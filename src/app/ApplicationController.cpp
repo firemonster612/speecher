@@ -230,8 +230,18 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
     m_recording = new RecordingSession(
         m_settings, m_providers,
-        [this](QObject *parent) { return m_platform->createRecordingAudioInput(m_settings, parent); }, this);
+        [this](QObject *parent) { return m_platform->createRecordingAudioInput(m_settings, parent); },
+        m_platform->recordsSystemAudio()
+            ? RecordingSession::InputFactory([this](QObject *parent) { return m_platform->createSystemAudioInput(parent); })
+            : RecordingSession::InputFactory(),
+        [this](QString *warning) { return m_platform->createEchoCanceller(warning); }, this);
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
+    // A dictation has the microphone from its start until it stops listening.
+    connect(m_session, &DictationSession::stateChanged, m_recording, [this] {
+        const DictationState state = m_session->state();
+        m_recording->setDictating(state == DictationState::Starting || state == DictationState::Listening
+                                  || state == DictationState::Paused || state == DictationState::Stopping);
+    });
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();
         reply.recording = status;
@@ -387,18 +397,22 @@ bool ApplicationController::isRecording() const
 
 // macOS may ask for the microphone first, and the provider's stream must
 // connect, so the reply waits for both.
-void ApplicationController::startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket)
+void ApplicationController::startRecording(const QString &path,
+                                           const QStringList &vocabulary,
+                                           bool microphoneOnly,
+                                           QLocalSocket *socket)
 {
     if (!ensureSetupCompleted()) {
         SingleInstanceIpc::writeResponse(socket, response(false, recordingNeedsSetupText()));
         return;
     }
-    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, socket = QPointer(socket)](bool granted) {
+    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, microphoneOnly,
+                                               socket = QPointer(socket)](bool granted) {
         if (!granted) {
             SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
             return;
         }
-        m_recording->start(path, vocabulary, dataFolder(), [this, socket](const QString &error) {
+        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, [this, socket](const QString &error) {
             if (!error.isEmpty()) {
                 SingleInstanceIpc::writeResponse(socket, response(false, error));
                 return;
@@ -1121,7 +1135,8 @@ void ApplicationController::handleIpcCommand(const QString &command,
                                              const QStringList &files,
                                              const QString &writingProfile,
                                              const QString &spokenLanguage,
-                                             const QStringList &terms)
+                                             const QStringList &terms,
+                                             bool microphoneOnly)
 {
     SessionOverrides overrides;
     if (!outputFormat.isEmpty()) {
@@ -1226,7 +1241,7 @@ void ApplicationController::handleIpcCommand(const QString &command,
         m_updates->installAndRestart();
 #endif
     } else if (command == QStringLiteral("recordStart")) {
-        startRecording(files.value(0), terms, socket);
+        startRecording(files.value(0), terms, microphoneOnly, socket);
     } else if (command == QStringLiteral("recordStatus")) {
         IpcResponse reply = response();
         reply.recording = m_recording->status();

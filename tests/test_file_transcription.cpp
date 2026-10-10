@@ -3,6 +3,7 @@
 #include "common/test_http.h"
 
 #include "app/HeadlessTranscribe.h"
+#include "core/EchoCanceller.h"
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsKeys.h"
@@ -182,6 +183,43 @@ QStringList recordedTexts(const QString &path)
     return texts;
 }
 
+// Each line of a recording as "speaker: text", without its time.
+QStringList recordedLines(const QString &path)
+{
+    QStringList lines = readFile(path).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (QString &line : lines) {
+        line.remove(QRegularExpression(QStringLiteral("^\\[\\d\\d:\\d\\d:\\d\\d\\] ")));
+    }
+    return lines;
+}
+
+// What a FakeEchoCanceller was given, kept by the test, as the recording
+// destroys the canceller once it is flushed.
+struct EchoCancellerLog {
+    QList<QByteArray> references;
+    int flushes = 0;
+};
+
+// Passes the microphone through and logs the rest.
+class FakeEchoCanceller final : public EchoCanceller {
+public:
+    explicit FakeEchoCanceller(EchoCancellerLog *log)
+        : m_log(log)
+    {
+    }
+
+    void addReference(const QByteArray &pcm) override { m_log->references << pcm; }
+    QByteArray process(const QByteArray &microphonePcm) override { return microphonePcm; }
+    QByteArray flush() override
+    {
+        ++m_log->flushes;
+        return QByteArray(320, '\1');
+    }
+
+private:
+    EchoCancellerLog *m_log;
+};
+
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 // Records half a second of 440 Hz tone beside a few plain video frames into
 // path with Qt's own FFmpeg recorder (its audio and video inputs arrived in
@@ -350,6 +388,7 @@ private slots:
                                            });
         m_refinedWith.clear();
         m_refinedVocabulary.clear();
+        m_codexes.clear();
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [this](QObject *parent) {
                                                    auto *refiner = new FakeRefiner(parent);
@@ -1394,7 +1433,7 @@ private slots:
         });
         const QString path = m_dir.filePath(QStringLiteral("never.md"));
         std::optional<QString> outcome;
-        recording.start(path, {}, m_dir.path(), [&outcome](const QString &error) { outcome = error; });
+        recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         QVERIFY(QFileInfo::exists(path));
         QVERIFY(!outcome);
@@ -1631,7 +1670,7 @@ private slots:
             return microphone.data();
         });
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), [&outcome](const QString &error) { outcome = error; });
+        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Two utterances go to Codex while it connects, each ended by the
         // pause after it.
@@ -1713,6 +1752,198 @@ private slots:
         QCOMPARE(recordingStreamProblemText(recording.status().streams.first()),
                  QStringLiteral("The microphone stream was down so long that the oldest 00:00:02 of audio waiting for it was "
                                 "dropped."));
+    }
+
+    // The microphone is "me" and system audio "them", each with its own
+    // provider session, their lines in the one file in the order their texts
+    // were finalised: a reply that comes first is written first, even when
+    // the question was asked earlier.
+    void aRecordingWritesBothStreamsIntoOneFile()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        QPointer<FakeAudioInput> systemAudio;
+        RecordingSession recording(
+            &settings, m_registry.get(),
+            [&](QObject *parent) { return microphone = new FakeAudioInput(parent); },
+            [&](QObject *parent) { return systemAudio = new FakeAudioInput(parent); });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        QCOMPARE(streamingCodexes().size(), 2);
+        FakeSpeechTranscriber *me = streamingCodexes().at(0);
+        FakeSpeechTranscriber *them = streamingCodexes().at(1);
+        QCOMPARE(recording.status().streams.size(), 2);
+        QCOMPARE(recording.status().streams.at(1).speaker, QStringLiteral("them"));
+
+        microphone->pushAudio(microphoneChunk(8000));
+        systemAudio->pushAudio(microphoneChunk(4000));
+        QTRY_VERIFY_WITH_TIMEOUT(!me->audioChunks.isEmpty() && !them->audioChunks.isEmpty(), 5000);
+        QCOMPARE(me->audioChunks.first(), microphoneChunk(8000));
+        QCOMPARE(them->audioChunks.first(), microphoneChunk(4000));
+        them->emitPartialText(QStringLiteral("Can you look"));
+        me->emitFinalText(QStringLiteral("Sorry, go on."));
+        them->emitFinalText(QStringLiteral("Can you look at the retry logic?"));
+        me->emitFinalText(QStringLiteral("Yes, today."));
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+        QCOMPARE(recordedLines(path), QStringList({QStringLiteral("me: Sorry, go on."),
+                                                   QStringLiteral("them: Can you look at the retry logic?"),
+                                                   QStringLiteral("me: Yes, today.")}));
+    }
+
+    // --mic-only takes the microphone alone: no system audio, no second
+    // provider session, one stream.
+    void aMicrophoneOnlyRecordingTakesNoSystemAudio()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        int systemAudioInputs = 0;
+        RecordingSession recording(
+            &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
+            [&](QObject *parent) {
+                ++systemAudioInputs;
+                return new FakeAudioInput(parent);
+            });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error, {}, true).isEmpty(), qPrintable(error));
+        QCOMPARE(systemAudioInputs, 0);
+        QCOMPARE(streamingCodexes().size(), 1);
+        QCOMPARE(recording.status().streams.size(), 1);
+        QCOMPARE(recording.status().streams.first().speaker, QStringLiteral("me"));
+    }
+
+    // While a dictation has the microphone, its stream sends silence and
+    // shows paused; each dictation writes one line saying so, and system
+    // audio records on.
+    void aDictationSilencesTheRecordingsMicrophone()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        QPointer<FakeAudioInput> systemAudio;
+        RecordingSession recording(
+            &settings, m_registry.get(),
+            [&](QObject *parent) { return microphone = new FakeAudioInput(parent); },
+            [&](QObject *parent) { return systemAudio = new FakeAudioInput(parent); });
+        QSignalSpy problems(&recording, &RecordingSession::problemChanged);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        FakeSpeechTranscriber *me = streamingCodexes().at(0);
+        FakeSpeechTranscriber *them = streamingCodexes().at(1);
+
+        recording.setDictating(true);
+        recording.setDictating(true);
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Paused);
+        QCOMPARE(problems.count(), 1);
+        microphone->pushAudio(microphoneChunk(8000));
+        systemAudio->pushAudio(microphoneChunk(4000));
+        QTRY_VERIFY_WITH_TIMEOUT(!me->audioChunks.isEmpty() && !them->audioChunks.isEmpty(), 5000);
+        QCOMPARE(me->audioChunks.first(), QByteArray(3200, '\0'));
+        QCOMPARE(them->audioChunks.first(), microphoneChunk(4000));
+        them->emitFinalText(QStringLiteral("Take your time."));
+
+        recording.setDictating(false);
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+        me->audioChunks.clear();
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_VERIFY_WITH_TIMEOUT(!me->audioChunks.isEmpty(), 5000);
+        QCOMPARE(me->audioChunks.first(), microphoneChunk(8000));
+        recording.setDictating(true);
+        QCOMPARE(recordedLines(path), QStringList({QStringLiteral("me: (dictating, not on the call)"),
+                                                   QStringLiteral("them: Take your time."),
+                                                   QStringLiteral("me: (dictating, not on the call)")}));
+    }
+
+    // Beside system audio, the microphone goes through the echo canceller,
+    // which takes system audio as its reference and gives back what it held
+    // at the stop; one that cannot start leaves the recording running and
+    // status saying why.
+    void aRecordingCancelsTheEchoOfSystemAudio()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        QPointer<FakeAudioInput> systemAudio;
+        EchoCancellerLog log;
+        int cancellers = 0;
+        const QString warning = echoCancellationFailedText(-1);
+        RecordingSession recording(
+            &settings, m_registry.get(),
+            [&](QObject *parent) { return microphone = new FakeAudioInput(parent); },
+            [&](QObject *parent) { return systemAudio = new FakeAudioInput(parent); },
+            [&](QString *why) -> std::unique_ptr<EchoCanceller> {
+                if (cancellers++ > 0) {
+                    *why = warning;
+                    return nullptr;
+                }
+                return std::make_unique<FakeEchoCanceller>(&log);
+            });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        QVERIFY(recording.status().echoCancellationWarning.isEmpty());
+        systemAudio->pushAudio(microphoneChunk(4000));
+        QCOMPARE(log.references, QList<QByteArray>{microphoneChunk(4000)});
+        FakeSpeechTranscriber *me = streamingCodexes().at(0);
+        me->autoCompleteOnFinish = false;
+        recording.stop();
+        QCOMPARE(log.flushes, 1);
+        QTRY_VERIFY_WITH_TIMEOUT(me->audioChunks.contains(QByteArray(320, '\1')), 5000);
+        me->emitCompletion();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        QCOMPARE(recording.status().echoCancellationWarning, warning);
+        QCOMPARE(recording.status().streams.size(), 2);
+    }
+
+    // System audio that cannot start, or whose stream stops, leaves the
+    // microphone recording; status says why.
+    void aFailedSystemAudioStreamLeavesTheMicrophoneRecording()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        bool systemAudioStarts = false;
+        RecordingSession recording(
+            &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
+            [&](QObject *parent) {
+                auto *systemAudio = new FakeAudioInput(parent);
+                systemAudio->startResult = systemAudioStarts;
+                systemAudio->startError = QStringLiteral("No default output.");
+                return systemAudio;
+            });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QSignalSpy problems(&recording, &RecordingSession::problemChanged);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        const RecordingStream them = recording.status().streams.at(1);
+        QCOMPARE(them.state, RecordingStream::State::Stopped);
+        QCOMPARE(them.problem, QStringLiteral("No default output."));
+        streamingCodexes().first()->emitFinalText(QStringLiteral("Still here."));
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+        QCOMPARE(recordedLines(path), QStringList{QStringLiteral("me: Still here.")});
+
+        systemAudioStarts = true;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        problems.clear();
+        streamingCodexes().last()->emitFailure(QStringLiteral("Unsupported audio"), false, QStringLiteral("streaming"),
+                                      ProviderFailureKind::Other);
+        QVERIFY(recording.isRecording());
+        QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.at(1).problem, QStringLiteral("Unsupported audio"));
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+        QCOMPARE(problems.count(), 1);
     }
 
     void numbersASaveThatWouldOverwrite()
@@ -2389,8 +2620,22 @@ private:
                                                    codex->onStartAttempt = [codex] { codex->emitConnected(); };
                                                }
                                                m_codex = codex;
+                                               m_codexes << codex;
                                                return codex;
                                            });
+    }
+
+    // The providers that streamed, oldest first: a two-stream recording's
+    // microphone, then its system audio.
+    QList<FakeSpeechTranscriber *> streamingCodexes() const
+    {
+        QList<FakeSpeechTranscriber *> streaming;
+        for (const QPointer<FakeSpeechTranscriber> &codex : m_codexes) {
+            if (codex && codex->startCalls > 0) {
+                streaming << codex;
+            }
+        }
+        return streaming;
     }
 
     // The Custom Endpoint at server as settings' speech provider.
@@ -2407,10 +2652,12 @@ private:
     QString startRecording(RecordingSession &recording,
                            const QString &path,
                            QString *error,
-                           const QStringList &vocabulary = {})
+                           const QStringList &vocabulary = {},
+                           bool microphoneOnly = false)
     {
         std::optional<QString> outcome;
-        recording.start(path, vocabulary, m_dir.path(), [&outcome](const QString &failure) { outcome = failure; });
+        recording.start(path, vocabulary, m_dir.path(), microphoneOnly,
+                        [&outcome](const QString &failure) { outcome = failure; });
         if (!QTest::qWaitFor([&outcome] { return outcome.has_value(); }, 10000)) {
             *error = QStringLiteral("the start never finished");
             return {};
@@ -2423,6 +2670,8 @@ private:
     std::unique_ptr<ProviderRegistry> m_registry;
     Script m_script;
     QPointer<FakeSpeechTranscriber> m_codex;
+    // Every provider registerStreamingCodex made, oldest first.
+    QList<QPointer<FakeSpeechTranscriber>> m_codexes;
     // Style and tone the last refinement ran with.
     QStringList m_refinedWith;
     QStringList m_refinedVocabulary;

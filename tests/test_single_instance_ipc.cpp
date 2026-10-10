@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
+#include "recording/RecordingPresentation.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -381,20 +382,28 @@ private slots:
                                                 {{QStringLiteral("me"), RecordingStream::State::Stopped}},
                                                 2,
                                                 QStringLiteral("Could not write /tmp/call.md: No space left on device")};
+        const RecordingStatus started{true,
+                                      QStringLiteral("/tmp/call.md"),
+                                      0,
+                                      {{QStringLiteral("me"), RecordingStream::State::Paused},
+                                       {QStringLiteral("them"), RecordingStream::State::Stopped,
+                                        QStringLiteral("No default output.")}},
+                                      0,
+                                      {},
+                                      echoCancellationNotBuiltText()};
         connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
                 [&](const QString &command, const QString &, QLocalSocket *socket) {
                     IpcResponse reply{true, QStringLiteral("idle"), {}};
                     reply.recording = command == QStringLiteral("recordStatus") ? reconnecting
                         : command == QStringLiteral("recordStop")               ? stoppedIncomplete
-                                                                                : RecordingStatus();
+                                                                                : started;
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
 
         IpcResponse response;
         QThread *client = QThread::create([platform, &response] {
-            SingleInstanceIpc::sendCommandDetailed(QStringLiteral("recordStart"), SessionOverrides(),
-                                                   {QStringLiteral("/tmp/call.md")},
-                                                   {QStringLiteral("readSharedChoice")}, &response, 2000, platform);
+            SingleInstanceIpc::sendRecordStart(QStringLiteral("/tmp/call.md"), {QStringLiteral("readSharedChoice")},
+                                               true, &response, 2000, platform);
         });
         client->start();
         QTRY_VERIFY(client->isFinished());
@@ -402,7 +411,8 @@ private slots:
         QCOMPARE(commands.first().at(0).toString(), QStringLiteral("recordStart"));
         QCOMPARE(commands.first().at(3).toStringList(), QStringList{QStringLiteral("/tmp/call.md")});
         QCOMPARE(commands.first().at(6).toStringList(), QStringList{QStringLiteral("readSharedChoice")});
-        QVERIFY(response.recording && !response.recording->recording);
+        QVERIFY(commands.first().at(7).toBool());
+        QVERIFY(response.recording && response.recording->recording);
 
         std::ostringstream out;
         std::ostringstream err;
@@ -430,6 +440,26 @@ private slots:
             delete runner;
             return exitCode;
         };
+        // A start that runs with a problem still succeeds, and says what on
+        // stderr: a system audio stream that failed, echo cancellation off.
+        QCOMPARE(run(QStringLiteral("recordStart"), false), 0);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("The system audio stream stopped: No default output.\n") + echoCancellationNotBuiltText()
+                     + QLatin1Char('\n'));
+        QCOMPARE(recordingStatusText(started),
+                 QStringLiteral("path: /tmp/call.md\nduration: 00:00:00\nmicrophone: paused\n"
+                                "system audio: stopped, No default output.\nwarning: ")
+                     + echoCancellationNotBuiltText());
+        QCOMPARE(statusWatchText(QStringLiteral("Listening"), started),
+                 QStringLiteral("Listening, recording 00:00:00, microphone paused, system audio stopped, echo "
+                                "cancellation off"));
+        const QJsonObject startedJson = recordingStatusJson(started);
+        QCOMPARE(startedJson.value(QStringLiteral("echoCancellationWarning")).toString(),
+                 echoCancellationNotBuiltText());
+        QCOMPARE(recordingStatusFromJson(startedJson).streams.first().state, RecordingStream::State::Paused);
+        QCOMPARE(recordingStatusFromJson(startedJson).echoCancellationWarning, echoCancellationNotBuiltText());
+
         QCOMPARE(run(QStringLiteral("recordStatus"), true), 0);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
                  QJsonObject({{QStringLiteral("recording"), true},

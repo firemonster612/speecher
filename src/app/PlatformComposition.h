@@ -32,11 +32,16 @@ public:
     virtual QList<AudioInputDeviceInfo> availableAudioInputDevices() const = 0;
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;
     // The microphone for a Recording: dictation's, except where the system's
-    // own echo cancellation needs the microphone opened for it.
+    // own echo cancellation needs the microphone opened for it, or Speecher's
+    // needs it whole, without Skip silence.
     virtual AudioInput *createRecordingAudioInput(SettingsStore *settings, QObject *parent) const
     {
         return createAudioInput(settings, parent);
     }
+    // Whether a Recording takes system audio as a second stream, "them":
+    // once both createSystemAudioInput and echo cancellation work here. Until
+    // then a Recording takes the microphone alone.
+    virtual bool recordsSystemAudio() const { return false; }
     // What the speakers play, from the default output, as 16 kHz mono s16 like
     // the microphone; none where Speecher cannot capture it.
     virtual AudioInput *createSystemAudioInput(QObject *parent) const

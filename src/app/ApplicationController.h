@@ -196,7 +196,8 @@ public slots:
                           const QStringList &files = {},
                           const QString &writingProfile = {},
                           const QString &spokenLanguage = {},
-                          const QStringList &terms = {});
+                          const QStringList &terms = {},
+                          bool microphoneOnly = false);
 
 signals:
     void stateChanged(const QString &stateName);
@@ -233,7 +234,10 @@ private:
     void updateSessionShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
-    void startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket);
+    void startRecording(const QString &path,
+                        const QStringList &vocabulary,
+                        bool microphoneOnly,
+                        QLocalSocket *socket);
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;

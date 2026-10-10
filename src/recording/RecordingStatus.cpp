@@ -9,6 +9,8 @@ QString recordingStreamStateName(RecordingStream::State state)
     switch (state) {
     case RecordingStream::State::Recording:
         return QStringLiteral("recording");
+    case RecordingStream::State::Paused:
+        return QStringLiteral("paused");
     case RecordingStream::State::Reconnecting:
         return QStringLiteral("reconnecting");
     case RecordingStream::State::Stopped:
@@ -42,6 +44,9 @@ QJsonObject recordingStatusJson(const RecordingStatus &status)
         object.insert(QStringLiteral("unwrittenLines"), status.unwrittenLines);
         object.insert(QStringLiteral("writeError"), status.writeError);
     }
+    if (!status.echoCancellationWarning.isEmpty()) {
+        object.insert(QStringLiteral("echoCancellationWarning"), status.echoCancellationWarning);
+    }
     return object;
 }
 
@@ -56,6 +61,7 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
         const QString state = stream.value(QStringLiteral("state")).toString();
         RecordingStream read{stream.value(QStringLiteral("speaker")).toString()};
         for (const RecordingStream::State known : {RecordingStream::State::Recording,
+                                                   RecordingStream::State::Paused,
                                                    RecordingStream::State::Reconnecting,
                                                    RecordingStream::State::Stopped}) {
             if (state == recordingStreamStateName(known)) {
@@ -68,6 +74,7 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
     }
     status.unwrittenLines = object.value(QStringLiteral("unwrittenLines")).toInt();
     status.writeError = object.value(QStringLiteral("writeError")).toString();
+    status.echoCancellationWarning = object.value(QStringLiteral("echoCancellationWarning")).toString();
     return status;
 }
 
