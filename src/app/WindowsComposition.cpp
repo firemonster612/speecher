@@ -8,6 +8,7 @@
 #include "platform/audio/QtAudioInput.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/win/WinCancelKeyGrab.h"
+#include "platform/win/WinCommunicationsAudioInput.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinMediaController.h"
 #include "platform/win/WinScreenshotContextProvider.h"
@@ -30,6 +31,19 @@ namespace {
 
 constexpr auto runKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr auto runValue = "Speecher";
+
+// The stub end-to-end tests stand in for the microphone, or none.
+AudioInput *stubAudioInput(QObject *parent)
+{
+#ifdef SPEECHER_E2E_HOOKS
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
+        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
+        return new E2EAudioInput(parent);
+    }
+#endif
+    Q_UNUSED(parent);
+    return nullptr;
+}
 
 QString launchCommand()
 {
@@ -66,18 +80,23 @@ QList<AudioInputDeviceInfo> WindowsComposition::availableAudioInputDevices() con
 
 AudioInput *WindowsComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
-#ifdef SPEECHER_E2E_HOOKS
-    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
-        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
-        return new E2EAudioInput(parent);
+    if (AudioInput *stub = stubAudioInput(parent)) {
+        return stub;
     }
-#endif
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+AudioInput *WindowsComposition::createRecordingAudioInput(SettingsStore *settings, QObject *parent) const
+{
+    if (AudioInput *stub = stubAudioInput(parent)) {
+        return stub;
+    }
+    return new WinCommunicationsAudioInput(settings->audioCaptureSettings().deviceId, parent);
 }
 
 AudioInput *WindowsComposition::createSystemAudioInput(QObject *parent) const

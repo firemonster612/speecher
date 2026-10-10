@@ -529,6 +529,8 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 set(SPEECHER_PLATFORM_WIN_SOURCES
   src/output/win/WinPasteDelivery.cpp
   src/platform/win/WinCancelKeyGrab.cpp
+  src/platform/win/WinCaptureInput.cpp
+  src/platform/win/WinCommunicationsAudioInput.cpp
   src/platform/win/WinCorrectionObserver.cpp
   src/platform/win/WinGlobalShortcutBinder.cpp
   src/platform/win/WinMediaController.cpp
@@ -541,6 +543,8 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
 set(SPEECHER_PLATFORM_WIN_HEADERS
   src/output/win/WinPasteDelivery.h
   src/platform/win/WinCancelKeyGrab.h
+  src/platform/win/WinCaptureInput.h
+  src/platform/win/WinCommunicationsAudioInput.h
   src/platform/win/WinCorrectionObserver.h
   src/platform/win/WinGlobalShortcutBinder.h
   src/platform/win/WinInjectedInput.h

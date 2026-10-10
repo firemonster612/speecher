@@ -230,7 +230,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
     m_recording = new RecordingSession(
         m_settings, m_providers,
-        [this](QObject *parent) { return m_platform->createAudioInput(m_settings, parent); }, this);
+        [this](QObject *parent) { return m_platform->createRecordingAudioInput(m_settings, parent); }, this);
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();

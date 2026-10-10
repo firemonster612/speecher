@@ -12,6 +12,12 @@ namespace {
 // Only the microphone records so far.
 const QString kMicrophoneSource = QStringLiteral("microphone");
 
+// Ends why a Recording runs without echo cancellation.
+QString withHeadphonesAdvice(const QString &why)
+{
+    return why + QStringLiteral(" On speakers, the other side may also be written as you; headphones avoid it.");
+}
+
 } // namespace
 
 QString recordingClock(qint64 elapsedMs)
@@ -146,15 +152,37 @@ QString recordingFileError(const QString &path, const QString &reason)
 
 QString echoCancellationNotBuiltText()
 {
-    return QStringLiteral("Echo cancellation is off: this Speecher was built without webrtc-audio-processing. "
-                          "On speakers, the other side may also be written as you; headphones avoid it.");
+    return withHeadphonesAdvice(
+        QStringLiteral("Echo cancellation is off: this Speecher was built without webrtc-audio-processing."));
 }
 
 QString echoCancellationFailedText(int error)
 {
-    return QStringLiteral("Echo cancellation is off: webrtc-audio-processing could not start (error %1). On "
-                          "speakers, the other side may also be written as you; headphones avoid it.")
-        .arg(error);
+    return withHeadphonesAdvice(
+        QStringLiteral("Echo cancellation is off: webrtc-audio-processing could not start (error %1).").arg(error));
+}
+
+QString echoCancellationNoCallStreamText(quint32 error)
+{
+    return withHeadphonesAdvice(
+        QStringLiteral("Echo cancellation is off: Windows would not open the microphone for calls (error 0x%1).")
+            .arg(error, 8, 16, QLatin1Char('0')));
+}
+
+QString echoCancellationUnknownText()
+{
+    return withHeadphonesAdvice(
+        QStringLiteral("Echo cancellation may be off: Windows cannot say whether the microphone cancels echo."));
+}
+
+QString echoCancellationNotOfferedText()
+{
+    return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: the microphone's driver does not offer it."));
+}
+
+QString echoCancellationTurnedOffText()
+{
+    return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: the microphone's driver has it turned off."));
 }
 
 } // namespace speecher

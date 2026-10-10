@@ -20,6 +20,8 @@
 #endif
 
 #ifdef Q_OS_WIN
+#include <QProcess>
+
 #include <mmdeviceapi.h>
 #include <mmreg.h>
 #include <wrl/client.h>
@@ -504,6 +506,72 @@ private slots:
         QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
         QVERIFY(capture->isActive());
         QCOMPARE(failed.count(), 0);
+    }
+
+    // Windows can turn other apps down while a call's stream is open. Plays
+    // a tone from another process, as a call app would, and checks system
+    // audio hears it as loud with the recording's microphone open. Run it in
+    // the signed-in user's session: ducking is their setting.
+    void liveRecordingMicrophoneKeepsOtherAudioLevel()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_RECORDING_MICROPHONE") != QStringLiteral("1")) {
+            QSKIP("Live recording microphone check is opt-in");
+        }
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString tonePath = directory.filePath(QStringLiteral("tone.wav"));
+        {
+            QByteArray tone;
+            for (int sample = 0; sample < 16000 * 10; ++sample) {
+                const auto value = qint16(0.5 * 32767 * std::sin(2 * M_PI * 440 * sample / 16000));
+                tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+            }
+            QFile file(tonePath);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(wavFromPcm16Mono(tone, 16000));
+        }
+
+        std::unique_ptr<AudioInput> system(platformComposition()->createSystemAudioInput(nullptr));
+        QByteArray heard;
+        connect(system.get(), &AudioInput::audioChunk, system.get(), [&](const QByteArray &chunk) { heard += chunk; });
+        QString error;
+        QVERIFY2(system->start(&error), qPrintable(error));
+        QProcess player;
+        player.start(QStringLiteral("powershell.exe"),
+                     {QStringLiteral("-NoProfile"),
+                      QStringLiteral("-Command"),
+                      QStringLiteral("(New-Object Media.SoundPlayer '%1').PlaySync()")
+                          .arg(QDir::toNativeSeparators(tonePath))});
+        const auto stopPlayer = qScopeGuard([&] {
+            player.kill();
+            player.waitForFinished();
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(loudestRms(heard) > 0.05f, 5000);
+        heard.clear();
+        QTest::qWait(1000);
+        const float before = rmsForPcm16(heard);
+
+        SettingsStore settings;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+        qInfo().noquote() << "echo cancellation:"
+                          << (microphone->echoCancellationWarning().isEmpty() ? QStringLiteral("on")
+                                                                              : microphone->echoCancellationWarning());
+        // Ducking fades in over a second.
+        QTest::qWait(1200);
+        heard.clear();
+        QTest::qWait(1000);
+        const float during = rmsForPcm16(heard);
+        microphone->stop();
+        qInfo().noquote() << "tone before" << before << "with the microphone open" << during << "microphone heard"
+                          << loudestRms(recorded) << "over" << recorded.size() / 32 << "ms";
+
+        QVERIFY2(recorded.size() >= 2000 * 32, "The microphone delivered too little audio");
+        QVERIFY2(during > before * 0.8f, "Other audio was turned down while the microphone was open");
     }
 #endif
 

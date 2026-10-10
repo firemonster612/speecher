@@ -5,11 +5,13 @@
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
 #include "output/TextDelivery.h"
+#include "platform/win/WinCommunicationsAudioInput.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinInjectedInput.h"
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 #include "platform/win/WinSystemAudioInput.h"
 #include "platform/win/WinTargetProvider.h"
+#include "recording/RecordingPresentation.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -19,6 +21,8 @@
 #include <QTest>
 
 #include <windows.h>
+#include <ks.h>
+#include <ksmedia.h>
 
 using namespace speecher;
 
@@ -399,6 +403,52 @@ private slots:
         }
         QVERIFY(!capture.isActive());
         // A failed start is reported once, by its return value.
+        QTest::qWait(300);
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void communicationsWarningSaysWhyEchoIsNotCancelled()
+    {
+        const AUDIO_EFFECT noiseSuppression{AUDIO_EFFECT_TYPE_NOISE_SUPPRESSION, TRUE, AUDIO_EFFECT_STATE_ON};
+        const AUDIO_EFFECT echoOn{AUDIO_EFFECT_TYPE_ACOUSTIC_ECHO_CANCELLATION, FALSE, AUDIO_EFFECT_STATE_ON};
+        const AUDIO_EFFECT echoOff{AUDIO_EFFECT_TYPE_ACOUSTIC_ECHO_CANCELLATION, TRUE, AUDIO_EFFECT_STATE_OFF};
+
+        QCOMPARE(communicationsEchoCancellationWarning(S_OK, S_OK, {noiseSuppression, echoOn}), QString());
+        QCOMPARE(communicationsEchoCancellationWarning(S_OK, S_OK, {echoOff}), echoCancellationTurnedOffText());
+        // Most microphones' drivers have no echo cancellation.
+        QCOMPARE(communicationsEchoCancellationWarning(S_OK, S_OK, {}), echoCancellationNotOfferedText());
+        QCOMPARE(communicationsEchoCancellationWarning(S_OK, S_OK, {noiseSuppression}),
+                 echoCancellationNotOfferedText());
+        // A Windows without the effects manager cannot say.
+        QCOMPARE(communicationsEchoCancellationWarning(S_OK, E_NOINTERFACE, {}), echoCancellationUnknownText());
+        // Without the communications category nothing cancels echo, whatever
+        // the effects say.
+        const QString noCategory = communicationsEchoCancellationWarning(E_NOINTERFACE, S_OK, {echoOn});
+        QCOMPARE(noCategory, echoCancellationNoCallStreamText(quint32(E_NOINTERFACE)));
+        QVERIFY2(noCategory.contains(QStringLiteral("0x80004002")), qPrintable(noCategory));
+    }
+
+    void recordingMicrophoneStartsOrSaysWhy()
+    {
+        WinCommunicationsAudioInput microphone(QString{});
+        QByteArray pcm;
+        connect(&microphone, &AudioInput::audioChunk, &microphone, [&](const QByteArray &chunk) { pcm += chunk; });
+        QSignalSpy failed(&microphone, &AudioInput::failed);
+        QString error;
+        if (microphone.start(&error)) {
+            QVERIFY(microphone.isActive());
+            qInfo().noquote() << "echo cancellation:"
+                              << (microphone.echoCancellationWarning().isEmpty() ? QStringLiteral("on")
+                                                                                 : microphone.echoCancellationWarning());
+            // Half a second of it.
+            QTRY_VERIFY(pcm.size() >= 16000 * 2 / 2);
+            microphone.stop();
+        } else {
+            // Runners without a microphone end here.
+            qInfo().noquote() << "recording microphone did not start:" << error;
+            QVERIFY(!error.isEmpty());
+        }
+        QVERIFY(!microphone.isActive());
         QTest::qWait(300);
         QCOMPARE(failed.count(), 0);
     }

@@ -3,7 +3,6 @@
 #include "platform/audio/LoopbackPcm.h"
 #include "platform/audio/LoopbackReopen.h"
 
-#include <QMetaObject>
 #include <QScopeGuard>
 
 #include <audioclient.h>
@@ -105,11 +104,10 @@ private:
     HANDLE m_changed;
 };
 
-// The loopback capture itself, which lives on the capture thread.
-class LoopbackCapture {
+class LoopbackCapture final : public WinCaptureStream {
 public:
     LoopbackCapture() = default;
-    ~LoopbackCapture()
+    ~LoopbackCapture() override
     {
         if (m_watcher) {
             m_enumerator->UnregisterEndpointNotificationCallback(m_watcher.Get());
@@ -120,11 +118,11 @@ public:
 
     // Starts watching the default output, then capturing from it, so a change
     // while it opens is reported after it and reopens.
-    QString open();
+    QString open() override;
     // The audio since the last read, with the silence around it. An output
     // that closes, or stops being the default, is reopened on this and later
     // reads until the reopen allowance runs out, which fails the read.
-    QString read(QList<QByteArray> *chunks);
+    QString read(QList<QByteArray> *chunks) override;
 
 private:
     // Expects no output open, and leaves none open when it fails.
@@ -336,112 +334,8 @@ QAudioFormat audioFormatForWave(const WAVEFORMATEX &wave)
 }
 
 WinSystemAudioInput::WinSystemAudioInput(QObject *parent)
-    : AudioInput(parent)
+    : WinCaptureInput([] { return std::make_unique<LoopbackCapture>(); }, parent)
 {
-}
-
-WinSystemAudioInput::~WinSystemAudioInput()
-{
-    stop();
-}
-
-bool WinSystemAudioInput::start(QString *error)
-{
-    if (m_thread.joinable()) {
-        return true;
-    }
-    QString message;
-    m_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (m_stopEvent) {
-        std::promise<QString> started;
-        std::future<QString> opened = started.get_future();
-        m_thread = std::thread(&WinSystemAudioInput::capture, this, m_generation, std::move(started));
-        message = opened.get();
-    } else {
-        message = captureError(HRESULT_FROM_WIN32(GetLastError()));
-    }
-    if (message.isEmpty()) {
-        return true;
-    }
-    stop();
-    if (error) {
-        *error = message;
-    }
-    return false;
-}
-
-void WinSystemAudioInput::stop()
-{
-    if (m_thread.joinable()) {
-        SetEvent(m_stopEvent);
-        m_thread.join();
-    }
-    if (m_stopEvent) {
-        CloseHandle(m_stopEvent);
-        m_stopEvent = nullptr;
-        ++m_generation;
-    }
-}
-
-bool WinSystemAudioInput::isActive() const
-{
-    return m_thread.joinable();
-}
-
-void WinSystemAudioInput::capture(quint64 generation, std::promise<QString> started)
-{
-    const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    const auto uninitialize = qScopeGuard([apartment] {
-        if (SUCCEEDED(apartment)) {
-            CoUninitialize();
-        }
-    });
-    LoopbackCapture loopback;
-    if (const QString error = loopback.open(); !error.isEmpty()) {
-        started.set_value(error);
-        return;
-    }
-    started.set_value({});
-
-    for (;;) {
-        // Polled rather than event-driven, because loopback signals nothing
-        // while nothing plays, and the poll that finds no audio is what fills
-        // the silence.
-        const DWORD woke = WaitForSingleObject(m_stopEvent, DWORD(kLoopbackPollMs));
-        if (woke == WAIT_OBJECT_0) {
-            return;
-        }
-        QList<QByteArray> chunks;
-        const QString error = woke == WAIT_FAILED
-            ? QStringLiteral("System audio capture stopped: %1").arg(qt_error_string(int(GetLastError())))
-            : loopback.read(&chunks);
-        if (!chunks.isEmpty()) {
-            QMetaObject::invokeMethod(
-                this,
-                [this, chunks, generation] {
-                    for (const QByteArray &chunk : chunks) {
-                        if (generation != m_generation) {
-                            return;
-                        }
-                        emit audioChunk(chunk);
-                    }
-                },
-                Qt::QueuedConnection);
-        }
-        if (!error.isEmpty()) {
-            QMetaObject::invokeMethod(this, [this, error, generation] { fail(generation, error); }, Qt::QueuedConnection);
-            return;
-        }
-    }
-}
-
-void WinSystemAudioInput::fail(quint64 generation, const QString &message)
-{
-    if (generation != m_generation) {
-        return;
-    }
-    stop();
-    emit failed(message);
 }
 
 } // namespace speecher
