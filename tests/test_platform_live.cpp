@@ -8,7 +8,6 @@
 #include <QMediaDevices>
 #include <QScopeGuard>
 
-#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -20,7 +19,99 @@
 #include <optional>
 #endif
 
+#ifdef Q_OS_WIN
+#include <mmdeviceapi.h>
+#include <mmreg.h>
+#include <wrl/client.h>
+
+#include <string>
+#endif
+
 using namespace speecher;
+
+namespace {
+
+// Plays a second of 440 Hz at half scale, an RMS of about 0.35 before the
+// output's volume, through output.
+bool playTone(const QAudioDevice &output)
+{
+    // WASAPI takes only the output's own rate and channels, in float.
+    QAudioFormat format = output.preferredFormat();
+    format.setSampleFormat(QAudioFormat::Float);
+    if (!output.isFormatSupported(format)) {
+        return false;
+    }
+    QByteArray tone;
+    for (int frame = 0; frame < format.sampleRate(); ++frame) {
+        const auto value = float(0.5 * std::sin(2 * M_PI * 440 * frame / format.sampleRate()));
+        for (int channel = 0; channel < format.channelCount(); ++channel) {
+            tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+        }
+    }
+    QBuffer toneBuffer(&tone);
+    toneBuffer.open(QIODevice::ReadOnly);
+    QAudioSink sink(output, format);
+    sink.start(&toneBuffer);
+    return QTest::qWaitFor([&] { return sink.state() == QAudio::IdleState; }, 5000);
+}
+
+// The loudest 100 ms of 16 kHz PCM.
+float loudestRms(const QByteArray &pcm)
+{
+    float loudest = 0.0f;
+    for (qsizetype at = 0; at < pcm.size(); at += 3200) {
+        loudest = qMax(loudest, rmsForPcm16(pcm.mid(at, 3200)));
+    }
+    return loudest;
+}
+
+} // namespace
+
+#ifdef Q_OS_WIN
+namespace {
+
+// Windows has no public API to change the default output, so this declares
+// the interface its Sound settings use, as far as SetDefaultEndpoint.
+struct __declspec(uuid("f8679f50-850a-41cf-9c72-430f290290c8")) IPolicyConfig : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE GetMixFormat(PCWSTR, WAVEFORMATEX **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetDeviceFormat(PCWSTR, INT, WAVEFORMATEX **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE ResetDeviceFormat(PCWSTR) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetDeviceFormat(PCWSTR, WAVEFORMATEX *, WAVEFORMATEX *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetProcessingPeriod(PCWSTR, INT, PINT64, PINT64) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetProcessingPeriod(PCWSTR, PINT64) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetShareMode(PCWSTR, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetShareMode(PCWSTR, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetPropertyValue(PCWSTR, INT, const PROPERTYKEY &, PROPVARIANT *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetPropertyValue(PCWSTR, INT, const PROPERTYKEY &, PROPVARIANT *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetDefaultEndpoint(PCWSTR deviceId, ERole role) = 0;
+};
+class __declspec(uuid("870af99c-171d-4f9e-af0d-e63df40c2bc9")) PolicyConfigClient;
+
+// Makes the output Qt names by id the default for every role, as Sound
+// settings does.
+bool setDefaultOutput(const QByteArray &id)
+{
+    const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const auto uninitialize = qScopeGuard([apartment] {
+        if (SUCCEEDED(apartment)) {
+            CoUninitialize();
+        }
+    });
+    Microsoft::WRL::ComPtr<IPolicyConfig> policy;
+    if (FAILED(CoCreateInstance(__uuidof(PolicyConfigClient), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&policy)))) {
+        return false;
+    }
+    const std::wstring device = QString::fromUtf8(id).toStdWString();
+    for (const ERole role : {eConsole, eMultimedia, eCommunications}) {
+        if (FAILED(policy->SetDefaultEndpoint(device.c_str(), role))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+#endif
 
 #ifdef SPEECHER_WITH_PULSE
 namespace {
@@ -342,19 +433,6 @@ private slots:
         }
         const QAudioDevice output = QMediaDevices::defaultAudioOutput();
         QVERIFY2(!output.isNull(), "There is no sound output to play the tone through");
-        // WASAPI takes only the output's own rate and channels, in float.
-        QAudioFormat format = output.preferredFormat();
-        format.setSampleFormat(QAudioFormat::Float);
-        QVERIFY(output.isFormatSupported(format));
-        QByteArray tone;
-        for (int frame = 0; frame < format.sampleRate(); ++frame) {
-            const auto value = float(0.5 * std::sin(2 * M_PI * 440 * frame / format.sampleRate()));
-            for (int channel = 0; channel < format.channelCount(); ++channel) {
-                tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
-            }
-        }
-        QBuffer toneBuffer(&tone);
-        QVERIFY(toneBuffer.open(QIODevice::ReadOnly));
 
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QVERIFY2(capture, "This platform has no system audio capture");
@@ -363,22 +441,54 @@ private slots:
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
         QVERIFY2(capture->start(&error), qPrintable(error));
-        QAudioSink sink(output, format);
-        sink.start(&toneBuffer);
-        QTRY_VERIFY_WITH_TIMEOUT(sink.state() == QAudio::IdleState, 5000);
+        QVERIFY(playTone(output));
         // Allow for the capture's poll and the output's latency.
         QTest::qWait(500);
         capture->stop();
-        sink.stop();
 
         QCOMPARE(failed.count(), 0);
-        float loudest = 0.0f;
-        for (qsizetype at = 0; at < pcm.size(); at += 3200) {
-            loudest = std::max(loudest, rmsForPcm16(pcm.mid(at, 3200)));
-        }
-        // The tone's RMS is about 0.35 before the output's volume.
-        QVERIFY2(loudest > 0.05f, qPrintable(QString::number(loudest)));
+        QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
     }
+
+#ifdef Q_OS_WIN
+    void liveSystemAudioFollowsDefaultOutput()
+    {
+        // It moves the real default output, so it never runs on a desktop by accident.
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SWITCH") != QStringLiteral("1")) {
+            QSKIP("Live default-output switching check is opt-in");
+        }
+        const QAudioDevice first = QMediaDevices::defaultAudioOutput();
+        QAudioDevice second;
+        for (const QAudioDevice &output : QMediaDevices::audioOutputs()) {
+            if (output.id() != first.id()) {
+                second = output;
+            }
+        }
+        QVERIFY2(!first.isNull() && !second.isNull(), "Switching needs two sound outputs");
+        const auto restore = qScopeGuard([&] { setDefaultOutput(first.id()); });
+
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QByteArray pcm;
+        connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture->start(&error), qPrintable(error));
+
+        // Only the default output is captured.
+        QVERIFY(playTone(second));
+        QTest::qWait(500);
+        QVERIFY2(loudestRms(pcm) < 0.01f, qPrintable(QString::number(loudestRms(pcm))));
+
+        QVERIFY(setDefaultOutput(second.id()));
+        QTest::qWait(500);
+        pcm.clear();
+        QVERIFY(playTone(second));
+        QTest::qWait(500);
+        QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
+        QVERIFY(capture->isActive());
+        QCOMPARE(failed.count(), 0);
+    }
+#endif
 
 #ifdef SPEECHER_WITH_WAYLAND
     void liveAtSpiVerificationRequiresActualInsertion()

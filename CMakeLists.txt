@@ -413,6 +413,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/SingleKeyShortcutBinder.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/LoopbackPcm.cpp
+  src/platform/audio/LoopbackReopen.cpp
   src/platform/audio/QtAudioInput.cpp
   src/platform/audio/WavFileAudioInput.cpp
   src/platform/FallbackPopupPositioner.cpp
@@ -437,6 +438,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/E2EAudioInput.h
   src/platform/audio/LoopbackPcm.h
+  src/platform/audio/LoopbackReopen.h
   src/platform/audio/QtAudioInput.h
   src/platform/audio/WavFileAudioInput.h
 )

@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/LoopbackPcm.h"
+#include "platform/audio/LoopbackReopen.h"
 
 using namespace speecher;
 
@@ -110,7 +111,78 @@ private slots:
         }
         QCOMPARE(loopback.convert(audio), audio);
         QVERIFY(loopback.silenceUntil(150).isEmpty());
+        // Less than 20 ms behind is left to the next fill.
+        QVERIFY(loopback.silenceUntil(160).isEmpty());
         QCOMPARE(loopback.silenceUntil(170), QByteArray(640, '\0'));
+    }
+
+    void loopbackFillsGapsBeforePackets()
+    {
+        LoopbackPcm loopback;
+        loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
+        const QByteArray tenMs = QByteArray(160, '\1') + QByteArray(160, '\2');
+
+        // Two packets read in one poll, 490 ms apart: the output dropped what
+        // played between them, which the stream keeps as silence.
+        QCOMPARE(loopback.convert(tenMs), tenMs);
+        QCOMPARE(loopback.silenceUntil(500), QByteArray(490 * 32, '\0'));
+        QCOMPARE(loopback.convert(tenMs), tenMs);
+
+        // Audio after the gap is in step again, so none is padded.
+        QVERIFY(loopback.silenceUntil(510).isEmpty());
+        QCOMPARE(loopback.convert(tenMs), tenMs);
+    }
+
+    void loopbackSkipsGapsTooLongToBeSilence()
+    {
+        LoopbackPcm loopback;
+        loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
+        QCOMPARE(loopback.silenceUntil(100).size(), 3200);
+
+        // An hour asleep is not an hour of silence to send; the stream picks up
+        // from where the clock is after it.
+        constexpr qint64 hourMs = 60 * 60 * 1000;
+        QVERIFY(loopback.silenceUntil(hourMs).isEmpty());
+        QCOMPARE(loopback.silenceUntil(hourMs + 100), QByteArray(3200, '\0'));
+    }
+
+    void loopbackSilentPacketsAreSilenceInEveryFormat()
+    {
+        // Unsigned 8-bit silence is 128, not 0.
+        LoopbackPcm loopback;
+        loopback.useFormat(format(16000, 1, QAudioFormat::UInt8));
+        QCOMPARE(loopback.convertSilent(160), QByteArray(320, '\0'));
+
+        loopback.useFormat(format(48000, 2, QAudioFormat::Float));
+        QCOMPARE(loopback.convertSilent(480 * 8), QByteArray(320, '\0'));
+    }
+
+    void loopbackReopenRetriesForAWhileThenGivesUp()
+    {
+        LoopbackReopen reopen;
+        reopen.restart();
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 1000));
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 10999));
+        QVERIFY(!reopen.retries(LoopbackReopen::Refusal::Failed, 11000));
+
+        // A new default output, or the output closing again, gets an allowance of its own.
+        reopen.restart();
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 12000));
+        QVERIFY(!reopen.retries(LoopbackReopen::Refusal::Failed, 22000));
+    }
+
+    void loopbackReopenWaitsWhileThereIsNoOutput()
+    {
+        LoopbackReopen reopen;
+        reopen.restart();
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 0));
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::NoOutput, 9000));
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::NoOutput, 60000));
+
+        // An output that appears and refuses starts its allowance then.
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 61000));
+        QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 70000));
+        QVERIFY(!reopen.retries(LoopbackReopen::Refusal::Failed, 71000));
     }
 
     void loopbackConvertsMixFormatAndCarriesOnAcrossOutputs()
@@ -129,7 +201,7 @@ private slots:
 
         // A new default output's format continues the same stream.
         loopback.useFormat(format(44100, 1, QAudioFormat::Int16));
-        QCOMPARE(loopback.silenceUntil(20), QByteArray(320, '\0'));
+        QCOMPARE(loopback.silenceUntil(30), QByteArray(640, '\0'));
     }
 };
 
