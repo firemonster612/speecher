@@ -108,24 +108,6 @@ AudioInput *LinuxComposition::createAudioInput(SettingsStore *settings, QObject 
     return input;
 }
 
-// Skip silence would throw the echo canceller's alignment off, so it is left
-// off however the settings change.
-AudioInput *LinuxComposition::createRecordingAudioInput(SettingsStore *settings, QObject *parent) const
-{
-    const QString wavSeam = qEnvironmentVariable("SPEECHER_AUDIO_WAV");
-    if (!wavSeam.isEmpty()) {
-        return new WavFileAudioInput(wavSeam, parent);
-    }
-    const auto whole = [](AudioCaptureSettings capture) {
-        capture.vadEnabled = false;
-        return capture;
-    };
-    auto *input = new QtAudioInput(whole(settings->audioCaptureSettings()), parent);
-    QObject::connect(settings, &SettingsStore::audioCaptureSettingsChanged, input,
-                     [input, whole](const AudioCaptureSettings &capture) { input->applySettings(whole(capture)); });
-    return input;
-}
-
 bool LinuxComposition::recordsSystemAudio() const
 {
 #ifdef SPEECHER_WITH_PULSE

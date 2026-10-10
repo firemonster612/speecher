@@ -69,6 +69,11 @@ public:
         return echoWarning;
     }
 
+    void keepSilence() override
+    {
+        keepsSilence = true;
+    }
+
     void pushAudio(const QByteArray &pcm)
     {
         emit audioChunk(pcm);
@@ -84,6 +89,7 @@ public:
     QString echoWarning;
     bool started = false;
     bool active = false;
+    bool keepsSilence = false;
     std::function<void()> onStart;
     std::function<void()> onStop;
 };

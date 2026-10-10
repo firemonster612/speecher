@@ -237,7 +237,7 @@ ApplicationController::ApplicationController(bool popupOnly,
         [this](QString *warning) { return m_platform->createEchoCanceller(warning); }, this);
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
     connect(m_session, &DictationSession::microphoneChanged, m_recording, &RecordingSession::setDictating);
-    connect(m_session, &DictationSession::listeningStarted, m_recording, &RecordingSession::markDictation);
+    connect(m_session, &DictationSession::listeningChanged, m_recording, &RecordingSession::setDictationListening);
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();
         reply.recording = status;

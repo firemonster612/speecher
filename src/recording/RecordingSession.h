@@ -20,6 +20,7 @@ class EchoCanceller;
 class FileTranscriptionSession;
 class ProviderRegistry;
 class RecordingMicrophone;
+class RecordingSystemAudio;
 class SettingsStore;
 struct TranscribeFileResult;
 struct TranscribeOptions;
@@ -69,7 +70,7 @@ public:
 
     // Without createSystemAudio, or when it makes none, a recording takes the
     // microphone alone. createEchoCanceller is asked for one only beside
-    // system audio; with it the microphone must not skip silence.
+    // system audio; with one, the microphone is told to keep silence.
     RecordingSession(SettingsStore *settings,
                      ProviderRegistry *providers,
                      InputFactory createMicrophone,
@@ -100,20 +101,21 @@ public:
     // Ends the recording at once and removes its file, for a start whose
     // caller stopped waiting and so took it for a failure.
     void discard();
-    // While a dictation has the microphone open, the microphone's stream
-    // sends silence and shows paused; system audio records on.
+    // While a dictation holds the microphone, the microphone's stream sends
+    // silence and shows paused; system audio records on.
     void setDictating(bool dictating);
-    // Writes a line saying a dictation started; a recording that starts
-    // while one has the microphone writes it too.
-    void markDictation();
+    // While a dictation listens, pauses and all. Each one that listens while
+    // the recording runs, or already did when it started, writes one line
+    // saying so.
+    void setDictationListening(bool listening);
 
 signals:
     void recordingChanged(bool recording);
     // While recording, a stream reconnects, connects again, stops on its
     // own, pauses for a dictation or resumes, misses an utterance or starts
-    // losing audio, or the file first fails to take a line. Not for more
-    // audio lost or more lines missed, which can come with every chunk or
-    // line.
+    // losing audio, echo cancellation turns off as system audio stops, or the
+    // file first fails to take a line. Not for more audio lost or more lines
+    // missed, which can come with every chunk or line.
     void problemChanged();
     // The finished recording's last status.
     void stopped(const speecher::RecordingStatus &status);
@@ -138,12 +140,16 @@ private:
     void startStream(Stream &stream, AudioInput *input, const TranscribeOptions &options);
     void handleStreamConnected(Stream &stream);
     void finishStartOnceSettled();
+    void finishListening(Stream &stream);
+    void markDictation();
     void trackUtterance(Stream &stream, const QByteArray &pcm);
     void endUtterance(Stream &stream);
     void forgetUtterance(Stream &stream);
     void extendStop();
     void writeLine(const QString &speaker, const QString &text);
     void handleTranscriptionFinished(Stream &stream, const QList<TranscribeFileResult> &results);
+    void handleSystemAudioFailed();
+    void stopCancellingEcho();
     // The state a live stream shows: the microphone's pauses for a dictation.
     RecordingStream::State liveState(const Stream &stream) const;
     void releaseInputs();
@@ -162,10 +168,14 @@ private:
     // What the microphone's stream reads.
     QPointer<RecordingMicrophone> m_microphone;
     // What system audio's stream reads, when the recording takes it.
-    QPointer<AudioInput> m_systemAudio;
-    // Why Speecher's echo canceller could not start.
+    QPointer<RecordingSystemAudio> m_systemAudio;
+    // Why Speecher's echo canceller is off: it could not start, or system
+    // audio stopped.
     QString m_echoCancellationWarning;
     bool m_dictating = false;
+    // Whether the dictation listens, and whether its line is written.
+    bool m_dictationListening = false;
+    bool m_dictationMarked = false;
     RecordingTranscript m_transcript;
     QElapsedTimer m_clock;
     Phase m_phase = Phase::Off;

@@ -15,7 +15,6 @@ public:
 
     QList<AudioInputDeviceInfo> availableAudioInputDevices() const override;
     AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override;
-    AudioInput *createRecordingAudioInput(SettingsStore *settings, QObject *parent) const override;
     bool recordsSystemAudio() const override;
     AudioInput *createSystemAudioInput(QObject *parent) const override;
     std::unique_ptr<EchoCanceller> createEchoCanceller(QString *warning) const override;

@@ -986,8 +986,25 @@ bool DictationSession::startAudio(QString *error)
 
 void DictationSession::setMicrophoneOpen(bool open)
 {
-    if (std::exchange(m_microphoneOpen, open) != open) {
-        emit microphoneChanged(open);
+    m_microphoneOpen = open;
+    updateMicrophoneHeld();
+}
+
+void DictationSession::updateMicrophoneHeld()
+{
+    const bool held =
+        m_microphoneOpen || m_state == DictationState::Starting || m_state == DictationState::Listening;
+    if (std::exchange(m_microphoneHeld, held) != held) {
+        emit microphoneChanged(held);
+    }
+}
+
+// Listening and Paused come only after the first Listening.
+void DictationSession::updateListening()
+{
+    const bool listening = m_state == DictationState::Listening || m_state == DictationState::Paused;
+    if (std::exchange(m_listening, listening) != listening) {
+        emit listeningChanged(listening);
     }
 }
 
@@ -1026,6 +1043,8 @@ void DictationSession::setState(DictationState state, const QString &message, co
                       << "messagePresent=" + QString::number(!message.isEmpty());
     emit stateChanged(stateName());
     emit statusChanged(label);
+    updateMicrophoneHeld();
+    updateListening();
 }
 
 void DictationSession::finishStartupPreparation(const StartupPreparationResult &result)
@@ -1095,7 +1114,6 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     }
     qInfo() << "audio capture started";
     setState(DictationState::Listening);
-    emit listeningStarted();
     emit popupListeningIndicatorRequested();
 }
 

@@ -205,7 +205,7 @@ Record a call into a file, in the running Speecher (started if needed):
                            file's path once the speech provider is
                            connected, or exit with status 1 and no file;
                            each utterance is appended as one line,
-                           "[hh:mm:ss] me: text"
+                           "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
                            (default file: recordings/<yyyy-mm-dd-hhmm>.md in
                            Speecher's data folder)
   --mic-only               record the microphone alone, without system audio
