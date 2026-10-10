@@ -8,11 +8,13 @@ constexpr qint64 kSamplesPerMs = 16;
 // output's clock drifting from the system's, so a shorter gap is left to a
 // later fill rather than padded into the middle of audio.
 constexpr qint64 kShortestGapMs = 20;
-// A longer gap is the machine asleep or capture stalled, not silence that
-// played, and the stream picks up after it instead of sending it.
-constexpr qint64 kLongestGapMs = 5000;
 
 } // namespace
+
+qint64 loopbackPacketMs(qint64 elapsedMs, qint64 counterNowMs, qint64 counterPlayedAtMs)
+{
+    return elapsedMs - (counterNowMs - counterPlayedAtMs);
+}
 
 void LoopbackPcm::useFormat(const QAudioFormat &format)
 {
@@ -34,17 +36,20 @@ QByteArray LoopbackPcm::convertSilent(qsizetype bytes)
     return convert(QByteArray(bytes, silence));
 }
 
-QByteArray LoopbackPcm::silenceUntil(qint64 elapsedMs)
+QList<QByteArray> LoopbackPcm::silenceUntil(qint64 elapsedMs)
 {
-    const qint64 owed = elapsedMs * kSamplesPerMs - m_samples;
+    qint64 owed = elapsedMs * kSamplesPerMs - m_samples;
     if (owed < kShortestGapMs * kSamplesPerMs) {
         return {};
     }
     m_samples += owed;
-    if (owed > kLongestGapMs * kSamplesPerMs) {
-        return {};
+    // A gap as long as a stall comes in pieces, so no chunk holds more than a
+    // poll's worth.
+    QList<QByteArray> chunks;
+    for (; owed > 0; owed -= kLoopbackPollMs * kSamplesPerMs) {
+        chunks.append(QByteArray(qMin(owed, kLoopbackPollMs * kSamplesPerMs) * qsizetype(sizeof(qint16)), '\0'));
     }
-    return QByteArray(owed * qsizetype(sizeof(qint16)), '\0');
+    return chunks;
 }
 
 } // namespace speecher

@@ -20,6 +20,11 @@ QByteArray bytes(std::initializer_list<T> values)
     return result;
 }
 
+QByteArray joined(const QList<QByteArray> &chunks)
+{
+    return chunks.join();
+}
+
 QAudioFormat format(int sampleRate, int channels, QAudioFormat::SampleFormat sampleFormat)
 {
     QAudioFormat result;
@@ -101,7 +106,7 @@ private slots:
         loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
 
         // 100 ms with nothing played is 1600 silent samples, owed once.
-        QCOMPARE(loopback.silenceUntil(100), QByteArray(3200, '\0'));
+        QCOMPARE(joined(loopback.silenceUntil(100)), QByteArray(3200, '\0'));
         QVERIFY(loopback.silenceUntil(100).isEmpty());
 
         // 50 ms of audio covers the clock until 150 ms.
@@ -113,7 +118,7 @@ private slots:
         QVERIFY(loopback.silenceUntil(150).isEmpty());
         // Less than 20 ms behind is left to the next fill.
         QVERIFY(loopback.silenceUntil(160).isEmpty());
-        QCOMPARE(loopback.silenceUntil(170), QByteArray(640, '\0'));
+        QCOMPARE(joined(loopback.silenceUntil(170)), QByteArray(640, '\0'));
     }
 
     void loopbackFillsGapsBeforePackets()
@@ -125,7 +130,7 @@ private slots:
         // Two packets read in one poll, 490 ms apart: the output dropped what
         // played between them, which the stream keeps as silence.
         QCOMPARE(loopback.convert(tenMs), tenMs);
-        QCOMPARE(loopback.silenceUntil(500), QByteArray(490 * 32, '\0'));
+        QCOMPARE(joined(loopback.silenceUntil(500)), QByteArray(490 * 32, '\0'));
         QCOMPARE(loopback.convert(tenMs), tenMs);
 
         // Audio after the gap is in step again, so none is padded.
@@ -133,17 +138,43 @@ private slots:
         QCOMPARE(loopback.convert(tenMs), tenMs);
     }
 
-    void loopbackSkipsGapsTooLongToBeSilence()
+    void loopbackSendsLongSilenceAPollAtATime()
     {
         LoopbackPcm loopback;
         loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
-        QCOMPARE(loopback.silenceUntil(100).size(), 3200);
 
-        // An hour asleep is not an hour of silence to send; the stream picks up
-        // from where the clock is after it.
+        // 250 ms is two polls' worth and half of one, 4000 samples in all.
+        const QList<QByteArray> chunks = loopback.silenceUntil(250);
+        QCOMPARE(chunks.size(), 3);
+        QCOMPARE(chunks.at(0).size(), 3200);
+        QCOMPARE(chunks.at(1).size(), 3200);
+        QCOMPARE(chunks.at(2).size(), 1600);
+        QCOMPARE(joined(chunks), QByteArray(8000, '\0'));
+    }
+
+    void loopbackFillsAStallButNotASleep()
+    {
+        LoopbackPcm loopback;
+        loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
+        constexpr qint64 counterStartMs = 1'000'000;
+
+        // Capture stalled 8 s, on both clocks: the packet after it plays 8 s
+        // into the timeline, and the 8 s before it are sent as silence.
+        QCOMPARE(loopbackPacketMs(8000, counterStartMs + 8000, counterStartMs + 8000), 8000);
+        const QList<QByteArray> stall = loopback.silenceUntil(8000);
+        QCOMPARE(stall.size(), 80);
+        QCOMPARE(joined(stall).size(), 8000 * 32);
+
+        // An hour asleep passes on the performance counter only. The packet
+        // that played on waking 100 ms later is 100 ms on, with no hour of
+        // silence before it.
         constexpr qint64 hourMs = 60 * 60 * 1000;
-        QVERIFY(loopback.silenceUntil(hourMs).isEmpty());
-        QCOMPARE(loopback.silenceUntil(hourMs + 100), QByteArray(3200, '\0'));
+        const qint64 wokeCounterMs = counterStartMs + 8000 + hourMs + 100;
+        QCOMPARE(loopbackPacketMs(8100, wokeCounterMs, wokeCounterMs), 8100);
+        QCOMPARE(joined(loopback.silenceUntil(8100)), QByteArray(3200, '\0'));
+        // One that played before the sleep but was read after it is behind
+        // the stream, and adds none.
+        QVERIFY(loopback.silenceUntil(loopbackPacketMs(8100, wokeCounterMs, counterStartMs + 8050)).isEmpty());
     }
 
     void loopbackSilentPacketsAreSilenceInEveryFormat()
@@ -160,7 +191,6 @@ private slots:
     void loopbackReopenRetriesForAWhileThenGivesUp()
     {
         LoopbackReopen reopen;
-        reopen.restart();
         QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 1000));
         QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 10999));
         QVERIFY(!reopen.retries(LoopbackReopen::Refusal::Failed, 11000));
@@ -174,7 +204,6 @@ private slots:
     void loopbackReopenWaitsWhileThereIsNoOutput()
     {
         LoopbackReopen reopen;
-        reopen.restart();
         QVERIFY(reopen.retries(LoopbackReopen::Refusal::Failed, 0));
         QVERIFY(reopen.retries(LoopbackReopen::Refusal::NoOutput, 9000));
         QVERIFY(reopen.retries(LoopbackReopen::Refusal::NoOutput, 60000));
@@ -201,7 +230,7 @@ private slots:
 
         // A new default output's format continues the same stream.
         loopback.useFormat(format(44100, 1, QAudioFormat::Int16));
-        QCOMPARE(loopback.silenceUntil(30), QByteArray(640, '\0'));
+        QCOMPARE(joined(loopback.silenceUntil(30)), QByteArray(640, '\0'));
     }
 };
 

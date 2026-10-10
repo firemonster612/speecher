@@ -18,10 +18,7 @@ using Microsoft::WRL::ComPtr;
 
 // A second of it, so a poll every 100 ms never lets it overflow.
 constexpr REFERENCE_TIME kBufferDuration = 10'000'000;
-// Polled rather than event-driven, because loopback signals nothing while
-// nothing plays, and the poll that finds no audio is what fills the silence.
-constexpr DWORD kPollMs = 100;
-// The unit of GetBuffer's performance counter positions.
+// The unit of GetBuffer's performance counter positions and of interrupt time.
 constexpr UINT64 kHundredNsPerMs = 10'000;
 
 // Windows has no text for the audio engine's own errors.
@@ -46,7 +43,18 @@ QString captureError(HRESULT result)
     return QStringLiteral("Could not capture system audio: %1").arg(audioErrorText(result));
 }
 
-// The performance counter, on the clock GetBuffer places packets on.
+// Two clocks: the timeline, and with it the reopen allowance, runs on
+// unbiased interrupt time, which stops while the machine sleeps, so a gap on
+// it is capture stalling and is filled, while sleep is skipped. GetBuffer
+// places packets on the performance counter, which counts sleep, so a packet
+// is placed by comparing its position with that counter now.
+qint64 unbiasedInterruptTimeMs()
+{
+    ULONGLONG time = 0;
+    QueryUnbiasedInterruptTime(&time);
+    return qint64(time / kHundredNsPerMs);
+}
+
 qint64 performanceCounterMs()
 {
     LARGE_INTEGER count;
@@ -58,15 +66,26 @@ qint64 performanceCounterMs()
 }
 
 // Signals an event when the default output changes. Windows calls it on a
-// thread of its own.
+// thread of its own, so the watcher owns the event and keeps it for as long
+// as Windows holds a reference to it.
 class DefaultOutputWatcher final
     : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
                                           IMMNotificationClient> {
 public:
-    explicit DefaultOutputWatcher(HANDLE changed)
-        : m_changed(changed)
+    DefaultOutputWatcher()
+        : m_changed(CreateEventW(nullptr, FALSE, FALSE, nullptr))
     {
     }
+    ~DefaultOutputWatcher() override
+    {
+        if (m_changed) {
+            CloseHandle(m_changed);
+        }
+    }
+
+    // Null when the event could not be made. It resets itself when a wait
+    // takes it.
+    HANDLE changed() const { return m_changed; }
 
     STDMETHODIMP OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override
     {
@@ -96,9 +115,6 @@ public:
             m_enumerator->UnregisterEndpointNotificationCallback(m_watcher.Get());
         }
         closeOutput();
-        if (m_defaultOutputChanged) {
-            CloseHandle(m_defaultOutputChanged);
-        }
     }
     Q_DISABLE_COPY_MOVE(LoopbackCapture)
 
@@ -108,7 +124,7 @@ public:
     // The audio since the last read, with the silence around it. An output
     // that closes, or stops being the default, is reopened on this and later
     // reads until the reopen allowance runs out, which fails the read.
-    QString read(QByteArray *pcm);
+    QString read(QList<QByteArray> *chunks);
 
 private:
     // Expects no output open, and leaves none open when it fails.
@@ -116,10 +132,9 @@ private:
     QString reopenDefaultOutput(qint64 elapsedMs);
     void closeOutput();
     bool takeDefaultOutputChange();
-    HRESULT readPackets(QByteArray *pcm);
-    qint64 elapsedMs() const { return performanceCounterMs() - m_startMs; }
+    HRESULT readPackets(QList<QByteArray> *chunks);
+    qint64 elapsedMs() const { return unbiasedInterruptTimeMs() - m_startMs; }
 
-    HANDLE m_defaultOutputChanged = nullptr;
     ComPtr<IMMDeviceEnumerator> m_enumerator;
     ComPtr<DefaultOutputWatcher> m_watcher;
     ComPtr<IAudioClient> m_client;
@@ -132,11 +147,7 @@ private:
 
 QString LoopbackCapture::open()
 {
-    m_startMs = performanceCounterMs();
-    m_defaultOutputChanged = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (!m_defaultOutputChanged) {
-        return captureError(HRESULT_FROM_WIN32(GetLastError()));
-    }
+    m_startMs = unbiasedInterruptTimeMs();
     HRESULT result = CoCreateInstance(__uuidof(MMDeviceEnumerator),
                                       nullptr,
                                       CLSCTX_INPROC_SERVER,
@@ -144,7 +155,11 @@ QString LoopbackCapture::open()
     if (FAILED(result)) {
         return captureError(result);
     }
-    m_watcher = Microsoft::WRL::Make<DefaultOutputWatcher>(m_defaultOutputChanged);
+    m_watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
+    if (!m_watcher || !m_watcher->changed()) {
+        m_watcher.Reset();
+        return captureError(E_OUTOFMEMORY);
+    }
     result = m_enumerator->RegisterEndpointNotificationCallback(m_watcher.Get());
     if (FAILED(result)) {
         m_watcher.Reset();
@@ -207,18 +222,13 @@ QString LoopbackCapture::reopenDefaultOutput(qint64 elapsedMs)
     if (m_reopen.retries(refusal, elapsedMs)) {
         return {};
     }
-    // A default output that changed since gets an allowance of its own.
-    if (takeDefaultOutputChange()) {
-        m_reopen.restart();
-        return reopenDefaultOutput(elapsedMs);
-    }
     return QStringLiteral("System audio capture stopped: %1").arg(audioErrorText(result));
 }
 
-QString LoopbackCapture::read(QByteArray *pcm)
+QString LoopbackCapture::read(QList<QByteArray> *chunks)
 {
     if (m_capture) {
-        const HRESULT result = readPackets(pcm);
+        const HRESULT result = readPackets(chunks);
         // Removing the output or changing its format ends its stream.
         if (result == AUDCLNT_E_DEVICE_INVALIDATED) {
             closeOutput();
@@ -226,7 +236,9 @@ QString LoopbackCapture::read(QByteArray *pcm)
             return QStringLiteral("System audio capture stopped: %1").arg(audioErrorText(result));
         }
     }
-    // The old default output's last audio is read before moving on.
+    // The old default output's last audio is read before moving on, and the
+    // change is taken before any reopen, so closing for it gives the new
+    // default output an allowance of its own.
     if (takeDefaultOutputChange()) {
         closeOutput();
     }
@@ -236,8 +248,8 @@ QString LoopbackCapture::read(QByteArray *pcm)
             return error;
         }
     }
-    if (pcm->isEmpty()) {
-        *pcm = m_pcm.silenceUntil(nowMs);
+    if (chunks->isEmpty()) {
+        *chunks = m_pcm.silenceUntil(nowMs);
     }
     return {};
 }
@@ -254,11 +266,10 @@ void LoopbackCapture::closeOutput()
 
 bool LoopbackCapture::takeDefaultOutputChange()
 {
-    // The event resets itself when a wait takes it.
-    return WaitForSingleObject(m_defaultOutputChanged, 0) == WAIT_OBJECT_0;
+    return WaitForSingleObject(m_watcher->changed(), 0) == WAIT_OBJECT_0;
 }
 
-HRESULT LoopbackCapture::readPackets(QByteArray *pcm)
+HRESULT LoopbackCapture::readPackets(QList<QByteArray> *chunks)
 {
     UINT32 packetFrames = 0;
     HRESULT result;
@@ -274,12 +285,16 @@ HRESULT LoopbackCapture::readPackets(QByteArray *pcm)
         // Where the packet played says what the output dropped before it, such
         // as after a stall long enough to fill its buffer.
         if (!(flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR)) {
-            *pcm += m_pcm.silenceUntil(qint64(playedAt / kHundredNsPerMs) - m_startMs);
+            *chunks += m_pcm.silenceUntil(
+                loopbackPacketMs(elapsedMs(), performanceCounterMs(), qint64(playedAt / kHundredNsPerMs)));
         }
         const qsizetype size = qsizetype(frames) * m_bytesPerFrame;
-        *pcm += flags & AUDCLNT_BUFFERFLAGS_SILENT
+        const QByteArray pcm = flags & AUDCLNT_BUFFERFLAGS_SILENT
             ? m_pcm.convertSilent(size)
             : m_pcm.convert(QByteArray(reinterpret_cast<const char *>(data), size));
+        if (!pcm.isEmpty()) {
+            chunks->append(pcm);
+        }
         result = m_capture->ReleaseBuffer(frames);
         if (FAILED(result)) {
             return result;
@@ -389,20 +404,26 @@ void WinSystemAudioInput::capture(quint64 generation, std::promise<QString> star
     started.set_value({});
 
     for (;;) {
-        const DWORD woke = WaitForSingleObject(m_stopEvent, kPollMs);
+        // Polled rather than event-driven, because loopback signals nothing
+        // while nothing plays, and the poll that finds no audio is what fills
+        // the silence.
+        const DWORD woke = WaitForSingleObject(m_stopEvent, DWORD(kLoopbackPollMs));
         if (woke == WAIT_OBJECT_0) {
             return;
         }
-        QByteArray pcm;
+        QList<QByteArray> chunks;
         const QString error = woke == WAIT_FAILED
             ? QStringLiteral("System audio capture stopped: %1").arg(qt_error_string(int(GetLastError())))
-            : loopback.read(&pcm);
-        if (!pcm.isEmpty()) {
+            : loopback.read(&chunks);
+        if (!chunks.isEmpty()) {
             QMetaObject::invokeMethod(
                 this,
-                [this, pcm, generation] {
-                    if (generation == m_generation) {
-                        emit audioChunk(pcm);
+                [this, chunks, generation] {
+                    for (const QByteArray &chunk : chunks) {
+                        if (generation != m_generation) {
+                            return;
+                        }
+                        emit audioChunk(chunk);
                     }
                 },
                 Qt::QueuedConnection);
