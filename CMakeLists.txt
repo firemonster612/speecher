@@ -507,10 +507,12 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacKeyCode.mm
   src/platform/mac/MacMediaController.cpp
   src/platform/mac/MacMediaController.mm
+  src/platform/mac/MacMicrophoneInput.cpp
   src/platform/mac/MacPopupPositioner.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
   src/platform/mac/MacTargetProvider.mm
+  src/platform/mac/MacVoiceProcessingCapture.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -520,6 +522,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacGlobalShortcutBinder.h
   src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
+  src/platform/mac/MacMicrophoneInput.h
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
@@ -1060,6 +1063,8 @@ if(APPLE)
     "-framework AppKit"
     "-framework Carbon"
     "-framework ApplicationServices"
+    "-framework AudioToolbox"
+    "-framework CoreAudio"
   )
 endif()
 if(WIN32)
@@ -1674,6 +1679,8 @@ if(SPEECHER_BUILD_TESTS)
     target_sources(speecher_tests PRIVATE
       src/platform/mac/MacMediaController.cpp
       src/platform/mac/MacMediaController.h
+      src/platform/mac/MacMicrophoneInput.cpp
+      src/platform/mac/MacMicrophoneInput.h
     )
   endif()
   target_include_directories(speecher_tests PRIVATE src)

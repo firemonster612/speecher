@@ -2,6 +2,15 @@
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/LoopbackPcm.h"
 #include "platform/audio/LoopbackReopen.h"
+#include "platform/mac/MacMicrophoneInput.h"
+#include "recording/RecordingPresentation.h"
+
+#include <QElapsedTimer>
+#include <QSignalSpy>
+#include <QTest>
+
+#include <atomic>
+#include <thread>
 
 using namespace speecher;
 
@@ -33,6 +42,50 @@ QAudioFormat format(int sampleRate, int channels, QAudioFormat::SampleFormat sam
     result.setSampleFormat(sampleFormat);
     return result;
 }
+
+// Stands in for CoreAudio: hands over chunk from a thread of its own every
+// 10 ms, from its open until its destruction, counting what it handed over.
+class FakeMicrophoneCapture final : public MacMicrophoneCapture {
+public:
+    FakeMicrophoneCapture(QAudioFormat format, QByteArray chunk, std::atomic_int *handedOver)
+        : m_format(format)
+        , m_chunk(std::move(chunk))
+        , m_handedOver(handedOver)
+    {
+    }
+
+    ~FakeMicrophoneCapture() override
+    {
+        m_running = false;
+        if (m_thread.joinable()) {
+            m_thread.join();
+        }
+    }
+
+    QString open(Deliver deliver, Fail fail) override
+    {
+        fails = std::move(fail);
+        m_thread = std::thread([this, deliver = std::move(deliver)] {
+            while (m_running) {
+                deliver(m_chunk);
+                ++*m_handedOver;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+        return {};
+    }
+
+    QAudioFormat format() const override { return m_format; }
+
+    Fail fails;
+
+private:
+    QAudioFormat m_format;
+    QByteArray m_chunk;
+    std::atomic_int *m_handedOver;
+    std::atomic_bool m_running = true;
+    std::thread m_thread;
+};
 
 class AudioPcmConverterTests : public QObject {
     Q_OBJECT
@@ -231,6 +284,99 @@ private slots:
         // A new default output's format continues the same stream.
         loopback.useFormat(format(44100, 1, QAudioFormat::Int16));
         QCOMPARE(joined(loopback.silenceUntil(30)), QByteArray(640, '\0'));
+    }
+
+    // Voice processing can capture in other layouts than the microphone's.
+    void macMicrophoneConvertsWhatItCaptures()
+    {
+        std::atomic_int handedOver = 0;
+        MacMicrophoneInput microphone(
+            [&] {
+                return std::make_unique<FakeMicrophoneCapture>(
+                    format(48000, 2, QAudioFormat::Float), bytes<float>({0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f}),
+                    &handedOver);
+            },
+            0);
+        QByteArray pcm;
+        connect(&microphone, &AudioInput::audioChunk, &microphone, [&](const QByteArray &chunk) { pcm += chunk; });
+        QVERIFY(microphone.start());
+        QTRY_VERIFY(handedOver >= 10);
+        microphone.stop();
+
+        // Three stereo frames at 48 kHz are one sample at 16 kHz.
+        QCOMPARE(pcm.size(), handedOver * qsizetype(sizeof(qint16)));
+        QCOMPARE(pcm.left(4), bytes<qint16>({16384, 16384}));
+    }
+
+    void macMicrophoneDeliversItsPostRollBeforeStopReturns()
+    {
+        std::atomic_int handedOver = 0;
+        MacMicrophoneInput microphone(
+            [&] {
+                return std::make_unique<FakeMicrophoneCapture>(
+                    format(16000, 1, QAudioFormat::Int16), bytes<qint16>({1}), &handedOver);
+            },
+            200);
+        int delivered = 0;
+        connect(&microphone, &AudioInput::audioChunk, &microphone, [&] { ++delivered; });
+        QVERIFY(microphone.start());
+        QVERIFY(microphone.isActive());
+        QElapsedTimer stopping;
+        stopping.start();
+        microphone.stop();
+
+        QVERIFY(stopping.elapsed() >= 200);
+        QVERIFY(!microphone.isActive());
+        // At least half the post-roll's chunks, allowing for a busy machine.
+        QVERIFY(delivered >= 10);
+        QCOMPARE(delivered, handedOver.load());
+        QTest::qWait(50);
+        QCOMPARE(delivered, handedOver.load());
+    }
+
+    // Once, and only for the capture it came from.
+    void macMicrophoneReportsAFailureOfItsCapture()
+    {
+        std::atomic_int handedOver = 0;
+        FakeMicrophoneCapture *capture = nullptr;
+        MacMicrophoneInput microphone(
+            [&] {
+                auto created = std::make_unique<FakeMicrophoneCapture>(
+                    format(16000, 1, QAudioFormat::Int16), bytes<qint16>({1}), &handedOver);
+                capture = created.get();
+                return created;
+            },
+            0);
+        QSignalSpy failed(&microphone, &AudioInput::failed);
+        QVERIFY(microphone.start());
+        capture->fails(QStringLiteral("unplugged"));
+        capture->fails(QStringLiteral("unplugged"));
+        QTRY_COMPARE(failed.count(), 1);
+        QCOMPARE(failed.first().first().toString(), QStringLiteral("unplugged"));
+        QVERIFY(!microphone.isActive());
+
+        QVERIFY(microphone.start());
+        const MacMicrophoneCapture::Fail stale = capture->fails;
+        microphone.stop();
+        QVERIFY(microphone.start());
+        stale(QStringLiteral("stale"));
+        QTest::qWait(50);
+        QCOMPARE(failed.count(), 1);
+        QVERIFY(microphone.isActive());
+        microphone.stop();
+    }
+
+    void voiceProcessingWarningSaysWhyItCouldNotStart()
+    {
+        QCOMPARE(echoCancellationNoVoiceProcessingText(-50),
+                 QStringLiteral("Echo cancellation is off: macOS could not start voice processing on the microphone "
+                                "(error -50). On speakers, the other side may also be written as you; headphones "
+                                "avoid it."));
+        QCOMPARE(echoCancellationNoVoiceProcessingText(-10875),
+                 QStringLiteral("Echo cancellation is off: macOS could not start voice processing on the microphone "
+                                "(error -10875). It may need the microphone and the sound output to be on one "
+                                "device, such as the Mac's built-in ones. On speakers, the other side may also be "
+                                "written as you; headphones avoid it."));
     }
 };
 

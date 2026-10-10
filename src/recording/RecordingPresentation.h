@@ -59,5 +59,8 @@ QString echoCancellationUnknownText();
 QString echoCancellationNotOfferedText();
 QString echoCancellationTurnedOffText();
 QString echoCancellationNoReferenceText(quint32 error);
+// Why a Recording's microphone runs without macOS' voice processing, for
+// `record start` and `record status`: it could not start, with error.
+QString echoCancellationNoVoiceProcessingText(int error);
 
 } // namespace speecher

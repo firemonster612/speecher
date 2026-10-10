@@ -11,6 +11,7 @@
 #include "platform/mac/MacCancelKeyGrab.h"
 #include "platform/mac/MacGlobalShortcutBinder.h"
 #include "platform/mac/MacMediaController.h"
+#include "platform/mac/MacMicrophoneInput.h"
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
 #include "platform/mac/MacPopupPositioner.h"
 #include "platform/mac/MacScreenshotContextProvider.h"
@@ -97,6 +98,18 @@ void logAccessibilityIdentity()
                       + "\" cdhash=" + cdhash;
 }
 
+AudioInput *stubAudioInput(QObject *parent)
+{
+#ifdef SPEECHER_E2E_HOOKS
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
+        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
+        return new E2EAudioInput(parent);
+    }
+#endif
+    Q_UNUSED(parent);
+    return nullptr;
+}
+
 } // namespace
 
 MacComposition::MacComposition()
@@ -131,18 +144,29 @@ QList<AudioInputDeviceInfo> MacComposition::availableAudioInputDevices() const
 
 AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
-#ifdef SPEECHER_E2E_HOOKS
-    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
-        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
-        return new E2EAudioInput(parent);
+    if (AudioInput *stub = stubAudioInput(parent)) {
+        return stub;
     }
-#endif
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+// Like Windows' recording microphone, it takes the microphone and post-roll
+// from the audio settings and leaves the rest, which shape dictation's
+// listening.
+AudioInput *MacComposition::createRecordingAudioInput(SettingsStore *settings, QObject *parent) const
+{
+    if (AudioInput *stub = stubAudioInput(parent)) {
+        return stub;
+    }
+    const AudioCaptureSettings capture = settings->audioCaptureSettings();
+    return new MacMicrophoneInput([capture] { return createVoiceProcessingCapture(capture); },
+                                  capture.postRollMs,
+                                  parent);
 }
 
 void MacComposition::requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const

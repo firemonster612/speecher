@@ -11,6 +11,12 @@
 #include <cmath>
 #include <memory>
 
+#ifdef Q_OS_MACOS
+#include "platform/audio/QtAudioInput.h"
+
+#include <QProcess>
+#endif
+
 #ifdef SPEECHER_WITH_PULSE
 #include <QProcess>
 
@@ -526,11 +532,16 @@ private slots:
         QVERIFY(capture->isActive());
         QCOMPARE(failed.count(), 0);
     }
+#endif
 
-    // Windows can turn other apps down while a call's stream is open. Plays
-    // a tone from another process, as a call app would, and checks system
-    // audio hears it as loud with the recording's microphone open. Run it in
-    // the signed-in user's session: ducking is their setting.
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    // Windows can turn other apps down while a call's stream is open, and
+    // macOS' voice processing does. Plays a tone from another process, as a
+    // call app would, and checks system audio hears it as loud with the
+    // recording's microphone open. Run it in the signed-in user's session:
+    // ducking is their setting. On macOS, which records no system audio yet,
+    // it needs the default output looped back to an input of the same name,
+    // such as BlackHole's.
     void liveRecordingMicrophoneKeepsOtherAudioLevel()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_RECORDING_MICROPHONE") != QStringLiteral("1")) {
@@ -550,17 +561,33 @@ private slots:
             file.write(wavFromPcm16Mono(tone, 16000));
         }
 
+#ifdef Q_OS_MACOS
+        const QString output = QMediaDevices::defaultAudioOutput().description();
+        const QList<AudioInputDeviceInfo> inputs = QtAudioInput::availableInputDevices();
+        const auto loopback = std::ranges::find(inputs, output, &AudioInputDeviceInfo::label);
+        if (loopback == inputs.end()) {
+            QSKIP("Needs the default output looped back to an input of the same name");
+        }
+        AudioCaptureSettings loopbackSettings;
+        loopbackSettings.deviceId = loopback->id;
+        auto system = std::make_unique<QtAudioInput>(loopbackSettings);
+#else
         std::unique_ptr<AudioInput> system(platformComposition()->createSystemAudioInput(nullptr));
+#endif
         QByteArray heard;
         connect(system.get(), &AudioInput::audioChunk, system.get(), [&](const QByteArray &chunk) { heard += chunk; });
         QString error;
         QVERIFY2(system->start(&error), qPrintable(error));
         QProcess player;
+#ifdef Q_OS_MACOS
+        player.start(QStringLiteral("/usr/bin/afplay"), {tonePath});
+#else
         player.start(QStringLiteral("powershell.exe"),
                      {QStringLiteral("-NoProfile"),
                       QStringLiteral("-Command"),
                       QStringLiteral("(New-Object Media.SoundPlayer '%1').PlaySync()")
                           .arg(QDir::toNativeSeparators(tonePath))});
+#endif
         const auto stopPlayer = qScopeGuard([&] {
             player.kill();
             player.waitForFinished();
@@ -621,7 +648,9 @@ private slots:
         // Allow for the audio engine's latency.
         QVERIFY(recordedMs >= untilStopMs + postRollMs / 2);
     }
+#endif
 
+#ifdef Q_OS_WIN
     // Needs two sound outputs. The echo canceller is a stand-in, as virtual
     // machines' microphones have none, and the recording's microphone runs
     // beside it to show the switch leaves capture alone.

@@ -131,37 +131,6 @@ QString formatLabel(const QAudioFormat &format)
         }());
 }
 
-QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error)
-{
-    const QList<QAudioDevice> inputs = QMediaDevices::audioInputs();
-    if (inputs.isEmpty()) {
-        if (error) {
-            *error = noMicrophoneText();
-        }
-        return {};
-    }
-
-    if (settings.deviceId.isEmpty()) {
-        const QAudioDevice device = QMediaDevices::defaultAudioInput();
-        if (device.isNull()) {
-            return inputs.first();
-        }
-        return device;
-    }
-
-    for (const QAudioDevice &device : inputs) {
-        if (encodedDeviceId(device) == settings.deviceId) {
-            return device;
-        }
-    }
-
-    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
-    if (!defaultDevice.isNull()) {
-        return defaultDevice;
-    }
-    return inputs.first();
-}
-
 QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)
 {
     const QString microphone = label.trimmed().isEmpty() ? QStringLiteral("selected microphone") : label.trimmed();
@@ -207,6 +176,43 @@ QString sourceErrorMessage(const QAudioDevice &device, QAudio::Error error)
 QString noMicrophoneText()
 {
     return QStringLiteral("No microphone was found. Connect or enable an input device, then try again.");
+}
+
+QString microphoneDisconnectedText(const QString &label)
+{
+    return QStringLiteral("Microphone \"%1\" was disconnected. Reconnect it or choose another input in Settings.")
+        .arg(label);
+}
+
+QAudioDevice QtAudioInput::selectedInputDevice(const AudioCaptureSettings &settings, QString *error)
+{
+    const QList<QAudioDevice> inputs = QMediaDevices::audioInputs();
+    if (inputs.isEmpty()) {
+        if (error) {
+            *error = noMicrophoneText();
+        }
+        return {};
+    }
+
+    if (settings.deviceId.isEmpty()) {
+        const QAudioDevice device = QMediaDevices::defaultAudioInput();
+        if (device.isNull()) {
+            return inputs.first();
+        }
+        return device;
+    }
+
+    for (const QAudioDevice &device : inputs) {
+        if (encodedDeviceId(device) == settings.deviceId) {
+            return device;
+        }
+    }
+
+    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
+    if (!defaultDevice.isNull()) {
+        return defaultDevice;
+    }
+    return inputs.first();
 }
 
 QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent)
@@ -364,9 +370,7 @@ void QtAudioInput::handleAudioInputsChanged()
                 return encodedDeviceId(device) == m_currentDeviceId;
             });
         if (!currentStillAvailable && m_captureActive) {
-            failCapture(QStringLiteral(
-                "Microphone \"%1\" was disconnected. Reconnect it or choose another input in Settings.")
-                            .arg(m_currentDeviceLabel));
+            failCapture(microphoneDisconnectedText(m_currentDeviceLabel));
             return;
         }
     }
@@ -410,7 +414,7 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     stopSource();
 
     QString deviceError;
-    const QAudioDevice device = selectedDevice(settings, &deviceError);
+    const QAudioDevice device = selectedInputDevice(settings, &deviceError);
     if (device.isNull()) {
         if (error) {
             *error = deviceError;

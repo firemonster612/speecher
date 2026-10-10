@@ -14,6 +14,8 @@ namespace speecher {
 
 // Why a microphone capture cannot start when the system has no microphone.
 QString noMicrophoneText();
+// Why a microphone capture stopped when its microphone, named label, went away.
+QString microphoneDisconnectedText(const QString &label);
 
 class QtAudioInput : public AudioInput {
     Q_OBJECT
@@ -21,6 +23,9 @@ class QtAudioInput : public AudioInput {
 public:
     explicit QtAudioInput(const AudioCaptureSettings &settings = {}, QObject *parent = nullptr);
     static QList<AudioInputDeviceInfo> availableInputDevices();
+    // The microphone settings name, or the default one when it is missing;
+    // a null device with why in error when there is none.
+    static QAudioDevice selectedInputDevice(const AudioCaptureSettings &settings, QString *error);
 
     void warmUp() override;
     void useDevice(const QString &deviceId) override;

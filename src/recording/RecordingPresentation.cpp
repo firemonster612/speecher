@@ -219,6 +219,21 @@ QString echoCancellationNoReferenceText(quint32 error)
             .arg(error, 8, 16, QLatin1Char('0')));
 }
 
+QString echoCancellationNoVoiceProcessingText(int error)
+{
+    // kAudioUnitErr_FailedInitialization, which macOS gives when the
+    // microphone and the sound output are different devices.
+    constexpr int failedInitialization = -10875;
+    const QString why = QStringLiteral("Echo cancellation is off: macOS could not start voice processing on the "
+                                       "microphone (error %1).")
+                            .arg(error);
+    return withHeadphonesAdvice(error == failedInitialization
+                                    ? why
+                                        + QStringLiteral(" It may need the microphone and the sound output to be "
+                                                         "on one device, such as the Mac's built-in ones.")
+                                    : why);
+}
+
 QString echoCancellationWithoutSystemAudioText()
 {
     return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: system audio stopped."));
