@@ -1856,7 +1856,8 @@ private slots:
 
     // While a dictation has the microphone, its stream sends silence and
     // shows paused, and system audio records on; each dictation's start
-    // writes one line saying so.
+    // writes one line saying so. As on Windows, where the system cancels the
+    // echo and Speecher has no canceller, the microphone's own warning shows.
     void aDictationSilencesTheRecordingsMicrophone()
     {
         registerStreamingCodex();
@@ -1866,12 +1867,19 @@ private slots:
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
             &settings, m_registry.get(),
-            [&](QObject *parent) { return microphone = new FakeAudioInput(parent); },
-            [&](QObject *parent) { return systemAudio = new FakeAudioInput(parent); });
+            [&](QObject *parent) {
+                microphone = new FakeAudioInput(parent);
+                microphone->echoWarning = echoCancellationNotOfferedText();
+                return microphone.data();
+            },
+            [&](QObject *parent) { return systemAudio = new FakeAudioInput(parent); },
+            [](QString *) { return std::unique_ptr<EchoCanceller>(); });
         QSignalSpy problems(&recording, &RecordingSession::problemChanged);
         QString error;
         const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
+        QCOMPARE(recording.status().streams.size(), 2);
+        QCOMPARE(recording.status().echoCancellationWarning, echoCancellationNotOfferedText());
         FakeSpeechTranscriber *me = streamingCodexes().at(0);
         FakeSpeechTranscriber *them = streamingCodexes().at(1);
 
