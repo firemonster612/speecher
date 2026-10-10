@@ -1,13 +1,12 @@
 #include "platform/mac/MacSystemAudioInput.h"
 
-#include "platform/audio/LoopbackPcm.h"
-#include "platform/audio/LoopbackReopen.h"
+#include "platform/mac/MacSystemAudioCapture.h"
 
 #include <QMetaObject>
 #include <QScopeGuard>
-#include <QTimer>
 
 #include <cstring>
+#include <map>
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreMedia/CoreMedia.h>
@@ -16,15 +15,6 @@
 
 namespace speecher {
 namespace {
-
-// How long start and stop wait for ScreenCaptureKit, which answers on a queue
-// of its own.
-constexpr int64_t kReplyTimeoutNs = 10 * NSEC_PER_SEC;
-
-bool waitForReply(dispatch_semaphore_t replied)
-{
-    return dispatch_semaphore_wait(replied, dispatch_time(DISPATCH_TIME_NOW, kReplyTimeoutNs)) == 0;
-}
 
 QString errorText(NSError *error)
 {
@@ -35,11 +25,6 @@ QString errorText(NSError *error)
 qint64 msBetween(CMTime from, CMTime to)
 {
     return qint64(CMTimeGetSeconds(CMTimeSubtract(to, from)) * 1000);
-}
-
-qint64 hostClockMs()
-{
-    return qint64(CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock())) * 1000);
 }
 
 // The display to capture alongside: the main one, with the menu bar, when
@@ -54,169 +39,188 @@ SCDisplay *mainDisplay(SCShareableContent *content)
     return content.displays.firstObject;
 }
 
-// Waits for ScreenCaptureKit to stop stream, when there is one.
-void stopCapture(SCStream *stream)
-{
-    if (!stream) {
-        return;
-    }
-    dispatch_semaphore_t stopped = dispatch_semaphore_create(0);
-    [stream stopCaptureWithCompletionHandler:^(NSError *) {
-        dispatch_semaphore_signal(stopped);
-    }];
-    waitForReply(stopped);
-}
-
 } // namespace
 
-// What runs on the capture queue: the stream's timeline, and the input it
-// sends audio to until stop() detaches it there.
-class SystemAudioReader {
-public:
-    SystemAudioReader(MacSystemAudioInput *input, quint64 generation, QString permissionDenied)
-        : m_input(input)
-        , m_generation(generation)
-        , m_permissionDenied(std::move(permissionDenied))
-        // The timeline runs on the host clock, mach_absolute_time, which
-        // stops while the machine sleeps like Windows' unbiased interrupt
-        // time, so sleep is skipped rather than filled; mach_continuous_time
-        // would count it. ScreenCaptureKit stamps sample buffers on the same
-        // clock, so a buffer is placed by its stamp alone, with no second
-        // clock for loopbackPacketMs to reconcile.
-        , m_start(CMClockGetTime(CMClockGetHostTimeClock()))
-    {
+SystemAudioCapture::SystemAudioCapture(QString permissionDenied)
+    : m_permissionDenied(std::move(permissionDenied))
+{
+}
+
+void SystemAudioCapture::open()
+{
+    // The timeline runs on the host clock, mach_absolute_time, which stops
+    // while the machine sleeps like Windows' unbiased interrupt time, so
+    // sleep is skipped rather than filled; mach_continuous_time would count
+    // it. ScreenCaptureKit stamps sample buffers on the same clock, so a
+    // buffer is placed by its stamp alone, with no second clock for
+    // loopbackPacketMs to reconcile.
+    m_start = hostTime();
+    openStream();
+}
+
+void SystemAudioCapture::started(quint64 streamId, const StreamStart &start)
+{
+    // A stream given up on, or that starts after capture ended, is stopped.
+    if (!m_attached || streamId != m_streamId) {
+        stopStream(streamId);
+        return;
     }
-
-    void read(CMSampleBufferRef buffer)
-    {
-        if (!m_input) {
-            return;
-        }
-        const SampleBufferPcm pcm = pcmForSampleBuffer(buffer);
-        if (!pcm.format.isValid()) {
-            fail(QStringLiteral("System audio capture stopped: macOS sent audio in a format Speecher cannot read."));
-            return;
-        }
-        if (pcm.data.isEmpty()) {
-            return;
-        }
-        if (pcm.format != m_format) {
-            m_format = pcm.format;
-            m_pcm.useFormat(pcm.format);
-        }
-        QList<QByteArray> chunks;
-        const CMTime playedAt = CMSampleBufferGetPresentationTimeStamp(buffer);
-        if (CMTIME_IS_NUMERIC(playedAt)) {
-            // Audio cannot have played after now, so a stamp that says it did,
-            // from a clock that jumped, is taken as now: one bad stamp adds no
-            // more silence than a poll would.
-            chunks = m_pcm.silenceUntil(qMin(msBetween(m_start, playedAt), elapsedMs()));
-        }
-        if (const QByteArray converted = m_pcm.convert(pcm.data); !converted.isEmpty()) {
-            chunks.append(converted);
-        }
-        m_heard = true;
-        send(chunks);
+    m_startingSinceMs.reset();
+    const bool reopening = std::exchange(m_opened, true);
+    if (!reopening) {
+        opened(start);
     }
-
-    // Fills the time since the last poll with silence if no audio came in it.
-    void poll()
-    {
-        if (!m_input) {
-            return;
-        }
-        if (!m_heard) {
-            send(m_pcm.silenceUntil(elapsedMs()));
-        }
-        m_heard = false;
+    if (start.started) {
+        m_runningSinceMs = elapsedMs();
+        return;
     }
-
-    // A stream that stopped for anything but the permission or the user, such
-    // as its display going away, is opened again while the timeline carries
-    // on.
-    void stopped(NSError *error)
-    {
-        if (!m_input) {
-            return;
-        }
-        if (isScreenRecordingDenied((__bridge CFErrorRef)error)) {
-            fail(m_permissionDenied);
-            return;
-        }
-        if ([error.domain isEqualToString:SCStreamErrorDomain] && error.code == SCStreamErrorUserStopped) {
-            fail(QStringLiteral("System audio capture stopped: %1").arg(errorText(error)));
-            return;
-        }
-        MacSystemAudioInput *input = m_input;
-        const quint64 generation = m_generation;
-        QMetaObject::invokeMethod(input, [input, generation] { input->reopen(generation); }, Qt::QueuedConnection);
+    stopStream(streamId);
+    m_streamId = 0;
+    // A first stream that refuses fails start() instead.
+    if (reopening) {
+        refused(start.error, start.noDisplay ? LoopbackReopen::Refusal::NoOutput : LoopbackReopen::Refusal::Failed);
     }
+}
 
-    void detach() { m_input = nullptr; }
-
-private:
-    qint64 elapsedMs() const { return msBetween(m_start, CMClockGetTime(CMClockGetHostTimeClock())); }
-
-    void send(const QList<QByteArray> &chunks)
-    {
-        if (!m_input || chunks.isEmpty()) {
-            return;
-        }
-        MacSystemAudioInput *input = m_input;
-        const quint64 generation = m_generation;
-        QMetaObject::invokeMethod(
-            input,
-            [input, chunks, generation] {
-                for (const QByteArray &chunk : chunks) {
-                    if (generation != input->m_generation) {
-                        return;
-                    }
-                    emit input->audioChunk(chunk);
-                }
-            },
-            Qt::QueuedConnection);
+void SystemAudioCapture::read(quint64 streamId, CMSampleBufferRef buffer)
+{
+    if (!m_attached || streamId != m_streamId) {
+        return;
     }
-
-    // Capture ends at the first failure, so nothing is sent after it.
-    void fail(const QString &message)
-    {
-        if (!m_input) {
-            return;
-        }
-        MacSystemAudioInput *input = m_input;
-        const quint64 generation = m_generation;
-        QMetaObject::invokeMethod(
-            input, [input, message, generation] { input->fail(generation, message); }, Qt::QueuedConnection);
-        m_input = nullptr;
+    const SampleBufferPcm pcm = pcmForSampleBuffer(buffer);
+    if (!pcm.format.isValid()) {
+        fail(QStringLiteral("System audio capture stopped: macOS sent audio in a format Speecher cannot read."));
+        return;
     }
+    if (pcm.data.isEmpty()) {
+        return;
+    }
+    if (pcm.format != m_format) {
+        m_format = pcm.format;
+        m_pcm.useFormat(pcm.format);
+    }
+    QList<QByteArray> chunks;
+    const CMTime playedAt = CMSampleBufferGetPresentationTimeStamp(buffer);
+    if (CMTIME_IS_NUMERIC(playedAt)) {
+        // Audio cannot have played after now, so a stamp that says it did,
+        // from a clock that jumped, is taken as now: one bad stamp adds no
+        // more silence than a poll would.
+        chunks = m_pcm.silenceUntil(qMin(msBetween(m_start, playedAt), elapsedMs()));
+    }
+    if (const QByteArray converted = m_pcm.convert(pcm.data); !converted.isEmpty()) {
+        chunks.append(converted);
+    }
+    m_heard = true;
+    send(chunks);
+}
 
-    MacSystemAudioInput *m_input;
-    const quint64 m_generation;
-    const QString m_permissionDenied;
-    const CMTime m_start;
-    LoopbackPcm m_pcm;
-    QAudioFormat m_format;
-    // Whether audio came in since the last poll.
-    bool m_heard = false;
-};
+void SystemAudioCapture::stopped(quint64 streamId, NSError *error)
+{
+    if (!m_attached || streamId != m_streamId) {
+        return;
+    }
+    // Only a stream that ran for the whole allowance starts it afresh; any
+    // other stop counts as a refusal.
+    if (!m_startingSinceMs && elapsedMs() - m_runningSinceMs >= LoopbackReopen::kAllowanceMs) {
+        m_reopen.restart();
+    }
+    m_startingSinceMs.reset();
+    stopStream(streamId);
+    m_streamId = 0;
+    refused(error, LoopbackReopen::Refusal::Failed);
+}
+
+void SystemAudioCapture::poll()
+{
+    if (!m_attached) {
+        return;
+    }
+    if (!m_heard) {
+        send(m_pcm.silenceUntil(elapsedMs()));
+    }
+    m_heard = false;
+    if (!m_streamId) {
+        openStream();
+    } else if (m_startingSinceMs && elapsedMs() - *m_startingSinceMs >= kStreamReplyTimeoutMs) {
+        // started() stops the stream if it answers after all.
+        m_startingSinceMs.reset();
+        m_streamId = 0;
+        refused(nil, LoopbackReopen::Refusal::Failed);
+    }
+}
+
+void SystemAudioCapture::detach()
+{
+    m_attached = false;
+}
+
+CMTime SystemAudioCapture::hostTime() const
+{
+    return CMClockGetTime(CMClockGetHostTimeClock());
+}
+
+void SystemAudioCapture::openStream()
+{
+    m_streamId = ++m_lastStreamId;
+    m_startingSinceMs = elapsedMs();
+    startStream(m_streamId);
+}
+
+void SystemAudioCapture::refused(NSError *error, LoopbackReopen::Refusal refusal)
+{
+    if (isScreenRecordingDenied((__bridge CFErrorRef)error)) {
+        fail(m_permissionDenied);
+        return;
+    }
+    const bool userStopped =
+        [error.domain isEqualToString:SCStreamErrorDomain] && error.code == SCStreamErrorUserStopped;
+    if (userStopped || !m_reopen.retries(refusal, elapsedMs())) {
+        fail(QStringLiteral("System audio capture stopped: %1").arg(errorText(error)));
+    }
+}
+
+// Capture ends at the first failure, so nothing is sent after it.
+void SystemAudioCapture::fail(const QString &message)
+{
+    detach();
+    sendFailure(message);
+}
+
+void SystemAudioCapture::send(const QList<QByteArray> &chunks)
+{
+    if (!chunks.isEmpty()) {
+        sendAudio(chunks);
+    }
+}
+
+qint64 SystemAudioCapture::elapsedMs() const
+{
+    return msBetween(m_start, hostTime());
+}
 
 } // namespace speecher
 
-// ScreenCaptureKit's output and delegate, which hand everything to the reader
-// on the capture queue.
+// A ScreenCaptureKit stream's output and delegate, which hand everything to
+// capture on the capture queue, tagged with the stream's id.
 @interface SpeecherSystemAudioOutput : NSObject <SCStreamOutput, SCStreamDelegate>
-- (instancetype)initWithReader:(std::shared_ptr<speecher::SystemAudioReader>)reader queue:(dispatch_queue_t)queue;
+- (instancetype)initWithCapture:(std::shared_ptr<speecher::SystemAudioCapture>)capture
+                       streamId:(quint64)streamId
+                          queue:(dispatch_queue_t)queue;
 @end
 
 @implementation SpeecherSystemAudioOutput {
-    std::shared_ptr<speecher::SystemAudioReader> _reader;
+    std::shared_ptr<speecher::SystemAudioCapture> _capture;
+    quint64 _streamId;
     dispatch_queue_t _queue;
 }
 
-- (instancetype)initWithReader:(std::shared_ptr<speecher::SystemAudioReader>)reader queue:(dispatch_queue_t)queue
+- (instancetype)initWithCapture:(std::shared_ptr<speecher::SystemAudioCapture>)capture
+                       streamId:(quint64)streamId
+                          queue:(dispatch_queue_t)queue
 {
     if ((self = [super init])) {
-        _reader = std::move(reader);
+        _capture = std::move(capture);
+        _streamId = streamId;
         _queue = queue;
     }
     return self;
@@ -227,15 +231,16 @@ private:
     // The video frames are dropped here; they only keep ScreenCaptureKit from
     // logging each one it has nowhere to send.
     if (type == SCStreamOutputTypeAudio && CMSampleBufferIsValid(buffer)) {
-        _reader->read(buffer);
+        _capture->read(_streamId, buffer);
     }
 }
 
 - (void)stream:(SCStream *)stream didStopWithError:(NSError *)error
 {
-    const std::shared_ptr<speecher::SystemAudioReader> reader = _reader;
+    const std::shared_ptr<speecher::SystemAudioCapture> capture = _capture;
+    const quint64 streamId = _streamId;
     dispatch_async(_queue, ^{
-        reader->stopped(error);
+        capture->stopped(streamId, error);
     });
 }
 
@@ -243,21 +248,177 @@ private:
 
 namespace speecher {
 
-struct MacSystemAudioInput::Stream {
-    dispatch_queue_t queue;
-    std::shared_ptr<SystemAudioReader> reader;
-    SpeecherSystemAudioOutput *output;
-    SCStream *stream = nil;
-    dispatch_source_t poll = nil;
-    LoopbackReopen reopen;
+// Capture from ScreenCaptureKit into the input that opened it. Each stream
+// is set up on the capture queue between ScreenCaptureKit's answers, so
+// nothing waits for them but start() for the first.
+class ScreenCaptureAudio final : public SystemAudioCapture, public std::enable_shared_from_this<ScreenCaptureAudio> {
+public:
+    ScreenCaptureAudio(MacSystemAudioInput *input, dispatch_queue_t queue)
+        : SystemAudioCapture(input->m_permissionDenied)
+        , m_input(input)
+        , m_generation(input->m_generation)
+        , m_queue(queue)
+        , m_answered(dispatch_semaphore_create(0))
+    {
+    }
+
+    // Waits on the main thread for the first stream's answer.
+    StreamStart waitUntilOpened()
+    {
+        // An answer that comes after the wait gave up still writes, so what
+        // it wrote is read only once it has answered.
+        if (dispatch_semaphore_wait(m_answered,
+                                    dispatch_time(DISPATCH_TIME_NOW, int64_t(kStreamReplyTimeoutMs * NSEC_PER_MSEC)))
+            != 0) {
+            return {};
+        }
+        return m_firstStart;
+    }
+
+    // Stops every stream, once detached.
+    void stopStreams()
+    {
+        while (!m_natives.empty()) {
+            stopStream(m_natives.begin()->first);
+        }
+    }
+
+private:
+    void startStream(quint64 streamId) override;
+    void stopStream(quint64 streamId) override;
+    void opened(const StreamStart &start) override;
+    void sendAudio(const QList<QByteArray> &chunks) override;
+    void sendFailure(const QString &message) override;
+    // Runs on the capture queue once ScreenCaptureKit has listed what there
+    // is to capture.
+    void startWith(quint64 streamId, SCShareableContent *content, NSError *contentError);
+
+    struct NativeStream {
+        SCStream *stream;
+        SpeecherSystemAudioOutput *output;
+    };
+
+    MacSystemAudioInput *const m_input;
+    const quint64 m_generation;
+    const dispatch_queue_t m_queue;
+    const dispatch_semaphore_t m_answered;
+    StreamStart m_firstStart;
+    std::map<quint64, NativeStream> m_natives;
 };
 
-struct MacSystemAudioInput::StreamStart {
-    bool started = false;
-    // Why it did not: there is no display to capture alongside, or what
-    // ScreenCaptureKit said, nil when it did not answer.
-    bool noDisplay = false;
-    NSError *error = nil;
+void ScreenCaptureAudio::startStream(quint64 streamId)
+{
+    const std::shared_ptr<ScreenCaptureAudio> capture = shared_from_this();
+    dispatch_queue_t queue = m_queue;
+    // Asks for the permission the first time, and fails while it is off.
+    [SCShareableContent getShareableContentExcludingDesktopWindows:YES
+                                               onScreenWindowsOnly:YES
+                                                 completionHandler:^(SCShareableContent *content, NSError *error) {
+                                                     dispatch_async(queue, ^{
+                                                         capture->startWith(streamId, content, error);
+                                                     });
+                                                 }];
+}
+
+void ScreenCaptureAudio::startWith(quint64 streamId, SCShareableContent *content, NSError *contentError)
+{
+    if (!content) {
+        started(streamId, {.error = contentError});
+        return;
+    }
+    SCDisplay *display = mainDisplay(content);
+    if (!display) {
+        started(streamId, {.noDisplay = true});
+        return;
+    }
+
+    SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
+    configuration.capturesAudio = YES;
+    configuration.excludesCurrentProcessAudio = YES;
+    configuration.sampleRate = 16000;
+    configuration.channelCount = 1;
+    configuration.width = 2;
+    configuration.height = 2;
+    configuration.minimumFrameInterval = CMTimeMake(1, 1);
+    configuration.showsCursor = NO;
+
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];
+    SpeecherSystemAudioOutput *output = [[SpeecherSystemAudioOutput alloc] initWithCapture:shared_from_this()
+                                                                                  streamId:streamId
+                                                                                     queue:m_queue];
+    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:configuration delegate:output];
+    NSError *outputError = nil;
+    if (![stream addStreamOutput:output type:SCStreamOutputTypeAudio sampleHandlerQueue:m_queue error:&outputError]
+        || ![stream addStreamOutput:output
+                               type:SCStreamOutputTypeScreen
+                 sampleHandlerQueue:m_queue
+                              error:&outputError]) {
+        started(streamId, {.error = outputError});
+        return;
+    }
+
+    // Kept before it starts, so a start that answers late is still stopped.
+    m_natives[streamId] = {stream, output};
+    const std::shared_ptr<ScreenCaptureAudio> capture = shared_from_this();
+    dispatch_queue_t queue = m_queue;
+    [stream startCaptureWithCompletionHandler:^(NSError *error) {
+        dispatch_async(queue, ^{
+            capture->started(streamId, {.started = !error, .error = error});
+        });
+    }];
+}
+
+void ScreenCaptureAudio::stopStream(quint64 streamId)
+{
+    const auto native = m_natives.find(streamId);
+    if (native == m_natives.end()) {
+        return;
+    }
+    SCStream *stream = native->second.stream;
+    SpeecherSystemAudioOutput *output = native->second.output;
+    m_natives.erase(native);
+    // The handler keeps the stream and its output until it has stopped.
+    [stream stopCaptureWithCompletionHandler:^(NSError *) {
+        (void)stream;
+        (void)output;
+    }];
+}
+
+void ScreenCaptureAudio::opened(const StreamStart &start)
+{
+    m_firstStart = start;
+    dispatch_semaphore_signal(m_answered);
+}
+
+void ScreenCaptureAudio::sendAudio(const QList<QByteArray> &chunks)
+{
+    MacSystemAudioInput *input = m_input;
+    const quint64 generation = m_generation;
+    QMetaObject::invokeMethod(
+        input,
+        [input, chunks, generation] {
+            for (const QByteArray &chunk : chunks) {
+                if (generation != input->m_generation) {
+                    return;
+                }
+                emit input->audioChunk(chunk);
+            }
+        },
+        Qt::QueuedConnection);
+}
+
+void ScreenCaptureAudio::sendFailure(const QString &message)
+{
+    MacSystemAudioInput *input = m_input;
+    const quint64 generation = m_generation;
+    QMetaObject::invokeMethod(
+        input, [input, message, generation] { input->fail(generation, message); }, Qt::QueuedConnection);
+}
+
+struct MacSystemAudioInput::Stream {
+    dispatch_queue_t queue;
+    std::shared_ptr<ScreenCaptureAudio> capture;
+    dispatch_source_t poll = nil;
 };
 
 // ScreenCaptureKit is asked for 16 kHz mono float, so the other layouts read
@@ -378,9 +539,12 @@ bool MacSystemAudioInput::start(QString *error)
 QString MacSystemAudioInput::open()
 {
     auto queue = dispatch_queue_create("io.github.firemonster612.speecher.system-audio", DISPATCH_QUEUE_SERIAL);
-    auto reader = std::make_shared<SystemAudioReader>(this, m_generation, m_permissionDenied);
-    m_stream.reset(new Stream{queue, reader, [[SpeecherSystemAudioOutput alloc] initWithReader:reader queue:queue]});
-    const StreamStart start = startStream();
+    auto capture = std::make_shared<ScreenCaptureAudio>(this, queue);
+    m_stream.reset(new Stream{queue, capture});
+    dispatch_async(queue, ^{
+        capture->open();
+    });
+    const StreamStart start = capture->waitUntilOpened();
     if (start.noDisplay) {
         return QStringLiteral("Could not capture system audio: macOS captures it only alongside a display, and there "
                               "is none.");
@@ -398,101 +562,10 @@ QString MacSystemAudioInput::open()
     dispatch_source_set_timer(m_stream->poll, dispatch_time(DISPATCH_TIME_NOW, int64_t(interval)), interval,
                               interval / 10);
     dispatch_source_set_event_handler(m_stream->poll, ^{
-        reader->poll();
+        capture->poll();
     });
     dispatch_resume(m_stream->poll);
     return {};
-}
-
-MacSystemAudioInput::StreamStart MacSystemAudioInput::startStream()
-{
-    // Asks for the permission the first time, and fails while it is off.
-    __block SCShareableContent *content = nil;
-    __block NSError *contentError = nil;
-    dispatch_semaphore_t answered = dispatch_semaphore_create(0);
-    [SCShareableContent getShareableContentExcludingDesktopWindows:YES
-                                               onScreenWindowsOnly:YES
-                                                 completionHandler:^(SCShareableContent *shareable, NSError *error) {
-                                                     content = shareable;
-                                                     contentError = error;
-                                                     dispatch_semaphore_signal(answered);
-                                                 }];
-    // A handler that answers after the wait gave up still writes, so what it
-    // wrote is read only once it has answered.
-    if (!waitForReply(answered)) {
-        return {};
-    }
-    if (!content) {
-        return {.error = contentError};
-    }
-    SCDisplay *display = mainDisplay(content);
-    if (!display) {
-        return {.noDisplay = true};
-    }
-
-    SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
-    configuration.capturesAudio = YES;
-    configuration.excludesCurrentProcessAudio = YES;
-    configuration.sampleRate = 16000;
-    configuration.channelCount = 1;
-    configuration.width = 2;
-    configuration.height = 2;
-    configuration.minimumFrameInterval = CMTimeMake(1, 1);
-    configuration.showsCursor = NO;
-
-    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];
-    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:configuration delegate:m_stream->output];
-    NSError *outputError = nil;
-    if (![stream addStreamOutput:m_stream->output
-                            type:SCStreamOutputTypeAudio
-              sampleHandlerQueue:m_stream->queue
-                           error:&outputError]
-        || ![stream addStreamOutput:m_stream->output
-                               type:SCStreamOutputTypeScreen
-                 sampleHandlerQueue:m_stream->queue
-                              error:&outputError]) {
-        return {.error = outputError};
-    }
-
-    __block NSError *startError = nil;
-    dispatch_semaphore_t started = dispatch_semaphore_create(0);
-    // Kept before it starts, so a start that answers late is still stopped.
-    m_stream->stream = stream;
-    [stream startCaptureWithCompletionHandler:^(NSError *error) {
-        startError = error;
-        dispatch_semaphore_signal(started);
-    }];
-    if (!waitForReply(started)) {
-        return {};
-    }
-    if (startError) {
-        return {.error = startError};
-    }
-    return {.started = true};
-}
-
-void MacSystemAudioInput::reopen(quint64 generation)
-{
-    if (generation != m_generation) {
-        return;
-    }
-    stopCapture(m_stream->stream);
-    m_stream->stream = nil;
-    const StreamStart start = startStream();
-    if (start.started) {
-        m_stream->reopen.restart();
-        return;
-    }
-    if (isScreenRecordingDenied((__bridge CFErrorRef)start.error)) {
-        fail(generation, m_permissionDenied);
-        return;
-    }
-    const auto refusal = start.noDisplay ? LoopbackReopen::Refusal::NoOutput : LoopbackReopen::Refusal::Failed;
-    if (m_stream->reopen.retries(refusal, hostClockMs())) {
-        QTimer::singleShot(kLoopbackPollMs, this, [this, generation] { reopen(generation); });
-        return;
-    }
-    fail(generation, QStringLiteral("System audio capture stopped: %1").arg(errorText(start.error)));
 }
 
 void MacSystemAudioInput::stop()
@@ -502,13 +575,13 @@ void MacSystemAudioInput::stop()
     }
     const std::unique_ptr<Stream> stream = std::move(m_stream);
     ++m_generation;
-    stopCapture(stream->stream);
     // Once this has run on the capture queue, nothing there reaches this
-    // input again.
-    const std::shared_ptr<SystemAudioReader> reader = stream->reader;
+    // input again, and ScreenCaptureKit stops the streams in the background.
+    const std::shared_ptr<ScreenCaptureAudio> capture = stream->capture;
     dispatch_source_t poll = stream->poll;
     dispatch_sync(stream->queue, ^{
-        reader->detach();
+        capture->detach();
+        capture->stopStreams();
         if (poll) {
             dispatch_source_cancel(poll);
         }

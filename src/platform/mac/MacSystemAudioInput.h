@@ -11,7 +11,7 @@
 
 namespace speecher {
 
-class SystemAudioReader;
+class ScreenCaptureAudio;
 
 // The samples of a ScreenCaptureKit audio buffer, interleaved, and their
 // layout; an invalid format when the converter cannot read them, and no data
@@ -34,7 +34,7 @@ bool isScreenRecordingDenied(CFErrorRef error);
 // silence, which keeps the stream in step with the clock. A stream that
 // stops for anything but the permission or the user, such as when its display
 // is unplugged, is opened again on the main display and the timeline carries
-// on, as long as LoopbackReopen allows.
+// on, as long as LoopbackReopen allows; see SystemAudioCapture.
 class MacSystemAudioInput final : public AudioInput {
 public:
     // permissionDenied is what start() and failed say when Screen & System
@@ -47,20 +47,14 @@ public:
     bool isActive() const override;
 
 private:
-    friend class SystemAudioReader;
+    friend class ScreenCaptureAudio;
 
     // Leaves whatever it got as far as for stop() to tear down when it fails.
     QString open();
-    // Opens a ScreenCaptureKit stream into m_stream, on the main display.
-    struct StreamStart;
-    StreamStart startStream();
-    // Runs on the main thread after the stream stopped, and again a poll later
-    // while a new one refuses.
-    void reopen(quint64 generation);
     // Runs on the main thread.
     void fail(quint64 generation, const QString &message);
 
-    // The ScreenCaptureKit stream and its queue, kept opaque so this header
+    // The capture queue and what runs on it, kept opaque so this header
     // stays C++.
     struct Stream;
     std::unique_ptr<Stream> m_stream;

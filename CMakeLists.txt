@@ -524,6 +524,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
+  src/platform/mac/MacSystemAudioCapture.h
   src/platform/mac/MacSystemAudioInput.h
   src/platform/mac/MacTargetProvider.h
 )
