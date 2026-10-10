@@ -464,20 +464,16 @@ QStringList bashCompletions(const QString &script, const QStringList &words, con
         environment.insert(QStringLiteral("HOME"), dir);
         bash.setProcessEnvironment(environment);
     }
-    // The script goes in on stdin: Windows command lines garble the quotes in
-    // it on their way to Git Bash.
     bash.start(QStringLiteral("bash"),
-               QStringList{QStringLiteral("--norc"), QStringLiteral("--noprofile"), QStringLiteral("-s"),
-                           QStringLiteral("--"), line.isEmpty() ? words.join(QLatin1Char(' ')) : line}
+               QStringList{QStringLiteral("--norc"), QStringLiteral("--noprofile"), QStringLiteral("-c"),
+                           prelude + QLatin1Char('\n') + script
+                               + QStringLiteral("COMP_LINE=$1; COMP_POINT=${#COMP_LINE}; shift; "
+                                                "COMP_WORDS=(\"$@\"); COMP_CWORD=$(($# - 1)); _speecher; "
+                                                "printf '%s\\n' \"${COMPREPLY[@]}\""),
+                           QStringLiteral("bash"), line.isEmpty() ? words.join(QLatin1Char(' ')) : line}
                    + words);
-    bash.write((prelude + QLatin1Char('\n') + script
-                + QStringLiteral("COMP_LINE=$1; COMP_POINT=${#COMP_LINE}; shift; "
-                                 "COMP_WORDS=(\"$@\"); COMP_CWORD=$(($# - 1)); _speecher; "
-                                 "printf '%s\\n' \"${COMPREPLY[@]}\"\n"))
-                   .toUtf8());
-    bash.closeWriteChannel();
     if (!bash.waitForFinished() || bash.exitCode() != 0) {
-        qWarning().noquote() << "bash failed with" << bash.exitCode() << bash.readAllStandardError();
+        qWarning().noquote() << "bash failed:" << bash.readAllStandardError();
         return {QStringLiteral("<bash failed>")};
     }
     return QString::fromUtf8(bash.readAllStandardOutput()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
