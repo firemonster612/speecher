@@ -11,6 +11,13 @@
 #include <cmath>
 #include <memory>
 
+#ifdef Q_OS_MACOS
+#include "recording/RecordingPresentation.h"
+
+#include <QProcess>
+#include <QTemporaryFile>
+#endif
+
 #ifdef SPEECHER_WITH_PULSE
 #include <QProcess>
 
@@ -41,6 +48,21 @@ namespace {
 // output's volume, through output.
 bool playTone(const QAudioDevice &output)
 {
+#ifdef Q_OS_MACOS
+    // System audio leaves out Speecher's own sounds, so another process plays
+    // it, through the default output.
+    Q_UNUSED(output);
+    QByteArray tone;
+    for (int sample = 0; sample < 16000; ++sample) {
+        const auto value = qint16(0.5 * 32767 * std::sin(2 * M_PI * 440 * sample / 16000));
+        tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+    }
+    QTemporaryFile wav(QDir::temp().filePath(QStringLiteral("tone-XXXXXX.wav")));
+    if (!wav.open() || wav.write(wavFromPcm16Mono(tone, 16000)) < 0 || !wav.flush()) {
+        return false;
+    }
+    return QProcess::execute(QStringLiteral("/usr/bin/afplay"), {wav.fileName()}) == 0;
+#else
     // WASAPI takes only the output's own rate and channels, in float.
     QAudioFormat format = output.preferredFormat();
     format.setSampleFormat(QAudioFormat::Float);
@@ -59,6 +81,7 @@ bool playTone(const QAudioDevice &output)
     QAudioSink sink(output, format);
     sink.start(&toneBuffer);
     return QTest::qWaitFor([&] { return sink.state() == QAudio::IdleState; }, 5000);
+#endif
 }
 
 // The loudest 100 ms of 16 kHz PCM.
@@ -485,6 +508,27 @@ private slots:
         QCOMPARE(failed.count(), 0);
         QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
     }
+
+#ifdef Q_OS_MACOS
+    // For a Mac where the test binary has no Screen & System Audio Recording:
+    // the first run raises macOS's prompt, and start() answers without
+    // waiting for it.
+    void liveSystemAudioSaysWhenNotAllowed()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_DENIED") != QStringLiteral("1")) {
+            QSKIP("Live system audio permission check is opt-in");
+        }
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY(!capture->start(&error));
+        QCOMPARE(error, systemAudioPermissionText());
+        QVERIFY(!capture->isActive());
+        // A failed start is reported once, by its return value.
+        QTest::qWait(300);
+        QCOMPARE(failed.count(), 0);
+    }
+#endif
 
 #ifdef Q_OS_WIN
     // Needs a second output on a separate device: endpoints of one device,

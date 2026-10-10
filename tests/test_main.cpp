@@ -173,6 +173,9 @@ int main(int argc, char **argv)
 #ifdef SPEECHER_WITH_SWIFT_UI
     if (selected("mac_front_end")) result |= runMacFrontEndTests(argc, argv);
 #endif
+#ifdef Q_OS_MACOS
+    if (selected("mac_platform")) result |= runMacPlatformTests(argc, argv);
+#endif
 #ifdef Q_OS_WIN
     if (selected("win_platform")) result |= runWinPlatformTests(argc, argv);
 #endif

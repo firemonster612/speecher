@@ -59,5 +59,8 @@ QString echoCancellationUnknownText();
 QString echoCancellationNotOfferedText();
 QString echoCancellationTurnedOffText();
 QString echoCancellationNoReferenceText(quint32 error);
+// Why system audio could not be recorded on macOS while Screen & System Audio
+// Recording is off for Speecher, and where to turn it on.
+QString systemAudioPermissionText();
 
 } // namespace speecher

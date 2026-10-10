@@ -15,6 +15,9 @@ class LoopbackReopen {
 public:
     enum class Refusal { NoOutput, Failed };
 
+    // How long refusals go on before capture gives up.
+    static constexpr qint64 kAllowanceMs = 10'000;
+
     // Starts the allowance afresh, for an output that closed or a new default
     // output.
     void restart();
