@@ -41,8 +41,9 @@ QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
                                      const QString &serviceLabel,
                                      const QString &instead);
 
-// A code some service or Local Model offers, or kAutomaticSpokenLanguage:
-// what `--language` accepts.
+// Every code some service or Local Model offers, and kAutomaticSpokenLanguage,
+// sorted: what `--language` accepts.
+QStringList knownSpokenLanguages();
 bool isKnownSpokenLanguage(const QString &language);
 
 } // namespace speecher

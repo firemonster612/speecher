@@ -526,11 +526,17 @@ int main(int argc, char **argv)
     QCoreApplication::setApplicationName(QStringLiteral("speecher"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.firemonster612.speecher"));
     QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
+    const QStringList arguments = commandLineArguments(argc, argv);
+    // A completion script runs this on every Tab, so it only reads the
+    // settings: no log, no migration.
+    if (arguments.value(1) == QStringLiteral("completions")) {
+        attachParentConsole();
+        return parseCommandLine(arguments, {}).exitCode;
+    }
     const QString logPath = installLogHandler();
     migrateSettings();
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
-    const QStringList arguments = commandLineArguments(argc, argv);
     // Before parsing, which prints --help, --version and usage errors itself.
     // A plain launch has no command line to talk to.
     if (argc > 1) {
