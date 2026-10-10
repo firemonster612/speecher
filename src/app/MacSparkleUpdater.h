@@ -9,7 +9,6 @@ class QTimer;
 
 namespace speecher {
 
-class DictationSession;
 class SettingsStore;
 
 class MacSparkleUpdater final : public UpdateController {
@@ -17,7 +16,6 @@ class MacSparkleUpdater final : public UpdateController {
 
 public:
     MacSparkleUpdater(SettingsStore *settings,
-                      DictationSession *session,
                       QObject *parent = nullptr);
     ~MacSparkleUpdater() override;
 
@@ -63,6 +61,9 @@ public slots:
     void installAndRestart() override;
     void dismissAvailableVersion() override;
 
+protected:
+    void finishRestart() override;
+
 private:
     struct Native;
     void applySettings();
@@ -74,10 +75,8 @@ private:
     bool sessionActive() const;
     void setState(State state, const QString &error = {});
     void restartNow();
-    void finishRestart();
 
     SettingsStore *m_settings;
-    DictationSession *m_session;
     std::unique_ptr<Native> m_native;
     // Sparkle's schedule clamps to a one-hour minimum, so the sub-hour check
     // frequency is ours to drive, like ManifestUpdater's own timer.

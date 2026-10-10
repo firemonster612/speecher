@@ -2,6 +2,8 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/PhoneTransfer.h"
+#include "app/PhoneTransferPresentation.h"
 #include "frontend/win/CustomRows.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
@@ -23,6 +25,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -52,6 +55,8 @@
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+#include <winrt/Windows.Storage.Streams.h>
 #pragma pop_macro("GetClassName")
 #pragma pop_macro("GetCurrentTime")
 
@@ -66,6 +71,7 @@ using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
+using winrt::Microsoft::UI::Xaml::Media::Imaging::WriteableBitmap;
 
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 // The open sidebar, narrower than NavigationView's 320 to leave the page room.
@@ -80,6 +86,62 @@ const QString kHomePane = QStringLiteral("home");
 // The Transcribe pane keeps its batch across the window; entering and leaving
 // it tells TranscribePane so.
 const QString kTranscribePane = QStringLiteral("transcribe");
+
+// The phone transfer's code, in DIPs: large enough to scan from across a desk.
+constexpr double kPhoneCodeSide = 240;
+// Wider than ContentDialog's 548 default, so the lists keep room beside the code.
+constexpr double kPhoneTransferDialogWidth = 680;
+// A spent code at the opacity of the theme's disabled text (#5C).
+constexpr double kSpentCodeOpacity = 0.36;
+
+// The code as an image one bitmap pixel per screen pixel, so no module blurs.
+Image phoneCode(const QString &link, double scale)
+{
+    const QImage image = qrCodeImage(link, int(kPhoneCodeSide * scale))
+                             .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    WriteableBitmap bitmap(image.width(), image.height());
+    // BGRA8, premultiplied: QImage's ARGB32 on a little-endian machine.
+    std::memcpy(bitmap.PixelBuffer().data(), image.constBits(), size_t(image.sizeInBytes()));
+    bitmap.Invalidate();
+    Image code;
+    code.Source(bitmap);
+    code.Width(image.width() / scale);
+    code.Height(image.height() / scale);
+    code.VerticalAlignment(VerticalAlignment::Top);
+    return code;
+}
+
+// items one per line after a bullet or their number, wrapped lines indented
+// past it, as an HTML list sets them.
+StackPanel markedList(const QStringList &items, bool numbered)
+{
+    StackPanel list;
+    list.Spacing(4);
+    for (qsizetype index = 0; index < items.size(); ++index) {
+        Grid item;
+        item.ColumnSpacing(8);
+        ColumnDefinition markerColumn;
+        markerColumn.Width({0, GridUnitType::Auto});
+        item.ColumnDefinitions().Append(markerColumn);
+        item.ColumnDefinitions().Append(ColumnDefinition{});
+        item.Children().Append(styledTextBlock(
+            numbered ? QStringLiteral("%1.").arg(index + 1) : QStringLiteral("\u2022"), L"BodyTextBlockStyle"));
+        TextBlock text = styledTextBlock(items.at(index), L"BodyTextBlockStyle");
+        Grid::SetColumn(text, 1);
+        item.Children().Append(text);
+        list.Children().Append(item);
+    }
+    return list;
+}
+
+StackPanel listSection(const QString &heading, const QStringList &items)
+{
+    StackPanel section;
+    section.Spacing(4);
+    section.Children().Append(styledTextBlock(heading, L"BodyStrongTextBlockStyle"));
+    section.Children().Append(markedList(items, false));
+    return section;
+}
 
 // Segoe Fluent Icons for the schema's platform-neutral icon ids — the one
 // piece of per-platform icon data this front end keeps.
@@ -446,6 +508,8 @@ struct SettingsWindow::Native {
         endMicrophoneTest(host);
         ShortcutRecorder::setRecording(host, false);
         transcribe->forget(host);
+        // The phone transfer's dialog went with the window, so its port closes too.
+        phoneTransfer.reset();
         window = nullptr;
         root = nullptr;
         titleBar = nullptr;
@@ -975,6 +1039,69 @@ struct SettingsWindow::Native {
         dialog.ShowAsync();
     }
 
+    void showPhoneTransfer(const AppSettings &settings)
+    {
+        if (!root) {
+            return;
+        }
+        phoneTransfer = std::make_unique<PhoneTransfer>(settings);
+        PhoneTransfer *transfer = phoneTransfer.get();
+        const PhoneTransferText text = phoneTransferText(settings, transfer->state());
+        ContentDialog dialog;
+        dialog.XamlRoot(root.XamlRoot());
+        dialog.RequestedTheme(root.ActualTheme());
+        dialog.Resources().Insert(box_value(L"ContentDialogMaxWidth"), box_value(kPhoneTransferDialogWidth));
+        dialog.Title(box_value(hs(text.title)));
+        dialog.CloseButtonText(hs(text.close));
+
+        StackPanel details;
+        details.Spacing(12);
+        if (!text.steps.isEmpty()) {
+            details.Children().Append(markedList(text.steps, true));
+        }
+        details.Children().Append(listSection(text.includedHeading, text.included));
+        if (!text.stays.isEmpty()) {
+            details.Children().Append(listSection(text.staysHeading, text.stays));
+        }
+        details.Children().Append(secondaryTextBlock(text.neverIncluded, L"CaptionTextBlockStyle", host));
+        TextBlock status = styledTextBlock(text.status, L"BodyTextBlockStyle");
+        details.Children().Append(status);
+
+        // No code without an address or a port; the status says which.
+        Image code{nullptr};
+        if (const QString link = transfer->link(); !link.isEmpty()) {
+            code = phoneCode(link, root.XamlRoot().RasterizationScale());
+            Grid layout;
+            layout.ColumnSpacing(24);
+            ColumnDefinition codeColumn;
+            codeColumn.Width({0, GridUnitType::Auto});
+            layout.ColumnDefinitions().Append(codeColumn);
+            layout.ColumnDefinitions().Append(ColumnDefinition{});
+            layout.Children().Append(code);
+            Grid::SetColumn(details, 1);
+            layout.Children().Append(details);
+            dialog.Content(layout);
+        } else {
+            dialog.Content(details);
+        }
+
+        // Once sent, the code is spent and dims.
+        QObject::connect(transfer, &PhoneTransfer::stateChanged, transfer, [transfer, settings, status, code] {
+            status.Text(hs(phoneTransferText(settings, transfer->state()).status));
+            if (code) {
+                code.Opacity(transfer->state() == PhoneTransferState::Waiting ? 1 : kSpentCodeOpacity);
+            }
+        });
+        // The transfer listens exactly as long as its code is on screen.
+        dialog.Closed([this, weak = std::weak_ptr<bool>(alive)](const ContentDialog &,
+                                                                const ContentDialogClosedEventArgs &) {
+            if (!gone(weak)) {
+                phoneTransfer.reset();
+            }
+        });
+        dialog.ShowAsync();
+    }
+
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     ApplicationController *controller;
     SettingsModel model;
@@ -985,6 +1112,8 @@ struct SettingsWindow::Native {
     std::function<void(const QString &)> actionHook;
     std::function<void()> themeHook;
     QObject lifetime;
+    // The open "Copy settings to your phone" dialog's transfer.
+    std::unique_ptr<PhoneTransfer> phoneTransfer;
 
     Window window{nullptr};
     winrt::event_token closedToken{};
@@ -1080,6 +1209,11 @@ void SettingsWindow::inform(const QString &title, const QString &text)
     m_native->inform(title, text);
 }
 
+void SettingsWindow::showPhoneTransfer(const AppSettings &settings)
+{
+    m_native->showPhoneTransfer(settings);
+}
+
 namespace {
 
 // The controls of a page built in code, in order, from its panels, borders
@@ -1137,6 +1271,26 @@ bool SettingsWindow::pressForTest(const QString &name, int index)
                 return false;
             }
             winrt::Microsoft::UI::Xaml::Automation::Peers::ButtonAutomationPeer(button).Invoke();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SettingsWindow::phoneTransferOpenForTest() const
+{
+    return m_native->phoneTransfer != nullptr;
+}
+
+bool SettingsWindow::closeDialogForTest()
+{
+    if (!m_native->root) {
+        return false;
+    }
+    for (const auto &popup :
+         winrt::Microsoft::UI::Xaml::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(m_native->root.XamlRoot())) {
+        if (const auto dialog = popup.Child().try_as<ContentDialog>()) {
+            dialog.Hide();
             return true;
         }
     }

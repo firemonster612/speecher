@@ -110,6 +110,9 @@ public:
     // until the first dictation says something.
     QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
+    // status's answer and each line status --watch is written: the dictation
+    // state and the recording.
+    IpcResponse statusResponse() const;
     QString outputSummary() const;
     bool accessibilitySupported() const;
     bool accessibilityEnabled() const;
@@ -248,6 +251,9 @@ private:
     RecordingSession *m_recording = nullptr;
     // record stop's clients, answered once the last utterance is written.
     QList<QPointer<QLocalSocket>> m_recordStopReplies;
+    // Write status watchers each change. Cut first on teardown, which
+    // deletes the recording before the session.
+    QList<QMetaObject::Connection> m_statusPublishers;
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
     bool m_filesOpened = false;

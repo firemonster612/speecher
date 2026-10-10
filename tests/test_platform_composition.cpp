@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
+#include "common/test_manifest_updater_access.h"
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
@@ -8,6 +9,7 @@
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
+#include "app/UpdateBanner.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -41,6 +43,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPalette>
+#include <QPointer>
 #include <QLabel>
 #include <QLayout>
 #include <QList>
@@ -200,12 +203,12 @@ public:
 
     QString ipcListenName() const override
     {
-        return m_delegate->ipcListenName();
+        return ipcName.isEmpty() ? m_delegate->ipcListenName() : ipcName;
     }
 
     QStringList ipcConnectCandidates() const override
     {
-        return m_delegate->ipcConnectCandidates();
+        return ipcName.isEmpty() ? m_delegate->ipcConnectCandidates() : QStringList{ipcName};
     }
 
     QString detachedExecutablePath() const override
@@ -296,6 +299,8 @@ public:
     }
 
     mutable QString launchAtLoginError;
+    // Set, the app listens here instead of where the running Speecher does.
+    QString ipcName;
 
     mutable std::function<void(bool)> microphoneAnswer;
     // Makes the microphones instead of the platform, when set.
@@ -312,6 +317,30 @@ private:
 
 // Records what the controller asks of a user interface, so the seam can be
 // checked without a window on screen.
+// A connection to the controller's own IPC, as a command line would make.
+static void connectToController(QLocalSocket &socket, const QString &ipcName)
+{
+    socket.connectToServer(ipcName);
+    QVERIFY(socket.waitForConnected(2000));
+}
+
+// Every line socket has been written once the app has had a moment to write
+// more.
+static QList<QJsonObject> linesWritten(QLocalSocket &socket)
+{
+    QTest::qWait(200);
+    QList<QJsonObject> lines;
+    while (socket.canReadLine()) {
+        lines << QJsonDocument::fromJson(socket.readLine()).object();
+    }
+    return lines;
+}
+
+static QString uniqueControllerIpcName()
+{
+    return QStringLiteral("spchr-c-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12));
+}
+
 class FakeAppFrontEnd final : public AppFrontEnd {
 public:
     void showMainWindow() override
@@ -1127,6 +1156,28 @@ private slots:
             QCOMPARE(refused.mode, LaunchMode::Exit);
             QCOMPARE(refused.exitCode, 2);
         }
+    }
+
+    // status --watch keeps asking the running Speecher; --json goes with
+    // either.
+    void statusTakesJsonAndWatch()
+    {
+        const auto parse = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("status")} + options, {});
+        };
+        QCOMPARE(parse({}).ipcCommand, QStringLiteral("status"));
+        QVERIFY(!parse({}).json);
+        QVERIFY(parse({QStringLiteral("--json")}).json);
+        const CommandLineDecision watch = parse({QStringLiteral("--watch"), QStringLiteral("--json")});
+        QCOMPARE(watch.mode, LaunchMode::RunCli);
+        QCOMPARE(watch.ipcCommand, QStringLiteral("watchStatus"));
+        QVERIFY(watch.json);
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        QCOMPARE(parse({QStringLiteral("--follow")}).exitCode, 2);
+        QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.
@@ -2705,6 +2756,108 @@ private slots:
         QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
     }
 
+    // The controller answers status on its own IPC with the recording, and
+    // writes a watcher a line on each change of the dictation state. A
+    // watcher's further commands are ignored: none doubles its lines or ends
+    // its watch.
+    void theControllerWritesItsStatusToWatchers()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->ipcName = uniqueControllerIpcName();
+        ApplicationController controller(true, platform);
+        QVERIFY(controller.startIpc());
+
+        QLocalSocket status;
+        connectToController(status, platform->ipcName);
+        status.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
+        QTRY_VERIFY(status.canReadLine());
+        const QJsonObject answer = QJsonDocument::fromJson(status.readLine()).object();
+        QCOMPARE(answer.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
+        QCOMPARE(answer.value(QStringLiteral("recording"))[QStringLiteral("recording")], QJsonValue(false));
+
+        QLocalSocket watcher;
+        connectToController(watcher, platform->ipcName);
+        watcher.write(QByteArrayLiteral("{\"command\":\"watchStatus\"}\n{\"command\":\"watchStatus\"}\n"));
+        QTRY_VERIFY(watcher.canReadLine());
+        watcher.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
+        // An unknown speech provider fails the session as it starts.
+        controller.settings()->setSpeechProvider(QStringLiteral("missing"));
+        controller.session()->startListening();
+        QTRY_COMPARE(controller.session()->stateName(), QStringLiteral("error"));
+
+        QStringList states;
+        for (const QJsonObject &line : linesWritten(watcher)) {
+            states << line.value(QStringLiteral("state")).toString();
+        }
+        QCOMPARE(states, QStringList({QStringLiteral("idle"), QStringLiteral("starting"), QStringLiteral("error")}));
+        QCOMPARE(watcher.state(), QLocalSocket::ConnectedState);
+    }
+
+    // A recording's stream changing writes a watcher one line, and audio
+    // lost past the buffer one more, however many chunks it goes on losing.
+    void aRecordingWritesWatchersALinePerStreamChange()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->ipcName = uniqueControllerIpcName();
+        QPointer<test::FakeAudioInput> microphone;
+        platform->audioInputs = [&microphone](QObject *parent) {
+            microphone = new test::FakeAudioInput(parent);
+            return microphone.data();
+        };
+        ApplicationController controller(true, platform);
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        QPointer<test::FakeSpeechTranscriber> codex;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&codex](QObject *parent) {
+                codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex = codex.data()] { codex->emitConnected(); };
+                return codex.data();
+            });
+        QVERIFY(controller.startIpc());
+        QTemporaryDir dir;
+
+        QLocalSocket start;
+        connectToController(start, platform->ipcName);
+        start.write(QJsonDocument(QJsonObject{{QStringLiteral("command"), QStringLiteral("recordStart")},
+                                              {QStringLiteral("files"),
+                                               QJsonArray{dir.filePath(QStringLiteral("call.md"))}}})
+                        .toJson(QJsonDocument::Compact)
+                    + '\n');
+        QTRY_VERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QTRY_VERIFY(start.canReadLine());
+        QVERIFY(controller.isRecording());
+
+        QLocalSocket watcher;
+        connectToController(watcher, platform->ipcName);
+        watcher.write(QByteArrayLiteral("{\"command\":\"watchStatus\"}\n"));
+        QCOMPARE(linesWritten(watcher).size(), 1);
+        const auto stream = [](const QJsonObject &line) {
+            return line.value(QStringLiteral("recording"))[QStringLiteral("streams")][0];
+        };
+
+        // The stream drops and does not come back.
+        codex->onStartAttempt = nullptr;
+        codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                           ProviderFailureKind::Network);
+        const QList<QJsonObject> dropped = linesWritten(watcher);
+        QCOMPARE(dropped.size(), 1);
+        QCOMPARE(stream(dropped.first())[QStringLiteral("state")], QJsonValue(QStringLiteral("reconnecting")));
+
+        // Ten minutes wait for it, in ten-second chunks; the four past them
+        // each lose audio.
+        const QByteArray tenSeconds(10 * 16000 * 2, '\0');
+        for (int chunk = 0; chunk < 64; ++chunk) {
+            microphone->pushAudio(tenSeconds);
+        }
+        const QList<QJsonObject> losing = linesWritten(watcher);
+        QCOMPARE(losing.size(), 1);
+        QVERIFY(stream(losing.first())[QStringLiteral("lostAudioMs")].toInteger() > 0);
+    }
+
     // A record start whose command line stopped waiting, and so reported a
     // failure, leaves nothing recording and no file once the stream connects.
     void aRecordStartNoOneWaitsForIsDiscarded()
@@ -2734,6 +2887,101 @@ private slots:
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
         QVERIFY(!QFileInfo::exists(path));
+    }
+
+    // Outside an AppImage, the AppImage updater's restart opens the release
+    // page instead, which a test can count. The other updaters quit or start
+    // an installer.
+    static ManifestUpdater *restartWatchableUpdater(ApplicationController &controller)
+    {
+        return controller.updates()->inherits("speecher::AppImageUpdater")
+            ? static_cast<ManifestUpdater *>(controller.updates())
+            : nullptr;
+    }
+
+    // An update restart asked for mid-recording waits for the recording, and
+    // the stop's reply still reaches its caller before the app goes away.
+    void anUpdateRestartWaitsForARecordingToStop()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        auto *updater = restartWatchableUpdater(controller);
+        if (!updater) {
+            QSKIP("Only the AppImage updater's restart can be watched without quitting");
+        }
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex] { codex->emitConnected(); };
+                return codex;
+            });
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-u-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QTemporaryDir dir;
+
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QSignalSpy bannerChanges(controller.updateBanner(), &UpdateBanner::changed);
+        QLocalSocket startClient;
+        startClient.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, server.nextPendingConnection(),
+                                    {dir.filePath(QStringLiteral("call.md"))});
+        platform->microphoneAnswer(true);
+        QTRY_VERIFY(controller.isRecording());
+        QVERIFY(!bannerChanges.isEmpty());
+        QCOMPARE(controller.updateBanner()->model().action, QStringLiteral("Restart after this recording"));
+
+        QLocalSocket *stopReply = nullptr;
+        bool stopRepliedFirst = false;
+        connect(updater, &UpdateController::openReleasePageRequested, this, [&] {
+            stopRepliedFirst = stopReply && stopReply->state() != QLocalSocket::ConnectedState;
+        });
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+        QVERIFY(restartAttempts.isEmpty());
+
+        QLocalSocket stopClient;
+        stopClient.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        stopReply = server.nextPendingConnection();
+        controller.handleIpcCommand(QStringLiteral("recordStop"), {}, stopReply);
+        QTRY_COMPARE(restartAttempts.count(), 1);
+        QVERIFY(stopRepliedFirst);
+        QTRY_VERIFY(stopClient.canReadLine());
+        QVERIFY(QJsonDocument::fromJson(stopClient.readLine()).object().value(QStringLiteral("ok")).toBool());
+    }
+
+    // An update restart asked for mid-dictation waits for it, and a dictation
+    // that ends in an error has nothing left to cut short.
+    void anUpdateRestartWaitsForADictationButNotItsError()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        auto *updater = restartWatchableUpdater(controller);
+        if (!updater) {
+            QSKIP("Only the AppImage updater's restart can be watched without quitting");
+        }
+        controller.settings()->setSetupCompleted(true);
+        emit platform->binder->activated();
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+
+        auto *audio = controller.findChild<AudioInput *>();
+        QVERIFY(audio);
+        emit audio->failed(QStringLiteral("Test microphone disconnected"));
+        QCOMPARE(controller.session()->state(), DictationState::Error);
+        QCOMPARE(restartAttempts.count(), 1);
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()

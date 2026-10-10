@@ -1111,6 +1111,11 @@ SettingsPage generalPage(const SchemaContext &context)
                              QStringLiteral("Setup assistant"),
                              QStringLiteral("Go through the first-run steps again."),
                              QStringLiteral("Run setup assistant")));
+    appRows.append(actionRow(QStringLiteral("copyToPhone"),
+                             QStringLiteral("Copy settings to your phone"),
+                             QStringLiteral("Scan a code with Speecher for Android to bring over your "
+                                            "vocabulary, snippets and Writing Profiles."),
+                             QStringLiteral("Show code")));
 
     // The recorder, which every front end draws with its own key capture.
     QList<SettingsRow> shortcutRows{customRow(

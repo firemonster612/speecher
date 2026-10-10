@@ -12,6 +12,7 @@
 #include "frontend/qt/FallbackList.h"
 #include "frontend/qt/LocalModelRows.h"
 #include "frontend/qt/MicrophoneTestRow.h"
+#include "frontend/qt/PhoneTransferDialog.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "providers/LocalModelStore.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -442,6 +443,11 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     }
     if (rowId == QStringLiteral("runSetup")) {
         m_controller->showSetupAssistant();
+        return;
+    }
+    if (rowId == QStringLiteral("copyToPhone")) {
+        openPhoneTransferDialog(m_controller->settings()->snapshot(),
+                                qobject_cast<QWidget *>(parent()));
         return;
     }
     if (rowId == QStringLiteral("clearInsights")) {

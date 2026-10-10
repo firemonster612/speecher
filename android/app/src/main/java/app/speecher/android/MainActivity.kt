@@ -19,6 +19,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +45,14 @@ import app.speecher.android.dictation.insightsFile
 import app.speecher.android.dictation.loadInsights
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedHttp
+import app.speecher.android.transfer.ComputerSettings
+import app.speecher.android.transfer.ImportFailure
+import app.speecher.android.transfer.withImported
 import app.speecher.android.ui.ChipPosition
+import app.speecher.android.ui.ComputerImport
+import app.speecher.android.ui.ComputerImportViewModel
 import app.speecher.android.ui.Home
+import app.speecher.android.ui.ImportState
 import app.speecher.android.ui.Insights
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SettingsPage
@@ -71,6 +79,9 @@ import app.speecher.android.update.releaseNotes
 import app.speecher.android.update.stageApk
 import app.speecher.android.update.untilCheck
 import app.speecher.android.update.whatsNewSince
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +97,7 @@ private enum class Page {
     ChipPosition,
     Insights,
     WhatsNew,
+    ComputerImport,
 }
 
 class MainActivity : ComponentActivity() {
@@ -109,7 +121,18 @@ class MainActivity : ComponentActivity() {
     private var whatsNewFrom = Page.Home
     // Counts checks begun and channel changes, so only the latest check reports what it found.
     private var checkCount = 0
-    private var page by mutableStateOf(Page.Home)
+    private var shownPage by mutableStateOf(Page.Home)
+    // Leaving the import page by any route ends the import, so showing the page whenever an import
+    // is under way never brings back an old one.
+    private var page: Page
+        get() = shownPage
+        set(value) {
+            if (shownPage == Page.ComputerImport && value != Page.ComputerImport) {
+                computerImport.dismiss()
+            }
+            shownPage = value
+        }
+
     // Where leaving setup goes: Settings when its Setup assistant row opened it, otherwise Home.
     private var setupFrom = Page.Home
     // The page open from the Settings list, or null for the list itself.
@@ -119,6 +142,8 @@ class MainActivity : ComponentActivity() {
     // The Settings page a sign-in started from, to go back to once it succeeds or is left. Saved
     // with the activity, so recreating it while the browser is up keeps it.
     private var signInFrom: SettingsPage? = null
+    private val computerImport: ComputerImportViewModel by viewModels()
+    private val snackbar = SnackbarHostState()
 
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
@@ -170,6 +195,11 @@ class MainActivity : ComponentActivity() {
                     if (signIn.activeProvider != null) return@LaunchedEffect
                     if (signIn.error == null) returnFromSignIn() else signInFrom = null
                 }
+                // The import outlives the activity, so a recreated one, or one a scan finished
+                // behind, shows it too.
+                LaunchedEffect(computerImport.state != null) {
+                    if (computerImport.state != null) page = Page.ComputerImport
+                }
                 BackHandler(page != Page.Home, ::back)
                 when (page) {
                     Page.Home ->
@@ -200,14 +230,7 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 ::openAccessibilitySettings,
-                                {
-                                    startActivity(
-                                        Intent(
-                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                            Uri.fromParts("package", packageName, null),
-                                        )
-                                    )
-                                },
+                                ::openAppSettings,
                                 onFinish = ::leaveSetup,
                                 onUseServer = {
                                     changeSettings(
@@ -226,7 +249,11 @@ class MainActivity : ComponentActivity() {
                     Page.Settings -> {
                         val open = settingsPage
                         if (open == null) {
-                            SpeecherScreen("Settings", onBack = ::back) {
+                            SpeecherScreen(
+                                "Settings",
+                                onBack = ::back,
+                                snackbarHost = { SnackbarHost(snackbar) },
+                            ) {
                                 app.speecher.android.ui.Settings(
                                     settings,
                                     status.signedIn,
@@ -245,6 +272,7 @@ class MainActivity : ComponentActivity() {
                                         setupFrom = Page.Settings
                                         page = Page.Setup
                                     },
+                                    onImportFromComputer = ::scanComputerCode,
                                 )
                             }
                         } else {
@@ -294,6 +322,17 @@ class MainActivity : ComponentActivity() {
                                     changeSettings(settings.copy(chipDockOnMic = true))
                                     page = Page.Settings
                                 },
+                            )
+                        }
+                    Page.ComputerImport ->
+                        computerImport.state?.let {
+                            ComputerImport(
+                                it,
+                                settings,
+                                ::back,
+                                ::scanComputerCode,
+                                ::import,
+                                ::merge,
                             )
                         }
                     Page.WhatsNew ->
@@ -417,6 +456,7 @@ class MainActivity : ComponentActivity() {
         when {
             page == Page.ChipPosition -> page = Page.Settings
             page == Page.WhatsNew -> page = whatsNewFrom
+            page == Page.ComputerImport -> page = Page.Settings
             page == Page.Settings && settingsPage != null -> settingsPage = null
             page == Page.Setup -> leaveSetup()
             else -> page = Page.Home
@@ -426,6 +466,63 @@ class MainActivity : ComponentActivity() {
     private fun leaveSetup() {
         page = setupFrom
         setupFrom = Page.Home
+    }
+
+    // From Android 17 a socket to the computer's private address fails until the app holds this.
+    private val localNetwork =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startScanner() else computerImport.fail(ImportFailure.NoLocalNetwork)
+        }
+
+    private fun scanComputerCode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
+            startScanner()
+            return
+        }
+        val permission = Manifest.permission.ACCESS_LOCAL_NETWORK
+        when {
+            checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED -> startScanner()
+            // Denied twice, Android stops asking, so only Speecher's settings can allow it.
+            computerImport.state == ImportState.Failed(ImportFailure.NoLocalNetwork) &&
+                !shouldShowRequestPermissionRationale(permission) -> openAppSettings()
+            else -> localNetwork.launch(permission)
+        }
+    }
+
+    /** Starts Google's code scanner, which needs no camera permission, for the computer's code. */
+    private fun startScanner() {
+        val options =
+            GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        // The activity may be recreated before the scan ends, so its result goes to the import,
+        // which outlives it, never to this activity.
+        val retained = computerImport
+        GmsBarcodeScanning.getClient(this, options)
+            .startScan()
+            .addOnSuccessListener { retained.importFrom(it.rawValue.orEmpty()) }
+            .addOnFailureListener { retained.fail(ImportFailure.ScannerUnavailable) }
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null),
+            )
+        )
+    }
+
+    private fun import(computer: ComputerSettings) {
+        merge(computer)
+        lifecycleScope.launch { snackbar.showSnackbar("Imported from ${computer.computer}") }
+    }
+
+    /**
+     * Merges [computer]'s settings into those stored now, not the copy the preview showed, since a
+     * dictation may have stored use counts meanwhile.
+     */
+    private fun merge(computer: ComputerSettings) {
+        changeSettings(settingsStore.load().withImported(computer))
+        page = Page.Settings
     }
 
     private val updatePreferences by lazy { getSharedPreferences("updates", MODE_PRIVATE) }

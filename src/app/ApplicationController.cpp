@@ -240,13 +240,30 @@ ApplicationController::ApplicationController(bool popupOnly,
         }
     });
 #ifdef Q_OS_MACOS
-    m_updates = new MacSparkleUpdater(m_settings, m_session, this);
+    m_updates = new MacSparkleUpdater(m_settings, this);
 #elif defined(Q_OS_WIN)
-    m_updates = new WindowsInstallerUpdater(m_settings, m_session, this);
+    m_updates = new WindowsInstallerUpdater(m_settings, this);
 #else
-    m_updates = new AppImageUpdater(m_settings, m_session, this);
+    m_updates = new AppImageUpdater(m_settings, this);
 #endif
-    m_updateBanner = new UpdateBanner(m_updates, m_session, this);
+    // A restart for an update waits out a dictation and a recording. A
+    // recording still starting does not hold it back: a start that fails emits
+    // no stop to resume the restart on.
+    m_updates->setRestartBlockerProvider([this] {
+        using RestartBlocker = UpdateController::RestartBlocker;
+        const DictationState state = m_session->state();
+        if (state != DictationState::Idle && state != DictationState::Error) {
+            return RestartBlocker::Dictation;
+        }
+        return m_recording->isRecording() ? RestartBlocker::Recording : RestartBlocker::None;
+    });
+    connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
+    // After the stop replies above are written: recordingChanged(false) comes
+    // before them.
+    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
+    m_updateBanner = new UpdateBanner(m_updates, this);
+    connect(m_session, &DictationSession::stateChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
+    connect(m_recording, &RecordingSession::recordingChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -275,6 +292,13 @@ ApplicationController::ApplicationController(bool popupOnly,
     });
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
+    // Not on each tick of the recording's duration, which every line carries.
+    const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
+    m_statusPublishers = {
+        connect(m_session, &DictationSession::stateChanged, this, publishStatus),
+        connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus),
+        connect(m_recording, &RecordingSession::problemChanged, this, publishStatus),
+    };
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
@@ -594,6 +618,13 @@ IpcResponse ApplicationController::response(bool ok, const QString &message) con
 {
     const SessionResponse sessionResponse = m_session->response(ok, message);
     return {sessionResponse.ok, sessionResponse.state, sessionResponse.message};
+}
+
+IpcResponse ApplicationController::statusResponse() const
+{
+    IpcResponse reply = response();
+    reply.recording = m_recording->status();
+    return reply;
 }
 
 QString ApplicationController::outputSummary() const
@@ -1208,7 +1239,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         m_recordStopReplies.append(socket);
         m_recording->stop();
     } else if (command == QStringLiteral("status")) {
-        SingleInstanceIpc::writeResponse(socket, response());
+        SingleInstanceIpc::writeResponse(socket, statusResponse());
+    } else if (command == QStringLiteral("watchStatus")) {
+        m_ipc->addStatusWatcher(socket, statusResponse());
     } else if (command == QStringLiteral("last")) {
         IpcResponse reply = response(!m_lastTranscript.isEmpty());
         reply.text = m_lastTranscript;
@@ -1235,6 +1268,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
 // points at them. Tear the dependents down first.
 ApplicationController::~ApplicationController()
 {
+    for (const QMetaObject::Connection &publisher : std::as_const(m_statusPublishers)) {
+        disconnect(publisher);
+    }
     delete m_updateBanner;
     m_updateBanner = nullptr;
     delete m_updates;

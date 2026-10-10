@@ -1,7 +1,6 @@
 #include "app/ManifestUpdater.h"
 
 #include "core/SettingsStore.h"
-#include "dictation/DictationSession.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -34,11 +33,6 @@ void setError(QString *error, const QString &message)
     }
 }
 
-bool restartSafe(DictationState state)
-{
-    return state == DictationState::Idle || state == DictationState::Error;
-}
-
 int automaticRetryInterval(int failureCount)
 {
     int interval = initialRetryIntervalMs;
@@ -53,14 +47,12 @@ int automaticRetryInterval(int failureCount)
 } // namespace
 
 ManifestUpdater::ManifestUpdater(SettingsStore *settings,
-                                 DictationSession *session,
                                  QString platformKey,
                                  QString downloadKey,
                                  QString downloadDescription,
                                  QObject *parent)
     : UpdateController(parent)
     , m_settings(settings)
-    , m_session(session)
     , m_network(new QNetworkAccessManager(this))
     , m_checkTimer(new QTimer(this))
     , m_platformKey(std::move(platformKey))
@@ -73,12 +65,6 @@ ManifestUpdater::ManifestUpdater(SettingsStore *settings,
     m_checkTimer->setSingleShot(true);
     m_dismissedVersion = m_settings->updatesDismissedVersion();
 
-    connect(m_session, &DictationSession::stateChanged, this, [this] {
-        if (m_state == State::RestartPending && restartSafe(m_session->state())) {
-            writeRestoreState();
-            restartApplication();
-        }
-    });
     connect(m_settings,
             &SettingsStore::updateSettingsChanged,
             this,
@@ -369,21 +355,22 @@ void ManifestUpdater::restartNow()
         return;
     }
     // Captured at the moment of the restart request: a restart deferred to the
-    // end of a dictation still restores what the user was doing when they asked.
+    // end of a dictation or recording still restores what the user was doing
+    // when they asked.
     m_pendingRestoreState = restoreState();
-    if (!restartSafe(m_session->state())) {
+    if (busy()) {
         setState(State::RestartPending);
         return;
     }
-    writeRestoreState();
-    restartApplication();
+    finishRestart();
 }
 
-void ManifestUpdater::writeRestoreState()
+void ManifestUpdater::finishRestart()
 {
     if (!m_pendingRestoreState.isEmpty()) {
         m_settings->setUpdatesRestoreState(m_pendingRestoreState);
     }
+    restartApplication();
 }
 
 void ManifestUpdater::dismissAvailableVersion()
