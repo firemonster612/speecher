@@ -88,7 +88,7 @@ step "Bundling Qt into the app (the slow part)"
 # refuses to launch the copy a user drags out of the image.
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
 
-step "Verifying the bundled Qt plugins"
+step "Verifying the bundled libraries"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
 if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
   > "$SPEECHER_SYMBOLS" 2>> "$LOG"; then
@@ -104,6 +104,31 @@ fi
 # when the Mac is offline.
 if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" ]]; then
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
+  exit 1
+fi
+# macdeployqt also copies libraries from outside Qt, such as
+# webrtc-audio-processing, into Frameworks; neither Speecher nor a library or
+# plugin it bundles may still load one from where the build found it.
+# Prints what BINARY loads from outside the bundle and the system, leaving out
+# its own install name. otool heads its output, and each architecture of a
+# universal binary, with a line ending in a colon; the libraries are indented.
+libraries_outside_bundle() {
+  local install_name
+  install_name="$(otool -D "$1" | grep -v ':$' || true)"
+  otool -L "$1" | awk '/^\t/ { print $1 }' | grep -v -x -F -e "$install_name" \
+    | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' | sort -u || true
+}
+LOADS_OUTSIDE_BUNDLE=0
+while IFS= read -r -d '' binary; do
+  outside="$(libraries_outside_bundle "$binary")"
+  if [[ -n "$outside" ]]; then
+    printf '%s loads from outside the bundle:\n%s\n' "${binary#"$STAGING_DIR/"}" "$outside" >&2
+    LOADS_OUTSIDE_BUNDLE=1
+  fi
+done < <(printf '%s\0' "$STAGING_DIR/speecher.app/Contents/MacOS/speecher"
+  find "$STAGING_DIR/speecher.app/Contents/Frameworks" "$STAGING_DIR/speecher.app/Contents/PlugIns" \
+    -type f -name '*.dylib' -print0)
+if [[ "$LOADS_OUTSIDE_BUNDLE" -ne 0 ]]; then
   exit 1
 fi
 

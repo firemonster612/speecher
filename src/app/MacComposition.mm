@@ -1,6 +1,7 @@
 #include "app/MacComposition.h"
 
 #include "app/CommandLineTool.h"
+#include "app/CompositionEchoCanceller.h"
 #include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
@@ -147,9 +148,21 @@ AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *p
     return input;
 }
 
+bool MacComposition::recordsSystemAudio() const
+{
+    return true;
+}
+
 AudioInput *MacComposition::createSystemAudioInput(QObject *parent) const
 {
     return new MacSystemAudioInput(systemAudioPermissionText(), parent);
+}
+
+// In-app, as Linux's: the system's voice processing turns other audio down
+// even at its least ducking, which would make the call quieter.
+std::unique_ptr<EchoCanceller> MacComposition::createEchoCanceller(QString *warning) const
+{
+    return createWebRtcEchoCanceller(warning);
 }
 
 void MacComposition::requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const

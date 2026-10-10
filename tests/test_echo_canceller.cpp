@@ -232,10 +232,10 @@ class EchoCancellerTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void saysWhyALinuxBuildWithoutWebRtcCannotCancel()
+    void saysWhyABuildWithoutWebRtcCannotCancel()
     {
-#if !defined(Q_OS_LINUX) || defined(SPEECHER_WITH_WEBRTC_AEC)
-        QSKIP("Only a Linux build without webrtc-audio-processing has no echo cancellation");
+#if !(defined(Q_OS_LINUX) || defined(Q_OS_MACOS)) || defined(SPEECHER_WITH_WEBRTC_AEC)
+        QSKIP("Only a Linux or macOS build without webrtc-audio-processing has no echo cancellation");
 #else
         QString warning;
         QVERIFY(!platformComposition()->createEchoCanceller(&warning));

@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 
+#include "app/PlatformComposition.h"
 #include "platform/mac/MacSystemAudioCapture.h"
 #include "platform/mac/MacSystemAudioInput.h"
 
@@ -142,6 +143,16 @@ class MacPlatformTests final : public QObject {
     Q_OBJECT
 
 private slots:
+    void echoCancellationStartsWithoutAWarning()
+    {
+#ifndef SPEECHER_WITH_WEBRTC_AEC
+        QSKIP("Built without webrtc-audio-processing");
+#endif
+        QString warning;
+        platformComposition()->createEchoCanceller(&warning);
+        QCOMPARE(warning, QString());
+    }
+
     void systemAudioInterleavesPlanarBuffers()
     {
         // ScreenCaptureKit's own layout: float, one buffer a channel.

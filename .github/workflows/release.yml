@@ -234,6 +234,9 @@ jobs:
     if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
     runs-on: macos-26
     env:
+      # Speecher's minimum macOS, for both webrtc-audio-processing and the app;
+      # CMakeLists.txt defaults to the same for local builds.
+      MACOS_DEPLOYMENT_TARGET: "15.0"
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_OBJC_COMPILER_LAUNCHER: ccache
@@ -277,6 +280,20 @@ jobs:
           find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
             sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
 
+      # Echo cancellation; Homebrew has no formula for the library.
+      - name: Cache webrtc-audio-processing
+        id: webrtc-audio-processing
+        uses: actions/cache@v4
+        with:
+          path: ~/webrtc-audio-processing
+          key: macos-26-${{ runner.arch }}-macos${{ env.MACOS_DEPLOYMENT_TARGET }}-webrtc-audio-processing-${{ hashFiles('packaging/macos/build-webrtc-audio-processing.sh') }}
+
+      - name: Build webrtc-audio-processing
+        if: steps.webrtc-audio-processing.outputs.cache-hit != 'true'
+        run: |
+          brew install meson
+          bash packaging/macos/build-webrtc-audio-processing.sh "$HOME/webrtc-audio-processing" "$MACOS_DEPLOYMENT_TARGET"
+
       - name: Configure
         env:
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
@@ -285,8 +302,11 @@ jobs:
             echo "SPARKLE_ED_PUBLIC_KEY is required for publishing." >&2
             exit 1
           fi
+          PKG_CONFIG_PATH="$HOME/webrtc-audio-processing/lib/pkgconfig" \
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DSPEECHER_BUILD_TESTS=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
+            -DSPEECHER_REQUIRE_WEBRTC_AEC=ON \
             -DSPEECHER_WITH_LOCAL_SPEECH=ON \
             -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="${SPARKLE_ED_PUBLIC_KEY:-}"
 
@@ -296,7 +316,12 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          status=0
+          ctest --test-dir build --output-on-failure -E speecher_echo_canceller || status=1
+          # Verbose, so the log shows the echo suite ran rather than skipped.
+          ctest --test-dir build --output-on-failure -V -R speecher_echo_canceller || status=1
+          exit "$status"
 
       - name: Import macOS signing identity
         if: github.event_name != 'pull_request'
