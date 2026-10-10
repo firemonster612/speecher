@@ -284,6 +284,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
   src/dictation/SelectionEditPresentation.cpp
+  src/recording/SystemAudioPresentation.cpp
 )
 
 set(SPEECHER_DOMAIN_HEADERS
@@ -325,6 +326,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h
   src/dictation/SelectionEditPresentation.h
+  src/recording/SystemAudioPresentation.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES

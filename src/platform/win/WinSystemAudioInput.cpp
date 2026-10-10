@@ -2,6 +2,7 @@
 
 #include "platform/audio/LoopbackPcm.h"
 #include "platform/audio/LoopbackReopen.h"
+#include "recording/SystemAudioPresentation.h"
 
 #include <QScopeGuard>
 
@@ -17,8 +18,7 @@ constexpr UINT64 kHundredNsPerMs = 10'000;
 
 QString captureError(HRESULT result)
 {
-    return QStringLiteral("Could not capture system audio: %1")
-        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
+    return systemAudioCaptureFailedText(audioErrorText(result, AudioEndpoint::SoundOutput));
 }
 
 // Two clocks: the timeline, and with it the reopen allowance, runs on
@@ -101,12 +101,11 @@ QString LoopbackCapture::open()
     result = m_enumerator->RegisterEndpointNotificationCallback(m_watcher.Get());
     if (FAILED(result)) {
         m_watcher.Reset();
-        return QStringLiteral("Could not follow the default sound output: %1")
-            .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
+        return defaultSoundOutputUnfollowedText(audioErrorText(result, AudioEndpoint::SoundOutput));
     }
     result = openDefaultOutput();
     if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {
-        return QStringLiteral("There is no sound output to capture system audio from.");
+        return noSoundOutputText();
     }
     return FAILED(result) ? captureError(result) : QString();
 }
@@ -165,8 +164,7 @@ QString LoopbackCapture::reopenDefaultOutput(qint64 elapsedMs)
     if (m_reopen.retries(refusal, elapsedMs)) {
         return {};
     }
-    return QStringLiteral("System audio capture stopped: %1")
-        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
+    return systemAudioCaptureStoppedText(audioErrorText(result, AudioEndpoint::SoundOutput));
 }
 
 QString LoopbackCapture::read(QList<QByteArray> *chunks)
@@ -177,8 +175,7 @@ QString LoopbackCapture::read(QList<QByteArray> *chunks)
         if (result == AUDCLNT_E_DEVICE_INVALIDATED) {
             closeOutput();
         } else if (FAILED(result)) {
-            return QStringLiteral("System audio capture stopped: %1")
-                .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
+            return systemAudioCaptureStoppedText(audioErrorText(result, AudioEndpoint::SoundOutput));
         }
     }
     // The old default output's last audio is read before moving on, and the

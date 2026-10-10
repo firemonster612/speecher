@@ -1,5 +1,7 @@
 #include "platform/audio/PulseSystemAudioInput.h"
 
+#include "recording/SystemAudioPresentation.h"
+
 #include <QMetaObject>
 
 #include <pulse/pulseaudio.h>
@@ -42,7 +44,7 @@ QString captureError(pa_context *context)
     if (!PA_CONTEXT_IS_GOOD(pa_context_get_state(context))) {
         return lostConnection(context);
     }
-    return QStringLiteral("Could not capture system audio: %1").arg(pulseError(context));
+    return systemAudioCaptureFailedText(pulseError(context));
 }
 
 } // namespace
@@ -119,7 +121,7 @@ bool PulseSystemAudioInput::open(QString *error)
         this);
     pa_operation *subscription = pa_context_subscribe(m_context, PA_SUBSCRIPTION_MASK_SERVER, nullptr, nullptr);
     if (!subscription) {
-        *error = QStringLiteral("Could not follow the default sound output: %1").arg(pulseError(m_context));
+        *error = defaultSoundOutputUnfollowedText(pulseError(m_context));
         return false;
     }
     pa_operation_unref(subscription);
@@ -135,7 +137,7 @@ bool PulseSystemAudioInput::open(QString *error)
         return false;
     }
     if (m_sinkName.isEmpty()) {
-        *error = QStringLiteral("There is no sound output to capture system audio from.");
+        *error = noSoundOutputText();
         return false;
     }
     if (!connectStream(m_sinkName)) {
@@ -207,8 +209,7 @@ bool PulseSystemAudioInput::connectStream(const QByteArray &sinkName)
             auto *input = static_cast<PulseSystemAudioInput *>(self);
             pa_threaded_mainloop_signal(input->m_mainloop, 0);
             if (pa_stream_get_state(stream) == PA_STREAM_FAILED) {
-                input->postStreamFailure(
-                    QStringLiteral("System audio capture stopped: %1").arg(pulseError(input->m_context)));
+                input->postStreamFailure(systemAudioCaptureStoppedText(pulseError(input->m_context)));
             }
         },
         this);
@@ -265,7 +266,7 @@ void PulseSystemAudioInput::followDefaultSink(const QByteArray &sinkName)
     }
     disconnectStream();
     if (!connectStream(sinkName)) {
-        postStreamFailure(QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context)));
+        postStreamFailure(systemAudioCaptureFailedText(pulseError(m_context)));
     }
 }
 

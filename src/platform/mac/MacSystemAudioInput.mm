@@ -1,6 +1,7 @@
 #include "platform/mac/MacSystemAudioInput.h"
 
 #include "platform/mac/MacSystemAudioCapture.h"
+#include "recording/SystemAudioPresentation.h"
 
 #include <QMetaObject>
 #include <QScopeGuard>
@@ -89,7 +90,7 @@ void SystemAudioCapture::read(quint64 streamId, CMSampleBufferRef buffer)
     }
     const SampleBufferPcm pcm = pcmForSampleBuffer(buffer);
     if (!pcm.format.isValid()) {
-        fail(QStringLiteral("System audio capture stopped: macOS sent audio in a format Speecher cannot read."));
+        fail(systemAudioCaptureStoppedText(QStringLiteral("macOS sent audio in a format Speecher cannot read.")));
         return;
     }
     if (pcm.data.isEmpty()) {
@@ -175,7 +176,7 @@ void SystemAudioCapture::refused(NSError *error, LoopbackReopen::Refusal refusal
     const bool userStopped =
         [error.domain isEqualToString:SCStreamErrorDomain] && error.code == SCStreamErrorUserStopped;
     if (userStopped || !m_reopen.retries(refusal, elapsedMs())) {
-        fail(QStringLiteral("System audio capture stopped: %1").arg(errorText(error)));
+        fail(systemAudioCaptureStoppedText(errorText(error)));
     }
 }
 
@@ -546,13 +547,13 @@ QString MacSystemAudioInput::open()
     });
     const StreamStart start = capture->waitUntilOpened();
     if (start.noDisplay) {
-        return QStringLiteral("Could not capture system audio: macOS captures it only alongside a display, and there "
-                              "is none.");
+        return systemAudioCaptureFailedText(
+            QStringLiteral("macOS captures it only alongside a display, and there is none."));
     }
     if (!start.started) {
         return isScreenRecordingDenied((__bridge CFErrorRef)start.error)
             ? m_permissionDenied
-            : QStringLiteral("Could not capture system audio: %1").arg(errorText(start.error));
+            : systemAudioCaptureFailedText(errorText(start.error));
     }
 
     // Polled as well, because nothing arrives while nothing plays, and the
