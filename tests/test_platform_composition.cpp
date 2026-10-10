@@ -1392,7 +1392,13 @@ private slots:
         // What each script offers after a command: its options, when the word
         // typed starts with -, or else its arguments. bash's is run; zsh's and
         // fish's are read off the script.
+#ifdef Q_OS_WIN
+        // The bash on a Windows PATH may be WSL's launcher, with no Linux to
+        // run it in.
+        const bool haveBash = false;
+#else
         const bool haveBash = !QStandardPaths::findExecutable(QStringLiteral("bash")).isEmpty();
+#endif
         const auto offered = [](const QString &shell, const QString &script, const QString &command, bool options) {
             if (shell == QStringLiteral("bash")) {
                 return bashCompletions(script, QStringList{QStringLiteral("speecher")}
