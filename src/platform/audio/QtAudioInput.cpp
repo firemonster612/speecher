@@ -136,7 +136,7 @@ QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error
     const QList<QAudioDevice> inputs = QMediaDevices::audioInputs();
     if (inputs.isEmpty()) {
         if (error) {
-            *error = QStringLiteral("No microphone was found. Connect or enable an input device, then try again.");
+            *error = noMicrophoneText();
         }
         return {};
     }
@@ -203,6 +203,11 @@ QString sourceErrorMessage(const QAudioDevice &device, QAudio::Error error)
 }
 
 } // namespace
+
+QString noMicrophoneText()
+{
+    return QStringLiteral("No microphone was found. Connect or enable an input device, then try again.");
+}
 
 QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent)
     : AudioInput(parent)

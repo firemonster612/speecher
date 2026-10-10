@@ -103,6 +103,10 @@ public:
     // Forgets the audio a warm input keeps rolling for the next start, so a
     // resume after a pause does not send what was said during it.
     virtual void clearPreRoll() {}
+    // Why a started input that asks the system to cancel echo records
+    // without it, for `record start` and `record status`; nothing for one
+    // that has it or never asks.
+    virtual QString echoCancellationWarning() const { return {}; }
 
 signals:
     void audioChunk(const QByteArray &pcm);

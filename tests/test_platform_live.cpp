@@ -20,9 +20,15 @@
 #endif
 
 #ifdef Q_OS_WIN
+#include "platform/win/WinCommunicationsAudioInput.h"
+
+#include <QElapsedTimer>
+#include <QProcess>
+
 #include <mmdeviceapi.h>
 #include <mmreg.h>
 #include <wrl/client.h>
+#include <wrl/implements.h>
 
 #include <string>
 #endif
@@ -124,6 +130,21 @@ bool setDefaultOutput(const QByteArray &id)
     }
     return SUCCEEDED(policy->SetDefaultEndpoint(QString::fromUtf8(id).toStdWString().c_str(), eConsole));
 }
+
+// An echo canceller that only notes the outputs it is told to cancel, for
+// machines whose microphones have no echo canceller to tell.
+class NotedEchoControl final
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+                                          IAcousticEchoCancellationControl> {
+public:
+    STDMETHODIMP SetEchoCancellationRenderEndpoint(LPCWSTR id) override
+    {
+        outputs.append(QString::fromWCharArray(id).toUtf8());
+        return S_OK;
+    }
+
+    QList<QByteArray> outputs;
+};
 
 } // namespace
 #endif
@@ -504,6 +525,157 @@ private slots:
         QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
         QVERIFY(capture->isActive());
         QCOMPARE(failed.count(), 0);
+    }
+
+    // Windows can turn other apps down while a call's stream is open. Plays
+    // a tone from another process, as a call app would, and checks system
+    // audio hears it as loud with the recording's microphone open. Run it in
+    // the signed-in user's session: ducking is their setting.
+    void liveRecordingMicrophoneKeepsOtherAudioLevel()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_RECORDING_MICROPHONE") != QStringLiteral("1")) {
+            QSKIP("Live recording microphone check is opt-in");
+        }
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString tonePath = directory.filePath(QStringLiteral("tone.wav"));
+        {
+            QByteArray tone;
+            for (int sample = 0; sample < 16000 * 10; ++sample) {
+                const auto value = qint16(0.5 * 32767 * std::sin(2 * M_PI * 440 * sample / 16000));
+                tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+            }
+            QFile file(tonePath);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(wavFromPcm16Mono(tone, 16000));
+        }
+
+        std::unique_ptr<AudioInput> system(platformComposition()->createSystemAudioInput(nullptr));
+        QByteArray heard;
+        connect(system.get(), &AudioInput::audioChunk, system.get(), [&](const QByteArray &chunk) { heard += chunk; });
+        QString error;
+        QVERIFY2(system->start(&error), qPrintable(error));
+        QProcess player;
+        player.start(QStringLiteral("powershell.exe"),
+                     {QStringLiteral("-NoProfile"),
+                      QStringLiteral("-Command"),
+                      QStringLiteral("(New-Object Media.SoundPlayer '%1').PlaySync()")
+                          .arg(QDir::toNativeSeparators(tonePath))});
+        const auto stopPlayer = qScopeGuard([&] {
+            player.kill();
+            player.waitForFinished();
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(loudestRms(heard) > 0.05f, 5000);
+        heard.clear();
+        QTest::qWait(1000);
+        const float before = rmsForPcm16(heard);
+
+        SettingsStore settings;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+        qInfo().noquote() << "echo cancellation:"
+                          << (microphone->echoCancellationWarning().isEmpty() ? QStringLiteral("on")
+                                                                              : microphone->echoCancellationWarning());
+        // Ducking fades in over a second.
+        QTest::qWait(1200);
+        heard.clear();
+        QTest::qWait(1000);
+        const float during = rmsForPcm16(heard);
+        microphone->stop();
+        qInfo().noquote() << "tone before" << before << "with the microphone open" << during << "microphone heard"
+                          << loudestRms(recorded) << "over" << recorded.size() / 32 << "ms";
+
+        QVERIFY2(recorded.size() >= 2000 * 32, "The microphone delivered too little audio");
+        QVERIFY2(during > before * 0.8f, "Other audio was turned down while the microphone was open");
+    }
+
+    // record stop ends the last utterance on what the microphone heard up to
+    // the stop and its post-roll.
+    void liveRecordingMicrophoneKeepsItsPostRoll()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_RECORDING_MICROPHONE") != QStringLiteral("1")) {
+            QSKIP("Live recording microphone check is opt-in");
+        }
+        SettingsStore settings;
+        const int postRollMs = settings.audioCaptureSettings().postRollMs;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QString error;
+        QElapsedTimer running;
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+        running.start();
+        QTest::qWait(1000);
+        const qint64 untilStopMs = running.elapsed();
+        microphone->stop();
+        const qint64 recordedMs = recorded.size() / 32;
+        qInfo().noquote() << "recorded" << recordedMs << "ms for a stop after" << untilStopMs
+                          << "ms with a post-roll of" << postRollMs << "ms";
+
+        // Allow for the audio engine's latency.
+        QVERIFY(recordedMs >= untilStopMs + postRollMs / 2);
+    }
+
+    // Needs two sound outputs. The echo canceller is a stand-in, as virtual
+    // machines' microphones have none, and the recording's microphone runs
+    // beside it to show the switch leaves capture alone.
+    void liveRecordingMicrophoneFollowsDefaultOutput()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SWITCH") != QStringLiteral("1")) {
+            QSKIP("Live default-output switching check is opt-in");
+        }
+        const QByteArray first = defaultOutputId();
+        QAudioDevice second;
+        for (const QAudioDevice &output : QMediaDevices::audioOutputs()) {
+            if (output.id() != first) {
+                second = output;
+            }
+        }
+        QVERIFY2(!first.isEmpty() && !second.isNull(), "Switching needs two sound outputs");
+        const auto restore = qScopeGuard([&] { setDefaultOutput(first); });
+
+        SettingsStore settings;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QSignalSpy failed(microphone.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+
+        const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const auto uninitialize = qScopeGuard([apartment] {
+            if (SUCCEEDED(apartment)) {
+                CoUninitialize();
+            }
+        });
+        Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+        QVERIFY(SUCCEEDED(
+            CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))));
+        const auto control = Microsoft::WRL::Make<NotedEchoControl>();
+        EchoReferenceFollower follower(enumerator.Get(), control.Get());
+        QCOMPARE(control->outputs, QList<QByteArray>{first});
+
+        QVERIFY(setDefaultOutput(second.id()));
+        QTRY_VERIFY([&] {
+            follower.update();
+            return control->outputs.size() == 2;
+        }());
+        QCOMPARE(control->outputs.last(), second.id());
+
+        const qsizetype heardBefore = recorded.size();
+        QTest::qWait(500);
+        QVERIFY(recorded.size() > heardBefore);
+        QVERIFY(microphone->isActive());
+        QCOMPARE(failed.count(), 0);
+        microphone->stop();
     }
 #endif
 

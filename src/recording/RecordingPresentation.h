@@ -40,5 +40,15 @@ QString recordingFileError(const QString &path, const QString &reason);
 // audio processing failed to start with error.
 QString echoCancellationNotBuiltText();
 QString echoCancellationFailedText(int error);
+// Why a Recording's microphone runs without Windows' echo cancellation, for
+// `record start` and `record status`: Windows would not open it for calls,
+// with error; Windows cannot say whether it cancels echo; its driver has no
+// echo cancellation; the driver has it turned off; or Windows would not
+// point it at the default output, with error.
+QString echoCancellationNoCallStreamText(quint32 error);
+QString echoCancellationUnknownText();
+QString echoCancellationNotOfferedText();
+QString echoCancellationTurnedOffText();
+QString echoCancellationNoReferenceText(quint32 error);
 
 } // namespace speecher

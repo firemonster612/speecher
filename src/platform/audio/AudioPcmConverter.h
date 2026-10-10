@@ -18,6 +18,8 @@ float rmsForPcm16(const QByteArray &pcm);
 // Whether audio this loud is speech by Skip silence's threshold, a
 // percentage of full scale.
 bool isVoiced(float rms, int thresholdPercent);
+// Silence as bytes of samples in format.
+QByteArray silentPcm(const QAudioFormat &format, qsizetype bytes);
 
 class AudioPcmConverter {
 public:

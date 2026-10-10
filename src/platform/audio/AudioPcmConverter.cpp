@@ -114,6 +114,12 @@ bool isVoiced(float rms, int thresholdPercent)
     return rms >= float(thresholdPercent) / 100.0f;
 }
 
+QByteArray silentPcm(const QAudioFormat &format, qsizetype bytes)
+{
+    // Unsigned samples are silent at the middle of their range.
+    return QByteArray(bytes, format.sampleFormat() == QAudioFormat::UInt8 ? char(0x80) : '\0');
+}
+
 void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
 {
     m_sourceFormat = sourceFormat;
