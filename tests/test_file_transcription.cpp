@@ -1796,7 +1796,8 @@ private slots:
     }
 
     // --mic-only takes the microphone alone: no system audio, no second
-    // provider session, one stream.
+    // provider session, one stream. A microphone the system cancels echo in
+    // still says when it does not.
     void aMicrophoneOnlyRecordingTakesNoSystemAudio()
     {
         registerStreamingCodex();
@@ -1804,7 +1805,12 @@ private slots:
         settings.setSpeechProvider(QStringLiteral("codex"));
         int systemAudioInputs = 0;
         RecordingSession recording(
-            &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
+            &settings, m_registry.get(),
+            [](QObject *parent) {
+                auto *microphone = new FakeAudioInput(parent);
+                microphone->echoWarning = QStringLiteral("Echo cancellation is off: the driver has none.");
+                return microphone;
+            },
             [&](QObject *parent) {
                 ++systemAudioInputs;
                 return new FakeAudioInput(parent);
@@ -1815,6 +1821,8 @@ private slots:
         QCOMPARE(streamingCodexes().size(), 1);
         QCOMPARE(recording.status().streams.size(), 1);
         QCOMPARE(recording.status().streams.first().speaker, QStringLiteral("me"));
+        QCOMPARE(recording.status().echoCancellationWarning,
+                 QStringLiteral("Echo cancellation is off: the driver has none."));
     }
 
     // While a dictation has the microphone, its stream sends silence and

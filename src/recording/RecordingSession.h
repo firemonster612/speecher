@@ -161,6 +161,7 @@ private:
     Stream m_them;
     // What the microphone's stream reads.
     QPointer<RecordingMicrophone> m_microphone;
+    // Why Speecher's echo canceller could not start.
     QString m_echoCancellationWarning;
     bool m_dictating = false;
     RecordingTranscript m_transcript;

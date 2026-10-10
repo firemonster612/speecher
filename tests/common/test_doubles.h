@@ -64,6 +64,11 @@ public:
         return active;
     }
 
+    QString echoCancellationWarning() const override
+    {
+        return echoWarning;
+    }
+
     void pushAudio(const QByteArray &pcm)
     {
         emit audioChunk(pcm);
@@ -76,6 +81,7 @@ public:
 
     bool startResult = true;
     QString startError = QStringLiteral("audio failed");
+    QString echoWarning;
     bool started = false;
     bool active = false;
     std::function<void()> onStart;

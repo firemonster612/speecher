@@ -122,6 +122,8 @@ public:
 
     bool isActive() const override { return m_microphone->isActive(); }
 
+    QString echoCancellationWarning() const override { return m_microphone->echoCancellationWarning(); }
+
     void setSilenced(bool silenced) { m_silenced = silenced; }
 
 private:
@@ -229,8 +231,12 @@ RecordingStatus RecordingSession::status() const
     if (m_them.used) {
         streams << m_them.status;
     }
+    // Speecher's canceller and the system's are never both asked for.
+    const QString echoCancellationWarning =
+        m_echoCancellationWarning.isEmpty() && m_microphone ? m_microphone->echoCancellationWarning()
+                                                            : m_echoCancellationWarning;
     return {true, m_transcript.path(), m_clock.elapsed(), streams, m_unwrittenLines, m_writeError,
-            m_echoCancellationWarning};
+            echoCancellationWarning};
 }
 
 void RecordingSession::start(const QString &path,

@@ -35,9 +35,10 @@ struct RecordingStatus {
     // not. Nothing clears them while the recording runs.
     int unwrittenLines = 0;
     QString writeError;
-    // Why the microphone's audio keeps what the speakers play, when
-    // Speecher's echo canceller could not start. Empty when it runs, the
-    // system cancels the echo or nothing records system audio.
+    // Why the microphone's audio keeps what the speakers play: Speecher's
+    // echo canceller could not start, or the microphone the system was asked
+    // to cancel echo in records without it. Empty when echo is cancelled or
+    // nothing asked for it.
     QString echoCancellationWarning;
 };
 
