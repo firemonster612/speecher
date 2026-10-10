@@ -451,6 +451,8 @@ private slots:
     }
 
 #ifdef Q_OS_WIN
+    // Needs a second output on a separate device: endpoints of one device,
+    // such as VB-CABLE's two, can share a loopback, so each hears the other.
     void liveSystemAudioFollowsDefaultOutput()
     {
         // It moves the real default output, so it never runs on a desktop by accident.
