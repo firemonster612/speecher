@@ -87,8 +87,29 @@ struct __declspec(uuid("f8679f50-850a-41cf-9c72-430f290290c8")) IPolicyConfig : 
 };
 class __declspec(uuid("870af99c-171d-4f9e-af0d-e63df40c2bc9")) PolicyConfigClient;
 
-// Makes the output Qt names by id the default for every role, as Sound
-// settings does.
+// The test moves only the console role's default output, the one system
+// audio captures, so the other roles' defaults are left as they were.
+// Outputs are named by their endpoint ids, as Qt names them.
+QByteArray defaultOutputId()
+{
+    const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const auto uninitialize = qScopeGuard([apartment] {
+        if (SUCCEEDED(apartment)) {
+            CoUninitialize();
+        }
+    });
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+    Microsoft::WRL::ComPtr<IMMDevice> device;
+    LPWSTR id = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))
+        || FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device)) || FAILED(device->GetId(&id))) {
+        return {};
+    }
+    const QByteArray result = QString::fromWCharArray(id).toUtf8();
+    CoTaskMemFree(id);
+    return result;
+}
+
 bool setDefaultOutput(const QByteArray &id)
 {
     const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -101,13 +122,7 @@ bool setDefaultOutput(const QByteArray &id)
     if (FAILED(CoCreateInstance(__uuidof(PolicyConfigClient), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&policy)))) {
         return false;
     }
-    const std::wstring device = QString::fromUtf8(id).toStdWString();
-    for (const ERole role : {eConsole, eMultimedia, eCommunications}) {
-        if (FAILED(policy->SetDefaultEndpoint(device.c_str(), role))) {
-            return false;
-        }
-    }
-    return true;
+    return SUCCEEDED(policy->SetDefaultEndpoint(QString::fromUtf8(id).toStdWString().c_str(), eConsole));
 }
 
 } // namespace
@@ -459,15 +474,15 @@ private slots:
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SWITCH") != QStringLiteral("1")) {
             QSKIP("Live default-output switching check is opt-in");
         }
-        const QAudioDevice first = QMediaDevices::defaultAudioOutput();
+        const QByteArray first = defaultOutputId();
         QAudioDevice second;
         for (const QAudioDevice &output : QMediaDevices::audioOutputs()) {
-            if (output.id() != first.id()) {
+            if (output.id() != first) {
                 second = output;
             }
         }
-        QVERIFY2(!first.isNull() && !second.isNull(), "Switching needs two sound outputs");
-        const auto restore = qScopeGuard([&] { setDefaultOutput(first.id()); });
+        QVERIFY2(!first.isEmpty() && !second.isNull(), "Switching needs two sound outputs");
+        const auto restore = qScopeGuard([&] { setDefaultOutput(first); });
 
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QByteArray pcm;
