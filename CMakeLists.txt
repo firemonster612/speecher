@@ -1749,6 +1749,8 @@ if(SPEECHER_BUILD_TESTS)
     set_tests_properties(speecher_${suite} PROPERTIES
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
   endforeach()
+  # Its drift calls play over half an hour of audio through AEC3.
+  set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)
 
   # Wording drift checks (docs/adr/0007-presentation-lives-in-core.md).
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
