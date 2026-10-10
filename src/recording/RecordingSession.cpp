@@ -82,8 +82,10 @@ void RecordingTranscript::close()
 
 // The microphone as the recording's stream hears it: without what the
 // speakers play when there is an echo canceller, and silent while a dictation
-// has the microphone. The canceller takes all the microphone's audio either
-// way, so it stays lined up with system audio.
+// has the microphone. The canceller holds audio back, so it is given silence
+// for the dictation rather than nothing: it stays lined up with system audio,
+// what it held from before the dictation still comes out, and what it holds
+// at the dictation's end is silence.
 class RecordingMicrophone final : public AudioInput {
 public:
     RecordingMicrophone(AudioInput *microphone,
@@ -96,7 +98,8 @@ public:
     {
         m_microphone->setParent(this);
         connect(m_microphone, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
-            deliver(m_canceller ? m_canceller->process(pcm) : pcm);
+            const QByteArray heard = m_silenced ? QByteArray(pcm.size(), '\0') : pcm;
+            deliver(m_canceller ? m_canceller->process(heard) : heard);
         });
         connect(m_microphone, &AudioInput::levelChanged, this, &AudioInput::levelChanged);
         connect(m_microphone, &AudioInput::failed, this, &AudioInput::failed);
@@ -111,13 +114,10 @@ public:
 
     bool start(QString *error = nullptr) override { return m_microphone->start(error); }
 
-    // The canceller gives back what it held, once, as nothing may go in after.
     void stop() override
     {
         m_microphone->stop();
-        if (m_canceller) {
-            deliver(std::exchange(m_canceller, nullptr)->flush());
-        }
+        stopCancelling();
     }
 
     bool isActive() const override { return m_microphone->isActive(); }
@@ -126,11 +126,22 @@ public:
 
     void setSilenced(bool silenced) { m_silenced = silenced; }
 
+    bool cancelsEcho() const { return m_canceller != nullptr; }
+
+    // The canceller gives back what it held, once, as nothing may go in
+    // after; the microphone's audio then passes as it comes.
+    void stopCancelling()
+    {
+        if (m_canceller) {
+            deliver(std::exchange(m_canceller, nullptr)->flush());
+        }
+    }
+
 private:
     void deliver(const QByteArray &pcm)
     {
         if (!pcm.isEmpty()) {
-            emit audioChunk(m_silenced ? QByteArray(pcm.size(), '\0') : pcm);
+            emit audioChunk(pcm);
         }
     }
 
@@ -175,7 +186,7 @@ RecordingSession::~RecordingSession()
         delete stream->transcription;
     }
     delete m_microphone;
-    delete m_them.input;
+    delete m_systemAudio;
 }
 
 void RecordingSession::connectStream(Stream &stream)
@@ -228,7 +239,7 @@ RecordingStatus RecordingSession::status() const
         return {};
     }
     QList<RecordingStream> streams{m_me.status};
-    if (m_them.used) {
+    if (m_systemAudio) {
         streams << m_them.status;
     }
     // Speecher's canceller and the system's are never both asked for.
@@ -272,42 +283,38 @@ void RecordingSession::start(const QString &path,
     m_unwrittenLines = 0;
     m_writeError.clear();
     m_echoCancellationWarning.clear();
-    AudioInput *systemAudio = !microphoneOnly && m_createSystemAudio ? m_createSystemAudio(this) : nullptr;
+    m_systemAudio = !microphoneOnly && m_createSystemAudio ? m_createSystemAudio(this) : nullptr;
     std::unique_ptr<EchoCanceller> canceller;
-    if (systemAudio && m_createEchoCanceller) {
+    if (m_systemAudio && m_createEchoCanceller) {
         canceller = m_createEchoCanceller(&m_echoCancellationWarning);
     }
-    m_microphone = new RecordingMicrophone(m_createMicrophone(this), systemAudio, std::move(canceller), this);
+    m_microphone = new RecordingMicrophone(m_createMicrophone(this), m_systemAudio, std::move(canceller), this);
     m_microphone->setSilenced(m_dictating);
-    m_me.input = m_microphone;
-    m_them.input = systemAudio;
-    m_me.used = true;
-    m_them.used = systemAudio != nullptr;
     m_me.connecting = true;
-    m_them.connecting = m_them.used;
+    m_them.connecting = m_systemAudio != nullptr;
     m_voiceThreshold = m_settings->audioCaptureSettings().vadThresholdPercent;
     m_phase = Phase::Starting;
     m_startDone = std::move(done);
     m_clock.start();
-    startStream(m_me, options);
+    startStream(m_me, m_microphone, options);
     // A microphone that cannot start has failed the start already.
     if (m_phase == Phase::Off) {
         return;
     }
-    if (m_them.used) {
-        startStream(m_them, options);
+    if (m_systemAudio) {
+        startStream(m_them, m_systemAudio, options);
     }
 }
 
-void RecordingSession::startStream(Stream &stream, const TranscribeOptions &options)
+void RecordingSession::startStream(Stream &stream, AudioInput *input, const TranscribeOptions &options)
 {
-    stream.utteranceBytes = 0;
-    stream.transcription->startListening(stream.input, options);
+    forgetUtterance(stream);
+    stream.transcription->startListening(input, options);
     // After the transcription's own connection, so the audio that ends an
     // utterance is already queued for the provider. An input that could not
     // start has finished its stream already.
     if (stream.transcription->isRunning()) {
-        connect(stream.input, &AudioInput::audioChunk, this,
+        connect(input, &AudioInput::audioChunk, this,
                 [this, &stream](const QByteArray &pcm) { trackUtterance(stream, pcm); });
     }
 }
@@ -325,8 +332,6 @@ void RecordingSession::stop()
         }
     }
     if (running.isEmpty()) {
-        m_me.pauseTimer.stop();
-        m_them.pauseTimer.stop();
         finish();
         return;
     }
@@ -338,13 +343,12 @@ void RecordingSession::stop()
     }
     m_stopDeadline.start(m_utteranceAnswerTimeoutMs);
     for (Stream *stream : running) {
-        const bool speaking = stream->pauseTimer.isActive();
-        stream->pauseTimer.stop();
+        // What the input delivers as it stops, its post-roll and what the
+        // echo canceller held, can begin an utterance too. The one being
+        // spoken then ends here, as the others did at a pause: a provider
+        // that transcribes utterances does not take the audio after the last.
         stream->transcription->finishListening();
-        // The utterance being spoken ends here, as the others did at a
-        // pause, once the input has delivered its post-roll: a provider that
-        // transcribes utterances does not take the audio after the last.
-        if (speaking) {
+        if (stream->pauseTimer.isActive()) {
             endUtterance(*stream);
         }
     }
@@ -382,13 +386,17 @@ void RecordingSession::setDictating(bool dictating)
     if (m_phase != Phase::Recording) {
         return;
     }
-    if (dictating) {
-        writeLine(m_me.status.speaker, recordingDictatingText());
-    }
     if (m_me.status.state == RecordingStream::State::Recording
         || m_me.status.state == RecordingStream::State::Paused) {
         m_me.status.state = liveState(m_me);
         emit problemChanged();
+    }
+}
+
+void RecordingSession::markDictation()
+{
+    if (m_phase == Phase::Recording) {
+        writeLine(m_me.status.speaker, recordingDictatingText());
     }
 }
 
@@ -425,7 +433,7 @@ void RecordingSession::finishStartOnceSettled()
 // one.
 void RecordingSession::trackUtterance(Stream &stream, const QByteArray &pcm)
 {
-    if (m_phase == Phase::Stopping) {
+    if (!stream.transcription->isRunning()) {
         return;
     }
     if (isVoiced(rmsForPcm16(pcm), m_voiceThreshold)) {
@@ -445,9 +453,14 @@ void RecordingSession::trackUtterance(Stream &stream, const QByteArray &pcm)
 
 void RecordingSession::endUtterance(Stream &stream)
 {
+    forgetUtterance(stream);
+    stream.transcription->endUtterance();
+}
+
+void RecordingSession::forgetUtterance(Stream &stream)
+{
     stream.pauseTimer.stop();
     stream.utteranceBytes = 0;
-    stream.transcription->endUtterance();
 }
 
 // While a stop waits, each utterance the provider answers gives it time for
@@ -480,6 +493,7 @@ void RecordingSession::writeLine(const QString &speaker, const QString &text)
 // stream if it runs, so status says why, until it is stopped.
 void RecordingSession::handleTranscriptionFinished(Stream &stream, const QList<TranscribeFileResult> &results)
 {
+    forgetUtterance(stream);
     if (m_phase == Phase::Off) {
         return;
     }
@@ -500,6 +514,11 @@ void RecordingSession::handleTranscriptionFinished(Stream &stream, const QList<T
     }
     stream.status.problem = error.isEmpty() ? recordingStreamEndedText() : error;
     qWarning().noquote() << "recording stream " + stream.status.speaker + " stopped: " + stream.status.problem;
+    // The echo canceller would wait for system audio that no longer comes.
+    if (&stream == &m_them && m_microphone && m_microphone->cancelsEcho()) {
+        m_microphone->stopCancelling();
+        m_echoCancellationWarning = echoCancellationWithoutSystemAudioText();
+    }
     if (m_phase == Phase::Starting) {
         stream.connecting = false;
         finishStartOnceSettled();
@@ -518,8 +537,8 @@ void RecordingSession::releaseInputs()
     if (m_microphone) {
         m_microphone->deleteLater();
     }
-    if (m_them.input) {
-        m_them.input->deleteLater();
+    if (m_systemAudio) {
+        m_systemAudio->deleteLater();
     }
 }
 

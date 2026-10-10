@@ -219,4 +219,9 @@ QString echoCancellationNoReferenceText(quint32 error)
             .arg(error, 8, 16, QLatin1Char('0')));
 }
 
+QString echoCancellationWithoutSystemAudioText()
+{
+    return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: system audio stopped."));
+}
+
 } // namespace speecher

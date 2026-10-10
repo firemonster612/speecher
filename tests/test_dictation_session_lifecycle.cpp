@@ -1452,6 +1452,54 @@ private slots:
         QCOMPARE(speech->cancelledAttempts.last(), speech->currentAttemptId);
     }
 
+    // A recording beside a dictation hears the call whenever the dictation's
+    // microphone is off: the microphone is the dictation's from the start of
+    // listening until it has stopped, post-roll and all, but not while
+    // paused. Listening starts once a dictation, not at a resume, and not
+    // for a start whose microphone failed.
+    void theMicrophoneIsTheDictationsOnlyWhileItListens()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy microphone(&session, &DictationSession::microphoneChanged);
+        QSignalSpy listening(&session, &DictationSession::listeningStarted);
+        const auto openings = [&microphone] {
+            QList<bool> open;
+            for (const QList<QVariant> &arguments : microphone) {
+                open << arguments.first().toBool();
+            }
+            return open;
+        };
+        QList<bool> openAtStops;
+        audio->onStop = [&] { openAtStops << openings().last(); };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.pause();
+        session.resume();
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(openings(), QList<bool>({true, false, true, false}));
+        QCOMPARE(openAtStops, QList<bool>({true, true}));
+        QCOMPARE(listening.count(), 1);
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+        audio->startResult = false;
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 250);
+        QCOMPARE(openings().mid(4), QList<bool>({true, false}));
+        QCOMPARE(listening.count(), 1);
+    }
+
     // Every pause button calls togglePause: it pauses a listening session and
     // resumes a paused one.
     void togglePausePausesAndResumes()

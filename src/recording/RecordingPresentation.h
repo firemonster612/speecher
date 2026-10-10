@@ -44,10 +44,11 @@ QString recordingUtteranceFailedText(const QString &reason);
 QString recordingStopTimedOutText();
 QString recordingFileError(const QString &path, const QString &reason);
 // Why a Recording runs without echo cancellation, for `record start` and
-// `record status`: a build without webrtc-audio-processing, or one whose
-// audio processing failed to start with error.
+// `record status`: a build without webrtc-audio-processing, one whose
+// audio processing failed to start with error, or system audio that stopped.
 QString echoCancellationNotBuiltText();
 QString echoCancellationFailedText(int error);
+QString echoCancellationWithoutSystemAudioText();
 // Why a Recording's microphone runs without Windows' echo cancellation, for
 // `record start` and `record status`: Windows would not open it for calls,
 // with error; Windows cannot say whether it cancels echo; its driver has no

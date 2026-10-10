@@ -100,10 +100,12 @@ public:
     // Ends the recording at once and removes its file, for a start whose
     // caller stopped waiting and so took it for a failure.
     void discard();
-    // While a dictation has the microphone, the microphone's stream sends
-    // silence, and each dictation writes a line saying so; system audio
-    // records on.
+    // While a dictation has the microphone open, the microphone's stream
+    // sends silence and shows paused; system audio records on.
     void setDictating(bool dictating);
+    // Writes a line saying a dictation started; a recording that starts
+    // while one has the microphone writes it too.
+    void markDictation();
 
 signals:
     void recordingChanged(bool recording);
@@ -122,10 +124,7 @@ private:
     // One input, its speech stream and the utterances the recording cuts.
     struct Stream {
         FileTranscriptionSession *transcription = nullptr;
-        QPointer<AudioInput> input;
         RecordingStream status;
-        // Whether this recording takes the input at all.
-        bool used = false;
         // From the start until the stream first connects or fails.
         bool connecting = false;
         // Runs from the latest speech until a pause ends the utterance; while
@@ -136,11 +135,12 @@ private:
     };
 
     void connectStream(Stream &stream);
-    void startStream(Stream &stream, const TranscribeOptions &options);
+    void startStream(Stream &stream, AudioInput *input, const TranscribeOptions &options);
     void handleStreamConnected(Stream &stream);
     void finishStartOnceSettled();
     void trackUtterance(Stream &stream, const QByteArray &pcm);
     void endUtterance(Stream &stream);
+    void forgetUtterance(Stream &stream);
     void extendStop();
     void writeLine(const QString &speaker, const QString &text);
     void handleTranscriptionFinished(Stream &stream, const QList<TranscribeFileResult> &results);
@@ -161,6 +161,8 @@ private:
     Stream m_them;
     // What the microphone's stream reads.
     QPointer<RecordingMicrophone> m_microphone;
+    // What system audio's stream reads, when the recording takes it.
+    QPointer<AudioInput> m_systemAudio;
     // Why Speecher's echo canceller could not start.
     QString m_echoCancellationWarning;
     bool m_dictating = false;

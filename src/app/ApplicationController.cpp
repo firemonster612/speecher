@@ -236,12 +236,8 @@ ApplicationController::ApplicationController(bool popupOnly,
             : RecordingSession::InputFactory(),
         [this](QString *warning) { return m_platform->createEchoCanceller(warning); }, this);
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
-    // A dictation has the microphone from its start until it stops listening.
-    connect(m_session, &DictationSession::stateChanged, m_recording, [this] {
-        const DictationState state = m_session->state();
-        m_recording->setDictating(state == DictationState::Starting || state == DictationState::Listening
-                                  || state == DictationState::Paused || state == DictationState::Stopping);
-    });
+    connect(m_session, &DictationSession::microphoneChanged, m_recording, &RecordingSession::setDictating);
+    connect(m_session, &DictationSession::listeningStarted, m_recording, &RecordingSession::markDictation);
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();
         reply.recording = status;

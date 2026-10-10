@@ -292,6 +292,13 @@ public:
         }
     }
 
+    void beginUtterance(quint64 attemptId) override
+    {
+        if (attemptId == currentAttemptId) {
+            ++beginUtteranceCalls;
+        }
+    }
+
     void emitConnected()
     {
         emit attemptConnected(currentAttemptId);
@@ -342,6 +349,7 @@ public:
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;
+    int beginUtteranceCalls = 0;
     quint64 currentAttemptId = 0;
     bool autoCompleteOnFinish = true;
     QList<quint64> cancelledAttempts;
