@@ -159,6 +159,8 @@ final class AppModel: ObservableObject {
     /// costs nothing new.
     private var deferredLoaded = false
     private var keyWindowObserver: NSObjectProtocol?
+    /// The osascript writing the speecher command, while it runs.
+    private var commandLineToolInstaller: Process?
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
@@ -591,6 +593,72 @@ final class AppModel: ObservableObject {
 
     func requestAccessibility() {
         accessibilityProblem = bridge.enableAccessibility() ?? ""
+    }
+
+    /// Writes the speecher command, asking for an administrator's password
+    /// when its folder needs one, and says how it went. osascript runs in its
+    /// own process so the password prompt never holds the main thread, which
+    /// serves the CLI's socket, the menu bar and any dictation in progress.
+    /// AuthorizationExecuteWithPrivileges is deprecated, and a privileged
+    /// helper is a lot of machinery for writing one file.
+    func installCommandLineTool() {
+        // A second click would stack a second password prompt on the first.
+        guard commandLineToolInstaller == nil else { return }
+        if let problem = SpeecherBridge.commandLineToolLocationProblem {
+            Self.showCommandLineToolFailure(problem)
+            return
+        }
+        let osascript = Process()
+        osascript.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        osascript.arguments = ["-e", SpeecherBridge.commandLineToolInstallScript()]
+        osascript.standardOutput = FileHandle.nullDevice
+        let errors = Pipe()
+        osascript.standardError = errors
+        osascript.terminationHandler = { [weak self] process in
+            let succeeded = process.terminationStatus == 0
+            let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.commandLineToolInstaller = nil
+                    if succeeded {
+                        Self.showCommandLineToolInstalled()
+                    } else if !message.contains("(-128)") { // userCanceledErr: the prompt was cancelled
+                        Self.showCommandLineToolFailure(Self.osascriptErrorReason(message))
+                    }
+                }
+            }
+        }
+        do {
+            try osascript.run()
+            commandLineToolInstaller = osascript
+        } catch {
+            Self.showCommandLineToolFailure(error.localizedDescription)
+        }
+    }
+
+    /// osascript reports a failed script as "0:171: execution error: <reason>
+    /// (<code>)"; the alert shows only the reason.
+    private static func osascriptErrorReason(_ message: String) -> String {
+        message.replacingOccurrences(of: #"(?s)^\d+:\d+: execution error: (.*) \(-?\d+\)$"#, with: "$1",
+                                     options: .regularExpression)
+    }
+
+    private static func showCommandLineToolInstalled() {
+        let alert = NSAlert()
+        alert.messageText = SpeecherBridge.commandLineToolInstalledTitle
+        alert.informativeText = SpeecherBridge.commandLineToolInstalledText
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private static func showCommandLineToolFailure(_ reason: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = SpeecherBridge.commandLineToolFailedTitle
+        alert.informativeText = reason
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     /// A new recording starts clean: what the last one reported is stale.
