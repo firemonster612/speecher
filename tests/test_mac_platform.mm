@@ -44,7 +44,8 @@ bool isPlanar(const AudioStreamBasicDescription &description)
 }
 
 // An audio sample buffer as ScreenCaptureKit hands one over, holding buffers,
-// one a channel when the description is planar.
+// one a channel when the description is planar, or with its data not there
+// yet when there are none.
 CMSampleBufferRef sampleBuffer(const AudioStreamBasicDescription &description,
                                CMItemCount frames,
                                const QList<QByteArray> &buffers)
@@ -55,6 +56,9 @@ CMSampleBufferRef sampleBuffer(const AudioStreamBasicDescription &description,
     CMSampleBufferRef buffer = nullptr;
     CMAudioSampleBufferCreateWithPacketDescriptions(
         nullptr, nullptr, false, nullptr, nullptr, format, frames, kCMTimeZero, nullptr, &buffer);
+    if (buffers.isEmpty()) {
+        return buffer;
+    }
     QByteArray listStorage(qsizetype(offsetof(AudioBufferList, mBuffers) + sizeof(AudioBuffer) * buffers.size()),
                            '\0');
     auto *list = reinterpret_cast<AudioBufferList *>(listStorage.data());
@@ -100,6 +104,17 @@ private slots:
         QCOMPARE(pcm.format.sampleRate(), 16000);
         QCOMPARE(pcm.format.channelCount(), 1);
         QCOMPARE(pcm.data, samples);
+    }
+
+    void systemAudioSkipsBuffersWithoutData()
+    {
+        CMSampleBufferRef buffer = sampleBuffer(floatDescription(16000, 1, true), 4, {});
+        QVERIFY(buffer);
+        const auto release = qScopeGuard([buffer] { CFRelease(buffer); });
+
+        const SampleBufferPcm pcm = pcmForSampleBuffer(buffer);
+        QVERIFY(pcm.format.isValid());
+        QVERIFY(pcm.data.isEmpty());
     }
 
     void systemAudioRefusesFormatsItCannotRead()

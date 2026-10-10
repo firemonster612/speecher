@@ -14,7 +14,8 @@ namespace speecher {
 class SystemAudioReader;
 
 // The samples of a ScreenCaptureKit audio buffer, interleaved, and their
-// layout; an invalid format when the converter cannot read them.
+// layout; an invalid format when the converter cannot read them, and no data
+// when the buffer holds none yet.
 struct SampleBufferPcm {
     QAudioFormat format;
     QByteArray data;

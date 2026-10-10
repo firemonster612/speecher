@@ -97,6 +97,9 @@ public:
             fail(QStringLiteral("System audio capture stopped: macOS sent audio in a format Speecher cannot read."));
             return;
         }
+        if (pcm.data.isEmpty()) {
+            return;
+        }
         if (pcm.format != m_format) {
             m_format = pcm.format;
             m_pcm.useFormat(pcm.format);
@@ -104,7 +107,10 @@ public:
         QList<QByteArray> chunks;
         const CMTime playedAt = CMSampleBufferGetPresentationTimeStamp(buffer);
         if (CMTIME_IS_NUMERIC(playedAt)) {
-            chunks = m_pcm.silenceUntil(msBetween(m_start, playedAt));
+            // Audio cannot have played after now, so a stamp that says it did,
+            // from a clock that jumped, is taken as now: one bad stamp adds no
+            // more silence than a poll would.
+            chunks = m_pcm.silenceUntil(qMin(msBetween(m_start, playedAt), elapsedMs()));
         }
         if (const QByteArray converted = m_pcm.convert(pcm.data); !converted.isEmpty()) {
             chunks.append(converted);
@@ -120,7 +126,7 @@ public:
             return;
         }
         if (!m_heard) {
-            send(m_pcm.silenceUntil(msBetween(m_start, CMClockGetTime(CMClockGetHostTimeClock()))));
+            send(m_pcm.silenceUntil(elapsedMs()));
         }
         m_heard = false;
     }
@@ -149,6 +155,8 @@ public:
     void detach() { m_input = nullptr; }
 
 private:
+    qint64 elapsedMs() const { return msBetween(m_start, CMClockGetTime(CMClockGetHostTimeClock())); }
+
     void send(const QList<QByteArray> &chunks)
     {
         if (!m_input || chunks.isEmpty()) {
@@ -252,6 +260,9 @@ struct MacSystemAudioInput::StreamStart {
     NSError *error = nil;
 };
 
+// ScreenCaptureKit is asked for 16 kHz mono float, so the other layouts read
+// here are a guard against it delivering something else on some macOS
+// release rather than failing capture there; the converter takes any rate.
 SampleBufferPcm pcmForSampleBuffer(CMSampleBufferRef buffer)
 {
     const AudioStreamBasicDescription *description =
@@ -282,6 +293,11 @@ SampleBufferPcm pcmForSampleBuffer(CMSampleBufferRef buffer)
     }
     if (!pcm.format.isValid()) {
         return {};
+    }
+    // A buffer whose samples are not there yet, or that has none, is skipped
+    // rather than taken for a format Speecher cannot read.
+    if (!CMSampleBufferDataIsReady(buffer) || CMSampleBufferGetNumSamples(buffer) == 0) {
+        return pcm;
     }
 
     size_t listSize = 0;
