@@ -322,7 +322,12 @@ QString MacSystemAudioInput::open()
                                                      contentError = error;
                                                      dispatch_semaphore_signal(answered);
                                                  }];
-    if (!waitForReply(answered) || !content) {
+    // A handler that answers after the wait gave up still writes, so what it
+    // wrote is read only once it has answered.
+    if (!waitForReply(answered)) {
+        return captureError(nil);
+    }
+    if (!content) {
         return captureError(contentError);
     }
     SCDisplay *display = content.displays.firstObject;
@@ -362,7 +367,10 @@ QString MacSystemAudioInput::open()
         startError = error;
         dispatch_semaphore_signal(started);
     }];
-    if (!waitForReply(started) || startError) {
+    if (!waitForReply(started)) {
+        return captureError(nil);
+    }
+    if (startError) {
         return captureError(startError);
     }
 
