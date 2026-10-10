@@ -72,16 +72,23 @@ public:
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
     // files rides along as the request's "files" array: the transcribe
-    // command's files, or the file recordStart writes. terms is the "terms"
-    // array: recordStart's terms for the recording's custom vocabulary.
+    // command's files.
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 const SessionOverrides &overrides,
                                                 const QStringList &files,
-                                                const QStringList &terms,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
+    // The recordStart command: path (empty for the default file) as the
+    // "files" array, terms as "terms", and "microphoneOnly" for --mic-only.
+    static IpcCommandResult sendRecordStart(const QString &path,
+                                            const QStringList &terms,
+                                            bool microphoneOnly,
+                                            IpcResponse *response,
+                                            int timeoutMs,
+                                            std::shared_ptr<const SingleInstancePlatform> platform = {},
+                                            QString *error = nullptr);
     // The addVocabulary command, with terms as the request's "terms" array.
     static IpcCommandResult sendVocabularyTerms(const QStringList &terms,
                                                 IpcResponse *response,
@@ -111,7 +118,8 @@ signals:
                          const QStringList &files,
                          const QString &writingProfile,
                          const QString &spokenLanguage,
-                         const QStringList &terms);
+                         const QStringList &terms,
+                         bool microphoneOnly);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

@@ -9,8 +9,11 @@ namespace speecher {
 namespace {
 
 // People name a stream by its source; its speaker belongs to the file's lines.
-// Only the microphone records so far.
-const QString kMicrophoneSource = QStringLiteral("microphone");
+QString streamSource(const RecordingStream &stream)
+{
+    return stream.speaker == recordingSystemAudioSpeaker() ? QStringLiteral("system audio")
+                                                           : QStringLiteral("microphone");
+}
 
 // Ends why a Recording runs without echo cancellation.
 QString withHeadphonesAdvice(const QString &why)
@@ -19,6 +22,21 @@ QString withHeadphonesAdvice(const QString &why)
 }
 
 } // namespace
+
+QString recordingMicrophoneSpeaker()
+{
+    return QStringLiteral("me");
+}
+
+QString recordingSystemAudioSpeaker()
+{
+    return QStringLiteral("them");
+}
+
+QString recordingDictatingText()
+{
+    return QStringLiteral("(dictating, not on the call)");
+}
 
 QString recordingClock(qint64 elapsedMs)
 {
@@ -50,31 +68,36 @@ QString recordingStatusText(const RecordingStatus &status)
         if (stream.lostAudioMs > 0) {
             parts << QStringLiteral("lost %1 of audio").arg(recordingClock(stream.lostAudioMs));
         }
-        lines << QStringLiteral("%1: %2").arg(kMicrophoneSource, parts.join(QStringLiteral(", ")));
+        lines << QStringLiteral("%1: %2").arg(streamSource(stream), parts.join(QStringLiteral(", ")));
+    }
+    if (!status.echoCancellationWarning.isEmpty()) {
+        lines << QStringLiteral("warning: %1").arg(status.echoCancellationWarning);
     }
     return lines.join(QLatin1Char('\n'));
 }
 
 QString recordingStreamProblemText(const RecordingStream &stream)
 {
+    const QString source = streamSource(stream);
     QStringList problems;
     if (!stream.problem.isEmpty()) {
         switch (stream.state) {
         case RecordingStream::State::Recording:
-            problems << QStringLiteral("The %1 stream has a problem: %2").arg(kMicrophoneSource, stream.problem);
+        case RecordingStream::State::Paused:
+            problems << QStringLiteral("The %1 stream has a problem: %2").arg(source, stream.problem);
             break;
         case RecordingStream::State::Reconnecting:
-            problems << QStringLiteral("The %1 stream is reconnecting: %2").arg(kMicrophoneSource, stream.problem);
+            problems << QStringLiteral("The %1 stream is reconnecting: %2").arg(source, stream.problem);
             break;
         case RecordingStream::State::Stopped:
-            problems << QStringLiteral("The %1 stream stopped: %2").arg(kMicrophoneSource, stream.problem);
+            problems << QStringLiteral("The %1 stream stopped: %2").arg(source, stream.problem);
             break;
         }
     }
     if (stream.lostAudioMs > 0) {
         problems << QStringLiteral("The %1 stream was down so long that the oldest %2 of audio waiting for it was "
                                    "dropped.")
-                        .arg(kMicrophoneSource, recordingClock(stream.lostAudioMs));
+                        .arg(source, recordingClock(stream.lostAudioMs));
     }
     return problems.join(QLatin1Char('\n'));
 }
@@ -102,8 +125,11 @@ QString statusWatchText(const QString &dictationState, const RecordingStatus &re
     parts << QStringLiteral("recording %1").arg(recordingClock(recording.durationMs));
     for (const RecordingStream &stream : recording.streams) {
         if (stream.state != RecordingStream::State::Recording) {
-            parts << QStringLiteral("%1 %2").arg(kMicrophoneSource, recordingStreamStateName(stream.state));
+            parts << QStringLiteral("%1 %2").arg(streamSource(stream), recordingStreamStateName(stream.state));
         }
+    }
+    if (!recording.echoCancellationWarning.isEmpty()) {
+        parts << QStringLiteral("echo cancellation off");
     }
     return parts.join(QStringLiteral(", "));
 }
@@ -191,6 +217,11 @@ QString echoCancellationNoReferenceText(quint32 error)
         QStringLiteral("Echo cancellation may miss system audio: Windows would not point it at the sound output "
                        "(error 0x%1).")
             .arg(error, 8, 16, QLatin1Char('0')));
+}
+
+QString echoCancellationWithoutSystemAudioText()
+{
+    return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: system audio stopped."));
 }
 
 } // namespace speecher

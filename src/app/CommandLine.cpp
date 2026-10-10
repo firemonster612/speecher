@@ -200,13 +200,15 @@ Check which speech and refinement services can work:
 
 Record a call into a file, in the running Speecher (started if needed):
   speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
-                           record the microphone and print the file's path
-                           once the speech provider is connected, or exit
-                           with status 1 and no file; each utterance is
-                           appended as one line,
-                           "[hh:mm:ss] me: text" (default file: recordings/
-                           <yyyy-mm-dd-hhmm>.md in Speecher's data folder)
-  --mic-only               record the microphone alone, the only source so far
+                           record the microphone as "me" and, on Linux and
+                           Windows, system audio as "them", and print the
+                           file's path once the speech provider is
+                           connected, or exit with status 1 and no file;
+                           each utterance is appended as one line,
+                           "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
+                           (default file: recordings/<yyyy-mm-dd-hhmm>.md in
+                           Speecher's data folder)
+  --mic-only               record the microphone alone, without system audio
   --vocab-file <path>      add the file's terms to the custom vocabulary for
                            this recording, as transcribe does
   speecher record status [--json]
@@ -770,6 +772,7 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
             }
             decision->recordPath = QFileInfo(*path).absoluteFilePath();
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
+            decision->recordMicrophoneOnly = true;
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {
             if (const QString error = addVocabularyFile(takeValue(arguments, index), &decision->vocabularyTerms);
                 !error.isEmpty()) {
@@ -938,12 +941,13 @@ int runRecordCommand(const CommandLineDecision &decision,
     const int timeoutMs = start ? kRecordStartTimeoutMs
         : command == QStringLiteral("recordStop") ? kRecordStopTimeoutMs
                                                   : 2500;
-    const QStringList files = decision.recordPath.isEmpty() ? QStringList() : QStringList{decision.recordPath};
     IpcResponse response;
     QString ipcError;
     const auto send = [&] {
-        return SingleInstanceIpc::sendCommandDetailed(
-            command, {}, files, decision.vocabularyTerms, &response, timeoutMs, platform, &ipcError);
+        return start ? SingleInstanceIpc::sendRecordStart(decision.recordPath, decision.vocabularyTerms,
+                                                          decision.recordMicrophoneOnly, &response, timeoutMs,
+                                                          platform, &ipcError)
+                     : SingleInstanceIpc::sendCommandDetailed(command, &response, timeoutMs, platform, &ipcError);
     };
     IpcCommandResult result = send();
     if (result == IpcCommandResult::Unavailable && start) {
@@ -983,11 +987,15 @@ int runRecordCommand(const CommandLineDecision &decision,
     if (!response.message.isEmpty()) {
         std::cerr << response.message.toStdString() << "\n";
     }
-    // A stopped recording that missed something is still where it is, but
-    // incomplete.
+    // A recording that started with a problem, such as system audio that
+    // failed, runs on; a stopped one that missed something is still where it
+    // is, but incomplete.
     const bool incomplete = printRecordingProblems(status);
+    if (start && !status.echoCancellationWarning.isEmpty()) {
+        std::cerr << status.echoCancellationWarning.toStdString() << "\n";
+    }
     std::cout << status.path.toStdString() << "\n";
-    return incomplete ? 1 : 0;
+    return incomplete && !start ? 1 : 0;
 }
 
 } // namespace

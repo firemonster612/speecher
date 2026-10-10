@@ -302,7 +302,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                                          stringList(object.value(QStringLiteral("files"))),
                                          object.value(QStringLiteral("writingProfile")).toString(),
                                          object.value(QStringLiteral("spokenLanguage")).toString(),
-                                         stringList(object.value(QStringLiteral("terms"))));
+                                         stringList(object.value(QStringLiteral("terms"))),
+                                         object.value(QStringLiteral("microphoneOnly")).toBool());
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -453,13 +454,12 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    return sendCommandDetailed(command, overrides, {}, {}, response, timeoutMs, std::move(platform), error);
+    return sendCommandDetailed(command, overrides, {}, response, timeoutMs, std::move(platform), error);
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         const SessionOverrides &overrides,
                                                         const QStringList &files,
-                                                        const QStringList &terms,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
@@ -478,8 +478,26 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
     if (!files.isEmpty()) {
         request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
     }
+    return sendRequest(request, response, timeoutMs, std::move(platform), error);
+}
+
+IpcCommandResult SingleInstanceIpc::sendRecordStart(const QString &path,
+                                                    const QStringList &terms,
+                                                    bool microphoneOnly,
+                                                    IpcResponse *response,
+                                                    int timeoutMs,
+                                                    std::shared_ptr<const SingleInstancePlatform> platform,
+                                                    QString *error)
+{
+    QJsonObject request{{QStringLiteral("command"), QStringLiteral("recordStart")}};
+    if (!path.isEmpty()) {
+        request.insert(QStringLiteral("files"), QJsonArray{path});
+    }
     if (!terms.isEmpty()) {
         request.insert(QStringLiteral("terms"), QJsonArray::fromStringList(terms));
+    }
+    if (microphoneOnly) {
+        request.insert(QStringLiteral("microphoneOnly"), true);
     }
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }

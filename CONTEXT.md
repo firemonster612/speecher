@@ -9,7 +9,7 @@ One dictation, from the microphone opening through toggle or push-to-talk until 
 _Avoid_: Recording job, transcription run
 
 **Recording**:
-A call recorded into a transcript file, started and stopped with `speecher record`. It streams the microphone to a speech provider and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. Distinct from a Dictation Session, which ends by delivering one text.
+A call recorded into a transcript file, started and stopped with `speecher record`. It streams the microphone (`me`) and, where Speecher captures it, system audio (`them`) to a speech provider, each in its own session, and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. Distinct from a Dictation Session, which ends by delivering one text.
 _Avoid_: Call session, meeting mode
 
 **Spoken Language**:

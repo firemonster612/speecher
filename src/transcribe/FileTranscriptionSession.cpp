@@ -253,10 +253,11 @@ void FileTranscriptionSession::finishListening()
 }
 
 // A begin never goes before the mark ahead of it, as the lead-in of speech
-// that runs on past an end belongs to the utterance that ended.
+// that runs on past an end belongs to the utterance that ended. Audio the
+// microphone delivers as it stops can begin one too.
 void FileTranscriptionSession::beginUtterance(qsizetype voicedBytes)
 {
-    if (m_microphone != Microphone::Listening) {
+    if (m_microphone == Microphone::Off) {
         return;
     }
     qsizetype position = m_pcmDropped + m_pcm.size() - voicedBytes;

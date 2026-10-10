@@ -28,6 +28,7 @@ public:
     void stop() override;
     bool isActive() const override;
     void clearPreRoll() override;
+    void keepSilence() override;
 
 public slots:
     void applySettings(const AudioCaptureSettings &settings);
@@ -69,6 +70,7 @@ private:
     bool m_vadSpeaking = false;
     bool m_conversionFailed = false;
     bool m_mediaDevicesInitialized = false;
+    bool m_keepsSilence = false;
 };
 
 } // namespace speecher

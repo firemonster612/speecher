@@ -59,8 +59,9 @@ struct CommandLineDecision {
     // and status: one JSON object, and status --watch one a line.
     bool json = false;
     // RunCli's record start: the absolute path of --to, or empty for the
-    // default file.
+    // default file, and --mic-only.
     QString recordPath;
+    bool recordMicrophoneOnly = false;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that

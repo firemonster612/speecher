@@ -897,7 +897,7 @@ void DictationSession::resume()
     m_audio->clearPreRoll();
     QString audioError;
     m_audioGeneration = generation;
-    const bool started = m_audio->start(&audioError);
+    const bool started = startAudio(&audioError);
     // Starting spins an event loop too; a stop or cancel may have ended the
     // session meanwhile, and stopped the microphone itself.
     if (generation != m_generation || m_state != DictationState::Listening || !m_sessionSettings) {
@@ -963,6 +963,7 @@ void DictationSession::stopAudio()
     ++m_audioStopDepth;
     m_audio->stop();
     --m_audioStopDepth;
+    setMicrophoneOpen(false);
     if (m_audioStopDepth == 0 && m_pendingStart) {
         // After the caller has settled the session it stopped the microphone for.
         QTimer::singleShot(0, this, [this] {
@@ -970,6 +971,40 @@ void DictationSession::stopAudio()
                 startSession(*overrides);
             }
         });
+    }
+}
+
+bool DictationSession::startAudio(QString *error)
+{
+    setMicrophoneOpen(true);
+    const bool started = m_audio->start(error);
+    if (!started) {
+        setMicrophoneOpen(false);
+    }
+    return started;
+}
+
+void DictationSession::setMicrophoneOpen(bool open)
+{
+    m_microphoneOpen = open;
+    updateMicrophoneHeld();
+}
+
+void DictationSession::updateMicrophoneHeld()
+{
+    const bool held =
+        m_microphoneOpen || m_state == DictationState::Starting || m_state == DictationState::Listening;
+    if (std::exchange(m_microphoneHeld, held) != held) {
+        emit microphoneChanged(held);
+    }
+}
+
+// Listening and Paused come only after the first Listening.
+void DictationSession::updateListening()
+{
+    const bool listening = m_state == DictationState::Listening || m_state == DictationState::Paused;
+    if (std::exchange(m_listening, listening) != listening) {
+        emit listeningChanged(listening);
     }
 }
 
@@ -1008,6 +1043,8 @@ void DictationSession::setState(DictationState state, const QString &message, co
                       << "messagePresent=" + QString::number(!message.isEmpty());
     emit stateChanged(stateName());
     emit statusChanged(label);
+    updateMicrophoneHeld();
+    updateListening();
 }
 
 void DictationSession::finishStartupPreparation(const StartupPreparationResult &result)
@@ -1046,7 +1083,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     QString audioError;
     m_audioGeneration = generation;
     m_microphoneStartGeneration = generation;
-    const bool started = m_audio->start(&audioError);
+    const bool started = startAudio(&audioError);
     m_microphoneStartGeneration = 0;
     if (!started) {
         if (m_audioGeneration == generation) {

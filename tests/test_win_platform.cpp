@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "app/PlatformComposition.h"
 
 #include "core/OutputMethod.h"
 #include "core/settings/SettingsSchema.h"
@@ -645,6 +646,17 @@ private slots:
         const QString noCategory = communicationsEchoCancellationWarning(E_NOINTERFACE, S_OK, {echoOn});
         QCOMPARE(noCategory, echoCancellationNoCallStreamText(quint32(E_NOINTERFACE)));
         QVERIFY2(noCategory.contains(QStringLiteral("0x80004002")), qPrintable(noCategory));
+    }
+
+    // A Recording takes system audio as "them" beside the communications
+    // microphone, whose echo Windows cancels, so Speecher adds no canceller
+    // and has no warning of its own.
+    void aRecordingTakesSystemAudioWithoutSpeechersCanceller()
+    {
+        QVERIFY(platformComposition()->recordsSystemAudio());
+        QString warning;
+        QVERIFY(!platformComposition()->createEchoCanceller(&warning));
+        QCOMPARE(warning, QString());
     }
 
     void recordingMicrophoneStartsOrSaysWhy()

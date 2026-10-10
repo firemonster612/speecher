@@ -1164,7 +1164,9 @@ private slots:
         QCOMPARE(start.mode, LaunchMode::RunCli);
         QCOMPARE(start.ipcCommand, QStringLiteral("recordStart"));
         QCOMPARE(start.recordPath, QDir::current().absoluteFilePath(QStringLiteral("call.md")));
+        QVERIFY(start.recordMicrophoneOnly);
         QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
+        QVERIFY(!parse({QStringLiteral("start")}).recordMicrophoneOnly);
         QTemporaryDir dir;
         const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
         QFile vocabularyFile(vocabulary);

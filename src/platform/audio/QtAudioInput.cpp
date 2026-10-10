@@ -320,9 +320,16 @@ bool QtAudioInput::isActive() const
     return m_captureActive;
 }
 
+void QtAudioInput::keepSilence()
+{
+    m_keepsSilence = true;
+    m_captureSettings.vadEnabled = false;
+}
+
 void QtAudioInput::applySettings(const AudioCaptureSettings &settings)
 {
     m_captureSettings = settings;
+    m_captureSettings.vadEnabled = settings.vadEnabled && !m_keepsSilence;
     if (m_captureActive) {
         return;
     }

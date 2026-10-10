@@ -14,7 +14,8 @@ constexpr int kLongestRecordingStopMs = 180000;
 
 // One audio source of a recording and the speaker its lines name.
 struct RecordingStream {
-    enum class State { Recording, Reconnecting, Stopped };
+    // Paused: the microphone's, while a dictation has it; it sends silence.
+    enum class State { Recording, Paused, Reconnecting, Stopped };
 
     QString speaker;
     State state = State::Recording;
@@ -34,6 +35,11 @@ struct RecordingStatus {
     // not. Nothing clears them while the recording runs.
     int unwrittenLines = 0;
     QString writeError;
+    // Why the microphone's audio keeps what the speakers play: Speecher's
+    // echo canceller could not start, or the microphone the system was asked
+    // to cancel echo in records without it. Empty when echo is cancelled or
+    // nothing asked for it.
+    QString echoCancellationWarning;
 };
 
 // How status and its JSON name a stream's state.

@@ -99,6 +99,14 @@ AudioInput *WindowsComposition::createRecordingAudioInput(SettingsStore *setting
     return new WinCommunicationsAudioInput(settings->audioCaptureSettings(), streamEchoControl, parent);
 }
 
+// WASAPI loopback captures system audio, and Windows cancels its echo in the
+// recording's communications microphone, so there is no canceller of
+// Speecher's.
+bool WindowsComposition::recordsSystemAudio() const
+{
+    return true;
+}
+
 AudioInput *WindowsComposition::createSystemAudioInput(QObject *parent) const
 {
     return new WinSystemAudioInput(parent);

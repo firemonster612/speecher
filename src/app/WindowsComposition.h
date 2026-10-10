@@ -16,6 +16,7 @@ public:
     QList<AudioInputDeviceInfo> availableAudioInputDevices() const override;
     AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override;
     AudioInput *createRecordingAudioInput(SettingsStore *settings, QObject *parent) const override;
+    bool recordsSystemAudio() const override;
     AudioInput *createSystemAudioInput(QObject *parent) const override;
     MediaController *createMediaController(QObject *parent) const override;
     TargetProvider *createTargetProvider(QObject *parent) const override;

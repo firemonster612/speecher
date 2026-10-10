@@ -1452,6 +1452,70 @@ private slots:
         QCOMPARE(speech->cancelledAttempts.last(), speech->currentAttemptId);
     }
 
+    // A recording beside a dictation hears the call whenever the dictation
+    // does not hold the microphone: the dictation holds it from the start's
+    // request, before the microphone starts, until it has stopped, post-roll
+    // and all, but not while paused. It listens from its first Listening
+    // until it stops, through a pause; a start whose microphone failed, or
+    // that was stopped before it, never listens.
+    void theMicrophoneIsTheDictationsOnlyWhileItListens()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy microphone(&session, &DictationSession::microphoneChanged);
+        QSignalSpy listening(&session, &DictationSession::listeningChanged);
+        const auto values = [](const QSignalSpy &spy) {
+            QList<bool> values;
+            for (const QList<QVariant> &arguments : spy) {
+                values << arguments.first().toBool();
+            }
+            return values;
+        };
+        // Whether the speech provider had been set up when the dictation
+        // took the microphone.
+        QList<bool> preparedAtHolds;
+        connect(&session, &DictationSession::microphoneChanged, this, [&](bool held) {
+            if (held) {
+                preparedAtHolds << (speech != nullptr);
+            }
+        });
+        QList<bool> heldAtStops;
+        audio->onStop = [&] { heldAtStops << values(microphone).last(); };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.pause();
+        session.resume();
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(values(microphone), QList<bool>({true, false, true, false}));
+        QCOMPARE(preparedAtHolds.first(), false);
+        QCOMPARE(heldAtStops, QList<bool>({true, true}));
+        QCOMPARE(values(listening), QList<bool>({true, false}));
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+        audio->startResult = false;
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 250);
+        QCOMPARE(values(microphone).mid(4), QList<bool>({true, false}));
+
+        audio->started = false;
+        session.startListening();
+        session.stopListening();
+        QCOMPARE(values(microphone).mid(6), QList<bool>({true, false}));
+        QVERIFY(!audio->started);
+        QCOMPARE(values(listening), QList<bool>({true, false}));
+    }
+
     // Every pause button calls togglePause: it pauses a listening session and
     // resumes a paused one.
     void togglePausePausesAndResumes()

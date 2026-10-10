@@ -108,6 +108,15 @@ AudioInput *LinuxComposition::createAudioInput(SettingsStore *settings, QObject 
     return input;
 }
 
+bool LinuxComposition::recordsSystemAudio() const
+{
+#ifdef SPEECHER_WITH_PULSE
+    return true;
+#else
+    return false;
+#endif
+}
+
 AudioInput *LinuxComposition::createSystemAudioInput(QObject *parent) const
 {
 #ifdef SPEECHER_WITH_PULSE

@@ -103,6 +103,10 @@ public:
     // Forgets the audio a warm input keeps rolling for the next start, so a
     // resume after a pause does not send what was said during it.
     virtual void clearPreRoll() {}
+    // Delivers quiet audio too from now on, whatever Skip silence says, for
+    // an echo canceller, which needs the audio whole. Inputs that never skip
+    // silence ignore it.
+    virtual void keepSilence() {}
     // Why a started input that asks the system to cancel echo records
     // without it, for `record start` and `record status`; nothing for one
     // that has it or never asks.

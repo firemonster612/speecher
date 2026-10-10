@@ -64,6 +64,16 @@ public:
         return active;
     }
 
+    QString echoCancellationWarning() const override
+    {
+        return echoWarning;
+    }
+
+    void keepSilence() override
+    {
+        keepsSilence = true;
+    }
+
     void pushAudio(const QByteArray &pcm)
     {
         emit audioChunk(pcm);
@@ -76,8 +86,10 @@ public:
 
     bool startResult = true;
     QString startError = QStringLiteral("audio failed");
+    QString echoWarning;
     bool started = false;
     bool active = false;
+    bool keepsSilence = false;
     std::function<void()> onStart;
     std::function<void()> onStop;
 };
@@ -286,6 +298,13 @@ public:
         }
     }
 
+    void beginUtterance(quint64 attemptId) override
+    {
+        if (attemptId == currentAttemptId) {
+            ++beginUtteranceCalls;
+        }
+    }
+
     void emitConnected()
     {
         emit attemptConnected(currentAttemptId);
@@ -336,6 +355,7 @@ public:
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;
+    int beginUtteranceCalls = 0;
     quint64 currentAttemptId = 0;
     bool autoCompleteOnFinish = true;
     QList<quint64> cancelledAttempts;

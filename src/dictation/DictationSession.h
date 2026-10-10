@@ -118,6 +118,14 @@ signals:
     // What a session learned about a provider's sign-in: present when it
     // prepared, missing or turned down when it failed for that.
     void providerSignInObserved(const QString &providerId, bool signedIn);
+    // The session holds the microphone from a start's request, before it
+    // prepares, or a resume, until the microphone has stopped, post-roll and
+    // all; not while paused. A warm microphone's pre-roll, from just before
+    // the request, was heard by others before the session held it.
+    void microphoneChanged(bool held);
+    // The session listens from its first Listening until it stops listening,
+    // through pauses; a start that never listened does not.
+    void listeningChanged(bool listening);
 
 private:
     static int s_popupPaintFallbackMs;
@@ -170,6 +178,10 @@ private:
     // which commands and provider signals are dispatched. Callers settle the
     // session before stopping and recheck it afterwards.
     void stopAudio();
+    bool startAudio(QString *error);
+    void setMicrophoneOpen(bool open);
+    void updateMicrophoneHeld();
+    void updateListening();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
@@ -262,6 +274,9 @@ private:
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
+    bool m_microphoneOpen = false;
+    bool m_microphoneHeld = false;
+    bool m_listening = false;
     // The generation whose first microphone start is under way; it spins an
     // event loop too. A provider that becomes ready meanwhile opens only its
     // attempt, and that start goes on to Listening.

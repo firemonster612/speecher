@@ -37,6 +37,11 @@ public:
     {
         return createAudioInput(settings, parent);
     }
+    // Whether a Recording takes system audio as a second stream, "them":
+    // wherever createSystemAudioInput captures it, even where echo
+    // cancellation cannot start, as the Recording then says why. Otherwise a
+    // Recording takes the microphone alone.
+    virtual bool recordsSystemAudio() const { return false; }
     // What the speakers play, from the default output, as 16 kHz mono s16 like
     // the microphone; none where Speecher cannot capture it.
     virtual AudioInput *createSystemAudioInput(QObject *parent) const
