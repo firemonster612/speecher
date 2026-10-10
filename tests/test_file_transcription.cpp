@@ -1896,7 +1896,10 @@ private slots:
         me->autoCompleteOnFinish = false;
         recording.stop();
         QCOMPARE(log.flushes, 1);
-        QTRY_VERIFY_WITH_TIMEOUT(me->audioChunks.contains(QByteArray(320, '\1')), 5000);
+        // The input ends once all its audio has gone, the canceller's last
+        // with it.
+        QTRY_COMPARE_WITH_TIMEOUT(me->stopCalls, 1, 5000);
+        QVERIFY(me->audioChunks.contains(QByteArray(320, '\1')));
         me->emitCompletion();
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
 
