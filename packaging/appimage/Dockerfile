@@ -33,6 +33,7 @@ RUN apt-get update \
         libsecret-1-dev \
         libvulkan-dev \
         libwayland-dev \
+        libwebrtc-audio-processing-dev \
         libxkbcommon-dev \
         libxkbcommon-x11-0 \
         libxcb-cursor0 \

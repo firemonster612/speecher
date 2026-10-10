@@ -35,5 +35,10 @@ QString recordingStreamEndedText();
 QString recordingUtteranceFailedText(const QString &reason);
 QString recordingStopTimedOutText();
 QString recordingFileError(const QString &path, const QString &reason);
+// Why a Recording runs without echo cancellation, for `record start` and
+// `record status`: a build without webrtc-audio-processing, or one whose
+// audio processing failed to start with error.
+QString echoCancellationNotBuiltText();
+QString echoCancellationFailedText(int error);
 
 } // namespace speecher

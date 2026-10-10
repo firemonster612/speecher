@@ -144,4 +144,17 @@ QString recordingFileError(const QString &path, const QString &reason)
     return QStringLiteral("Could not write %1: %2").arg(path, reason);
 }
 
+QString echoCancellationNotBuiltText()
+{
+    return QStringLiteral("Echo cancellation is off: this Speecher was built without webrtc-audio-processing. "
+                          "On speakers, the other side may also be written as you; headphones avoid it.");
+}
+
+QString echoCancellationFailedText(int error)
+{
+    return QStringLiteral("Echo cancellation is off: webrtc-audio-processing could not start (error %1). On "
+                          "speakers, the other side may also be written as you; headphones avoid it.")
+        .arg(error);
+}
+
 } // namespace speecher
