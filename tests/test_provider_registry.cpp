@@ -174,9 +174,9 @@ private slots:
         QCOMPARE(ratingTexts(ProviderRole::Speech, QStringLiteral("claude")),
                  QStringList({QStringLiteral("Accuracy 5.5/10"), QStringLiteral("Speed 10/10")}));
         QCOMPARE(ratingTexts(ProviderRole::Refinement, QStringLiteral("openai")),
-                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7/10")}));
+                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7.5/10")}));
         QCOMPARE(ratingTexts(ProviderRole::Refinement, QStringLiteral("anthropic")),
-                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 4.5/10")}));
+                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7/10")}));
         // A service names no model as what was rated.
         QCOMPARE(ratedSubject(ProviderRole::Speech, QStringLiteral("codex"), referencePc()), QString());
 
@@ -202,6 +202,22 @@ private slots:
         QCOMPARE(anthropic.first().note, QStringLiteral("Change it in Settings, under Refinement."));
         QCOMPARE(modelNames(providerModels(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen)),
                  QStringList({QStringLiteral("gpt-7-test")}));
+    }
+
+    // A refinement service is rated by the model the settings hold, and not
+    // at all by one the benchmark never ran.
+    void refinementServicesRateTheChosenModel()
+    {
+        AppSettings chosen;
+        chosen.refinement.anthropicModel = QStringLiteral("claude-haiku-5-5");
+        chosen.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
+        QCOMPARE(ratingTexts(ProviderRole::Refinement, QStringLiteral("anthropic"), {}, chosen),
+                 QStringList({QStringLiteral("Quality 9/10"), QStringLiteral("Speed 8/10")}));
+        QCOMPARE(ratingTexts(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen),
+                 QStringList({QStringLiteral("Quality 9.5/10"), QStringLiteral("Speed 7/10")}));
+        // The GPT-5.4 models need an API key, which the benchmark had none of.
+        chosen.refinement.openAiModel = QStringLiteral("gpt-5.4");
+        QVERIFY(!providerRating(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen));
     }
 
     // The server and its model are the user's own, so there is nothing to rate.

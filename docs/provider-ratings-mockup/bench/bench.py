@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Refinement speed and quality for each provider's default setup.
+"""Refinement speed and quality for each model the Settings pickers offer.
 
 Sends the app's real prompts (dumped from the build by ./dump) the way each
-refiner does: OpenAI gpt-6-luna at effort none with Fast (priority tier),
-Anthropic claude-opus-5-5 with adaptive thinking at effort low at standard
+refiner does at its default settings: OpenAI models at effort none (low for
+GPT-6.1 Sol, which refuses none) with Fast (priority tier), Anthropic models
+with adaptive thinking at effort low where the model takes it, at standard
 speed (fast mode fails on a subscription, see the app log), and the Local
 Runner's suggested models on Ollama with the compact prompt. Cloud requests
 go through the CLI Proxy API. Each output is scored on per-transcript checks.
+
+Usage: bench.py [runs] [model ...]. Cloud models are named openai:<id> or
+anthropic:<id>; anything else is an Ollama tag. SPEECHER_BENCH_OUT names the
+results file (results.json by default).
 """
 import json, os, re, sys, time, urllib.request
 
@@ -17,6 +22,7 @@ SYSTEM = open("system.txt").read()
 COMPACT = open("compact.txt").read()
 USER = open("user.txt").read()
 RUNS = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+OUT = os.environ.get("SPEECHER_BENCH_OUT", "results.json")
 
 # (transcript, checks). A check is (description, regex, should_match).
 SAMPLES = {
@@ -87,17 +93,19 @@ def stream(url, body, headers):
 def request(provider, transcript):
     user = USER.replace("__TRANSCRIPT__", transcript)
     auth = {"Authorization": f"Bearer {KEY}"}
-    if provider == "openai":
+    api, _, model = provider.partition(":")
+    if api == "openai":
+        effort = "low" if model.startswith("gpt-6.1-sol") else "none"
         return stream(f"{PROXY}/v1/responses", {
-            "model": "gpt-6-luna", "reasoning": {"effort": "none"}, "instructions": SYSTEM,
+            "model": model, "reasoning": {"effort": effort}, "instructions": SYSTEM,
             "input": [{"role": "user", "content": user}], "stream": True, "store": False,
             "service_tier": "fast"}, auth)
-    if provider == "anthropic":
-        return stream(f"{PROXY}/v1/messages", {
-            "model": "claude-opus-5-5", "max_tokens": 4096, "stream": True,
-            "thinking": {"type": "adaptive", "display": "omitted"}, "output_config": {"effort": "low"},
-            "system": SYSTEM, "messages": [{"role": "user", "content": user}]},
-            {**auth, "anthropic-version": "2023-06-01"})
+    if api == "anthropic":
+        body = {"model": model, "max_tokens": 4096, "stream": True,
+                "system": SYSTEM, "messages": [{"role": "user", "content": user}]}
+        if "haiku-4" not in model:  # Haiku 4.5 is the only listed model without them
+            body |= {"thinking": {"type": "adaptive", "display": "omitted"}, "output_config": {"effort": "low"}}
+        return stream(f"{PROXY}/v1/messages", body, {**auth, "anthropic-version": "2023-06-01"})
     return stream(f"{OLLAMA}/chat/completions", {
         "model": provider, "stream": True, "temperature": 0, "reasoning_effort": "none",
         "messages": [{"role": "system", "content": COMPACT}, {"role": "user", "content": user}]}, {})
@@ -110,7 +118,8 @@ def score(text, checks):
     return passed
 
 
-PROVIDERS = ["openai", "anthropic", "LiquidAI/lfm2.5-1.2b-instruct:latest", "gemma4:e4b"]
+PROVIDERS = sys.argv[2:] or [
+    "openai:gpt-6-luna", "anthropic:claude-opus-5-5", "LiquidAI/lfm2.5-1.2b-instruct:latest", "gemma4:e4b"]
 
 
 def main():
@@ -133,7 +142,7 @@ def main():
                 results.append({"provider": provider, "sample": name, "run": run, "first_s": first,
                                 "total_s": total, "passed": passed, "text": text})
                 print(f"{provider[:20]:20s} {name:10s} run{run} {total:5.2f}s {sum(passed)}/{len(passed)}", flush=True)
-    json.dump(results, open("results.json", "w"), indent=1)
+    json.dump(results, open(OUT, "w"), indent=1)
     for provider in PROVIDERS:
         rows = [r for r in results if r["provider"] == provider and "error" not in r]
         if not rows:

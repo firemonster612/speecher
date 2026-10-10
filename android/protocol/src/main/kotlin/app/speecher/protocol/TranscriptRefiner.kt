@@ -116,13 +116,22 @@ fun modelSupportsFastMode(model: String): Boolean =
 /** Anthropic models that take adaptive thinking and an effort; the rest are sent neither. */
 private fun modelSupportsAdaptiveEffort(model: String): Boolean =
     model.lowercase().let { id ->
-        listOf("opus-5", "sonnet-5", "sonnet-4-6", "opus-4-8", "opus-4-7", "opus-4-6", "opus-4-5")
+        listOf(
+                "opus-5",
+                "sonnet-5",
+                "haiku-5",
+                "sonnet-4-6",
+                "opus-4-8",
+                "opus-4-7",
+                "opus-4-6",
+                "opus-4-5",
+            )
             .any { it in id }
     }
 
 private fun modelSupportsExtraHighEffort(model: String): Boolean =
     model.lowercase().let { id ->
-        listOf("opus-5", "sonnet-5", "opus-4-8", "opus-4-7").any { it in id }
+        listOf("opus-5", "sonnet-5", "haiku-5", "opus-4-8", "opus-4-7").any { it in id }
     }
 
 /** The effort Anthropic is sent: max for xhigh on a model without it, high for an unknown one. */

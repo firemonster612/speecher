@@ -40,6 +40,7 @@ bool modelSupportsAdaptiveEffort(const QString &model)
     const QString normalized = model.toCaseFolded();
     return normalized.contains(QStringLiteral("opus-5"))
         || normalized.contains(QStringLiteral("sonnet-5"))
+        || normalized.contains(QStringLiteral("haiku-5"))
         || normalized.contains(QStringLiteral("sonnet-4-6"))
         || normalized.contains(QStringLiteral("opus-4-8"))
         || normalized.contains(QStringLiteral("opus-4-7"))
@@ -62,6 +63,7 @@ bool modelSupportsExtraHighEffort(const QString &model)
     const QString normalized = model.toCaseFolded();
     return normalized.contains(QStringLiteral("opus-5"))
         || normalized.contains(QStringLiteral("sonnet-5"))
+        || normalized.contains(QStringLiteral("haiku-5"))
         || normalized.contains(QStringLiteral("opus-4-8"))
         || normalized.contains(QStringLiteral("opus-4-7"));
 }

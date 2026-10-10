@@ -1692,10 +1692,10 @@ private slots:
         };
         QCOMPARE(ratingTexts(*rating(QStringLiteral("openai"))),
                  (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
-                              QStringLiteral("7/10")}));
+                              QStringLiteral("7.5/10")}));
         QCOMPARE(ratingTexts(*rating(QStringLiteral("anthropic"))),
                  (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
-                              QStringLiteral("4.5/10")}));
+                              QStringLiteral("7/10")}));
         QVERIFY(rating(QStringLiteral("endpoint"))->isHidden());
         QVERIFY(subject(QStringLiteral("endpoint"))->isHidden());
 
@@ -1761,7 +1761,7 @@ private slots:
         SchemaSettingsPage *refinement = pages.page(QStringLiteral("refinement"));
         QCOMPARE(ratingTexts(*refinement->findChild<QWidget *>(QStringLiteral("refinementRating"))),
                  (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
-                              QStringLiteral("4.5/10")}));
+                              QStringLiteral("7/10")}));
     }
 
     // The setup steps' fallback section is optional: editing it never holds

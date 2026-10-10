@@ -210,13 +210,19 @@ class TranscriptRefinerTest {
     }
 
     @Test
-    fun `Claude sends the nearest effort the model takes, and none to Haiku`() {
+    fun `Claude sends the nearest effort the model takes, and none to older Haiku`() {
         MockWebServer().use { server ->
             val ok =
                 "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-            repeat(3) { server.enqueue(MockResponse.Builder().body(ok).build()) }
+            repeat(4) { server.enqueue(MockResponse.Builder().body(ok).build()) }
             server.start()
-            for (model in listOf("claude-opus-5-5", "claude-opus-4-6", "claude-haiku-4-5")) {
+            for (model in
+                listOf(
+                    "claude-opus-5-5",
+                    "claude-haiku-5-5",
+                    "claude-opus-4-6",
+                    "claude-haiku-4-5",
+                )) {
                 refineTranscript(
                     OkHttpClient(),
                     OAuthProvider.Claude,
@@ -230,12 +236,17 @@ class TranscriptRefinerTest {
                 )
             }
             val bodies =
-                List(3) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+                List(4) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
             assertEquals(
-                listOf("{\"effort\":\"xhigh\"}", "{\"effort\":\"max\"}", null),
+                listOf(
+                    "{\"effort\":\"xhigh\"}",
+                    "{\"effort\":\"xhigh\"}",
+                    "{\"effort\":\"max\"}",
+                    null,
+                ),
                 bodies.map { it["output_config"]?.toString() },
             )
-            assertEquals(listOf(true, true, false), bodies.map { "thinking" in it })
+            assertEquals(listOf(true, true, true, false), bodies.map { "thinking" in it })
         }
     }
 

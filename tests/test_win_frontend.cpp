@@ -1548,7 +1548,7 @@ private slots:
             QCOMPARE(models.ratedModels.first().name, QStringLiteral("GPT Live Transcribe"));
             const QHash<QString, win::RowSnapshot> refinement = rowsOnPane(model, QStringLiteral("refinement"));
             QCOMPARE(refinement.value(QStringLiteral("refinementRating")).ratings,
-                     (QList<Rating>{{RatingMeasure::Quality, 10.0}, {RatingMeasure::Speed, 7.0}}));
+                     (QList<Rating>{{RatingMeasure::Quality, 10.0}, {RatingMeasure::Speed, 7.5}}));
         }
         store->setSpeechProvider(QStringLiteral("endpoint"));
         chooseRefinementProvider(*store, QStringLiteral("endpoint"));

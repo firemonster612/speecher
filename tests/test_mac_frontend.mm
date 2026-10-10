@@ -1637,7 +1637,7 @@ private slots:
         QVERIFY(refinement);
         QCOMPARE(QString::fromNSString(refinement.ratings[0].label), QStringLiteral("Quality"));
         QCOMPARE(QString::fromNSString(refinement.ratings[0].valueText), QStringLiteral("10/10"));
-        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("4.5/10"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("7/10"));
 
         [schema setValue:@"endpoint" forRowId:@"speechProvider"];
         [schema setValue:@"endpoint" forRowId:@"refinementProvider"];
@@ -1682,7 +1682,7 @@ private slots:
                                                             provider:@"openai"];
         QVERIFY(openAi);
         QCOMPARE(QString::fromNSString(openAi.bars[0].valueText), QStringLiteral("10/10"));
-        QCOMPARE(QString::fromNSString(openAi.bars[1].valueText), QStringLiteral("7/10"));
+        QCOMPARE(QString::fromNSString(openAi.bars[1].valueText), QStringLiteral("7.5/10"));
         NSArray<SpeecherRatedModel *> *openAiModels = [bridge setupProviderModels:SpeecherProviderRoleRefinement
                                                                          provider:@"openai"];
         QCOMPARE(openAiModels.count, NSUInteger(1));
