@@ -323,7 +323,7 @@ private slots:
 
         QThread *client = QThread::create([platform, files] {
             SingleInstanceIpc::sendCommandDetailed(
-                QStringLiteral("transcribe"), SessionOverrides(), files, {}, nullptr, 2000, platform);
+                QStringLiteral("transcribe"), SessionOverrides(), files, nullptr, 2000, platform);
         });
         client->start();
         QTRY_COMPARE(commands.count(), 1);
