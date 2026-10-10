@@ -2425,6 +2425,16 @@ private slots:
         QCOMPARE(refinement->helpValue(settings),
                  QStringLiteral("Anthropic, then Local Runner. Ollama isn't running, so it can't stand in right now."));
         QCOMPARE(refinement->helpTone(settings), StatusTone::Negative);
+
+        // A Custom Endpoint without a server says where its URL is entered.
+        settings.speech.fallbackProviderIds = {QStringLiteral("endpoint")};
+        QCOMPARE(speech->helpValue(settings),
+                 QStringLiteral("Custom Endpoint. No server URL is set. Enter one in Settings, under Custom Endpoint "
+                                "on the Dictation page."));
+        settings.refinement.fallbackProviderIds = {QStringLiteral("endpoint")};
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("Custom Endpoint. No server URL is set. Enter one in Settings, under Custom Endpoint "
+                                "on the Refinement page."));
     }
 
     // "Use this model" makes Local Model the primary the way the Service row
