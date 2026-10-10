@@ -1,9 +1,15 @@
 #include "common/test_prelude.h"
 
+#include "platform/audio/AudioPcmConverter.h"
 #include "providers/PcmWav.h"
 
+#include <QAudioSink>
+#include <QBuffer>
+#include <QMediaDevices>
 #include <QScopeGuard>
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 #ifdef SPEECHER_WITH_PULSE
@@ -325,6 +331,53 @@ private slots:
         wav.write(wavFromPcm16Mono(pcm, 16000));
         // Allow for the server's buffering at either end.
         QVERIFY2(pcm.size() >= (seconds - 1) * 16000 * 2, qPrintable(QString::number(pcm.size())));
+    }
+
+    // Plays a second of 440 Hz at half scale through the default output and
+    // checks system audio heard it.
+    void liveSystemAudioHearsTone()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_TONE") != QStringLiteral("1")) {
+            QSKIP("Live system audio tone check is opt-in");
+        }
+        const QAudioDevice output = QMediaDevices::defaultAudioOutput();
+        QVERIFY2(!output.isNull(), "There is no sound output to play the tone through");
+        // WASAPI takes only the output's own rate and channels, in float.
+        QAudioFormat format = output.preferredFormat();
+        format.setSampleFormat(QAudioFormat::Float);
+        QVERIFY(output.isFormatSupported(format));
+        QByteArray tone;
+        for (int frame = 0; frame < format.sampleRate(); ++frame) {
+            const auto value = float(0.5 * std::sin(2 * M_PI * 440 * frame / format.sampleRate()));
+            for (int channel = 0; channel < format.channelCount(); ++channel) {
+                tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+            }
+        }
+        QBuffer toneBuffer(&tone);
+        QVERIFY(toneBuffer.open(QIODevice::ReadOnly));
+
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QVERIFY2(capture, "This platform has no system audio capture");
+        QByteArray pcm;
+        connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture->start(&error), qPrintable(error));
+        QAudioSink sink(output, format);
+        sink.start(&toneBuffer);
+        QTRY_VERIFY_WITH_TIMEOUT(sink.state() == QAudio::IdleState, 5000);
+        // Allow for the capture's poll and the output's latency.
+        QTest::qWait(500);
+        capture->stop();
+        sink.stop();
+
+        QCOMPARE(failed.count(), 0);
+        float loudest = 0.0f;
+        for (qsizetype at = 0; at < pcm.size(); at += 3200) {
+            loudest = std::max(loudest, rmsForPcm16(pcm.mid(at, 3200)));
+        }
+        // The tone's RMS is about 0.35 before the output's volume.
+        QVERIFY2(loudest > 0.05f, qPrintable(QString::number(loudest)));
     }
 
 #ifdef SPEECHER_WITH_WAYLAND

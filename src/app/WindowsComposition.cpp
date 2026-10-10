@@ -12,6 +12,7 @@
 #include "platform/win/WinMediaController.h"
 #include "platform/win/WinScreenshotContextProvider.h"
 #include "platform/win/WinSingleKeyShortcutBinder.h"
+#include "platform/win/WinSystemAudioInput.h"
 #include "platform/win/WinTargetProvider.h"
 
 #include <QCoreApplication>
@@ -77,6 +78,11 @@ AudioInput *WindowsComposition::createAudioInput(SettingsStore *settings, QObjec
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+AudioInput *WindowsComposition::createSystemAudioInput(QObject *parent) const
+{
+    return new WinSystemAudioInput(parent);
 }
 
 MediaController *WindowsComposition::createMediaController(QObject *parent) const

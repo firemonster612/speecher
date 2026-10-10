@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "platform/audio/AudioPcmConverter.h"
+#include "platform/audio/LoopbackPcm.h"
 
 using namespace speecher;
 
@@ -91,6 +92,44 @@ private slots:
         actual += converter.convert(input.mid(3)).pcm16Mono16k;
 
         QCOMPARE(actual, input);
+    }
+
+    void loopbackSilenceKeepsStepWithTheClock()
+    {
+        LoopbackPcm loopback;
+        loopback.useFormat(format(16000, 1, QAudioFormat::Int16));
+
+        // 100 ms with nothing played is 1600 silent samples, owed once.
+        QCOMPARE(loopback.silenceUntil(100), QByteArray(3200, '\0'));
+        QVERIFY(loopback.silenceUntil(100).isEmpty());
+
+        // 50 ms of audio covers the clock until 150 ms.
+        QByteArray audio;
+        for (int pair = 0; pair < 400; ++pair) {
+            audio += bytes<qint16>({1000, -1000});
+        }
+        QCOMPARE(loopback.convert(audio), audio);
+        QVERIFY(loopback.silenceUntil(150).isEmpty());
+        QCOMPARE(loopback.silenceUntil(170), QByteArray(640, '\0'));
+    }
+
+    void loopbackConvertsMixFormatAndCarriesOnAcrossOutputs()
+    {
+        LoopbackPcm loopback;
+        loopback.useFormat(format(48000, 2, QAudioFormat::Float));
+
+        // 10 ms of 48 kHz stereo at half scale is 160 samples at 16 kHz.
+        QByteArray packet;
+        for (int frame = 0; frame < 480; ++frame) {
+            packet += bytes<float>({0.5f, 0.5f});
+        }
+        const QByteArray pcm = loopback.convert(packet);
+        QCOMPARE(pcm.size(), 320);
+        QCOMPARE(pcm.left(4), bytes<qint16>({16384, 16384}));
+
+        // A new default output's format continues the same stream.
+        loopback.useFormat(format(44100, 1, QAudioFormat::Int16));
+        QCOMPARE(loopback.silenceUntil(20), QByteArray(320, '\0'));
     }
 };
 
