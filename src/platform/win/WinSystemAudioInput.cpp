@@ -21,6 +21,11 @@ QString captureError(HRESULT result)
     return systemAudioCaptureFailedText(audioErrorText(result, AudioEndpoint::SoundOutput));
 }
 
+QString captureStartError(const QString &reason)
+{
+    return QStringLiteral("System audio capture could not start: %1").arg(reason);
+}
+
 // Two clocks: the timeline, and with it the reopen allowance, runs on
 // unbiased interrupt time, which stops while the machine sleeps, so a gap on
 // it is capture stalling and is filled, while sleep is skipped. GetBuffer
@@ -253,7 +258,10 @@ HRESULT LoopbackCapture::readPackets(QList<QByteArray> *chunks)
 } // namespace
 
 WinSystemAudioInput::WinSystemAudioInput(QObject *parent)
-    : WinCaptureInput(QStringLiteral("System audio"), [] { return std::make_unique<LoopbackCapture>(); }, 0, parent)
+    : WinCaptureInput({captureStartError, systemAudioCaptureStoppedText},
+                      [] { return std::make_unique<LoopbackCapture>(); },
+                      0,
+                      parent)
 {
 }
 

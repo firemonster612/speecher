@@ -93,9 +93,9 @@ STDMETHODIMP DefaultOutputWatcher::OnDefaultDeviceChanged(EDataFlow flow, ERole 
     return S_OK;
 }
 
-WinCaptureInput::WinCaptureInput(const QString &name, StreamFactory createStream, int postRollMs, QObject *parent)
+WinCaptureInput::WinCaptureInput(CaptureWording wording, StreamFactory createStream, int postRollMs, QObject *parent)
     : AudioInput(parent)
-    , m_name(name)
+    , m_wording(wording)
     , m_createStream(std::move(createStream))
     , m_postRollMs(postRollMs)
 {
@@ -120,7 +120,7 @@ bool WinCaptureInput::start(QString *error)
         m_thread = std::thread(&WinCaptureInput::capture, this, m_generation, std::move(opened));
         failure = done.get();
     } else {
-        failure = QStringLiteral("%1 capture could not start: %2").arg(m_name, qt_error_string(int(GetLastError())));
+        failure = m_wording.startFailed(qt_error_string(int(GetLastError())));
     }
     if (failure.isEmpty()) {
         return true;
@@ -183,7 +183,7 @@ void WinCaptureInput::capture(quint64 generation, std::promise<QString> opened)
             return;
         }
         const QString error = woke == WAIT_FAILED
-            ? QStringLiteral("%1 capture stopped: %2").arg(m_name, qt_error_string(int(GetLastError())))
+            ? m_wording.stopped(qt_error_string(int(GetLastError())))
             : stream->read(&chunks);
         queueAudio(chunks);
         setEchoCancellationWarning(stream->echoCancellationWarning());

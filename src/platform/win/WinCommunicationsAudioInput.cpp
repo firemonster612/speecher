@@ -20,6 +20,16 @@ namespace {
 
 using Microsoft::WRL::ComPtr;
 
+QString captureStartError(const QString &reason)
+{
+    return QStringLiteral("Microphone capture could not start: %1").arg(reason);
+}
+
+QString captureStoppedError(const QString &reason)
+{
+    return QStringLiteral("Microphone capture stopped: %1").arg(reason);
+}
+
 QString openError(HRESULT result)
 {
     return QStringLiteral("Could not open the microphone: %1").arg(audioErrorText(result, AudioEndpoint::Microphone));
@@ -198,7 +208,7 @@ QString MicrophoneCapture::read(QList<QByteArray> *chunks)
         chunks->append(pcm);
     }
     if (FAILED(result)) {
-        return QStringLiteral("Microphone capture stopped: %1").arg(audioErrorText(result, AudioEndpoint::Microphone));
+        return captureStoppedError(audioErrorText(result, AudioEndpoint::Microphone));
     }
     return {};
 }
@@ -303,7 +313,7 @@ WinCommunicationsAudioInput::WinCommunicationsAudioInput(const AudioCaptureSetti
                                                          EchoControlFactory echoControl,
                                                          QObject *parent)
     : WinCaptureInput(
-          QStringLiteral("Microphone"),
+          {captureStartError, captureStoppedError},
           [deviceId = settings.deviceId, echoControl = std::move(echoControl)] {
               return std::make_unique<MicrophoneCapture>(deviceId, echoControl);
           },
