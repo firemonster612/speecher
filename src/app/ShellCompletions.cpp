@@ -213,14 +213,8 @@ QString bashValues(const Values &values)
         actions << QStringLiteral("COMPREPLY+=($(compgen -W '%1' -- \"$cur\"))")
                        .arg(values.words.join(QLatin1Char(' ')));
     }
-    // Not through compgen -W, which would expand a name from the settings
-    // and run what is in it; each is escaped as the command line reads it.
-    // The word typed may be escaped already, as a common prefix bash inserted.
     if (!values.listed.isEmpty()) {
-        actions << QStringLiteral("while IFS= read -r name; do printf -v quoted %q \"$name\"; "
-                                  "[[ $name == \"$cur\"* || $quoted == \"$cur\"* ]] && COMPREPLY+=(\"$quoted\"); "
-                                  "done < <(\"${COMP_WORDS[0]}\" completions --list %1 2>/dev/null)")
-                       .arg(values.listed);
+        actions << QStringLiteral("_speecher_list %1").arg(values.listed);
     }
     // Read a line each, so a file name with a space stays one.
     if (values.paths != Paths::None) {
@@ -231,20 +225,87 @@ QString bashValues(const Values &values)
     return actions.isEmpty() ? QStringLiteral(":") : actions.join(QStringLiteral("; "));
 }
 
+// What surrounds the generated _speecher_reply: _speecher works out the
+// words, calls it, and fits its replies to what bash replaces.
+const char kBashHelpers[] = R"(# The words as bash-completion's _get_comp_words_by_ref -n =: gives them, for
+# a bash without it: bash's, joined again where bash split them at = or :,
+# which a name may have, the last cut at the cursor.
+_speecher_words() {
+  local line=${COMP_LINE:0:COMP_POINT} trimmed word i
+  words=() cword=-1
+  for ((i = 0; i <= COMP_CWORD; i++)); do
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    word=${COMP_WORDS[i]}
+    (( i == COMP_CWORD )) && word=$trimmed
+    if [[ $cword -ge 0 && $trimmed == "$line" && ( $word == [=:]* || ${words[cword]} == *[=:] ) ]]; then
+      words[cword]+=$word
+    else
+      words[++cword]=$word
+    fi
+    line=${trimmed#"$word"}
+  done
+  cur=${words[cword]} prev=${words[cword-1]}
+}
+
+# Offers the names `speecher completions --list $1` prints that start with
+# the word typed, escaped as the command line reads them inside the quote the
+# word opens, if any. Not through compgen -W, which would expand a name from
+# the settings and run what is in it. The word typed may be escaped already,
+# as a common prefix bash inserted.
+_speecher_list() {
+  local open= typed=$cur name quoted c i
+  [[ $cur == [\"\']* ]] && open=${cur:0:1} typed=${cur:1}
+  while IFS= read -r name; do
+    if [[ -z $open ]]; then
+      printf -v quoted %q "$name"
+    else
+      quoted=
+      for ((i = 0; i < ${#name}; i++)); do
+        c=${name:i:1}
+        if [[ $open == \' && $c == \' ]]; then
+          quoted+=\'\\\'\'
+        elif [[ $open == \" && $c == [\\\"\$\`] ]]; then
+          quoted+=\\$c
+        else
+          quoted+=$c
+        fi
+      done
+    fi
+    [[ $name == "$typed"* || $quoted == "$typed"* ]] && COMPREPLY+=("$quoted")
+  done < <("$speecher" completions --list "$1" 2>/dev/null)
+}
+
+_speecher() {
+  local cur prev words cword speecher split= breaks=${COMP_WORDBREAKS//[^=:]}
+  COMPREPLY=()
+  if declare -F _get_comp_words_by_ref >/dev/null; then
+    _get_comp_words_by_ref -n =: cur prev words cword
+  else
+    _speecher_words
+  fi
+  # bash leaves a ~/ path to speecher as it was typed.
+  speecher=${words[0]}
+  [[ $speecher == '~/'* ]] && speecher=$HOME/${speecher:2}
+  _speecher_reply
+  # bash replaces only what follows the last = or : it split the word at.
+  [[ -n $breaks && $cur != [\"\']* ]] && split=${cur%"${cur##*[$breaks]}"}
+  [[ -n $split ]] && COMPREPLY=("${COMPREPLY[@]#"$split"}")
+}
+)";
+
 QString bashScript(const QMap<QString, std::optional<Values>> &options, const QList<CompletedCommand> &commands)
 {
     QStringList lines{
         QStringLiteral("# speecher's completions for bash, from `speecher completions bash`."),
         {},
-        QStringLiteral("_speecher() {"),
-        QStringLiteral("  local cur=${COMP_WORDS[COMP_CWORD]} command= options= name quoted"),
-        QStringLiteral("  COMPREPLY=()"),
-        QStringLiteral("  (( COMP_CWORD > 1 )) && command=${COMP_WORDS[1]}"),
+        QString::fromLatin1(kBashHelpers),
+        QStringLiteral("_speecher_reply() {"),
+        QStringLiteral("  local command= options="),
+        QStringLiteral("  (( cword > 1 )) && command=${words[1]}"),
         QStringLiteral("  case $command in"),
-        QStringLiteral("    %1) (( COMP_CWORD > 2 )) && command+=\" ${COMP_WORDS[2]}\" ;;")
-            .arg(parentPattern(commands)),
+        QStringLiteral("    %1) (( cword > 2 )) && command+=\" ${words[2]}\" ;;").arg(parentPattern(commands)),
         QStringLiteral("  esac"),
-        QStringLiteral("  case ${COMP_WORDS[COMP_CWORD-1]} in"),
+        QStringLiteral("  case $prev in"),
     };
     for (auto option = options.cbegin(); option != options.cend(); ++option) {
         if (option.value()) {

@@ -363,7 +363,8 @@ std::optional<QString> writingProfileNamed(const QString &value, QString *error)
 
 // The name `completions --list profiles` offers for each profile, one that
 // --profile takes for it alone: its command-line name, or its id where
-// another profile has that name too.
+// another profile has that name too or the name starts with -, as --help,
+// --version and --grab do, which the command line reads before --profile.
 QStringList writingProfileCompletions()
 {
     const QList<RowOption> profiles = writingProfiles();
@@ -373,7 +374,7 @@ QStringList writingProfileCompletions()
         if (name.isEmpty()) {
             continue;
         }
-        if (writingProfilesNamed(profiles, name).size() == 1) {
+        if (!name.startsWith(QLatin1Char('-')) && writingProfilesNamed(profiles, name).size() == 1) {
             names << name;
         } else if (writingProfilesNamed(profiles, profile.id).isEmpty()) {
             names << profile.id;
@@ -440,9 +441,11 @@ CommandLineDecision printCompletions(const QStringList &arguments)
         }
         return {LaunchMode::Exit};
     }
-    std::cerr << (arguments.isEmpty() ? QStringLiteral("completions needs a shell: bash, zsh or fish")
-                                      : QStringLiteral("Unknown completions argument: %1 (expected bash, zsh or fish)")
-                                            .arg(arguments.join(QLatin1Char(' '))))
+    const QString shells = kCompletionShells.mid(0, kCompletionShells.size() - 1).join(QStringLiteral(", "))
+        + QStringLiteral(" or ") + kCompletionShells.last();
+    std::cerr << (arguments.isEmpty() ? QStringLiteral("completions needs a shell: %1").arg(shells)
+                                      : QStringLiteral("Unknown completions argument: %1 (expected %2)")
+                                            .arg(arguments.join(QLatin1Char(' ')), shells))
                      .toStdString()
               << "\n\n"
               << helpText().toStdString();
