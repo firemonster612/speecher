@@ -77,16 +77,22 @@ public:
     virtual QString echoCancellationWarning() const { return {}; }
 };
 
+// How a WinCaptureInput words its own errors, that its capture could not
+// start or stopped, each with the reason Windows gave.
+struct CaptureWording {
+    QString (*startFailed)(const QString &reason);
+    QString (*stopped)(const QString &reason);
+};
+
 // Runs a WinCaptureStream on a thread of its own, which polls it every
-// kLoopbackPollMs, and delivers its audio on the input's thread. name, such
-// as "Microphone", begins the input's own errors. A stop keeps capturing for
-// postRollMs, drains the stream and delivers all of it before it returns, as
-// QtAudioInput's does.
+// kLoopbackPollMs, and delivers its audio on the input's thread. A stop keeps
+// capturing for postRollMs, drains the stream and delivers all of it before
+// it returns, as QtAudioInput's does.
 class WinCaptureInput : public AudioInput {
 public:
     using StreamFactory = std::function<std::unique_ptr<WinCaptureStream>()>;
 
-    WinCaptureInput(const QString &name, StreamFactory createStream, int postRollMs, QObject *parent = nullptr);
+    WinCaptureInput(CaptureWording wording, StreamFactory createStream, int postRollMs, QObject *parent = nullptr);
     ~WinCaptureInput() override;
 
     bool start(QString *error = nullptr) override;
@@ -106,7 +112,7 @@ private:
     void endCapture();
     void fail(quint64 generation, const QString &message);
 
-    QString m_name;
+    CaptureWording m_wording;
     StreamFactory m_createStream;
     int m_postRollMs;
     std::thread m_thread;
