@@ -184,7 +184,9 @@ private:
         }
 
         // Voice processing can capture at another rate and channel count
-        // than the microphone's own, so the format comes from the unit.
+        // than the microphone's own, so the rate comes from the unit. It
+        // renders one channel, its processed voice, whatever channel count it
+        // reports and accepts.
         AudioStreamBasicDescription captured{};
         UInt32 size = sizeof(captured);
         if (status == noErr) {
@@ -194,12 +196,13 @@ private:
         if (status == noErr && (captured.mSampleRate <= 0 || captured.mChannelsPerFrame == 0)) {
             status = kAudioUnitErr_FormatNotSupported;
         }
+        const UInt32 channels = voiceProcessing ? 1 : captured.mChannelsPerFrame;
         if (status == noErr) {
             status = setProperty(m_unit,
                                  kAudioUnitProperty_StreamFormat,
                                  kAudioUnitScope_Output,
                                  kInputElement,
-                                 floatFormat(captured.mSampleRate, captured.mChannelsPerFrame));
+                                 floatFormat(captured.mSampleRate, channels));
         }
         if (status == noErr && voiceProcessing) {
             status = setProperty(m_unit,
@@ -238,9 +241,9 @@ private:
             return status;
         }
         m_format.setSampleRate(int(captured.mSampleRate));
-        m_format.setChannelCount(int(captured.mChannelsPerFrame));
+        m_format.setChannelCount(int(channels));
         m_format.setSampleFormat(QAudioFormat::Float);
-        m_buffer.resize(size_t(maximumFrames) * captured.mChannelsPerFrame);
+        m_buffer.resize(size_t(maximumFrames) * channels);
         return AudioOutputUnitStart(m_unit);
     }
 
