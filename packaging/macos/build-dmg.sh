@@ -110,12 +110,13 @@ fi
 # webrtc-audio-processing, into Frameworks; neither Speecher nor a library or
 # plugin it bundles may still load one from where the build found it.
 # Prints what BINARY loads from outside the bundle and the system, leaving out
-# its own install name.
+# its own install name. otool heads its output, and each architecture of a
+# universal binary, with a line ending in a colon; the libraries are indented.
 libraries_outside_bundle() {
   local install_name
-  install_name="$(otool -D "$1" | tail -n +2)"
-  otool -L "$1" | tail -n +2 | awk '{ print $1 }' | grep -v -x -F -e "$install_name" \
-    | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' || true
+  install_name="$(otool -D "$1" | grep -v ':$' || true)"
+  otool -L "$1" | awk '/^\t/ { print $1 }' | grep -v -x -F -e "$install_name" \
+    | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' | sort -u || true
 }
 LOADS_OUTSIDE_BUNDLE=0
 while IFS= read -r -d '' binary; do
