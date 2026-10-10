@@ -282,6 +282,23 @@ Recording needs Claude Voice, ChatGPT Codex or a Custom Endpoint; Local Models c
 
 A Custom Endpoint has no stream to connect, so `record start` prints the path at once. Each utterance is uploaded on its own when it ends, after the one before has been transcribed, with your vocabulary and the end of the text before it as the prompt. The quiet between utterances is not uploaded, except the 300 ms before each, so a recording that hears no speech uploads nothing. An utterance the endpoint fails to transcribe because it is down, slow or busy is missing from the file: `record status` says so, the recording goes on with the next, and `record stop` exits with 1. Any other failure, such as a refused key, a wrong path or an account out of quota, would fail every utterance, so it stops the stream at once, with no retry, as there is no sign-in to renew: `record status` says why and `record stop` exits with 1. With a Custom Endpoint, `record stop` waits up to 65 seconds for each utterance still to be transcribed, rather than the 15 seconds other providers get, as a slow server may say nothing for a minute while it works, and three minutes in all.
 
+### Shell completions
+
+`speecher completions bash|zsh|fish` prints a script that completes Speecher's commands, options and files in that shell. Writing Profile, tone and cleanup names are not written into the script: it runs `speecher completions --list profiles` (or `tones`, `cleanup`) each time it completes one, which reads your settings without starting Speecher, so a profile you add later is offered without reinstalling. A profile's name is offered with `-` between words, as `--profile` takes it.
+
+```sh
+# bash
+mkdir -p ~/.local/share/bash-completion/completions
+speecher completions bash > ~/.local/share/bash-completion/completions/speecher
+# zsh: a folder on $fpath; add `fpath=(~/.zfunc $fpath)` before compinit in ~/.zshrc
+mkdir -p ~/.zfunc
+speecher completions zsh > ~/.zfunc/_speecher
+# fish
+speecher completions fish > ~/.config/fish/completions/speecher.fish
+```
+
+Open a new shell afterwards. Reinstall the script after an update that adds options.
+
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.

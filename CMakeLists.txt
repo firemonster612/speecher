@@ -575,6 +575,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ProvidersCommand.cpp
   src/app/AccessibilityPresentation.cpp
   src/app/SetupSteps.cpp
+  src/app/ShellCompletions.cpp
   src/app/SingleInstanceIpc.cpp
   src/app/UpdateBanner.cpp
   src/recording/RecordingPresentation.cpp
@@ -606,6 +607,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ProvidersCommand.h
   src/app/AccessibilityPresentation.h
   src/app/SetupSteps.h
+  src/app/ShellCompletions.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateBanner.h
   src/app/UpdateController.h

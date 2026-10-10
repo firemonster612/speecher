@@ -1221,6 +1221,81 @@ private slots:
         QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
     }
 
+    // Each shell's script offers every option --help documents; fish names
+    // an option without its dashes.
+    void completionsCoverEveryOptionInHelp()
+    {
+        const auto printed = [](const QStringList &arguments, int *exitCode) {
+            std::ostringstream out;
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            const auto restoreStdout = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
+            *exitCode = parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {}).exitCode;
+            return QString::fromStdString(out.str());
+        };
+        int exitCode = -1;
+        const QString help = printed({QStringLiteral("--help")}, &exitCode);
+        QStringList options;
+        for (const QRegularExpressionMatch &match :
+             QRegularExpression(QStringLiteral("--[a-z][a-z-]*")).globalMatch(help)) {
+            options << match.captured();
+        }
+        options.removeDuplicates();
+        QVERIFY(options.contains(QStringLiteral("--until-silence")));
+        for (const QString &shell : {QStringLiteral("bash"), QStringLiteral("zsh"), QStringLiteral("fish")}) {
+            const QString script = printed({QStringLiteral("completions"), shell}, &exitCode);
+            QCOMPARE(exitCode, 0);
+            for (const QString &option : std::as_const(options)) {
+                const QString written =
+                    shell == QStringLiteral("fish") ? QStringLiteral("-l ") + option.mid(2) : option;
+                // A whole word, so --tone does not count for --to.
+                const QRegularExpression word(QStringLiteral("(?<![\\w-])%1(?![\\w-])")
+                                                  .arg(QRegularExpression::escape(written)));
+                QVERIFY2(script.contains(word), qPrintable(shell + QStringLiteral(" lacks ") + option));
+            }
+        }
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        for (const QStringList &mistake : {QStringList{}, QStringList{QStringLiteral("tcsh")},
+                                           QStringList{QStringLiteral("--list"), QStringLiteral("files")}}) {
+            printed(QStringList{QStringLiteral("completions")} + mistake, &exitCode);
+            QCOMPARE(exitCode, 2);
+        }
+    }
+
+    // The scripts read these while completing, so a profile, tone or level
+    // added later is offered too, by the name the options take.
+    void completionsListTheSettingsNames()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+        draft.refinement.customTones = {
+            {QStringLiteral("custom_very_terse"), QStringLiteral("Very terse"), QStringLiteral("Short.")}};
+        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                 QStringLiteral("balanced"), QString()}};
+        settings.applySnapshot(draft);
+        const auto listed = [](const QString &list) {
+            std::ostringstream out;
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            const auto restoreStdout = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
+            parseCommandLine(
+                {QStringLiteral("speecher"), QStringLiteral("completions"), QStringLiteral("--list"), list}, {});
+            return QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        };
+        QCOMPARE(listed(QStringLiteral("profiles")),
+                 QStringList({QStringLiteral("Work"), QStringLiteral("Email"), QStringLiteral("Personal"),
+                              QStringLiteral("AI-coding"), QStringLiteral("Other"), QStringLiteral("Stand-up")}));
+        QCOMPARE(listed(QStringLiteral("tones")).last(), QStringLiteral("very-terse"));
+        QCOMPARE(listed(QStringLiteral("cleanup")),
+                 QStringList({QStringLiteral("none"), QStringLiteral("light"), QStringLiteral("medium"),
+                              QStringLiteral("high"), QStringLiteral("notes")}));
+        settings.raw().clear();
+    }
+
     // A custom tone or level is named by its id without custom_, with - for _.
     void transcribeTakesCustomTonesAndLevels()
     {

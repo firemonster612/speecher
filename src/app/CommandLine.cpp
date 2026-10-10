@@ -2,6 +2,7 @@
 
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
+#include "app/ShellCompletions.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/Vocabulary.h"
 #include "core/settings/SettingsCodecs.h"
@@ -216,6 +217,12 @@ Record a call into a file, in the running Speecher (started if needed):
                            exit status 1 when the recording missed something,
                            which it says on stderr
 
+Complete speecher's commands and options in a shell:
+  speecher completions bash|zsh|fish
+                           print the shell's completion script; it asks
+                           speecher for the profile, tone and cleanup names
+                           each time it completes them
+
 Options:
   --format plain|html      output format for toggle and start
   --profile <name>         writing profile for toggle and start: %4
@@ -353,6 +360,66 @@ QString helpText()
              cliNames(cleanupNames()).join(separator),
              writingProfileNames(writingProfiles()),
              cliNames(toneNames()).join(separator));
+}
+
+// The choices a completion script carries, from the same registry as --help.
+CompletionChoices completionChoices()
+{
+    ProviderRegistry registry;
+    registerProviders(registry, nullptr, nullptr);
+    return {providerIds(registry.speechProviders()), providerIds(registry.refinementProviders()),
+            knownSpokenLanguages()};
+}
+
+// The names `completions --list` prints for one of the lists a completion
+// script reads while completing, or nothing for another list. A profile's
+// name has - between words, which --profile takes, so no shell splits it.
+std::optional<QStringList> completionList(const QString &list)
+{
+    if (list == kCompletionProfiles) {
+        QStringList names;
+        for (const RowOption &profile : writingProfiles()) {
+            const QString name = profile.label.simplified().replace(QLatin1Char(' '), QLatin1Char('-'));
+            if (!name.isEmpty()) {
+                names << name;
+            }
+        }
+        return names;
+    }
+    if (list == kCompletionTones) {
+        return cliNames(toneNames());
+    }
+    if (list == kCompletionCleanupLevels) {
+        return cliNames(cleanupNames());
+    }
+    return std::nullopt;
+}
+
+// `speecher completions <shell>` prints the shell's completion script, and
+// `completions --list <list>`, which those scripts run, one name a line.
+// Reads the settings without starting Speecher, so completing stays quick.
+CommandLineDecision printCompletions(const QStringList &arguments)
+{
+    if (arguments.size() == 1 && kCompletionShells.contains(arguments.first())) {
+        std::cout << completionScript(arguments.first(), completionChoices()).toStdString();
+        return {LaunchMode::Exit};
+    }
+    const std::optional<QStringList> names = arguments.size() == 2 && arguments.first() == QStringLiteral("--list")
+        ? completionList(arguments.last())
+        : std::nullopt;
+    if (names) {
+        for (const QString &name : *names) {
+            std::cout << name.toStdString() << "\n";
+        }
+        return {LaunchMode::Exit};
+    }
+    std::cerr << (arguments.isEmpty() ? QStringLiteral("completions needs a shell: bash, zsh or fish")
+                                      : QStringLiteral("Unknown completions argument: %1 (expected bash, zsh or fish)")
+                                            .arg(arguments.join(QLatin1Char(' '))))
+                     .toStdString()
+              << "\n\n"
+              << helpText().toStdString();
+    return {LaunchMode::Exit, 2};
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
@@ -1016,6 +1083,9 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     }
 
     const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
+    if (verb == QStringLiteral("completions")) {
+        return printCompletions(arguments.mid(2));
+    }
     // Before the dictation options below, which vocabulary does not take.
     if (verb == QStringLiteral("vocabulary")) {
         const QString error = parseVocabularyArguments(arguments.mid(2), &decision);
