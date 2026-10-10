@@ -20,11 +20,15 @@
 #endif
 
 #ifdef Q_OS_WIN
+#include "platform/win/WinCommunicationsAudioInput.h"
+
+#include <QElapsedTimer>
 #include <QProcess>
 
 #include <mmdeviceapi.h>
 #include <mmreg.h>
 #include <wrl/client.h>
+#include <wrl/implements.h>
 
 #include <string>
 #endif
@@ -126,6 +130,21 @@ bool setDefaultOutput(const QByteArray &id)
     }
     return SUCCEEDED(policy->SetDefaultEndpoint(QString::fromUtf8(id).toStdWString().c_str(), eConsole));
 }
+
+// An echo canceller that only notes the outputs it is told to cancel, for
+// machines whose microphones have no echo canceller to tell.
+class NotedEchoControl final
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+                                          IAcousticEchoCancellationControl> {
+public:
+    STDMETHODIMP SetEchoCancellationRenderEndpoint(LPCWSTR id) override
+    {
+        outputs.append(QString::fromWCharArray(id).toUtf8());
+        return S_OK;
+    }
+
+    QList<QByteArray> outputs;
+};
 
 } // namespace
 #endif
@@ -572,6 +591,91 @@ private slots:
 
         QVERIFY2(recorded.size() >= 2000 * 32, "The microphone delivered too little audio");
         QVERIFY2(during > before * 0.8f, "Other audio was turned down while the microphone was open");
+    }
+
+    // record stop ends the last utterance on what the microphone heard up to
+    // the stop and its post-roll.
+    void liveRecordingMicrophoneKeepsItsPostRoll()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_RECORDING_MICROPHONE") != QStringLiteral("1")) {
+            QSKIP("Live recording microphone check is opt-in");
+        }
+        SettingsStore settings;
+        const int postRollMs = settings.audioCaptureSettings().postRollMs;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QString error;
+        QElapsedTimer running;
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+        running.start();
+        QTest::qWait(1000);
+        const qint64 untilStopMs = running.elapsed();
+        microphone->stop();
+        const qint64 recordedMs = recorded.size() / 32;
+        qInfo().noquote() << "recorded" << recordedMs << "ms for a stop after" << untilStopMs
+                          << "ms with a post-roll of" << postRollMs << "ms";
+
+        // Allow for the audio engine's latency.
+        QVERIFY(recordedMs >= untilStopMs + postRollMs / 2);
+    }
+
+    // Needs two sound outputs. The echo canceller is a stand-in, as virtual
+    // machines' microphones have none, and the recording's microphone runs
+    // beside it to show the switch leaves capture alone.
+    void liveRecordingMicrophoneFollowsDefaultOutput()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SWITCH") != QStringLiteral("1")) {
+            QSKIP("Live default-output switching check is opt-in");
+        }
+        const QByteArray first = defaultOutputId();
+        QAudioDevice second;
+        for (const QAudioDevice &output : QMediaDevices::audioOutputs()) {
+            if (output.id() != first) {
+                second = output;
+            }
+        }
+        QVERIFY2(!first.isEmpty() && !second.isNull(), "Switching needs two sound outputs");
+        const auto restore = qScopeGuard([&] { setDefaultOutput(first); });
+
+        SettingsStore settings;
+        std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
+        QByteArray recorded;
+        connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
+            recorded += chunk;
+        });
+        QSignalSpy failed(microphone.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(microphone->start(&error), qPrintable(error));
+
+        const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const auto uninitialize = qScopeGuard([apartment] {
+            if (SUCCEEDED(apartment)) {
+                CoUninitialize();
+            }
+        });
+        Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+        QVERIFY(SUCCEEDED(
+            CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))));
+        const auto control = Microsoft::WRL::Make<NotedEchoControl>();
+        EchoReferenceFollower follower(enumerator.Get(), control.Get());
+        QCOMPARE(control->outputs, QList<QByteArray>{first});
+
+        QVERIFY(setDefaultOutput(second.id()));
+        QTRY_VERIFY([&] {
+            follower.update();
+            return control->outputs.size() == 2;
+        }());
+        QCOMPARE(control->outputs.last(), second.id());
+
+        const qsizetype heardBefore = recorded.size();
+        QTest::qWait(500);
+        QVERIFY(recorded.size() > heardBefore);
+        QVERIFY(microphone->isActive());
+        QCOMPARE(failed.count(), 0);
+        microphone->stop();
     }
 #endif
 

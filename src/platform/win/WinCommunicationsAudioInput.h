@@ -7,6 +7,8 @@
 
 #include <windows.h>
 #include <audioclient.h>
+#include <mmdeviceapi.h>
+#include <wrl/client.h>
 
 namespace speecher {
 
@@ -21,6 +23,26 @@ QString microphoneEndpointId(const QString &deviceId);
 QString communicationsEchoCancellationWarning(HRESULT category,
                                               HRESULT effectsQuery,
                                               const QList<AUDIO_EFFECT> &effects);
+
+// Keeps an echo canceller's reference on the default output, the output
+// system audio captures, from its construction on. Lives on one thread,
+// which calls update between reads.
+class EchoReferenceFollower {
+public:
+    EchoReferenceFollower(IMMDeviceEnumerator *enumerator, IAcousticEchoCancellationControl *control);
+    ~EchoReferenceFollower();
+    Q_DISABLE_COPY_MOVE(EchoReferenceFollower)
+
+    // Sets the reference again when the default output changed since.
+    void update();
+
+private:
+    void setReference();
+
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> m_enumerator;
+    Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl> m_control;
+    Microsoft::WRL::ComPtr<DefaultOutputWatcher> m_watcher;
+};
 
 // The microphone for a Recording, captured with WASAPI as a communications
 // stream, which brings in the echo cancellation of a microphone whose driver

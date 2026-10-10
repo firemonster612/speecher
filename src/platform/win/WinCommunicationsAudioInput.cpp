@@ -68,23 +68,6 @@ void keepOtherAudioLevel(IAudioClient *client)
     }
 }
 
-// Cancels what the default output plays, the output system audio captures,
-// where the echo canceller lets Speecher choose (Windows 11 22H2 and later);
-// elsewhere Windows chooses.
-void cancelEchoOfDefaultOutput(IMMDeviceEnumerator *enumerator, IAcousticEchoCancellationControl *control)
-{
-    ComPtr<IMMDevice> output;
-    LPWSTR id = nullptr;
-    if (FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &output)) || FAILED(output->GetId(&id))) {
-        return;
-    }
-    const HRESULT result = control->SetEchoCancellationRenderEndpoint(id);
-    qInfo().noquote() << QStringLiteral("recording microphone cancels the echo of output=\"%1\" result=0x%2")
-                             .arg(QString::fromWCharArray(id))
-                             .arg(quint32(result), 8, 16, QLatin1Char('0'));
-    CoTaskMemFree(id);
-}
-
 HRESULT streamEffects(IAudioClient *client, QList<AUDIO_EFFECT> *effects)
 {
     ComPtr<IAudioEffectsManager> manager;
@@ -108,9 +91,6 @@ public:
     }
     ~MicrophoneCapture() override
     {
-        if (m_outputWatcher) {
-            m_enumerator->UnregisterEndpointNotificationCallback(m_outputWatcher.Get());
-        }
         if (m_client) {
             m_client->Stop();
         }
@@ -122,14 +102,10 @@ public:
     QString echoCancellationWarning() const override { return m_echoCancellationWarning; }
 
 private:
-    // Moves the echo canceller's reference to each new default output, as
-    // system audio moves to it.
-    void followDefaultOutput();
-
     QString m_deviceId;
-    ComPtr<IMMDeviceEnumerator> m_enumerator;
-    ComPtr<IAcousticEchoCancellationControl> m_echoControl;
-    ComPtr<DefaultOutputWatcher> m_outputWatcher;
+    // Only where the echo canceller lets Speecher choose what it cancels
+    // (Windows 11 22H2 and later); elsewhere Windows chooses.
+    std::unique_ptr<EchoReferenceFollower> m_echoReference;
     ComPtr<IAudioClient> m_client;
     ComPtr<IAudioCaptureClient> m_capture;
     int m_bytesPerFrame = 0;
@@ -173,9 +149,9 @@ QString MicrophoneCapture::open()
         return openError(result);
     }
     keepOtherAudioLevel(client.Get());
-    m_enumerator = enumerator;
-    if (SUCCEEDED(client->GetService(IID_PPV_ARGS(&m_echoControl)))) {
-        followDefaultOutput();
+    ComPtr<IAcousticEchoCancellationControl> echoControl;
+    if (SUCCEEDED(client->GetService(IID_PPV_ARGS(&echoControl)))) {
+        m_echoReference = std::make_unique<EchoReferenceFollower>(enumerator.Get(), echoControl.Get());
     }
     QList<AUDIO_EFFECT> effects;
     const HRESULT effectsQuery = streamEffects(client.Get(), &effects);
@@ -192,21 +168,10 @@ QString MicrophoneCapture::open()
     return {};
 }
 
-// Watches before it sets the reference, so a change in between sets it again.
-void MicrophoneCapture::followDefaultOutput()
-{
-    auto watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
-    if (watcher && watcher->changed()
-        && SUCCEEDED(m_enumerator->RegisterEndpointNotificationCallback(watcher.Get()))) {
-        m_outputWatcher = watcher;
-    }
-    cancelEchoOfDefaultOutput(m_enumerator.Get(), m_echoControl.Get());
-}
-
 QString MicrophoneCapture::read(QList<QByteArray> *chunks)
 {
-    if (m_outputWatcher && m_outputWatcher->takeChange()) {
-        cancelEchoOfDefaultOutput(m_enumerator.Get(), m_echoControl.Get());
+    if (m_echoReference) {
+        m_echoReference->update();
     }
     QByteArray pcm;
     UINT32 packetFrames = 0;
@@ -240,6 +205,48 @@ QString MicrophoneCapture::read(QList<QByteArray> *chunks)
 }
 
 } // namespace
+
+// Watches before it sets the reference, so a change in between sets it again.
+// Without the watcher the reference stays where it was first set.
+EchoReferenceFollower::EchoReferenceFollower(IMMDeviceEnumerator *enumerator,
+                                             IAcousticEchoCancellationControl *control)
+    : m_enumerator(enumerator)
+    , m_control(control)
+{
+    auto watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
+    if (watcher && watcher->changed() && SUCCEEDED(m_enumerator->RegisterEndpointNotificationCallback(watcher.Get()))) {
+        m_watcher = watcher;
+    }
+    setReference();
+}
+
+EchoReferenceFollower::~EchoReferenceFollower()
+{
+    if (m_watcher) {
+        m_enumerator->UnregisterEndpointNotificationCallback(m_watcher.Get());
+    }
+}
+
+void EchoReferenceFollower::update()
+{
+    if (m_watcher && m_watcher->takeChange()) {
+        setReference();
+    }
+}
+
+void EchoReferenceFollower::setReference()
+{
+    ComPtr<IMMDevice> output;
+    LPWSTR id = nullptr;
+    if (FAILED(m_enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &output)) || FAILED(output->GetId(&id))) {
+        return;
+    }
+    const HRESULT result = m_control->SetEchoCancellationRenderEndpoint(id);
+    qInfo().noquote() << QStringLiteral("echo cancellation reference output=\"%1\" result=0x%2")
+                             .arg(QString::fromWCharArray(id))
+                             .arg(quint32(result), 8, 16, QLatin1Char('0'));
+    CoTaskMemFree(id);
+}
 
 QString microphoneEndpointId(const QString &deviceId)
 {
