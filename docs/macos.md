@@ -29,6 +29,17 @@ descriptions, so permission prompts work from a plain developer build. For a
 distributable app, `make dmg` runs `macdeployqt` on a staged copy of the bundle.
 Sign and notarize release builds as usual.
 
+Echo cancellation for recordings needs webrtc-audio-processing 1.3, which
+Homebrew does not package. Build it once into a prefix and point pkg-config at
+it; `make dmg` bundles the library and its notices into the app:
+
+```sh
+brew install meson
+# 15.0: Speecher's minimum macOS, CMAKE_OSX_DEPLOYMENT_TARGET in CMakeLists.txt
+packaging/macos/build-webrtc-audio-processing.sh ~/webrtc-audio-processing 15.0
+export PKG_CONFIG_PATH=~/webrtc-audio-processing/lib/pkgconfig
+```
+
 ## Permissions Speecher asks for
 
 | Permission | Why | When asked |
@@ -36,7 +47,7 @@ Sign and notarize release builds as usual.
 | Microphone | Recording dictation | Setup assistant, or first dictation |
 | Accessibility | Synthetic Cmd+V paste into the frontmost app, and reading the focused control for direct insertion | Setup assistant; grant needs an app restart to take effect |
 | Automation (Music, Spotify, TV) | Optional pause/resume of playing media during dictation | First time media pause runs |
-| Screen Recording | Optional target screenshots for refinement context | First capture; Speecher refuses to capture without it rather than sending a wallpaper-only image |
+| Screen & System Audio Recording | Optional target screenshots for refinement context, and the other side of a call for `speecher record` | First screenshot; Speecher refuses to capture without it rather than sending a wallpaper-only image. For recordings, the first `record start`; without it a recording keeps the microphone alone, with echo cancellation off |
 
 ## After an update or rebuild
 
@@ -154,8 +165,8 @@ user-consented APIs for all of it:
    this needed the Wayland-only layer-shell protocol.
 6. **Reliable clipboard snapshot and restore** through one API that all
    applications share.
-7. **Target screenshots without a per-shot dialog** once Screen Recording is
-   granted; the portal on Wayland can prompt per capture.
+7. **Target screenshots without a per-shot dialog** once Screen & System Audio
+   Recording is granted; the portal on Wayland can prompt per capture.
 8. **Learned corrections without polling.** An AXObserver reports the user's
    edit to the inserted text as it happens; AT-SPI has no text-change signal
    Speecher can rely on across toolkits, so on Linux the same span has to be
