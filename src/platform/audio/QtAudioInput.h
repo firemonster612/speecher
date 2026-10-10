@@ -12,6 +12,9 @@
 
 namespace speecher {
 
+// Why a microphone capture cannot start when the system has no microphone.
+QString noMicrophoneText();
+
 class QtAudioInput : public AudioInput {
     Q_OBJECT
 

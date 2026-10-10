@@ -62,6 +62,8 @@ public:
     // that closes, or stops being the default, is reopened on this and later
     // reads until the reopen allowance runs out, which fails the read.
     QString read(QList<QByteArray> *chunks) override;
+    // The open output's last audio, with the silence before the stop.
+    void drain(QList<QByteArray> *chunks) override;
 
 private:
     // Expects no output open, and leaves none open when it fails.
@@ -176,7 +178,7 @@ QString LoopbackCapture::read(QList<QByteArray> *chunks)
             closeOutput();
         } else if (FAILED(result)) {
             return QStringLiteral("System audio capture stopped: %1")
-        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
+                .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
         }
     }
     // The old default output's last audio is read before moving on, and the
@@ -195,6 +197,16 @@ QString LoopbackCapture::read(QList<QByteArray> *chunks)
         *chunks = m_pcm.silenceUntil(nowMs);
     }
     return {};
+}
+
+void LoopbackCapture::drain(QList<QByteArray> *chunks)
+{
+    if (m_capture) {
+        readPackets(chunks);
+    }
+    if (chunks->isEmpty()) {
+        *chunks = m_pcm.silenceUntil(elapsedMs());
+    }
 }
 
 void LoopbackCapture::closeOutput()
@@ -242,36 +254,6 @@ HRESULT LoopbackCapture::readPackets(QList<QByteArray> *chunks)
 }
 
 } // namespace
-
-QAudioFormat audioFormatForWave(const WAVEFORMATEX &wave)
-{
-    WORD tag = wave.wFormatTag;
-    if (tag == WAVE_FORMAT_EXTENSIBLE && wave.cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-        const GUID &subFormat = reinterpret_cast<const WAVEFORMATEXTENSIBLE &>(wave).SubFormat;
-        tag = subFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT ? WAVE_FORMAT_IEEE_FLOAT
-            : subFormat == KSDATAFORMAT_SUBTYPE_PCM        ? WAVE_FORMAT_PCM
-                                                           : WAVE_FORMAT_UNKNOWN;
-    }
-    QAudioFormat::SampleFormat sampleFormat = QAudioFormat::Unknown;
-    if (tag == WAVE_FORMAT_IEEE_FLOAT && wave.wBitsPerSample == 32) {
-        sampleFormat = QAudioFormat::Float;
-    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 8) {
-        sampleFormat = QAudioFormat::UInt8;
-    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 16) {
-        sampleFormat = QAudioFormat::Int16;
-    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 32) {
-        sampleFormat = QAudioFormat::Int32;
-    }
-    QAudioFormat format;
-    format.setSampleRate(int(wave.nSamplesPerSec));
-    format.setChannelCount(wave.nChannels);
-    format.setSampleFormat(sampleFormat);
-    // Padded frames would be misread as samples.
-    if (format.bytesPerFrame() != wave.nBlockAlign) {
-        format.setSampleFormat(QAudioFormat::Unknown);
-    }
-    return format;
-}
 
 WinSystemAudioInput::WinSystemAudioInput(QObject *parent)
     : WinCaptureInput(QStringLiteral("System audio"), [] { return std::make_unique<LoopbackCapture>(); }, 0, parent)

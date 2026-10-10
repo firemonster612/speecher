@@ -26,8 +26,10 @@
 #include <ks.h>
 #include <ksmedia.h>
 #include <wrl/client.h>
+#include <wrl/implements.h>
 
 #include <atomic>
+#include <cstring>
 
 using namespace speecher;
 
@@ -81,6 +83,84 @@ public:
 
 private:
     std::atomic<int> *m_reads;
+};
+
+// Hands over three chunks at each read, each of them its capture's number
+// and its place in that capture.
+class BatchCapture final : public WinCaptureStream {
+public:
+    explicit BatchCapture(char capture)
+        : m_capture(capture)
+    {
+    }
+    QString open() override { return {}; }
+    QString read(QList<QByteArray> *chunks) override
+    {
+        for (int chunk = 0; chunk < 3; ++chunk) {
+            chunks->append(QByteArray().append(m_capture).append(char(++m_sent)));
+        }
+        return {};
+    }
+
+private:
+    char m_capture;
+    int m_sent = 0;
+};
+
+// The default output of a StandInEnumerator.
+class StandInOutput final
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IMMDevice> {
+public:
+    STDMETHODIMP Activate(REFIID, DWORD, PROPVARIANT *, void **) override { return E_NOTIMPL; }
+    STDMETHODIMP OpenPropertyStore(DWORD, IPropertyStore **) override { return E_NOTIMPL; }
+    STDMETHODIMP GetId(LPWSTR *id) override
+    {
+        static constexpr wchar_t kId[] = L"output";
+        *id = static_cast<LPWSTR>(CoTaskMemAlloc(sizeof(kId)));
+        if (!*id) {
+            return E_OUTOFMEMORY;
+        }
+        std::memcpy(*id, kId, sizeof(kId));
+        return S_OK;
+    }
+    STDMETHODIMP GetState(DWORD *state) override
+    {
+        *state = DEVICE_STATE_ACTIVE;
+        return S_OK;
+    }
+};
+
+// Has one output, which never changes.
+class StandInEnumerator final
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+                                          IMMDeviceEnumerator> {
+public:
+    STDMETHODIMP EnumAudioEndpoints(EDataFlow, DWORD, IMMDeviceCollection **) override { return E_NOTIMPL; }
+    STDMETHODIMP GetDefaultAudioEndpoint(EDataFlow, ERole, IMMDevice **device) override
+    {
+        return Microsoft::WRL::Make<StandInOutput>().CopyTo(device);
+    }
+    STDMETHODIMP GetDevice(LPCWSTR, IMMDevice **) override { return E_NOTIMPL; }
+    STDMETHODIMP RegisterEndpointNotificationCallback(IMMNotificationClient *) override { return S_OK; }
+    STDMETHODIMP UnregisterEndpointNotificationCallback(IMMNotificationClient *) override { return S_OK; }
+};
+
+// An echo canceller that refuses its first failures references, and counts
+// every try.
+class StandInEchoControl final
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+                                          IAcousticEchoCancellationControl> {
+public:
+    explicit StandInEchoControl(int failures)
+        : m_failures(failures)
+    {
+    }
+    STDMETHODIMP SetEchoCancellationRenderEndpoint(LPCWSTR) override { return ++sets > m_failures ? S_OK : E_FAIL; }
+
+    std::atomic<int> sets = 0;
+
+private:
+    const int m_failures;
 };
 
 SchemaContext context()
@@ -461,6 +541,38 @@ private slots:
         QCOMPARE(heard.size(), reads.load());
     }
 
+    // A handler that stops and starts again in the middle of a read's
+    // chunks gets the rest of the old capture, in order, before stop returns.
+    void captureStoppedFromItsAudioDeliversTheRestFirst()
+    {
+        std::atomic<char> captures = 0;
+        WinCaptureInput capture(
+            QStringLiteral("Test"), [&captures] { return std::make_unique<BatchCapture>(++captures); }, 0);
+        QList<QByteArray> heard;
+        qsizetype heardBeforeRestart = 0;
+        bool restarted = false;
+        connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) {
+            heard.append(chunk);
+            if (heard.size() == 1) {
+                capture.stop();
+                heardBeforeRestart = heard.size();
+                restarted = capture.start();
+            }
+        });
+        QVERIFY(capture.start());
+        QTRY_VERIFY(heardBeforeRestart > 0 && heard.size() >= heardBeforeRestart + 3);
+        capture.stop();
+
+        QVERIFY(restarted);
+        // The stop's last read follows the first read's three chunks.
+        QVERIFY(heardBeforeRestart >= 6);
+        for (qsizetype index = 0; index < heard.size(); ++index) {
+            const bool first = index < heardBeforeRestart;
+            QCOMPARE(heard[index][0], char(first ? 1 : 2));
+            QCOMPARE(heard[index][1], char(first ? index + 1 : index - heardBeforeRestart + 1));
+        }
+    }
+
     void defaultOutputWatcherTakesConsoleOutputChanges()
     {
         const auto watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
@@ -472,6 +584,24 @@ private slots:
         watcher->OnDefaultDeviceChanged(eRender, eConsole, nullptr);
         QVERIFY(watcher->takeChange());
         QVERIFY(!watcher->takeChange());
+    }
+
+    // A reference Windows refused is set again at the next update, without
+    // waiting for the default output to change, and says why until then.
+    void echoReferenceRetriesARefusedReference()
+    {
+        const auto enumerator = Microsoft::WRL::Make<StandInEnumerator>();
+        const auto control = Microsoft::WRL::Make<StandInEchoControl>(1);
+        EchoReferenceFollower follower(enumerator.Get(), control.Get());
+        QCOMPARE(control->sets.load(), 1);
+        QCOMPARE(follower.warning(), echoCancellationNoReferenceText(quint32(E_FAIL)));
+        QVERIFY2(follower.warning().contains(QStringLiteral("0x80004005")), qPrintable(follower.warning()));
+
+        follower.update();
+        QCOMPARE(control->sets.load(), 2);
+        QCOMPARE(follower.warning(), QString());
+        follower.update();
+        QCOMPARE(control->sets.load(), 2);
     }
 
     void recordingMicrophoneFindsEachListedMicrophone()
@@ -540,6 +670,25 @@ private slots:
         QVERIFY(!microphone.isActive());
         QTest::qWait(300);
         QCOMPARE(failed.count(), 0);
+    }
+
+    // The recording microphone's reads keep its echo reference on the
+    // default output, here by setting again one Windows refused at open.
+    void recordingMicrophoneReadsUpdateItsEchoReference()
+    {
+        if (QMediaDevices::defaultAudioOutput().isNull()) {
+            QSKIP("There is no sound output");
+        }
+        const auto control = Microsoft::WRL::Make<StandInEchoControl>(1);
+        WinCommunicationsAudioInput microphone(AudioCaptureSettings{}, [control](IAudioClient *) {
+            return Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl>(control);
+        });
+        QString error;
+        if (!microphone.start(&error)) {
+            QSKIP(qPrintable(QStringLiteral("The recording microphone did not start: %1").arg(error)));
+        }
+        QTRY_COMPARE(control->sets.load(), 2);
+        microphone.stop();
     }
 
     void schemaUsesWindowsCopyAndRows()

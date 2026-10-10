@@ -7,6 +7,8 @@
 #include <QScopeGuard>
 #include <QTimer>
 
+#include <ks.h>
+#include <ksmedia.h>
 #include <objbase.h>
 
 namespace speecher {
@@ -32,6 +34,36 @@ QString audioErrorText(HRESULT result, AudioEndpoint endpoint)
         return QStringLiteral("The %1 uses a format Speecher cannot read.").arg(device);
     }
     return qt_error_string(int(result));
+}
+
+QAudioFormat audioFormatForWave(const WAVEFORMATEX &wave)
+{
+    WORD tag = wave.wFormatTag;
+    if (tag == WAVE_FORMAT_EXTENSIBLE && wave.cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+        const GUID &subFormat = reinterpret_cast<const WAVEFORMATEXTENSIBLE &>(wave).SubFormat;
+        tag = subFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT ? WAVE_FORMAT_IEEE_FLOAT
+            : subFormat == KSDATAFORMAT_SUBTYPE_PCM        ? WAVE_FORMAT_PCM
+                                                           : WAVE_FORMAT_UNKNOWN;
+    }
+    QAudioFormat::SampleFormat sampleFormat = QAudioFormat::Unknown;
+    if (tag == WAVE_FORMAT_IEEE_FLOAT && wave.wBitsPerSample == 32) {
+        sampleFormat = QAudioFormat::Float;
+    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 8) {
+        sampleFormat = QAudioFormat::UInt8;
+    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 16) {
+        sampleFormat = QAudioFormat::Int16;
+    } else if (tag == WAVE_FORMAT_PCM && wave.wBitsPerSample == 32) {
+        sampleFormat = QAudioFormat::Int32;
+    }
+    QAudioFormat format;
+    format.setSampleRate(int(wave.nSamplesPerSec));
+    format.setChannelCount(wave.nChannels);
+    format.setSampleFormat(sampleFormat);
+    // Padded frames would be misread as samples.
+    if (format.bytesPerFrame() != wave.nBlockAlign) {
+        format.setSampleFormat(QAudioFormat::Unknown);
+    }
+    return format;
 }
 
 DefaultOutputWatcher::DefaultOutputWatcher()
@@ -79,24 +111,23 @@ bool WinCaptureInput::start(QString *error)
     if (m_thread.joinable()) {
         return true;
     }
-    Opened result;
+    setEchoCancellationWarning({});
+    QString failure;
     m_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (m_stopEvent) {
-        std::promise<Opened> opened;
-        std::future<Opened> done = opened.get_future();
+        std::promise<QString> opened;
+        std::future<QString> done = opened.get_future();
         m_thread = std::thread(&WinCaptureInput::capture, this, m_generation, std::move(opened));
-        result = done.get();
+        failure = done.get();
     } else {
-        result.error = QStringLiteral("%1 capture could not start: %2")
-                           .arg(m_name, qt_error_string(int(GetLastError())));
+        failure = QStringLiteral("%1 capture could not start: %2").arg(m_name, qt_error_string(int(GetLastError())));
     }
-    m_echoCancellationWarning = result.echoCancellationWarning;
-    if (result.error.isEmpty()) {
+    if (failure.isEmpty()) {
         return true;
     }
     endCapture();
     if (error) {
-        *error = result.error;
+        *error = failure;
     }
     return false;
 }
@@ -120,10 +151,11 @@ bool WinCaptureInput::isActive() const
 
 QString WinCaptureInput::echoCancellationWarning() const
 {
+    const QMutexLocker locker(&m_mutex);
     return m_echoCancellationWarning;
 }
 
-void WinCaptureInput::capture(quint64 generation, std::promise<Opened> opened)
+void WinCaptureInput::capture(quint64 generation, std::promise<QString> opened)
 {
     const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     const auto uninitialize = qScopeGuard([apartment] {
@@ -133,10 +165,11 @@ void WinCaptureInput::capture(quint64 generation, std::promise<Opened> opened)
     });
     const std::unique_ptr<WinCaptureStream> stream = m_createStream();
     if (const QString error = stream->open(); !error.isEmpty()) {
-        opened.set_value({error, {}});
+        opened.set_value(error);
         return;
     }
-    opened.set_value({{}, stream->echoCancellationWarning()});
+    setEchoCancellationWarning(stream->echoCancellationWarning());
+    opened.set_value({});
 
     for (;;) {
         // Polled rather than event-driven, because loopback signals nothing
@@ -144,15 +177,16 @@ void WinCaptureInput::capture(quint64 generation, std::promise<Opened> opened)
         // the silence.
         const DWORD woke = WaitForSingleObject(m_stopEvent, DWORD(kLoopbackPollMs));
         QList<QByteArray> chunks;
+        if (woke == WAIT_OBJECT_0) {
+            stream->drain(&chunks);
+            queueAudio(chunks);
+            return;
+        }
         const QString error = woke == WAIT_FAILED
             ? QStringLiteral("%1 capture stopped: %2").arg(m_name, qt_error_string(int(GetLastError())))
             : stream->read(&chunks);
         queueAudio(chunks);
-        // The read after a stop takes what the stream still holds; a failure
-        // of it is no longer worth reporting.
-        if (woke == WAIT_OBJECT_0) {
-            return;
-        }
+        setEchoCancellationWarning(stream->echoCancellationWarning());
         if (!error.isEmpty()) {
             QMetaObject::invokeMethod(
                 this, [this, error, generation] { fail(generation, error); }, Qt::QueuedConnection);
@@ -167,20 +201,33 @@ void WinCaptureInput::queueAudio(const QList<QByteArray> &chunks)
         return;
     }
     {
-        const QMutexLocker locker(&m_queuedMutex);
+        const QMutexLocker locker(&m_mutex);
         m_queued += chunks;
     }
     QMetaObject::invokeMethod(this, &WinCaptureInput::deliverAudio, Qt::QueuedConnection);
 }
 
+void WinCaptureInput::setEchoCancellationWarning(const QString &warning)
+{
+    const QMutexLocker locker(&m_mutex);
+    m_echoCancellationWarning = warning;
+}
+
+// One chunk at a time, so a stop from a handler finds the rest still queued
+// and delivers it, in order, before it returns. What is queued after that
+// stop is a later capture's, which has a delivery of its own.
 void WinCaptureInput::deliverAudio()
 {
-    QList<QByteArray> chunks;
-    {
-        const QMutexLocker locker(&m_queuedMutex);
-        chunks.swap(m_queued);
-    }
-    for (const QByteArray &chunk : std::as_const(chunks)) {
+    const quint64 generation = m_generation;
+    while (generation == m_generation) {
+        QByteArray chunk;
+        {
+            const QMutexLocker locker(&m_mutex);
+            if (m_queued.isEmpty()) {
+                return;
+            }
+            chunk = m_queued.takeFirst();
+        }
         emit audioChunk(chunk);
     }
 }

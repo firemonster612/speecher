@@ -2,12 +2,14 @@
 
 #include "dictation/DictationPorts.h"
 
+#include <QAudioFormat>
 #include <QList>
 #include <QMutex>
 
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
+#include <mmreg.h>
 #include <wrl/implements.h>
 
 #include <functional>
@@ -26,6 +28,10 @@ enum class AudioEndpoint { Microphone, SoundOutput };
 // Why the audio engine refused a capture from endpoint; Windows has no text
 // for its own errors.
 QString audioErrorText(HRESULT result, AudioEndpoint endpoint);
+
+// The sample layout a WASAPI mix format describes, or an invalid format when
+// it is one the converter cannot read.
+QAudioFormat audioFormatForWave(const WAVEFORMATEX &wave);
 
 // Signals an event when the default output changes. Windows calls it on a
 // thread of its own, so the watcher owns the event and keeps it for as long
@@ -62,15 +68,19 @@ public:
     // The audio since the last read, as 16 kHz mono s16, and why capture
     // stopped, or nothing while it runs.
     virtual QString read(QList<QByteArray> *chunks) = 0;
-    // Why it records without the system's echo cancellation, once open, for
-    // a stream that asks for it.
+    // The audio it still holds, read once capture stops, without what a read
+    // does to keep capture going, such as moving to a new default output. A
+    // failure of it is no longer worth reporting.
+    virtual void drain(QList<QByteArray> *chunks) { read(chunks); }
+    // Why it records without the system's echo cancellation, once open and
+    // after each read, for a stream that asks for it.
     virtual QString echoCancellationWarning() const { return {}; }
 };
 
 // Runs a WinCaptureStream on a thread of its own, which polls it every
 // kLoopbackPollMs, and delivers its audio on the input's thread. name, such
 // as "Microphone", begins the input's own errors. A stop keeps capturing for
-// postRollMs, reads once more and delivers all of it before it returns, as
+// postRollMs, drains the stream and delivers all of it before it returns, as
 // QtAudioInput's does.
 class WinCaptureInput : public AudioInput {
 public:
@@ -85,16 +95,12 @@ public:
     QString echoCancellationWarning() const override;
 
 private:
-    struct Opened {
-        QString error;
-        QString echoCancellationWarning;
-    };
-
-    // Runs on the capture thread, and reports through opened whether the
-    // stream opened.
-    void capture(quint64 generation, std::promise<Opened> opened);
-    // Runs on the capture thread.
+    // Runs on the capture thread, and reports through opened why the stream
+    // could not open, or nothing.
+    void capture(quint64 generation, std::promise<QString> opened);
+    // Run on the capture thread.
     void queueAudio(const QList<QByteArray> &chunks);
+    void setEchoCancellationWarning(const QString &warning);
     // Run on the input's thread.
     void deliverAudio();
     void endCapture();
@@ -106,10 +112,12 @@ private:
     std::thread m_thread;
     HANDLE m_stopEvent = nullptr;
     // Bumped by every stop, so a failure the capture thread queued before it
-    // is dropped rather than reaching the next start. Its audio needs no
-    // such guard, as a stop delivers all of it.
+    // is dropped rather than reaching the next start, and a delivery a stop
+    // interrupted ends there. Its audio needs no such guard, as a stop
+    // delivers all of it.
     quint64 m_generation = 0;
-    QMutex m_queuedMutex;
+    // Guards what the capture thread hands the input's thread.
+    mutable QMutex m_mutex;
     QList<QByteArray> m_queued;
     QString m_echoCancellationWarning;
 };

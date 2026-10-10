@@ -31,9 +31,7 @@ QByteArray LoopbackPcm::convert(const QByteArray &packet)
 
 QByteArray LoopbackPcm::convertSilent(qsizetype bytes)
 {
-    // Unsigned samples are silent at the middle of their range.
-    const char silence = m_format.sampleFormat() == QAudioFormat::UInt8 ? char(0x80) : '\0';
-    return convert(QByteArray(bytes, silence));
+    return convert(silentPcm(m_format, bytes));
 }
 
 QList<QByteArray> LoopbackPcm::silenceUntil(qint64 elapsedMs)

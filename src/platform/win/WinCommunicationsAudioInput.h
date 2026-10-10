@@ -10,6 +10,8 @@
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
+#include <functional>
+
 namespace speecher {
 
 // The endpoint id of the microphone the audio settings name by deviceId,
@@ -33,8 +35,11 @@ public:
     ~EchoReferenceFollower();
     Q_DISABLE_COPY_MOVE(EchoReferenceFollower)
 
-    // Sets the reference again when the default output changed since.
+    // Sets the reference again when the default output changed since, or
+    // when the last try failed.
     void update();
+    // Why the reference is not on the default output, or nothing.
+    QString warning() const;
 
 private:
     void setReference();
@@ -42,7 +47,14 @@ private:
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> m_enumerator;
     Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl> m_control;
     Microsoft::WRL::ComPtr<DefaultOutputWatcher> m_watcher;
+    // How the last try to set the reference went.
+    HRESULT m_result = E_PENDING;
 };
+
+// The echo canceller of a communications stream that lets Speecher choose
+// what it cancels, or none.
+using EchoControlFactory = std::function<Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl>(IAudioClient *)>;
+Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl> streamEchoControl(IAudioClient *client);
 
 // The microphone for a Recording, captured with WASAPI as a communications
 // stream, which brings in the echo cancellation of a microphone whose driver
@@ -52,10 +64,12 @@ private:
 // one means the default, and the post-roll; the rest shape dictation's
 // listening. Qt Multimedia cannot set a stream's category, which is why
 // dictation's microphone, which needs no echo cancellation, is Qt's and this
-// one is not.
+// one is not. Tests replace echoControl with a stand-in.
 class WinCommunicationsAudioInput final : public WinCaptureInput {
 public:
-    explicit WinCommunicationsAudioInput(const AudioCaptureSettings &settings, QObject *parent = nullptr);
+    explicit WinCommunicationsAudioInput(const AudioCaptureSettings &settings,
+                                         EchoControlFactory echoControl = streamEchoControl,
+                                         QObject *parent = nullptr);
 };
 
 } // namespace speecher
