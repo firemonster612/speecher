@@ -370,6 +370,13 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         : m_targetProvider ? m_targetProvider->capture(m_sessionSettings->appRecognitionRules)
                            : Target{};
     m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
+    // Lengths only: the text itself stays out of the log.
+    qInfo().noquote() << (m_followingUp ? "target kept for follow-up app=" : "target captured app=")
+                             + m_target.applicationId
+                      << "role=" + m_target.role
+                      << "accessible=" << m_target.accessible << "editable=" << m_target.editable
+                      << "selectionLength=" << m_target.selectedText.size()
+                      << "selectionEdit=" << m_target.hasSelection();
     // The target settles the Writing Profile, and with it the services the
     // session runs and the terms the speech request may carry.
     if (!selectProviders()) {

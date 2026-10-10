@@ -657,6 +657,43 @@ private slots:
         QVERIFY(!session.lastMessage().contains(QStringLiteral("Used raw transcript")));
     }
 
+    // Text selected in a page or a terminal's output can't be replaced, so
+    // dictating there is plain dictation, not an edit of it.
+    void aSelectionInReadOnlyTextIsNoEdit()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("light_cleanup"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("firefox");
+        target.target.selectedText = QStringLiteral("a sentence on a web page");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 24;
+        target.target.editable = false;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("hello there"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        QVERIFY(!refiner->lastContext.editSelection);
+        refiner->emitCompletedText(QStringLiteral("Hello there."));
+        QCOMPARE(reviews.count(), 0);
+        QCOMPARE(delivery.calls, 1);
+        QCOMPARE(delivery.lastText, QStringLiteral("Hello there."));
+    }
+
     void selectionEditingFailurePreservesTheSelectedText()
     {
         SettingsStore settings;

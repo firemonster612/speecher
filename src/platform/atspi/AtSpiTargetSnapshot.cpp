@@ -801,6 +801,7 @@ TargetSnapshot TargetSnapshot::capture()
         clearError(&error);
         target.secure = target.secure || isForeignPrivilegedProcess(target.processId);
         target.accessible = true;
+        target.editable = hasState(focused, ATSPI_STATE_EDITABLE);
         if (!target.secure) {
             populateAncestorContext(&target, focused, &identities);
             populateText(&target, focused);

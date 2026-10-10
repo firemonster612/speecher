@@ -11,6 +11,7 @@
 #import <Carbon/Carbon.h>
 
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace speecher {
@@ -192,14 +193,31 @@ void spinEventLoop(int milliseconds)
     wait.exec(QEventLoop::ExcludeUserInputEvents);
 }
 
+// Whether the attribute can be set; nothing when the element can't say.
+std::optional<bool> attributeSettable(AXUIElementRef element, CFStringRef attribute)
+{
+    Boolean settable = false;
+    if (!element || AXUIElementIsAttributeSettable(element, attribute, &settable) != kAXErrorSuccess) {
+        return std::nullopt;
+    }
+    return settable;
+}
+
 bool selectedTextIsSettable(AXUIElementRef element)
 {
-    if (!element) {
-        return false;
+    return attributeSettable(element, kAXSelectedTextAttribute).value_or(false);
+}
+
+// Whether the control takes typing. Its value says so wherever it can be
+// asked: WebKit lets the selected text of any text control be set, read-only
+// or not, and Qt's editors let only their value be set. Where the value
+// can't be asked about, the selected text decides.
+bool takesTyping(AXUIElementRef element)
+{
+    if (const std::optional<bool> value = attributeSettable(element, kAXValueAttribute)) {
+        return *value;
     }
-    Boolean settable = false;
-    return AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute, &settable) == kAXErrorSuccess
-        && settable;
+    return selectedTextIsSettable(element);
 }
 
 } // namespace
@@ -263,6 +281,9 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
         target.accessible = true;
         target.role = stringAttribute(focused, kAXRoleAttribute);
         target.controlName = stringAttribute(focused, kAXTitleAttribute);
+        // A web page or other read-only text reports its selection but takes
+        // no replacement for it.
+        target.editable = takesTyping(focused);
         if (!target.secure) {
             const std::optional<CFRange> selectedRange = rangeAttribute(
                 focused, kAXSelectedTextRangeAttribute);
@@ -289,6 +310,11 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
     }
 
     target.terminalHost = terminalBundleIdentifiers().contains(target.applicationId);
+    // A terminal shows output, and a paste there goes in at the prompt
+    // rather than over the selection, so its text is never edited.
+    if (target.terminalHost) {
+        target.editable = false;
+    }
     target.category = classifyTarget(target, recognitionRules);
     if (target.terminalHost && target.category == AppCategory::General) {
         target.category = AppCategory::Terminal;
