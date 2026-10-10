@@ -21,14 +21,29 @@ constexpr double codexWaitSeconds = 0.81 + 0.77;
 constexpr double claudeWordErrorRate = 6.59;
 constexpr double claudeWaitSeconds = 0.07;
 
-// Refinement services, from the benchmark in docs/provider-ratings-mockup/bench:
-// both passed every check; the waits are median seconds. OpenAI is gpt-6-luna
-// at effort none on the Fast tier; Anthropic is Claude Opus 5.5 at effort low
-// at standard speed, since its fast mode needs usage credits a subscription
-// lacks and the app falls back.
-constexpr int cloudChecksPassed = kRefinementBenchmarkChecks;
-constexpr double openAiWaitSeconds = 1.54;
-constexpr double anthropicWaitSeconds = 2.77;
+// Refinement services, from the benchmark in docs/provider-ratings-mockup/bench,
+// run 2026-10-10 on each model the Model rows list, at its provider's default
+// settings: OpenAI at effort none (low for GPT-6.1 Sol, which refuses none) on
+// the Fast tier; Anthropic at effort low at standard speed, since its fast
+// mode needs usage credits a subscription lacks and the app falls back. Checks
+// passed, then the median wait in seconds.
+struct MeasuredRefinementModel {
+    const char *id;
+    int checksPassed;
+    double waitSeconds;
+};
+constexpr MeasuredRefinementModel measuredRefinementModels[] = {
+    {"gpt-6-luna", 122, 1.29},
+    {"gpt-6.1-sol", 119, 1.53},
+    {"gpt-6-astra", 120, 1.65},
+    {"gpt-5.6-luna", 120, 1.53},
+    {"gpt-5.6-terra", 123, 1.62},
+    {"claude-opus-5-5", 121, 1.41},
+    {"claude-opus-5", 123, 1.94},
+    {"claude-sonnet-5-5", 123, 1.23},
+    {"claude-haiku-5-5", 110, 0.92},
+    {"claude-haiku-4-5", 116, 0.89},
+};
 
 double toHalves(double rating)
 {
@@ -135,13 +150,17 @@ std::optional<ProviderRating> speechRating(const QString &providerId, const Hard
     return std::nullopt;
 }
 
-std::optional<ProviderRating> refinementRating(const QString &providerId, const HardwareProfile &hardware)
+std::optional<ProviderRating> refinementRating(const QString &providerId, const HardwareProfile &hardware,
+                                               const RefinementSettings &refinement)
 {
-    if (providerId == QStringLiteral("openai")) {
-        return ProviderRating{refinementBars(cloudChecksPassed, openAiWaitSeconds), {}};
-    }
-    if (providerId == QStringLiteral("anthropic")) {
-        return ProviderRating{refinementBars(cloudChecksPassed, anthropicWaitSeconds), {}};
+    if (const std::optional<RowOption> model = refinementServiceModel(providerId, refinement)) {
+        const auto measured = std::ranges::find_if(measuredRefinementModels, [&model](const auto &measured) {
+            return model->id == QLatin1String(measured.id);
+        });
+        if (measured == std::ranges::end(measuredRefinementModels)) {
+            return std::nullopt;
+        }
+        return ProviderRating{refinementBars(measured->checksPassed, measured->waitSeconds), {}};
     }
     if (providerId == QStringLiteral("local")) {
         const std::optional<CleanupHardware> cleanupHardware = cleanupHardwareHere(hardware);
@@ -251,7 +270,7 @@ std::optional<ProviderRating> providerRating(ProviderRole role, const QString &p
                                              const HardwareProfile &hardware, const AppSettings &settings)
 {
     return role == ProviderRole::Speech ? speechRating(providerId, hardware, settings.speech)
-                                        : refinementRating(providerId, hardware);
+                                        : refinementRating(providerId, hardware, settings.refinement);
 }
 
 QList<RatedModel> providerModels(ProviderRole role, const QString &providerId,

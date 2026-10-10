@@ -2986,6 +2986,7 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("claude-opus-5-5"), QStringLiteral("Claude Opus 5.5")},
         {QStringLiteral("claude-opus-5"), QStringLiteral("Claude Opus 5")},
         {QStringLiteral("claude-sonnet-5-5"), QStringLiteral("Claude Sonnet 5.5")},
+        {QStringLiteral("claude-haiku-5-5"), QStringLiteral("Claude Haiku 5.5")},
         {QStringLiteral("claude-haiku-4-5"), QStringLiteral("Claude Haiku 4.5")},
     };
     anthropic.model = &RefinementSettings::anthropicModel;

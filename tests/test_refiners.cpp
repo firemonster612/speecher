@@ -1305,6 +1305,41 @@ private slots:
         socket->disconnectFromHost();
     }
 
+    void anthropicApiRefinerSendsTheNearestEffortTheModelTakes_data()
+    {
+        QTest::addColumn<QString>("model");
+        QTest::addColumn<QString>("effort");
+        QTest::newRow("Haiku 5.5 takes extra high") << "claude-haiku-5-5" << "xhigh";
+        QTest::newRow("Opus 4.6 tops out at max") << "claude-opus-4-6" << "max";
+        QTest::newRow("Haiku 4.5 takes none") << "claude-haiku-4-5" << "";
+    }
+
+    void anthropicApiRefinerSendsTheNearestEffortTheModelTakes()
+    {
+        QFETCH(QString, model);
+        QFETCH(QString, effort);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        refiner.refine(QStringLiteral("please clean this up"), {}, {}, QStringLiteral("test-token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()), model,
+                       QStringLiteral("xhigh"), false, QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        const int contentLength = httpContentLength(request.left(headerEnd));
+        const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4, contentLength)).object();
+        QCOMPARE(body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(),
+                 effort);
+        QCOMPARE(body.contains(QStringLiteral("thinking")), !effort.isEmpty());
+        socket->disconnectFromHost();
+    }
+
     void openAiSpeedAsksForItsTierWithoutAnAccountId_data()
     {
         QTest::addColumn<QString>("speed");

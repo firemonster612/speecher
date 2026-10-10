@@ -2928,7 +2928,7 @@ private slots:
         QVERIFY(refinementRating.visible(settings, capabilities));
         QCOMPARE(refinementRating.helpValue(settings), QStringLiteral("Out of 10."));
         QCOMPARE(bars(refinementRating, settings),
-                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7/10")}));
+                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7.5/10")}));
         settings.refinement.providerId = QStringLiteral("local");
         QCOMPARE(refinementRating.helpValue(settings), QStringLiteral("LFM2.5 1.2B, suggested for this computer"));
         QCOMPARE(bars(refinementRating, settings),

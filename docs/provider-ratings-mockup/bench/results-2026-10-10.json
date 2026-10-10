@@ -1,0 +1,5762 @@
+[
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.7307894529949408,
+  "total_s": 1.1174443619966041,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.1963914480002131,
+  "total_s": 1.3683620319934562,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.2707590549980523,
+  "total_s": 1.6613088900048751,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.9516945149953244,
+  "total_s": 1.4667827130033402,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.3140555940044578,
+  "total_s": 1.6105617450084537,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.948242020996986,
+  "total_s": 1.183048634993611,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.936682309009484,
+  "total_s": 2.1364421010075603,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.2050558650080347,
+  "total_s": 1.6909055830037687,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.1781887429970084,
+  "total_s": 1.44469097199908,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.7939409800019348,
+  "total_s": 2.265698714007158,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 0.8438375910045579,
+  "total_s": 1.3325337630085414,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.0811988710047444,
+  "total_s": 1.413516343003721,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.4488788899907377,
+  "total_s": 1.8208907149964944,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.1113999570079613,
+  "total_s": 1.485936869008583,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.262531268002931,
+  "total_s": 2.73689552200085,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "list",
+  "run": 0,
+  "first_s": 0.981418476003455,
+  "total_s": 1.5299238440056797,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.5773480999923777,
+  "total_s": 2.025932817996363,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.748628301997087,
+  "total_s": 2.2501738380087772,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "list",
+  "run": 0,
+  "first_s": 2.5764400769985514,
+  "total_s": 3.3146576610015472,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.0838460910017602,
+  "total_s": 1.5317666260089027,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.8508711729955394,
+  "total_s": 1.1980033969884971,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.1869637979980325,
+  "total_s": 1.4546859649999533,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.2757908260100521,
+  "total_s": 1.4987664910004241,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.2049727009871276,
+  "total_s": 1.7021694899885915,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.046005841009901,
+  "total_s": 1.3819500070094364,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.0635593560000416,
+  "total_s": 1.4020637789944885,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it\u2019s due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.252329105991521,
+  "total_s": 1.5324959790013963,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.2837404089950724,
+  "total_s": 1.517940894991625,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.6781281319999835,
+  "total_s": 2.0233072739938507,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.3123762379982509,
+  "total_s": 1.8858891499985475,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.903760033994331,
+  "total_s": 1.1347348879935453,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.1478816820017528,
+  "total_s": 1.3335288020025473,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.2411769500031369,
+  "total_s": 1.4393933489918709,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.8418326139944838,
+  "total_s": 1.0686147129890742,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.9862335799989523,
+  "total_s": 1.2579613689886173,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.8184682530118152,
+  "total_s": 1.157748708006693,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 2.2145600670046406,
+  "total_s": 2.525636286009103,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.2069914379972033,
+  "total_s": 1.4349776019953424,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.7037839320109924,
+  "total_s": 2.0782412230037153,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.1120902029942954,
+  "total_s": 1.4632690799917327,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.1026801169937244,
+  "total_s": 1.3452225789951626,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.1936217920010677,
+  "total_s": 1.313320952001959,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.692343715010793,
+  "total_s": 2.146254860010231,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.9636715270025888,
+  "total_s": 2.2573790310125332,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The budget is due on Friday. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.3578716449992498,
+  "total_s": 1.6170216190075735,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.7631611980032176,
+  "total_s": 0.9547462930058828,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.175116435988457,
+  "total_s": 1.417971997987479,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.2414820609992603,
+  "total_s": 1.401151211000979,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.1001136919949204,
+  "total_s": 1.295149005993153,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.9951649489958072,
+  "total_s": 1.2044955829915125,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.2532593389914837,
+  "total_s": 1.5088795399933588,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter\u2019s birthday card."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.31955313400249,
+  "total_s": 1.475935843991465,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.1199988790031057,
+  "total_s": 1.3681048169964924,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.1794314620055957,
+  "total_s": 1.4217657600092934,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.6388375199894654,
+  "total_s": 2.1293369209888624,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.8519658849982079,
+  "total_s": 1.1814954629953718,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.1610168810002506,
+  "total_s": 1.3615718850051053,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.5532143240125151,
+  "total_s": 1.7965322180098156,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.3775439619930694,
+  "total_s": 1.6536846469971351,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.2629978280019714,
+  "total_s": 1.5756355490011629,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.8276495110039832,
+  "total_s": 1.1297798000014154,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.7071054940024624,
+  "total_s": 2.1569953600119334,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file `readme.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.2386919129930902,
+  "total_s": 1.6070743470045272,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 3.6213743750122376,
+  "total_s": 4.345320528009324,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.696950169003685,
+  "total_s": 1.9441039439989254,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.3109269609994953,
+  "total_s": 1.4998766350036021,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.8399536249926314,
+  "total_s": 2.008563397990656,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.4949687680054922,
+  "total_s": 2.129179395007668,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 0.9865115930006141,
+  "total_s": 1.2142863679910079,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.3595413380098762,
+  "total_s": 1.5589688080071937,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.642643921994022,
+  "total_s": 2.10857786599081,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting to see when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.1321680049877614,
+  "total_s": 1.5054989269992802,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.136279893995379,
+  "total_s": 1.4980122970009688,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "email",
+  "run": 0,
+  "first_s": 0.8385544229968218,
+  "total_s": 1.3534585339948535,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.278230149007868,
+  "total_s": 1.8184682480059564,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.9972076959966216,
+  "total_s": 1.864130755988299,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.2031806529994356,
+  "total_s": 1.4172141869930783,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.2351773459959077,
+  "total_s": 1.4941188169905217,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.8739871580037288,
+  "total_s": 1.2928584189940011,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.0311834729945986,
+  "total_s": 1.4068210779951187,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.8854539490130264,
+  "total_s": 1.0955333540041465,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.736332084008609,
+  "total_s": 1.9604004709981382,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.3469327380007599,
+  "total_s": 1.6520572110021021,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.3711049640114652,
+  "total_s": 1.604158460002509,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.357573402012349,
+  "total_s": 1.624265408012434,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.8172934089961927,
+  "total_s": 1.2246251979959197,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.3736989269964397,
+  "total_s": 1.706924355996307,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.5478720459941542,
+  "total_s": 1.834723362000659,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.911206944991136,
+  "total_s": 1.915199697992648,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.090457862999756,
+  "total_s": 1.4024566029984271,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "list",
+  "run": 1,
+  "first_s": 0.9494332210015273,
+  "total_s": 1.538162448006915,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.2782105780061102,
+  "total_s": 1.7801709449995542,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.1797635850089137,
+  "total_s": 1.6569114800076932,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.5024048120103544,
+  "total_s": 2.0847321019973606,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.3695202720118687,
+  "total_s": 1.8164102010050556,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.8308067189936992,
+  "total_s": 1.1807136659917887,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.817308090001461,
+  "total_s": 2.1070027950045187,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.424373679998098,
+  "total_s": 1.6530540910025593,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.1834427010035142,
+  "total_s": 1.5369344200007617,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.7501597719965503,
+  "total_s": 2.085293800002546,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.9063044999929843,
+  "total_s": 1.2871417239948642,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it\u2019s due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.0822817540029064,
+  "total_s": 1.3495334710023599,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.1695300580031471,
+  "total_s": 1.468200944000273,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.2069803420017706,
+  "total_s": 1.533577113004867,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.5952851790061686,
+  "total_s": 2.6057910610106774,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.0464788199897157,
+  "total_s": 1.264263791992562,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.1391242649988271,
+  "total_s": 1.3916732000070624,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.2211774319875985,
+  "total_s": 1.5064158689929172,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.3086557850037934,
+  "total_s": 1.5718340300081763,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.8313340090098791,
+  "total_s": 1.0687512349977624,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 0.8965971989964601,
+  "total_s": 1.263396684997133,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.5595288570038974,
+  "total_s": 1.8943773890059674,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.379796402005013,
+  "total_s": 1.5753569730004529,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.3075986289914,
+  "total_s": 1.6492206219991203,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.6076409270026488,
+  "total_s": 1.9138174510007957,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 0.7329343980090925,
+  "total_s": 0.9392315290024271,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.3107142060034676,
+  "total_s": 1.5224533360014902,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.2922652879933594,
+  "total_s": 1.459282601994346,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.6853216099989368,
+  "total_s": 2.5037140780041227,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.5527881440066267,
+  "total_s": 1.8562281890044687,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.2414091669925256,
+  "total_s": 1.6347285520023433,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.9797414940112503,
+  "total_s": 1.220245041011367,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.3134198879997712,
+  "total_s": 1.5316499890031992,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.0342381249938626,
+  "total_s": 1.2521999729942763,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.1745849199942313,
+  "total_s": 1.3861975030013127,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.8394871000054991,
+  "total_s": 1.091397002004669,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.5144447030033916,
+  "total_s": 1.6882119520014385,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 5.024487332004355,
+  "total_s": 5.080447102998733,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.1854234600032214,
+  "total_s": 1.462642140002572,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.1992253589996835,
+  "total_s": 1.4823153430043021,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.8956830929964781,
+  "total_s": 1.2696369740006048,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.2008254359971033,
+  "total_s": 1.4599334259983152,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.1209920510009397,
+  "total_s": 1.3789821440004744,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.3491282140021212,
+  "total_s": 1.7716398619959364,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.263569439004641,
+  "total_s": 1.5814586449996568,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 0.8837097569921752,
+  "total_s": 1.1963681369961705,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.4426218129956396,
+  "total_s": 1.7372649269964313,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file `readme.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.3130854220071342,
+  "total_s": 1.668740898006945,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file `readme.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.200658300993382,
+  "total_s": 1.5345726369996555,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.314894055001787,
+  "total_s": 1.822381071993732,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.1353116300015245,
+  "total_s": 1.3257285360014066,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.1463891339953989,
+  "total_s": 1.4681275769980857,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.2362614900048357,
+  "total_s": 1.4077630179963307,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.8790062119951472,
+  "total_s": 2.1773717570031295,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 2.13200857200718,
+  "total_s": 2.51625024000532,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.1761101159936516,
+  "total_s": 1.567363068999839,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.241076348000206,
+  "total_s": 1.6988255719916197,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.4927864729979774,
+  "total_s": 1.8736826560052577,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.016535937989829,
+  "total_s": 1.4692638329870533,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.136766797004384,
+  "total_s": 1.768170272000134,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 0.7768006050027907,
+  "total_s": 1.1302945929928683,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.255633388995193,
+  "total_s": 1.4947341369988862,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.136959562994889,
+  "total_s": 1.3976920590066584,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.079181912005879,
+  "total_s": 1.4621203230053652,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.0295826380024664,
+  "total_s": 1.3469953180028824,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.8277558010013308,
+  "total_s": 1.3880281189922243,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.4453866339899832,
+  "total_s": 1.7213035710010445,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.005052465989138,
+  "total_s": 2.558803551000892,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.8337064299994381,
+  "total_s": 1.0270971880090656,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.1881804279983044,
+  "total_s": 1.5112579200067557,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.9499918159999652,
+  "total_s": 1.2868000790040242,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.376081925991457,
+  "total_s": 1.7416739449981833,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.3256022279965691,
+  "total_s": 1.70924648399523,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.0509894999995595,
+  "total_s": 1.442281871000887,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 2.2274210390023654,
+  "total_s": 2.5949174170091283,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.1167292890022509,
+  "total_s": 1.6765673959889682,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.3541050339990761,
+  "total_s": 1.7513348869979382,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.441437057001167,
+  "total_s": 1.7471691600076156,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.0813239729905035,
+  "total_s": 1.6365656109992415,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.2757595580042107,
+  "total_s": 1.7435663520009257,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.7883404069871176,
+  "total_s": 1.1236178639956051,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.309922934990027,
+  "total_s": 1.4797436309891054,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.2185474439902464,
+  "total_s": 1.4423886149888858,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.9232978399959393,
+  "total_s": 1.4137575780041516,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.3066810390009778,
+  "total_s": 1.5980476810073014,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.023641186999157,
+  "total_s": 1.3796316320076585,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.3171458049910143,
+  "total_s": 1.6333875309937866,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.084914064995246,
+  "total_s": 1.3253162920009345,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.072434380010236,
+  "total_s": 1.4445884570013732,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.3774173309939215,
+  "total_s": 1.7323237910022726,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.275302667010692,
+  "total_s": 1.351044188006199,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.296473613998387,
+  "total_s": 1.492933401998016,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.1138270359952003,
+  "total_s": 1.2666748439951334,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.8224996839999221,
+  "total_s": 1.4192472310096491,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.9641544129990507,
+  "total_s": 1.2057904260000214,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.3404454219999025,
+  "total_s": 1.7139322209986858,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.3567226860031951,
+  "total_s": 1.6652930230047787,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 2.782420410992927,
+  "total_s": 2.9923505499900784,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.9295801289990777,
+  "total_s": 1.2946923440031242,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at four thirty and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.3782217469997704,
+  "total_s": 1.6503166170004988,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.7897726299997885,
+  "total_s": 0.9976370009972015,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.5027317659987602,
+  "total_s": 1.7613146499934373,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.2873876419907901,
+  "total_s": 1.4907528379990254,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 2.461496154006454,
+  "total_s": 2.758434290997684,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.338240869998117,
+  "total_s": 1.6293266959983157,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.379673264993471,
+  "total_s": 1.6302840360003756,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.0699133049929515,
+  "total_s": 1.2819385689945193,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.2624508129956666,
+  "total_s": 1.6741663339926163,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "count",
+  "run": 2,
+  "first_s": 0.8626979180116905,
+  "total_s": 1.075327800004743,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.7679763469932368,
+  "total_s": 1.9699579349980922,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.881182880999404,
+  "total_s": 1.1185972630046308,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.196730377007043,
+  "total_s": 1.3679811129986774,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.4338309319864493,
+  "total_s": 1.6589119809941621,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.315206216997467,
+  "total_s": 1.5806094860017765,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 4.058952107006917,
+  "total_s": 4.338065032003215,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.080017157990369,
+  "total_s": 1.4289085950003937,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.2225527230039006,
+  "total_s": 1.7455798279988812,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.1530718640133273,
+  "total_s": 1.5054308330145432,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.3343278429965721,
+  "total_s": 1.6230277010035934,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.2390899620077107,
+  "total_s": 1.5454308059997857,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 0.8522215370030608,
+  "total_s": 1.2014574000058929,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 0.9486128389980877,
+  "total_s": 1.3716065019980306,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file `readme.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.3682015189988306,
+  "total_s": 1.7175708650029264,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file `readme.md` in the `docs` folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.5732367860036902,
+  "total_s": 1.9086366630072007,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.0861799039994366,
+  "total_s": 1.4778253459953703,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.1622099899977911,
+  "total_s": 1.381349073999445,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.7447117039992008,
+  "total_s": 1.9242940279946197,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.44678028600174,
+  "total_s": 1.757841497004847,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.1411111049965257,
+  "total_s": 1.339552787001594,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.4007198439940112,
+  "total_s": 1.6164772189949872,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-6-luna",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.9286710140004288,
+  "total_s": 1.398616235004738,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-6.1-sol",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.1684907070011832,
+  "total_s": 1.631979483005125,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-6-astra",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.299777735999669,
+  "total_s": 1.7201051250012824,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "openai:gpt-5.6-luna",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.933026721002534,
+  "total_s": 1.3921594309940701,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.6-terra",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.488761489992612,
+  "total_s": 2.023170870001195,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 2.8198837129893946,
+  "total_s": 3.054775481999968,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.0687390929961111,
+  "total_s": 1.9227121510048164,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.8282372789981309,
+  "total_s": 1.334440403006738,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.6453797839931212,
+  "total_s": 0.9936343209992629,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday, because I've got that dentist appointment."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.2773371369985398,
+  "total_s": 1.4761127219971968,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.743073377001565,
+  "total_s": 1.3481357250129804,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.187776873994153,
+  "total_s": 1.9637363859947072,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.8102208740019705,
+  "total_s": 1.2624567699967884,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.547227146991645,
+  "total_s": 0.8758350139978575,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "send the report to Maria by 5 pm"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.7580344039888587,
+  "total_s": 0.8909854599914979,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.5093982870021136,
+  "total_s": 1.8213939730048878,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.225050615001237,
+  "total_s": 2.151811996998731,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 0.6598484730056953,
+  "total_s": 1.1981206110067433,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 0.5697201720031444,
+  "total_s": 0.8380824040068546,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "run the deploy script --force and then check the logs at /var/log/speecher.log"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 0.6792180540069239,
+  "total_s": 0.8524786610068986,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "okay so run the deploy script with --force and then check the logs at /var/log/speecher.log"
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.5704056590038817,
+  "total_s": 1.9215884300065227,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.0799816120124888,
+  "total_s": 2.086290290011675,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.413107389002107,
+  "total_s": 1.647528253000928,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "list",
+  "run": 0,
+  "first_s": 0.531157824996626,
+  "total_s": 0.8518430139956763,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.1392118619987741,
+  "total_s": 1.449144971993519,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the change log.\n2. Bump the version number in CMakeLists.txt.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.6233901030063862,
+  "total_s": 1.304806900996482,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.2374639930058038,
+  "total_s": 2.067584545002319,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.7389313849998871,
+  "total_s": 1.3233125209953869,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.5517417410010239,
+  "total_s": 0.8527033509890316,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "can you tell me what the capital of france is I need it for the quiz tomorrow"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.5701212559943087,
+  "total_s": 0.6812883579987101,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "I need the capital of France for a quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.6075611370033585,
+  "total_s": 1.2125132250075694,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.071726228998159,
+  "total_s": 1.9484198610007297,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.7354850150004495,
+  "total_s": 1.2234830600064015,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.5667679259931901,
+  "total_s": 0.884119202994043,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "$2,345 total, due March 3."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.6290753459907137,
+  "total_s": 0.8321093159902375,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.6766477519995533,
+  "total_s": 1.2358215779968305,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.0199382860009791,
+  "total_s": 1.78738507500384,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.7861432189965853,
+  "total_s": 1.2383818039961625,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.5616638859937666,
+  "total_s": 0.8568293889984488,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 2.994129040002008,
+  "total_s": 3.1155131999985315,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.224541142990347,
+  "total_s": 1.9398729909880785,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the caf\u00e9 on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.1184750240063295,
+  "total_s": 1.9363981850037817,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.762868735997472,
+  "total_s": 1.2365110450045904,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.5931838509859517,
+  "total_s": 0.9297734059946379,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "let's meet at the cafe on Main Street at 4:30. Bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.6598797090118751,
+  "total_s": 0.8555501990049379,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.41091326699825,
+  "total_s": 1.5851832199987257,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.1019479899987346,
+  "total_s": 1.7800278329959838,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.7278576340031577,
+  "total_s": 1.1362719140015543,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.5562736909923842,
+  "total_s": 0.8227010179980425,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "the budget is due on the. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.8653626489976887,
+  "total_s": 1.0267697039962513,
+  "passed": [
+   true,
+   false
+  ],
+  "text": "The budget is due on Friday. We need to submit it by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.6252102120051859,
+  "total_s": 1.2439321590063628,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.2237681619881187,
+  "total_s": 1.9670498639898142,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.825537472992437,
+  "total_s": 1.2648728509957436,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.5726749419991393,
+  "total_s": 0.8439082389959367,
+  "passed": [
+   true,
+   false,
+   false
+  ],
+  "text": "order three, no, sorry, four boxes of printer paper for the office"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.5922189249977237,
+  "total_s": 0.6970626940019429,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.6495336719963234,
+  "total_s": 1.2701996859977953,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.1509582279977622,
+  "total_s": 1.9771430919936392,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.7981737130030524,
+  "total_s": 1.2541572540067136,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.5672920799988788,
+  "total_s": 0.8758706160006113,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.5942154630029108,
+  "total_s": 0.7128040700044949,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.7573903609882109,
+  "total_s": 1.4416580369870644,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.2693196040054318,
+  "total_s": 2.151590234003379,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.698489504007739,
+  "total_s": 1.2123691060114652,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.5524641149968375,
+  "total_s": 0.8669802130025346,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.5057437689974904,
+  "total_s": 0.7393565110105556,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.4141699570027413,
+  "total_s": 1.5852129670092836,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.9926581469917437,
+  "total_s": 1.8403480139968451,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.1712373449990992,
+  "total_s": 1.6607733990094857,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.8459058129956247,
+  "total_s": 0.9557810809928924,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "open the file `README.md` in the `docs` folder and fix the typo in the second heading"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.585692606997327,
+  "total_s": 0.7293903129902901,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file README.md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.2264743370033102,
+  "total_s": 1.2956658850016538,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.1661862600012682,
+  "total_s": 1.8703953939984785,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 0.7829035790055059,
+  "total_s": 1.2141390750039136,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 0.6337954359914875,
+  "total_s": 0.9156457299977774,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "tell him the contract looks fine to me"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.9199017969949637,
+  "total_s": 2.010109012000612,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.2918651069921907,
+  "total_s": 2.1365192129887873,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.15784934500698,
+  "total_s": 2.1653012559982017,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks"
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "email",
+  "run": 0,
+  "first_s": 0.9866864000068745,
+  "total_s": 1.5976748810062418,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "email",
+  "run": 0,
+  "first_s": 0.5996871319948696,
+  "total_s": 0.9986632049985928,
+  "passed": [
+   false,
+   true,
+   true
+  ],
+  "text": "hi sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "email",
+  "run": 0,
+  "first_s": 0.6876047190016834,
+  "total_s": 0.9258838199893944,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 3.5901905070059,
+  "total_s": 3.848486370014143,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.1256174270092743,
+  "total_s": 1.9741281660099048,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.7420547999936389,
+  "total_s": 1.2582696229947032,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.6035277319897432,
+  "total_s": 0.9162363829964306,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday, because I've got that dentist appointment."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.5825521429942455,
+  "total_s": 0.7610929060028866,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.7363525550026679,
+  "total_s": 1.279206007005996,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.2426130430103512,
+  "total_s": 2.0458477000065614,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.7226087000017287,
+  "total_s": 1.1612850100063952,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.6687076889938908,
+  "total_s": 0.9894947629945818,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.5781508329964709,
+  "total_s": 0.6928116420021979,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.459545876001357,
+  "total_s": 1.679390096993302,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.197279088999494,
+  "total_s": 2.029643835994648,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.6751295870053582,
+  "total_s": 1.1909741699928418,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.6018424520007102,
+  "total_s": 0.8995123960048659,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "run the deploy script --force and then check the logs at /var/log/speecher.log"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.6253673460014397,
+  "total_s": 0.8283304420037894,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.5085425069992198,
+  "total_s": 1.8863016730028903,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.1073830600071233,
+  "total_s": 2.0485404490027577,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.3342784639971796,
+  "total_s": 1.5677822869911324,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "list",
+  "run": 1,
+  "first_s": 0.5928098720032722,
+  "total_s": 0.9104548979958054,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "list",
+  "run": 1,
+  "first_s": 0.6103330780024407,
+  "total_s": 0.9277483470068546,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.6033713709912263,
+  "total_s": 1.2841283989982912,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.2098531600058777,
+  "total_s": 2.0298856630106457,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.7390648900036467,
+  "total_s": 1.222050914002466,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.6131357480044244,
+  "total_s": 0.9074553279933752,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "can you tell me what the capital of france is I need it for the quiz tomorrow"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.594214358003228,
+  "total_s": 0.6920083700097166,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "What is the capital of France? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.6774626130063552,
+  "total_s": 1.2929457420104882,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.9746013229887467,
+  "total_s": 1.834173840994481,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.7355409879965009,
+  "total_s": 1.1698763669992331,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.6387845280114561,
+  "total_s": 0.9810800609993748,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "$2,345 total, due March 3."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.049901107995538,
+  "total_s": 1.2214313489967026,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "the total was $2,345 and it's due on March 3rd"
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.62468646299385,
+  "total_s": 1.1692181370017352,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.1393543879967183,
+  "total_s": 1.9246517069987021,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.8153971980063943,
+  "total_s": 1.23992275200726,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.6273141199926613,
+  "total_s": 0.9260507540020626,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.0987311359931482,
+  "total_s": 1.223977030007518,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.1189225880079903,
+  "total_s": 1.9026180679938989,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the caf\u00e9 on Main Street at four thirty, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.0402330119977705,
+  "total_s": 1.8147192780015757,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 0.7298249889863655,
+  "total_s": 1.2621788979886333,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 0.6250854910031194,
+  "total_s": 0.9856853219971526,
+  "passed": [
+   false,
+   true,
+   false,
+   true
+  ],
+  "text": "let's meet at the cafe on main street at four thirty. Bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.1217726600007154,
+  "total_s": 1.308232757000951,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 2.7749219660036033,
+  "total_s": 2.9328840740054147,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.1030573019961594,
+  "total_s": 1.7580667709989939,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 0.8223532569973031,
+  "total_s": 1.2300148899958003,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 0.6867034720053198,
+  "total_s": 0.838585890000104,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "the budget is due on the. we need to submit the budget by friday"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 0.6932908910093829,
+  "total_s": 0.8857340109971119,
+  "passed": [
+   true,
+   false
+  ],
+  "text": "The budget is due on Friday. We need to submit it by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.750585942005273,
+  "total_s": 1.4329345639998792,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.5578351360018132,
+  "total_s": 2.296699451006134,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.7414199420018122,
+  "total_s": 1.194143411994446,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.5854133329994511,
+  "total_s": 0.8612422649894143,
+  "passed": [
+   true,
+   false,
+   false
+  ],
+  "text": "order three, no, sorry, four boxes of printer paper for the office"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.5927894070046023,
+  "total_s": 0.7043223250075243,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "order four boxes of printer paper for the office"
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.7423247850092594,
+  "total_s": 1.3239404810010456,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.1117670570092741,
+  "total_s": 1.8332956619997276,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.7689147290075198,
+  "total_s": 1.204885605009622,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.6330553450097796,
+  "total_s": 0.9008560930087697,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.9093364480067976,
+  "total_s": 1.023812107014237,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.8049234149948461,
+  "total_s": 1.4410114560014335,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.5776064030069392,
+  "total_s": 2.38714731100481,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.6599495720001869,
+  "total_s": 1.135989761998644,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.6738663139985874,
+  "total_s": 1.0037199590005912,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.5363169090123847,
+  "total_s": 0.7765831139986403,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.179671252000844,
+  "total_s": 1.3609281579992967,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.1222306080017006,
+  "total_s": 1.96565997399739,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 0.7114781929994933,
+  "total_s": 1.2065050809906097,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 0.8290419779950753,
+  "total_s": 0.9240913349931361,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "open the file `README.md` in the `docs` folder and fix the typo in the second heading"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.2640287579997675,
+  "total_s": 1.4526228730101138,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.2705343270063167,
+  "total_s": 1.3490416690037819,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.1373186120035825,
+  "total_s": 1.8844683159986744,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.0033092119992943,
+  "total_s": 1.4164241280086571,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 0.6128039169998374,
+  "total_s": 0.9168862539954716,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "tell him the contract looks fine to me"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 0.705412762996275,
+  "total_s": 0.7949050470051588,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.2337715339963324,
+  "total_s": 2.1898606860049767,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.2929545229999349,
+  "total_s": 2.187219523009844,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "email",
+  "run": 1,
+  "first_s": 0.8887816719943658,
+  "total_s": 1.5216036349884234,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "email",
+  "run": 1,
+  "first_s": 0.5572766700061038,
+  "total_s": 0.9492272990028141,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks!"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.7297431050101295,
+  "total_s": 1.9719390390091576,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 2.175257619994227,
+  "total_s": 2.395944083997165,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.0163642380066449,
+  "total_s": 1.895005341997603,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday, because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 0.7474153430084698,
+  "total_s": 1.253341289004311,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 0.6047423599957256,
+  "total_s": 0.9798102110071341,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday, because I've got that dentist appointment."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 0.5851717960031237,
+  "total_s": 0.7345983630075352,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.7675118419865612,
+  "total_s": 1.3963088780001272,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.116049555988866,
+  "total_s": 1.824150975997327,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.7742042150057387,
+  "total_s": 1.2335907560045598,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.6220769790088525,
+  "total_s": 0.9251009550062008,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "send the report to Maria by 5 pm"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.938527944002999,
+  "total_s": 1.0488504859968089,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.5098786250018748,
+  "total_s": 1.8294023939961335,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.1659777510067215,
+  "total_s": 2.045308330008993,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.6447323710017372,
+  "total_s": 1.169495463007479,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.6121348070009844,
+  "total_s": 0.8901244899898302,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "run the deploy script --force and then check the logs at /var/log/speecher.log"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.5880970040016109,
+  "total_s": 0.7522541380021721,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with --force and then check the logs at /var/log/speecher.log"
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.7555705400009174,
+  "total_s": 2.200605912003084,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.1011954299901845,
+  "total_s": 2.0125568399962503,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.357824934006203,
+  "total_s": 1.5902115259959828,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "list",
+  "run": 2,
+  "first_s": 0.6321317520050798,
+  "total_s": 0.9376506870030425,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "list",
+  "run": 2,
+  "first_s": 0.5826823800016427,
+  "total_s": 0.8962317160039674,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release we need three things:\n\n1. Update the changelog.\n2. Bump the version number in CMakeLists.txt.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.6822487550089136,
+  "total_s": 1.3490543640073156,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.159495510000852,
+  "total_s": 1.9158747429901268,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.2101006629964104,
+  "total_s": 1.7099856059940066,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.628539526995155,
+  "total_s": 0.9219079100003,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "can you tell me what the capital of france is I need it for the quiz tomorrow"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.0456717899942305,
+  "total_s": 1.1383546089928132,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "What's the capital of France? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 0.6548126929992577,
+  "total_s": 1.2707248290098505,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.0226474200026132,
+  "total_s": 1.8208492240082705,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 0.7235293999983696,
+  "total_s": 1.1597236359957606,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 0.5847856260079425,
+  "total_s": 0.8755163430032553,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "$2,345 total, due March 3."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 2.614098603997263,
+  "total_s": 2.7918712349928683,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345 and it's due on March 3rd."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.8328844479983672,
+  "total_s": 1.4118797590053873,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.1227604110026732,
+  "total_s": 1.8999863159988308,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.7535194360098103,
+  "total_s": 1.2211915150110144,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.6464124860067386,
+  "total_s": 0.9306428639974911,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "We should move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.149824609994539,
+  "total_s": 1.2749742180021713,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.1672118810092798,
+  "total_s": 1.8612109920068178,
+  "passed": [
+   false,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the caf\u00e9 on Main Street at four thirty, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.1820770210033515,
+  "total_s": 2.058506285000476,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.7242930590000469,
+  "total_s": 1.2640034629876027,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.5937661180068972,
+  "total_s": 0.9454843780113151,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.7740870230045402,
+  "total_s": 0.9576700300094672,
+  "passed": [
+   true,
+   true,
+   false,
+   true
+  ],
+  "text": "Let's meet at the cafe on main street at 4:30 and bring the slides."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.2844758839928545,
+  "total_s": 1.4766368769924156,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.0159630550042493,
+  "total_s": 1.727751812999486,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.7245951469958527,
+  "total_s": 1.1291992629994638,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.5705697139928816,
+  "total_s": 0.817975365993334,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "the budget is due on the. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.6969448089948855,
+  "total_s": 0.846444167997106,
+  "passed": [
+   true,
+   false
+  ],
+  "text": "The budget is due on Friday. We need to submit it by Friday."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "count",
+  "run": 2,
+  "first_s": 0.6815885830001207,
+  "total_s": 1.289296719012782,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.0543647279992001,
+  "total_s": 1.7855555809946964,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "count",
+  "run": 2,
+  "first_s": 0.7175812369969208,
+  "total_s": 1.1666226369998185,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "count",
+  "run": 2,
+  "first_s": 0.5662443290057126,
+  "total_s": 0.8219564340106444,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "order four boxes of printer paper for the office"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.2627705149934627,
+  "total_s": 1.3759141549962806,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "order four boxes of printer paper for the office"
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.8024044670019066,
+  "total_s": 1.382590392997372,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.0895201840030495,
+  "total_s": 1.7471426800038898,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.7308080100046936,
+  "total_s": 1.1897557269985555,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.5854288339905906,
+  "total_s": 0.8837775330030126,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.276901147008175,
+  "total_s": 1.3953080009960104,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.6936345900030574,
+  "total_s": 1.3524830690003,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.1131553599989275,
+  "total_s": 1.9318999649985926,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.655538090999471,
+  "total_s": 1.1208690170024056,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.605465208995156,
+  "total_s": 0.9323588370025391,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.5558184270048514,
+  "total_s": 0.7901634349982487,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.2495904259994859,
+  "total_s": 1.4042364329943666,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.0895400250010425,
+  "total_s": 1.9237091719987802,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 0.9196848319988931,
+  "total_s": 1.4016743969987147,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.4250915669981623,
+  "total_s": 1.5467615360103082,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "open the file `README.md` in the `docs` folder and fix the typo in the second heading"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 0.6028196420083987,
+  "total_s": 0.7625653760042042,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file readme.md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.286899208003888,
+  "total_s": 1.3644947879947722,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.1199573620106094,
+  "total_s": 1.8415127379994374,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 0.6831355919857742,
+  "total_s": 1.1038804979907582,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 0.6087468850018922,
+  "total_s": 0.8684865639952477,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "tell him the contract looks fine to me"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 0.7039968259923626,
+  "total_s": 0.7960231829929398,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic:claude-opus-5-5",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.2621597560064401,
+  "total_s": 2.17675761099963,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic:claude-opus-5",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.1027834439883009,
+  "total_s": 2.117125410994049,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks"
+ },
+ {
+  "provider": "anthropic:claude-sonnet-5-5",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.7227524780028034,
+  "total_s": 1.3399347800004762,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "anthropic:claude-haiku-5-5",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.578997224001796,
+  "total_s": 0.9815180379955564,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting on when it might go out? Thanks!"
+ },
+ {
+  "provider": "anthropic:claude-haiku-4-5-20251001",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.7621061350073433,
+  "total_s": 1.0038354760035872,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ }
+]

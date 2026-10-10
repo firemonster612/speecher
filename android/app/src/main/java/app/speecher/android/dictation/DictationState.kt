@@ -263,6 +263,7 @@ val Provider.refinementModels: Map<String, String>
                     "claude-opus-5-5" to "Claude Opus 5.5",
                     "claude-opus-5" to "Claude Opus 5",
                     "claude-sonnet-5-5" to "Claude Sonnet 5.5",
+                    "claude-haiku-5-5" to "Claude Haiku 5.5",
                     "claude-haiku-4-5" to "Claude Haiku 4.5",
                 )
         }

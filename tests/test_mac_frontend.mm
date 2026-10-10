@@ -1637,7 +1637,7 @@ private slots:
         QVERIFY(refinement);
         QCOMPARE(QString::fromNSString(refinement.ratings[0].label), QStringLiteral("Quality"));
         QCOMPARE(QString::fromNSString(refinement.ratings[0].valueText), QStringLiteral("10/10"));
-        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("4.5/10"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("7/10"));
 
         [schema setValue:@"endpoint" forRowId:@"speechProvider"];
         [schema setValue:@"endpoint" forRowId:@"refinementProvider"];
