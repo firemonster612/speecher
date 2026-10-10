@@ -116,8 +116,12 @@ QString problemText(FallbackProblem problem, ProviderRole role, const AppSetting
         return noModel(role) + QStringLiteral(", so it can't stand in yet.");
     case FallbackProblem::NoRunner:
         return runnerNotRunning(settings) + QStringLiteral(", so it can't stand in right now.");
+    // The list has no URL field; the role's Custom Endpoint card in Settings
+    // does, and setup lists this fallback too.
     case FallbackProblem::NoServer:
-        return QStringLiteral("No server URL is set, so it can't stand in yet.");
+        return QStringLiteral("No server URL is set. Enter one in Settings, under Custom Endpoint on the %1 page.")
+            .arg(paneTitleForRow(role == ProviderRole::Speech ? QStringLiteral("speechEndpointUrl")
+                                                              : QStringLiteral("refinementEndpointUrl")));
     case FallbackProblem::SpokenLanguage: {
         const LocalModel *model = providerId == kLocal ? findLocalModel(settings.speech.local.modelId) : nullptr;
         return QStringLiteral("%1 can't listen for your Spoken Language, so it is skipped.")
