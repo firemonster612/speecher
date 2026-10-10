@@ -3,7 +3,6 @@
 #include "platform/mac/MacSystemAudioInput.h"
 
 #include <QScopeGuard>
-#include <QSignalSpy>
 #include <QTest>
 
 #import <CoreMedia/CoreMedia.h>
@@ -145,30 +144,6 @@ private slots:
         QVERIFY(!isScreenRecordingDenied((__bridge CFErrorRef)stopped));
         NSError *elsewhere = [NSError errorWithDomain:NSOSStatusErrorDomain code:SCStreamErrorUserDeclined userInfo:nil];
         QVERIFY(!isScreenRecordingDenied((__bridge CFErrorRef)elsewhere));
-    }
-
-    void systemAudioStartsOrSaysWhy()
-    {
-        const QString denied = QStringLiteral("permission denied");
-        MacSystemAudioInput capture(denied);
-        QByteArray pcm;
-        connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { pcm += chunk; });
-        QSignalSpy failed(&capture, &AudioInput::failed);
-        QString error;
-        if (capture.start(&error)) {
-            QVERIFY(capture.isActive());
-            // With or without anything playing, the stream keeps time.
-            QTRY_VERIFY(pcm.size() >= 16000 * 2 / 2);
-            capture.stop();
-        } else {
-            // Runners without Screen & System Audio Recording end here.
-            qInfo().noquote() << "system audio did not start:" << error;
-            QVERIFY(error == denied || error.startsWith(QStringLiteral("Could not capture system audio: ")));
-        }
-        QVERIFY(!capture.isActive());
-        // A failed start is reported once, by its return value.
-        QTest::qWait(300);
-        QCOMPARE(failed.count(), 0);
     }
 };
 

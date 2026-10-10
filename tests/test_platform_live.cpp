@@ -12,6 +12,8 @@
 #include <memory>
 
 #ifdef Q_OS_MACOS
+#include "recording/RecordingPresentation.h"
+
 #include <QProcess>
 #include <QTemporaryFile>
 #endif
@@ -506,6 +508,27 @@ private slots:
         QCOMPARE(failed.count(), 0);
         QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
     }
+
+#ifdef Q_OS_MACOS
+    // For a Mac where the test binary has no Screen & System Audio Recording:
+    // the first run raises macOS's prompt, and start() answers without
+    // waiting for it.
+    void liveSystemAudioSaysWhenNotAllowed()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_DENIED") != QStringLiteral("1")) {
+            QSKIP("Live system audio permission check is opt-in");
+        }
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY(!capture->start(&error));
+        QCOMPARE(error, systemAudioPermissionText());
+        QVERIFY(!capture->isActive());
+        // A failed start is reported once, by its return value.
+        QTest::qWait(300);
+        QCOMPARE(failed.count(), 0);
+    }
+#endif
 
 #ifdef Q_OS_WIN
     // Needs a second output on a separate device: endpoints of one device,
