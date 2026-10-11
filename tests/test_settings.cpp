@@ -798,6 +798,14 @@ private slots:
         QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechModel, QStringLiteral("moonshine-small"));
         const QByteArray stored = settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray();
         QVERIFY(stored.contains(R"("profile":"work","tone":"none"})"));
+
+        // A profile saved on Haiku 4.5 loads on Haiku 5.5, which replaced it.
+        settings.raw().setValue(
+            QStringLiteral("refinement/writingProfiles"),
+            QByteArray(R"([{"profile":"email","cleanupStrength":"balanced","tone":"none",)"
+                       R"("refinementProvider":"anthropic","refinementModel":"claude-haiku-4-5"}])"));
+        QCOMPARE(profile(SettingsStore().snapshot(), WritingProfile::Email).refinementModel,
+                 QStringLiteral("claude-haiku-5-5"));
         settings.raw().clear();
     }
 

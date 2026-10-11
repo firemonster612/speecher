@@ -521,7 +521,12 @@ class SettingsStore(private val context: Context) {
         const val NO_OFFSET = Int.MIN_VALUE
         const val VERSION = 2
         val replacedModels =
-            mapOf("claude-sonnet-5" to "claude-sonnet-5-5", "gpt-6-sol" to "gpt-6.1-sol")
+            mapOf(
+                "claude-sonnet-5" to "claude-sonnet-5-5",
+                "gpt-6-sol" to "gpt-6.1-sol",
+                "claude-haiku-4-5" to "claude-haiku-5-5",
+                "claude-haiku-4-5-20251001" to "claude-haiku-5-5",
+            )
     }
 }
 
