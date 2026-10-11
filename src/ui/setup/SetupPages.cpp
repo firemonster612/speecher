@@ -2493,7 +2493,6 @@ void RefinementSetupPage::updateFastModeControl()
         settings::selectData(m_openAiSpeed, m_settings.openAiSpeed());
         updateOpenAiSpeedHint();
     } else if (anthropic) {
-        m_fastModeHint->setPalette(QPalette());
         m_fastModeHint->setText(fastModeHelp(provider));
         m_fastMode->setToolTip(fastModeTooltip(provider));
         const QSignalBlocker blocker(m_fastMode);
@@ -2501,17 +2500,11 @@ void RefinementSetupPage::updateFastModeControl()
     }
 }
 
-// As the settings page's Speed row: a warning naming the plans Ultrafast works
-// on while it is what gets asked for.
+// The settings page's Speed help, which names the plans Ultrafast works on
+// while it is what gets asked for. Plain, as the page's other warning is.
 void RefinementSetupPage::updateOpenAiSpeedHint()
 {
-    const bool warns = openAiSpeedWarnsOfPlans(m_settings.snapshot().refinement);
-    m_fastModeHint->setText(warns ? ultrafastPlansHelp() : openAiSpeedHelp());
-    QPalette own;
-    if (warns) {
-        own.setColor(QPalette::WindowText, settings::negativeTextColor(palette()));
-    }
-    m_fastModeHint->setPalette(own);
+    m_fastModeHint->setText(setupSchemaRow(QStringLiteral("openAiSpeed")).helpValue(m_settings.snapshot()));
 }
 
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)

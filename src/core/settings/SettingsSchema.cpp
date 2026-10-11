@@ -2879,6 +2879,15 @@ struct ProviderAccount {
 // come from CLI Proxy API.
 const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
 
+// Whether Speed warns which plans Ultrafast works on: other plans take an
+// Ultrafast request at Standard without complaint. A saved API key goes to the
+// public API, which is never asked for a tier.
+bool openAiSpeedWarnsOfPlans(const RefinementSettings &refinement)
+{
+    return refinement.openAiAuthMode != QStringLiteral("settings")
+        && effectiveOpenAiSpeed(refinement.openAiSpeed, refinement.openAiModel) == QStringLiteral("ultrafast");
+}
+
 QList<RowOption> namedModels(const QStringList &ids)
 {
     QList<RowOption> models;
@@ -3207,14 +3216,6 @@ QString fastModeHelp(const QString &refinementProviderId)
 QString openAiSpeedHelp()
 {
     return QStringLiteral("Fast answers sooner for slightly more usage.");
-}
-
-bool openAiSpeedWarnsOfPlans(const RefinementSettings &refinement)
-{
-    // Other plans take an Ultrafast request at Standard without complaint. A
-    // saved API key goes to the public API, which is never asked for a tier.
-    return refinement.openAiAuthMode != QStringLiteral("settings")
-        && effectiveOpenAiSpeed(refinement.openAiSpeed, refinement.openAiModel) == QStringLiteral("ultrafast");
 }
 
 QString ultrafastPlansHelp()

@@ -1946,10 +1946,9 @@ struct SetupWindow::Native {
         panel.Children().Append(fallbacks);
 
         // As the settings page's Speed row, the help can warn about the choice
-        // (which plans Ultrafast works on), so it follows each change.
-        const auto showSpeedHelp = [this, speedHelp](const QString &speedRowId) {
-            const SettingsRow &speedSetting = setupSchemaRow(speedRowId);
-            const AppSettings settings = controller->settings()->snapshot();
+        // (which plans Ultrafast works on), so it follows each change. It
+        // stays untinted: the wizard never paints in red.
+        const auto showSpeedHelp = [speedHelp](const SettingsRow &speedSetting, const AppSettings &settings) {
             speedHelp.Text(win::hs(speedSetting.helpValue ? speedSetting.helpValue(settings) : speedSetting.help));
         };
         refinementRefresh = [this, options, skip, speed, speedHelp, speedRow, stats, warning, showSpeedHelp] {
@@ -1966,7 +1965,7 @@ struct SetupWindow::Native {
                 const AppSettings settings = controller->settings()->snapshot();
                 const QString current = speedSetting.value(settings).toString();
                 ToolTipService::SetToolTip(speed, box_value(win::hs(speedSetting.tooltip)));
-                showSpeedHelp(speedRowId);
+                showSpeedHelp(speedSetting, settings);
                 speed.Items().Clear();
                 int selected = -1;
                 for (const RowOption &option : speedSetting.options(settings)) {
@@ -2037,14 +2036,15 @@ struct SetupWindow::Native {
             }
             const QString chosen = win::qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()));
             AppSettings settings = controller->settings()->snapshot();
-            setupSchemaRow(speedRowId).apply(settings, chosen);
+            const SettingsRow &speedSetting = setupSchemaRow(speedRowId);
+            speedSetting.apply(settings, chosen);
             if (settings.refinement.openAiSpeed != controller->settings()->openAiSpeed()) {
                 controller->settings()->setOpenAiSpeed(settings.refinement.openAiSpeed);
             }
             if (settings.refinement.anthropicFastMode != controller->settings()->anthropicFastMode()) {
                 controller->settings()->setAnthropicFastMode(settings.refinement.anthropicFastMode);
             }
-            showSpeedHelp(speedRowId);
+            showSpeedHelp(speedSetting, settings);
         });
         LocalSetup *local = controller->localSetup();
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
