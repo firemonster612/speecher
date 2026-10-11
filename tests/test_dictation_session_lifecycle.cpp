@@ -629,6 +629,38 @@ private slots:
         QCOMPARE(speech->startCalls, 1);
     }
 
+    void stopDuringTargetCaptureEndsTheStart()
+    {
+        // KWin's active-window query waits in a nested event loop, where a
+        // push-to-talk release stops the session the target is captured for.
+        // Neither capture nor startup may read the session settings the stop
+        // dropped.
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPauseMediaDuringTranscription(true);
+        settings.setRefinementProvider(QStringLiteral("none"));
+        const QList<AppRecognitionRule> rules{{QStringLiteral("org.example.shell"), AppCategory::Terminal, std::nullopt}};
+        settings.setAppRecognitionRules(rules);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), target.get(), delivery.get(), &registry);
+        target->onCapture = [&session] { session.stopListening(); };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(target->captureCalls, 1, 250);
+        QCOMPARE(target->lastRecognitionRules, rules);
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        QVERIFY(!speech);
+        QCOMPARE(media->pauseCalls, 0);
+        QVERIFY(!audio->started);
+    }
+
     void dictationSessionWaitsForProviderCompletion()
     {
         SettingsStore settings;
