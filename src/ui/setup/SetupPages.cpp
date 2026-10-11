@@ -1976,6 +1976,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     });
     connect(m_openAiSpeed, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setOpenAiSpeed(m_openAiSpeed->currentData().toString());
+        updateOpenAiSpeedHint();
     });
     selectProvider(selectedProviderId());
 }
@@ -2480,7 +2481,6 @@ void RefinementSetupPage::updateFastModeControl()
     m_openAiSpeedRow->setVisible(openAi);
     m_fastModeHint->setVisible(openAi || anthropic);
     if (openAi) {
-        m_fastModeHint->setText(openAiSpeedHelp());
         m_openAiSpeed->setToolTip(fastModeTooltip(provider));
         const QString model = m_settings.openAiModel();
         const QSignalBlocker blocker(m_openAiSpeed);
@@ -2491,12 +2491,20 @@ void RefinementSetupPage::updateFastModeControl()
                                           option.enabled ? QString() : option.help);
         }
         settings::selectData(m_openAiSpeed, m_settings.openAiSpeed());
+        updateOpenAiSpeedHint();
     } else if (anthropic) {
         m_fastModeHint->setText(fastModeHelp(provider));
         m_fastMode->setToolTip(fastModeTooltip(provider));
         const QSignalBlocker blocker(m_fastMode);
         m_fastMode->setChecked(m_settings.anthropicFastMode());
     }
+}
+
+// The settings page's Speed help, which names the plans Ultrafast works on
+// while it is what gets asked for. Plain, as the page's other warning is.
+void RefinementSetupPage::updateOpenAiSpeedHint()
+{
+    m_fastModeHint->setText(setupSchemaRow(QStringLiteral("openAiSpeed")).helpValue(m_settings.snapshot()));
 }
 
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)

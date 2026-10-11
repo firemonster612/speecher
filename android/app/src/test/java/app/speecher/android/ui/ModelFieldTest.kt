@@ -9,7 +9,6 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.requestFocus
 import app.speecher.android.dictation.CleanupProvider
@@ -30,7 +29,7 @@ class ModelFieldTest {
         mutableStateOf(
             SpeecherSettings(
                 refinementProvider = CleanupProvider.Claude,
-                claudeRefinement = RefinementChoice("claude-haiku-4-5", "low"),
+                claudeRefinement = RefinementChoice("claude-haiku-5-5", "low"),
             )
         )
 
@@ -55,13 +54,11 @@ class ModelFieldTest {
     @Test
     fun `deleting a model letter by letter saves the default, shown by name once left`() {
         show()
-        field.assertTextContains("Claude Haiku 4.5")
-        compose.onNodeWithText("Haiku may treat transcript as instructions.").assertExists()
-        for (length in "Claude Haiku 4.5".length - 1 downTo 0) {
-            field.performTextReplacement("Claude Haiku 4.5".take(length))
+        field.assertTextContains("Claude Haiku 5.5")
+        for (length in "Claude Haiku 5.5".length - 1 downTo 0) {
+            field.performTextReplacement("Claude Haiku 5.5".take(length))
         }
         assertEquals("claude-sonnet-5-5", settings.claudeRefinement.model)
-        compose.onNodeWithText("Haiku may treat transcript as instructions.").assertDoesNotExist()
         // Leaving for the instructions field.
         compose.onAllNodes(hasSetTextAction()).onLast().requestFocus()
         field.assertTextContains("Claude Sonnet 5.5")

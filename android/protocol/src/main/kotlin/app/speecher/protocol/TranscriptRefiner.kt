@@ -142,9 +142,9 @@ private fun anthropicEffort(model: String, effort: String): String =
         else -> "high"
     }
 
-/** Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it. */
+/** Ultrafast serves only GPT-6 Astra and GPT-6.1 Sol. */
 fun modelSupportsUltrafast(model: String): Boolean =
-    model.trim().lowercase().startsWith("gpt-6-astra")
+    model.trim().lowercase().let { it.startsWith("gpt-6-astra") || it.startsWith("gpt-6.1-sol") }
 
 /** A refinement request the provider answered with a non-2xx [status]. */
 private fun refinementHttpFailure(status: Int) =

@@ -258,10 +258,11 @@ struct RefinementEndpointSettings {
     bool operator==(const RefinementEndpointSettings &other) const = default;
 };
 
-// Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it.
+// Ultrafast serves only GPT-6 Astra and GPT-6.1 Sol.
 inline bool openAiModelSupportsUltrafast(const QString &model)
 {
-    return model.trimmed().toCaseFolded().startsWith(QStringLiteral("gpt-6-astra"));
+    const QString normalized = model.trimmed().toCaseFolded();
+    return normalized.startsWith(QStringLiteral("gpt-6-astra")) || normalized.startsWith(QStringLiteral("gpt-6.1-sol"));
 }
 
 // The OpenAI speed a refinement with this model runs at: Ultrafast asks for

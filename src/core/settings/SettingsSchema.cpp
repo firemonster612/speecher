@@ -2864,10 +2864,6 @@ struct ProviderAccount {
     int modelWidthHint = 0;
     QList<RowOption> models;
     QString RefinementSettings::*model;
-    // Said only while the chosen model's id contains this, which is how a model
-    // that reads a transcript as instructions warns about it.
-    QString cautionWhenModelContains;
-    QString caution;
     QString effortRowId;
     QString effortTooltip;
     QList<RowOption> efforts;
@@ -2882,6 +2878,15 @@ struct ProviderAccount {
 // The account picker for a provider is only worth showing while its credentials
 // come from CLI Proxy API.
 const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
+
+// Whether Speed warns which plans Ultrafast works on: other plans take an
+// Ultrafast request at Standard without complaint. A saved API key goes to the
+// public API, which is never asked for a tier.
+bool openAiSpeedWarnsOfPlans(const RefinementSettings &refinement)
+{
+    return refinement.openAiAuthMode != QStringLiteral("settings")
+        && effectiveOpenAiSpeed(refinement.openAiSpeed, refinement.openAiModel) == QStringLiteral("ultrafast");
+}
 
 QList<RowOption> namedModels(const QStringList &ids)
 {
@@ -2939,6 +2944,12 @@ QList<ProviderAccount> providerAccounts()
         [](const AppSettings &settings) { return settings.refinement.openAiSpeed; },
         [](AppSettings &settings, const QString &value) { settings.refinement.openAiSpeed = value; });
     openAi.speed.tooltip = fastModeTooltip(QStringLiteral("openai"));
+    openAi.speed.helpValue = [](const AppSettings &settings) {
+        return openAiSpeedWarnsOfPlans(settings.refinement) ? ultrafastPlansHelp() : openAiSpeedHelp();
+    };
+    openAi.speed.helpTone = [](const AppSettings &settings) {
+        return openAiSpeedWarnsOfPlans(settings.refinement) ? StatusTone::Negative : StatusTone::Normal;
+    };
     SettingsRow openAiStatus = customRow(QStringLiteral("openAiAuth"), QStringLiteral("Status"), QString());
     // In key mode the row holds the key itself.
     openAiStatus.labelValue = [](const AppSettings &settings) {
@@ -2987,11 +2998,8 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("claude-opus-5"), QStringLiteral("Claude Opus 5")},
         {QStringLiteral("claude-sonnet-5-5"), QStringLiteral("Claude Sonnet 5.5")},
         {QStringLiteral("claude-haiku-5-5"), QStringLiteral("Claude Haiku 5.5")},
-        {QStringLiteral("claude-haiku-4-5"), QStringLiteral("Claude Haiku 4.5")},
     };
     anthropic.model = &RefinementSettings::anthropicModel;
-    anthropic.cautionWhenModelContains = QStringLiteral("haiku");
-    anthropic.caution = QStringLiteral("Haiku may treat transcript as instructions.");
     anthropic.effortRowId = QStringLiteral("anthropicEffort");
     // AnthropicApiRefiner::apiEffortForModel rewrites an effort the model does
     // not support before the request goes out.
@@ -3075,20 +3083,6 @@ QList<SettingsSection> providerModelSections()
         };
 
         QList<SettingsRow> accountRows{std::move(model)};
-        if (!account.caution.isEmpty()) {
-            SettingsRow caution = infoRow(account.modelRowId + QStringLiteral("Caution"),
-                                          QStringLiteral("Caution"),
-                                          QString(),
-                                          account.caution);
-            caution.visible = [field = account.model,
-                               needle = account.cautionWhenModelContains,
-                               provider = account.providerId](const AppSettings &settings,
-                                                              const Capabilities &) {
-                return providersInUse(ProviderRole::Refinement, settings).contains(provider)
-                    && (settings.refinement.*field).toCaseFolded().contains(needle);
-            };
-            accountRows.append(std::move(caution));
-        }
         accountRows.append(choiceRow(
             account.effortRowId,
             QStringLiteral("Thinking"),
@@ -3224,6 +3218,12 @@ QString openAiSpeedHelp()
     return QStringLiteral("Fast answers sooner for slightly more usage.");
 }
 
+QString ultrafastPlansHelp()
+{
+    return QStringLiteral("Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. "
+                          "Other plans run it at Standard, which is slower than Fast.");
+}
+
 QList<RowOption> openAiSpeedOptions(const QString &model)
 {
     const bool ultrafast = openAiModelSupportsUltrafast(model);
@@ -3231,8 +3231,7 @@ QList<RowOption> openAiSpeedOptions(const QString &model)
         {QStringLiteral("standard"), QStringLiteral("Standard")},
         {QStringLiteral("fast"), QStringLiteral("Fast")},
         {QStringLiteral("ultrafast"), QStringLiteral("Ultrafast"),
-         ultrafast ? QString()
-                   : QStringLiteral("Needs GPT-6 Astra. GPT-6.1 Sol support is coming later."),
+         ultrafast ? QString() : QStringLiteral("Needs GPT-6 Astra or GPT-6.1 Sol."),
          ultrafast},
     };
 }
@@ -3240,9 +3239,9 @@ QList<RowOption> openAiSpeedOptions(const QString &model)
 QString fastModeTooltip(const QString &refinementProviderId)
 {
     return refinementProviderId == QStringLiteral("openai")
-        ? QStringLiteral("Ultrafast is much faster but uses a lot more usage, and needs a plan with "
-                         "Ultrafast access. A fast or ultrafast request that fails is sent again at "
-                         "Standard.")
+        ? QStringLiteral("Ultrafast is much faster but uses a lot more usage. It only works on ChatGPT "
+                         "Pro $500 and eligible Enterprise and Edu plans; other plans run it at Standard. "
+                         "A fast or ultrafast request that fails is sent again at Standard.")
         : QStringLiteral("Only Opus models support Fast; other models refine at Standard.");
 }
 
@@ -4361,17 +4360,8 @@ CollectionDescriptor writingProfileGrid(const SchemaContext &context)
         }
         return options;
     };
-    // The caution the provider's card gives its model, such as Haiku's.
-    refinementModel.recordNote = [=](const AppSettings &settings, const QVariantMap &record) -> FieldNote {
+    refinementModel.recordNote = [=](const AppSettings &, const QVariantMap &record) -> FieldNote {
         const QString provider = record.value(kRefinementColumn).toString();
-        for (const ProviderAccount &account : providerAccounts()) {
-            const QString picked = record.value(kRefinementModelColumn).toString();
-            const QString model = picked.isEmpty() ? settings.refinement.*account.model : picked;
-            if (account.providerId == provider && !account.cautionWhenModelContains.isEmpty()
-                && model.toCaseFolded().contains(account.cautionWhenModelContains)) {
-                return {account.caution, true};
-            }
-        }
         return {QStringLiteral("Thinking and speed are %1's settings under %2.")
                     .arg(labels(ProviderRole::Refinement, provider), refinementPane)};
     };

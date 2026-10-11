@@ -76,7 +76,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
@@ -88,7 +87,6 @@ import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
-import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.resolveSpeech
@@ -470,9 +468,6 @@ private fun RefinementSettings(
             onChange(settings.withRefinement(provider, choice.copy(model = it)))
         }
     }
-    refinementModelCaution(provider, choice.model)?.let {
-        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
-    }
     DropdownRow(
         "Thinking",
         provider.refinementEfforts,
@@ -489,11 +484,20 @@ private fun RefinementSettings(
             speeds.associateWith { it.label },
             settings.chatGptSpeed,
             description =
-                if (ultrafast)
-                    "Faster tiers use more of your plan. Ultrafast needs a plan that includes it."
-                else "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra.",
+                if (ultrafast) "Faster tiers use more of your plan."
+                else
+                    "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra or GPT-6.1 Sol.",
         ) {
             onChange(settings.copy(chatGptSpeed = it))
+        }
+        // Other plans take an Ultrafast request at Standard without complaint.
+        if (ultrafast && settings.chatGptSpeed == OpenAiSpeed.Ultrafast) {
+            Text(
+                "Ultrafast only works on ChatGPT Pro \$500 and eligible Enterprise and Edu plans. " +
+                    "Other plans run it at Standard, which is slower than Fast.",
+                Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     } else {
         ListItem(
@@ -1311,22 +1315,17 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
 
 @PreviewLightDark
 @Composable
-internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
-    var settings by remember {
-        mutableStateOf(
-            SpeecherSettings(
-                refinementProvider = CleanupProvider.Claude,
-                claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
-            )
-        )
-    }
+internal fun SettingsRefinementUltrafastPreview() = SpeecherTheme {
     Surface {
         Column {
             SettingsPageContent(
                 SettingsPage.Refinement,
-                settings,
-                setOf(Provider.Claude),
-                { settings = it },
+                SpeecherSettings(
+                    chatGptRefinement = RefinementChoice("gpt-6.1-sol", "low"),
+                    chatGptSpeed = OpenAiSpeed.Ultrafast,
+                ),
+                setOf(Provider.ChatGpt),
+                {},
                 {},
                 {},
                 chipEnabled = true,

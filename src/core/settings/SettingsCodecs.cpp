@@ -82,6 +82,14 @@ QString profileKey(ProviderRole role, const char *field)
 // A Writing Profile's own provider for a role and its model. An id no chain
 // can hold reads as the page's choice, and a model as the provider's own
 // without a provider of the profile's to go with.
+// Haiku 4.5, dated or not, has left the picker for Haiku 5.5.
+QString replacedAnthropicModel(const QString &model)
+{
+    return model == QStringLiteral("claude-haiku-4-5") || model == QStringLiteral("claude-haiku-4-5-20251001")
+        ? QStringLiteral("claude-haiku-5-5")
+        : model;
+}
+
 void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &provider, QString &model)
 {
     provider = object.value(profileKey(role, "Provider")).toString();
@@ -90,6 +98,9 @@ void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &
         return;
     }
     model = object.value(profileKey(role, "Model")).toString().trimmed();
+    if (provider == QStringLiteral("anthropic")) {
+        model = replacedAnthropicModel(model);
+    }
 }
 
 void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString &provider, const QString &model)
@@ -1076,12 +1087,7 @@ QString SettingsCodecs::anthropicModel() const
     if (model.isEmpty()) {
         return QStringLiteral("claude-opus-5-5");
     }
-    // The picker used to ship Haiku as a dated snapshot; the undated ID is the
-    // same model and matches the current picker entry's display name.
-    if (model == QStringLiteral("claude-haiku-4-5-20251001")) {
-        return QStringLiteral("claude-haiku-4-5");
-    }
-    return model;
+    return replacedAnthropicModel(model);
 }
 
 void SettingsCodecs::setAnthropicModel(const QString &value)

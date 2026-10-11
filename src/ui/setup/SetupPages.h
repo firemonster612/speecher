@@ -382,6 +382,7 @@ private:
     void autoSelectReadyProvider();
     void updateProviderStats();
     void updateFastModeControl();
+    void updateOpenAiSpeedHint();
     int selectedIndex() const;
     QString selectedProviderId() const;
     std::optional<bool> providerReady() const;

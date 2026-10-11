@@ -44,4 +44,15 @@ class SettingsUpgradeTest {
             settings.transcriptionProvider to settings.refinementProvider,
         )
     }
+
+    @Test
+    fun `a model saved on Haiku 4_5 loads on Haiku 5_5, which replaced it`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
+            commit = true
+        ) {
+            putString("ClaudeRefinementModel", "claude-haiku-4-5-20251001")
+        }
+        assertEquals("claude-haiku-5-5", SettingsStore(context).load().claudeRefinement.model)
+    }
 }

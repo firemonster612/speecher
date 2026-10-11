@@ -264,14 +264,8 @@ val Provider.refinementModels: Map<String, String>
                     "claude-opus-5" to "Claude Opus 5",
                     "claude-sonnet-5-5" to "Claude Sonnet 5.5",
                     "claude-haiku-5-5" to "Claude Haiku 5.5",
-                    "claude-haiku-4-5" to "Claude Haiku 4.5",
                 )
         }
-
-/** The desktop's warning under a refinement model that may misread dictation, or null. */
-fun refinementModelCaution(provider: Provider, model: String): String? =
-    "Haiku may treat transcript as instructions."
-        .takeIf { provider == Provider.Claude && model.lowercase().contains("haiku") }
 
 /**
  * The efforts Settings offers, as API id to label, as on the desktop. OpenAI's `reasoning.effort`
