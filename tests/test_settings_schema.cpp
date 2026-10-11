@@ -1052,6 +1052,9 @@ private slots:
         // While Ultrafast is what gets sent, Speed says which plans have it.
         QCOMPARE(speed.helpValue(settings), ultrafastPlansHelp());
         QCOMPARE(speed.helpTone(settings), StatusTone::Negative);
+        settings.refinement.openAiAuthMode = QStringLiteral("settings");
+        QCOMPARE(speed.helpValue(settings), openAiSpeedHelp());
+        settings.refinement.openAiAuthMode = QStringLiteral("auto");
         settings.refinement.openAiModel = QStringLiteral("gpt-6-luna");
         QCOMPARE(speed.helpValue(settings), openAiSpeedHelp());
         QCOMPARE(speed.helpTone(settings), StatusTone::Normal);

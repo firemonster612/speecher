@@ -2936,9 +2936,11 @@ QList<ProviderAccount> providerAccounts()
         [](AppSettings &settings, const QString &value) { settings.refinement.openAiSpeed = value; });
     openAi.speed.tooltip = fastModeTooltip(QStringLiteral("openai"));
     // Other plans take an Ultrafast request at Standard without complaint, so
-    // the row says which plans have it while Ultrafast is what gets sent.
+    // the row says which plans have it while Ultrafast is what gets sent. A
+    // saved API key goes to the public API, which is never asked for a tier.
     const auto ultrafastSent = [](const AppSettings &settings) {
-        return effectiveOpenAiSpeed(settings.refinement.openAiSpeed, settings.refinement.openAiModel)
+        return settings.refinement.openAiAuthMode != QStringLiteral("settings")
+            && effectiveOpenAiSpeed(settings.refinement.openAiSpeed, settings.refinement.openAiModel)
             == QStringLiteral("ultrafast");
     };
     openAi.speed.helpValue = [ultrafastSent](const AppSettings &settings) {
