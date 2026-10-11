@@ -1043,9 +1043,11 @@ private slots:
         anthropicSpeed.apply(settings, QStringLiteral("standard"));
         QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("ultrafast"));
         QCOMPARE(settings.refinement.anthropicFastMode, false);
-        // Ultrafast is only open on GPT-6 Astra.
+        // Ultrafast is only open on GPT-6 Astra and GPT-6.1 Sol.
         QVERIFY(!speed.options(settings).last().enabled);
         settings.refinement.openAiModel = QStringLiteral("gpt-6-astra");
+        QVERIFY(speed.options(settings).last().enabled);
+        settings.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
         QVERIFY(speed.options(settings).last().enabled);
 
         const SettingsSection &server = page.sections.last();
@@ -1083,19 +1085,6 @@ private slots:
         AppSettings keyMode;
         keyMode.refinement.openAiAuthMode = QStringLiteral("settings");
         QCOMPARE(status.labelValue(keyMode), QStringLiteral("API key"));
-    }
-
-    void aModelThatReadsTranscriptsAsInstructionsSaysSo()
-    {
-        const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &caution = rowById(schema.page(QStringLiteral("refinement")),
-                                             QStringLiteral("anthropicModelCaution"));
-        AppSettings settings;
-        settings.refinement.providerId = QStringLiteral("anthropic");
-        QVERIFY(!caution.visible(settings, Capabilities{}));
-        settings.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5");
-        QVERIFY(caution.visible(settings, Capabilities{}));
-        QVERIFY(caution.value(settings).toString().contains(QStringLiteral("instructions")));
     }
 
     void recognitionRecordsRoundTripAndRetireLegacyOverrides()
@@ -1679,13 +1668,6 @@ private slots:
         QCOMPARE(column(QStringLiteral("profileRefinement")).recordNote(settings, record).text,
                  QStringLiteral("Cleanup None skips refinement for this profile."));
 
-        // Haiku gets the caution its card under Refinement gives it.
-        record.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-haiku-4-5"));
-        const FieldNote haiku = refinementModel.recordNote(settings, record);
-        QVERIFY(haiku.caution);
-        QCOMPARE(haiku.text, QStringLiteral("Haiku may treat transcript as instructions."));
-        record.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-sonnet-5-5"));
-
         // An OpenAI model a profile picks is kept, as an Anthropic one is.
         QVariantMap openAiModel = record;
         openAiModel.insert(QStringLiteral("profileRefinement"), QStringLiteral("openai"));
@@ -2026,8 +2008,8 @@ private slots:
                  QStringList({QStringLiteral("refinementProvider"), QStringLiteral("refinementRating"),
                               QStringLiteral("refinementFallbacks")}));
         QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Anthropic")),
-                 QStringList({QStringLiteral("anthropicModel"), QStringLiteral("anthropicModelCaution"),
-                              QStringLiteral("anthropicEffort"), QStringLiteral("anthropicFastMode")}));
+                 QStringList({QStringLiteral("anthropicModel"), QStringLiteral("anthropicEffort"),
+                              QStringLiteral("anthropicFastMode")}));
         QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Local Runner")),
                  QStringList({QStringLiteral("localRunner"), QStringLiteral("localRunnerModel"),
                               QStringLiteral("localRunnerDetect")}));

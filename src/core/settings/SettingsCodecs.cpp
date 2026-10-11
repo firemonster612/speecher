@@ -1076,10 +1076,9 @@ QString SettingsCodecs::anthropicModel() const
     if (model.isEmpty()) {
         return QStringLiteral("claude-opus-5-5");
     }
-    // The picker used to ship Haiku as a dated snapshot; the undated ID is the
-    // same model and matches the current picker entry's display name.
-    if (model == QStringLiteral("claude-haiku-4-5-20251001")) {
-        return QStringLiteral("claude-haiku-4-5");
+    // Haiku 4.5, dated or not, has left the picker for Haiku 5.5.
+    if (model == QStringLiteral("claude-haiku-4-5") || model == QStringLiteral("claude-haiku-4-5-20251001")) {
+        return QStringLiteral("claude-haiku-5-5");
     }
     return model;
 }

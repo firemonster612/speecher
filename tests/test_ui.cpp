@@ -2195,31 +2195,6 @@ private slots:
         QVERIFY(undo->isHidden());
     }
 
-    void theHaikuCautionComesAndGoesWithTheModel()
-    {
-        ProviderRegistry providers;
-        providers.registerRefinementProvider(
-            {QStringLiteral("anthropic"), QStringLiteral("Fake Anthropic")},
-            [](QObject *) -> TranscriptRefiner * { return nullptr; });
-        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("refinement"), *platform, providers);
-        auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
-        auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
-        QVERIFY(caution && model);
-
-        AppSettings snapshot;
-        snapshot.refinement.providerId = QStringLiteral("anthropic");
-        page->load(snapshot);
-        QVERIFY(!caution->isVisibleTo(page.get()));
-
-        snapshot.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5");
-        page->load(snapshot);
-        QCOMPARE(model->currentText(), QStringLiteral("Claude Haiku 4.5"));
-        QVERIFY(caution->isVisibleTo(page.get()));
-        QVERIFY(caution->text().contains(QStringLiteral("instructions")));
-    }
-
     void constructingAndReopeningSetupPreservesTheSavedSpeechEndpoint()
     {
         SettingsStore settings;

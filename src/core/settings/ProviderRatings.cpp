@@ -45,7 +45,6 @@ constexpr MeasuredRefinementModel measuredRefinementModels[] = {
     {"claude-opus-5", 123, 1.94},
     {"claude-sonnet-5-5", 123, 1.23},
     {"claude-haiku-5-5", 110, 0.92},
-    {"claude-haiku-4-5", 116, 0.89},
 };
 
 double toHalves(double rating)

@@ -133,14 +133,13 @@ class TranscriptRefinerTest {
     }
 
     @Test
-    fun `ChatGPT ultrafast asks for the ultrafast tier only on GPT-6 Astra, and Sol never at none`() {
+    fun `ChatGPT ultrafast asks for the ultrafast tier only on GPT-6 Astra and Sol, and Sol never at none`() {
         MockWebServer().use { server ->
             val ok =
                 "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-            server.enqueue(MockResponse.Builder().body(ok).build())
-            server.enqueue(MockResponse.Builder().body(ok).build())
+            repeat(3) { server.enqueue(MockResponse.Builder().body(ok).build()) }
             server.start()
-            for (model in listOf("gpt-6-astra", "gpt-6.1-sol")) {
+            for (model in listOf("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna")) {
                 refineTranscript(
                     OkHttpClient(),
                     OAuthProvider.ChatGpt,
@@ -156,8 +155,8 @@ class TranscriptRefinerTest {
                 )
             }
             assertEquals(
-                listOf("ultrafast" to "none", "priority" to "low"),
-                List(2) {
+                listOf("ultrafast" to "none", "ultrafast" to "low", "priority" to "none"),
+                List(3) {
                     val body =
                         Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
                     body["service_tier"]?.jsonPrimitive?.content to
@@ -210,7 +209,7 @@ class TranscriptRefinerTest {
     }
 
     @Test
-    fun `Claude sends the nearest effort the model takes, and none to older Haiku`() {
+    fun `Claude sends the nearest effort the model takes, and none to older models`() {
         MockWebServer().use { server ->
             val ok =
                 "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
@@ -221,7 +220,7 @@ class TranscriptRefinerTest {
                     "claude-opus-5-5",
                     "claude-haiku-5-5",
                     "claude-opus-4-6",
-                    "claude-haiku-4-5",
+                    "claude-sonnet-4-5",
                 )) {
                 refineTranscript(
                     OkHttpClient(),

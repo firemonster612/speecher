@@ -223,7 +223,6 @@ private val states: Map<String, @Composable () -> Unit> =
             "panel-sizes" to { PanelSizePickerPreview() },
             "restricted-settings-illustrations" to { RestrictedSettingsIllustrationsPreview() },
             "settings-screen" to { SettingsScreenPreview() },
-            "settings-refinement-haiku" to { SettingsRefinementHaikuPreview() },
         )
 
 /**

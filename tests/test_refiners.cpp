@@ -1311,7 +1311,7 @@ private slots:
         QTest::addColumn<QString>("effort");
         QTest::newRow("Haiku 5.5 takes extra high") << "claude-haiku-5-5" << "xhigh";
         QTest::newRow("Opus 4.6 tops out at max") << "claude-opus-4-6" << "max";
-        QTest::newRow("Haiku 4.5 takes none") << "claude-haiku-4-5" << "";
+        QTest::newRow("Sonnet 4.5 takes none") << "claude-sonnet-4-5" << "";
     }
 
     void anthropicApiRefinerSendsTheNearestEffortTheModelTakes()
@@ -1349,7 +1349,8 @@ private slots:
         QTest::addColumn<QString>("effort");
         QTest::newRow("fast") << "fast" << "gpt-test" << "priority" << "none";
         QTest::newRow("ultrafast on Astra") << "ultrafast" << "gpt-6-astra" << "ultrafast" << "none";
-        QTest::newRow("ultrafast elsewhere") << "ultrafast" << "gpt-6.1-sol" << "priority" << "low";
+        QTest::newRow("ultrafast on Sol") << "ultrafast" << "gpt-6.1-sol" << "ultrafast" << "low";
+        QTest::newRow("ultrafast elsewhere") << "ultrafast" << "gpt-6-luna" << "priority" << "none";
     }
 
     void openAiSpeedAsksForItsTierWithoutAnAccountId()

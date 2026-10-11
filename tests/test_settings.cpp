@@ -552,7 +552,9 @@ private slots:
         settings.setAnthropicModel(QString());
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5-5"));
         settings.setAnthropicModel(QStringLiteral("claude-haiku-4-5-20251001"));
-        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-4-5"));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-5-5"));
+        settings.setAnthropicModel(QStringLiteral("claude-haiku-4-5"));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-5-5"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));

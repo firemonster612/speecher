@@ -2864,10 +2864,6 @@ struct ProviderAccount {
     int modelWidthHint = 0;
     QList<RowOption> models;
     QString RefinementSettings::*model;
-    // Said only while the chosen model's id contains this, which is how a model
-    // that reads a transcript as instructions warns about it.
-    QString cautionWhenModelContains;
-    QString caution;
     QString effortRowId;
     QString effortTooltip;
     QList<RowOption> efforts;
@@ -2987,11 +2983,8 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("claude-opus-5"), QStringLiteral("Claude Opus 5")},
         {QStringLiteral("claude-sonnet-5-5"), QStringLiteral("Claude Sonnet 5.5")},
         {QStringLiteral("claude-haiku-5-5"), QStringLiteral("Claude Haiku 5.5")},
-        {QStringLiteral("claude-haiku-4-5"), QStringLiteral("Claude Haiku 4.5")},
     };
     anthropic.model = &RefinementSettings::anthropicModel;
-    anthropic.cautionWhenModelContains = QStringLiteral("haiku");
-    anthropic.caution = QStringLiteral("Haiku may treat transcript as instructions.");
     anthropic.effortRowId = QStringLiteral("anthropicEffort");
     // AnthropicApiRefiner::apiEffortForModel rewrites an effort the model does
     // not support before the request goes out.
@@ -3075,20 +3068,6 @@ QList<SettingsSection> providerModelSections()
         };
 
         QList<SettingsRow> accountRows{std::move(model)};
-        if (!account.caution.isEmpty()) {
-            SettingsRow caution = infoRow(account.modelRowId + QStringLiteral("Caution"),
-                                          QStringLiteral("Caution"),
-                                          QString(),
-                                          account.caution);
-            caution.visible = [field = account.model,
-                               needle = account.cautionWhenModelContains,
-                               provider = account.providerId](const AppSettings &settings,
-                                                              const Capabilities &) {
-                return providersInUse(ProviderRole::Refinement, settings).contains(provider)
-                    && (settings.refinement.*field).toCaseFolded().contains(needle);
-            };
-            accountRows.append(std::move(caution));
-        }
         accountRows.append(choiceRow(
             account.effortRowId,
             QStringLiteral("Thinking"),
@@ -3231,8 +3210,7 @@ QList<RowOption> openAiSpeedOptions(const QString &model)
         {QStringLiteral("standard"), QStringLiteral("Standard")},
         {QStringLiteral("fast"), QStringLiteral("Fast")},
         {QStringLiteral("ultrafast"), QStringLiteral("Ultrafast"),
-         ultrafast ? QString()
-                   : QStringLiteral("Needs GPT-6 Astra. GPT-6.1 Sol support is coming later."),
+         ultrafast ? QString() : QStringLiteral("Needs GPT-6 Astra or GPT-6.1 Sol."),
          ultrafast},
     };
 }
@@ -4361,17 +4339,8 @@ CollectionDescriptor writingProfileGrid(const SchemaContext &context)
         }
         return options;
     };
-    // The caution the provider's card gives its model, such as Haiku's.
-    refinementModel.recordNote = [=](const AppSettings &settings, const QVariantMap &record) -> FieldNote {
+    refinementModel.recordNote = [=](const AppSettings &, const QVariantMap &record) -> FieldNote {
         const QString provider = record.value(kRefinementColumn).toString();
-        for (const ProviderAccount &account : providerAccounts()) {
-            const QString picked = record.value(kRefinementModelColumn).toString();
-            const QString model = picked.isEmpty() ? settings.refinement.*account.model : picked;
-            if (account.providerId == provider && !account.cautionWhenModelContains.isEmpty()
-                && model.toCaseFolded().contains(account.cautionWhenModelContains)) {
-                return {account.caution, true};
-            }
-        }
         return {QStringLiteral("Thinking and speed are %1's settings under %2.")
                     .arg(labels(ProviderRole::Refinement, provider), refinementPane)};
     };

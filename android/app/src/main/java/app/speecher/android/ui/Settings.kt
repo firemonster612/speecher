@@ -76,10 +76,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.cleanup
@@ -88,7 +86,6 @@ import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
-import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.resolveSpeech
@@ -470,9 +467,6 @@ private fun RefinementSettings(
             onChange(settings.withRefinement(provider, choice.copy(model = it)))
         }
     }
-    refinementModelCaution(provider, choice.model)?.let {
-        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
-    }
     DropdownRow(
         "Thinking",
         provider.refinementEfforts,
@@ -491,7 +485,8 @@ private fun RefinementSettings(
             description =
                 if (ultrafast)
                     "Faster tiers use more of your plan. Ultrafast needs a plan that includes it."
-                else "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra.",
+                else
+                    "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra or GPT-6.1 Sol.",
         ) {
             onChange(settings.copy(chatGptSpeed = it))
         }
@@ -1300,33 +1295,6 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
                 SpeecherSettings(),
                 setOf(Provider.ChatGpt),
                 {},
-                {},
-                {},
-                chipEnabled = true,
-                onTurnOnChip = {},
-            )
-        }
-    }
-}
-
-@PreviewLightDark
-@Composable
-internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
-    var settings by remember {
-        mutableStateOf(
-            SpeecherSettings(
-                refinementProvider = CleanupProvider.Claude,
-                claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
-            )
-        )
-    }
-    Surface {
-        Column {
-            SettingsPageContent(
-                SettingsPage.Refinement,
-                settings,
-                setOf(Provider.Claude),
-                { settings = it },
                 {},
                 {},
                 chipEnabled = true,
