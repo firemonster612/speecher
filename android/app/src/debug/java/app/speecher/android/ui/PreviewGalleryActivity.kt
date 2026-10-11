@@ -205,6 +205,7 @@ private val states: Map<String, @Composable () -> Unit> =
             "settings-server" to { SettingsServerPreview() },
             "settings-transcription-server" to { SettingsTranscriptionServerPreview() },
             "settings-refinement" to { SettingsRefinementPreview() },
+            "settings-refinement-ultrafast" to { SettingsRefinementUltrafastPreview() },
             "settings-vocabulary" to { SettingsVocabularyPreview() },
             "settings-replacements" to { SettingsReplacementsPreview() },
             "settings-replacements-empty" to { SettingsReplacementsEmptyPreview() },

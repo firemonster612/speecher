@@ -2935,6 +2935,18 @@ QList<ProviderAccount> providerAccounts()
         [](const AppSettings &settings) { return settings.refinement.openAiSpeed; },
         [](AppSettings &settings, const QString &value) { settings.refinement.openAiSpeed = value; });
     openAi.speed.tooltip = fastModeTooltip(QStringLiteral("openai"));
+    // Other plans take an Ultrafast request at Standard without complaint, so
+    // the row says which plans have it while Ultrafast is what gets sent.
+    const auto ultrafastSent = [](const AppSettings &settings) {
+        return effectiveOpenAiSpeed(settings.refinement.openAiSpeed, settings.refinement.openAiModel)
+            == QStringLiteral("ultrafast");
+    };
+    openAi.speed.helpValue = [ultrafastSent](const AppSettings &settings) {
+        return ultrafastSent(settings) ? ultrafastPlansHelp() : openAiSpeedHelp();
+    };
+    openAi.speed.helpTone = [ultrafastSent](const AppSettings &settings) {
+        return ultrafastSent(settings) ? StatusTone::Negative : StatusTone::Normal;
+    };
     SettingsRow openAiStatus = customRow(QStringLiteral("openAiAuth"), QStringLiteral("Status"), QString());
     // In key mode the row holds the key itself.
     openAiStatus.labelValue = [](const AppSettings &settings) {
@@ -3203,6 +3215,12 @@ QString openAiSpeedHelp()
     return QStringLiteral("Fast answers sooner for slightly more usage.");
 }
 
+QString ultrafastPlansHelp()
+{
+    return QStringLiteral("Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. "
+                          "Other plans run it at Standard, which is slower than Fast.");
+}
+
 QList<RowOption> openAiSpeedOptions(const QString &model)
 {
     const bool ultrafast = openAiModelSupportsUltrafast(model);
@@ -3218,9 +3236,9 @@ QList<RowOption> openAiSpeedOptions(const QString &model)
 QString fastModeTooltip(const QString &refinementProviderId)
 {
     return refinementProviderId == QStringLiteral("openai")
-        ? QStringLiteral("Ultrafast is much faster but uses a lot more usage, and needs a plan with "
-                         "Ultrafast access. A fast or ultrafast request that fails is sent again at "
-                         "Standard.")
+        ? QStringLiteral("Ultrafast is much faster but uses a lot more usage. It only works on ChatGPT "
+                         "Pro $500 and eligible Enterprise and Edu plans; other plans run it at Standard. "
+                         "A fast or ultrafast request that fails is sent again at Standard.")
         : QStringLiteral("Only Opus models support Fast; other models refine at Standard.");
 }
 

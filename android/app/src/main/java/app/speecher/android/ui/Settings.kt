@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.cleanup
@@ -483,12 +484,20 @@ private fun RefinementSettings(
             speeds.associateWith { it.label },
             settings.chatGptSpeed,
             description =
-                if (ultrafast)
-                    "Faster tiers use more of your plan. Ultrafast needs a plan that includes it."
+                if (ultrafast) "Faster tiers use more of your plan."
                 else
                     "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra or GPT-6.1 Sol.",
         ) {
             onChange(settings.copy(chatGptSpeed = it))
+        }
+        // Other plans take an Ultrafast request at Standard without complaint.
+        if (ultrafast && settings.chatGptSpeed == OpenAiSpeed.Ultrafast) {
+            Text(
+                "Ultrafast only works on ChatGPT Pro \$500 and eligible Enterprise and Edu plans. " +
+                    "Other plans run it at Standard, which is slower than Fast.",
+                Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     } else {
         ListItem(
@@ -1293,6 +1302,28 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
             SettingsPageContent(
                 SettingsPage.Refinement,
                 SpeecherSettings(),
+                setOf(Provider.ChatGpt),
+                {},
+                {},
+                {},
+                chipEnabled = true,
+                onTurnOnChip = {},
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsRefinementUltrafastPreview() = SpeecherTheme {
+    Surface {
+        Column {
+            SettingsPageContent(
+                SettingsPage.Refinement,
+                SpeecherSettings(
+                    chatGptRefinement = RefinementChoice("gpt-6.1-sol", "low"),
+                    chatGptSpeed = OpenAiSpeed.Ultrafast,
+                ),
                 setOf(Provider.ChatGpt),
                 {},
                 {},

@@ -395,7 +395,7 @@ Anthropic refinement has two auth modes:
 
 OpenAI refinement defaults to `gpt-6-luna` with effort set to `none`, through the Responses API shape. The Settings picker also includes GPT-6.1 Sol, GPT-6 Astra, GPT-5.6 Luna, and GPT-5.6 Terra. GPT-6.1 Sol has no `none` effort, so pick Low or higher with it.
 
-OpenAI Speed is Standard, Fast (`service_tier=priority`) or Ultrafast (`service_tier=ultrafast`), sent only through a ChatGPT sign-in or CLI Proxy API. Ultrafast uses a lot more usage, needs a plan with Ultrafast access, and only serves GPT-6 Astra and GPT-6.1 Sol; other models ask for Fast instead. A rejected fast or ultrafast request is retried at standard speed.
+OpenAI Speed is Standard, Fast (`service_tier=priority`) or Ultrafast (`service_tier=ultrafast`), sent only through a ChatGPT sign-in or CLI Proxy API. Ultrafast uses a lot more usage, only serves GPT-6 Astra and GPT-6.1 Sol (other models ask for Fast instead), and only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans accept an Ultrafast request but run it at Standard, so Settings warns while Ultrafast is chosen. A rejected fast or ultrafast request is retried at standard speed.
 
 Authentication is resolved in this order:
 

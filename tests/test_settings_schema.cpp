@@ -1049,6 +1049,12 @@ private slots:
         QVERIFY(speed.options(settings).last().enabled);
         settings.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
         QVERIFY(speed.options(settings).last().enabled);
+        // While Ultrafast is what gets sent, Speed says which plans have it.
+        QCOMPARE(speed.helpValue(settings), ultrafastPlansHelp());
+        QCOMPARE(speed.helpTone(settings), StatusTone::Negative);
+        settings.refinement.openAiModel = QStringLiteral("gpt-6-luna");
+        QCOMPARE(speed.helpValue(settings), openAiSpeedHelp());
+        QCOMPARE(speed.helpTone(settings), StatusTone::Normal);
 
         const SettingsSection &server = page.sections.last();
         QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));
