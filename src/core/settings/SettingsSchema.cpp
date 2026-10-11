@@ -2935,19 +2935,11 @@ QList<ProviderAccount> providerAccounts()
         [](const AppSettings &settings) { return settings.refinement.openAiSpeed; },
         [](AppSettings &settings, const QString &value) { settings.refinement.openAiSpeed = value; });
     openAi.speed.tooltip = fastModeTooltip(QStringLiteral("openai"));
-    // Other plans take an Ultrafast request at Standard without complaint, so
-    // the row says which plans have it while Ultrafast is what gets sent. A
-    // saved API key goes to the public API, which is never asked for a tier.
-    const auto ultrafastSent = [](const AppSettings &settings) {
-        return settings.refinement.openAiAuthMode != QStringLiteral("settings")
-            && effectiveOpenAiSpeed(settings.refinement.openAiSpeed, settings.refinement.openAiModel)
-            == QStringLiteral("ultrafast");
+    openAi.speed.helpValue = [](const AppSettings &settings) {
+        return openAiSpeedWarnsOfPlans(settings.refinement) ? ultrafastPlansHelp() : openAiSpeedHelp();
     };
-    openAi.speed.helpValue = [ultrafastSent](const AppSettings &settings) {
-        return ultrafastSent(settings) ? ultrafastPlansHelp() : openAiSpeedHelp();
-    };
-    openAi.speed.helpTone = [ultrafastSent](const AppSettings &settings) {
-        return ultrafastSent(settings) ? StatusTone::Negative : StatusTone::Normal;
+    openAi.speed.helpTone = [](const AppSettings &settings) {
+        return openAiSpeedWarnsOfPlans(settings.refinement) ? StatusTone::Negative : StatusTone::Normal;
     };
     SettingsRow openAiStatus = customRow(QStringLiteral("openAiAuth"), QStringLiteral("Status"), QString());
     // In key mode the row holds the key itself.
@@ -3215,6 +3207,14 @@ QString fastModeHelp(const QString &refinementProviderId)
 QString openAiSpeedHelp()
 {
     return QStringLiteral("Fast answers sooner for slightly more usage.");
+}
+
+bool openAiSpeedWarnsOfPlans(const RefinementSettings &refinement)
+{
+    // Other plans take an Ultrafast request at Standard without complaint. A
+    // saved API key goes to the public API, which is never asked for a tier.
+    return refinement.openAiAuthMode != QStringLiteral("settings")
+        && effectiveOpenAiSpeed(refinement.openAiSpeed, refinement.openAiModel) == QStringLiteral("ultrafast");
 }
 
 QString ultrafastPlansHelp()

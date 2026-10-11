@@ -1055,6 +1055,9 @@ private slots:
         settings.refinement.openAiAuthMode = QStringLiteral("settings");
         QCOMPARE(speed.helpValue(settings), openAiSpeedHelp());
         settings.refinement.openAiAuthMode = QStringLiteral("auto");
+        speed.apply(settings, QStringLiteral("fast"));
+        QCOMPARE(speed.helpTone(settings), StatusTone::Normal);
+        speed.apply(settings, QStringLiteral("ultrafast"));
         settings.refinement.openAiModel = QStringLiteral("gpt-6-luna");
         QCOMPARE(speed.helpValue(settings), openAiSpeedHelp());
         QCOMPARE(speed.helpTone(settings), StatusTone::Normal);

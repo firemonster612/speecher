@@ -639,7 +639,9 @@ QString fastModeHelp(const QString &refinementProviderId);
 QString fastModeTooltip(const QString &refinementProviderId);
 // The OpenAI Speed row's help and choices, which the setup assistants share.
 QString openAiSpeedHelp();
-// Which plans Ultrafast works on, said under Speed while it is chosen.
+// Whether Speed says, as a warning in place of its help, which plans
+// Ultrafast works on: while Ultrafast is what a refinement asks for.
+bool openAiSpeedWarnsOfPlans(const RefinementSettings &refinement);
 QString ultrafastPlansHelp();
 QList<RowOption> openAiSpeedOptions(const QString &model);
 

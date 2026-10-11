@@ -1945,7 +1945,14 @@ struct SetupWindow::Native {
         fallbacks = StackPanel();
         panel.Children().Append(fallbacks);
 
-        refinementRefresh = [this, options, skip, speed, speedHelp, speedRow, stats, warning] {
+        // As the settings page's Speed row, the help can warn about the choice
+        // (which plans Ultrafast works on), so it follows each change.
+        const auto showSpeedHelp = [this, speedHelp](const QString &speedRowId) {
+            const SettingsRow &speedSetting = setupSchemaRow(speedRowId);
+            const AppSettings settings = controller->settings()->snapshot();
+            speedHelp.Text(win::hs(speedSetting.helpValue ? speedSetting.helpValue(settings) : speedSetting.help));
+        };
+        refinementRefresh = [this, options, skip, speed, speedHelp, speedRow, stats, warning, showSpeedHelp] {
             const QString id = controller->settings()->refinementProvider();
             const bool ownModel = id == kLocal || id == kEndpoint;
             skip.IsChecked(id == kNone);
@@ -1959,7 +1966,7 @@ struct SetupWindow::Native {
                 const AppSettings settings = controller->settings()->snapshot();
                 const QString current = speedSetting.value(settings).toString();
                 ToolTipService::SetToolTip(speed, box_value(win::hs(speedSetting.tooltip)));
-                speedHelp.Text(win::hs(speedSetting.help));
+                showSpeedHelp(speedRowId);
                 speed.Items().Clear();
                 int selected = -1;
                 for (const RowOption &option : speedSetting.options(settings)) {
@@ -2022,7 +2029,7 @@ struct SetupWindow::Native {
         // report late; comparing with the stored speed keeps that from saving.
         // The choice goes through the schema row, which knows how each
         // provider stores it.
-        speed.SelectionChanged([this, speed](const auto &, const auto &) {
+        speed.SelectionChanged([this, speed, showSpeedHelp](const auto &, const auto &) {
             const auto item = speed.SelectedItem();
             const QString speedRowId = speedRowFor(controller->settings()->refinementProvider());
             if (!item || speedRowId.isEmpty()) {
@@ -2037,6 +2044,7 @@ struct SetupWindow::Native {
             if (settings.refinement.anthropicFastMode != controller->settings()->anthropicFastMode()) {
                 controller->settings()->setAnthropicFastMode(settings.refinement.anthropicFastMode);
             }
+            showSpeedHelp(speedRowId);
         });
         LocalSetup *local = controller->localSetup();
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
