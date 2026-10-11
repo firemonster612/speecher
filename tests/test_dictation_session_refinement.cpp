@@ -375,6 +375,68 @@ private slots:
                  QStringList{QStringLiteral("openai")});
     }
 
+    // Replace reads the Target again, and on KDE that can wait in a nested event
+    // loop where a cancel, a follow-up press or a second Enter acts on the
+    // review first. The edit is delivered at most once.
+    void replaceYieldsToWhatEndsTheReviewWhileItReadsTheTarget_data()
+    {
+        QTest::addColumn<QString>("action");
+        QTest::addColumn<int>("state");
+        QTest::addColumn<int>("deliveries");
+        QTest::newRow("cancel") << QStringLiteral("cancel") << int(DictationState::Idle) << 0;
+        QTest::newRow("follow-up") << QStringLiteral("follow-up") << int(DictationState::Starting) << 0;
+        QTest::newRow("replace again") << QStringLiteral("replace") << int(DictationState::Delivering) << 1;
+    }
+
+    void replaceYieldsToWhatEndsTheReviewWhileItReadsTheTarget()
+    {
+        QFETCH(QString, action);
+        QFETCH(int, state);
+        QFETCH(int, deliveries);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 4;
+        target.target.selectionEnd = 34;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+
+        bool acted = false;
+        target.onCapture = [&] {
+            if (std::exchange(acted, true)) {
+                return;
+            }
+            if (action == QStringLiteral("cancel")) {
+                session.cancel();
+            } else if (action == QStringLiteral("follow-up")) {
+                session.toggle();
+            } else {
+                session.replaceSelection();
+            }
+        };
+        session.replaceSelection();
+        QCOMPARE(int(session.state()), state);
+        QCOMPARE(delivery.calls, deliveries);
+    }
+
     void aFollowUpThatComesToNothingLeavesTheReview_data()
     {
         QTest::addColumn<QString>("how");

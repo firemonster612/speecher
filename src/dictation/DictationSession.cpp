@@ -364,12 +364,20 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     m_continuedStartupGeneration = generation;
 
     clearScreenshotContext();
+    // Capturing can spin an event loop, where a stop or cancel ends this start
+    // and drops the session settings: the rules capture reads after it are a
+    // copy.
+    const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
     // A follow-up edits the same selection, so the Target is the review's:
     // capturing again would also replace the control the provider tracks.
-    m_target = m_followingUp ? m_review->target
-        : m_targetProvider ? m_targetProvider->capture(m_sessionSettings->appRecognitionRules)
+    Target target = m_followingUp ? m_review->target
+        : m_targetProvider ? m_targetProvider->capture(rules)
                            : Target{};
-    m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
+    if (generation != m_generation) {
+        return;
+    }
+    m_target = std::move(target);
+    m_target.category = classifyTarget(m_target, rules);
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_followingUp ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -1511,12 +1519,19 @@ void DictationSession::replaceSelection()
     }
     // The person may have clicked or typed in the Target while reading. The
     // edit replaces only the selection it was made from; any other goes
-    // untouched and the edit waits on the clipboard.
+    // untouched and the edit waits on the clipboard. Read while the review is
+    // still up: reading can spin an event loop, where a cancel, a follow-up or
+    // another Replace acts on the review as it stands.
+    const quint64 generation = m_generation;
+    const bool unchanged = selectionUnchanged();
+    if (generation != m_generation || !m_review) {
+        return;
+    }
     const Review review = *m_review;
     endReview();
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
-    if (!selectionUnchanged()) {
+    if (!unchanged) {
         m_sessionSettings->output.pasteRules = {{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}};
         deliverFinal(review.edit, selectionChangedNote(), review.spokenWords);
         return;
@@ -1537,7 +1552,9 @@ bool DictationSession::selectionUnchanged()
     if (m_targetProvider->focusMatch(m_target) != TargetProvider::FocusMatch::Same) {
         return false;
     }
-    const Target now = m_targetProvider->capture(m_sessionSettings->appRecognitionRules);
+    // A copy: capturing can spin an event loop where a cancel drops the settings.
+    const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
+    const Target now = m_targetProvider->capture(rules);
     return now.selectedText == m_target.selectedText && now.selectionStart == m_target.selectionStart
         && now.selectionEnd == m_target.selectionEnd;
 }

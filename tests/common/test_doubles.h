@@ -122,6 +122,10 @@ public:
     Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override
     {
         ++captureCalls;
+        if (onCapture) {
+            onCapture();
+        }
+        // Read after onCapture, as the real provider reads them after its wait.
         lastRecognitionRules = recognitionRules;
         return target;
     }
@@ -166,6 +170,9 @@ public:
     bool directInsertionAvailable = false;
     bool inserted = false;
     QString insertedText;
+    // Runs inside capture(), as events delivered in a real provider's nested
+    // event loop would.
+    std::function<void()> onCapture;
 };
 
 class FakeScreenshotContextProvider final : public ScreenshotContextProvider {
