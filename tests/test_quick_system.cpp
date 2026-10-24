@@ -9,6 +9,7 @@
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickSystem.h"
+#include "frontend/quick/host/QuickUpdates.h"
 
 #include <QFile>
 #include <QJSValue>
@@ -444,6 +445,7 @@ private slots:
         QuickSettings settings(&controller);
         QuickStatus status(&controller);
         QuickDictation dictation(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
