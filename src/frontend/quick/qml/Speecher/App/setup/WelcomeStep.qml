@@ -52,7 +52,7 @@ StepPage {
                     readonly property var service: found.entry(key)
                     first: index === 0 && found.first
                     title: service.name
-                    help: service.detail
+                    help: Words.signInDetail(service)
                     StateText { stateId: foundRow.service.state; text: Words.signInStates[foundRow.service.state]; indicator: "dot" }
                 }
             }

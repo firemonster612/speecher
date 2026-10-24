@@ -41,13 +41,31 @@ QtObject {
     readonly property string notSet: "Not set"
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
-    // A secret field: what it shows once a key is saved, and why one was not.
+    // A secret field: what it shows once a key is saved, and why a save or
+    // clear failed (Accounts.secretErrors).
     readonly property string savedSecret: "Saved"
-    function notSaved(why) { return why ? "Not saved: " + why : "Not saved" }
+    function secretError(error) {
+        const what = error.action === "clear" ? "Not cleared" : "Not saved"
+        return error.reason ? what + ": " + error.reason : what
+    }
     // A sign-in's state, on Accounts and in setup.
     readonly property var signInStates: ({
-        signedIn: "Signed in", expired: "Expired", missing: "Not found", disabled: "Disabled", checking: "Checking"
+        signedIn: "Signed in", expired: "Expired", missing: "Not found", unknown: "Unknown",
+        disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
+    // A service's line on Accounts: core's own words, else where its last
+    // check found the sign-in (Accounts.services).
+    function signInDetail(service) {
+        if (service.detail) return service.detail
+        if (service.server) return "Using CLI Proxy API at " + service.server
+        if (service.id === "anthropic" && service.found === "signedIn")
+            return service.directory ? "CLI Proxy API Claude token found" : "Signed in with Claude Code"
+        if (service.id !== "cliproxy" || !service.directory) return ""
+        const found = { signedIn: "CLI Proxy API accounts found in %1", expired: "Every CLI Proxy API account in %1 is expired",
+                        missing: "No CLI Proxy API accounts found in %1" }[service.found]
+        return found ? found.arg(service.directory) : ""
+    }
+    readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
     // What each service on Accounts is used for, by its id.

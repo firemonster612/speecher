@@ -12,6 +12,9 @@ struct CliProxyAccount {
     QString label;
     bool disabled = false;
     bool expired = false;
+    // Why load() refuses the file other than for its expiry (disabled, no
+    // access token, an expiry it can't read), or nothing.
+    QString problem;
     // A chosen account whose file is gone; see ProviderSignIn::accounts.
     bool missing = false;
 };

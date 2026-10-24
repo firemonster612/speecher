@@ -263,7 +263,7 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
     m_lastError.clear();
     const QString cleaned = value.trimmed();
     CachedSecret &entry = cached(secret);
-    if (entry.known && cleaned == entry.value && settingsFallback(secret).isEmpty()) {
+    if (entry.known && cleaned == entry.value && settingsFallback(secret).isEmpty() && !deletionPending(secret)) {
         return true;
     }
     // Clearing a key that was never written to the keyring needs no keyring.
@@ -292,13 +292,14 @@ bool SecretStore::saveSecret(Secret secret, const QString &value)
 
 bool SecretStore::clearSecret(Secret secret)
 {
-    return storeSecret(secret, {});
+    return storeSecret(secret, {}) && !deletionPending(secret);
 }
 
 bool SecretStore::storeSecret(Secret secret, const QString &cleaned)
 {
     const CachedSecret &entry = cached(secret);
-    if (entry.known && cleaned == entry.value) {
+    // A deletion the keyring refused is retried rather than taken as done.
+    if (entry.known && cleaned == entry.value && !deletionPending(secret)) {
         return true;
     }
     if (saveToKeyring(secret, cleaned)) {
@@ -357,6 +358,14 @@ QString SecretStore::lastError() const
     return m_lastError;
 }
 
+QString SecretStore::readFailure(Secret secret) const
+{
+    if (isSecretKnown(secret) || !cached(secret).retryTimer.isValid()) {
+        return {};
+    }
+    return QStringLiteral("Desktop keyring unavailable for %1: %2").arg(settingsKey(secret), m_lastError);
+}
+
 bool SecretStore::usesInsecureSettingsFallback() const
 {
     return !settingsFallback(Secret::OpenAiApiKey).isEmpty();
@@ -402,6 +411,9 @@ bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 {
     if (QStandardPaths::isTestModeEnabled()
         && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_WRITE_FAILURE") == 1) {
+        // A real keyring answers through the event loop, which runs other
+        // work while it waits.
+        QCoreApplication::processEvents();
         m_lastError = QStringLiteral("Keyring write denied");
         return false;
     }

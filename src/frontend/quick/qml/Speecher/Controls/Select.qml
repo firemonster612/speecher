@@ -3,10 +3,11 @@ import QtQuick
 import QtQuick.Templates as T
 import Speecher.Theme
 
-// A dropdown. options: [{ id, label, help?, icon?, badge? }]. The menu
+// A dropdown. options: [{ id, label, help?, icon?, badge?, enabled? }]. The menu
 // grows open from the button's corner and each option can carry a line of
-// help; its entries are the same MenuItem a Menu shows. It shows currentId
-// and only asks for a change through chosen: the caller sets currentId.
+// help; its entries are the same MenuItem a Menu shows, greyed out and not
+// chosen when enabled is false. It shows currentId and only asks for a
+// change through chosen: the caller sets currentId.
 T.ComboBox {
     id: control
 
@@ -24,7 +25,10 @@ T.ComboBox {
     // The template moves currentIndex itself, to the pick and to the first
     // entry when the options are replaced; tie it back to currentId, which
     // only the caller changes.
-    onActivated: index => { chosen(options[index].id); currentIndex = Qt.binding(() => _index) }
+    onActivated: index => {
+        if (options[index].enabled !== false) chosen(options[index].id)
+        currentIndex = Qt.binding(() => _index)
+    }
     onModelChanged: currentIndex = Qt.binding(() => _index)
 
     implicitHeight: Theme.controlHeight
@@ -81,6 +85,7 @@ T.ComboBox {
         iconName: modelData.icon || ""
         help: modelData.help || ""
         badge: modelData.badge || ""
+        enabled: modelData.enabled !== false
         current: index === control.currentIndex
         highlighted: control.highlightedIndex === index
     }

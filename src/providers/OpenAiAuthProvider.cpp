@@ -1,5 +1,6 @@
 #include "providers/OpenAiAuthProvider.h"
 
+#include "core/AppSettings.h"
 #include "core/EndpointUrl.h"
 
 #include "core/SecretStore.h"
@@ -34,6 +35,18 @@ OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
     , m_cliproxyBaseUrl(cliproxyBaseUrl)
     , m_cliproxyApiKey(cliproxyApiKey)
 {
+}
+
+OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore, const RefinementSettings &settings)
+{
+    return OpenAiAuthProvider(secretStore,
+                              settings.openAiAuthMode,
+                              settings.openAiCliproxyAccount,
+                              settings.cliproxyOauthDir,
+                              {},
+                              {},
+                              settings.cliproxyBaseUrl,
+                              settings.cliproxyApiKey);
 }
 
 struct ApiKeyCandidate {

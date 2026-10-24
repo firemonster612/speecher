@@ -309,7 +309,7 @@ QList<CliProxyAccount> CliProxyCredentials::listAccounts(const QString &director
             continue;
         }
         accounts.append({fileName, accountLabel(fileName, type), account.value(QStringLiteral("disabled")).toBool(),
-                         accountExpired(account)});
+                         accountExpired(account), accountValidationError(directory, type, fileName, account)});
     }
     return accounts;
 }

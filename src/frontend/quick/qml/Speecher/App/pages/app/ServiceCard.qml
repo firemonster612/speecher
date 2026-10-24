@@ -52,7 +52,7 @@ Card {
                     }
                 }
             }
-            Txt { width: parent.width; text: root.service.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: Words.signInDetail(root.service); variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"

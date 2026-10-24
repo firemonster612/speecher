@@ -46,7 +46,8 @@ public:
     // persisted marker that suppresses reads until deletion succeeds.
     bool saveSecret(Secret secret, const QString &value);
     // Removes a secret whether or not it was read, the way saveSecret clears
-    // one it has read: a failed keyring deletion leaves the marker.
+    // one it has read. False when the keyring refused: the marker then hides
+    // the key until a later deletion succeeds, and lastError() says why.
     bool clearSecret(Secret secret);
     // Removes every Speecher entry from the keychain.
     bool deleteKeyringSecrets() const;
@@ -56,6 +57,9 @@ public:
     bool saveApiKey(const QString &apiKey);
     QString status() const;
     QString lastError() const;
+    // Why the last read of the secret failed, naming the secret, or nothing
+    // when it was read. Ask right after the read: it carries lastError().
+    QString readFailure(Secret secret) const;
     bool usesInsecureSettingsFallback() const;
 
 private:

@@ -18,7 +18,7 @@ SettingRow {
     // refused shows in its place.
     property string note: spec.help || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
-                                           ? Words.notSaved(Accounts.secretErrors[rowId]) : ""
+                                           ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
     title: spec.label
     help: Settings.errors[rowId] || _secretError || note
@@ -104,12 +104,15 @@ SettingRow {
             hideText: Words.hide
             secret: true
             placeholderText: saved ? Words.savedSecret : root.spec.placeholder || ""
-            // Once saved, the key leaves the field; a refused one stays to retry.
+            // Once saved, the key leaves the field; a refused one stays to
+            // retry. Typing goes on while the keyring answers, so only the
+            // draft that was saved leaves.
             onEditingFinished: {
-                if (!text.trim())
+                const draft = text
+                if (!draft.trim())
                     return
-                Accounts.saveSecret(root.rowId, text)
-                if (!(root.rowId in Accounts.secretErrors))
+                Accounts.saveSecret(root.rowId, draft)
+                if (text === draft && !(root.rowId in Accounts.secretErrors))
                     clear()
             }
             trailing: IconButton {

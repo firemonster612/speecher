@@ -1,6 +1,7 @@
 #include "frontend/quick/host/QuickAccounts.h"
 
 #include "app/ApplicationController.h"
+#include "app/ProviderAvailability.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderProbe.h"
@@ -21,10 +22,13 @@ const struct ServiceRow {
     const char *id;
     const char *name;
     SignInService service;
+    // The refinement and speech providers whose sign-in this is, if any.
+    const char *provider;
+    const char *speechProvider;
 } serviceRows[] = {
-    {"openai", "OpenAI", SignInService::OpenAi},
-    {"anthropic", "Anthropic", SignInService::Anthropic},
-    {"cliproxy", "CLI Proxy API", SignInService::CliProxy},
+    {"openai", "OpenAI", SignInService::OpenAi, "openai", "codex"},
+    {"anthropic", "Anthropic", SignInService::Anthropic, "anthropic", "claude"},
+    {"cliproxy", "CLI Proxy API", SignInService::CliProxy, nullptr, nullptr},
 };
 
 // The schema's secret rows, each one SecretStore entry.
@@ -38,7 +42,7 @@ const struct SecretRow {
     {"refinementEndpointApiKey", SecretStore::Secret::RefinementEndpointKey},
 };
 
-const QString cliproxyServiceId = QStringLiteral("cliproxy");
+const QString cliproxyAccountTypes[] = {QStringLiteral("codex"), QStringLiteral("claude")};
 
 template <typename Row, std::size_t count>
 const Row *findRow(const Row (&rows)[count], const QString &id)
@@ -58,6 +62,8 @@ QString stateName(SignInState state)
         return QStringLiteral("signedIn");
     case SignInState::Expired:
         return QStringLiteral("expired");
+    case SignInState::Unknown:
+        return QStringLiteral("unknown");
     case SignInState::Missing:
         break;
     }
@@ -72,7 +78,58 @@ QString accountState(const CliProxyAccount &account)
     if (account.disabled) {
         return QStringLiteral("disabled");
     }
+    if (!account.problem.isEmpty()) {
+        return QStringLiteral("unusable");
+    }
     return account.expired ? QStringLiteral("expired") : QStringLiteral("signedIn");
+}
+
+// CLI Proxy API's account files as cliproxyAccounts lists them. Parses each
+// file: worker threads only.
+QVariantList readCliproxyAccounts(SettingsStore &store)
+{
+    const ProviderSignIn signIn(store);
+    QVariantList accounts;
+    for (const QString &type : cliproxyAccountTypes) {
+        for (const CliProxyAccount &account : signIn.accounts(type)) {
+            accounts.append(QVariantMap{
+                {QStringLiteral("id"), account.fileName},
+                {QStringLiteral("type"), type},
+                {QStringLiteral("label"), account.label},
+                {QStringLiteral("state"), accountState(account)},
+            });
+        }
+    }
+    return accounts;
+}
+
+// What a check's worker hands back.
+struct ServiceAnswer {
+    SignInCheck signIn;
+    SignInCheck speech;
+    // CLI Proxy API's account files, read for its own check only.
+    QVariantList accounts;
+};
+
+// Saves value, or clears the secret when it is empty. The OpenAI key never
+// falls back to the settings file, so it goes through saveApiKey either way.
+bool storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
+{
+    if (secret == SecretStore::Secret::OpenAiApiKey) {
+        return secrets->saveApiKey(value);
+    }
+    return value.isEmpty() ? secrets->clearSecret(secret) : secrets->saveSecret(secret, value);
+}
+
+// Tells the daemon what a check found of a provider's sign-in, for fallbacks
+// and `speecher providers`. Only a definite answer counts: an expired token
+// dictation may still renew, or a keyring that did not answer, says nothing.
+void noteSignIn(ApplicationController *controller, const char *providerId, const SignInCheck &check)
+{
+    if (!providerId || (check.state != SignInState::SignedIn && check.state != SignInState::Missing)) {
+        return;
+    }
+    controller->providerAvailability()->noteSignIn(QLatin1String(providerId), check.state == SignInState::SignedIn);
 }
 
 // The settings a sign-in check reads, other than secrets.
@@ -135,14 +192,26 @@ QVariantMap QuickAccounts::service(const QString &id) const
     if (!row) {
         return {};
     }
-    const auto check = m_checks.constFind(id);
-    const bool checking = m_pending.contains(id) || check == m_checks.cend();
-    return {
+    const bool answered = m_checks.contains(id);
+    const bool checking = m_pending.contains(id) || !answered;
+    const Check check = m_checks.value(id);
+    QVariantMap service{
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), QLatin1String(row->name)},
-        {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check->state)},
-        {QStringLiteral("detail"), check == m_checks.cend() ? QString() : check->detail},
+        {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check.signIn.state)},
+        {QStringLiteral("found"), answered ? stateName(check.signIn.state) : QString()},
+        {QStringLiteral("detail"), check.signIn.detail},
+        {QStringLiteral("server"), check.signIn.server},
+        {QStringLiteral("directory"), check.signIn.directory},
     };
+    if (row->speechProvider) {
+        service.insert(QStringLiteral("speech"),
+                       QVariantMap{
+                           {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check.speech.state)},
+                           {QStringLiteral("detail"), check.speech.detail},
+                       });
+    }
+    return service;
 }
 
 QVariantList QuickAccounts::cliproxyAccounts() const
@@ -162,6 +231,7 @@ QVariantMap QuickAccounts::secretErrors() const
 
 void QuickAccounts::recheck(const QString &id)
 {
+    readSavedSecrets();
     run(id, checkSignIn);
 }
 
@@ -177,41 +247,64 @@ void QuickAccounts::run(const QString &id, SignInRun signIn)
         qWarning().noquote() << "Accounts: no service" << id;
         return;
     }
-    if (id == cliproxyServiceId) {
-        readCliproxyAccounts();
-    }
     const quint64 number = ++m_lastCheck;
     m_pending.insert(id, number);
     emit servicesChanged();
     const SignInService service = row->service;
-    runProviderProbe<SignInCheck>(
+    const bool speaks = row->speechProvider;
+    runProviderProbe<ServiceAnswer>(
         this,
         this,
-        [service, signIn] {
+        [service, signIn, speaks] {
             // This thread's own store, so the keyring is read here and never
             // through the daemon's cache.
             SettingsStore store;
-            return signIn(service, store.snapshot().refinement, store.secrets());
+            const AppSettings settings = store.dictationSnapshot();
+            ServiceAnswer answer{signIn(service, settings, store.secrets())};
+            if (speaks) {
+                answer.speech = checkSpeechSignIn(service, settings.speech);
+            }
+            if (service == SignInService::CliProxy) {
+                answer.accounts = readCliproxyAccounts(store);
+            }
+            return answer;
         },
-        [this, id, number](const SignInCheck &check) {
+        [this, row, number, renewing = signIn == renewSignIn](const ServiceAnswer &answer) {
+            const QString id = QLatin1String(row->id);
             if (m_pending.value(id) != number) {
                 return;
             }
             m_pending.remove(id);
-            m_checks.insert(id, check);
+            m_checks.insert(id, {answer.signIn, answer.speech});
+            if (row->service == SignInService::CliProxy) {
+                showCliproxyAccounts(answer.accounts);
+            }
+            noteSignIn(m_controller, row->provider, answer.signIn);
+            noteSignIn(m_controller, row->speechProvider, answer.speech);
             emit servicesChanged();
+            if (!renewing) {
+                return;
+            }
+            // Renewing rewrote credentials the others may read: Codex's and
+            // Claude's files, or CLI Proxy API's account files.
+            for (const ServiceRow &other : serviceRows) {
+                if (&other != row) {
+                    run(QLatin1String(other.id), checkSignIn);
+                }
+            }
         });
 }
 
 void QuickAccounts::recheckAll()
 {
     for (const ServiceRow &row : serviceRows) {
-        recheck(QLatin1String(row.id));
+        run(QLatin1String(row.id), checkSignIn);
     }
 }
 
 void QuickAccounts::readSavedSecrets()
 {
+    const quint64 number = ++m_lastSecretRead;
     m_secretsChanged.clear();
     runProviderProbe<QVariantMap>(
         this,
@@ -227,7 +320,10 @@ void QuickAccounts::readSavedSecrets()
             }
             return saved;
         },
-        [this](const QVariantMap &saved) {
+        [this, number](const QVariantMap &saved) {
+            if (number != m_lastSecretRead) {
+                return;
+            }
             for (auto it = saved.cbegin(); it != saved.cend(); ++it) {
                 if (!m_secretsChanged.contains(it.key())) {
                     m_savedSecrets.insert(it.key(), it.value());
@@ -237,20 +333,8 @@ void QuickAccounts::readSavedSecrets()
         });
 }
 
-void QuickAccounts::readCliproxyAccounts()
+void QuickAccounts::showCliproxyAccounts(const QVariantList &accounts)
 {
-    const ProviderSignIn signIn(*m_controller->settings());
-    QVariantList accounts;
-    for (const QString type : {QStringLiteral("codex"), QStringLiteral("claude")}) {
-        for (const CliProxyAccount &account : signIn.accounts(type)) {
-            accounts.append(QVariantMap{
-                {QStringLiteral("id"), account.fileName},
-                {QStringLiteral("type"), type},
-                {QStringLiteral("label"), account.label},
-                {QStringLiteral("state"), accountState(account)},
-            });
-        }
-    }
     if (accounts == m_cliproxyAccounts) {
         return;
     }
@@ -260,30 +344,40 @@ void QuickAccounts::readCliproxyAccounts()
 
 void QuickAccounts::saveSecret(const QString &rowId, const QString &value)
 {
-    const SecretRow *row = findRow(secretRows, rowId);
-    if (!row) {
+    if (!findRow(secretRows, rowId)) {
         qWarning().noquote() << "Accounts.saveSecret:" << rowId << "is not a secret";
         return;
     }
     const QString cleaned = value.trimmed();
-    if (cleaned.isEmpty()) {
-        return;
+    if (!cleaned.isEmpty()) {
+        writeSecret(rowId, cleaned);
     }
-    SecretStore *secrets = m_controller->settings()->secrets();
-    // The OpenAI key never falls back to the settings file.
-    const bool saved = row->secret == SecretStore::Secret::OpenAiApiKey ? secrets->saveApiKey(cleaned)
-                                                                        : secrets->saveSecret(row->secret, cleaned);
-    finishSecretChange(rowId, saved, true);
 }
 
 void QuickAccounts::clearSecret(const QString &rowId)
 {
-    const SecretRow *row = findRow(secretRows, rowId);
-    if (!row) {
+    if (!findRow(secretRows, rowId)) {
         qWarning().noquote() << "Accounts.clearSecret:" << rowId << "is not a secret";
         return;
     }
-    finishSecretChange(rowId, m_controller->settings()->secrets()->clearSecret(row->secret), false);
+    writeSecret(rowId, {});
+}
+
+void QuickAccounts::writeSecret(const QString &rowId, const QString &value)
+{
+    // The keyring's wait runs the event loop, where QML can save the same
+    // secret again. That write waits its turn, so the keyring and the
+    // daemon's copy both end with the value asked for last.
+    if (m_writes.contains(rowId)) {
+        m_writes.insert(rowId, value);
+        return;
+    }
+    const SecretStore::Secret secret = findRow(secretRows, rowId)->secret;
+    for (std::optional<QString> next = value; next; next = m_writes.take(rowId)) {
+        m_writes.insert(rowId, std::nullopt);
+        const bool done = storeSecret(m_controller->settings()->secrets(), secret, *next);
+        finishSecretChange(rowId, done, !next->isEmpty());
+    }
 }
 
 void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool saved)
@@ -293,7 +387,11 @@ void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool sav
         m_savedSecrets.insert(rowId, saved);
         m_secretErrors.remove(rowId);
     } else {
-        m_secretErrors.insert(rowId, m_controller->settings()->secrets()->lastError());
+        m_secretErrors.insert(rowId,
+                              QVariantMap{
+                                  {QStringLiteral("action"), saved ? QStringLiteral("save") : QStringLiteral("clear")},
+                                  {QStringLiteral("reason"), m_controller->settings()->secrets()->lastError()},
+                              });
     }
     emit secretsChanged();
     if (done && m_started) {

@@ -3,6 +3,7 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "core/SettingsStore.h"
+#include "core/AppSettings.h"
 #include "providers/ProviderSignIn.h"
 #include "providers/SignInCheck.h"
 #include "providers/ClaudeCredentialStorage.h"
@@ -1380,16 +1381,27 @@ private slots:
     void signInChecksSayWhatEachServiceHas()
     {
         QTemporaryDir dir;
-        RefinementSettings settings;
-        settings.cliproxyOauthDir = dir.path();
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
-        settings.openAiAuthMode = QStringLiteral("settings");
+        AppSettings settings;
+        RefinementSettings &refinement = settings.refinement;
+        refinement.cliproxyOauthDir = dir.path();
+        refinement.anthropicAuthMode = QStringLiteral("cliproxy");
+        refinement.openAiAuthMode = QStringLiteral("settings");
 
         SignInCheck cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::Missing);
-        QVERIFY(cliproxy.detail.contains(dir.path()));
+        QCOMPARE(cliproxy.directory, dir.path());
         QCOMPARE(checkSignIn(SignInService::OpenAi, settings, nullptr).detail,
                  QStringLiteral("Settings API key not found"));
+
+        // A file dictation would refuse is no sign-in, and says why.
+        QFile tokenless(dir.filePath(QStringLiteral("claude-a@example.com.json")));
+        QVERIFY(tokenless.open(QIODevice::WriteOnly));
+        tokenless.write(R"({"type": "claude"})");
+        tokenless.close();
+        cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
+        QCOMPARE(cliproxy.state, SignInState::Missing);
+        QCOMPARE(cliproxy.detail, QStringLiteral("No access token in CLI Proxy API account claude-a@example.com.json"));
+        QCOMPARE(CliProxyCredentials::listAccounts(dir.path(), QStringLiteral("claude")).value(0).problem, cliproxy.detail);
 
         // An expired token is expired, not missing: a refresh may renew it.
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
@@ -1407,20 +1419,96 @@ private slots:
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::SignedIn);
 
         // Through a server, its key is the whole sign-in.
-        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
         QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::Missing);
-        settings.cliproxyApiKey = QStringLiteral("server-key");
+        refinement.cliproxyApiKey = QStringLiteral("server-key");
         cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::SignedIn);
+        QCOMPARE(cliproxy.server, refinement.cliproxyBaseUrl);
         QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
 
         // Claude Code's own sign-in.
-        settings.anthropicAuthMode = QStringLiteral("oauth");
-        settings.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        refinement.anthropicAuthMode = QStringLiteral("oauth");
+        refinement.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Missing);
-        QVERIFY(writeJsonCredentials(settings.claudeCredentialsPath, QStringLiteral("secret-token"),
+        QVERIFY(writeJsonCredentials(refinement.claudeCredentialsPath, QStringLiteral("secret-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(-60)));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
+    }
+
+    // Codex dictates with a ChatGPT sign-in or a CLI Proxy API account, never
+    // an API key, so its sign-in is checked apart from OpenAI's.
+    void speechSignInIsTheSpeechProvidersOwn()
+    {
+        QTemporaryDir dir;
+        const QString codexAuth = dir.filePath(QStringLiteral(".codex/auth.json"));
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(codexAuth));
+        const QByteArray openAiKey = qgetenv("OPENAI_API_KEY");
+        qputenv("OPENAI_API_KEY", "sk-test-key");
+        const auto restore = qScopeGuard([openAiKey] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+            openAiKey.isNull() ? qunsetenv("OPENAI_API_KEY") : qputenv("OPENAI_API_KEY", openAiKey);
+        });
+        AppSettings settings;
+        settings.refinement.openAiAuthMode = QStringLiteral("env");
+        settings.speech.codexAuthMode = QStringLiteral("env");
+
+        QCOMPARE(checkSignIn(SignInService::OpenAi, settings, nullptr).state, SignInState::SignedIn);
+        QCOMPARE(checkSpeechSignIn(SignInService::OpenAi, settings.speech).state, SignInState::Missing);
+        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(3600))));
+        QCOMPARE(checkSpeechSignIn(SignInService::OpenAi, settings.speech).state, SignInState::SignedIn);
+
+        // Claude Voice through CLI Proxy API reads the account chosen for it.
+        settings.speech.claudeAuthMode = QStringLiteral("cliproxy");
+        settings.speech.cliproxyOauthDir = dir.path();
+        settings.speech.claudeCliproxyAccount = QStringLiteral("claude-a@example.com.json");
+        QCOMPARE(checkSpeechSignIn(SignInService::Anthropic, settings.speech).state, SignInState::Missing);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        QCOMPARE(checkSpeechSignIn(SignInService::Anthropic, settings.speech).state, SignInState::Expired);
+    }
+
+    // "Sign in again" on CLI Proxy API renews the account OpenAI and
+    // Anthropic each chose and no other, since each renewal rotates tokens.
+    // An account with no refresh token stays expired and says why.
+    void renewingRenewsOnlyTheChosenAccounts()
+    {
+        FakeServer server;
+        server.route("POST /token", httpResponse("200 OK", "application/json",
+                                                 R"({"access_token": "rotated", "expires_in": 3600})"));
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL", (server.origin() + QStringLiteral("/token")).toUtf8());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
+        QTemporaryDir dir;
+        const QDateTime expired = QDateTime::currentDateTimeUtc().addSecs(-60);
+        const QString codex = QStringLiteral("codex");
+        const QString chosen = QStringLiteral("codex-a@example.com.json");
+        const QString other = QStringLiteral("codex-b@example.com.json");
+        QVERIFY(writeCliProxyAccount(dir.path(), chosen, codex, QStringLiteral("a"), expired));
+        QVERIFY(writeCliProxyAccount(dir.path(), other, codex, QStringLiteral("b"), expired));
+        AppSettings settings;
+        settings.refinement.cliproxyOauthDir = dir.path();
+        settings.refinement.openAiCliproxyAccount = chosen;
+
+        QCOMPARE(renewSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::SignedIn);
+        QCOMPARE(server.requests.size(), 1);
+        QVERIFY(CliProxyCredentials::load(dir.path(), codex, chosen).ok);
+        QVERIFY(CliProxyCredentials::accountNeedsRefresh(dir.path(), codex, other));
+
+        const QString claude = QStringLiteral("claude-a@example.com.json");
+        QFile noRefresh(dir.filePath(claude));
+        QVERIFY(noRefresh.open(QIODevice::WriteOnly));
+        noRefresh.write(QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("claude")},
+                                                  {QStringLiteral("access_token"), QStringLiteral("token")},
+                                                  {QStringLiteral("expired"), expired.toString(Qt::ISODate)}})
+                            .toJson());
+        noRefresh.close();
+        settings.refinement.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.refinement.anthropicCliproxyAccount = claude;
+        const SignInCheck anthropic = renewSignIn(SignInService::Anthropic, settings, nullptr);
+        QCOMPARE(anthropic.state, SignInState::Expired);
+        QCOMPARE(anthropic.detail, QStringLiteral("CLI Proxy API account claude-a@example.com.json has no refresh "
+                                                  "token; sign in again through CLI Proxy API"));
     }
 
     void providerSignInRoundTripsTheFallbackMode()

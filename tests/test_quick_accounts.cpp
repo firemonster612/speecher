@@ -1,9 +1,12 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/ProviderAvailability.h"
 #include "common/test_auth.h"
+#include "common/test_http.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickSettings.h"
 
@@ -56,6 +59,52 @@ bool checked(const QuickAccounts &accounts)
     return true;
 }
 
+QString accountState(const QuickAccounts &accounts, const QString &fileName)
+{
+    return entry(accounts.cliproxyAccounts(), fileName).value(QStringLiteral("state")).toString();
+}
+
+// The sign-ins the daemon's provider availability has noted.
+QHash<QString, bool> notedSignIns(ApplicationController &controller)
+{
+    LiveFacts facts;
+    controller.providerAvailability()->addTo(facts);
+    return facts.signedIn;
+}
+
+// SchemaRow for the CLI Proxy API key in a window, and its text field.
+struct SecretRowWindow {
+    std::unique_ptr<QObject> window;
+    QQuickItem *field = nullptr;
+};
+
+SecretRowWindow showSecretRow(QQmlEngine &engine)
+{
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import Speecher.App
+        Window {
+            width: 640; height: 120; visible: true
+            SchemaRow { rowId: "cliproxyApiKey"; width: parent.width }
+        }
+    )", QUrl());
+    SecretRowWindow shown{std::unique_ptr<QObject>(component.create())};
+    if (!shown.window) {
+        qWarning().noquote() << component.errorString();
+        return shown;
+    }
+    for (QQuickItem *item : shown.window->findChildren<QQuickItem *>()) {
+        if (QByteArray(item->metaObject()->className()).startsWith("TextField_")) {
+            shown.field = item;
+        }
+    }
+    return shown;
+}
+
+const char *const proxyKeyFallbackWarning =
+    "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied";
+
 } // namespace
 
 // The UI's Accounts singleton: each sign-in as core finds it on a worker, CLI
@@ -69,6 +118,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        // Nothing here reads this user's Claude Code or Codex sign-ins.
+        settings.raw().setValue(SettingsKeys::ClaudeCredentialsPath, m_home.filePath(QStringLiteral("claude.json")));
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(m_home.filePath(QStringLiteral("codex.json"))));
         // The keyring stays out of these tests: a write fails as a missing
         // one would, and the settings file holds what may fall back there.
         // Reads fail at once, so none is left waiting on this thread when an
@@ -83,6 +135,7 @@ private slots:
     {
         qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
         qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+        qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
         if (!m_openAiKey.isEmpty()) {
             qputenv("OPENAI_API_KEY", m_openAiKey);
         }
@@ -99,6 +152,11 @@ private slots:
                                      QStringLiteral("token"), valid, true));
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
                                      QStringLiteral("token"), QDateTime::currentDateTimeUtc().addSecs(-60)));
+        // A file dictation would refuse: it holds no token.
+        QFile tokenless(dir.filePath(QStringLiteral("codex-c@example.com.json")));
+        QVERIFY(tokenless.open(QIODevice::WriteOnly));
+        tokenless.write(R"({"type": "codex"})");
+        tokenless.close();
         SettingsStore *store = controller.settings();
         store->setCliproxyOauthDir(dir.path());
         store->setOpenAiAuthMode(QStringLiteral("env"));
@@ -116,13 +174,31 @@ private slots:
         const QVariantMap openAi = service(accounts, QStringLiteral("openai"));
         QCOMPARE(openAi.value(QStringLiteral("state")).toString(), QStringLiteral("missing"));
         QCOMPARE(openAi.value(QStringLiteral("detail")).toString(), QStringLiteral("OPENAI_API_KEY not found"));
-        QCOMPARE(serviceState(accounts, QStringLiteral("anthropic")), QStringLiteral("expired"));
+        // Codex dictates with its own sign-in, never the OpenAI key.
+        QCOMPARE(openAi.value(QStringLiteral("speech")).toMap().value(QStringLiteral("state")).toString(),
+                 QStringLiteral("missing"));
+        const QVariantMap anthropic = service(accounts, QStringLiteral("anthropic"));
+        QCOMPARE(anthropic.value(QStringLiteral("state")).toString(), QStringLiteral("expired"));
+        QCOMPARE(anthropic.value(QStringLiteral("directory")).toString(), dir.path());
+        QCOMPARE(anthropic.value(QStringLiteral("speech")).toMap().value(QStringLiteral("state")).toString(),
+                 QStringLiteral("expired"));
         const QVariantMap cliproxy = service(accounts, QStringLiteral("cliproxy"));
         QCOMPARE(cliproxy.value(QStringLiteral("state")).toString(), QStringLiteral("signedIn"));
-        QVERIFY(cliproxy.value(QStringLiteral("detail")).toString().contains(dir.path()));
+        QCOMPARE(cliproxy.value(QStringLiteral("found")).toString(), QStringLiteral("signedIn"));
+        QCOMPARE(cliproxy.value(QStringLiteral("detail")).toString(), QString());
+        QCOMPARE(cliproxy.value(QStringLiteral("directory")).toString(), dir.path());
+
+        // What was found definitely reaches fallbacks and `speecher
+        // providers`; an expired sign-in, which dictation may renew, does not.
+        const QHash<QString, bool> noted = notedSignIns(controller);
+        QCOMPARE(noted.value(QStringLiteral("openai"), true), false);
+        QCOMPARE(noted.value(QStringLiteral("codex"), true), false);
+        QVERIFY(!noted.contains(QStringLiteral("anthropic")));
+        QVERIFY(!noted.contains(QStringLiteral("claude")));
 
         const QVariantList files = accounts.cliproxyAccounts();
-        QCOMPARE(files.size(), 4);
+        QCOMPARE(files.size(), 5);
+        QCOMPARE(accountState(accounts, QStringLiteral("codex-c@example.com.json")), QStringLiteral("unusable"));
         const QVariantMap first = entry(files, QStringLiteral("codex-a@example.com.json"));
         QCOMPARE(first.value(QStringLiteral("type")).toString(), QStringLiteral("codex"));
         QCOMPARE(first.value(QStringLiteral("label")).toString(), QStringLiteral("a@example.com"));
@@ -197,8 +273,9 @@ private slots:
         // The OpenAI key never falls back to the settings file; why it was
         // not saved is the keyring's answer.
         accounts.saveSecret(QStringLiteral("openAiApiKey"), QStringLiteral("sk-test-key"));
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")).toString(),
-                 QStringLiteral("Keyring write denied"));
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
+                 QVariant(QVariantMap{{QStringLiteral("action"), QStringLiteral("save")},
+                                      {QStringLiteral("reason"), QStringLiteral("Keyring write denied")}}));
         QVERIFY(!accounts.savedSecrets().contains(QStringLiteral("openAiApiKey")));
         QCOMPARE(SettingsStore().secrets()->apiKey(), QString());
 
@@ -223,41 +300,157 @@ private slots:
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine);
-        component.setData(R"(
-            import QtQuick
-            import Speecher.App
-            Window {
-                width: 640; height: 120; visible: true
-                SchemaRow { rowId: "cliproxyApiKey"; width: parent.width }
-            }
-        )", QUrl());
-        std::unique_ptr<QObject> created(component.create());
-        auto *window = qobject_cast<QQuickWindow *>(created.get());
-        QVERIFY2(window, qPrintable(component.errorString()));
-        QQuickItem *field = nullptr;
-        for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
-            if (QByteArray(item->metaObject()->className()).startsWith("TextField_")) {
-                field = item;
-            }
-        }
-        QVERIFY(field);
+        const SecretRowWindow row = showSecretRow(engine);
+        QVERIFY(row.field);
         const int password = 2; // TextInput.Password
-        QCOMPARE(field->property("echoMode").toInt(), password);
+        QCOMPARE(row.field->property("echoMode").toInt(), password);
 
-        QTest::ignoreMessage(QtWarningMsg,
-                             "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
-        field->setProperty("text", QStringLiteral("proxy-key"));
-        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+        QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
+        row.field->setProperty("text", QStringLiteral("proxy-key"));
+        QVERIFY(QMetaObject::invokeMethod(row.field, "editingFinished"));
         QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("proxy-key"));
-        QCOMPARE(field->property("text").toString(), QString());
-        QCOMPARE(field->property("placeholderText").toString(), QStringLiteral("Saved"));
+        QCOMPARE(row.field->property("text").toString(), QString());
+        QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("Saved"));
 
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
-        QCOMPARE(field->property("placeholderText").toString(), QStringLiteral("A key the server accepts"));
+        QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("A key the server accepts"));
+    }
+
+    // The keyring's wait runs the event loop, where typing goes on and the
+    // field can save again. What was typed meanwhile stays in the field, and
+    // the key saved last is the one kept, by the keyring and the daemon both.
+    void savesDuringASaveEndWithTheNewest()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine);
+        QVERIFY(row.field);
+        QQuickItem *field = row.field;
+        for (int save = 0; save < 3; ++save) {
+            QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
+        }
+
+        field->setProperty("text", QStringLiteral("first-key"));
+        QMetaObject::invokeMethod(
+            field, [field] { field->setProperty("text", QStringLiteral("typed-meanwhile")); }, Qt::QueuedConnection);
+        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("first-key"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("typed-meanwhile"));
+
+        field->setProperty("text", QStringLiteral("outer-key"));
+        QMetaObject::invokeMethod(
+            field,
+            [field] {
+                field->setProperty("text", QStringLiteral("inner-key"));
+                QMetaObject::invokeMethod(field, "editingFinished");
+            },
+            Qt::QueuedConnection);
+        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+        QCOMPARE(controller.settings()->secrets()->secret(SecretStore::Secret::CliproxyApiKey),
+                 QStringLiteral("inner-key"));
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("inner-key"));
+        QCOMPARE(field->property("text").toString(), QString());
+    }
+
+    // A keyring that does not answer leaves a sign-in that needs it unknown,
+    // in the keyring's words, rather than "not found".
+    void aKeyringTimeoutShowsTheKeyringsError()
+    {
+        ApplicationController controller(true);
+        SettingsStore *store = controller.settings();
+        store->setOpenAiAuthMode(QStringLiteral("settings"));
+        store->setCliproxyBaseUrl(QStringLiteral("http://127.0.0.1:8317"));
+        store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
+        QuickAccounts accounts(&controller);
+        QuickAccounts::create(nullptr, nullptr);
+        QTRY_VERIFY(checked(accounts));
+
+        const QVariantMap openAi = service(accounts, QStringLiteral("openai"));
+        QCOMPARE(openAi.value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
+        QCOMPARE(openAi.value(QStringLiteral("detail")).toString(),
+                 QStringLiteral("Desktop keyring unavailable for openai/apiKey: Desktop keyring request timed out"));
+        const QVariantMap cliproxy = service(accounts, QStringLiteral("cliproxy"));
+        QCOMPARE(cliproxy.value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
+        QCOMPARE(cliproxy.value(QStringLiteral("detail")).toString(),
+                 QStringLiteral("Desktop keyring unavailable for cliproxy/apiKey: Desktop keyring request timed out"));
+        QVERIFY(!notedSignIns(controller).contains(QStringLiteral("openai")));
+    }
+
+    // A secret the keyring could not answer for at first shows as saved once
+    // a later check finds it.
+    void aRecheckReadsWhichSecretsAreSaved()
+    {
+        ApplicationController controller(true);
+        SettingsStore *store = controller.settings();
+        store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
+        store->raw().setValue(SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
+        QuickAccounts accounts(&controller);
+        QuickAccounts::create(nullptr, nullptr);
+        QTRY_VERIFY(accounts.savedSecrets().contains(QStringLiteral("speechEndpointApiKey")));
+        QVERIFY(!accounts.savedSecrets().contains(QStringLiteral("cliproxyApiKey")));
+
+        // The keyring is out of the way now: Speecher no longer looks there.
+        store->raw().remove(SettingsKeys::SecretsInKeyring);
+        accounts.recheck(QStringLiteral("cliproxy"));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
+    }
+
+    // Clearing a key the keyring refused to delete says so, for the OpenAI
+    // key and for one Speecher only hides until the deletion goes through.
+    void aRefusedDeletionReportsAnError()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        const QVariant refused(QVariantMap{{QStringLiteral("action"), QStringLiteral("clear")},
+                                           {QStringLiteral("reason"), QStringLiteral("Keyring deletion denied")}});
+
+        accounts.clearSecret(QStringLiteral("openAiApiKey"));
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")), refused);
+
+        controller.settings()->raw().setValue(SettingsKeys::SecretsInKeyring,
+                                              QStringList{QStringLiteral("cliproxy-api-key")});
+        accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refused);
+    }
+
+    // Renewing a sign-in shows everything it rewrote: OpenAI's renewed CLI
+    // Proxy API account is current in the account list as well.
+    void aRenewalRefreshesTheAccountFiles()
+    {
+        FakeServer server;
+        server.route("POST /token", httpResponse("200 OK", "application/json",
+                                                 R"({"access_token": "rotated", "expires_in": 3600})"));
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL", (server.origin() + QStringLiteral("/token")).toUtf8());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        const QString fileName = QStringLiteral("codex-a@example.com.json");
+        QVERIFY(writeCliProxyAccount(dir.path(), fileName, QStringLiteral("codex"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        SettingsStore *store = controller.settings();
+        store->setCliproxyOauthDir(dir.path());
+        store->setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        store->setOpenAiCliproxyAccount(fileName);
+        QuickAccounts accounts(&controller);
+        QuickAccounts::create(nullptr, nullptr);
+        QTRY_VERIFY(checked(accounts));
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("expired"));
+        QCOMPARE(accountState(accounts, fileName), QStringLiteral("expired"));
+
+        accounts.renew(QStringLiteral("openai"));
+        QTRY_VERIFY(checked(accounts));
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("signedIn"));
+        QCOMPARE(serviceState(accounts, QStringLiteral("cliproxy")), QStringLiteral("signedIn"));
+        QCOMPARE(accountState(accounts, fileName), QStringLiteral("signedIn"));
+        QCOMPARE(notedSignIns(controller).value(QStringLiteral("openai")), true);
     }
 
 private:
+    QTemporaryDir m_home;
     QByteArray m_openAiKey;
 };
 

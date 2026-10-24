@@ -28,7 +28,7 @@ RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &setti
             if (accessToken) {
                 *accessToken = settings.cliproxyApiKey;
             }
-            return {true, QStringLiteral("Using CLI Proxy API at %1").arg(settings.cliproxyBaseUrl)};
+            return {true, QString()};
         }
         const CliProxyCredentialResult credentials = refreshExpired
             ? CliProxyCredentials::loadWithRefresh(settings.cliproxyOauthDir, QStringLiteral("claude"),
@@ -38,10 +38,7 @@ RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &setti
         if (accessToken) {
             *accessToken = credentials.ok ? credentials.accessToken : QString();
         }
-        if (credentials.ok) {
-            return {true, QStringLiteral("CLI Proxy API Claude token found")};
-        }
-        return {false, credentials.error, credentials.kind, credentials.httpStatus};
+        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         settings.claudeCredentialsPath,
@@ -55,7 +52,7 @@ RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &setti
     if (accessToken) {
         *accessToken = credentials.accessToken;
     }
-    return {true, QStringLiteral("Signed in with Claude Code")};
+    return {true, QString()};
 }
 
 bool anthropicSignInNeedsRefresh(const RefinementSettings &settings)

@@ -8,7 +8,7 @@ class AnthropicApiRefiner;
 
 // The access token the Anthropic sign-in mode points at: Claude Code's
 // credentials, a CLI Proxy API account file, or the CLI Proxy API server's
-// key. The message says where it came from, or why there is none. With
+// key. The message says why there is none. With
 // refreshExpired an expired token is renewed over the network first, so
 // only a worker thread may ask for that. accessToken may be null.
 RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &settings,

@@ -73,7 +73,7 @@ Backend is the C++ types plus the mocks not yet replaced.
 - `Accounts`: each service's sign-in is core's check, run on a worker; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
   through the daemon's `SecretStore`, and QML sees only whether a key is
-  saved and why a save failed.
+  saved and why a save or clear failed.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
