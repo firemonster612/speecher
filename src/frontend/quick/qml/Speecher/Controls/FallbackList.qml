@@ -44,9 +44,9 @@ Column {
 
     width: parent ? parent.width : implicitWidth
 
-    SettingRow {
-        shown: root.emptyText.length > 0 && root.ids.length === 0
-        title: root.emptyText
+    Reveal {
+        open: root.emptyText.length > 0 && root.ids.length === 0
+        EmptyState { compact: true; text: root.emptyText }
     }
 
     RowList {

@@ -38,6 +38,10 @@ Item {
         PropertyAction { target: row; property: "_lit"; value: false }
     }
 
+    // The text, icon and chevron fade together when the row is disabled; the
+    // control in the slot fades itself.
+    property real _ink: enabled ? 1 : Theme.disabledOpacity
+    Behavior on _ink { Ease {} }
     readonly property int _inset: Theme.rowInset
     // Room a clickable row keeps at its right end for its text and chevron.
     readonly property real _trail: clickable ? trail.width + 6 : 0
@@ -56,17 +60,26 @@ Item {
     Accessible.name: title
     Accessible.onPressAction: if (clickable) clicked()
     activeFocusOnTab: clickable
-    Keys.onSpacePressed: if (clickable) clicked()
-    Keys.onReturnPressed: if (clickable) clicked()
+    Keys.onSpacePressed: { focusVisible.keyed(); if (clickable) clicked() }
+    Keys.onReturnPressed: { focusVisible.keyed(); if (clickable) clicked() }
+    FocusVisible { id: focusVisible }
 
     Rectangle {
-        id: hoverFill
+        id: wash
         anchors.fill: parent
-        anchors.margins: 3
-        radius: Theme.radius
-        color: row._lit ? Theme.accentSoft : row.clickable && hover.hovered ? Theme.fill : "transparent"
-        Behavior on color { EaseColor { duration: row._lit ? Theme.fast : Theme.slow * 2 } }
-        FocusRing { target: hoverFill; shown: row.activeFocus }
+        anchors.margins: Theme.washInset
+        radius: Theme.washRadius
+        color: !row.clickable ? "transparent" : tap.pressed ? Theme.fillStrong : hover.hovered ? Theme.fill : "transparent"
+        Behavior on color { EaseColor {} }
+        FocusRing { target: wash; shown: focusVisible.shown }
+    }
+    // The search landing's wash lingers as it goes.
+    Rectangle {
+        anchors.fill: wash
+        radius: wash.radius
+        color: Theme.accentSoft
+        opacity: row._lit ? 1 : 0
+        Behavior on opacity { Ease { duration: row._lit ? Theme.fast : Theme.slow * 2 } }
     }
     Rectangle {
         visible: !row.first
@@ -83,6 +96,7 @@ Item {
         name: row.iconName
         size: 16
         color: row.iconTint
+        opacity: row._ink
     }
 
     Column {
@@ -91,8 +105,7 @@ Item {
         y: row.stacked ? 14 : (row.height - height) / 2
         width: row.stacked ? row.width - x - row._inset : slot.x - x - (slot.width > 0 ? 20 : row._trail)
         spacing: 3
-        opacity: row.enabled ? 1 : Theme.disabledOpacity
-        Behavior on opacity { Ease {} }
+        opacity: row._ink
         Txt { text: row.title; variant: "label"; width: parent.width; wrapMode: Text.WordWrap }
         Txt {
             visible: row.help.length > 0
@@ -119,6 +132,7 @@ Item {
         anchors.rightMargin: row._inset - 2
         anchors.verticalCenter: parent.verticalCenter
         spacing: 6
+        opacity: row._ink
         Txt { visible: row.trailingText.length > 0; text: row.trailingText; variant: "small"; tone: "secondary"; anchors.verticalCenter: parent.verticalCenter }
         Icon {
             name: row.trailingIcon
@@ -126,7 +140,7 @@ Item {
             color: hover.hovered ? Theme.textSecondary : Theme.textTertiary
             anchors.verticalCenter: parent.verticalCenter
             rotation: row.trailingRotation
-            Behavior on rotation { Ease { duration: Theme.slow } }
+            Behavior on rotation { Ease {} }
             // A chevron that leads somewhere nudges that way.
             transform: Translate {
                 x: hover.hovered && row.trailingIcon === "chevron-right" ? 2 * Theme.movement : 0
@@ -136,5 +150,5 @@ Item {
     }
 
     HoverHandler { id: hover; enabled: row.clickable; cursorShape: Qt.PointingHandCursor }
-    TapHandler { enabled: row.clickable; onTapped: row.clicked() }
+    TapHandler { id: tap; enabled: row.clickable; onTapped: { focusVisible.pointed(); row.clicked() } }
 }

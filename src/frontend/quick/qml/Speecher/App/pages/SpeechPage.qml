@@ -5,7 +5,6 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
-import "speech"
 
 Page {
     id: page
@@ -41,13 +40,27 @@ Page {
     Section {
         id: serviceSection
         title: Schema.row("speechProvider").label
-        plain: true
+        caption: Schema.row("speechProvider").help
         SearchLanding { rowIds: ["speechProvider"]; target: serviceSection }
-        ServicePicker {
-            width: parent.width
+        // Each says what it is good at, where setup says what it needs.
+        ChoiceRows {
+            recommendedText: Words.recommended
+            options: States.withTones(Models.serviceChoices).map(o => Object.assign({}, o, { help: Models.service(o.id).summary }))
             currentId: page.primary
-            fallbacks: page.fallbacks
-            onChosen: id => page.choose(id)
+            onActivated: id => page.choose(id)
+        }
+        // How the chosen service's text arrives, and its ratings.
+        SchemaRow {
+            id: ratingRow
+            readonly property var bars: Models.serviceBars(page.primary)
+            rowId: "speechRating"
+            help: Models.serviceTextShows(page.primary) + "." + Models.ratedAsText(Models.ratingSubject(page.primary))
+            Switcher {
+                width: implicitWidth
+                currentIndex: ratingRow.bars ? 0 : 1
+                RatingBars { appearance: "wide"; bars: ratingRow.bars || [] }
+                Txt { text: Models.text.unrated; variant: "small"; tone: "tertiary" }
+            }
         }
     }
 

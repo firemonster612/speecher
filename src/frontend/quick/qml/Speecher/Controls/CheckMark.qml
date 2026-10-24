@@ -8,7 +8,7 @@ Rectangle {
 
     width: 18
     height: 18
-    radius: 9
+    radius: width / 2
     color: Theme.accent
     scale: shown ? 1 : Theme.motionScale(0.2)
     opacity: shown ? 1 : 0

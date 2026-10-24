@@ -15,18 +15,20 @@ T.Button {
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     Accessible.role: checkable ? Accessible.CheckBox : Accessible.Button
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
-    scale: down ? Theme.motionScale(0.95) : 1
+    scale: down ? Theme.motionScale(0.965) : 1
     Behavior on scale { Ease { duration: Theme.fast; curve: Theme.springy } }
 
     background: Rectangle {
         id: bg
         radius: Theme.radius
-        color: chip.checked ? Theme.accentSoft : chip.hovered ? Theme.fill : "transparent"
+        color: chip.checked ? Theme.accentSoft : chip.down ? Theme.fillStrong : chip.hovered ? Theme.fill : "transparent"
         border.width: 1
         border.color: chip.checked ? Theme.accent : chip.hovered ? Theme.borderStrong : Theme.border
-        Behavior on color { EaseColor { duration: Theme.base } }
-        Behavior on border.color { EaseColor { duration: Theme.base } }
+        Behavior on color { EaseColor {} }
+        Behavior on border.color { EaseColor {} }
         FocusRing { target: bg; shown: chip.visualFocus }
     }
     contentItem: Item {

@@ -108,7 +108,7 @@ Section {
                 }
             }
             actions: [
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteRule; onClicked: Library.remove("appPasteRules", ruleRow.index) }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteRule; onClicked: { const name = ruleRow.rule.name; const undo = Library.remove("appPasteRules", ruleRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
             ]
         }
     }

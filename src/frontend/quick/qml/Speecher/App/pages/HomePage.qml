@@ -250,15 +250,4 @@ Page {
             }
         }
     }
-
-    // A small pencil link inside a line of text.
-    component TextLink: Txt {
-        id: link
-        signal activated()
-        variant: "small"
-        tone: "accent"
-        font.underline: linkHover.hovered
-        HoverHandler { id: linkHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: link.activated() }
-    }
 }

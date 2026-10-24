@@ -3,7 +3,9 @@ import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
 
-// A round icon button for the popup's capsule.
+// A round icon button for the popup's capsule. It presses like an
+// IconButton; it never takes focus, so the dictation keeps it, and the
+// popup's keys do the same jobs.
 T.Button {
     id: control
     property string iconName
@@ -16,12 +18,12 @@ T.Button {
     focusPolicy: Qt.NoFocus
     Accessible.name: tooltip
 
-    scale: Theme.motionScale(down ? 0.88 : hovered ? 1.06 : 1)
-    Behavior on scale { Ease { duration: Theme.base; curve: Theme.springy } }
+    scale: down ? Theme.motionScale(0.92) : 1
+    Behavior on scale { Ease { duration: Theme.fast; curve: Theme.springy } }
 
     background: Rectangle {
         radius: width / 2
-        color: control.down ? Theme.fillStrong : control.hovered ? Theme.fillStrong : Theme.fill
+        color: control.down ? Theme.surfacePressed : control.hovered ? Theme.fillStrong : Theme.fill
         border.width: 1
         border.color: Theme.rule
         Behavior on color { EaseColor {} }
@@ -30,6 +32,7 @@ T.Button {
         name: control.iconName
         size: Math.round(control.size * 0.5)
         color: control.hovered ? Theme.text : Theme.textSecondary
+        Behavior on color { EaseColor {} }
     }
     Tip { text: control.tooltip; shown: control.hovered }
 }

@@ -2,8 +2,9 @@ import QtQuick
 import Speecher.Theme
 
 // The question that opens in place before an action that can't be undone,
-// instead of a dialog: what will happen on the left (or leading content such
-// as a check box), Cancel and the action on the right. Put it under the row
+// instead of a dialog: the question and what it costs on the left, with
+// leading content such as a check box under them, and Cancel and the action
+// on the right. Put it under the row
 // it belongs to, or in place of a footer it replaces. The caller does the
 // action on confirmed and closes it on either signal.
 Reveal {
@@ -24,25 +25,18 @@ Reveal {
 
     Item {
         width: parent.width
-        implicitHeight: Math.max(Theme.rowHeight, question.implicitHeight + Theme.space4, leadingSlot.height + Theme.space4)
+        implicitHeight: Math.max(Theme.rowHeight, question.implicitHeight + Theme.space4 * 2)
 
         Rectangle { visible: root.ruled; x: root.inset; width: parent.width - root.inset * 2; height: 1; color: Theme.rule }
         Column {
             id: question
-            visible: root.text.length > 0
             x: root.inset
             width: buttons.x - x - Theme.space4
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
+            spacing: 3
             Txt { text: root.text; variant: "label"; width: parent.width; wrapMode: Text.WordWrap }
             Txt { visible: text.length > 0; text: root.detail; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
-        }
-        Item {
-            id: leadingSlot
-            x: root.inset
-            width: childrenRect.width
-            height: childrenRect.height
-            anchors.verticalCenter: parent.verticalCenter
+            Column { id: leadingSlot; visible: children.length > 0; topPadding: Theme.space2 }
         }
         Row {
             id: buttons

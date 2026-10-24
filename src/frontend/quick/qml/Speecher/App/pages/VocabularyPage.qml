@@ -69,7 +69,7 @@ Page {
                 Row {
                     layoutDirection: Qt.RightToLeft
                     spacing: Theme.space2
-                    Button { text: Library.vocabularyText.addTerm; iconName: "plus"; size: "small"; variant: "primary"; onClicked: terms.startAdd() }
+                    Button { text: Library.vocabularyText.addTerm; iconName: "plus"; size: "small"; onClicked: terms.startAdd() }
                     Button { text: Library.vocabularyText.importTerms; iconName: "file-up"; size: "small"; onClicked: Library.importTerms() }
                 }
                 Row {
@@ -85,7 +85,7 @@ Page {
                 Row {
                     layoutDirection: Qt.RightToLeft
                     spacing: Theme.space2
-                    Button { text: Library.vocabularyText.addReplacement; iconName: "plus"; size: "small"; variant: "primary"; onClicked: replacements.startAdd() }
+                    Button { text: Library.vocabularyText.addReplacement; iconName: "plus"; size: "small"; onClicked: replacements.startAdd() }
                     Button { text: Library.vocabularyText.importReplacements; iconName: "file-up"; size: "small"; onClicked: Library.importReplacements() }
                 }
             }

@@ -52,20 +52,14 @@ ClientWindow {
         width: 248
         height: parent.height
 
-        Row {
-            id: brand
-            x: Theme.space6
-            // Centred in the title strip, which moves the window.
-            y: (window.titleBarHeight - height) / 2
-            spacing: 10
-            BrandMark {}
-            Txt { text: System.setupText.title; variant: "heading"; anchors.verticalCenter: parent.verticalCenter }
-        }
+        // In the title strip, which moves the window.
+        Brand { id: brand; title: System.setupText.title }
 
+        // The steps' nodes line up under the mark.
         StepRail {
-            x: 28
-            y: brand.y + brand.height + 36
-            width: parent.width - Theme.space6 * 2
+            x: Theme.titleBarInset
+            y: brand.height + Theme.space5
+            width: parent.width - x - Theme.space6
             steps: window.steps
             current: window.step
             limit: window._limit

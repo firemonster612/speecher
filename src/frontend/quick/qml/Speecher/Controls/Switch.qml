@@ -11,6 +11,7 @@ T.Switch {
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     indicator: Rectangle {
         id: track
@@ -21,7 +22,7 @@ T.Switch {
                                : (control.hovered ? Theme.fillStrong : Theme.fill)
         border.width: control.checked ? 0 : 1
         border.color: Theme.border
-        Behavior on color { EaseColor { duration: Theme.base } }
+        Behavior on color { EaseColor {} }
 
         Rectangle {
             id: knob

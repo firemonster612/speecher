@@ -34,6 +34,7 @@ T.ComboBox {
     leftPadding: 11
     rightPadding: 30
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     readonly property var _current: currentIndex >= 0 ? options[currentIndex] : null
 

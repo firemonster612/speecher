@@ -1,9 +1,10 @@
 import QtQuick
 import Speecher.Theme
 
-// A card that can be chosen, the shell of OptionCards and service cards:
-// the chosen one takes a pencil wash and outline, the others lighten under
-// the pointer, and every card gives a little when pressed. checked adds the
+// A card that can be chosen as a whole, the shell of OptionCards: the chosen
+// one takes a pencil wash and outline, the others lighten under the pointer,
+// and every card gives a little when pressed. Only whole-card choices press
+// in; a card that opens is a Card with a clickable header instead. checked adds the
 // CheckMark in the top right corner; put it elsewhere yourself with
 // checked: false. Content goes inside, laid out within padding.
 // interactive: false leaves the pointer to the content, for a card where only
@@ -24,12 +25,13 @@ Rectangle {
     implicitHeight: body.childrenRect.height + padding * 2
     radius: Theme.radiusLarge
     color: selected ? Theme.accentSoft : card.hovered ? Theme.fill : "transparent"
-    border.width: selected ? 1.5 : 1
+    border.width: 1
     border.color: selected ? Theme.accent : card.hovered ? Theme.borderStrong : Theme.border
     opacity: enabled ? 1 : Theme.disabledOpacity
     scale: card.pressed ? Theme.motionScale(0.98) : 1
-    Behavior on color { EaseColor { duration: Theme.base } }
-    Behavior on border.color { EaseColor { duration: Theme.base } }
+    Behavior on color { EaseColor {} }
+    Behavior on border.color { EaseColor {} }
+    Behavior on opacity { Ease {} }
     Behavior on scale { Ease { duration: Theme.fast; curve: Theme.springy } }
     Accessible.role: Accessible.RadioButton
     Accessible.checked: selected

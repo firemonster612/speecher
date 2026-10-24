@@ -39,18 +39,20 @@ Item {
     Accessible.name: title
     Accessible.description: detail
     Accessible.onPressAction: if (clickable) clicked()
-    Keys.onReturnPressed: if (clickable) clicked()
-    Keys.onSpacePressed: if (clickable) clicked()
+    Keys.onReturnPressed: { focusVisible.keyed(); if (clickable) clicked() }
+    Keys.onSpacePressed: { focusVisible.keyed(); if (clickable) clicked() }
+    FocusVisible { id: focusVisible }
 
     Rectangle {
         id: wash
         anchors.fill: parent
-        anchors.margins: 3
-        radius: Theme.radius
-        color: row.selected ? Theme.accentSoft : row.clickable && row.hovered ? Theme.fill : "transparent"
+        anchors.margins: Theme.washInset
+        radius: Theme.washRadius
+        color: row.selected ? Theme.accentSoft : !row.clickable ? "transparent"
+             : tap.pressed ? Theme.fillStrong : row.hovered ? Theme.fill : "transparent"
         Behavior on color { EaseColor {} }
     }
-    FocusRing { target: wash; shown: row.activeFocus }
+    FocusRing { target: wash; shown: focusVisible.shown }
     Rectangle {
         visible: !row.first
         x: row.inset
@@ -63,6 +65,9 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: row.inset
         anchors.rightMargin: ends.width > 0 ? row.width - ends.x + Theme.space2 : row.inset
+        // The trailing controls fade themselves when the row is disabled.
+        opacity: row.enabled ? 1 : Theme.disabledOpacity
+        Behavior on opacity { Ease {} }
 
         Icon {
             visible: row.iconName.length > 0
@@ -117,5 +122,5 @@ Item {
     }
 
     HoverHandler { id: hover; cursorShape: row.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-    TapHandler { enabled: row.clickable; onTapped: row.clicked() }
+    TapHandler { id: tap; enabled: row.clickable; onTapped: { focusVisible.pointed(); row.clicked() } }
 }

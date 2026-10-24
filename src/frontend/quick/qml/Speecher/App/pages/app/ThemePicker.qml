@@ -22,6 +22,8 @@ FocusScope {
     implicitWidth: 420
     // The outline reaches 4px past the thumbnails, so they start 4px down.
     implicitHeight: _thumbHeight + 32
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     activeFocusOnTab: true
     Keys.onLeftPressed: { focusVisible.keyed(); _choose(Math.max(0, currentIndex - 1)) }
     Keys.onRightPressed: { focusVisible.keyed(); _choose(Math.min(options.length - 1, currentIndex + 1)) }
@@ -59,8 +61,9 @@ FocusScope {
                 id: thumb
                 width: parent.width
                 height: root._thumbHeight
-                scale: Theme.motionScale(tap.pressed ? 0.97 : hover.hovered && !option.selected ? 1.02 : 1)
-                Behavior on scale { Ease { curve: Theme.springy } }
+                // Pressed like a choice card; nothing grows under the pointer.
+                scale: tap.pressed ? Theme.motionScale(0.98) : 1
+                Behavior on scale { Ease { duration: Theme.fast; curve: Theme.springy } }
 
                 // System splits the window down the middle.
                 MiniWindow {
@@ -86,6 +89,7 @@ FocusScope {
                     color: "transparent"
                     border.width: 1
                     border.color: hover.hovered ? Theme.borderStrong : Theme.border
+                    Behavior on border.color { EaseColor {} }
                 }
             }
 

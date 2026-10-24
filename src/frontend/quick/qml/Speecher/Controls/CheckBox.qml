@@ -10,6 +10,8 @@ T.CheckBox {
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     spacing: 8
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     indicator: Rectangle {
         id: box

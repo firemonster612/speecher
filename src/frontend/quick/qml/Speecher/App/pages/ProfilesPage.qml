@@ -12,7 +12,6 @@ Page {
     id: page
     title: Schema.page("profiles").title
     subtitle: Schema.page("profiles").subtitle
-    maxWidth: 920
 
     readonly property var profiles: Library.profiles
     // Preview state: --profile=<id> opens that profile, --profiles-form=tone|level opens a form.
@@ -43,11 +42,27 @@ Page {
                 width: 244
                 spacing: Theme.space1
 
-                ChoiceRows {
-                    indicator: "check"
-                    options: page.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon, help: Library.profileSummary(p) }))
-                    currentId: page.selected.id
-                    onActivated: id => page.selectedId = id
+                // Which profile the editor shows: a selected row, not a check,
+                // since choosing one here changes nothing.
+                RowList {
+                    id: profileRows
+                    width: parent.width
+                    values: page.profiles
+                    keyOf: p => p.id
+                    delegate: ListRow {
+                        required property string key
+                        required property int index
+                        readonly property var profile: profileRows.entry(key)
+                        width: ListView.view.width
+                        first: index === 0
+                        title: profile.name
+                        detail: Library.profileSummary(profile)
+                        iconName: profile.icon
+                        clickable: true
+                        selected: key === page.selected.id
+                        Accessible.selected: selected
+                        onClicked: page.selectedId = key
+                    }
                 }
                 Button {
                     x: Theme.space2
@@ -134,7 +149,7 @@ Page {
                 formOpen: toneForm.open
                 emptyText: Library.profilesText.tonesEmpty
                 onEditClicked: i => toneForm.startEdit(i)
-                onRemoveClicked: i => Library.removeTone(Library.customTones[i].id)
+                onRemoveClicked: i => { const name = Library.customTones[i].name; const undo = Library.removeTone(Library.customTones[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) }
 
                 InlineForm {
                     cancelText: Words.cancel
@@ -184,7 +199,7 @@ Page {
                 formOpen: levelForm.open
                 emptyText: Library.profilesText.levelsEmpty
                 onEditClicked: i => levelForm.startEdit(i)
-                onRemoveClicked: i => Library.removeLevel(Library.customCleanupLevels[i].id)
+                onRemoveClicked: i => { const name = Library.customCleanupLevels[i].name; const undo = Library.removeLevel(Library.customCleanupLevels[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) }
 
                 InlineForm {
                     cancelText: Words.cancel

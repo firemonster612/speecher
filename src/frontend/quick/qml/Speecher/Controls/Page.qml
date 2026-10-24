@@ -9,7 +9,6 @@ Item {
 
     property string title
     property string subtitle
-    property int maxWidth: Theme.contentMaxWidth
     default property alias content: body.data
     property alias headerActions: actions.data
     property alias flickable: flick
@@ -41,7 +40,7 @@ Item {
 
         Column {
             id: column
-            width: Math.min(page.maxWidth, flick.width - 64)
+            width: Math.min(Theme.contentMaxWidth, flick.width - 64)
             x: (flick.width - width) / 2
             y: 28
             spacing: Theme.sectionGap

@@ -43,6 +43,8 @@ T.AbstractButton {
     implicitWidth: content.width + clear.width + 16
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     onClicked: if (recordsKeys) { listening = true; forceActiveFocus() }
 
     // While listening, a combination such as Ctrl+K goes to the field rather
@@ -72,11 +74,10 @@ T.AbstractButton {
     background: Rectangle {
         id: bg
         radius: Theme.radius
-        color: control.listening ? Theme.accentSoft : control.hovered ? Theme.fill : "transparent"
+        color: control.listening ? Theme.accentSoft : control.down ? Theme.fillStrong : control.hovered ? Theme.fill : "transparent"
         border.width: control.listening ? 1 : 0
         border.color: Theme.accent
-        Behavior on color { EaseColor { duration: Theme.base } }
-        Behavior on border.color { EaseColor { duration: Theme.base } }
+        Behavior on color { EaseColor {} }
         SequentialAnimation on opacity {
             running: control.listening
             loops: Animation.Infinite

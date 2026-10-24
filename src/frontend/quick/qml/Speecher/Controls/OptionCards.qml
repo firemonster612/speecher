@@ -27,7 +27,7 @@ FocusScope {
     Row {
         id: row
         width: parent.width
-        spacing: 10
+        spacing: Theme.space3
         Repeater {
             model: root.options
             delegate: ChoiceCard {

@@ -292,7 +292,8 @@ QtObject {
     function newId(prefix) { return prefix + "_" + (++_lastId) }
 
     // Deleting a profile, tone or level also drops what pointed at it, so
-    // nothing names something that is gone.
+    // nothing names something that is gone. Deleting a tone or level
+    // returns a function that puts everything back, for an Undo.
     function removeProfile(id) {
         profiles = profiles.filter(p => p.id !== id)
         recognitionRules = recognitionRules.map(r => r.profile === id ? Object.assign({}, r, { profile: "" }) : r)
@@ -302,16 +303,29 @@ QtObject {
         if (Transcription.options.profile === id) Transcription.setOption("profile", Settings.values.defaultWritingProfile)
     }
     function removeTone(id) {
+        const undo = _restorer(["customTones", "profiles"], "tone")
         customTones = customTones.filter(t => t.id !== id)
         profiles = profiles.map(p => p.tone === id ? Object.assign({}, p, { tone: "none" }) : p)
         if (Transcription.options.tone === id) Transcription.setOption("tone", "none")
+        return undo
     }
     function removeLevel(id) {
+        const undo = _restorer(["customCleanupLevels", "profiles"], "cleanup")
         const gone = customCleanupLevels.find(l => l.id === id)
         const instead = gone.base === "custom_only" ? "balanced" : gone.base
         customCleanupLevels = customCleanupLevels.filter(l => l.id !== id)
         profiles = profiles.map(p => p.cleanup === id ? Object.assign({}, p, { cleanup: instead }) : p)
         if (Transcription.options.cleanup === id) Transcription.setOption("cleanup", instead)
+        return undo
+    }
+    // Puts back the lists named and Transcribe's option as they are now.
+    function _restorer(lists, option) {
+        const saved = lists.map(name => library[name])
+        const was = Transcription.options[option]
+        return () => {
+            lists.forEach((name, i) => library[name] = saved[i])
+            Transcription.setOption(option, was)
+        }
     }
 
     // Vocabulary ---------------------------------------------------------
@@ -515,10 +529,16 @@ QtObject {
         next[index] = Object.assign({}, next[index], item)
         library[list] = next
     }
+    // Returns a function that puts the entry back where it was, for an Undo.
     function remove(list, index) {
         const next = library[list].slice()
-        next.splice(index, 1)
+        const gone = next.splice(index, 1)[0]
         library[list] = next
+        return () => {
+            const back = library[list].slice()
+            back.splice(index, 0, gone)
+            library[list] = back
+        }
     }
 
     // Later, so a binding that first touched Library isn't still reading

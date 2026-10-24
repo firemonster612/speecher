@@ -11,6 +11,7 @@ CheckMark 1.0 CheckMark.qml
 Chip 1.0 Chip.qml
 ChoiceCard 1.0 ChoiceCard.qml
 ChoiceRows 1.0 ChoiceRows.qml
+CompactChoice 1.0 CompactChoice.qml
 CopyButton 1.0 CopyButton.qml
 DiffText 1.0 DiffText.qml
 Disclosure 1.0 Disclosure.qml
@@ -62,6 +63,7 @@ Surface 1.0 Surface.qml
 Switch 1.0 Switch.qml
 Switcher 1.0 Switcher.qml
 TextArea 1.0 TextArea.qml
+TextLink 1.0 TextLink.qml
 TextField 1.0 TextField.qml
 Tip 1.0 Tip.qml
 TipBody 1.0 TipBody.qml

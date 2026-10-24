@@ -4,8 +4,9 @@ import Speecher.Theme
 // An add or edit form that opens in place, usually at the top of a card's
 // list, instead of a dialog. The caller opens it, decides what saving does
 // and closes it on saved or cancelled. A faint fill sets it apart from the
-// rows around it. Fields go in the default slot, one per line; put two in a
-// Row to set them side by side.
+// rows around it. Fields go in the default slot, one per line, each a
+// FormField; put two in a Row with spacing Theme.space4 to set them side by
+// side.
 Reveal {
     id: root
 
@@ -23,8 +24,8 @@ Reveal {
 
         Rectangle {
             anchors.fill: parent
-            anchors.margins: 3
-            radius: Theme.radius
+            anchors.margins: Theme.washInset
+            radius: Theme.washRadius
             color: Theme.fill
         }
         Column {
@@ -38,7 +39,7 @@ Reveal {
             Column {
                 id: fieldColumn
                 width: parent.width
-                spacing: 14
+                spacing: Theme.space4
             }
             Row {
                 anchors.right: parent.right

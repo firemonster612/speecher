@@ -49,6 +49,7 @@ T.Button {
         border.width: control.variant === "secondary" || control.variant === "danger" ? 1 : 0
         border.color: control.variant === "danger" ? Theme.soft(Theme.negative, 0.45) : control.hovered ? Theme.borderStrong : Theme.border
         Behavior on color { EaseColor {} }
+        Behavior on border.color { EaseColor {} }
         FocusRing { target: bg; shown: control.visualFocus }
     }
 

@@ -29,8 +29,18 @@ Item {
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: title
     Accessible.onPressAction: if (interactive) activated()
-    Keys.onReturnPressed: if (interactive) activated()
-    Keys.onSpacePressed: if (interactive) activated()
+    Keys.onReturnPressed: { focusVisible.keyed(); if (interactive) activated() }
+    Keys.onSpacePressed: { focusVisible.keyed(); if (interactive) activated() }
+    FocusVisible { id: focusVisible }
+
+    // A node you can pick takes the rows' faint fill under the pointer.
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: -Theme.space1
+        radius: Theme.radius
+        color: !node.interactive ? "transparent" : tap.pressed ? Theme.fillStrong : hover.hovered ? Theme.fill : "transparent"
+        Behavior on color { EaseColor {} }
+    }
 
     // Keeps a line behind the node from showing through a translucent fill.
     Rectangle { width: node.size; height: node.size; radius: width / 2; color: Theme.paper; scale: disc.scale }
@@ -97,8 +107,8 @@ Item {
         }
     }
 
-    FocusRing { target: disc; shown: node.activeFocus; targetRadius: node.size / 2 }
+    FocusRing { target: disc; shown: focusVisible.shown; targetRadius: node.size / 2 }
 
-    HoverHandler { enabled: node.interactive; cursorShape: Qt.PointingHandCursor }
-    TapHandler { enabled: node.interactive; onTapped: node.activated() }
+    HoverHandler { id: hover; enabled: node.interactive; cursorShape: Qt.PointingHandCursor }
+    TapHandler { id: tap; enabled: node.interactive; onTapped: { focusVisible.pointed(); node.activated() } }
 }

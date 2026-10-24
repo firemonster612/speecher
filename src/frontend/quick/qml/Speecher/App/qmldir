@@ -11,6 +11,7 @@ AccessibilityNotice 1.0 AccessibilityNotice.qml
 HealthRow 1.0 HealthRow.qml
 StateText 1.0 StateText.qml
 Sheet 1.0 Sheet.qml
+Brand 1.0 Brand.qml
 States 1.0 states.js
 ClientWindow 1.0 ClientWindow.qml
 WindowControls 1.0 WindowControls.qml

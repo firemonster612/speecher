@@ -2,14 +2,14 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Theme
 
-// A choice as rows on a card, one option each with a line of help and its
-// status on the right. A pencil wash slides to the chosen row, and options
-// that come and go fold in and out. Up and down arrows move the choice.
+// A choice as rows on a card, the one way to pick a provider or service in
+// settings and setup alike: each option's icon, its name over a line of
+// help, its status, and a check after the chosen one. A pencil wash slides
+// to the chosen row, and options that come and go fold in and out. Up and
+// down arrows move the choice.
 //   options: [{ id, label, help?, icon?, recommended?, status?, tone? }]
-//            tone colours the status (warning, negative, positive); the
-//            page decides which options need it.
-//   indicator: radio (a radio before each option) or check (the option's
-//            icon before it and a check after the chosen one).
+//            tone colours the status (warning, negative, positive), the
+//            same whether or not the option is chosen.
 // ruleBelow draws an inset divider under the last row, for a row that opens
 // after it in the same card.
 FocusScope {
@@ -17,17 +17,18 @@ FocusScope {
 
     property var options: []
     property string currentId
-    property string indicator: "radio"
-    property int rowHeight: 58
     property bool ruleBelow: false
     property string recommendedText
     signal activated(string id)
 
     readonly property int currentIndex: options.findIndex(o => o.id === currentId)
+    readonly property int rowHeight: 56
 
     implicitWidth: 520
     implicitHeight: list.implicitHeight
     width: parent ? parent.width : implicitWidth
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     activeFocusOnTab: true
     Accessible.role: Accessible.List
     Keys.onUpPressed: { focusVisible.keyed(); _choose(Math.max(0, currentIndex - 1)) }
@@ -37,11 +38,11 @@ FocusScope {
 
     Rectangle {
         id: selection
-        x: 3
-        y: Math.max(0, root.currentIndex) * root.rowHeight + 3
-        width: parent.width - 6
-        height: root.rowHeight - 6
-        radius: Theme.radius
+        x: Theme.washInset
+        y: Math.max(0, root.currentIndex) * root.rowHeight + Theme.washInset
+        width: parent.width - Theme.washInset * 2
+        height: root.rowHeight - Theme.washInset * 2
+        radius: Theme.washRadius
         color: Theme.accentSoft
         opacity: root.currentIndex >= 0 ? 1 : 0
         // Under reduced motion the selection moves at once.
@@ -77,9 +78,9 @@ FocusScope {
 
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: 3
-                radius: Theme.radius
-                color: hover.hovered && !option.selected ? Theme.fill : "transparent"
+                anchors.margins: Theme.washInset
+                radius: Theme.washRadius
+                color: option.selected ? "transparent" : tap.pressed ? Theme.fillStrong : hover.hovered ? Theme.fill : "transparent"
                 Behavior on color { EaseColor {} }
             }
             // The wash covers the lines next to the chosen row.
@@ -93,31 +94,18 @@ FocusScope {
                 Behavior on opacity { Ease { duration: Theme.fast } }
             }
 
-            Rectangle {
-                id: radio
-                visible: root.indicator === "radio"
-                x: Theme.rowInset
-                anchors.verticalCenter: parent.verticalCenter
-                width: 18
-                height: 18
-                radius: 9
-                color: "transparent"
-                border.width: option.selected ? 5.5 : 1.5
-                border.color: option.selected ? Theme.accent : Theme.borderStrong
-                Behavior on border.width { Ease { duration: Theme.slow; curve: Theme.springy } }
-                Behavior on border.color { EaseColor { duration: Theme.base } }
-            }
             Icon {
                 id: glyph
-                visible: root.indicator === "check" && !!option.entry.icon
+                visible: !!option.entry.icon
                 x: Theme.rowInset
                 anchors.verticalCenter: parent.verticalCenter
                 name: option.entry.icon || ""
                 size: 16
                 color: option.selected ? Theme.accent : Theme.textSecondary
+                Behavior on color { EaseColor {} }
             }
             Column {
-                x: radio.visible || glyph.visible ? Theme.rowInset + 30 : Theme.rowInset
+                x: glyph.visible ? Theme.rowInset + 30 : Theme.rowInset
                 width: trail.x - x - Theme.space4
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
@@ -153,7 +141,6 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Icon {
-                    visible: root.indicator === "check"
                     name: "check"
                     size: 16
                     color: Theme.accent
@@ -166,7 +153,7 @@ FocusScope {
             }
 
             HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(option.index) } }
+            TapHandler { id: tap; onTapped: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(option.index) } }
         }
     }
 }

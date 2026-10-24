@@ -65,11 +65,8 @@ Page {
         caption: Schema.row("refinementProvider").help
         SearchLanding { rowIds: ["refinementProvider"]; target: providerSection }
         ChoiceRows {
-            indicator: "check"
-            rowHeight: 56
-            // A provider that is chosen but not ready says so in the warning colour.
+            recommendedText: Words.recommended
             options: Library.providerChoices
-                     .map(o => Object.assign({}, o, { tone: o.id === page.primary && o.tone === "neutral" ? "warning" : "neutral" }))
             currentId: page.primary
             onActivated: id => page.choose(id)
         }
@@ -173,11 +170,11 @@ Page {
                                     id: runner
                                     required property var modelData
                                     spacing: Theme.space2
-                                    opacity: Library.detectingRunners ? 0.5 : 1
                                     anchors.verticalCenter: parent.verticalCenter
-                                    Behavior on opacity { Ease {} }
                                     Txt { text: runner.modelData.label; variant: "label"; anchors.verticalCenter: parent.verticalCenter }
+                                    // While a search runs, each says so with a spinner rather than greying out.
                                     StatusText {
+                                        busy: Library.detectingRunners
                                         text: runner.modelData.running ? Library.refinementText.running : Library.refinementText.notRunning
                                         tone: runner.modelData.running ? "positive" : "neutral"
                                         indicator: runner.modelData.running ? "dot" : "none"

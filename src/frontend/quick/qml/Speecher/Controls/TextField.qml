@@ -31,6 +31,7 @@ T.TextField {
     verticalAlignment: TextInput.AlignVCenter
     hoverEnabled: true
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     Txt { id: style; visible: false; variant: control.variant }
     // Templates draws no placeholder of its own.

@@ -109,9 +109,10 @@ QtObject {
         }
         return problem(id) ? { state: "setup", status: "Needs a URL" } : { state: "ready", status: "Ready" }
     }
-    // The services as setup offers them: what each needs, and where it stands.
+    // The services as a choice, in setup and on Speech to text: what each
+    // needs, and where it stands.
     readonly property var serviceChoices: speechServices.map(s => Object.assign(
-        { id: s.id, label: s.label, help: s.access, recommended: !!s.recommended }, readiness(s.id)))
+        { id: s.id, label: s.label, icon: s.icon, help: s.access, recommended: !!s.recommended }, readiness(s.id)))
     // Downloaded models as a choice, for a profile's own speech model.
     readonly property var downloadedModels: downloaded.map(id => ({ id: id, label: catalogModel(id).name }))
 
@@ -236,7 +237,7 @@ QtObject {
         deleteQuestion: "Delete %1?", download: "Download %1", progress: "%1 of %2",
         bestFor: "Best for", wordErrors: "Word errors", wordErrorsValue: "%1 clear, %2 everyday", speed: "10 s of speech",
         textShows: "Text shows", languages: "Languages", licence: "Licence", file: "File",
-        fallback: "Fallback %1", unrated: "No rating"
+        unrated: "No rating"
     })
     // Where a speech service stands in the chain: 0 for the service itself,
     // then its place among the fallbacks.
