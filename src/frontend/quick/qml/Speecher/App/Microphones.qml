@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // The microphones as the UI words them, from Audio's devices and the saved
 // Input device: the device choices, whether the saved one has gone, and what
@@ -36,7 +37,7 @@ QtObject {
     }
 
     // What the test says: the microphone it listens to, or why it can't.
-    readonly property string testStatus: System.check("microphoneAccess").state !== "ok" ? _test.accessOffText
+    readonly property string testStatus: Health.find(System.checks, "microphoneAccess").state !== "ok" ? _test.accessOffText
                                        : !Audio.hasMicrophones ? _test.noMicrophoneText
                                        : Audio.testError !== "" ? Audio.testError
                                        : _test.listeningText.arg(deviceName)

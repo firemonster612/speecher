@@ -70,7 +70,7 @@ QtObject {
     // without microphone access.
     readonly property DemoVoice _voice: DemoVoice {
         running: audio.testState === "running" && audio.hasMicrophones && audio._micState !== "silent"
-                 && System.check("microphoneAccess").state === "ok"
+                 && System.checks.find(c => c.id === "microphoneAccess").state === "ok"
     }
 
     Component.onCompleted: Qt.callLater(() => {

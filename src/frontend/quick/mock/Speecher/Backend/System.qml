@@ -35,7 +35,6 @@ QtObject {
             : _keyboard === "ready" ? { id: "virtualKeyboardHealth", state: "ok", reason: "ready", fix: "", failures: [] }
             : { id: "virtualKeyboardHealth", state: "attention", reason: _keyboard, fix: _keyboardFixes[_keyboard] || "", failures: [] }
     ]
-    function check(id) { return checks.find(c => c.id === id) }
     function fixFromSetup(id) { fix(id) }
     function fix(id) {
         if (id === "virtualKeyboardHealth" && _keyboard === "disabled") {

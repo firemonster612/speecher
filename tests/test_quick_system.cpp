@@ -112,7 +112,12 @@ SpeecherRemoval::Steps quietRemoval()
 
 QVariantMap keyboardCheck(const QuickSystem &system)
 {
-    return system.check(QStringLiteral("virtualKeyboardHealth"));
+    for (const QVariant &check : system.checks()) {
+        if (check.toMap().value(QStringLiteral("id")) == QStringLiteral("virtualKeyboardHealth")) {
+            return check.toMap();
+        }
+    }
+    return {};
 }
 
 QVariantList keyboardFailures(const QuickSystem &system)
