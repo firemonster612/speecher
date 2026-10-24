@@ -9,6 +9,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 #include "providers/LocalModelStore.h"
 
 #include <QDir>
@@ -281,6 +282,8 @@ private slots:
             });
         QuickSettings settings(&controller);
         QuickModels models(&controller);
+        // Setup and the pages read System, as the host always has one.
+        QuickSystem system(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -337,6 +340,8 @@ private slots:
             });
         QuickSettings settings(&controller);
         QuickModels models(&controller);
+        // Setup and the pages read System, as the host always has one.
+        QuickSystem system(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -369,6 +374,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
+        // Setup and the pages read System, as the host always has one.
+        QuickSystem system(&controller);
         LocalSetupTestAccess::setRunners(*controller.localSetup(),
                                          {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
                                            QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
@@ -402,6 +409,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
+        // Setup and the pages read System, as the host always has one.
+        QuickSystem system(&controller);
         placeDownloaded(controller, QStringLiteral("moonshine-small"));
         settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
         QQmlEngine engine;
@@ -474,6 +483,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
+        // Setup and the pages read System, as the host always has one.
+        QuickSystem system(&controller);
         // Every section the page has, open.
         settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("endpoint")});
         settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});
