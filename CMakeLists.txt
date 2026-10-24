@@ -1379,8 +1379,11 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
+      tests/test_quick_dictation.cpp
+      src/frontend/quick/host/QuickPopupWindow.cpp
+      src/frontend/quick/host/QuickPopupWindow.h
     )
-    # The Settings suite loads the UI's rows over the C++ Settings; Qt's own
+    # The Quick suites load the UI's QML over the C++ Backend; Qt's own
     # QML modules load from the shared Qt, as in the app.
     target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
     set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
@@ -1411,7 +1414,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

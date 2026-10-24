@@ -298,7 +298,7 @@ private slots:
         QCOMPARE(errors.last().at(0).toString(),
                  QStringLiteral("No speech service is available. ChatGPT Codex couldn't be reached, Custom Endpoint "
                                 "didn't answer and Local Model has no model downloaded."));
-        QCOMPARE(errors.last().at(1).value<PopupErrorAction>().pageId, QStringLiteral("dictation"));
+        QCOMPARE(errors.last().at(1).value<PopupErrorAction>().pageId, QStringLiteral("speech"));
         QCOMPARE(rig.microphoneStarts, 0);
     }
 

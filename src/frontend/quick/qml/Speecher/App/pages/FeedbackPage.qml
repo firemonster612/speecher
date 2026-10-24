@@ -30,11 +30,11 @@ Page {
                 id: demo
                 elapsed: 4
                 level: voice.level
-                receipt: Dictation.sample.receipt
+                receipt: ({ title: "Input sent", detail: "", outcome: "inserted", page: "" })
             }
             DemoVoice { id: voice; running: demo.state === "listening" }
 
-            readonly property var sentence: Dictation.sample.words.split(" ")
+            readonly property var sentence: "Quick update on the launch, the onboarding flow is ready for review and I'd love feedback before Friday".split(" ")
             property int fed: 0
             Timer {
                 interval: Theme.ms(260)

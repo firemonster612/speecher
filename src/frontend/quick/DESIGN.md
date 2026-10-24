@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings` and `Status` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, and the real `Settings` and `Status` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation` and `DictationState` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation` and `DictationState` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -34,10 +34,10 @@ wiring an area means replacing its mock with a C++ type of the same name, not
 editing pages. Each Backend type comes from exactly one module: the app's
 Backend is the C++ types plus the mocks not yet replaced.
 
-- Wired: `Settings` (`host/QuickSettings`) and `Status` (`host/QuickStatus`).
-  Placeholders until their wiring PRs: `Insights`, `Transcription`, `Audio`,
-  `Models`, `Library`, `Accounts`, `System`, `Updates`, `Dictation` and
-  `DictationState`.
+- Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
+  and `Dictation` and `DictationState` (`host/QuickDictation`). Placeholders
+  until their wiring PRs: `Insights`, `Transcription`, `Audio`, `Models`,
+  `Library`, `Accounts`, `System` and `Updates`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
@@ -56,6 +56,17 @@ Backend is the C++ types plus the mocks not yet replaced.
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version, a waiting update and the shortcut's keys.
+- `Dictation` is the session as the popup shows it: `state` (the popup's
+  phase: idle, starting, listening, paused, transcribing, refining,
+  delivering, delivered, review, error), `level`, `elapsed`, `words`,
+  `refined`, and `receipt`, `review` and `error`, whose fields
+  `QuickDictation.h` documents. A receipt and an error are core's message
+  split at its " • " into a title and a detail, with the settings page that
+  fixes it; the popup words that page's button. Its `*Requested` signals go
+  to the controller (start, stop, cancel, follow-up) and the session (pause,
+  replace); the fix opens Main on that page. An error dismisses itself after
+  core's `popupErrorDismissMs`. `DictationState` is the same type with
+  nothing behind it, for a page's demo popup.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
   options. Option ids are the values core stores. Pages place rows by id with
   `SchemaRow { rowId: "…" }`.
@@ -73,16 +84,27 @@ Backend is the C++ types plus the mocks not yet replaced.
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
   Theme setting.
+- The popup has its own window (`host/QuickPopupWindow`), made with the
+  engine and placed by the platform's `PopupPositioner`: an overlay
+  layer-shell surface anchored to the bottom of the active screen on
+  Wayland, never focused or activated. It shows when the session asks
+  (`popupShowRequested(generation)`), answers `popupPresented(generation)`
+  after the first frame of that dictation (a later show or a hide drops the
+  answer), and hides itself once `PopupWindow.empty`, faded out, so the
+  popup works whether or not Main was ever opened.
 - The popup window is larger than the capsule, so only the capsule may take
   the pointer: the host sets the window's input region to
-  `PopupWindow.inputRegion` (`QWindow::setMask`, or the layer-shell input
-  region) whenever it changes, about once per phase.
+  `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
+  input region on Wayland) whenever it changes, about once per phase.
+  `SPEECHER_POPUP_CAPTURE_DIR=<dir>` saves the popup's frames while it is up.
 - Wording belongs to the UI. It comes from the schema row, `Words` (shared
   words such as Cancel, Save and Copied, and the shell's: `Words.shell`,
   `Words.results(count)`) or the page, kept short and in one place per page.
   A C++ Backend type carries data, not wording; when an area is wired, the
-  wording its mock holds moves into QML. The popup's wording is the
-  dictation's `text` until the popup is wired.
+  wording its mock holds moves into QML. The popup words itself
+  (`DictationPopup.t`) and Home words the dictation's state; the
+  messages core writes (receipts, errors, a review's summary) come through
+  as they are.
 
 ## Look and motion
 

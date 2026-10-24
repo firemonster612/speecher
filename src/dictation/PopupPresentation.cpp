@@ -204,6 +204,11 @@ constexpr int kPopupErrorMaximumMs = 30000;
 
 } // namespace
 
+QString popupMessageSeparator()
+{
+    return QStringLiteral(" • ");
+}
+
 QString cancelledOutcomeText()
 {
     return QStringLiteral("Canceled");
@@ -223,7 +228,7 @@ DictationOutcome dictationOutcome(const QString &receipt,
                                   const QString &speechWarning,
                                   const ProviderLabels &labels)
 {
-    const QString separator = QStringLiteral(" • ");
+    const QString separator = popupMessageSeparator();
     bool wordsMayBeMissing = false;
     const QString note = fallbackNote(history, usedRawTranscript, labels, &wordsMayBeMissing);
     DictationOutcome outcome;
@@ -257,10 +262,10 @@ QString noSpeechServiceText(const QList<ProviderAttemptIssue> &issues, const Pro
 PopupErrorAction speechSetupAction(const QString &providerId)
 {
     if (providerId == QStringLiteral("local")) {
-        return {ErrorFix::SettingsPage, QStringLiteral("localModels")};
+        return {ErrorFix::SettingsPage, QStringLiteral("models")};
     }
     if (providerId == QStringLiteral("endpoint")) {
-        return {ErrorFix::SettingsPage, QStringLiteral("dictation")};
+        return {ErrorFix::SettingsPage, QStringLiteral("speech")};
     }
     return {ErrorFix::SettingsPage, QStringLiteral("accounts")};
 }

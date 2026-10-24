@@ -24,6 +24,10 @@ enum class PopupOutcome {
     Cancelled,
 };
 
+// Between the parts of a receipt or an error: what happened first, then each
+// note on it ("Copied • Your selection changed").
+QString popupMessageSeparator();
+
 // What a cancelled session's popup says. It stays up as long as a delivered
 // result does.
 QString cancelledOutcomeText();
@@ -52,7 +56,7 @@ struct PopupErrorAction {
     QString pageId;
 };
 // Where a speech service that cannot start is set up: Accounts for a
-// sign-in, Local models for a model on this computer, Dictation for a server.
+// sign-in, Local models for a model on this computer, Speech to text for a server.
 PopupErrorAction speechSetupAction(const QString &providerId);
 
 // What the popup says once a Dictation Session delivered: the receipt

@@ -30,7 +30,11 @@ Item {
     // first one that changed, so a word heard in part ("Hel") gives way to
     // the whole of it. A change before the words on show starts over.
     onTextChanged: {
-        const all = text.split(/\s+/).filter(w => w.length > 0)
+        let all = text.split(/\s+/).filter(w => w.length > 0)
+        // Core sends only the last words heard, so the first can drop off the
+        // front while the rest carry on; the words before them stay.
+        const slid = _slid(all)
+        if (slid > 0) all = _all.slice(0, slid).concat(all)
         let same = 0
         while (same < all.length && same < _all.length && all[same] === _all[same]) ++same
         if (same < _dropped) {
@@ -44,6 +48,24 @@ Item {
         Qt.callLater(_trim)
     }
 
+    // How many words off the front of the last text the new one has lost:
+    // it starts with the rest of them, the last of which may have changed.
+    // 0 when it carries on from the start (its first word can be the same
+    // by chance, so that alone says nothing) or is something else.
+    function _slid(all) {
+        let same = 0
+        while (same < all.length && same < _all.length && all[same] === _all[same]) ++same
+        if (same >= _all.length - 1) return 0
+        for (let k = 1; k < _all.length - 1; ++k) {
+            const kept = _all.length - k - 1
+            if (kept > all.length) continue
+            let match = true
+            for (let i = 0; i < kept && match; ++i) match = all[i] === _all[k + i]
+            if (match) return k
+        }
+        return 0
+    }
+
     // Drops whole lines that have scrolled out of view. Removing a full first
     // line leaves every other line wrapped as it was, so only the offset
     // changes, and that change is not animated.
@@ -53,10 +75,13 @@ Item {
         let firstLine = 0
         while (firstLine < repeater.count && repeater.itemAt(firstLine).y < lineHeight / 2) ++firstLine
         if (firstLine === 0 || firstLine >= words.count) return
+        // Laid out at once, so the offset's change is over before the
+        // animation is back on; a later layout would slide the words down.
         _trimming = true
         words.remove(0, firstLine)
         _dropped += firstLine
-        Qt.callLater(() => _trimming = false)
+        flow.forceLayout()
+        _trimming = false
     }
 
     property real _sweep: 0

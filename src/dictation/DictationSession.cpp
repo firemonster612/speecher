@@ -211,6 +211,11 @@ QString DictationSession::lastTranscript() const
     return m_lastTranscript.isEmpty() ? m_transcript->text() : m_lastTranscript;
 }
 
+int DictationSession::listeningMs() const
+{
+    return m_listeningMs + (m_state == DictationState::Listening ? int(m_listeningClock.elapsed()) : 0);
+}
+
 QString DictationSession::lastMessage() const
 {
     return m_lastMessage;
@@ -437,7 +442,7 @@ bool DictationSession::selectProviders()
     if (const QString problem =
             spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
         !problem.isEmpty()) {
-        failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("dictation")});
+        failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("speech")});
         return false;
     }
     if (settings.refinement.providerId != QStringLiteral("none")) {
@@ -612,7 +617,7 @@ void DictationSession::speechChainExhausted()
         return;
     }
     failStartup(noSpeechServiceText(m_providerHistory.issues, providerLabels()),
-                {ErrorFix::SettingsPage, QStringLiteral("dictation")});
+                {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
 // A provider still preparing gets no more than the connect budget's worth of
@@ -1621,7 +1626,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
                                                           m_speechWarning,
                                                           providerLabels());
         if (!note.isEmpty()) {
-            outcome.message += QStringLiteral(" • ") + note;
+            outcome.message += popupMessageSeparator() + note;
         }
         m_lastMessage = outcome.message;
         emit popupMessageRequested(outcome.message, outcome.outcome, outcome.fix);
@@ -1635,7 +1640,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
         setState(DictationState::Error,
-                 m_speechWarning.isEmpty() ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning);
+                 m_speechWarning.isEmpty() ? result.message : result.message + popupMessageSeparator() + m_speechWarning);
     }
 }
 
@@ -1765,7 +1770,7 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     const QString message = chainTried ? noSpeechServiceText(m_providerHistory.issues, providerLabels())
                                        : failure.message;
     const PopupErrorAction fix =
-        chainTried ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("dictation")} : PopupErrorAction{};
+        chainTried ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")} : PopupErrorAction{};
     m_sessionSettings.reset();
     resumePausedMedia();
     setState(DictationState::Error, message, fix);

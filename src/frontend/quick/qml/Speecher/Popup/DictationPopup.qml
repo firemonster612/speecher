@@ -9,29 +9,62 @@ import Speecher.Wording
 // The dictation popup: one capsule that grows, shrinks and changes its
 // content as a dictation moves from listening to delivered. It reads the
 // dictation from source (the live one by default; the settings page passes a
-// demo) and the popup rows from Settings.
+// demo) and the popup rows from Settings, and words it itself (t).
 Item {
     id: popup
 
     property DictationState source: Dictation
     readonly property string phase: source.state
     readonly property bool shown: phase !== "idle"
-    readonly property bool live: phase === "listening" || phase === "paused" || phase === "transcribing" || phase === "refining"
-    readonly property string liveText: phase === "refining" && popup.source.refined.length ? popup.source.refined : popup.source.words
-    readonly property bool textOn: phase === "refining" ? Settings.values.showRefinementText !== false
-                                                         : Settings.values.showLiveText !== false
+    // Faded out, so the window carrying it can go.
+    readonly property bool empty: !shown && holder.opacity === 0
+    readonly property bool live: ["starting", "listening", "paused", "transcribing", "refining", "delivering"].includes(phase)
+    readonly property bool recording: phase === "starting" || phase === "listening" || phase === "paused"
+    // The refined words show from refining until the text is out.
+    readonly property bool refinedPhase: phase === "refining" || phase === "delivering" && source.refined.length > 0
+    readonly property string liveText: refinedPhase && popup.source.refined.length ? popup.source.refined : popup.source.words
+    readonly property bool textOn: refinedPhase ? Settings.values.showRefinementText !== false
+                                                : Settings.values.showLiveText !== false
     readonly property bool showText: live && textOn && liveText.length > 0
-    // The last working phase, so its label holds while the bar fades out.
+    // The last working phase, so its label holds while the bar fades out
+    // and while the text is delivered.
     property string workPhase: "transcribing"
-    onPhaseChanged: if (phase === "transcribing" || phase === "refining") workPhase = phase
+    // The last of delivered and error, so its words hold while it fades out.
+    property string noticePhase: "delivered"
+    // A new review opens folded; one followed up keeps its view.
+    property bool wholeEdit: false
+    onPhaseChanged: {
+        if (phase === "transcribing" || phase === "refining") workPhase = phase
+        if (phase === "delivered" || phase === "error") noticePhase = phase
+        if (phase === "idle") wholeEdit = false
+    }
+    readonly property var selectionEdit: source.review
+    readonly property bool canFold: (selectionEdit.folded || []).length > 0
+    // The receipt's mark: what happened to the text.
+    readonly property string receiptMark: noticePhase === "error" ? "error"
+        : ({ copied: "copied", fallback: "fallback", cancelled: "cancelled" })[source.receipt.outcome] || "delivered"
+    readonly property var notice: noticePhase === "error" ? source.error : source.receipt
+
+    readonly property var t: ({
+        transcribing: "Transcribing…",
+        refining: "Refining…",
+        reviewTitle: "Edit to your selection",
+        youSaid: said => "You said " + said,
+        askForMore: "Ask for more changes",
+        replace: "Replace",
+        wholeEdit: "Show whole edit",
+        changesOnly: "Show changes only",
+        open: pageId => "Open " + Schema.page(pageId).title
+    })
 
     // The capsule's size for the current phase. Width and height animate to
     // it, so the shape morphs between phases.
     readonly property size target: {
         if (phase === "review") return Qt.size(widest, review.implicitHeight + 36)
-        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(320, receipt.implicitWidth + 40)), 64)
+        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(320, receipt.implicitWidth + 40)),
+                                                                      Math.max(64, receipt.implicitHeight + 28))
         if (showText) return Qt.size(540, 58 + words.implicitHeight + 14)
-        return Qt.size(phase === "listening" || phase === "paused" ? 360 : 300, 58)
+        return Qt.size(recording ? 360 : 300, 58)
     }
 
     // Where the margin rule falls inside the slip.
@@ -130,7 +163,7 @@ Item {
                         id: orb
                         x: (popup.marginX - width) / 2
                         anchors.verticalCenter: parent.verticalCenter
-                        phase: popup.phase
+                        phase: popup.phase === "delivering" ? popup.workPhase : popup.phase
                         level: popup.source.level
                     }
 
@@ -143,26 +176,18 @@ Item {
                         bars: Math.max(8, Math.floor(width / 5.5))
                         level: popup.source.level
                         active: popup.phase === "listening"
-                        opacity: popup.phase === "listening" || popup.phase === "paused" ? 1 : 0
+                        opacity: popup.recording ? 1 : 0
                         Behavior on opacity { Ease {} }
                     }
 
-                    Column {
+                    MorphText {
                         x: popup.marginX + 16
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 1
-                        opacity: popup.phase === "transcribing" || popup.phase === "refining" ? 1 : 0
+                        text: popup.workPhase === "refining" ? popup.t.refining : popup.t.transcribing
+                        variant: "label"
+                        strong: true
+                        opacity: popup.phase === "transcribing" || popup.phase === "refining" || popup.phase === "delivering" ? 1 : 0
                         Behavior on opacity { Ease {} }
-                        MorphText {
-                            text: popup.workPhase === "refining" ? popup.source.text.refining : popup.source.text.transcribing
-                            variant: "label"
-                            strong: true
-                        }
-                        Txt {
-                            text: popup.workPhase === "refining" ? popup.source.text.refiningWith : popup.source.speechService
-                            variant: "small"
-                            tone: "secondary"
-                        }
                     }
 
                     MorphText {
@@ -212,37 +237,44 @@ Item {
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
 
-                VoiceOrb { id: receiptOrb; phase: popup.phase; size: 30; anchors.verticalCenter: parent.verticalCenter }
+                VoiceOrb { id: receiptOrb; phase: popup.phase === "delivered" || popup.phase === "error" ? popup.receiptMark : popup.phase; size: 30; anchors.verticalCenter: parent.verticalCenter }
                 Column {
                     // The words take what the widest capsule has left once the
-                    // orb, the action and the spacing are in, and elide past it,
+                    // orb, the action and the spacing are in, and wrap past it,
                     // so a long error never pushes its action out.
                     readonly property real room: popup.widest - 40 - receiptOrb.width - receiptEnd.width
                                                  - (receiptAction.visible ? receiptAction.implicitWidth + receipt.spacing * 3 : receipt.spacing * 2)
                     width: Math.min(Math.max(receiptTitle.implicitWidth, receiptDetail.implicitWidth), room)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
+                    // A long error wraps, and the capsule grows taller for it.
                     Txt {
                         id: receiptTitle
                         width: parent.width
-                        text: popup.phase === "error" ? popup.source.error.title : popup.source.receipt.title
+                        text: popup.notice.title || ""
                         variant: "label"
                         strong: true
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 3
                         elide: Text.ElideRight
                     }
                     Txt {
                         id: receiptDetail
                         width: parent.width
-                        text: popup.phase === "error" ? popup.source.error.detail : popup.source.receipt.detail
+                        text: popup.notice.detail || ""
+                        // No room kept for a detail there isn't.
+                        visible: text.length > 0
                         variant: "small"
                         tone: "secondary"
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 3
                         elide: Text.ElideRight
                     }
                 }
                 Button {
                     id: receiptAction
-                    visible: popup.phase === "error" && popup.source.error.action.length > 0
-                    text: popup.source.error.action || ""
+                    visible: (popup.notice.page || "").length > 0
+                    text: visible ? popup.t.open(popup.notice.page) : ""
                     size: "small"
                     variant: "primary"
                     anchors.verticalCenter: parent.verticalCenter
@@ -270,11 +302,36 @@ Item {
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
 
-                Column {
+                Item {
                     id: reviewHeading
-                    spacing: 2
-                    Txt { text: popup.source.text.reviewTitle; variant: "label"; strong: true }
-                    Txt { text: popup.source.text.youSaid; variant: "small"; tone: "secondary" }
+                    width: parent.width
+                    height: reviewTitle.height
+                    Column {
+                        id: reviewTitle
+                        width: parent.width - reviewSummary.width - 12
+                        spacing: 2
+                        Txt { text: popup.t.reviewTitle; variant: "label"; strong: true }
+                        Txt {
+                            width: parent.width
+                            text: popup.t.youSaid(popup.selectionEdit.instruction || "")
+                            variant: "small"
+                            tone: "secondary"
+                            elide: Text.ElideRight
+                        }
+                    }
+                    // How much changed, and the whole edit or only its changes.
+                    Column {
+                        id: reviewSummary
+                        anchors.right: parent.right
+                        spacing: 2
+                        Txt { anchors.right: parent.right; text: popup.selectionEdit.summary || ""; variant: "small"; tone: "secondary" }
+                        TextLink {
+                            anchors.right: parent.right
+                            visible: popup.canFold
+                            text: popup.wholeEdit ? popup.t.changesOnly : popup.t.wholeEdit
+                            onActivated: popup.wholeEdit = !popup.wholeEdit
+                        }
+                    }
                 }
 
                 Flickable {
@@ -288,7 +345,11 @@ Item {
                     WheelScroll {}
                     clip: true
                     T.ScrollBar.vertical: ScrollBar {}
-                    DiffText { id: edit; segments: popup.source.review.segments; variant: "transcript" }
+                    DiffText {
+                        id: edit
+                        segments: popup.canFold && !popup.wholeEdit ? popup.selectionEdit.folded : popup.selectionEdit.whole || []
+                        variant: "transcript"
+                    }
                 }
 
                 // Each button names its key, so the edit can be answered
@@ -299,18 +360,18 @@ Item {
                     spacing: 8
                     Button {
                         text: Words.cancel
-                        trailing: KeyCombo { keys: ["Esc"]; size: "small" }
+                        trailing: KeyCombo { keys: popup.selectionEdit.keepKeys || []; size: "small" }
                         onClicked: popup.source.cancelRequested()
                     }
                     Button {
-                        text: popup.source.text.askForMore
-                        trailing: KeyCombo { keys: Settings.values.globalShortcut || []; size: "small" }
+                        text: popup.t.askForMore
+                        trailing: KeyCombo { keys: popup.selectionEdit.followUpKeys || []; size: "small" }
                         onClicked: popup.source.followUpRequested()
                     }
                     Button {
-                        text: popup.source.text.replace
+                        text: popup.t.replace
                         variant: "primary"
-                        trailing: KeyCombo { keys: ["↵"]; size: "small" }
+                        trailing: KeyCombo { keys: popup.selectionEdit.replaceKeys || []; size: "small" }
                         onClicked: popup.source.replaceRequested()
                     }
                 }

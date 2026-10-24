@@ -605,7 +605,7 @@ void ApplicationController::notifyModelReady(const QString &modelId)
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
               : QStringLiteral("Choose it on the Local models page to dictate with it."),
-        QStringLiteral("localModels"));
+        QStringLiteral("models"));
 }
 
 ProviderRegistry *ApplicationController::providerRegistry() const

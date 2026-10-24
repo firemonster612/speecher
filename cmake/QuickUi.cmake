@@ -59,12 +59,14 @@ speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUIC
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup")
-# Settings and Status are C++ over core; the other areas ship the preview's
-# mocks as placeholders until each is wired. The mock Settings and Status
-# stay with the preview.
+# Settings, Status and the dictation are C++ over core; the other areas ship
+# the preview's mocks as placeholders until each is wired. The mocks of the
+# wired ones stay with the preview.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
-  EXCLUDE Settings.qml Status.qml
+  EXCLUDE Settings.qml Status.qml Dictation.qml DictationState.qml
   SOURCES
+    "${SPEECHER_QUICK_DIR}/host/QuickDictation.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickDictation.h"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.h"
     "${SPEECHER_QUICK_DIR}/host/QuickStatus.cpp"
@@ -77,6 +79,8 @@ target_include_directories(speecher_quick_backend PRIVATE "${SPEECHER_QUICK_DIR}
 target_sources(speecher PRIVATE
   "${SPEECHER_QUICK_DIR}/host/QuickFrontEnd.cpp"
   "${SPEECHER_QUICK_DIR}/host/QuickFrontEnd.h"
+  "${SPEECHER_QUICK_DIR}/host/QuickPopupWindow.cpp"
+  "${SPEECHER_QUICK_DIR}/host/QuickPopupWindow.h"
 )
 # QuickFrontEnd.cpp imports these plugins itself. Qt's own QML modules load
 # from the shared Qt at run time, so the import scan, which links them for a

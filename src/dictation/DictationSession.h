@@ -52,6 +52,8 @@ public:
     // can still say it; empty once the next session starts.
     QString lastFailure() const;
     QString lastTranscript() const;
+    // How long this session has listened so far, pauses left out.
+    int listeningMs() const;
     // A selection edit is under review, a follow-up to it dictated or not.
     bool reviewUp() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
