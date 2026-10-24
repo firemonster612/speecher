@@ -9,18 +9,19 @@ Item {
     id: wave
 
     property real progress: 0
-    property int seed: 1
+    // The file's peak levels, 0..1 across its length; flat until it is read.
+    property var peaks: []
     readonly property real barWidth: 2
     readonly property real gap: 2
     readonly property int bars: Math.max(1, Math.floor((width + gap) / (barWidth + gap)))
-    // A made-up but steady shape per file: speech-like bursts with pauses.
+    // The loudest peak under each bar, scaled to the file's loudest.
     readonly property var levels: {
-        let s = seed * 7919
-        const next = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296 }
+        const loudest = Math.max(0.01, ...peaks)
         const out = []
         for (let i = 0; i < bars; ++i) {
-            const phrase = 0.55 + 0.45 * Math.sin(i / 9 + seed)
-            out.push(next() < 0.06 ? 0.08 : Math.max(0.12, Math.min(1, phrase * (0.35 + next() * 0.75))))
+            const from = Math.floor(i * peaks.length / bars)
+            const to = Math.max(from + 1, Math.floor((i + 1) * peaks.length / bars))
+            out.push(Math.max(0.08, Math.max(0, ...peaks.slice(from, to)) / loudest))
         }
         return out
     }

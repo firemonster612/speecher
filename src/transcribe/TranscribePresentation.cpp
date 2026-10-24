@@ -122,6 +122,20 @@ QString exportedTranscript(const TranscribeFileResult &result, TranscriptFormat 
     return format == TranscriptFormat::Text ? shownTranscript(result, raw) : subtitleFile(result.segments, format);
 }
 
+QString allTranscripts(const QList<TranscribeFileResult> &results, bool raw)
+{
+    QStringList parts;
+    for (const TranscribeFileResult &result : results) {
+        if (result.failed()) {
+            continue;
+        }
+        parts << (results.size() > 1 ? QStringLiteral("# %1\n\n%2").arg(QFileInfo(result.path).fileName(),
+                                                                           shownTranscript(result, raw))
+                                     : shownTranscript(result, raw));
+    }
+    return parts.join(QStringLiteral("\n\n\n"));
+}
+
 QString subtitlesNeedTimings(const QString &speechProvider)
 {
     return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(speechProvider);

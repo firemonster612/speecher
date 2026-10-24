@@ -3,6 +3,7 @@ import QtQuick.Shapes
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.App
 
 // Where audio files arrive: a dashed outline that turns pencil while files
 // are dragged over it. Large while nothing is listed, a slim strip after;
@@ -12,7 +13,6 @@ Item {
 
     property bool compact: false
     readonly property bool over: drop.containsDrag
-    readonly property var t: Transcription.text
     signal chooseRequested()
 
     implicitHeight: layouts.height
@@ -57,12 +57,12 @@ Item {
                 Column {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: Theme.space1
-                    Txt { anchors.horizontalCenter: parent.horizontalCenter; text: zone.t.dropToAdd; variant: "heading" }
-                    Txt { anchors.horizontalCenter: parent.horizontalCenter; text: zone.t.mediaHint; variant: "small"; tone: "secondary" }
+                    Txt { anchors.horizontalCenter: parent.horizontalCenter; text: TranscribeWords.dropToAdd; variant: "heading" }
+                    Txt { anchors.horizontalCenter: parent.horizontalCenter; text: TranscribeWords.mediaHint; variant: "small"; tone: "secondary" }
                 }
                 Button {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: zone.t.chooseFiles
+                    text: TranscribeWords.chooseFiles
                     iconName: "folder-open"
                     variant: "primary"
                     onClicked: zone.chooseRequested()
@@ -81,15 +81,15 @@ Item {
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 1
-                    Txt { text: zone.t.dropMore; variant: "label" }
-                    Txt { text: zone.t.mediaHint; variant: "caption"; tone: "secondary" }
+                    Txt { text: TranscribeWords.dropMore; variant: "label" }
+                    Txt { text: TranscribeWords.mediaHint; variant: "caption"; tone: "secondary" }
                 }
             }
             Button {
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.space3
                 anchors.verticalCenter: parent.verticalCenter
-                text: zone.t.addMore
+                text: TranscribeWords.addMore
                 iconName: "plus"
                 size: "small"
                 onClicked: zone.chooseRequested()
@@ -101,6 +101,6 @@ Item {
     DropArea {
         id: drop
         anchors.fill: parent
-        onDropped: Transcription.addFiles()
+        onDropped: drag => Transcription.addUrls(drag.urls)
     }
 }

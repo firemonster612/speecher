@@ -5,6 +5,7 @@
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
+#include "frontend/quick/host/QuickTranscription.h"
 
 #include <QObject>
 #include <QPointer>
@@ -37,8 +38,7 @@ public:
     // Settings are pages of the main window.
     void showSettingsWindow() override;
     void showSetupAssistant(SetupAssistantPage page) override;
-    // Opens the Transcribe page. Its queue is still the placeholder, so the
-    // files only go to the log until file transcription is wired.
+    // Opens the Transcribe page with these files added to its list.
     void showTranscribeFiles(const QStringList &paths) override;
     void showDictationError(const QString &message, const PopupErrorAction &fix = {}) override;
     void alert() override;
@@ -67,6 +67,7 @@ private:
     QuickStatus m_status;
     QuickDictation m_dictation;
     QuickUpdates m_updates;
+    QuickTranscription m_transcription;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

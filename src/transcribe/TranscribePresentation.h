@@ -58,6 +58,10 @@ bool canExportAs(const TranscribeFileResult &result, TranscriptFormat format);
 // from the Raw Transcript, which the timings belong to.
 QString exportedTranscript(const TranscribeFileResult &result, TranscriptFormat format, bool raw);
 
+// What Copy all puts on the clipboard: every finished transcript, each under a
+// "# file name" heading when there are several.
+QString allTranscripts(const QList<TranscribeFileResult> &results, bool raw);
+
 // What the results summary names the batch's choices, read when it starts so
 // a later settings change does not rewrite a finished batch's description.
 struct TranscribeBatchLabels {

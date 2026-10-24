@@ -2,6 +2,7 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 
+#include "app/ApplicationController.h"
 #include "app/HeadlessTranscribe.h"
 #include "core/EchoCanceller.h"
 #include "core/SettingsStore.h"
@@ -14,6 +15,7 @@
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/Subtitles.h"
 #include "transcribe/TranscribePresentation.h"
+#include "transcribe/TranscribeQueue.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -2976,7 +2978,233 @@ private slots:
         }
     }
 
+    // The Transcribe page's queue lists each file the decoder may take once,
+    // by its full path, and learns its length.
+    void theQueueListsEachAudioFileOnceByItsPath()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        const QString notes = m_dir.filePath(QStringLiteral("notes.txt"));
+        QFile file(notes);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("not audio");
+        file.close();
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+
+        queue.addFiles({audio, m_dir.path() + QStringLiteral("/./memo.wav"), notes});
+
+        QCOMPARE(queue.files(), QStringList{audio});
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(queue.durationMs(audio) - 500) <= 50, 10000);
+        queue.removeFile(audio);
+        QVERIFY(queue.files().isEmpty());
+    }
+
+    // A batch runs through the controller with the choices it started with,
+    // whatever is chosen meanwhile, and ends on its results.
+    void theQueueRunsABatchWithTheChoicesItStartedWith()
+    {
+        const QString first = m_dir.filePath(QStringLiteral("one.wav"));
+        const QString second = m_dir.filePath(QStringLiteral("two.wav"));
+        writeWav(first);
+        writeWav(second);
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        useScriptedSpeech(controller);
+        queue.addFiles({first, second});
+        queue.setOptions(queueOptions());
+
+        QVERIFY(queue.start());
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Transcribe);
+        TranscribeOptions changed = queueOptions();
+        changed.speechProviderId = QStringLiteral("codex");
+        queue.setOptions(changed);
+        QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
+
+        QCOMPARE(queue.batchOptions().speechProviderId, QStringLiteral("claude"));
+        QCOMPARE(queue.batchLabels().speech, QStringLiteral("Scripted"));
+        QVERIFY(!queue.batchRefines());
+        QCOMPARE(queue.results().size(), 2);
+        QCOMPARE(queue.results().at(1).path, second);
+        QVERIFY(queue.results().at(1).raw.startsWith(QStringLiteral("heard ")));
+        QCOMPARE(queue.fileState(1), TranscribeQueue::FileState::Done);
+        QCOMPARE(queue.progress(), 1.0);
+        QVERIFY(!queue.cancelled());
+    }
+
+    // A start while a batch runs is refused before anything changes.
+    void aBusyQueueRefusesToStartAndKeepsItsBatch()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        useScriptedSpeech(controller);
+        queue.addFiles({audio});
+        queue.setOptions(queueOptions());
+        QVERIFY(queue.start());
+
+        QVERIFY(!queue.start());
+
+        QCOMPARE(queue.problem(), QStringLiteral("Files are already being transcribed."));
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Transcribe);
+        QCOMPARE(queue.batch(), QStringList{audio});
+        QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
+        QCOMPARE(queue.results().size(), 1);
+    }
+
+    // Cancelled after a file finished, the batch shows that file's result;
+    // back at setup, the file it never reached is still listed.
+    void aCancelledBatchKeepsTheFilesItFinished()
+    {
+        const QString first = m_dir.filePath(QStringLiteral("one.wav"));
+        const QString second = m_dir.filePath(QStringLiteral("two.wav"));
+        writeWav(first);
+        writeWav(second);
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        useScriptedSpeech(controller);
+        queue.addFiles({first, second});
+        queue.setOptions(queueOptions());
+        connect(controller.fileTranscription(), &FileTranscriptionSession::fileStarted, &queue,
+                [&queue](int index) {
+                    if (index == 1) {
+                        queue.cancel();
+                    }
+                });
+
+        QVERIFY(queue.start());
+        QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
+
+        QVERIFY(queue.cancelled());
+        QCOMPARE(queue.results().size(), 1);
+        QCOMPARE(queue.fileState(1), TranscribeQueue::FileState::Waiting);
+        queue.backToSetup();
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Configure);
+        QCOMPARE(queue.files(), QStringList{second});
+    }
+
+    // Cancelled before any file finished, there is nothing to show.
+    void aBatchCancelledEarlyGoesBackToSetup()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        useScriptedSpeech(controller);
+        queue.addFiles({audio});
+        queue.setOptions(queueOptions());
+        connect(controller.fileTranscription(), &FileTranscriptionSession::fileProgress, &queue,
+                [&queue] { queue.cancel(); });
+
+        QVERIFY(queue.start());
+
+        QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Configure, 10000);
+        QCOMPARE(queue.files(), QStringList{audio});
+        QVERIFY(queue.results().isEmpty());
+    }
+
+    // A retry runs the failed file again with the batch's choices and puts
+    // its result in the failed one's place, leaving the others alone.
+    void aRetryReplacesOnlyTheFailedResult()
+    {
+        const QString broken = m_dir.filePath(QStringLiteral("broken.wav"));
+        QFile file(broken);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("not audio at all");
+        file.close();
+        const QString good = m_dir.filePath(QStringLiteral("good.wav"));
+        writeWav(good);
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        useScriptedSpeech(controller);
+        // Listed by name, as a dropped file the decoder may still read.
+        queue.addFiles({broken, good});
+        queue.setOptions(queueOptions());
+        QVERIFY(queue.start());
+        QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
+        QCOMPARE(queue.fileState(0), TranscribeQueue::FileState::Failed);
+        const TranscribeFileResult kept = queue.results().at(1);
+        writeWav(broken);
+        queue.setOptions({});
+
+        queue.retry(0);
+
+        QCOMPARE(queue.retrying(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(queue.retrying(), -1, 10000);
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Export);
+        QVERIFY(!queue.results().at(0).failed());
+        QCOMPARE(queue.results().at(0).path, broken);
+        QVERIFY(qAbs(queue.durationMs(broken) - 500) <= 50);
+        QCOMPARE(queue.results().at(1).raw, kept.raw);
+        QCOMPARE(queue.results().at(1).path, good);
+    }
+
+    // A Writing Profile brings its services, cleanup level and tone, as for
+    // dictation; one that translates refines even when set to None.
+    void aProfileBringsItsCleanupAndTone()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+            if (profile.profile == WritingProfile::Work) {
+                profile.cleanupStrength = QStringLiteral("strong_polish");
+                profile.tone = QStringLiteral("formal");
+            } else if (profile.profile == WritingProfile::Personal) {
+                profile.cleanupStrength = QStringLiteral("none");
+                profile.outputLanguage = QStringLiteral("Spanish");
+            }
+        }
+        controller.settings()->applySnapshot(settings);
+        TranscribeQueue queue(&controller);
+
+        queue.chooseProfile(WritingProfile::Work);
+        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("strong_polish"));
+        QCOMPARE(queue.options().tone, QStringLiteral("formal"));
+        QCOMPARE(queue.options().speechProviderId, settings.speech.providerId);
+
+        queue.chooseProfile(WritingProfile::Personal);
+        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("light_cleanup"));
+    }
+
+    // Choices nobody has made yet follow the settings; once one is made
+    // here, the settings no longer move them.
+    void untouchedChoicesFollowTheSettings()
+    {
+        ApplicationController controller(true);
+        TranscribeQueue queue(&controller);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.speech.providerId = QStringLiteral("codex");
+        controller.settings()->applySnapshot(settings);
+        QCOMPARE(queue.options().speechProviderId, QStringLiteral("codex"));
+
+        TranscribeOptions chosen = queue.options();
+        chosen.tone = QStringLiteral("casual");
+        queue.setOptions(chosen);
+        settings.speech.providerId = QStringLiteral("claude");
+        controller.settings()->applySnapshot(settings);
+        QCOMPARE(queue.options().speechProviderId, QStringLiteral("codex"));
+        QCOMPARE(queue.options().tone, QStringLiteral("casual"));
+    }
+
 private:
+    // The controller's batches hear through the scripted provider.
+    void useScriptedSpeech(ApplicationController &controller)
+    {
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Scripted")},
+            [this](QObject *parent) { return new ScriptedTranscriber(&m_script, parent); });
+    }
+
+    // The queue's choices for a batch that only transcribes.
+    static TranscribeOptions queueOptions()
+    {
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("none");
+        options.destination = TranscriptDestination::None;
+        return options;
+    }
+
     static TranscribeOptions speechOnly()
     {
         TranscribeOptions options;

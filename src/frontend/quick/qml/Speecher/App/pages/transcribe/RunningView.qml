@@ -4,13 +4,15 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // Step two: the file being heard, its progress and the queue, beside the
 // transcript so far, which follows the newest words.
 Row {
     id: view
 
-    readonly property var t: Transcription.text
+    readonly property var batchFiles: Transcription.batch.files
+    readonly property string phase: TranscribeWords.phases[Transcription.phase]
 
     width: parent ? parent.width : implicitWidth
     spacing: Theme.space4
@@ -18,8 +20,8 @@ Row {
     Section {
         id: progress
         width: (parent.width - parent.spacing) / 2
-        title: Transcription.phase
-        caption: Transcription.processingCount
+        title: view.phase
+        caption: TranscribeWords.processingCount(Math.max(0, Transcription.current), view.batchFiles.length)
 
         Column {
             x: Theme.rowInset
@@ -33,7 +35,7 @@ Row {
                 MorphText {
                     id: fileName
                     width: parent.width - percent.width - Theme.space4
-                    text: Transcription.processingTitle
+                    text: Transcription.current >= 0 ? view.batchFiles[Transcription.current].name : ""
                     variant: "heading"
                     elide: Text.ElideRight
                 }
@@ -50,28 +52,29 @@ Row {
                 width: parent.width
                 height: 44
                 progress: Transcription.progress
-                seed: Transcription.currentFile ? Transcription.currentFile.seed : 1
+                peaks: Transcription.peaks
             }
         }
         RowList {
             id: queue
-            values: Transcription.batch.files
-            keyOf: f => f.name
+            values: view.batchFiles
+            keyOf: f => f.path
             delegate: ListRow {
                 id: queued
                 required property string key
                 required property int index
                 readonly property var file: queue.entry(key)
-                readonly property string queueState: Transcription.queueState(index)
+                readonly property string queueState: Transcription.queue[index] || "waiting"
                 width: ListView.view.width
                 first: index === 0 && queue.first
                 iconName: file.kind === "video" ? "file-video" : "file-audio"
-                title: key
-                detail: Transcription.fileDetail(file)
+                title: file.name
+                detail: TranscribeWords.fileDetail(file)
                 trailing: StatusText {
-                    text: queued.queueState === "current" ? Transcription.phase : Transcription.queueLabels[queued.queueState]
+                    text: queued.queueState === "current" ? view.phase : TranscribeWords.queueLabels[queued.queueState]
                     busy: queued.queueState === "current"
-                    tone: queued.queueState === "current" ? "accent" : queued.queueState === "done" ? "neutral" : "tertiary"
+                    tone: queued.queueState === "current" ? "accent" : queued.queueState === "failed" ? "negative"
+                        : queued.queueState === "done" ? "neutral" : "tertiary"
                     indicator: "none"
                 }
             }
@@ -81,8 +84,8 @@ Row {
     Section {
         width: (parent.width - parent.spacing) / 2
         minimumHeaderHeight: progress.naturalHeaderHeight
-        title: view.t.partialName
-        caption: view.t.partialHelp
+        title: TranscribeWords.partialName
+        caption: TranscribeWords.partialHelp
 
         Item {
             width: parent.width
@@ -104,7 +107,7 @@ Row {
                 Behavior on contentY { enabled: Theme.movement > 0; Ease {} }
 
                 Txt {
-                    text: view.t.partialPlaceholder
+                    text: TranscribeWords.partialPlaceholder
                     tone: "tertiary"
                     opacity: live.length === 0 ? 1 : 0
                     Behavior on opacity { Ease { duration: Theme.fast } }
@@ -121,7 +124,7 @@ Row {
                     selectionColor: Theme.accent
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontTranscript
-                    Accessible.name: view.t.partialName
+                    Accessible.name: TranscribeWords.partialName
 
                     Caret { edit: live }
                 }

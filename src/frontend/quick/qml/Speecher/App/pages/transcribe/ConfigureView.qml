@@ -11,19 +11,19 @@ import Speecher.App
 Column {
     id: view
 
-    readonly property var t: Transcription.text
     readonly property var options: Transcription.options
+    readonly property bool refines: options.refiner !== "none"
 
     spacing: Theme.sectionGap
 
     Section {
-        title: view.t.audioFiles
-        caption: Transcription.filesCaption
+        title: TranscribeWords.audioFiles
+        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.options.service, view.options.refiner))
 
         RowList {
             id: files
             values: Transcription.files
-            keyOf: f => f.name
+            keyOf: f => f.path
             delegate: ListRow {
                 id: fileRow
                 required property string key
@@ -32,9 +32,9 @@ Column {
                 width: ListView.view.width
                 first: index === 0 && files.first
                 iconName: file.kind === "video" ? "file-video" : "file-audio"
-                title: key
-                detail: Transcription.fileDetail(file)
-                trailing: IconButton { iconName: "x"; size: 28; tooltip: view.t.remove; onClicked: Transcription.removeFile(fileRow.index) }
+                title: file.name
+                detail: TranscribeWords.fileDetail(file)
+                trailing: IconButton { iconName: "x"; size: 28; tooltip: Words.remove; onClicked: Transcription.removeFile(fileRow.key) }
             }
         }
         // Inset on every side while it is the whole card, below the list after.
@@ -49,78 +49,94 @@ Column {
                 y: parent.gap
                 width: parent.width - 2 * Theme.rowInset
                 compact: files.count > 0
-                onChooseRequested: Transcription.addFiles()
+                onChooseRequested: Transcription.chooseFiles(TranscribeWords.filesDialog, TranscribeWords.mediaFiles)
             }
+        }
+        // Why the batch did not start.
+        Reveal {
+            open: Transcription.problem.length > 0
+            Notice { inset: Theme.rowInset; tone: "negative"; text: Transcription.problem }
         }
     }
 
     // The service and the provider are chosen as on Speech to text and
     // Refinement, with the same rows.
     Section {
-        title: view.t.transcription
-        caption: view.t.serviceHelp
+        title: TranscribeWords.transcription
+        caption: TranscribeWords.serviceHelp
         ChoiceRows {
             recommendedText: Words.recommended
-            options: States.withTones(Transcription.services)
+            options: States.withTones(Models.serviceChoices)
             currentId: view.options.service
             onActivated: id => Transcription.setOption("service", id)
         }
         SettingRow {
-            title: view.t.vocabulary
-            help: view.t.vocabularyHelp
+            title: TranscribeWords.language
+            help: TranscribeWords.languageHelp
+            Select { options: Schema.row("spokenLanguage").options; currentId: view.options.language; onChosen: id => Transcription.setOption("language", id) }
+        }
+        SettingRow {
+            title: TranscribeWords.vocabulary
+            help: TranscribeWords.vocabularyHelp
             Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
         }
     }
 
     Section {
-        title: view.t.output
+        title: TranscribeWords.output
         SettingRow {
-            title: view.t.saveTranscripts
-            help: Transcription.destinationHint
-            Select { options: Transcription.destinations; currentId: view.options.destination; onChosen: id => Transcription.setOption("destination", id) }
+            title: TranscribeWords.saveTranscripts
+            help: TranscribeWords.destinationHint(view.options.destination)
+            Select {
+                options: TranscribeWords.destinations
+                currentId: view.options.destination
+                onChosen: id => {
+                    Transcription.setOption("destination", id)
+                    if (id === "folder" && !view.options.folder) Transcription.chooseFolder(TranscribeWords.folderDialog)
+                }
+            }
         }
         SettingRow {
             shown: view.options.destination === "folder"
-            title: view.t.folder
+            title: TranscribeWords.folder
             help: view.options.folder
-            Button { text: view.t.changeFolder; size: "small"; onClicked: Transcription.chooseFolder() }
+            Button { text: TranscribeWords.changeFolder; size: "small"; onClicked: Transcription.chooseFolder(TranscribeWords.folderDialog) }
         }
     }
 
     Section {
-        title: view.t.refinement
-        caption: view.t.refinerHelp
+        title: TranscribeWords.refinement
+        caption: TranscribeWords.refinerHelp
         ChoiceRows {
             recommendedText: Words.recommended
-            options: Transcription.refiners
+            options: Library.providerChoices
             currentId: view.options.refiner
             onActivated: id => Transcription.setOption("refiner", id)
         }
         SettingRow {
-            enabled: Transcription.refines
-            title: view.t.model
-            help: Transcription.refines ? view.t.modelHint : view.t.needsRefiner
-            clickable: Transcription.refines
+            enabled: view.refines
+            title: TranscribeWords.model
+            help: view.refines ? TranscribeWords.modelHint : TranscribeWords.needsRefiner
+            clickable: view.refines
             trailingText: Transcription.refinerModel
             onClicked: Navigation.go("refinement")
         }
         SettingRow {
-            enabled: Transcription.refines
-            title: view.t.cleanup
-            help: Transcription.refines ? view.t.cleanupHelp : view.t.needsRefiner
-            CompactChoice { options: Transcription.cleanupLevels; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
+            enabled: view.refines
+            title: TranscribeWords.cleanup
+            help: view.refines ? TranscribeWords.cleanupHelp : TranscribeWords.needsRefiner
+            CompactChoice { options: Library.levelOptions; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
         }
         SettingRow {
-            enabled: Transcription.refines
-            title: view.t.profile
-            help: Transcription.refines ? view.t.profileHelp : view.t.needsRefiner
-            Select { options: Transcription.profiles; currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
+            title: TranscribeWords.profile
+            help: TranscribeWords.profileHelp
+            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
         }
         SettingRow {
-            enabled: Transcription.refines
-            title: view.t.tone
-            help: Transcription.refines ? view.t.toneHelp : view.t.needsRefiner
-            Select { options: Transcription.tones; currentId: view.options.tone; onChosen: id => Transcription.setOption("tone", id) }
+            enabled: view.refines
+            title: TranscribeWords.tone
+            help: view.refines ? TranscribeWords.toneHelp : TranscribeWords.needsRefiner
+            Select { options: Library.toneOptions; currentId: view.options.tone; onChosen: id => Transcription.setOption("tone", id) }
         }
     }
 }

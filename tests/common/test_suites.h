@@ -60,6 +60,7 @@ int runHelperInstallTests(int argc, char **argv);
 int runQuickSettingsTests(int argc, char **argv);
 int runQuickDictationTests(int argc, char **argv);
 int runQuickUpdatesTests(int argc, char **argv);
+int runQuickTranscriptionTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);

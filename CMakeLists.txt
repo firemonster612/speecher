@@ -563,6 +563,7 @@ set(SPEECHER_APP_SOURCES
   src/transcribe/FileTranscriptionSession.cpp
   src/transcribe/Subtitles.cpp
   src/transcribe/TranscribePresentation.cpp
+  src/transcribe/TranscribeQueue.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -591,6 +592,7 @@ set(SPEECHER_APP_HEADERS
   src/transcribe/FileTranscriptionSession.h
   src/transcribe/Subtitles.h
   src/transcribe/TranscribePresentation.h
+  src/transcribe/TranscribeQueue.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
@@ -1385,6 +1387,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_settings.cpp
       tests/test_quick_dictation.cpp
       tests/test_quick_updates.cpp
+      tests/test_quick_transcription.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1421,7 +1424,8 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
+    quick_transcription)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

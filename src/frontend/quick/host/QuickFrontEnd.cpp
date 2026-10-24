@@ -78,6 +78,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     , m_status(controller)
     , m_dictation(controller)
     , m_updates(controller, controller->updates())
+    , m_transcription(controller)
 {
     registerFonts();
     // Into the log with the rest, marked so a load's warnings are easy to find.
@@ -185,8 +186,8 @@ void QuickFrontEnd::showSetupAssistant(SetupAssistantPage)
 
 void QuickFrontEnd::showTranscribeFiles(const QStringList &paths)
 {
+    m_transcription.addFiles(paths);
     showPage(QStringLiteral("transcribe"));
-    qInfo().noquote() << "Files to transcribe, not yet handed to the Transcribe page:" << paths.join(QStringLiteral(", "));
 }
 
 void QuickFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
