@@ -74,6 +74,22 @@ QQuickItem *findText(QQuickItem *root, const QString &text)
     return nullptr;
 }
 
+// The non-empty texts of the figure tooltips under `root`. A tooltip is a
+// child object of its item, not an item, so findText doesn't reach it.
+QStringList figureTips(QQuickItem *root)
+{
+    QStringList tips;
+    if (auto *tip = root->findChild<QObject *>(QStringLiteral("figureTip"), Qt::FindDirectChildrenOnly)) {
+        if (const QString text = tip->property("text").toString(); !text.isEmpty()) {
+            tips << text;
+        }
+    }
+    for (QQuickItem *child : root->childItems()) {
+        tips << figureTips(child);
+    }
+    return tips;
+}
+
 } // namespace
 
 // The UI's Insights, over the controller's insights log, its settings and
@@ -314,7 +330,7 @@ private slots:
     {
         QTest::failOnWarning();
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday.addDays(-2), 300, QStringLiteral("Slack"), WritingProfile::Work));
+        controller.insightsLog()->append(recordOn(kToday.addDays(-2), 3033, QStringLiteral("Slack"), WritingProfile::Work));
         controller.insightsLog()->append(recordOn(kToday, 120));
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello there."));
         QuickSettings settings(&controller);
@@ -356,7 +372,13 @@ private slots:
         // Copy as text, worded by Home: the last 30 days.
         QVERIFY(QMetaObject::invokeMethod(share, "picked", Q_ARG(QString, QStringLiteral("text"))));
         QVERIFY(QGuiApplication::clipboard()->text().startsWith(
-            QStringLiteral("My Speecher stats, last 30 days\n420 words dictated\nAbout")));
+            QStringLiteral("My Speecher stats, last 30 days\n3,153 words dictated\nAbout")));
+
+        // The Words note's tooltip: the book's length and the next count
+        // that compares differently.
+        QCOMPARE(figureTips(home), QStringList{QStringLiteral("The Declaration of Independence is about 1,321 words\n"
+                                                             "Changes to about as long as An Occurrence at Owl Creek "
+                                                             "Bridge at 3,154 words")});
 
         // The best run, Thursday's, isn't the one going on today.
         QVERIFY(findText(home, QStringLiteral("Longest streak")));

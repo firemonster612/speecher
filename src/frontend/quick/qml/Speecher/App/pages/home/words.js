@@ -103,13 +103,25 @@ function appName(app) { return app.otherApps ? _count(app.otherApps, "other app"
 // Core's BookComparison: the words are `times` the book's length.
 var _bookShares = [[1 / 4, "a quarter of"], [1 / 3, "a third of"], [1 / 2, "half of"], [3 / 4, "three-quarters of"],
                    [1, "as long as"], [2, "twice the length of"], [3, "three times the length of"], [4, "four times the length of"]]
+// "half of Hamlet"
+function _bookShare(c) {
+    const share = _bookShares.find(b => b[0] === c.times)
+    return (share ? share[1] : _num(c.times) + " times the length of") + " " + c.book
+}
 // "About half of Hamlet"
 function bookText(s) {
     if (!s.words) return "Nothing yet"
-    const c = s.bookComparison
-    if (!c) return "A few sentences so far"
-    const share = _bookShares.find(b => b[0] === c.times)
-    return "About " + (share ? share[1] : _num(c.times) + " times the length of") + " " + c.book
+    if (!s.bookComparison) return "A few sentences so far"
+    return "About " + _bookShare(s.bookComparison)
+}
+// "Hamlet is about 30,557 words", then on a new line "Changes to about
+// twice the length of Macbeth at 32,348 words"; empty with no words.
+function bookTip(s) {
+    if (!s.words) return ""
+    const c = s.bookComparison, next = s.nextBookComparison
+    return [c ? _capitalized(c.book) + " is about " + _num(c.bookWords) + " words" : "",
+            next ? "Changes to about " + _bookShare(next) + " at " + _num(next.at) + " words" : ""]
+        .filter(line => line).join("\n")
 }
 
 // "23% more than the previous 30 days", or nothing without a delta.
@@ -131,10 +143,11 @@ function streakNote(streak, today) {
     return ""
 }
 
-// The period's figures: [{ label, value, note }].
+// The period's figures: [{ label, value, note, tip }]; tip, the note's
+// tooltip, only on Words.
 function figures(s, period, today) {
     const rows = [
-        { label: "Words", value: _num(s.words), note: _sentence([bookText(s), _delta(s.wordsDelta, period)]) },
+        { label: "Words", value: _num(s.words), note: _sentence([bookText(s), _delta(s.wordsDelta, period)]), tip: bookTip(s) },
         { label: "Dictations", value: _num(s.dictations),
           note: _sentence([s.dictations ? _num(s.dictationsPerActiveDay, 1) + " a day when you dictate" : "", _delta(s.dictationsDelta, period)]) },
         { label: "Audio", value: audioText(s.audioMs),

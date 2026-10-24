@@ -4,9 +4,10 @@ import Speecher.Theme
 import Speecher.Controls
 
 // The period's figures in two columns on a card: what was counted, the
-// figure, and a note under it. rows: [{ label, value, note }], filled down
-// the first column, then the second. Rows are keyed by label, so a new
-// period rolls the figures and fades the notes while the rows hold still.
+// figure, and a note under it, with an optional tooltip on the note.
+// rows: [{ label, value, note, tip }], filled down the first column, then
+// the second. Rows are keyed by label, so a new period rolls the figures and
+// fades the notes while the rows hold still.
 Item {
     id: grid
 
@@ -69,7 +70,15 @@ Item {
                 width: parent.width - x
                 spacing: 2
                 MorphText { text: cell.entry.value; variant: "label"; strong: true }
-                MorphText { width: parent.width; wrap: true; text: cell.entry.note; variant: "small"; tone: "secondary" }
+                MorphText {
+                    width: parent.width
+                    wrap: true
+                    text: cell.entry.note
+                    variant: "small"
+                    tone: "secondary"
+                    Tip { objectName: "figureTip"; text: cell.entry.tip ?? ""; shown: noteHover.hovered }
+                    HoverHandler { id: noteHover }
+                }
             }
         }
     }

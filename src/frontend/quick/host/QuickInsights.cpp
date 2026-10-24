@@ -106,11 +106,21 @@ QVariantMap summaryMap(const InsightsSummary &summary)
         // periods and when those days were empty.
         {QStringLiteral("wordsDelta"), optionalNumber(summary.wordsDelta)},
         {QStringLiteral("dictationsDelta"), optionalNumber(summary.dictationsDelta)},
-        // { book, times }: the words are `times` the book's length (see
-        // core's BookComparison). Null without a book.
+        // { book, times, bookWords }: the words are `times` the book's length
+        // (see core's BookComparison). Null without a book.
         {QStringLiteral("bookComparison"),
          book.book.isEmpty() ? QVariant()
-                             : QVariantMap{{QStringLiteral("book"), book.book}, {QStringLiteral("times"), book.times}}},
+                             : QVariantMap{{QStringLiteral("book"), book.book},
+                                           {QStringLiteral("times"), book.times},
+                                           {QStringLiteral("bookWords"), book.bookWords}}},
+        // { book, times, at }: the comparison from `at` words on, the next
+        // count that compares differently. Null when none does.
+        {QStringLiteral("nextBookComparison"),
+         summary.bookComparisonChangesAt == 0
+             ? QVariant()
+             : QVariantMap{{QStringLiteral("book"), summary.nextBookComparison.book},
+                           {QStringLiteral("times"), summary.nextBookComparison.times},
+                           {QStringLiteral("at"), summary.bookComparisonChangesAt}}},
         {QStringLiteral("wordsPerMinute"), summary.wordsPerMinute},
         {QStringLiteral("typingWordsPerMinute"), summary.typingWordsPerMinute},
         {QStringLiteral("minutesSaved"), summary.minutesSavedVersusTyping},

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <limits>
 
 namespace speecher {
 namespace {
@@ -101,7 +102,7 @@ BookComparison compareToBook(qint64 words)
     }
     const Book &last = kBooks[std::size(kBooks) - 1];
     if (words > last.words * 5.0) {
-        return {QLatin1String(last.title), double(roundHalfUp(double(words) / last.words))};
+        return {QLatin1String(last.title), double(roundHalfUp(double(words) / last.words)), last.words};
     }
     const Book *bestBook = nullptr;
     double times = 0;
@@ -116,7 +117,29 @@ BookComparison compareToBook(qint64 words)
             }
         }
     }
-    return {QLatin1String(bestBook->title), times};
+    return {QLatin1String(bestBook->title), times, bestBook->words};
+}
+
+// The smallest count above `words` that compares differently, or 0 if none
+// does. Each comparison covers a single run of counts, so a binary search
+// finds its end.
+qint64 nextChange(qint64 words)
+{
+    constexpr qint64 most = std::numeric_limits<qint64>::max();
+    if (words < 0 || words == most) return 0;
+    const BookComparison now = compareToBook(words);
+    qint64 same = words;
+    qint64 other = words + 1;
+    while (compareToBook(other) == now) {
+        if (other == most) return 0;
+        same = other;
+        other = other > most / 2 ? most : other * 2;
+    }
+    while (other - same > 1) {
+        const qint64 middle = same + (other - same) / 2;
+        (compareToBook(middle) == now ? same : other) = middle;
+    }
+    return other;
 }
 
 std::optional<qint64> percentChange(qint64 current, qint64 previous)
@@ -350,6 +373,10 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
         summary.dictationsDelta = percentChange(summary.dictations, previous.size());
     }
     summary.bookComparison = compareToBook(summary.words);
+    summary.bookComparisonChangesAt = nextChange(summary.words);
+    if (summary.bookComparisonChangesAt) {
+        summary.nextBookComparison = compareToBook(summary.bookComparisonChangesAt);
+    }
 
     summary.typingWordsPerMinute = kTypingWpm;
     if (summary.audioMs > 0) {

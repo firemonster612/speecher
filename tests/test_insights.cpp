@@ -264,7 +264,40 @@ private slots:
         QFETCH(double, times);
         const InsightsSummary summary =
             summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
-        QCOMPARE(summary.bookComparison, (BookComparison{book, times}));
+        QCOMPARE(summary.bookComparison.book, book);
+        QCOMPARE(summary.bookComparison.times, times);
+    }
+
+    void bookComparisonSaysWhenItChanges_data()
+    {
+        QTest::addColumn<int>("words");
+        QTest::addColumn<int>("bookWords");
+        QTest::addColumn<qint64>("changesAt");
+        QTest::addColumn<QString>("nextBook");
+        QTest::addColumn<double>("nextTimes");
+        QTest::newRow("few sentences") << 40 << 0 << qint64(68) << QStringLiteral("the Gettysburg Address") << 0.25;
+        QTest::newRow("3153") << 3153 << 1321 << qint64(3154) << QStringLiteral("An Occurrence at Owl Creek Bridge")
+                              << 1.0;
+        QTest::newRow("3848") << 3848 << 3763 << qint64(4019) << QStringLiteral("The Tell-Tale Heart") << 2.0;
+        QTest::newRow("3500000") << 3500000 << 561304 << qint64(3648476) << QStringLiteral("War and Peace") << 7.0;
+        QTest::newRow("negative") << -5 << 0 << qint64(0) << QString() << 0.0;
+        QTest::newRow("INT_MAX") << INT_MAX << 561304 << qint64(2147829756) << QStringLiteral("War and Peace")
+                                 << 3827.0;
+    }
+
+    void bookComparisonSaysWhenItChanges()
+    {
+        QFETCH(int, words);
+        QFETCH(int, bookWords);
+        QFETCH(qint64, changesAt);
+        QFETCH(QString, nextBook);
+        QFETCH(double, nextTimes);
+        const InsightsSummary summary =
+            summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
+        QCOMPARE(summary.bookComparison.bookWords, bookWords);
+        QCOMPARE(summary.bookComparisonChangesAt, changesAt);
+        QCOMPARE(summary.nextBookComparison.book, nextBook);
+        QCOMPARE(summary.nextBookComparison.times, nextTimes);
     }
 
     void wordsAddUpPastAnInt()

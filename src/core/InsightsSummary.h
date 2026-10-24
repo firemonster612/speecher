@@ -51,10 +51,11 @@ struct ProfileShare {
 // The book a word count is closest to: `times` its length, where times is
 // one of a quarter, a third, a half, three-quarters, 1, 2, 3 or 4, or a whole
 // number from 5 up past the longest book. No book when the count is under a
-// quarter of the shortest.
+// quarter of the shortest. bookWords is the book's own length.
 struct BookComparison {
     QString book;
     double times = 0;
+    int bookWords = 0;
     bool operator==(const BookComparison &) const = default;
 };
 
@@ -99,8 +100,12 @@ struct InsightsSummary {
     // the 7 and 30 day periods, and only when that period has data.
     std::optional<qint64> wordsDelta;
     std::optional<qint64> dictationsDelta;
-    // The period's words against a book.
+    // The period's words against a book, and the smallest count above them
+    // that compares differently, with what it compares to; 0 and no book
+    // when no count does.
     BookComparison bookComparison;
+    qint64 bookComparisonChangesAt = 0;
+    BookComparison nextBookComparison;
 
     // Streak. A streak survives until the end of today.
     int currentStreak = 0;
