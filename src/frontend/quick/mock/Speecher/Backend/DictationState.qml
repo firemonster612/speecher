@@ -1,5 +1,6 @@
 import QtQuick
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // A dictation as the popup shows it. The Dictation singleton is the live
 // one; the Popup & sounds page makes its own for the preview. Core's
 // DictationController and PopupPresentation would feed these.

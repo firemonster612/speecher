@@ -240,9 +240,10 @@ ffmpeg -i talk.mp4 -f wav - | speecher transcribe --stdout -   # audio from stdi
 
 The desktop UI is being replaced by one Qt Quick UI on every platform, which
 the running app shows in its own process (see
-[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). Until it lands,
-Speecher runs in the background without windows, and on Linux it shows a tray
-icon whose menu starts and stops dictation.
+[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). On Linux it opens
+when you launch Speecher or click its tray icon, whose menu also starts and
+stops dictation; `speecher --daemon` starts without a window. Elsewhere,
+until it lands, Speecher runs in the background without windows.
 
 ### Voice input from the terminal
 

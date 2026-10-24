@@ -1,9 +1,10 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 import Speecher.Theme
-import "schema/pasting.js" as Pasting
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of what the Text pages show: refinement providers and runners, Writing
 // Profiles with their tones and cleanup levels, the three word lists, and the
 // paste and app recognition rules. Lists are plain arrays of objects and are
@@ -412,7 +413,7 @@ QtObject {
 
     // Pasting ------------------------------------------------------------
 
-    readonly property var appCategories: Pasting.categories
+    readonly property var appCategories: Schema.appCategories
     function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
 
     // The steps a paste takes with the current settings, for the Pasting

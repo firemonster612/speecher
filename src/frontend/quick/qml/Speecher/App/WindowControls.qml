@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Window
 import Speecher.Theme
 import Speecher.Controls
-import Speecher.Backend
+import Speecher.Wording
 
 // Minimize, maximize or restore, and close, for a window that draws its own
 // frame.
@@ -16,21 +16,21 @@ Row {
     IconButton {
         size: 28
         iconName: "minus"
-        tooltip: Status.text.minimize
+        tooltip: Words.shell.minimize
         focusPolicy: Qt.NoFocus
         onClicked: controls.window.showMinimized()
     }
     IconButton {
         size: 28
         iconName: controls.maximized ? "copy" : "square"
-        tooltip: controls.maximized ? Status.text.restore : Status.text.maximize
+        tooltip: controls.maximized ? Words.shell.restore : Words.shell.maximize
         focusPolicy: Qt.NoFocus
         onClicked: controls.maximized ? controls.window.showNormal() : controls.window.showMaximized()
     }
     IconButton {
         size: 28
         iconName: "x"
-        tooltip: Status.text.close
+        tooltip: Words.shell.close
         focusPolicy: Qt.NoFocus
         iconColor: hovered ? Theme.negative : Theme.textSecondary
         onClicked: controls.window.close()

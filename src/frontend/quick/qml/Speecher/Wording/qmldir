@@ -1,0 +1,3 @@
+module Speecher.Wording
+singleton Schema 1.0 Schema.qml
+singleton Words 1.0 Words.qml

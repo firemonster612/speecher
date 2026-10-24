@@ -46,8 +46,8 @@ public:
                                    QObject *parent = nullptr);
     ~ApplicationController() override;
 
-    // The front end outlives the controller and is attached after both exist,
-    // because a front end needs the controller it renders.
+    // A front end needs the controller it renders, so it attaches once both
+    // exist, and detaches with nullptr before it goes.
     void setFrontEnd(AppFrontEnd *frontEnd);
     // The session the front end renders. Everything it shows about a dictation
     // arrives on these signals.

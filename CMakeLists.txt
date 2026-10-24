@@ -197,6 +197,9 @@ else()
 endif()
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
+  # The Qt Quick UI, Linux first (cmake/QuickUi.cmake). Its QML needs 6.9,
+  # for QtQuick.Effects' RectangularShadow.
+  find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
   if(SPEECHER_WITH_KDE)
     find_package(KF6GlobalAccel REQUIRED)
     find_package(LayerShellQt REQUIRED)
@@ -994,6 +997,7 @@ if(UNIX AND NOT APPLE)
   add_library(speecher_linux_tray STATIC src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
   target_link_libraries(speecher_linux_tray PUBLIC speecher_app Qt6::Widgets)
   target_link_libraries(speecher PRIVATE speecher_linux_tray)
+  include(cmake/QuickUi.cmake)
 endif()
 
 if(WIN32)
@@ -1304,6 +1308,11 @@ if(UNIX AND NOT APPLE)
   if(WEBRTC_APM_FOUND)
     install(FILES packaging/webrtc-audio-processing-licenses.txt DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   endif()
+  # The fonts the UI carries in the binary.
+  install(FILES
+    src/frontend/quick/assets/fonts/LICENSE-AtkinsonHyperlegibleNext.txt
+    src/frontend/quick/assets/icons/LICENSE-Lucide.txt
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
@@ -1369,7 +1378,11 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
+      tests/test_quick_settings.cpp
     )
+    # The Settings suite tests the C++ only; no QML module loads.
+    target_link_libraries(speecher_tests PRIVATE speecher_quick_backend)
+    set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
   endif()
   set(SPEECHER_TEST_SUITES
     transcript_state
@@ -1397,7 +1410,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

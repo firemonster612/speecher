@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // Step three: a card per file with its transcript, refined or raw, and
 // copy and export for one file or all of them.

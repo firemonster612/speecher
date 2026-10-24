@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // Where the updater is, from checking through downloading to restarting, as
 // the version's card. Each state fades in as the last one leaves, and the

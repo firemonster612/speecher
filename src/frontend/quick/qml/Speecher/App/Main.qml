@@ -4,11 +4,11 @@ import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The main window: sidebar on the window background, the current page on an
-// inset panel, the search palette above both, and toasts above that. It sets
-// the theme from the Theme setting and opens the setup assistant when
-// General asks for it.
+// inset panel, the search palette above both, and toasts above that. The host
+// opens it, hides it on close and opens the setup assistant itself.
 ClientWindow {
     id: window
     width: 1240
@@ -16,20 +16,7 @@ ClientWindow {
     minimumWidth: 900
     minimumHeight: 600
     visible: true
-    title: Status.text.appName
-
-    Binding {
-        target: Theme
-        property: "dark"
-        value: Settings.values.themeControl === "dark" || (Settings.values.themeControl !== "light" && Theme.systemDark)
-    }
-
-    property Window _setup: null
-    Component { id: setupWindow; SetupAssistant { onVisibleChanged: if (!visible) destroy() } }
-    Connections {
-        target: Settings
-        function onActed(id) { if (id === "runSetup" && !window._setup) window._setup = setupWindow.createObject(window) }
-    }
+    title: Words.shell.appName
 
     // Opaque, so the search palette's blurred copy of it hides what is under.
     Rectangle {

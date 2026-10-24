@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import "transcribe"
 
 // Transcribe files: add audio and set the batch's options, watch it run

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // A settings row built from its schema entry: label, help and the control its
 // kind calls for, bound to the row's value in Settings.

@@ -4,6 +4,7 @@ import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The dictation popup: one capsule that grows, shrinks and changes its
 // content as a dictation moves from listening to delivered. It reads the

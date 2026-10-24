@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The microphone test, leading the microphone page: the live level across
 // the stage, and under it what is being heard and the button that runs it.

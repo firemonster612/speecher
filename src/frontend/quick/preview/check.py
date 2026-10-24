@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 STEP_MS = 700
 
-PAGES = re.findall(r'\{ id: "(\w+)", group:', (ROOT / "mock/Speecher/Backend/schema/pages.js").read_text())
+PAGES = re.findall(r'\{ id: "(\w+)", group:', (ROOT / "qml/Speecher/Wording/schema/pages.js").read_text())
 SEARCHES = ["shortcut", "api key", "paste", "zzz no match"]
 POPUP_DEMOS = ["listening", "paused", "refining", "delivered", "review", "error"]
 SETUP_STEPS = 8

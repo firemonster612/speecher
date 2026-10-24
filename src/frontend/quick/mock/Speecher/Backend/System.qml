@@ -1,8 +1,10 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 import Speecher.Theme
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of what Speecher knows about the computer it runs on: the permissions
 // dictation needs, phone transfer, what it hands to the desktop, removing
 // it, and the setup assistant's steps. Wording comes from core.

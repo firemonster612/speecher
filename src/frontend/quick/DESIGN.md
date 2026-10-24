@@ -1,8 +1,9 @@
 # Speecher Quick front end
 
 A Qt Quick (QML) front end for every platform, replacing the Qt Widgets, SwiftUI
-and WinUI front ends. Right now it runs on mock data so the design can be judged
-before it is wired to core.
+and WinUI front ends. The daemon shows it in its own process
+(`docs/adr/0009-one-quick-ui-inside-the-daemon.md`); on Linux it reads and
+writes the real settings, and the areas not wired yet still run on mock data.
 
 ## Layout
 
@@ -11,25 +12,43 @@ before it is wired to core.
 | `qml/Speecher/Theme/Theme.qml` | Every colour, size, font and motion value |
 | `qml/Speecher/Launch/Launch.qml` | `Launch.arg(name, fallback)`: the `--name=value` options the app started with |
 | `qml/Speecher/Controls/` | The design system: buttons, switches, rows, cards, pages |
-| `qml/Speecher/App/` | The window, sidebar, search palette and pages |
+| `qml/Speecher/App/` | The window, sidebar, search palette and pages, and `ThemeSetting`, which makes Theme follow the Theme setting |
 | `qml/Speecher/App/pages/` | One file per page, local parts in `pages/<area>/` |
 | `qml/Speecher/Popup/` | The dictation popup |
+| `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | Mock singletons standing in for core |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings` and `Status` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, and the real `Settings` and `Status` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
+`cmake/QuickUi.cmake` builds each directory under `qml/` (and the Backend from
+`mock/` plus `host/`) into a QML module compiled into the binary; each
+directory's qmldir names its singletons for both the app and the preview.
+
 ## Wiring plan
 
-Pages import `Speecher.Backend` and read only its singletons. The mock module
-in `mock/` and a future C++ module registered under the same URI expose the
-same API, so wiring means swapping the import path, not editing pages.
+Pages import `Speecher.Backend` and read only its singletons for data. The
+preview's module in `mock/` and the app's module expose the same API, so
+wiring an area means replacing its mock with a C++ type of the same name, not
+editing pages. Each Backend type comes from exactly one module: the app's
+Backend is the C++ types plus the mocks not yet replaced.
 
-- The UI owns its pages, rows and wording (ADR 0009). `Schema` lists the
-  pages and rows with label, help, kind and options, and pages place rows by
-  id with `SchemaRow { rowId: "…" }`. The values come from the daemon:
-  `AppSettings` and live state.
-- `Settings.values[id]` and `Settings.set(id, value)` are the settings store.
+- Wired: `Settings` (`host/QuickSettings`) and `Status` (`host/QuickStatus`).
+  Placeholders until their wiring PRs: `Insights`, `Transcription`, `Audio`,
+  `Models`, `Library`, `Accounts`, `System`, `Updates`, `Dictation` and
+  `DictationState`.
+- `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
+  keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
+  to its `AppSettings` field, and `set` saves through the daemon's
+  `SettingsStore`, so the CLI and the daemon see the same values. A row the
+  table lacks reads as absent, and `Settings.rowEnabled(spec)` greys its
+  control out; add the row to the table when its page is wired.
+- `Settings.act(id)` runs an action row (`runSetup`).
+- `Status` has the version, a waiting update and the shortcut's keys.
+- `Schema` is the UI's own: pages and rows with label, help, kind and
+  options. Option ids are the values core stores. Pages place rows by id with
+  `SchemaRow { rowId: "…" }`.
 - Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
   and state pages show. Keep their properties plain (strings, numbers, arrays
   of objects) so a C++ `QObject` or model can replace them one for one.
@@ -40,21 +59,20 @@ same API, so wiring means swapping the import path, not editing pages.
   command whose outcome shows: a state change, or `System.open(what)`'s toast.
   Mocks never import `Speecher.Controls`: `System.announced(text, icon)` says
   what happened, and Main shows it as a toast.
+- The host (`QuickFrontEnd`) opens Main and the setup assistant when the
+  daemon asks, at most one of each, and hides a window when it is closed.
+  It creates `ThemeSetting` before any window, so every window follows the
+  Theme setting.
 - The popup window is larger than the capsule, so only the capsule may take
   the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, or the layer-shell input
   region) whenever it changes, about once per phase.
-- Wording that takes a value is a method on the singleton
-  (`Status.results(count)`), never a function inside a `text` object, which a
-  C++ `QObject` can't provide.
-- The theme binding (`Theme.dark` from `Settings.themeControl` and the host
-  scheme) lives in Main for now; the host must apply it to every window it
-  creates, including ones opened without Main (the popup, the setup assistant).
-- Wording comes from the schema row or the page's QML, and stays in the UI
-  once wired, so keep it short and in one place per page.
-  The shell's wording is `Status.text`, the popup's is the dictation's
-  `text`, and words many places share (Cancel, Save, Copied, Remove, …) are
-  `Words`.
+- Wording belongs to the UI. It comes from the schema row, `Words` (shared
+  words such as Cancel, Save and Copied, and the shell's: `Words.shell`,
+  `Words.results(count)`) or the page, kept short and in one place per page.
+  A C++ Backend type carries data, not wording; when an area is wired, the
+  wording its mock holds moves into QML. The popup's wording is the
+  dictation's `text` until the popup is wired.
 
 ## Look and motion
 
@@ -265,7 +283,8 @@ In Speecher.App, besides SchemaRow:
 - `SchemaRow { rowId }` renders a schema row with the right control.
   `SettingRow { title; help; iconName }` with a custom control inside covers
   anything the schema can't describe.
-- Add the page's rows to `mock/Speecher/Backend/schema/<area>.js`. Row fields
+- Add the page's rows to `qml/Speecher/Wording/schema/<area>.js`, and their
+  value rows to the table in `host/QuickSettings.cpp`. Row fields
   are documented at the top of `Schema.qml`. Give rows good `keywords`; search
   depends on them.
 - Templates controls (`QtQuick.Templates`) have no implicit size: set

@@ -13,6 +13,7 @@
 #include "providers/ProviderRegistry.h"
 #ifdef Q_OS_LINUX
 #include "app/LinuxTrayIcon.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 #endif
 #ifdef Q_OS_WIN
 #include "platform/win/WinSessionEnd.h"
@@ -545,6 +546,8 @@ int main(int argc, char **argv)
                      &QCoreApplication::quit,
                      Qt::QueuedConnection);
 #ifdef Q_OS_LINUX
+    // Opens no window until the controller asks for one.
+    QuickFrontEnd frontEnd(&controller);
     // From launch: in daemon mode it is the only sign the process is running
     // and the global shortcut has something to reach.
     LinuxTrayIcon tray(&controller);

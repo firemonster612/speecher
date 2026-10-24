@@ -1,7 +1,9 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of core's InsightsSummary and Home's wording: about five months of
 // generated dictation ending in a 47-day streak, summarised for the chosen
 // period. This is the one record of past dictation: General counts and

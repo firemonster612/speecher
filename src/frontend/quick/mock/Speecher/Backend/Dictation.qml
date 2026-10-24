@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of the dictation in progress, which the popup shows, and the made-up
 // one the Popup & sounds page plays in its preview.
 DictationState {

@@ -3,6 +3,7 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Demo
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 Page {
@@ -46,7 +47,7 @@ Page {
                 }
                 // What pressing it does, as the chosen option says it.
                 MorphText {
-                    text: Settings.chosenHelp("shortcutBehavior")
+                    text: Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior)
                     tone: "secondary"
                     anchors.verticalCenter: parent.verticalCenter
                 }

@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The window's sidebar: the app mark, search, the pages in groups with a
 // selection that glides between them, and dictation status at the bottom.
@@ -36,8 +37,8 @@ Item {
         Column {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
-            Txt { text: Status.text.appName; variant: "heading" }
-            Txt { text: Status.text.version; variant: "caption"; tone: "tertiary" }
+            Txt { text: Words.shell.appName; variant: "heading" }
+            Txt { text: Words.version(Status.version); variant: "caption"; tone: "tertiary" }
         }
     }
 
@@ -58,7 +59,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
             Icon { name: "search"; size: 14; color: Theme.textTertiary; anchors.verticalCenter: parent.verticalCenter }
-            Txt { text: Status.text.searchSettings; tone: "tertiary"; anchors.verticalCenter: parent.verticalCenter }
+            Txt { text: Words.shell.searchSettings; tone: "tertiary"; anchors.verticalCenter: parent.verticalCenter }
         }
         KeyCombo { keys: ["Ctrl", "K"]; size: "small"; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter }
         HoverHandler { id: searchHover; cursorShape: Qt.PointingHandCursor }
@@ -67,7 +68,7 @@ Item {
         Keys.onReturnPressed: sidebar.searchRequested()
         Keys.onSpacePressed: sidebar.searchRequested()
         Accessible.role: Accessible.Button
-        Accessible.name: Status.text.searchSettings
+        Accessible.name: Words.shell.searchSettings
         Accessible.onPressAction: sidebar.searchRequested()
         FocusRing { target: search; shown: search.activeFocus }
     }
@@ -203,14 +204,14 @@ Item {
             Keys.onReturnPressed: Navigation.go("updates")
             Keys.onSpacePressed: Navigation.go("updates")
             Accessible.role: Accessible.Link
-            Accessible.name: Status.text.updateReady
+            Accessible.name: Words.updateReady(Status.updateVersion)
             Accessible.onPressAction: Navigation.go("updates")
             Row {
                 id: updateRow
                 spacing: 8
                 Icon { name: "arrow-down-to-line"; size: 15; color: Theme.accent; anchors.verticalCenter: parent.verticalCenter }
                 Txt {
-                    text: Status.text.updateReady
+                    text: Words.updateReady(Status.updateVersion)
                     variant: "labelSmall"
                     tone: "accent"
                     anchors.verticalCenter: parent.verticalCenter

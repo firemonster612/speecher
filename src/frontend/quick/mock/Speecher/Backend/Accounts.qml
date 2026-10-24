@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Launch
 import Speecher.Theme
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of the sign-ins core finds for each service. Every service has a
 // state (signedIn, expired, missing, checking), a line on what was found and
 // what it is used for, in wording core will supply.

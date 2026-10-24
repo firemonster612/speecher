@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // One finished file on its own card: its name, length and words with copy
 // and export, then the transcript folded to five lines until opened. A

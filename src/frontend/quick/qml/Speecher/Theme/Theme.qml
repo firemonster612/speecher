@@ -8,9 +8,10 @@ import Speecher.Launch
 QtObject {
     id: theme
 
-    // The host passes the desktop's scheme as --theme=light|dark (else Qt's
-    // is used) and --time-scale=<n> on the command line. The main window
-    // binds dark to the Theme setting, which follows systemDark on System.
+    // The desktop's scheme is Qt's, unless --theme=light|dark says otherwise
+    // on the command line, as the preview tool does with --time-scale=<n>.
+    // ThemeSetting (in Speecher.App) binds dark to the Theme setting, which
+    // follows systemDark on System.
     // The time scale stretches every animation, which the preview tool uses
     // to capture smooth video; the real app leaves it at 1.
     readonly property bool systemDark: Launch.arg("theme", "") ? Launch.arg("theme", "") === "dark"

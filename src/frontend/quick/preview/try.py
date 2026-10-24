@@ -42,6 +42,8 @@ def main():
     if not engine.rootObjects():
         sys.exit("the QML failed to load; see the messages above")
     window = engine.rootObjects()[0]
+    # As the app does, so the Theme setting switches the theme.
+    engine.loadFromModule("Speecher.App", "ThemeSetting")
     window.show()
     sys.exit(app.exec())
 

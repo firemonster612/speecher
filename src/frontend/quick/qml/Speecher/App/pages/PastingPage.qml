@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 import "text"
 
