@@ -1,7 +1,7 @@
 .pragma library
 
 var rows = [
-    { id: "openAiAuthMode", page: "accounts", section: "OpenAI", kind: "choice", control: "select",
+    { id: "openAiAuthMode", page: "accounts", section: "ChatGPT", kind: "choice", control: "select",
       label: "Sign-in", value: "auto",
       help: "API keys only cover cleanup; dictation needs a ChatGPT or CLI Proxy API sign-in.",
       keywords: "login chatgpt codex api key environment source",
@@ -13,14 +13,14 @@ var rows = [
           { id: "settings", label: "API key saved in Speecher" },
           { id: "cliproxy", label: "CLI Proxy API account" }
       ] },
-    { id: "openAiApiKey", page: "accounts", section: "OpenAI", kind: "secret",
+    { id: "openAiApiKey", page: "accounts", section: "ChatGPT", kind: "secret",
       label: "API key", help: "Stored in the system keychain when there is one.",
       placeholder: "sk-…", keywords: "openai key secret token" },
-    { id: "openAiCliproxyAccount", page: "accounts", section: "OpenAI", kind: "custom",
+    { id: "openAiCliproxyAccount", page: "accounts", section: "ChatGPT", kind: "custom",
       label: "Account", help: "The CLI Proxy API account to use.", value: "",
       keywords: "codex cli proxy account" },
 
-    { id: "anthropicAuthMode", page: "accounts", section: "Anthropic", kind: "choice", control: "select",
+    { id: "anthropicAuthMode", page: "accounts", section: "Claude", kind: "choice", control: "select",
       label: "Sign-in", value: "oauth",
       help: "Claude Code uses whichever account it is signed in to, in its desktop app or with /login in the claude CLI.",
       keywords: "login claude code anthropic source",
@@ -28,7 +28,7 @@ var rows = [
           { id: "oauth", label: "Claude Code" },
           { id: "cliproxy", label: "CLI Proxy API" }
       ] },
-    { id: "anthropicCliproxyAccount", page: "accounts", section: "Anthropic", kind: "custom",
+    { id: "anthropicCliproxyAccount", page: "accounts", section: "Claude", kind: "custom",
       label: "Account", help: "The CLI Proxy API account to use.", value: "",
       keywords: "claude cli proxy account" },
 

@@ -48,7 +48,7 @@ QString ClaudeSpeechTranscriber::id() const
 
 QString ClaudeSpeechTranscriber::label() const
 {
-    return QStringLiteral("Claude Voice");
+    return QStringLiteral("Claude");
 }
 
 bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const

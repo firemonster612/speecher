@@ -6,8 +6,9 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 
-// The dictation popup: one capsule that grows, shrinks and changes its
-// content as a dictation moves from listening to delivered. It reads the
+// The dictation popup: one pill that grows, shrinks and changes its content
+// as a dictation moves from listening to delivered, with its state mark (the
+// orb) in its left end and its round buttons in its right. It reads the
 // dictation from source (the live one by default; the settings page passes a
 // demo) and the popup rows from Settings, and words it itself (t). The live
 // one carries the update and What's New offers over the capsule (OfferChips).
@@ -77,23 +78,29 @@ Item {
     // The capsule's size for the current phase. Width and height animate to
     // it, so the shape morphs between phases.
     readonly property size target: {
-        if (phase === "review") return Qt.size(widest, review.implicitHeight + 36)
+        if (phase === "review") return Qt.size(widest, review.y * 2 + review.implicitHeight)
         if (followingUp) return Qt.size(widest, review.y + review.implicitHeight + liveHeight)
-        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(320, receipt.implicitWidth + 40)),
-                                                                      Math.max(64, receipt.implicitHeight + 28))
-        return Qt.size(showText ? 540 : recording ? 360 : 300, liveHeight)
+        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(220, receipt.x + receipt.implicitWidth + receiptEnd)),
+                                                                      Math.max(barHeight, receipt.implicitHeight + 20))
+        return Qt.size(showText ? 460 : recording ? 280 : 220, liveHeight)
     }
     // The live bar, and the words above it when they show.
-    readonly property real liveHeight: showText ? barHeight + words.implicitHeight + 14 : barHeight
-    readonly property int barHeight: 58
+    readonly property real liveHeight: showText ? barHeight + words.y + words.implicitHeight - 4 : barHeight
+    readonly property int barHeight: 44
 
-    // Where the margin rule falls inside the slip.
-    readonly property int marginX: 54
+    // The orb sits in the pill's round left end, and words and sound start
+    // after it.
+    readonly property int orbX: 10
+    readonly property int orbSize: 24
+    readonly property int contentX: orbX + orbSize + 10
+    // The room after the receipt's words: less where its buttons end it,
+    // since a button's own padding takes the rest.
+    readonly property int receiptEnd: receiptButtons.visible ? 8 : 18
     // A long edit or message scrolls past this height rather than growing
     // the capsule.
-    readonly property int textMax: 220
+    readonly property int textMax: 180
     // The capsule's width in review, the widest phase.
-    readonly property int widest: 580
+    readonly property int widest: 500
     // The most the capsule ever grows to: the review with its edit at the
     // scroll limit, with its buttons or, during a follow-up, with the live
     // bar and the most lines of words under it. A window this size never
@@ -101,7 +108,8 @@ Item {
     // the edit from the column, which lags the edit by a frame while it lays
     // out.
     readonly property size largest: Qt.size(widest, reviewHeading.height + review.spacing + textMax
-        + Math.max(review.spacing + reviewActions.height + 36, review.y + barHeight + words.maxLines * words.lineHeight + 14))
+        + Math.max(review.spacing + reviewActions.height + review.y * 2,
+                   review.y + barHeight + words.y + words.maxLines * words.lineHeight - 4))
 
     // Where the capsule is drawn, in the popup's coordinates, frame by frame
     // as it grows and shrinks between phases and with the scale (about its
@@ -165,24 +173,16 @@ Item {
             offset.y: 8
             color: Theme.shadow
         }
+        // A pill while it is one bar; taller, it keeps the bar's round
+        // corners, so it stays one shape as it grows.
         Rectangle {
             id: shell
             anchors.fill: parent
-            radius: Theme.radiusPanel
+            radius: popup.barHeight / 2
             color: Theme.sheet
             border.width: 1
             border.color: Theme.borderStrong
             clip: true
-
-            // The slip's margin rule: the mark sits left of it, words and
-            // sound run to its right.
-            Rectangle {
-                x: popup.marginX
-                width: 1
-                height: parent.height
-                color: Theme.soft(Theme.negative, popup.phase === "listening" ? 0.55 : 0.35)
-                Behavior on color { EaseColor { duration: Theme.base } }
-            }
 
             // Live: words above, the control bar below ----------------------
             Item {
@@ -197,9 +197,9 @@ Item {
 
                 LiveWords {
                     id: words
-                    x: popup.marginX + 16
-                    y: 16
-                    width: parent.width - x - 22
+                    x: popup.contentX
+                    y: 12
+                    width: parent.width - x - 18
                     text: popup.liveText
                     maxWords: Settings.values.previewWords || 12
                     shimmer: popup.phase === "refining" && popup.source.refined.length === 0
@@ -215,7 +215,8 @@ Item {
 
                     VoiceOrb {
                         id: orb
-                        x: (popup.marginX - width) / 2
+                        x: popup.orbX
+                        size: popup.orbSize
                         anchors.verticalCenter: parent.verticalCenter
                         phase: popup.phase === "delivering" ? popup.workPhase : popup.phase
                         level: popup.source.level
@@ -223,10 +224,10 @@ Item {
 
                     Waveform {
                         id: wave
-                        x: popup.marginX + 16
-                        width: clock.x - x - 12
+                        x: popup.contentX
+                        width: clock.x - x - 10
                         anchors.verticalCenter: parent.verticalCenter
-                        height: 26
+                        height: 22
                         bars: Math.max(8, Math.floor(width / 5.5))
                         level: popup.source.level
                         active: popup.phase === "listening"
@@ -235,7 +236,7 @@ Item {
                     }
 
                     MorphText {
-                        x: popup.marginX + 16
+                        x: popup.contentX
                         anchors.verticalCenter: parent.verticalCenter
                         // While recording only a renewal shows here, and holds
                         // as it fades out.
@@ -249,7 +250,7 @@ Item {
                     MorphText {
                         id: clock
                         anchors.right: buttons.left
-                        anchors.rightMargin: 12
+                        anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: Math.floor(popup.source.elapsed / 60) + ":" + String(popup.source.elapsed % 60).padStart(2, "0")
                         variant: "mono"
@@ -258,17 +259,19 @@ Item {
                         Behavior on opacity { Ease {} }
                     }
 
+                    // Each button's centre on the round right end's.
                     Row {
                         id: buttons
                         anchors.right: parent.right
-                        anchors.rightMargin: 14
+                        anchors.rightMargin: (popup.barHeight - 28) / 2
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
+                        spacing: 6
                         Reveal {
                             sideways: true
                             open: popup.phase === "listening" || popup.phase === "paused"
                             anchors.verticalCenter: parent.verticalCenter
                             CircleButton {
+                                size: 28
                                 iconName: popup.phase === "paused" ? "play" : "pause"
                                 tooltip: popup.phase === "paused" ? Words.resume : Words.pause
                                 onClicked: popup.source.pauseRequested()
@@ -280,6 +283,7 @@ Item {
                             open: popup.phase !== "delivering"
                             anchors.verticalCenter: parent.verticalCenter
                             CircleButton {
+                                size: 28
                                 iconName: "x"
                                 tooltip: Words.cancel
                                 onClicked: popup.source.cancelRequested()
@@ -292,14 +296,14 @@ Item {
             // Delivered or failed: one line of outcome ----------------------
             Row {
                 id: receipt
-                x: (popup.marginX - 30) / 2
+                x: popup.orbX
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: (popup.marginX - 30) / 2 + 16
+                spacing: popup.contentX - popup.orbX - popup.orbSize
                 opacity: popup.phase === "delivered" || popup.phase === "error" ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
 
-                VoiceOrb { id: receiptOrb; phase: popup.receiptMark; size: 30; anchors.verticalCenter: parent.verticalCenter }
+                VoiceOrb { id: receiptOrb; phase: popup.receiptMark; size: popup.orbSize; anchors.verticalCenter: parent.verticalCenter }
                 Flickable {
                     id: receiptScroll
                     objectName: "noticeScroll"
@@ -308,7 +312,7 @@ Item {
                     // it, so a long error never pushes its buttons out. The
                     // capsule grows taller for them up to textMax, and they
                     // scroll past it.
-                    readonly property real room: popup.widest - 40 - receiptOrb.width - receiptEnd.width - receipt.spacing * 2
+                    readonly property real room: popup.widest - receipt.x - popup.receiptEnd - receiptOrb.width - receipt.spacing
                                                  - (receiptButtons.visible ? receiptButtons.implicitWidth + receipt.spacing : 0)
                     width: Math.min(Math.max(receiptTitle.implicitWidth, receiptDetail.implicitWidth), room)
                     height: Math.min(receiptText.implicitHeight, popup.textMax)
@@ -371,7 +375,6 @@ Item {
                         onClicked: popup.source.cancelRequested()
                     }
                 }
-                Item { id: receiptEnd; width: 2; height: 1 }
             }
 
             // An error's countdown to dismissing itself, draining under it
@@ -379,11 +382,11 @@ Item {
             Rectangle {
                 id: countdown
                 property real remaining: 1
-                x: popup.marginX + 16
+                x: popup.contentX
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 6
-                width: (parent.width - x - 20) * remaining
-                height: 3
+                anchors.bottomMargin: 4
+                width: (parent.width - x - popup.barHeight / 2) * remaining
+                height: 2
                 radius: height / 2
                 color: Theme.soft(Theme.negative, 0.55)
                 opacity: popup.phase === "error" ? 1 : 0
@@ -407,8 +410,9 @@ Item {
 
             // Review: the edit to a selection, waiting for Replace -----------
             VoiceOrb {
-                x: (popup.marginX - width) / 2
-                y: 16
+                x: popup.orbX
+                y: review.y - 2
+                size: popup.orbSize
                 phase: "review"
                 opacity: popup.reviewShown ? popup.followingUp ? popup.followUpDim : 1 : 0
                 visible: opacity > 0
@@ -416,10 +420,10 @@ Item {
             }
             Column {
                 id: review
-                x: popup.marginX + 16
-                y: 18
-                width: parent.width - x - 20
-                spacing: 14
+                x: popup.contentX
+                y: 12
+                width: parent.width - x - 16
+                spacing: 10
                 opacity: popup.reviewShown ? popup.followingUp ? popup.followUpDim : 1 : 0
                 visible: opacity > 0
                 enabled: !popup.followingUp
@@ -485,22 +489,25 @@ Item {
                     // The review's width, not the capsule's now: the window's
                     // size counts this row's height, and must not change
                     // between phases.
-                    width: popup.widest - review.x - 20
+                    width: popup.widest - review.x - 16
                     layoutDirection: Qt.RightToLeft
                     spacing: 8
                     Button {
                         text: popup.t.replace
+                        size: "small"
                         variant: "primary"
                         trailing: KeyCombo { keys: popup.selectionEdit.replaceKeys || []; size: "small" }
                         onClicked: popup.source.replaceRequested()
                     }
                     Button {
                         text: popup.t.askForMore
+                        size: "small"
                         trailing: KeyCombo { keys: popup.selectionEdit.followUpKeys || []; size: "small" }
                         onClicked: popup.source.followUpRequested()
                     }
                     Button {
                         text: Words.cancel
+                        size: "small"
                         trailing: KeyCombo { keys: popup.selectionEdit.keepKeys || []; size: "small" }
                         onClicked: popup.source.cancelRequested()
                     }

@@ -2,7 +2,13 @@ import QtQuick
 import QtQuick.Templates as T
 import Speecher.Theme
 
-// An on/off switch. The knob glides to the other end when it is toggled.
+// An on/off switch. A tap or Space flips it, and the knob can be dragged:
+// let go past halfway and it flips (the template's own drag). The knob is
+// drawn between two edges that ease on their own: pressing stretches it
+// toward the side it will go and holds it there, and on a flip the leading
+// edge goes first while the trailing one follows with a little overshoot, so
+// the knob stretches, travels and settles. Under reduced motion it neither
+// stretches nor travels, and the colours still fade.
 T.Switch {
     id: control
 
@@ -15,29 +21,65 @@ T.Switch {
 
     indicator: Rectangle {
         id: track
+        // position follows a drag; at rest it is checked's 0 or 1, so the
+        // colours show where the knob will land before it is let go.
+        readonly property bool on: control.position > 0.5
         width: control.width
         height: control.height
         radius: height / 2
-        readonly property color shade: control.checked ? (control.hovered ? Theme.accentHover : Theme.accent)
-                                                       : (control.hovered ? Theme.fillStrong : Theme.fill)
+        readonly property color shade: on ? (control.hovered ? Theme.accentHover : Theme.accent)
+                                          : (control.hovered ? Theme.fillStrong : Theme.fill)
         // Pressing tints the track toward fillStrong, whichever way it is set.
         color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
-        border.width: control.checked ? 0 : 1
+        border.width: on ? 0 : 1
         border.color: Theme.border
         Behavior on color { EaseColor {} }
 
         Rectangle {
             id: knob
             readonly property int inset: 3
-            width: track.height - inset * 2
-            height: track.height - inset * 2
-            radius: height / 2
+            readonly property real size: track.height - inset * 2
+            readonly property real held: size + 5 * Theme.movement
+            readonly property real start: inset
+            readonly property real end: track.width - inset
+            // Between the ends only while a drag carries it.
+            readonly property bool dragging: control.pressed && control.position > 0 && control.position < 1
+            readonly property real centre: Math.max(start + held / 2, Math.min(end - held / 2, control.position * track.width))
+            readonly property real reach: control.pressed ? held : size
+            property real leftEdge: dragging ? centre - held / 2 : control.checked ? end - reach : start
+            property real rightEdge: dragging ? centre + held / 2 : control.checked ? end : start + reach
+            // A drag keeps the knob under the pointer, so it lags less.
+            readonly property int lead: dragging ? Theme.ms(60) : Theme.ms(170)
+            readonly property int trail: dragging ? Theme.ms(110) : Theme.ms(320)
+
+            x: leftEdge
             y: inset
-            x: control.checked ? track.width - width - inset : inset
-            color: control.checked ? Theme.sheet : Theme.raised
-            // Under reduced motion the knob moves at once.
-            Behavior on x { enabled: Theme.movement > 0; Ease { duration: Theme.base } }
+            width: Math.max(size * 0.8, rightEdge - leftEdge)
+            height: size
+            radius: height / 2
+            color: track.on ? Theme.sheet : Theme.raised
             Behavior on color { EaseColor { duration: Theme.base } }
+            // The edge moving toward where the knob goes leads; the other
+            // trails and overshoots a little as it lands. Under reduced
+            // motion both move at once.
+            Behavior on leftEdge {
+                id: leftMove
+                enabled: Theme.movement > 0
+                Ease {
+                    readonly property bool leads: leftMove.targetValue < knob.leftEdge
+                    duration: leads ? knob.lead : knob.trail
+                    curve: leads ? Theme.easeOut : Theme.springy
+                }
+            }
+            Behavior on rightEdge {
+                id: rightMove
+                enabled: Theme.movement > 0
+                Ease {
+                    readonly property bool leads: rightMove.targetValue > knob.rightEdge
+                    duration: leads ? knob.lead : knob.trail
+                    curve: leads ? Theme.easeOut : Theme.springy
+                }
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -47,7 +89,7 @@ T.Switch {
                 color: "transparent"
                 border.color: Theme.knobEdge
                 border.width: 1
-                visible: !control.checked
+                visible: !track.on
             }
         }
         FocusRing { target: track; shown: control.visualFocus }

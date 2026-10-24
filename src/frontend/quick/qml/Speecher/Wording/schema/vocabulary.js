@@ -18,7 +18,7 @@ var rows = [
       label: "Profiles", help: "Under any other profile, neither refinement nor the speech service gets this term.",
       keywords: "writing profile only these" },
     { id: "vocabularyLimit", page: "vocabulary", section: "Terms", kind: "custom",
-      label: "Limit", help: "Claude Voice takes up to 100 key terms; refinement uses the first 1000 terms.",
+      label: "Limit", help: "Claude takes up to 100 key terms; refinement uses the first 1000 terms.",
       keywords: "limit maximum count how many" },
 
     { id: "correctionLearningControl", page: "vocabulary", section: "Learned corrections", kind: "toggle",

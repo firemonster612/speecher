@@ -66,10 +66,10 @@ Column {
     Section {
         title: TranscribeWords.transcription
         caption: TranscribeWords.serviceHelp
-        ChoiceRows {
-            recommendedText: Words.recommended
+        ServiceCards {
             options: States.withTones(ModelText.speechChoices(Models.speechServices))
             currentId: view.options.service
+            unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("service", id)
         }
         SettingRow {
@@ -126,10 +126,10 @@ Column {
     Section {
         title: TranscribeWords.refinement
         caption: TranscribeWords.refinerHelp
-        ChoiceRows {
-            recommendedText: Words.recommended
-            options: ModelText.refinementChoices(Models.refinementProviders)
+        ServiceCards {
+            options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: view.options.refiner
+            unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("refiner", id)
         }
         SettingRow {

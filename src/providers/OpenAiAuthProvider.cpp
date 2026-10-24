@@ -373,7 +373,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
 
     // A refresh that failed says more than a missing credential, so it is
     // the answer when no other source has one.
-    OpenAiAuth unresolved{false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+    OpenAiAuth unresolved{false, {}, {}, QStringLiteral("No ChatGPT credential found"), {}, {}, {}, {}, false};
     const auto keepRefreshFailure = [&unresolved](const OpenAiAuth &oauth) {
         if (oauth.kind == ProviderFailureKind::Unavailable) return;
         unresolved.status = oauth.status;

@@ -21,7 +21,6 @@ Page {
     readonly property var inUse: chain.concat(Library.profiles.map(p => p.refinement))
                                       .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
     readonly property bool refines: inUse.length > 0
-    readonly property var rating: Models.refinementRatings[primary]
     // The providers that have settings on this page, in the Switcher's order.
     readonly property var configurable: ["openai", "anthropic", "local", "endpoint"]
     // Which provider's settings show, when there are fallbacks.
@@ -87,18 +86,12 @@ Page {
         id: providerSection
         title: Schema.row("refinementProvider").label
         caption: Schema.row("refinementProvider").help
-        SearchLanding { rowIds: ["refinementProvider"]; target: providerSection }
-        ChoiceRows {
-            recommendedText: Words.recommended
+        SearchLanding { rowIds: ["refinementProvider", "refinementRating"]; target: providerSection }
+        ServiceCards {
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.primary
+            unratedText: ModelText.unrated
             onActivated: id => page.choose(id)
-        }
-        SchemaRow {
-            rowId: "refinementRating"
-            shown: !!page.rating
-            help: page.rating && page.rating.ratedModel ? ModelText.ratedWithText(page.rating) : spec.help
-            RatingBars { appearance: "wide"; bars: ModelText.bars(page.rating) || [] }
         }
     }
 

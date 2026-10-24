@@ -2,7 +2,6 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
-import Speecher.Wording
 import Speecher.App
 import "../pages/text"
 
@@ -27,11 +26,10 @@ StepPage {
     }
 
     Card {
-        ChoiceRows {
-            recommendedText: Words.recommended
+        ServiceCards {
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
-            ruleBelow: runner.open || endpoint.open || offer.open
+            unratedText: ModelText.unrated
             onActivated: id => page.choices.cleanup = id
         }
         Reveal {

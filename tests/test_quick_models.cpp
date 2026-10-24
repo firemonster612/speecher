@@ -127,7 +127,7 @@ private slots:
         QSignalSpy changed(&models, &QuickModels::changed);
 
         QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
-        QCOMPARE(codex.value(QStringLiteral("label")).toString(), QStringLiteral("ChatGPT Codex"));
+        QCOMPARE(codex.value(QStringLiteral("label")).toString(), QStringLiteral("ChatGPT"));
         QCOMPARE(codex.value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
         QVERIFY(codex.value(QStringLiteral("problem")).toString().isEmpty());
         const QVariantMap endpoint = entry(models.speechServices(), QStringLiteral("endpoint"));
@@ -144,7 +144,7 @@ private slots:
                  QStringLiteral("ready"));
 
         const QVariantMap openAi = entry(models.refinementProviders(), QStringLiteral("openai"));
-        QCOMPARE(openAi.value(QStringLiteral("label")).toString(), QStringLiteral("OpenAI"));
+        QCOMPARE(openAi.value(QStringLiteral("label")).toString(), QStringLiteral("ChatGPT"));
         QVERIFY(openAi.value(QStringLiteral("readsScreenshots")).toBool());
         QVERIFY(!entry(models.refinementProviders(), QStringLiteral("local")).value(QStringLiteral("readsScreenshots")).toBool());
         // The services' bars, numbers only.

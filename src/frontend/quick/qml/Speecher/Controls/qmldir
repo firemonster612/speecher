@@ -8,7 +8,7 @@ Card 1.0 Card.qml
 Caret 1.0 Caret.qml
 CheckBox 1.0 CheckBox.qml
 Chip 1.0 Chip.qml
-ChoiceRows 1.0 ChoiceRows.qml
+ChoiceCard 1.0 ChoiceCard.qml
 CompactChoice 1.0 CompactChoice.qml
 CopyButton 1.0 CopyButton.qml
 DiffText 1.0 DiffText.qml
@@ -48,6 +48,7 @@ ScrollBar 1.0 ScrollBar.qml
 SearchField 1.0 SearchField.qml
 Section 1.0 Section.qml
 SegmentedControl 1.0 SegmentedControl.qml
+ServiceCards 1.0 ServiceCards.qml
 Select 1.0 Select.qml
 SettingRow 1.0 SettingRow.qml
 ShortcutField 1.0 ShortcutField.qml

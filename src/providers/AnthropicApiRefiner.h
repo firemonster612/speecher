@@ -16,7 +16,7 @@ public:
     explicit AnthropicApiRefiner(QObject *parent = nullptr,
                                  int requestTimeoutMs = 20000,
                                  int absoluteDeadlineMs = 120000,
-                                 const QString &label = QStringLiteral("Anthropic"));
+                                 const QString &label = QStringLiteral("Claude"));
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,

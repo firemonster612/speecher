@@ -40,7 +40,7 @@ var rows = [
       ] },
     { id: "codexFinalRetranscribe", page: "speech", section: "Language and accuracy", kind: "toggle",
       label: "Transcribe again for accuracy",
-      help: "ChatGPT Codex goes over the whole recording once more when you stop, fixing words the live pass misheard. Adds one to five seconds and one ChatGPT request; dictations over about a minute and a half keep the live text.",
+      help: "ChatGPT goes over the whole recording once more when you stop, fixing words the live pass misheard. Adds one to five seconds and one ChatGPT request; dictations over about a minute and a half keep the live text.",
       value: true, keywords: "retranscribe second pass accuracy chatgpt codex final" },
 
     { id: "speechLocalModel", page: "speech", section: "Local model", kind: "custom",

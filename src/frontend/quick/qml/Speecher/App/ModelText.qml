@@ -12,35 +12,28 @@ QtObject {
 
     // Speech services ----------------------------------------------------------
 
-    // What each service is good at (settings), what it needs (setup), and
-    // how its text arrives. A service this table lacks, such as the test
-    // stub, shows its label alone.
+    // What each service is good at (settings) and what it needs (setup). A
+    // service this table lacks, such as the test stub, shows its label alone.
     readonly property var _services: ({
-        codex: { icon: "message-circle", help: "Very accurate, around 100 languages.",
-                 access: "Uses your sign-in from the Codex app.", textShows: "A phrase at a time",
+        codex: { icon: "openai", help: "Very accurate, around 100 languages.",
+                 access: "Uses your sign-in from the Codex app.",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
                           { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
-        claude: { icon: "audio-lines", help: "About 60 languages, automatic punctuation and numerals.",
-                  access: "Uses your Claude Code sign-in.", textShows: "Words as you speak",
+        claude: { icon: "claude", help: "About 60 languages, automatic punctuation and numerals.",
+                  access: "Uses your Claude Code sign-in.",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
         endpoint: { icon: "server", help: "A server you run. Speed, accuracy and languages depend on the server and its model.",
-                    access: "Your own speech server.", textShows: "Text after you stop", models: [] },
+                    access: "Your own speech server.", models: [] },
         local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.",
                  access: "No account, works offline after a one-time download.", models: [] }
     })
-    function _service(id) { return _services[id] || { icon: "circle", help: "", access: "", textShows: "", models: [] } }
+    function _service(id) { return _services[id] || { icon: "circle", help: "", access: "", models: [] } }
 
     // A speech service with its wording: { id, label, icon, help, access,
-    // textShows, models, state, problem }.
+    // models, state, problem }.
     function service(id) {
         const known = Models.speechServices.find(s => s.id === id) || { id: id, label: Models.service(id).label, state: "unknown", problem: "" }
-        return Object.assign({}, _service(id), known, { textShows: textShows(id) })
-    }
-    // How a service's text arrives; a Local Model's depends on its model.
-    function textShows(id) {
-        if (id !== "local") return _service(id).textShows
-        const m = catalogModel(Models.localModelChoice)
-        return m && m.streams ? "Words as you speak" : "Text after you stop"
+        return Object.assign({}, _service(id), known)
     }
 
     // A provider's status beside it: its problem, as core says it, or Ready
@@ -59,15 +52,18 @@ QtObject {
     }
     // What setup says of a service while its sign-in is checked.
     readonly property string checking: "Checking…"
-    // A provider as ChoiceRows shows it.
-    function _choice(provider, help) {
-        return { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                 state: provider.state, status: status(provider) }
+    // A provider as ServiceCards shows it, rated from ratings (Models'
+    // ratings by id), or with no rating at all when ratings is left out.
+    function _choice(provider, help, ratings) {
+        const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
+                         state: provider.state, status: status(provider) }
+        if (ratings) choice.bars = bars(ratings[provider.id])
+        return choice
     }
     // Speech services as a choice, saying what each is good at; setup's
     // say what each needs.
-    function speechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).help)) }
-    function setupSpeechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).access)) }
+    function speechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings)) }
+    function setupSpeechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings)) }
 
     // Where a speech service stands in the chain: 0 for the service itself,
     // then its place among the fallbacks.
@@ -86,7 +82,6 @@ QtObject {
     function bars(rating) { return rating ? rating.bars.map(b => ({ label: _measures[b.measure], value: b.value })) : null }
     // " Rated as Parakeet 0.6B on this computer.", after a role, or nothing.
     function ratedAsText(rating) { return rating && rating.ratedModel ? " Rated as " + rating.ratedModel + " on this computer." : "" }
-    function ratedWithText(rating) { return "Rated with " + rating.ratedModel + ", suggested for this computer." }
     readonly property string unrated: "No rating"
 
     // Local Models ---------------------------------------------------------------
@@ -177,8 +172,8 @@ QtObject {
     ]
 
     readonly property var _refiners: ({
-        openai: { icon: "aperture", help: "Uses your ChatGPT or Codex sign-in." },
-        anthropic: { icon: "asterisk", help: "Uses your Claude Code sign-in." },
+        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in." },
+        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in." },
         local: { icon: "cpu", help: "Ollama, LM Studio or llama-server on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Pastes your words as spoken." }
@@ -191,7 +186,8 @@ QtObject {
     }
     // The providers, then None, as a choice.
     function refinementChoices(providers) {
-        return providers.map(p => _choice(provider(p.id), provider(p.id).help)).concat([_choice(provider("none"), _refiners.none.help)])
+        return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings))
+            .concat([_choice(provider("none"), _refiners.none.help)])
     }
     // The model a provider refines with, as its settings name it.
     function refinementModel(id) {

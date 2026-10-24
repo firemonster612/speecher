@@ -10,7 +10,7 @@
 
 ### Prerequisites
 
-Sign in to at least one transcription service: Claude Code for Claude Voice, or the ChatGPT app or Codex CLI for ChatGPT Codex dictation. Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
+Sign in to at least one transcription service: Claude Code for Claude, or the ChatGPT app or Codex CLI for ChatGPT. Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
 
 ```sh
 # Arch
@@ -298,7 +298,7 @@ speecher record stop                   # writes the last utterance, then prints 
 
 Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. `--vocab-file <path>` adds the file's terms to the custom vocabulary for this recording only, read the same way as for `transcribe`; an unreadable file is a usage error (exit 2). The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
 
-Recording needs Claude Voice, ChatGPT Codex or a Custom Endpoint; Local Models can't record yet. `record start` prints the path once the provider is connected. When it can't connect, for example when you are signed out or offline, or the provider refuses a second session while you dictate, `record start` says why, leaves no file and exits with 1. If the stream drops later, Speecher reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, for as long as the recording runs, and `record status` says it is reconnecting. What you say meanwhile is sent once the stream is back, up to the last 10 minutes of it. The words the provider was still working on when the stream dropped are written as a line as they stood, since it will never finish them. Before each new stream Speecher renews the sign-in when it is due, and once more when the provider turns it down. A failure a reconnect can't mend, such as being signed out, stops the stream: the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record stop` still prints the path when the recording missed something, such as lines it could not write to the file, says what on stderr, and exits with 1. `record status` exits with 1 when nothing is recording.
+Recording needs Claude, ChatGPT or a Custom Endpoint; Local Models can't record yet. `record start` prints the path once the provider is connected. When it can't connect, for example when you are signed out or offline, or the provider refuses a second session while you dictate, `record start` says why, leaves no file and exits with 1. If the stream drops later, Speecher reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, for as long as the recording runs, and `record status` says it is reconnecting. What you say meanwhile is sent once the stream is back, up to the last 10 minutes of it. The words the provider was still working on when the stream dropped are written as a line as they stood, since it will never finish them. Before each new stream Speecher renews the sign-in when it is due, and once more when the provider turns it down. A failure a reconnect can't mend, such as being signed out, stops the stream: the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record stop` still prints the path when the recording missed something, such as lines it could not write to the file, says what on stderr, and exits with 1. `record status` exits with 1 when nothing is recording.
 
 On Linux, system audio is read from the default output's monitor through PulseAudio or PipeWire. On macOS it is captured with ScreenCaptureKit, which needs Speecher allowed under System Settings > Privacy & Security > Screen & System Audio Recording. On both, Speecher cancels its echo out of the microphone with webrtc-audio-processing, so speakers work without headphones; on macOS this is used rather than the system's voice processing, which turns other audio down. While echo is cancelled, the recording's microphone doesn't skip silence, whatever the Skip silence setting, because the echo canceller needs it whole; with `--mic-only`, or without echo cancellation, it follows the setting. When echo cancellation can't start, the recording goes on without it: `record start` says why on stderr, and `record status` shows it as a `warning` line (`echoCancellationWarning` in JSON). The other side may then also be written as `me` on speakers.
 
@@ -334,9 +334,9 @@ On Windows, uninstall Speecher from **Settings > Apps > Installed apps**.
 
 ## Transcription
 
-Choose Claude Voice or ChatGPT Codex under the transcription settings. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
+Choose Claude or ChatGPT under the transcription settings. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
 
-ChatGPT Codex dictation uses the same streaming protocol as the Codex CLI and reuses its ChatGPT OAuth session. An OpenAI API key cannot authorize this endpoint. Sign in with `codex login` or the ChatGPT app before using it.
+ChatGPT dictation uses the same streaming protocol as the Codex CLI and reuses its ChatGPT OAuth session. An OpenAI API key cannot authorize this endpoint. Sign in with `codex login` or the ChatGPT app before using it.
 
 Speecher reads `auth.json` inside `CODEX_HOME`, or `~/.codex` when unset. If the
 file is absent, it reads Codex's native login from macOS Keychain or Windows

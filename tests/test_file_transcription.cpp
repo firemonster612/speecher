@@ -1382,7 +1382,7 @@ private slots:
         QString error;
         const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
         QVERIFY(startRecording(recording, refused, &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs Claude Voice, ChatGPT Codex or the Custom Endpoint. Scripted "
+        QCOMPARE(error, QStringLiteral("Recording needs Claude, ChatGPT or the Custom Endpoint. Scripted "
                                        "can't record yet."));
         QVERIFY(!QFileInfo::exists(refused));
 

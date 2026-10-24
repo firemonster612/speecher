@@ -28,8 +28,11 @@ Window {
     }
 
     readonly property var choices: [
-        { id: "local", label: "On this computer", help: "Nothing leaves the machine.", icon: "cpu", recommended: true, status: "Ready", tone: "positive" },
-        { id: "claude", label: "Claude Voice", help: "Streams as you speak.", icon: "audio-lines", status: "Signed out", tone: "warning" },
+        { id: "codex", label: "ChatGPT", help: "Very accurate, around 100 languages.", icon: "openai", status: "Ready", tone: "positive",
+          bars: [{ label: "Accuracy", value: 9.2 }, { label: "Speed", value: 7 }] },
+        { id: "claude", label: "Claude", help: "Streams as you speak.", icon: "claude", status: "Signed out", tone: "warning",
+          bars: [{ label: "Accuracy", value: 8.4 }, { label: "Speed", value: 9 }] },
+        { id: "local", label: "Local Model", help: "Nothing leaves the machine.", icon: "cpu", status: "Ready", tone: "positive", bars: null },
         { id: "none", label: "None", help: "Pastes your words as spoken.", icon: "circle-off" }
     ]
     readonly property var edit: [
@@ -206,13 +209,13 @@ Window {
                 }
             }
             Section {
-                title: "ChoiceRows"
+                title: "ServiceCards"
                 caption: "Every provider choice. Status takes the option's tone."
-                ChoiceRows { recommendedText: Words.recommended; options: gallery.choices; currentId: "local" }
+                ServiceCards { unratedText: "No rating"; options: gallery.choices.slice(0, 2); currentId: "codex"; onActivated: id => currentId = id }
             }
             Section {
                 caption: "Disabled"
-                ChoiceRows { recommendedText: Words.recommended; options: gallery.choices; currentId: "claude"; enabled: false }
+                ServiceCards { unratedText: "No rating"; options: gallery.choices.slice(2); currentId: "local"; enabled: false }
             }
         }
 
@@ -229,8 +232,8 @@ Window {
                     removeText: Words.remove
                     ids: gallery.fallbacks
                     options: [
-                        { id: "claude", label: "Claude Voice", icon: "audio-lines", status: "Used when the first can't run" },
-                        { id: "openai", label: "OpenAI", icon: "sparkle", status: "No API key", tone: "negative" },
+                        { id: "claude", label: "Claude", icon: "claude", status: "Used when the first can't run" },
+                        { id: "openai", label: "ChatGPT", icon: "openai", status: "No API key", tone: "negative" },
                         { id: "local", label: "Local model", icon: "cpu" }
                     ]
                     addLabel: "Add a fallback"

@@ -629,14 +629,14 @@ private slots:
                 everyFrameMasked = everyFrameMasked && masksDrawn();
             }
         });
-        QTRY_COMPARE(capsule->width(), 360.0);
+        QTRY_COMPARE(capsule->width(), 280.0);
         QTRY_COMPARE(capsule->scale(), 1.0);
         QVERIFY(arrivingFrames > 0);
         QVERIFY(everyFrameMasked);
 
-        // From the bare bar to the receipt's 320 by 64.
+        // From the bare bar to the receipt's 220 by 44.
         emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsule->width() > 321 && capsule->width() < 359);
+        QTRY_VERIFY(capsule->width() > 221 && capsule->width() < 279);
         QVERIFY(masksDrawn());
     }
 
@@ -664,10 +664,10 @@ private slots:
             return mask == QRegion(capsule);
         };
         // Listening with no words yet: the bare bar.
-        QTRY_VERIFY(capsuleIs(360, 58));
+        QTRY_VERIFY(capsuleIs(280, 44));
         // The receipt's capsule hugs a short line.
         emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsuleIs(320, 64));
+        QTRY_VERIFY(capsuleIs(220, 44));
 
         // Faded out, the window goes.
         emit session->popupHideRequested();

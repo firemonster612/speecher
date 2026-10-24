@@ -151,7 +151,7 @@ QString recordingNeedsSetupText()
 
 QString recordingSpeechProviderRefusal(const QString &providerLabel)
 {
-    return QStringLiteral("Recording needs Claude Voice, ChatGPT Codex or the Custom Endpoint. %1 can't record "
+    return QStringLiteral("Recording needs Claude, ChatGPT or the Custom Endpoint. %1 can't record "
                           "yet.")
         .arg(providerLabel);
 }
