@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 
 #include <QPointer>
 #include <QQmlEngine>
@@ -349,6 +350,8 @@ private slots:
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
+        // What the test says reads the microphone access check.
+        QuickSystem system(&controller);
         Rig rig(controller);
         QQmlEngine engine;
         QObject *microphones = engine.singletonInstance<QObject *>("Speecher.App", "Microphones");
