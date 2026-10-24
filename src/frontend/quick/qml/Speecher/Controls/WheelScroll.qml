@@ -18,13 +18,24 @@ Item {
 
     // How long momentum takes to fade to about a third of its speed, in
     // seconds, and the speed below which it stops, in pixels a second.
-    readonly property real friction: 0.35
+    readonly property real friction: 0.6
     readonly property real stopSpeed: 20
     readonly property real maxSpeed: 6000
     // Pixels one line of a mouse wheel moves, and the system's lines per
     // notch (qmllint's type data lacks the style hint, hence the index).
     readonly property real lineHeight: 24
     readonly property int wheelLines: Qt.styleHints["wheelScrollLines"] || 3
+    // A touchpad's move in pixels, after the desktop's scroll speed. Qt
+    // rounds pixelDelta to whole pixels, so a slow scroll reads 0 or 1; the
+    // angle keeps the fraction: Wayland reports 12 per pixel, X11 8. Other
+    // platforms' pixelDelta is exact.
+    readonly property real _anglePerPixel: Qt.platform.pluginName.startsWith("wayland") ? 12
+                                         : Qt.platform.pluginName === "xcb" ? 8 : 0
+    function _touchpadMove(event) {
+        if (_anglePerPixel > 0 || event.pixelDelta.y === 0)
+            return -event.angleDelta.y / (_anglePerPixel || 8)
+        return -event.pixelDelta.y
+    }
 
     anchors.fill: parent
     z: 1
@@ -69,7 +80,7 @@ Item {
             // Only a touchpad reports scroll phases; a wheel, even one that
             // also reports pixels, steps by lines.
             const precise = event.phase !== Qt.NoScrollPhase
-            const dy = precise ? -(event.pixelDelta.y || event.angleDelta.y / 8)
+            const dy = precise ? scroll._touchpadMove(event)
                                : -event.angleDelta.y / 120 * scroll.wheelLines * scroll.lineHeight
 
             if (event.phase === Qt.ScrollEnd) {
@@ -107,10 +118,10 @@ Item {
         }
     }
 
-    // Starts the coast from how fast the fingers were moving at the end.
+    // Starts the coast from how fast the fingers were moving as they lifted.
     function _coast() {
         const now = Date.now()
-        const recent = _samples.filter(s => now - s.at < 100)
+        const recent = _samples.filter(s => now - s.at < 60)
         _samples = []
         if (recent.length < 2) return
         const span = Math.max(16, now - recent[0].at) / 1000
