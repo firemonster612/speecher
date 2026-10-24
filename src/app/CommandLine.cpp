@@ -228,8 +228,8 @@ CliNames cliNamesFor(const QStringList &builtIn, const QList<Custom> &custom,
                      const QHash<QString, QString> &renamed = {})
 {
     const auto name = [](const QString &id) {
-        QString name = id.startsWith(kCustomIdPrefix) ? id.mid(kCustomIdPrefix.size()) : id;
-        return name.replace(QLatin1Char('_'), QLatin1Char('-'));
+        QString stripped = id.startsWith(kCustomIdPrefix) ? id.mid(kCustomIdPrefix.size()) : id;
+        return stripped.replace(QLatin1Char('_'), QLatin1Char('-'));
     };
     CliNames names;
     for (const QString &id : builtIn) {

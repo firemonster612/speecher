@@ -6,7 +6,6 @@
 #include <QList>
 #include <QMap>
 #include <QString>
-#include <QStringList>
 
 #include <array>
 #include <optional>
@@ -174,89 +173,5 @@ QString averageDictationText(const InsightsSummary &summary);
 QString clockText(qint64 ms);
 // "12 am", "10 am", "6 pm", with a no-break space.
 QString hourLabel(int hour);
-
-// One of the four stat tiles, as every Home and the shared image word it.
-struct InsightTileText {
-    QString title; // "Words dictated"
-    // Platform-neutral, "text", "flame", "microphone" or "waveform"; each
-    // front end maps it to an icon of its own.
-    QString iconId;
-    // The figure large and its unit small: "4" and "days", "4.0" and "hours".
-    QString value;
-    QString unit;
-    // The lines under the figure, empty ones left out, and a tip for the first.
-    QStringList lines;
-    QString firstLineTip;
-    bool showsWeek = false; // the streak's weekday strip goes under its lines
-};
-// Words, streak, dictations, audio: the order every Home shows them in.
-QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate &today);
-
-// "1 dictation", "12 dictations", and so on, the number localised.
-QString dictationCountText(int dictations);
-QString dayCountText(int days);
-// A weekday's first letter as one grapheme (Monday is 1), whatever the
-// locale's narrow names are.
-QString weekdayLetter(int dayOfWeek);
-// The heatmap's row labels, Monday first: the locale's short names for
-// Monday, Wednesday and Friday, and empty for the other rows.
-std::array<QString, 7> heatmapRowLabels();
-// The heatmap's caption for the weeks a narrow one draws: "12 days with
-// dictation in the last year" while all 53 show, else "4 days with dictation
-// in the last 20 weeks", counted over those weeks only.
-QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks);
-// A chart mark's tip: a bold title over the count.
-struct ChartTip {
-    QString title;
-    QString detail;
-};
-// "10 am to 11 am" over "3 dictations".
-ChartTip hourTip(int hour, int dictations);
-
-// Home's fixed wording: card titles, captions and the empty notices.
-enum class HomeText {
-    InsightsOffTitle,
-    InsightsOffBody,
-    NoInsightsTitle,
-    NoInsightsBody,
-    InsightsSettings,
-    YourDictation,
-    Period,
-    Activity,
-    Measure,
-    WhenYouTalk,
-    NoHourData,
-    Pace,
-    SpeakingPace,
-    SavedOverTyping,
-    YouSpeaking,
-    TypicalTyping,
-    WhereYourWordsGo,
-    NoDictationInPeriod,
-    Records,
-    PrivacyNote,
-    // Clearing the history: the confirmation, its button, and what a failure
-    // says to do next.
-    ClearHistoryTitle,
-    ClearHistoryQuestion,
-    ClearHistoryBody,
-    ClearHistoryConfirm,
-    ClearHistoryFailed,
-};
-QString homeText(HomeText text);
-// "45 min", "2 h", "2 h 5 min": the time Pace says dictation saved.
-QString minutesText(qint64 minutes);
-
-// One row of the Records card: a title, the line under it and the figure on
-// the right. The next-milestone row shows a progress bar in place of a figure.
-struct InsightRecordText {
-    QString title;
-    QString detail;
-    QString value;
-    bool milestoneBar = false;
-};
-// The streak record is left out while it is the streak running now, which
-// the Streak tile already says.
-QList<InsightRecordText> insightRecords(const InsightsSummary &summary, const QDate &today);
 
 } // namespace speecher

@@ -351,32 +351,6 @@ QString speechSecondsText(double seconds)
     return QStringLiteral("%1 s").arg(std::max(seconds, 0.1), 0, 'f', 1);
 }
 
-QString localModelText(LocalModelText text)
-{
-    switch (text) {
-    case LocalModelText::UseModel:
-        return QStringLiteral("Use this model");
-    case LocalModelText::TestSpeed:
-        return QStringLiteral("Test speed");
-    case LocalModelText::InUse:
-        return QStringLiteral("In use");
-    case LocalModelText::Suggested:
-        return QStringLiteral("Suggested for this computer");
-    case LocalModelText::YourChoice:
-        return QStringLiteral("Your choice");
-    case LocalModelText::TooLarge:
-        return QStringLiteral("Too large for this computer");
-    case LocalModelText::CompareNote:
-        return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
-                              "model is downloaded and tested here.");
-    case LocalModelText::DeleteModel:
-        return QStringLiteral("Delete model");
-    case LocalModelText::DeleteBody:
-        return QStringLiteral("The model file is removed from this computer. You can download it again later.");
-    }
-    return {};
-}
-
 QString textShowsValue(bool streams)
 {
     return streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop");

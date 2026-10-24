@@ -128,21 +128,6 @@ struct LocalModelFactLabels {
     QString language = QStringLiteral("Language");
     QString license = QStringLiteral("License");
 };
-// The fixed wording the Local models page and the setup assistants' Local
-// Model card share.
-enum class LocalModelText {
-    UseModel,
-    TestSpeed,
-    InUse,
-    Suggested,
-    YourChoice,
-    TooLarge,
-    CompareNote,
-    // Deleting a downloaded model: the button and its confirmation's body.
-    DeleteModel,
-    DeleteBody,
-};
-QString localModelText(LocalModelText text);
 // "As you speak" for a streaming model, else "After you stop".
 QString textShowsValue(bool streams);
 

@@ -16,6 +16,7 @@
 #include "app/AppImageUpdater.h"
 #endif
 #include "core/InsightsLog.h"
+#include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
@@ -36,7 +37,6 @@
 #include <QMetaEnum>
 #endif
 #include <QTimer>
-#include <QVersionNumber>
 #ifdef Q_OS_MACOS
 #include <QPermissions>
 #endif
@@ -121,10 +121,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             && previousVersion != currentVersion;
         const bool upgraded = previousBuildNumber >= 0
             ? currentBuildNumber > previousBuildNumber
-            // Nightly metadata does not make a new Stable Release.
-            : QVersionNumber::compare(QVersionNumber::fromString(currentVersion).normalized(),
-                                      QVersionNumber::fromString(previousVersion).normalized()) > 0
-                || migratedNightlyUpgrade;
+            : compareBaseVersions(currentVersion, previousVersion) > 0 || migratedNightlyUpgrade;
         if (upgraded
             && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
             m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);

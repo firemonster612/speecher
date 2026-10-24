@@ -7,7 +7,6 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QScopeGuard>
 #include <QTemporaryDir>
 
 using namespace speecher;
@@ -310,7 +309,6 @@ private slots:
             {recordOn(kToday, 2000000000), recordOn(kToday, 2000000000)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.words, 4000000000);
         QCOMPARE(summary.allTimeWords, 4000000000);
-        QCOMPARE(insightTiles(summary, kToday).first().value, QStringLiteral("4,000,000,000"));
         QVERIFY(insightsShareText(summary, InsightsRange::AllTime)
                     .contains(QStringLiteral("4,000,000,000 words dictated")));
     }
@@ -453,22 +451,6 @@ private slots:
         QCOMPARE(summary.firstDictation, QDate(2026, 9, 1));
     }
 
-    void recordsLeaveOutTheStreakRunningNow()
-    {
-        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100), recordOn(kToday, 50)};
-        const QList<InsightRecordText> rows =
-            insightRecords(summarize(records, InsightsRange::Last7Days, kToday), kToday);
-        QStringList titles;
-        for (const InsightRecordText &row : rows) {
-            titles << row.title;
-        }
-        QCOMPARE(titles, (QStringList{QStringLiteral("Next milestone: 1,000 words"),
-                                      QStringLiteral("Longest dictation"), QStringLiteral("Busiest day"),
-                                      QStringLiteral("Wordiest day"), QStringLiteral("First dictation")}));
-        QVERIFY(rows.first().milestoneBar);
-        QCOMPARE(rows.last().value, QStringLiteral("1 day ago"));
-    }
-
     void everyMilestonePassed()
     {
         const InsightsSummary summary =
@@ -569,17 +551,6 @@ private slots:
                                              {12, QStringLiteral("Aug")}, {17, QStringLiteral("Sep")}}));
     }
 
-    void heatmapCaptionCountsOnlyTheWeeksDrawn()
-    {
-        // The latest two weeks start on Monday, Sep 14; the 13th is outside.
-        const InsightsSummary summary = summarize(
-            {recordOn(kToday), recordOn(kToday.addDays(-10)), recordOn(kToday.addDays(-13)),
-             recordOn(kToday.addDays(-200))},
-            InsightsRange::AllTime, kToday);
-        QCOMPARE(heatmapSpanText(summary, 2), QStringLiteral("2 days with dictation in the last 2 weeks"));
-        QCOMPARE(heatmapSpanText(summary, 53), QStringLiteral("4 days with dictation in the last year"));
-    }
-
     void shareTextListsThePeriodsNumbers()
     {
         const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
@@ -593,38 +564,6 @@ private slots:
                                 "2 dictations, 2 min of audio transcribed\n"
                                 "100 words per minute, 2.5× faster than typing\n"
                                 "Top apps: Kate 100%"));
-    }
-
-    void tilesReadInOneOrderWithOneLetterWeekdays()
-    {
-        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
-                                             recordOn(kToday, 50, 30000)};
-        const QList<InsightTileText> tiles =
-            insightTiles(summarize(records, InsightsRange::Last7Days, kToday), kToday);
-        QStringList titles;
-        for (const InsightTileText &tile : tiles) {
-            titles << tile.title;
-        }
-        QCOMPARE(titles, (QStringList{QStringLiteral("Words dictated"), QStringLiteral("Streak"),
-                                      QStringLiteral("Dictations"), QStringLiteral("Audio transcribed")}));
-        QCOMPARE(tiles.at(1).iconId, QStringLiteral("flame"));
-        QCOMPARE(tiles.at(1).value, QStringLiteral("2"));
-        QCOMPARE(tiles.at(1).unit, QStringLiteral("days"));
-        QVERIFY(tiles.at(1).showsWeek);
-        QCOMPARE(tiles.at(3).value + u' ' + tiles.at(3).unit, QStringLiteral("2 min"));
-
-        const QLocale previous;
-        QLocale::setDefault(QLocale(QLocale::German));
-        const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
-        QCOMPARE(heatmapRowLabels().at(0), QLocale().dayName(Qt::Monday, QLocale::ShortFormat));
-        QVERIFY(heatmapRowLabels().at(1).isEmpty());
-
-        // Vietnamese narrow names are two letters, "T2" for Monday; Hindi's
-        // Monday is one letter with a vowel sign, two code units.
-        QLocale::setDefault(QLocale(QLocale::Vietnamese));
-        QCOMPARE(weekdayLetter(Qt::Monday), QStringLiteral("T"));
-        QLocale::setDefault(QLocale(QLocale::Hindi));
-        QCOMPARE(weekdayLetter(Qt::Monday), QString::fromUtf8("सो"));
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()

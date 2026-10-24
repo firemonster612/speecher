@@ -131,9 +131,4 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
 
-QString insightsJsonFileName(const QDate &today)
-{
-    return QStringLiteral("speecher-stats-%1.json").arg(isoDate(today));
-}
-
 } // namespace speecher

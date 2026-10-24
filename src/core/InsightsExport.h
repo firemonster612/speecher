@@ -18,7 +18,5 @@ QString insightsPeriodName(InsightsRange range);
 // the top apps.
 QString insightsShareText(const InsightsSummary &summary, InsightsRange range);
 QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, const QDate &today);
-// "speecher-stats-2026-09-26.json", the name a save dialog suggests.
-QString insightsJsonFileName(const QDate &today);
 
 } // namespace speecher

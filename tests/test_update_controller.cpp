@@ -891,8 +891,11 @@ private slots:
     void bundledReleaseNotesComeNewestFirst()
     {
         const QList<ReleaseNote> notes = bundledReleaseNotes();
-        QCOMPARE(notes.size(), 7);
-        QCOMPARE(notes.first().version, QStringLiteral("0.2.0"));
+        QVERIFY(!notes.isEmpty());
+        for (qsizetype index = 1; index < notes.size(); ++index) {
+            QVERIFY2(compareBaseVersions(notes.at(index - 1).version, notes.at(index).version) > 0,
+                     qPrintable(notes.at(index).version));
+        }
         QCOMPARE(notes.last().version, QStringLiteral("0.1.0"));
         QVERIFY(notes.first().markdown.startsWith(QStringLiteral("## Added")));
     }

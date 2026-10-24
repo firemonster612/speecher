@@ -107,9 +107,10 @@ public:
     // statusChanged carries it.
     QString statusLabel() const;
     // The last transcript Speecher heard, which `speecher last` prints and
-    // Home offers to copy again: the running preview, then the text as delivered. It outlives the
-    // dictation that produced it, including a failed one, so it is empty only
-    // until the first dictation says something.
+    // Home offers to copy again: the running preview, then the text as
+    // delivered. It outlives the dictation that produced it, including a
+    // failed one, so it is empty only until the first dictation says
+    // something.
     QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     // status's answer and each line status --watch is written: the dictation
