@@ -13,7 +13,7 @@ StepPage {
     id: page
 
     Plate {
-        height: sample.implicitHeight + Theme.space5 * 2
+        height: sample.implicitHeight + Theme.space4 * 2
         DiffText {
             id: sample
             x: Theme.space6
@@ -30,6 +30,9 @@ StepPage {
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
             unratedText: ModelText.unrated
+            // One line of help, so every choice fits the step at its
+            // default size.
+            helpLines: 1
             onActivated: id => page.choices.cleanup = id
         }
         Reveal {

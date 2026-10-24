@@ -21,6 +21,9 @@ FocusScope {
     property var options: []
     property string currentId
     property string unratedText
+    // Lines of help each card keeps: two, or one where a step is short of
+    // height (assistive tech still hears all of it).
+    property int helpLines: 2
     signal activated(string id)
 
     readonly property int currentIndex: options.findIndex(o => o.id === currentId)
@@ -125,7 +128,7 @@ FocusScope {
                     variant: "label"
                     elide: Text.ElideRight
                 }
-                // Two lines kept for help, so a card with one lines up with
+                // helpLines kept for help, so a card with fewer lines up with
                 // its neighbours.
                 Txt {
                     id: help
@@ -136,7 +139,7 @@ FocusScope {
                     variant: "small"
                     tone: "secondary"
                     wrapMode: Text.WordWrap
-                    maximumLineCount: 2
+                    maximumLineCount: root.helpLines
                     elide: Text.ElideRight
                     FontMetrics { id: helpMetrics; font: help.font }
                 }
