@@ -8,52 +8,83 @@ import Speecher.Wording
 import Speecher.App
 
 // Rules for single apps: the add form, then each app with its paste method
-// and a switch, on the Pasting page. --pasting-form=rule opens the form.
+// and a switch, on the Pasting page. The list is the applicationPasteRules
+// setting, [{ app, method, enabled }], saved whole on every change.
+// --pasting-form=rule opens the form.
 Section {
     id: section
 
     readonly property var methods: Schema.row("globalPasteRule").options
+    readonly property var rules: Settings.values.applicationPasteRules || []
+    readonly property var t: ({
+        addRule: "Add rule",
+        newRule: "New paste rule",
+        ruleApp: "Application ID",
+        ruleAppHelp: "The app's desktop ID, such as org.kde.konsole.",
+        ruleAppPlaceholder: "org.kde.konsole",
+        ruleMethod: "Paste method",
+        deleteRule: "Delete rule",
+        noRules: "No rules for single apps",
+        noRulesHelp: "Add one to paste differently into one application."
+    })
+
+    function save(next) { Settings.set("applicationPasteRules", next) }
+    function update(index, change) {
+        const next = rules.slice()
+        next[index] = Object.assign({}, next[index], change)
+        save(next)
+    }
+    // Undo puts the rule back where it was, keeping edits made since.
+    function remove(index) {
+        const gone = rules[index]
+        save(rules.filter((r, i) => i !== index))
+        Toaster.show(Words.deleted(appName(gone.app)), { icon: "trash-2", actionText: Words.undo, action: () => {
+            const back = section.rules.slice()
+            back.splice(Math.min(index, back.length), 0, gone)
+            section.save(back)
+        } })
+    }
+    // The last part of a desktop ID, which is how most apps are known.
+    function appName(app) { return app.split(".").pop() }
 
     title: Schema.row("applicationPasteRules").label
     caption: Schema.row("applicationPasteRules").help
-    actions: [ Button { text: Library.pastingText.addRule; iconName: "plus"; size: "small"; onClicked: ruleForm.startAdd() } ]
+    actions: [ Button { text: section.t.addRule; iconName: "plus"; size: "small"; onClicked: ruleForm.startAdd() } ]
     SearchLanding { rowIds: ["applicationPasteRules"]; target: section }
 
     InlineForm {
         cancelText: Words.cancel
         id: ruleForm
         objectName: "ruleForm"
-        property string method: "standard"
-        function startAdd() { ruleApp.text = ""; method = "standard"; open = true }
-        title: Library.pastingText.newRule
-        saveText: Library.pastingText.addRule
+        property string method: "standard_paste"
+        function startAdd() { ruleApp.text = ""; method = "standard_paste"; open = true }
+        title: section.t.newRule
+        saveText: section.t.addRule
         canSave: ruleApp.text.trim().length > 0
         open: Launch.arg("pasting-form", "") === "rule"
         onCancelled: open = false
         onSaved: {
-            const id = ruleApp.text.trim()
-            Library.add("appPasteRules", { app: id, name: id.split(".").pop(), method: method, enabled: true })
-            open = false
+            section.save(section.rules.concat([{ app: ruleApp.text.trim(), method: method, enabled: true }]))
+            // A refused rule, such as a second one for the same app, keeps the form open.
+            open = Settings.errors.applicationPasteRules !== undefined
         }
         Row {
             width: parent.width
             spacing: Theme.space4
             FormField {
                 width: (parent.width - parent.spacing) * 0.55
-                label: Library.pastingText.ruleApp
-                help: Library.pastingText.ruleAppHelp
-                SuggestField {
-                    suggestionsText: Words.suggestions
+                label: section.t.ruleApp
+                help: Settings.errors.applicationPasteRules || section.t.ruleAppHelp
+                TextField {
                     id: ruleApp
                     width: parent.width
                     iconName: "app-window"
-                    placeholderText: Library.pastingText.ruleAppPlaceholder
-                    suggestions: Library.openApps.map(a => ({ id: a, label: a, badge: Library.pastingText.openNow }))
+                    placeholderText: section.t.ruleAppPlaceholder
                 }
             }
             FormField {
                 width: (parent.width - parent.spacing) * 0.45
-                label: Library.pastingText.ruleMethod
+                label: section.t.ruleMethod
                 Select { width: parent.width; options: section.methods; currentId: ruleForm.method; onChosen: id => ruleForm.method = id }
             }
         }
@@ -61,7 +92,7 @@ Section {
 
     RowList {
         id: appRules
-        values: Library.appPasteRules
+        values: section.rules
         keyOf: r => r.app
         delegate: ListRow {
             id: ruleRow
@@ -75,7 +106,7 @@ Section {
 
             AppIcon {
                 anchors.verticalCenter: parent.verticalCenter
-                name: ruleRow.rule.name
+                name: section.appName(ruleRow.rule.app)
                 size: 30
                 opacity: ruleRow.dim
                 Behavior on opacity { Ease {} }
@@ -86,7 +117,7 @@ Section {
                 spacing: 2
                 opacity: ruleRow.dim
                 Behavior on opacity { Ease {} }
-                Txt { text: ruleRow.rule.name; variant: "label" }
+                Txt { text: section.appName(ruleRow.rule.app); variant: "label" }
                 Txt { text: ruleRow.rule.app; variant: "code"; tone: "secondary" }
             }
             Row {
@@ -99,26 +130,31 @@ Section {
                     currentId: ruleRow.rule.method
                     enabled: ruleRow.rule.enabled
                     anchors.verticalCenter: parent.verticalCenter
-                    onChosen: id => Library.update("appPasteRules", ruleRow.index, { method: id })
+                    onChosen: id => section.update(ruleRow.index, { method: id })
                 }
                 Switch {
                     checked: ruleRow.rule.enabled
                     anchors.verticalCenter: parent.verticalCenter
-                    onToggled: Library.update("appPasteRules", ruleRow.index, { enabled: checked })
+                    onToggled: section.update(ruleRow.index, { enabled: checked })
                 }
             }
             actions: [
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteRule; onClicked: { const name = ruleRow.rule.name; const undo = Library.remove("appPasteRules", ruleRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
+                IconButton {
+                    iconName: "trash-2"
+                    size: 28
+                    tooltip: section.t.deleteRule
+                    onClicked: section.remove(ruleRow.index)
+                }
             ]
         }
     }
 
     Reveal {
-        open: Library.appPasteRules.length === 0 && !ruleForm.open
+        open: section.rules.length === 0 && !ruleForm.open
         EmptyState {
             compact: true
-            title: Library.pastingText.noRules
-            text: Library.pastingText.noRulesHelp
+            title: section.t.noRules
+            text: section.t.noRulesHelp
         }
     }
 }

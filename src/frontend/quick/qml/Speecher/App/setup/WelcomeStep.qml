@@ -9,7 +9,7 @@ import Speecher.App
 // sign-ins it already found on this computer.
 StepPage {
     id: page
-    title: System.setupText.welcomeTitle
+    title: Setup.text.welcomeTitle
 
     readonly property var _found: Accounts.services.filter(s => s.state === "signedIn")
 
@@ -28,13 +28,13 @@ StepPage {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: caps.bottom
             anchors.topMargin: Theme.space5
-            text: System.setupText.welcomeHint
+            text: Setup.text.welcomeHint
             tone: "secondary"
         }
     }
 
     Txt {
-        text: page._found.length ? System.setupText.signInsFound : System.setupText.noSignIns
+        text: page._found.length ? Setup.text.signInsFound : Setup.text.noSignIns
         variant: page._found.length ? "heading" : "body"
         tone: page._found.length ? "primary" : "secondary"
     }

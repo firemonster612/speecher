@@ -3,7 +3,6 @@ import QtQuick.Window
 import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
-import Speecher.Backend
 import Speecher.App
 
 // The first-run assistant: the steps down the side, the current one on a
@@ -17,7 +16,7 @@ ClientWindow {
     minimumWidth: 860
     minimumHeight: 600
     visible: true
-    title: System.setupText.title
+    title: Setup.text.title
 
     // The step on show, from 0. The preview tool sets it with --set step=n.
     property int step: 0
@@ -54,7 +53,7 @@ ClientWindow {
         height: parent.height
 
         // In the title strip, which moves the window.
-        Brand { id: brand; title: System.setupText.title }
+        Brand { id: brand; title: Setup.text.title }
 
         // The steps' nodes line up under the mark.
         StepRail {
@@ -72,7 +71,7 @@ ClientWindow {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 26
             width: parent.width - Theme.sideInset * 2
-            text: System.setupText.runAgain
+            text: Setup.text.runAgain
             variant: "small"
             tone: "tertiary"
             wrapMode: Text.WordWrap
@@ -136,7 +135,7 @@ ClientWindow {
             Button {
                 x: Theme.sideInset
                 anchors.verticalCenter: parent.verticalCenter
-                text: System.setupText.skip
+                text: Setup.text.skip
                 variant: "ghost"
                 enabled: !window._last && window._limit === window.steps.length - 1
                 onClicked: window.finish()
@@ -150,7 +149,7 @@ ClientWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space2
                 Button {
-                    text: System.setupText.back
+                    text: Setup.text.back
                     enabled: window.step > 0
                     opacity: enabled ? 1 : 0
                     visible: opacity > 0
@@ -158,7 +157,7 @@ ClientWindow {
                     onClicked: window.go(window.step - 1)
                 }
                 Button {
-                    text: window.step === 0 ? System.setupText.getStarted : window._last ? System.setupText.startDictating : System.setupText.continue_
+                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.startDictating : Setup.text.continue_
                     variant: "primary"
                     enabled: window._limit > window.step || window._last && window._limit === window.step
                     onClicked: window._last ? window.finish() : window.go(window.step + 1)

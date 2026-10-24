@@ -4,6 +4,7 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // The finish: a check that lands once, how to dictate with the chosen
 // shortcut, and a way back to any step that still needs attention. The rail
@@ -37,7 +38,7 @@ StepPage {
     }
 
     Txt {
-        text: page._open.length === 0 ? System.setupText.allPassed : System.stepsOpenText(page._open.length)
+        text: page._open.length === 0 ? Setup.text.allPassed : Setup.stepsOpen(page._open.length)
         variant: page._open.length ? "heading" : "body"
         tone: page._open.length ? "primary" : "secondary"
     }

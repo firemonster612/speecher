@@ -1,6 +1,7 @@
 #include "frontend/quick/host/QuickFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/PhoneTransfer.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
@@ -14,6 +15,7 @@
 #include <QQmlComponent>
 #include <QQmlError>
 #include <QQmlExtensionPlugin>
+#include <QQuickImageProvider>
 #include <QQuickWindow>
 #include <QTimer>
 
@@ -69,6 +71,28 @@ void grabWhenAsked(QQuickWindow *window)
     });
 }
 
+// image://qr/<text in base64>: the text as a QR code from core's
+// qrCodeImage, at most as large as asked for, for QrCode.qml.
+class QrCodeImageProvider final : public QQuickImageProvider {
+public:
+    QrCodeImageProvider()
+        : QQuickImageProvider(QQuickImageProvider::Image)
+    {
+    }
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
+    {
+        // Big enough to scan when nothing asks for a size.
+        constexpr int defaultSide = 512;
+        const QString text = QString::fromUtf8(QByteArray::fromBase64(id.toLatin1()));
+        const QImage image = qrCodeImage(text, requestedSize.width() > 0 ? requestedSize.width() : defaultSide);
+        if (size) {
+            *size = image.size();
+        }
+        return image;
+    }
+};
+
 } // namespace
 
 QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
@@ -79,8 +103,10 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     , m_dictation(controller)
     , m_updates(controller, controller->updates())
     , m_transcription(controller)
+    , m_system(controller)
 {
     registerFonts();
+    m_engine.addImageProvider(QStringLiteral("qr"), new QrCodeImageProvider);
     // Into the log with the rest, marked so a load's warnings are easy to find.
     m_engine.setOutputWarningsToStandardError(false);
     connect(&m_engine, &QQmlEngine::warnings, this, [](const QList<QQmlError> &warnings) {

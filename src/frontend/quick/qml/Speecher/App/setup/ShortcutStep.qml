@@ -1,6 +1,5 @@
 import QtQuick
 import Speecher.Controls
-import Speecher.Backend
 import Speecher.App
 
 // The same shortcut rows as the Shortcuts page: what starts dictation, what
@@ -9,6 +8,6 @@ StepPage {
     Card {
         SchemaRow { rowId: "globalShortcut" }
         SchemaRow { rowId: "shortcutBehavior" }
-        SchemaRow { rowId: "cancelShortcut"; note: System.setupText.cancelShortcutHelp }
+        SchemaRow { rowId: "cancelShortcut"; note: Setup.text.cancelShortcutHelp }
     }
 }

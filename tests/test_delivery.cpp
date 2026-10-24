@@ -381,6 +381,28 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
     }
 
+    void pasteRulesAreEditedByScopeAndMatch()
+    {
+        QList<PasteRule> rules = defaultPasteRules();
+        const QString terminal = QStringLiteral("terminal");
+        const QString browser = QStringLiteral("browser");
+
+        rules[0].enabled = false;
+        setPasteRule(rules, PasteRuleScope::Category, terminal, PasteMethod::DirectInsert);
+        setPasteRule(rules, PasteRuleScope::Category, browser, PasteMethod::ClipboardOnly);
+        QCOMPARE(rules.size(), 3);
+        QCOMPARE(*findPasteRule(rules, PasteRuleScope::Category, terminal),
+                 (PasteRule{PasteRuleScope::Category, terminal, PasteMethod::DirectInsert, true}));
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, browser)->method, PasteMethod::ClipboardOnly);
+        // An application named like a category is a rule of its own.
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, browser), nullptr);
+
+        removePasteRule(rules, PasteRuleScope::Category, terminal);
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, terminal), nullptr);
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Global, QString())->method, PasteMethod::StandardPaste);
+        QCOMPARE(rules.size(), 2);
+    }
+
     void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
     {
         PasteMethod attemptedMethod = PasteMethod::ClipboardOnly;

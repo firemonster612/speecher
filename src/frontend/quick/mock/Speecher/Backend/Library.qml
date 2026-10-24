@@ -7,7 +7,7 @@ import Speecher.Theme
 // Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of what the Text pages show: refinement providers and runners, Writing
 // Profiles with their tones and cleanup levels, the three word lists, and the
-// paste and app recognition rules. Lists are plain arrays of objects and are
+// app recognition rules. Lists are plain arrays of objects and are
 // replaced, never edited in place, so bindings see every change. Each list
 // has one owner: speech services are Models', the fallback profile is the
 // defaultWritingProfile setting, and app types are the pasting schema's.
@@ -427,39 +427,8 @@ QtObject {
     readonly property var appCategories: Schema.appCategories
     function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
 
-    // The steps a paste takes with the current settings, for the Pasting
-    // page's picture: [{ icon, label }], tried in order.
-    readonly property var pasteRoute: {
-        const rule = Settings.values.globalPasteRule
-        const copy = { icon: "clipboard", label: "Copy to clipboard" }
-        const insert = { icon: "text-cursor-input", label: "Insert directly" }
-        const press = System.virtualKeyboard === "running" ? { icon: "keyboard", label: rule === "terminal" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" } : copy
-        if (rule === "clipboard") return [copy]
-        if (rule === "direct") return [insert]
-        return Settings.values.outputMethod === "ydotool" ? [press] : [insert, press]
-    }
-    readonly property string pasteCaption: (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
-        + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
-
-    // The Pasting page's fixed wording, its picture's and its forms'.
+    // Application recognition's wording, on the Pasting page.
     readonly property var pastingText: ({
-        routeApp: "Slack",
-        routeSample: "Can you send me last quarter's numbers by Friday?",
-        routeStart: "Your words",
-        routeFirst: "First",
-        routeFallback: "If that fails",
-        categoriesCaption: "Paste differently into every app of one type. Apps are sorted into types under Application recognition below.",
-        categoriesNeedAccessibility: "Turn on desktop accessibility so Speecher can tell which app you're in.",
-        addRule: "Add rule",
-        newRule: "New paste rule",
-        ruleApp: "Application ID",
-        ruleAppHelp: "The app's desktop ID, such as org.kde.konsole.",
-        ruleAppPlaceholder: "org.kde.konsole",
-        openNow: "Open now",
-        ruleMethod: "Paste method",
-        deleteRule: "Delete rule",
-        noRules: "No rules for single apps",
-        noRulesHelp: "Add one to paste differently into one application.",
         automatic: "Automatic",
         addMatch: "Add match",
         newMatch: "New app match",
@@ -478,15 +447,6 @@ QtObject {
         searchBuiltIn: "Search built-in matches",
         builtInMatchTip: "Click to add your own match for it."
     })
-
-    // Desktop IDs of apps open now, which a new rule suggests.
-    readonly property var openApps: ["org.kde.kate", "firefox"]
-
-    property var appPasteRules: _empty ? [] : [
-        { app: "org.kde.konsole", name: "Konsole", method: "terminal", enabled: true },
-        { app: "com.mitchellh.ghostty", name: "Ghostty", method: "terminal", enabled: true },
-        { app: "org.libreoffice.LibreOffice.writer", name: "LibreOffice Writer", method: "direct", enabled: false }
-    ]
 
     property var recognitionRules: _empty ? [] : [
         { match: "obsidian", category: "office", profile: "personal" },

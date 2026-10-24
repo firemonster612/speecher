@@ -1,17 +1,19 @@
 .pragma library
 
+// Ids are core's paste methods; inherit is no rule of the row's own.
 var pasteMethods = [
-    { id: "standard", label: "Standard paste", help: "Presses Ctrl+V.", icon: "clipboard-paste" },
-    { id: "terminal", label: "Terminal paste", help: "Presses Ctrl+Shift+V.", icon: "square-terminal" },
-    { id: "direct", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
-    { id: "clipboard", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
+    { id: "standard_paste", label: "Standard paste", help: "Presses Ctrl+V.", icon: "clipboard-paste" },
+    { id: "terminal_paste", label: "Terminal paste", help: "Presses Ctrl+Shift+V.", icon: "square-terminal" },
+    { id: "direct_insert", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
+    { id: "clipboard_only", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
 ];
 var inherit = { id: "inherit", label: "Default paste", help: "Whatever Default paste above says." };
 
 // The app types Speecher sorts apps into, each with its paste rule's
-// default. Library and the Pasting page read them from here.
+// default; ids are core's category names, and host/QuickSettings saves a
+// rule for each. Library and the Pasting page read them from here.
 var categories = [
-    { id: "terminal", label: "Terminals", icon: "square-terminal", examples: "Konsole, Ghostty, Kitty", method: "terminal" },
+    { id: "terminal", label: "Terminals", icon: "square-terminal", examples: "Konsole, Ghostty, Kitty", method: "terminal_paste" },
     { id: "browser", label: "Browsers", icon: "globe", examples: "Firefox, Chrome, Helium" },
     { id: "email", label: "Email apps", icon: "mail", examples: "Thunderbird, KMail" },
     { id: "office", label: "Office apps", icon: "file-text", examples: "LibreOffice Writer" },
@@ -34,7 +36,7 @@ var rows = [
       keywords: "ydotool uinput service setup permission" },
     { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
       label: "Default paste", help: "How Speecher pastes unless a rule below says otherwise.",
-      value: "standard", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",
+      value: "standard_paste", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",
       options: pasteMethods },
     { id: "outputFormat", page: "pasting", section: "Delivery", kind: "choice",
       label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it.",
@@ -43,12 +45,12 @@ var rows = [
     { id: "restoreClipboardAfterTyping", page: "pasting", section: "Delivery", kind: "toggle",
       label: "Restore the clipboard after pasting",
       help: "If Speecher can't confirm the paste, your dictation stays on the clipboard.",
-      value: true, keywords: "clipboard restore keep previous copy" },
+      value: false, keywords: "clipboard restore keep previous copy" },
 
     { id: "applicationPasteRules", page: "pasting", section: "Rules for single apps", kind: "custom",
       label: "Rules for single apps",
       help: "Paste differently into one app, named by its exact desktop ID, such as org.kde.konsole.",
-      keywords: "app specific per-app paste rule application id override" },
+      value: [], keywords: "app specific per-app paste rule application id override" },
     { id: "appRecognitionRules", page: "pasting", section: "Application recognition", kind: "custom",
       label: "Application recognition",
       help: "Your matches come first. Each sets the app type for paste rules, the Writing Profile, or both.",

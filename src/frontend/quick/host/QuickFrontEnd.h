@@ -6,6 +6,7 @@
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "frontend/quick/host/QuickTranscription.h"
+#include "frontend/quick/host/QuickSystem.h"
 
 #include <QObject>
 #include <QPointer>
@@ -68,6 +69,7 @@ private:
     QuickDictation m_dictation;
     QuickUpdates m_updates;
     QuickTranscription m_transcription;
+    QuickSystem m_system;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

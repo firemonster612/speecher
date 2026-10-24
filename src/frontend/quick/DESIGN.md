@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates` and `Transcription` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates` and `Transcription` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription` and `System` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription` and `System` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -36,9 +36,18 @@ Backend is the C++ types plus the mocks not yet replaced.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
-  (`host/QuickUpdates`) and `Transcription` (`host/QuickTranscription`).
-  Placeholders until their wiring PRs: `Insights`, `Audio`, `Models`,
-  `Library`, `Accounts` and `System`.
+  (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`) and
+  `System` (`host/QuickSystem`). Placeholders until their wiring PRs:
+  `Insights`, `Audio`, `Models`, `Library` and `Accounts`.
+- `System.checks` are `{id, state, reason, fix}`; `Health` (health.js) words
+  each by id and reason, and `System.fix(id)` runs the fix. The virtual
+  keyboard turns on only after its typing test (`VirtualKeyboardTest`) puts
+  core's test text in the field. The phone code lives from
+  `startPhoneTransfer()` to `stopPhoneTransfer()`, and `QrCode` draws it
+  through the host's `image://qr` provider. `uninstall` reports in
+  `System.removal`. The paste rules are Settings rows: `globalPasteRule`,
+  `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
+  `applicationPasteRules`, a list of `{app, method, enabled}`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's

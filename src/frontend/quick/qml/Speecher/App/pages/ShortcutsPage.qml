@@ -66,7 +66,7 @@ Page {
 
     Section {
         title: Schema.row("pauseShortcut").section
-        caption: System.shortcutsText.whileDictatingCaption
+        caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
         SchemaRow { rowId: "pauseShortcut" }
         SchemaRow { rowId: "cancelShortcut" }
     }
@@ -76,8 +76,10 @@ Page {
         // The same check as General's, and where the desktop lists the shortcuts.
         HealthRow {
             rowId: "globalShortcuts"
+            // Where Speecher knows the desktop's own shortcut settings.
             Button {
-                text: System.shortcutsText.systemSettings
+                visible: System.canOpenShortcutSettings
+                text: "System settings"
                 size: "small"
                 trailingIcon: "external-link"
                 anchors.verticalCenter: parent.verticalCenter

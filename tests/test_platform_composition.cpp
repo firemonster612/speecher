@@ -26,6 +26,7 @@
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickStatus.h"
 
 #include <QQmlComponent>
@@ -961,6 +962,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The step's check is System's.
+        QuickSystem system(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);

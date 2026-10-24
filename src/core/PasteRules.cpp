@@ -102,6 +102,33 @@ PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
     return {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true};
 }
 
+const PasteRule *findPasteRule(const QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)
+{
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == scope && rule.match == match) {
+            return &rule;
+        }
+    }
+    return nullptr;
+}
+
+void setPasteRule(QList<PasteRule> &rules, PasteRuleScope scope, const QString &match, PasteMethod method)
+{
+    for (PasteRule &rule : rules) {
+        if (rule.scope == scope && rule.match == match) {
+            rule.method = method;
+            rule.enabled = true;
+            return;
+        }
+    }
+    rules.append({scope, match, method, true});
+}
+
+void removePasteRule(QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)
+{
+    rules.removeIf([scope, &match](const PasteRule &rule) { return rule.scope == scope && rule.match == match; });
+}
+
 QStringList validatePasteRules(const QList<PasteRule> &rules)
 {
     QSet<QString> applicationIds;

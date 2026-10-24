@@ -597,10 +597,14 @@ set(SPEECHER_APP_HEADERS
 
 set(SPEECHER_APP_LINUX_SOURCES
   src/app/LinuxComposition.cpp
+  src/app/SpeecherRemoval.cpp
+  src/app/VirtualKeyboardSetup.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
   src/app/LinuxComposition.h
+  src/app/SpeecherRemoval.h
+  src/app/VirtualKeyboardSetup.h
 )
 
 set(SPEECHER_APP_WIN_SOURCES
@@ -1388,6 +1392,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_dictation.cpp
       tests/test_quick_updates.cpp
       tests/test_quick_transcription.cpp
+      tests/test_quick_system.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1425,7 +1430,7 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
-    quick_transcription)
+    quick_transcription quick_system)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)
