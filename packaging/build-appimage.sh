@@ -282,8 +282,7 @@ copy_qml_module() {
   find "$qt_qml/$name" -maxdepth 1 -type f -exec cp -aL -t "$APPDIR_PATH/usr/qml/$name/" {} +
 }
 
-for module in QML QtQml QtQml/Models QtQml/WorkerScript \
-              QtQuick QtQuick/Templates QtQuick/Window QtQuick/Effects QtQuick/Shapes; do
+for module in $(grep -v '^#' "$ROOT_DIR/packaging/qt-qml-modules.txt"); do
   copy_qml_module "$module"
 done
 

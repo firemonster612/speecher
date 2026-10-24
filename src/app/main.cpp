@@ -14,10 +14,10 @@
 #include "app/TrayIcon.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #ifdef Q_OS_MACOS
-#include "platform/mac/MacReopen.h"
+#include "platform/mac/MacOpenRequests.h"
 #endif
 #ifdef Q_OS_WIN
-#include "platform/win/WinSessionEnd.h"
+#include "platform/win/WinBroadcasts.h"
 #endif
 
 #include <QApplication>
@@ -603,11 +603,14 @@ int main(int argc, char **argv)
     // After the socket, so a launch that only hands its command to the
     // running instance never builds a QML engine. Opens no window until the
     // controller asks for one.
-    QuickFrontEnd frontEnd(&controller);
+    QuickFrontEnd frontEnd(&controller, &tray);
 #ifdef Q_OS_MACOS
     // A click on the Dock icon, or opening Speecher again, brings up Main, as
     // a second launch does elsewhere.
     mac::onReopen(&controller, [&controller] { controller.showMain(); });
+    // Files take the command line's route, so a file opened before setup is
+    // finished waits for setup the same way.
+    mac::onOpenFile(&controller, [&controller](const QString &path) { controller.showTranscribeFiles({path}); });
 #endif
 
     if (opensSetupAtLaunch(decision, controller.setupPending())) {

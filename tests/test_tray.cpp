@@ -9,6 +9,10 @@
 #include <QMenu>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
+#ifdef Q_OS_WIN
+#include <QImage>
+#include <QSettings>
+#endif
 
 using namespace speecher;
 
@@ -100,6 +104,36 @@ private slots:
         QVERIFY(toggle->isEnabled());
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher"));
     }
+
+#ifdef Q_OS_WIN
+    // The listening icon is a glyph in the taskbar's text colour, which can
+    // differ from the apps' theme, not a themed icon in the apps' colours.
+    void listeningIconTakesTheTaskbarColour()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        auto *icon = tray.findChild<QSystemTrayIcon *>();
+        const QSettings personalize(
+            QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            QSettings::NativeFormat);
+        const QRgb taskbarText =
+            personalize.value(QStringLiteral("SystemUsesLightTheme"), 1).toInt() != 0 ? qRgb(0, 0, 0) : qRgb(255, 255, 255);
+
+        emit controller.stateChanged(QStringLiteral("listening"));
+        const QImage image = icon->icon().pixmap(32).toImage();
+        int inked = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QRgb pixel = image.pixel(x, y);
+                if (qAlpha(pixel) == 255) {
+                    QCOMPARE(qRgb(qRed(pixel), qGreen(pixel), qBlue(pixel)), taskbarText);
+                    ++inked;
+                }
+            }
+        }
+        QVERIFY(inked > 0);
+    }
+#endif
 
     void quitActionRequestsApplicationQuit()
     {

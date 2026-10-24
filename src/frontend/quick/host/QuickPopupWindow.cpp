@@ -1,6 +1,9 @@
 #include "frontend/quick/host/QuickPopupWindow.h"
 
 #include "platform/PopupPositioner.h"
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacClickThrough.h"
+#endif
 
 #include <QDebug>
 #include <QDir>
@@ -65,7 +68,11 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
             framePresented(generation);
         }, Qt::QueuedConnection);
     }, Qt::DirectConnection);
+#ifdef Q_OS_WIN
+    connect(m_window, SIGNAL(shadowRegionChanged()), this, SLOT(applyInputRegion()));
+#else
     connect(m_window, SIGNAL(inputRegionChanged()), this, SLOT(applyInputRegion()));
+#endif
     connect(m_window, SIGNAL(emptyChanged()), this, SLOT(hideOnceEmpty()));
     // The window is sized before it shows, but a size that still changes
     // while it is up (a review answered by other keys than the configured
@@ -119,21 +126,32 @@ void QuickPopupWindow::framePresented(quint64 generation)
 }
 
 // The window is as big as the capsule ever grows; the rest of it is
-// transparent and must let clicks through to the app underneath. On Wayland
-// the mask is the surface's input region. On X11 it would be the window's
-// shape, cutting off the shadow and the capsule wherever it moves past the
-// region, so there only the input shape is set.
+// transparent and must let clicks through to the app underneath.
 void QuickPopupWindow::applyInputRegion()
 {
     const QRect region = m_window->property("inputRegion").toRectF().toAlignedRect();
+#if defined(Q_OS_MACOS)
+    // Cocoa's mask clips drawing too, which cut the shadow off.
+    mac::takeClicksOnlyIn(m_window, region);
+#elif defined(Q_OS_WIN)
+    // The mask is the window region, which clips drawing too, so it takes in
+    // the shadow. A click on the shadow, a ring 20 pixels wide at the sides,
+    // 12 above the capsule and 28 below it, stays with the popup.
+    m_window->setMask(QRegion(m_window->property("shadowRegion").toRectF().toAlignedRect()));
+#else
 #ifdef SPEECHER_WITH_X11
-    // By name: offscreen also answers to QX11Application, with no display.
+    // On X11 the mask would be the window's shape, cutting off the shadow and
+    // the capsule wherever it moves past the region, so only the input shape
+    // is set. By name: offscreen also answers to QX11Application, with no
+    // display.
     if (QGuiApplication::platformName() == QLatin1String("xcb")) {
         setX11InputShape(qGuiApp->nativeInterface<QNativeInterface::QX11Application>()->display(), *m_window, region);
         return;
     }
 #endif
+    // On Wayland the mask is the surface's input region.
     m_window->setMask(QRegion(region));
+#endif
 }
 
 void QuickPopupWindow::hideOnceEmpty()

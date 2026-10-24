@@ -8,22 +8,18 @@ DMG_PATH="${1:?Usage: packaging/macos/verify-dmg.sh DMG}"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/speecher-verify-dmg.XXXXXX")"
 MOUNT_POINT="$WORK_DIR/mount"
 APP=""
-# Main opens at launch on a profile that has finished setup, so this run
-# marks it finished and puts the profile's own value back afterwards.
+# The run gets a profile of its own, marked as having finished setup so that
+# Main opens at launch; the person's own is set aside and put back after.
 SETTINGS_DOMAIN=com.io-github-firemonster612.speecher
-SETUP_COMPLETED="$(defaults read "$SETTINGS_DOMAIN" app.setupCompleted 2>/dev/null || true)"
+PROFILE_BACKUP="$WORK_DIR/profile.plist"
 cleanup() {
   if [[ -n "$APP" ]]; then
     kill "$APP" 2>/dev/null || true
     wait "$APP" 2>/dev/null || true
   fi
-  # defaults reads a bool as 1 or 0 and writes one as true or false.
-  if [[ "$SETUP_COMPLETED" == 1 ]]; then
-    defaults write "$SETTINGS_DOMAIN" app.setupCompleted -bool true
-  elif [[ "$SETUP_COMPLETED" == 0 ]]; then
-    defaults write "$SETTINGS_DOMAIN" app.setupCompleted -bool false
-  else
-    defaults delete "$SETTINGS_DOMAIN" app.setupCompleted 2>/dev/null || true
+  if [[ -f "$PROFILE_BACKUP" ]]; then
+    defaults delete "$SETTINGS_DOMAIN" 2>/dev/null || true
+    defaults import "$SETTINGS_DOMAIN" "$PROFILE_BACKUP"
   fi
   hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
   rm -rf "$WORK_DIR"
@@ -32,9 +28,19 @@ trap cleanup EXIT
 mkdir "$MOUNT_POINT" "$WORK_DIR/tmp"
 hdiutil attach "$DMG_PATH" -readonly -nobrowse -noautoopen -mountpoint "$MOUNT_POINT" -quiet
 
+# The licenses of the fonts the UI carries.
+for license in LICENSE-AtkinsonHyperlegibleNext.txt LICENSE-Lucide.txt; do
+  if [[ ! -f "$MOUNT_POINT/speecher.app/Contents/Resources/$license" ]]; then
+    echo "The app bundle is missing $license." >&2
+    exit 1
+  fi
+done
+
+defaults export "$SETTINGS_DOMAIN" "$PROFILE_BACKUP"
+defaults delete "$SETTINGS_DOMAIN" 2>/dev/null || true
+defaults write "$SETTINGS_DOMAIN" app.setupCompleted -bool true
 # SPEECHER_GRAB_MAIN_WINDOW saves Main once it is shown. Its own TMPDIR gives
 # it its own socket, apart from a Speecher already running.
-defaults write "$SETTINGS_DOMAIN" app.setupCompleted -bool true
 SHOT="$WORK_DIR/main.png"
 LOG="$HOME/Library/Caches/io.github.firemonster612/speecher/speecher.log"
 LOG_LINES="$( (cat "$LOG" 2>/dev/null || true) | wc -l)"

@@ -3,6 +3,7 @@
 #include <functional>
 
 class QObject;
+class QString;
 
 namespace speecher::mac {
 
@@ -11,5 +12,10 @@ namespace speecher::mac {
 // becoming active, which it also does for every other activation. Lasts
 // until context is destroyed; reopen runs on the main thread.
 void onReopen(QObject *context, std::function<void()> reopen);
+
+// Calls open with each file macOS asks Speecher to open: audio opened with
+// Speecher from Finder, or dropped on its Dock icon. Lasts until context is
+// destroyed; open runs on the main thread.
+void onOpenFile(QObject *context, std::function<void(const QString &path)> open);
 
 } // namespace speecher::mac

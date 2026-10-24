@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/PhoneTransfer.h"
 #include "app/PlatformComposition.h"
+#include "app/TrayIcon.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
@@ -108,9 +109,10 @@ void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
 
 } // namespace
 
-QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
+QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_tray(tray)
     , m_settings(controller)
     , m_appearance(controller)
     , m_audio(controller)
@@ -253,7 +255,10 @@ void QuickFrontEnd::alert()
 
 void QuickFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
-    qInfo().noquote() << "Notification, not shown yet:" << title << "-" << message << "(page" << pageId + ")";
+    if ((m_main && m_main->isVisible()) || (m_setup && m_setup->isVisible())) {
+        return;
+    }
+    m_tray->showMessage(title, message, [this, pageId] { showPage(pageId); });
 }
 
 void QuickFrontEnd::finishSetup()

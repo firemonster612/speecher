@@ -501,9 +501,10 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacGlobalShortcutBinder.mm
   src/platform/mac/MacKeyCode.mm
   src/platform/mac/MacMediaController.cpp
+  src/platform/mac/MacClickThrough.mm
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
-  src/platform/mac/MacReopen.mm
+  src/platform/mac/MacOpenRequests.mm
   src/platform/mac/MacWindowBackdrop.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
@@ -516,10 +517,11 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacSessionKeyGrab.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
+  src/platform/mac/MacClickThrough.h
   src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h
-  src/platform/mac/MacReopen.h
+  src/platform/mac/MacOpenRequests.h
   src/platform/mac/MacWindowBackdrop.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
@@ -538,7 +540,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinMediaController.cpp
   src/platform/win/WinRawKeyboard.cpp
   src/platform/win/WinScreenshotContextProvider.cpp
-  src/platform/win/WinSessionEnd.cpp
+  src/platform/win/WinBroadcasts.cpp
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
@@ -555,7 +557,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
   src/platform/win/WinMediaController.h
   src/platform/win/WinRawKeyboard.h
   src/platform/win/WinScreenshotContextProvider.h
-  src/platform/win/WinSessionEnd.h
+  src/platform/win/WinBroadcasts.h
   src/platform/win/WinSingleKeyShortcutBinder.h
   src/platform/win/WinSystemAudioInput.h
   src/platform/win/WinTargetProvider.h
@@ -1087,10 +1089,18 @@ if(WIN32)
   )
 endif()
 
+# The licenses of the fonts the UI carries in the binary. The Windows
+# installer copies the same two files.
+set(SPEECHER_QUICK_FONT_LICENSES
+  src/frontend/quick/assets/fonts/LICENSE-AtkinsonHyperlegibleNext.txt
+  src/frontend/quick/assets/icons/LICENSE-Lucide.txt
+)
+
 if(APPLE)
   find_program(SPEECHER_DITTO_EXECUTABLE ditto REQUIRED)
   set(SPEECHER_MACOS_RESOURCES
     packaging/macos/speecher.icns
+    ${SPEECHER_QUICK_FONT_LICENSES}
   )
   if(SPEECHER_WITH_LOCAL_SPEECH)
     list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
@@ -1382,11 +1392,7 @@ if(UNIX AND NOT APPLE)
   if(WEBRTC_APM_FOUND)
     install(FILES packaging/webrtc-audio-processing-licenses.txt DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   endif()
-  # The fonts the UI carries in the binary.
-  install(FILES
-    src/frontend/quick/assets/fonts/LICENSE-AtkinsonHyperlegibleNext.txt
-    src/frontend/quick/assets/icons/LICENSE-Lucide.txt
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
+  install(FILES ${SPEECHER_QUICK_FONT_LICENSES} DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
@@ -1446,31 +1452,33 @@ if(SPEECHER_BUILD_TESTS)
   target_link_libraries(speecher_tests PRIVATE
     speecher_app speecher_tray Qt6::Widgets Qt6::Test speecher_monocypher
   )
-  target_sources(speecher_tests PRIVATE tests/test_tray.cpp)
+  target_sources(speecher_tests PRIVATE
+    tests/test_tray.cpp
+    tests/test_quick_settings.cpp
+    tests/test_quick_appearance.cpp
+    tests/test_quick_dictation.cpp
+    tests/test_quick_updates.cpp
+    tests/test_quick_transcription.cpp
+    tests/test_quick_system.cpp
+    tests/test_quick_models.cpp
+    tests/test_quick_insights.cpp
+    tests/test_quick_accounts.cpp
+    tests/test_quick_audio.cpp
+    tests/test_quick_library.cpp
+    src/frontend/quick/host/QuickFrontEnd.cpp
+    src/frontend/quick/host/QuickFrontEnd.h
+    src/frontend/quick/host/QuickPopupWindow.cpp
+    src/frontend/quick/host/QuickPopupWindow.h
+  )
+  # The Quick suites load the UI's QML over the C++ Backend; Qt's own
+  # QML modules load from the shared Qt, as in the app.
+  target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
+  set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
   if(UNIX AND NOT APPLE)
     target_sources(speecher_tests PRIVATE
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
-      tests/test_quick_settings.cpp
-      tests/test_quick_appearance.cpp
-      tests/test_quick_dictation.cpp
-      tests/test_quick_updates.cpp
-      tests/test_quick_transcription.cpp
-      tests/test_quick_system.cpp
-      tests/test_quick_models.cpp
-      tests/test_quick_insights.cpp
-      tests/test_quick_accounts.cpp
-      tests/test_quick_audio.cpp
-      tests/test_quick_library.cpp
-      src/frontend/quick/host/QuickFrontEnd.cpp
-      src/frontend/quick/host/QuickFrontEnd.h
-      src/frontend/quick/host/QuickPopupWindow.cpp
-      src/frontend/quick/host/QuickPopupWindow.h
     )
-    # The Quick suites load the UI's QML over the C++ Backend; Qt's own
-    # QML modules load from the shared Qt, as in the app.
-    target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
-    set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
     # The KWin blur test runs a compositor of its own.
     pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
     if(SPEECHER_KWIN_BLUR_FOUND AND WAYLAND_SERVER_FOUND)
@@ -1485,6 +1493,17 @@ if(SPEECHER_BUILD_TESTS)
     provider_registry
     platform_composition
     tray
+    quick_settings
+    quick_appearance
+    quick_dictation
+    quick_updates
+    quick_transcription
+    quick_system
+    quick_models
+    quick_insights
+    quick_accounts
+    quick_audio
+    quick_library
     platform_live
     single_instance_ipc
     delivery
@@ -1505,8 +1524,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES keywatch helper_install quick_settings quick_appearance quick_dictation quick_updates
-    quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio quick_library)
+    list(APPEND SPEECHER_TEST_SUITES keywatch helper_install)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

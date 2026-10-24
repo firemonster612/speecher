@@ -3,6 +3,8 @@
 #include <QMenu>
 #include <QObject>
 
+#include <functional>
+
 class QAction;
 class QSystemTrayIcon;
 
@@ -23,6 +25,10 @@ class TrayIcon final : public QObject {
 public:
     explicit TrayIcon(ApplicationController *controller, QObject *parent = nullptr);
 
+    // A system notification from the icon. Clicking it runs clicked, which
+    // replaces the previous notification's.
+    void showMessage(const QString &title, const QString &message, std::function<void()> clicked);
+
 private:
     void applyState(const QString &stateName);
 
@@ -30,6 +36,7 @@ private:
     QMenu m_menu;
     QSystemTrayIcon *m_tray;
     QAction *m_toggleAction;
+    std::function<void()> m_messageClicked;
 };
 
 } // namespace speecher

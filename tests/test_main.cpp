@@ -109,9 +109,6 @@ int main(int argc, char **argv)
     if (selected("provider_registry")) result |= runProviderRegistryTests(argc, argv);
     if (selected("platform_composition")) result |= runPlatformCompositionTests(argc, argv);
     if (selected("tray")) result |= runTrayTests(argc, argv);
-#ifdef Q_OS_LINUX
-    if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
-    if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
     if (selected("quick_settings")) result |= runQuickSettingsTests(argc, argv);
     if (selected("quick_appearance")) result |= runQuickAppearanceTests(argc, argv);
     if (selected("quick_dictation")) result |= runQuickDictationTests(argc, argv);
@@ -123,6 +120,9 @@ int main(int argc, char **argv)
     if (selected("quick_accounts")) result |= runQuickAccountsTests(argc, argv);
     if (selected("quick_audio")) result |= runQuickAudioTests(argc, argv);
     if (selected("quick_library")) result |= runQuickLibraryTests(argc, argv);
+#ifdef Q_OS_LINUX
+    if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
+    if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

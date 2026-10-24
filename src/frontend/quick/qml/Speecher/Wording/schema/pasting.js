@@ -1,9 +1,11 @@
 .pragma library
 
 // Ids are core's paste methods; inherit is no rule of the row's own.
+// macOS pastes with ⌘V everywhere, terminals included.
+var mac = Qt.platform.os === "osx";
 var pasteMethods = [
-    { id: "standard_paste", label: "Standard paste", help: "Presses Ctrl+V.", icon: "clipboard-paste" },
-    { id: "terminal_paste", label: "Terminal paste", help: "Presses Ctrl+Shift+V.", icon: "square-terminal" },
+    { id: "standard_paste", label: "Standard paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+V.", icon: "clipboard-paste" },
+    { id: "terminal_paste", label: "Terminal paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+Shift+V.", icon: "square-terminal" },
     { id: "direct_insert", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
     { id: "clipboard_only", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
 ];

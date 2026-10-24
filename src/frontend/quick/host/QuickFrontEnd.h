@@ -24,6 +24,7 @@ namespace speecher {
 
 class ApplicationController;
 class QuickPopupWindow;
+class TrayIcon;
 
 // The Qt Quick UI, shown by the daemon in its own process
 // (docs/adr/0009-one-quick-ui-inside-the-daemon.md). It owns the one QML
@@ -31,13 +32,15 @@ class QuickPopupWindow;
 // window and the setup assistant when the controller asks: at most one of
 // each. Closing the main window hides it, and the daemon runs on; closing
 // the setup assistant ends it, finished or not. The dictation popup has its
-// own window, shown whenever the session asks, Main open or not. It attaches
-// itself to the controller and detaches before it goes.
+// own window, shown whenever the session asks, Main open or not.
+// Notifications come from the tray icon. It attaches itself to the controller
+// and detaches before it goes.
 class QuickFrontEnd final : public QObject, public AppFrontEnd {
     Q_OBJECT
 
 public:
-    explicit QuickFrontEnd(ApplicationController *controller, QObject *parent = nullptr);
+    // tray must outlive the front end.
+    QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent = nullptr);
     ~QuickFrontEnd() override;
 
     void showMainWindow() override;
@@ -49,7 +52,6 @@ public:
     void showTranscribeFiles(const QStringList &paths) override;
     void showDictationError(const QString &message, const PopupErrorAction &fix = {}) override;
     void alert() override;
-    // Logged: the daemon has no notification surface yet.
     void notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId) override;
 
 protected:
@@ -69,6 +71,7 @@ private:
     void setPage(const QString &pageId);
 
     ApplicationController *m_controller;
+    TrayIcon *m_tray;
     // Before the engine, which reads them until it goes.
     QuickSettings m_settings;
     QuickAppearance m_appearance;

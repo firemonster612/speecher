@@ -43,6 +43,10 @@ Copy-Item $Transcribe $AppDir
 Get-ChildItem $BuildDir -Filter "ggml*.dll" | Copy-Item -Destination $AppDir
 Copy-Item (Join-Path $BuildDir "transcribe.cpp-licenses.md") $AppDir
 Copy-Item (Join-Path $RootDir "THIRD_PARTY_NOTICES.md") $AppDir
+# The licenses of the fonts the UI carries in speecher.exe, as
+# SPEECHER_QUICK_FONT_LICENSES in CMakeLists.txt names them.
+Copy-Item (Join-Path $RootDir "src\frontend\quick\assets\fonts\LICENSE-AtkinsonHyperlegibleNext.txt") $AppDir
+Copy-Item (Join-Path $RootDir "src\frontend\quick\assets\icons\LICENSE-Lucide.txt") $AppDir
 
 $WinDeployQt = (Get-Command windeployqt.exe).Source
 # The Qt Quick UI's own QML modules are compiled into speecher.exe;
@@ -84,9 +88,10 @@ if (-not (Test-Path $OffscreenPlugin)) {
 }
 New-Item (Join-Path $AppDir "platforms") -ItemType Directory -Force | Out-Null
 Copy-Item $OffscreenPlugin (Join-Path $AppDir "platforms") -Force
-foreach ($Module in "QtQml", "QtQuick", "QtQuick\Templates", "QtQuick\Window", "QtQuick\Effects", "QtQuick\Shapes") {
-    if (-not (Test-Path (Join-Path $AppDir "qml\$Module\qmldir"))) {
-        throw "windeployqt did not deploy the $Module QML module the UI imports"
+# The Qt QML modules the UI loads.
+foreach ($Module in Get-Content (Join-Path $RootDir "packaging\qt-qml-modules.txt")) {
+    if ($Module -and -not $Module.StartsWith("#") -and -not (Test-Path (Join-Path $AppDir "qml\$Module\qmldir"))) {
+        throw "windeployqt did not deploy the $Module QML module the UI loads"
     }
 }
 # windeployqt brings it along with QtNetwork; without it Speecher can't tell

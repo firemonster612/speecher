@@ -20,9 +20,16 @@ OUTPUT_DMG="$BUILD_DIR/speecher.dmg"
 LOG="$BUILD_DIR/speecher-dmg.log"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKGROUND="$SCRIPT_DIR/dmg-background.png"
+# The checkout, which a copy of this script kept elsewhere is pointed at.
+SOURCE_DIR="${SPEECHER_SOURCE_DIR:-$SCRIPT_DIR/../..}"
 # The Qt Quick UI's own QML modules are compiled into Speecher; macdeployqt
 # reads their imports from here to bundle the Qt modules they need.
-QML_DIR="$SCRIPT_DIR/../../src/frontend/quick/qml"
+QML_DIR="$SOURCE_DIR/src/frontend/quick/qml"
+QT_QML_MODULES="$SOURCE_DIR/packaging/qt-qml-modules.txt"
+if [[ ! -d "$QML_DIR" || ! -f "$QT_QML_MODULES" ]]; then
+  echo "No Speecher checkout at $SOURCE_DIR; set SPEECHER_SOURCE_DIR to one." >&2
+  exit 1
+fi
 
 if [[ ! -d "$SOURCE_APP" ]]; then
   echo "App bundle not found: $SOURCE_APP" >&2
@@ -74,6 +81,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Prints the libraries BINARY loads, leaving out its own install name. otool
+# heads its output, and each architecture of a universal binary, with a line
+# ending in a colon; the libraries are indented.
+libraries_loaded_by() {
+  local install_name
+  install_name="$(otool -D "$1" | grep -v ':$' || true)"
+  otool -L "$1" | awk '/^\t/ { print $1 }' | grep -v -x -F -e "$install_name" | sort -u || true
+}
+# Prints, NUL-separated, Speecher and every library and plugin in the staged
+# bundle, Qt's frameworks included.
+bundle_binaries() {
+  local contents="$STAGING_DIR/speecher.app/Contents"
+  printf '%s\0' "$contents/MacOS/speecher"
+  find "$contents/Frameworks" "$contents/PlugIns" "$contents/Resources" -type f -name '*.dylib' -print0
+  find "$contents/Frameworks" -path '*/Qt*.framework/Versions/A/Qt*' -type f -print0
+}
+
 step "Copying the app bundle"
 mkdir -p "$STAGING_DIR/.background"
 run_logged "Copying the app bundle" ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
@@ -92,9 +116,42 @@ step "Bundling Qt into the app (the slow part)"
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY" \
   -qmldir="$QML_DIR"
 # macdeployqt copies an imported QML module's whole directory, so QtQuick
-# brings QtQuick.LocalStorage, and with it Qt SQL's database drivers, some of
-# which load client libraries from outside the bundle. Speecher uses no SQL.
+# brings Controls and its styles, Dialogs, LocalStorage and the rest. Only
+# the modules the UI loads stay: a directory goes unless it is one of them or
+# holds one.
+QML_ROOT="$STAGING_DIR/speecher.app/Contents/Resources/qml"
+KEPT_QML="$WORK_DIR/kept-qml.txt"
+grep -v '^#' "$QT_QML_MODULES" | sed "s|^|$QML_ROOT/|" > "$KEPT_QML"
+find "$QML_ROOT" -mindepth 1 -type d | sort -r | while IFS= read -r dir; do
+  if ! grep -q -x -F -e "$dir" "$KEPT_QML" && ! grep -q -F -e "$dir/" "$KEPT_QML"; then
+    rm -rf "$dir"
+  fi
+done
+# A module's plugin lives in PlugIns/quick, linked from the module's
+# directory, so the plugins no link is left to go too.
+LINKED_PLUGINS="$(find "$QML_ROOT" -type l -name '*.dylib' -exec basename {} \;)"
+for plugin in "$STAGING_DIR/speecher.app/Contents/PlugIns/quick"/*.dylib; do
+  if ! grep -q -x -F -e "$(basename "$plugin")" <<<"$LINKED_PLUGINS"; then
+    rm -f "$plugin"
+  fi
+done
+# The plugins macdeployqt deploys for Qt SQL, which LocalStorage brought:
+# its database drivers, some of which load client libraries from outside the
+# bundle. Speecher uses no SQL.
 rm -rf "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers"
+# Then the Qt frameworks nothing left in the bundle loads, which only the
+# dropped modules did. Dropping one can free another.
+while :; do
+  LOADED="$(bundle_binaries | while IFS= read -r -d '' binary; do libraries_loaded_by "$binary"; done)"
+  UNUSED=()
+  for framework in "$STAGING_DIR/speecher.app/Contents/Frameworks"/Qt*.framework; do
+    if ! grep -q -F -e "/$(basename "$framework")/" <<<"$LOADED"; then
+      UNUSED+=("$framework")
+    fi
+  done
+  [[ ${#UNUSED[@]} -eq 0 ]] && break
+  rm -rf "${UNUSED[@]}"
+done
 
 step "Verifying the bundled libraries"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
@@ -115,34 +172,23 @@ if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqsc
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
   exit 1
 fi
-for module in QtQml QtQuick QtQuick/Templates QtQuick/Window QtQuick/Effects QtQuick/Shapes; do
-  if [[ ! -f "$STAGING_DIR/speecher.app/Contents/Resources/qml/$module/qmldir" ]]; then
-    echo "macdeployqt did not bundle the $module QML module the UI imports." >&2
+while IFS= read -r module; do
+  if [[ ! -f "$module/qmldir" ]]; then
+    echo "macdeployqt did not bundle the QML module the UI loads at ${module#"$STAGING_DIR/"}." >&2
     exit 1
   fi
-done
+done < "$KEPT_QML"
 # macdeployqt also copies libraries from outside Qt, such as
 # webrtc-audio-processing, into Frameworks; neither Speecher nor a library or
 # plugin it bundles may still load one from where the build found it.
-# Prints what BINARY loads from outside the bundle and the system, leaving out
-# its own install name. otool heads its output, and each architecture of a
-# universal binary, with a line ending in a colon; the libraries are indented.
-libraries_outside_bundle() {
-  local install_name
-  install_name="$(otool -D "$1" | grep -v ':$' || true)"
-  otool -L "$1" | awk '/^\t/ { print $1 }' | grep -v -x -F -e "$install_name" \
-    | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' | sort -u || true
-}
 LOADS_OUTSIDE_BUNDLE=0
 while IFS= read -r -d '' binary; do
-  outside="$(libraries_outside_bundle "$binary")"
+  outside="$(libraries_loaded_by "$binary" | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' || true)"
   if [[ -n "$outside" ]]; then
     printf '%s loads from outside the bundle:\n%s\n' "${binary#"$STAGING_DIR/"}" "$outside" >&2
     LOADS_OUTSIDE_BUNDLE=1
   fi
-done < <(printf '%s\0' "$STAGING_DIR/speecher.app/Contents/MacOS/speecher"
-  find "$STAGING_DIR/speecher.app/Contents/Frameworks" "$STAGING_DIR/speecher.app/Contents/PlugIns" \
-    -type f -name '*.dylib' -print0)
+done < <(bundle_binaries)
 if [[ "$LOADS_OUTSIDE_BUNDLE" -ne 0 ]]; then
   exit 1
 fi

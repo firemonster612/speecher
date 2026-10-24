@@ -77,6 +77,28 @@ QQuickItem *capsuleOf(QQuickWindow *window)
     return window->findChild<QQuickItem *>(QStringLiteral("capsule"));
 }
 
+// The key a review's Replace names: the Mac keyboard's Return is Enter
+// elsewhere.
+#ifdef Q_OS_MACOS
+const QString replaceKey = QStringLiteral("Return");
+#else
+const QString replaceKey = QStringLiteral("Enter");
+#endif
+
+// Where the popup window takes the pointer. On Windows the mask takes in the
+// capsule's shadow too, 20 px at the sides, 12 above and 28 below; macOS has
+// no mask, and MacClickThrough is given the window's inputRegion.
+QRect pointerRect(QQuickWindow *window)
+{
+#if defined(Q_OS_MACOS)
+    return window->property("inputRegion").toRectF().toAlignedRect();
+#elif defined(Q_OS_WIN)
+    return window->mask().boundingRect().adjusted(20, 12, -20, -28);
+#else
+    return window->mask().boundingRect();
+#endif
+}
+
 QPoint centreOf(QQuickItem *item)
 {
     return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
@@ -238,8 +260,8 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
-    // Linux has no permission panel to open, so such an error has no button;
-    // cancel dismisses it.
+    // The popup opens no system permission panel, so such an error has no
+    // button; cancel dismisses it.
     void aPermissionErrorHasNoFixHereAndCancelDismissesIt()
     {
         ApplicationController controller(true);
@@ -420,7 +442,7 @@ private slots:
         QVERIFY(readAs(whole, {QStringLiteral("added")}).contains(QStringLiteral("slides")));
         QVERIFY(!review.value(QStringLiteral("summary")).toString().isEmpty());
         QCOMPARE(review.value(QStringLiteral("keepKeys")).toStringList(), QStringList{QStringLiteral("Esc")});
-        QCOMPARE(review.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{QStringLiteral("Enter")});
+        QCOMPARE(review.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{replaceKey});
         QCOMPARE(review.value(QStringLiteral("followUpKeys")).toStringList(),
                  (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Space")}));
         QCOMPARE(review.value(QStringLiteral("following")).toBool(), false);
@@ -603,7 +625,7 @@ private slots:
         QuickDictation dictation(&controller);
         const QVariantMap idle = dictation.property("review").toMap();
         QCOMPARE(idle.value(QStringLiteral("keepKeys")).toStringList(), QStringList{QStringLiteral("Esc")});
-        QCOMPARE(idle.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{QStringLiteral("Enter")});
+        QCOMPARE(idle.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{replaceKey});
         QCOMPARE(idle.value(QStringLiteral("followUpKeys")).toStringList(), shortcutKeys(controller.globalShortcutDisplay()));
 
         // The popup's offers read Status and Updates, as the host always has them.
@@ -657,11 +679,11 @@ private slots:
         QVERIFY(window);
         QQuickItem *capsule = capsuleOf(window);
         QVERIFY(capsule);
-        // The mask covers where it is drawn, its scale and lift included,
-        // to within the pixel the region rounds out to.
+        // The pointer is taken where it is drawn, its scale and lift
+        // included, to within the pixel the region rounds out to.
         const auto masksDrawn = [window, capsule] {
             const QRectF drawn = capsule->mapRectToScene(QRectF(0, 0, capsule->width(), capsule->height()));
-            const QRect mask = window->mask().boundingRect();
+            const QRect mask = pointerRect(window);
             return qAbs(mask.left() - drawn.left()) <= 1 && qAbs(mask.top() - drawn.top()) <= 1
                 && qAbs(mask.right() + 1 - drawn.right()) <= 1 && qAbs(mask.bottom() + 1 - drawn.bottom()) <= 1;
         };
@@ -685,9 +707,10 @@ private slots:
         QVERIFY(masksDrawn());
     }
 
-    // The window is as big as the popup ever grows; only the capsule, at
-    // the bottom centre inside the shadow's 32 px, takes the pointer.
-    void onlyTheCapsuleTakesThePointer()
+    // The window is as big as the popup ever grows; its mask follows the
+    // capsule, at the bottom centre inside the shadow's 32 px, so clicks
+    // beside it go through.
+    void theMaskFollowsTheCapsule()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
@@ -706,7 +729,18 @@ private slots:
         const auto capsuleIs = [window](int width, int height) {
             const QRegion mask = window->mask();
             const QRect capsule(QPoint((window->width() - width) / 2, window->height() - 32 - height), QSize(width, height));
+#if defined(Q_OS_MACOS)
+            // Cocoa's mask would clip the shadow; the window follows the
+            // pointer instead.
+            Q_UNUSED(capsule);
+            return mask.isEmpty();
+#elif defined(Q_OS_WIN)
+            // Windows' mask clips drawing too, so it takes in the shadow: 20
+            // px at the sides, 12 above and 28 below.
+            return mask == QRegion(capsule.adjusted(-20, -12, 20, 28));
+#else
             return mask == QRegion(capsule);
+#endif
         };
         // Listening with no words yet: the bare bar.
         QTRY_VERIFY(capsuleIs(280, 44));

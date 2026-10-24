@@ -129,6 +129,8 @@ Item {
     // room over it.
     readonly property rect touchable: offers.offering ? Qt.rect((width - widest) / 2, capsule.y - offerRoom, widest, capsule.height + offerRoom)
                                                       : capsule
+    // The capsule's shadow, which reaches past it.
+    readonly property alias shadow: shadow
 
     // As big as the capsule, or as it is while it grows or shrinks to the
     // target, so a scene that sizes to the popup never cuts it off.
@@ -171,6 +173,7 @@ Item {
         }
 
         RectangularShadow {
+            id: shadow
             anchors.fill: shell
             radius: shell.radius
             blur: 24

@@ -9,11 +9,11 @@ $InstallerPath = Resolve-Path $InstallerPath
 $InstallDir = Join-Path $env:TEMP "speecher-installer-test-$PID"
 $OriginalPath = $env:Path
 $OriginalPlatform = $env:QT_QPA_PLATFORM
-# Main opens at launch on a profile that has finished setup, so the check that
-# it opens marks the profile finished; the profile's own value goes back at
-# the end.
-$SetupKey = "HKCU:\Software\io.github.firemonster612\speecher\app"
-$OriginalSetupCompleted = (Get-ItemProperty $SetupKey -ErrorAction SilentlyContinue).setupCompleted
+# The runs here get a profile of their own; the person's own is set aside
+# and put back at the end.
+$ProfileKey = "HKCU\Software\io.github.firemonster612\speecher"
+$ProfileBackup = Join-Path $env:TEMP "speecher-profile-$PID.reg"
+$HadProfile = Test-Path "Registry::$ProfileKey"
 $App = $null
 
 # Starts the installed app and fails unless it is still running after startup.
@@ -43,6 +43,14 @@ function Get-PathEntryCount {
 }
 
 try {
+    if ($HadProfile) {
+        reg export $ProfileKey $ProfileBackup /y | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "reg export of $ProfileKey exited with $LASTEXITCODE"
+        }
+        Remove-Item "Registry::$ProfileKey" -Recurse -Force
+    }
+
     $Arguments = @(
         "/VERYSILENT",
         "/SUPPRESSMSGBOXES",
@@ -56,7 +64,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
+    foreach ($Required in "LICENSE-AtkinsonHyperlegibleNext.txt", "LICENSE-Lucide.txt", "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
@@ -142,9 +150,9 @@ try {
     $MainShot = Join-Path $env:TEMP "speecher-main-$PID.png"
     $Log = Join-Path $env:LOCALAPPDATA "io.github.firemonster612\speecher\cache\speecher.log"
     $LogLines = if (Test-Path $Log) { @(Get-Content $Log).Count } else { 0 }
-    if (-not (Test-Path $SetupKey)) {
-        New-Item $SetupKey -Force | Out-Null
-    }
+    # Main opens at launch on a profile that has finished setup.
+    $SetupKey = "Registry::$ProfileKey\app"
+    New-Item $SetupKey -Force | Out-Null
     Set-ItemProperty $SetupKey setupCompleted "true"
     $env:SPEECHER_GRAB_MAIN_WINDOW = $MainShot
     $App = Start-Process $Exe -PassThru
@@ -311,10 +319,10 @@ public static class RestartManager {
     }
     $env:Path = $OriginalPath
     $env:QT_QPA_PLATFORM = $OriginalPlatform
-    if ($null -eq $OriginalSetupCompleted) {
-        Remove-ItemProperty $SetupKey setupCompleted -ErrorAction SilentlyContinue
-    } else {
-        Set-ItemProperty $SetupKey setupCompleted $OriginalSetupCompleted
+    Remove-Item "Registry::$ProfileKey" -Recurse -Force -ErrorAction SilentlyContinue
+    if ($HadProfile) {
+        reg import $ProfileBackup 2>$null
+        Remove-Item $ProfileBackup
     }
     $Uninstaller = Join-Path $InstallDir "unins000.exe"
     if (Test-Path $Uninstaller) {

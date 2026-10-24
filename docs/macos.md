@@ -3,7 +3,8 @@
 `speecher.app` is one process: the daemon, with the same Qt Quick UI as on
 Linux inside it ([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Its
 menu bar item offers Open Speecher, Start or Stop dictation, Settings and
-Quit; a click on the Dock icon opens Speecher too. The dictation popup is a
+Quit; a click on the Dock icon opens Speecher too, and audio opened with
+Speecher in Finder opens its Transcribe page. The dictation popup is a
 non-activating panel, so the app being dictated into keeps the keyboard. The
 command line talks to the running app.
 
@@ -185,8 +186,6 @@ by nature.
 
 ## VM testing note
 
-The port was brought up in a QEMU macOS 26 (Tahoe) VM. Software-rendered
-vibrancy makes WindowServer extremely slow there; on real hardware the
-NSVisualEffectView sidebar and HUD popup composite normally. Eyeball the
-chrome (sidebar blur, popup glass, traffic-light inset) on a physical Mac
-before release.
+The Qt Quick UI was brought up in a QEMU macOS 26 (Tahoe) VM, which renders
+in software: Main and the popup draw slowly there, and their shadows and
+animations need checking on a physical Mac before release.

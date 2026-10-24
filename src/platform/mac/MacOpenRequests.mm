@@ -1,5 +1,7 @@
-#include "platform/mac/MacReopen.h"
+#include "platform/mac/MacOpenRequests.h"
 
+#include <QCoreApplication>
+#include <QFileOpenEvent>
 #include <QObject>
 #include <QTimer>
 
@@ -35,6 +37,36 @@
 
 namespace speecher::mac {
 
+namespace {
+
+// Qt's application delegate turns AppKit's application:openURLs: into a
+// QFileOpenEvent for the application object.
+class FileOpenFilter final : public QObject {
+public:
+    FileOpenFilter(QObject *context, std::function<void(const QString &)> open)
+        : QObject(context)
+        , m_open(std::move(open))
+    {
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::FileOpen) {
+            return QObject::eventFilter(watched, event);
+        }
+        const QString path = static_cast<QFileOpenEvent *>(event)->file();
+        if (!path.isEmpty()) {
+            m_open(path);
+        }
+        return true;
+    }
+
+private:
+    std::function<void(const QString &)> m_open;
+};
+
+} // namespace
+
 void onReopen(QObject *context, std::function<void()> reopen)
 {
     // The event manager does not retain its handlers.
@@ -52,6 +84,12 @@ void onReopen(QObject *context, std::function<void()> reopen)
                                                                           andEventID:kAEReopenApplication];
         [handler release];
     });
+}
+
+void onOpenFile(QObject *context, std::function<void(const QString &path)> open)
+{
+    // Parented to context, so the filter goes with it.
+    QCoreApplication::instance()->installEventFilter(new FileOpenFilter(context, std::move(open)));
 }
 
 } // namespace speecher::mac

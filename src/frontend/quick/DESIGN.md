@@ -2,8 +2,9 @@
 
 A Qt Quick (QML) front end for every platform, replacing the Qt Widgets, SwiftUI
 and WinUI front ends. The daemon shows it in its own process
-(`docs/adr/0009-one-quick-ui-inside-the-daemon.md`); on Linux it reads and
-writes the real settings, and every area runs on core's data.
+(`docs/adr/0009-one-quick-ui-inside-the-daemon.md`) on Linux, macOS and
+Windows. It reads and writes the real settings, and every area runs on core's
+data.
 
 ## Layout
 

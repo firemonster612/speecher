@@ -54,9 +54,6 @@ int runSettingsTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
 int runPlatformCompositionTests(int argc, char **argv);
 int runTrayTests(int argc, char **argv);
-#ifdef Q_OS_LINUX
-int runKeywatchTests(int argc, char **argv);
-int runHelperInstallTests(int argc, char **argv);
 int runQuickSettingsTests(int argc, char **argv);
 int runQuickAppearanceTests(int argc, char **argv);
 int runQuickDictationTests(int argc, char **argv);
@@ -68,6 +65,9 @@ int runQuickInsightsTests(int argc, char **argv);
 int runQuickAccountsTests(int argc, char **argv);
 int runQuickAudioTests(int argc, char **argv);
 int runQuickLibraryTests(int argc, char **argv);
+#ifdef Q_OS_LINUX
+int runKeywatchTests(int argc, char **argv);
+int runHelperInstallTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);
