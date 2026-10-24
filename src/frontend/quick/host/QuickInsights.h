@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QQmlEngine>
 #include <QTimer>
+#include <QUrl>
 #include <QVariant>
 
 namespace speecher {
@@ -83,14 +84,14 @@ public:
     // Deletes the kept history. False, with the history kept, when its file
     // could not be deleted.
     Q_INVOKABLE bool clear();
-    // The period's numbers as a few lines of text, on the clipboard.
-    Q_INVOKABLE void copyText();
+    // Puts Home's share text, which the page words, on the clipboard.
+    Q_INVOKABLE void copyText(const QString &text);
     // Puts Home's share picture, which the page draws, on the clipboard.
-    Q_INVOKABLE void copyImage(const QImage &image);
-    // Writes the period's numbers as JSON to a dated file in Documents,
-    // replacing that day's earlier export. The path written, or empty when
-    // the file could not be written.
-    Q_INVOKABLE QString saveJson();
+    // False, with nothing copied, for an empty picture.
+    Q_INVOKABLE bool copyImage(const QImage &image);
+    // Writes the period's numbers as JSON to a local file the page chose,
+    // replacing it. False when it could not be written.
+    Q_INVOKABLE bool saveJson(const QUrl &file);
     // The latest transcript, on the clipboard.
     Q_INVOKABLE void copyLatest();
 

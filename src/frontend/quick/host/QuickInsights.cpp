@@ -7,10 +7,8 @@
 
 #include <QClipboard>
 #include <QDebug>
-#include <QDir>
 #include <QGuiApplication>
 #include <QSaveFile>
-#include <QStandardPaths>
 
 #include <algorithm>
 #include <array>
@@ -60,30 +58,14 @@ QVariant optionalNumber(const std::optional<Number> &value)
     return value ? QVariant::fromValue(*value) : QVariant();
 }
 
-// The milestones either side of the all-time words: up to three passed, the
-// next with how far along it is, and one after it. Once every milestone is
-// passed, the last four.
-QVariantList milestoneList(const InsightsSummary &summary)
+QString milestoneState(Milestone::State state)
 {
-    const auto next = std::find_if(kWordMilestones.begin(), kWordMilestones.end(),
-                                   [&](int words) { return words > summary.allTimeWords; });
-    const qsizetype nextIndex = next - kWordMilestones.begin();
-    const qsizetype first = std::max<qsizetype>(0, nextIndex - 3);
-    const qsizetype end = std::min<qsizetype>(qsizetype(kWordMilestones.size()), nextIndex + 2);
-    QVariantList list;
-    for (qsizetype index = first; index < end; ++index) {
-        const int words = kWordMilestones[index];
-        const int from = index > 0 ? kWordMilestones[index - 1] : 0;
-        const QString state = index < nextIndex ? QStringLiteral("passed")
-            : index == nextIndex                ? QStringLiteral("next")
-                                                : QStringLiteral("later");
-        list.append(QVariantMap{
-            {QStringLiteral("words"), words},
-            {QStringLiteral("state"), state},
-            {QStringLiteral("progress"), std::clamp(double(summary.allTimeWords - from) / (words - from), 0.0, 1.0)},
-        });
+    switch (state) {
+    case Milestone::State::Passed: return QStringLiteral("passed");
+    case Milestone::State::Next: return QStringLiteral("next");
+    case Milestone::State::Later: break;
     }
-    return list;
+    return QStringLiteral("later");
 }
 
 QVariantMap summaryMap(const InsightsSummary &summary)
@@ -91,13 +73,14 @@ QVariantMap summaryMap(const InsightsSummary &summary)
     QVariantList apps;
     for (const AppShare &app : summary.apps) {
         apps.append(QVariantMap{{QStringLiteral("name"), app.name},
-                                {QStringLiteral("profile"), app.profileLabel},
+                                {QStringLiteral("otherApps"), app.otherApps},
+                                {QStringLiteral("profile"), app.profileName},
                                 {QStringLiteral("words"), app.words},
                                 {QStringLiteral("percent"), app.percent}});
     }
     QVariantList profiles;
     for (const ProfileShare &profile : summary.profiles) {
-        profiles.append(QVariantMap{{QStringLiteral("name"), profile.label},
+        profiles.append(QVariantMap{{QStringLiteral("name"), profile.name},
                                     {QStringLiteral("words"), profile.words},
                                     {QStringLiteral("percent"), profile.percent}});
     }
@@ -105,24 +88,29 @@ QVariantMap summaryMap(const InsightsSummary &summary)
     for (int count : summary.hourCounts) {
         hourCounts.append(count);
     }
-    QVariantList week;
-    for (bool active : summary.weekActivity) {
-        week.append(active);
+    QVariantList milestones;
+    for (const Milestone &milestone : summary.milestones) {
+        milestones.append(QVariantMap{{QStringLiteral("words"), milestone.words},
+                                      {QStringLiteral("state"), milestoneState(milestone.state)},
+                                      {QStringLiteral("progress"), milestone.progress}});
     }
+    const BookComparison &book = summary.bookComparison;
     return {
         // The period.
         {QStringLiteral("words"), summary.words},
         {QStringLiteral("dictations"), summary.dictations},
         {QStringLiteral("audioMs"), summary.audioMs},
-        {QStringLiteral("activeDays"), summary.activeDays},
         {QStringLiteral("averageAudioMs"), summary.averageAudioMs},
         {QStringLiteral("dictationsPerActiveDay"), summary.dictationsPerActiveDay},
         // Percent against the previous 7 or 30 days; null for the other
         // periods and when those days were empty.
         {QStringLiteral("wordsDelta"), optionalNumber(summary.wordsDelta)},
         {QStringLiteral("dictationsDelta"), optionalNumber(summary.dictationsDelta)},
-        // Core's sentence, as the exports carry it: "About half of Hamlet".
-        {QStringLiteral("bookComparison"), summary.bookComparison},
+        // { book, times }: the words are `times` the book's length (see
+        // core's BookComparison). Null without a book.
+        {QStringLiteral("bookComparison"),
+         book.book.isEmpty() ? QVariant()
+                             : QVariantMap{{QStringLiteral("book"), book.book}, {QStringLiteral("times"), book.times}}},
         {QStringLiteral("wordsPerMinute"), summary.wordsPerMinute},
         {QStringLiteral("typingWordsPerMinute"), summary.typingWordsPerMinute},
         {QStringLiteral("minutesSaved"), summary.minutesSavedVersusTyping},
@@ -132,27 +120,27 @@ QVariantMap summaryMap(const InsightsSummary &summary)
         {QStringLiteral("peakHour"), summary.peakHour},
         {QStringLiteral("busiestWeekday"), int(summary.busiestWeekday)},
         {QStringLiteral("hasHourData"), summary.hasHourData},
-        // [{ name, profile, words, percent }]: the top five, then core's
-        // "N other apps" fold, with no profile.
+        // [{ name, otherApps, profile, words, percent }]: the top five, then
+        // the fold of the others, where otherApps counts them. profile is the
+        // Writing Profile's name, empty when it was deleted unnamed.
         {QStringLiteral("apps"), apps},
-        // [{ name, words, percent }].
+        // [{ name, words, percent }], one per Writing Profile; name as apps' profile.
         {QStringLiteral("profiles"), profiles},
         // All time from here on. A streak lasts until the end of today.
         {QStringLiteral("streak"),
          QVariantMap{{QStringLiteral("current"), summary.currentStreak},
                      {QStringLiteral("best"), summary.bestStreak},
                      {QStringLiteral("bestEnd"), jsDate(summary.bestStreakEnd)},
+                     {QStringLiteral("bestEndsToday"), summary.bestStreakEndsToday},
                      {QStringLiteral("dictatedToday"), summary.weekActivity[summary.todayIndex]},
                      // The last run and the first day it was missed, while
                      // current is 0.
                      {QStringLiteral("brokenLength"), summary.brokenStreakLength},
-                     {QStringLiteral("brokenEnded"), jsDate(summary.brokenStreakEnded)},
-                     // Monday to Sunday of this week.
-                     {QStringLiteral("week"), week}}},
+                     {QStringLiteral("brokenEnded"), jsDate(summary.brokenStreakEnded)}}},
         {QStringLiteral("activeDaysLastYear"), summary.activeDaysLastYear},
         {QStringLiteral("allTimeWords"), summary.allTimeWords},
         // [{ words, state: passed|next|later, progress 0..1 }].
-        {QStringLiteral("milestones"), milestoneList(summary)},
+        {QStringLiteral("milestones"), milestones},
         {QStringLiteral("longest"),
          QVariantMap{{QStringLiteral("audioMs"), summary.longest.audioMs},
                      {QStringLiteral("words"), summary.longest.words},
@@ -185,6 +173,8 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     connect(controller, &ApplicationController::accessibilityStateChanged, this, &QuickInsights::refreshCorrections);
     connect(controller, &ApplicationController::lastTranscriptChanged, this, &QuickInsights::latestChanged);
     connect(controller, &ApplicationController::lastRecordChanged, this, &QuickInsights::latestChanged);
+    // The latest dictation's profile goes by its current name.
+    connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::latestChanged);
     connect(this, &QuickInsights::changed, this, &QuickInsights::heatLevelsChanged);
     connect(this, &QuickInsights::heatMeasureChanged, this, &QuickInsights::heatLevelsChanged);
 
@@ -328,7 +318,7 @@ QVariant QuickInsights::latest() const
                        {QStringLiteral("date"), QVariant()}};
     if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         latest[QStringLiteral("app")] = record->appName;
-        latest[QStringLiteral("profile")] = dictationProfileLabel(*record, m_controller->settings()->writingProfileSettings());
+        latest[QStringLiteral("profile")] = dictationProfileName(*record, m_controller->settings()->writingProfileSettings());
         latest[QStringLiteral("date")] = jsDate(record->finishedAt.date());
     }
     return latest;
@@ -339,33 +329,31 @@ bool QuickInsights::clear()
     return m_controller->clearInsights();
 }
 
-void QuickInsights::copyText()
+void QuickInsights::copyText(const QString &text)
 {
-    QGuiApplication::clipboard()->setText(insightsShareText(m_summary, m_range));
+    QGuiApplication::clipboard()->setText(text);
 }
 
-void QuickInsights::copyImage(const QImage &image)
+bool QuickInsights::copyImage(const QImage &image)
 {
     if (image.isNull()) {
         qWarning().noquote() << "Insights: the share picture came out empty; nothing copied";
-        return;
+        return false;
     }
     QGuiApplication::clipboard()->setImage(image);
+    return true;
 }
 
-QString QuickInsights::saveJson()
+bool QuickInsights::saveJson(const QUrl &file)
 {
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    const QString path =
-        QDir(folder).filePath(QStringLiteral("speecher-stats-%1.json").arg(m_today.toString(Qt::ISODate)));
-    QDir().mkpath(folder);
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(insightsJson(m_summary, m_range, m_today)) < 0
-        || !file.commit()) {
-        qWarning().noquote() << "Insights: could not save" << path << file.errorString();
-        return {};
+    const QString path = file.toLocalFile();
+    QSaveFile json(path);
+    if (!json.open(QIODevice::WriteOnly) || json.write(insightsJson(m_summary, m_range, m_today)) < 0
+        || !json.commit()) {
+        qWarning().noquote() << "Insights: could not save" << file.toString() << json.errorString();
+        return false;
     }
-    return path;
+    return true;
 }
 
 void QuickInsights::copyLatest()

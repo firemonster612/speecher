@@ -46,12 +46,18 @@ var share = {
     label: "Share",
     copyImage: "Copy image with stats",
     copyText: "Copy as text",
-    saveJson: "Save as JSON",
-    saved: "Saved to Documents",
+    saveJson: "Save as JSON…",
+    saved: "Saved",
     saveFailed: "Couldn't save",
-    saveFailedDetail: "Speecher couldn't write the stats to your Documents folder.",
+    saveFailedDetail: "Speecher couldn't write the stats to that file.",
+    copyFailed: "Couldn't copy",
+    copyFailedDetail: "Speecher couldn't draw the stats picture.",
+    saveTitle: "Save stats",
+    jsonFilter: "JSON files (*.json)",
     imageTitle: "My Speecher stats"
 }
+// "speecher-stats-2026-09-26.json"
+function jsonFileName(today) { return "speecher-stats-" + Qt.formatDate(today, "yyyy-MM-dd") + ".json" }
 
 function _words() { return Wording.Words }
 function _count(n, one, many) { return _words().count(n, one, many) }
@@ -89,6 +95,23 @@ function relativeDay(d, today) {
 }
 function periodName(period) { return periods.find(p => p.id === period).label }
 
+// A profile by its name; a profile deleted before records kept names has none.
+function profileName(name) { return name || "Deleted profile" }
+// An app row's name: the app, or the fold of the ones past the top five.
+function appName(app) { return app.otherApps ? _count(app.otherApps, "other app", "other apps") : app.name }
+
+// Core's BookComparison: the words are `times` the book's length.
+var _bookShares = [[1 / 4, "a quarter of"], [1 / 3, "a third of"], [1 / 2, "half of"], [3 / 4, "three-quarters of"],
+                   [1, "as long as"], [2, "twice the length of"], [3, "three times the length of"], [4, "four times the length of"]]
+// "About half of Hamlet"
+function bookText(s) {
+    if (!s.words) return "Nothing yet"
+    const c = s.bookComparison
+    if (!c) return "A few sentences so far"
+    const share = _bookShares.find(b => b[0] === c.times)
+    return "About " + (share ? share[1] : _num(c.times) + " times the length of") + " " + c.book
+}
+
 // "23% more than the previous 30 days", or nothing without a delta.
 function _delta(delta, period) {
     if (delta === null || delta === undefined) return ""
@@ -111,7 +134,7 @@ function streakNote(streak, today) {
 // The period's figures: [{ label, value, note }].
 function figures(s, period, today) {
     const rows = [
-        { label: "Words", value: _num(s.words), note: _sentence([s.bookComparison, _delta(s.wordsDelta, period)]) },
+        { label: "Words", value: _num(s.words), note: _sentence([bookText(s), _delta(s.wordsDelta, period)]) },
         { label: "Dictations", value: _num(s.dictations),
           note: _sentence([s.dictations ? _num(s.dictationsPerActiveDay, 1) + " a day when you dictate" : "", _delta(s.dictationsDelta, period)]) },
         { label: "Audio", value: audioText(s.audioMs),
@@ -162,10 +185,15 @@ function heatmapDescription(days, measure, activeDays) {
     return caption + " Busiest: " + Qt.formatDate(busiest.date, "MMM d, yyyy") + ", " + _dayValue(busiest, measure) + "."
 }
 
-// The Records card: [{ title, detail, value }].
+// The Records card: [{ title, detail, value }]. The longest streak shows
+// unless it is the one still going.
 function records(s, today) {
     const since = Math.round((today - s.firstDictation) / 86400000)
-    return [
+    const streak = s.streak.bestEndsToday && s.streak.current > 0 ? [] : [
+        { title: "Longest streak", detail: "Ended " + relativeDay(s.streak.bestEnd, today),
+          value: _count(s.streak.best, "day", "days") }
+    ]
+    return streak.concat([
         { title: "Longest dictation", value: clockText(s.longest.audioMs),
           detail: _count(s.longest.words, "word", "words") + " into " + s.longest.app + ", " + relativeDay(s.longest.date, today) },
         { title: "Busiest day", detail: _capitalized(relativeDay(s.busiestDay.date, today)),
@@ -174,7 +202,7 @@ function records(s, today) {
           value: _count(s.wordiestDay.words, "word", "words") },
         { title: "First dictation", detail: since === 0 ? "Today" : _count(since, "day", "days") + " ago",
           value: Qt.formatDate(s.firstDictation, "MMMM d, yyyy") }
-    ]
+    ])
 }
 
 // The Milestones card: [{ label, state, status, progress }].
@@ -193,15 +221,47 @@ function correctionsCaption(c) {
     if (!c.count) return "Fix a dictated word the same way twice and it appears here."
     return _count(c.count, "correction", "corrections") + " learned from edits you made after dictating."
 }
-function correctionsAction(c) { return !c.learning ? "Turn on learning" : c.count ? "Review learned corrections" : "" }
+// The card's button and the Vocabulary row it opens; no label, no button.
+function correctionsAction(c) {
+    if (!c.learning) return { label: "Turn on learning", row: "correctionLearningControl" }
+    if (c.count) return { label: "Review learned corrections", row: "learnedCorrections" }
+    return { label: "", row: "" }
+}
 
 // "27 words into Slack, today, Work profile"; the words alone when
 // insights did not record the dictation.
 function latestDetail(latest, today) {
     const parts = [_count(latest.words, "word", "words") + (latest.app ? " into " + latest.app : "")]
     if (latest.date) parts.push(relativeDay(latest.date, today))
-    if (latest.profile) parts.push(latest.profile + " profile")
+    if (latest.date) parts.push(latest.profile ? latest.profile + " profile" : "a deleted profile")
     return parts.join(", ")
+}
+
+// The share picture's figures, [{ label, value }], and the line under them.
+function shareFigures(s) {
+    return [
+        { label: "Words", value: _num(s.words) },
+        { label: "Streak", value: _count(s.streak.current, "day", "days") },
+        { label: "Dictations", value: _num(s.dictations) },
+        { label: "Audio", value: audioText(s.audioMs) }
+    ]
+}
+function shareLine(s) { return bookText(s) + ", " + _num(s.wordsPerMinute) + " words a minute" }
+
+// Copy as text: a few lines for Slack or any chat.
+function shareText(s, period) {
+    const name = periodName(period)
+    const lines = [share.imageTitle + ", " + name.charAt(0).toLowerCase() + name.slice(1),
+                   _count(s.words, "word", "words") + " dictated"]
+    if (s.words) lines.push(bookText(s))
+    const streak = s.streak
+    if (streak.current > 0)
+        lines.push(_num(streak.current) + "-day streak" + (streak.current >= streak.best ? ", my longest yet" : " (best: " + _count(streak.best, "day", "days") + ")"))
+    lines.push(_count(s.dictations, "dictation", "dictations") + ", " + audioText(s.audioMs) + " of audio transcribed")
+    if (s.wordsPerMinute > 0)
+        lines.push(_num(s.wordsPerMinute) + " words per minute, " + _num(s.wordsPerMinute / s.typingWordsPerMinute, 1) + "× faster than typing")
+    if (s.apps.length) lines.push("Top apps: " + s.apps.map(a => appName(a) + " " + a.percent + "%").join(", "))
+    return lines.join("\n")
 }
 
 // One tip, a different one each day.

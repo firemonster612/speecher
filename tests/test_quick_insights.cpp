@@ -60,6 +60,20 @@ QVariantMap summaryOf(const QuickInsights &insights)
     return insights.summary().toMap();
 }
 
+// The first item under `root` whose text is `text`.
+QQuickItem *findText(QQuickItem *root, const QString &text)
+{
+    if (root->property("text").toString() == text) {
+        return root;
+    }
+    for (QQuickItem *child : root->childItems()) {
+        if (QQuickItem *found = findText(child, text)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 // The UI's Insights, over the controller's insights log, its settings and
@@ -234,6 +248,26 @@ private slots:
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("Move the review to Thursday."));
     }
 
+    void latestProfileFollowsARename()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.refinement.writingProfiles.append({QStringLiteral("custom_notes"), QStringLiteral("balanced"),
+                                                    QStringLiteral("none"), QString(), QStringLiteral("Notes")});
+        controller.settings()->applySnapshot(settings);
+        QuickInsights insights(&controller);
+        emit controller.session()->transcriptDelivered(QStringLiteral("Hello."));
+        emit controller.session()->dictationRecorded(
+            recordOn(kToday, 1, QStringLiteral("Kate"), QStringLiteral("custom_notes")));
+        QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Notes"));
+
+        QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);
+        settings.refinement.writingProfiles.last().name = QStringLiteral("Journal");
+        controller.settings()->applySnapshot(settings);
+        QCOMPARE(latestChanged.count(), 1);
+        QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Journal"));
+    }
+
     void correctionsFollowWhatIsLearned()
     {
         ApplicationController controller(true);
@@ -252,23 +286,16 @@ private slots:
         QCOMPARE(recent.value(QStringLiteral("fixed")).toString(), QStringLiteral("Qt"));
     }
 
-    void exportsCarryThePeriod()
+    void jsonGoesToTheChosenFile()
     {
         ApplicationController controller(true);
         controller.insightsLog()->append(recordOn(kToday, 120));
         QuickInsights insights(&controller);
         insights.setPeriod(QStringLiteral("7d"));
 
-        insights.copyText();
-        QVERIFY(QGuiApplication::clipboard()->text().startsWith(QStringLiteral("My Speecher stats, last 7 days\n120 words dictated")));
-
-        // Documents under a home of the test's own.
-        QTemporaryDir home;
-        const QByteArray realHome = qgetenv("HOME");
-        qputenv("HOME", home.path().toUtf8());
-        const QString path = insights.saveJson();
-        qputenv("HOME", realHome);
-        QCOMPARE(path, home.filePath(QStringLiteral("Documents/speecher-stats-2026-09-26.json")));
+        QTemporaryDir folder;
+        const QString path = folder.filePath(QStringLiteral("mine.json"));
+        QVERIFY(insights.saveJson(QUrl::fromLocalFile(path)));
         QFile file(path);
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QJsonObject json = QJsonDocument::fromJson(file.readAll()).object();
@@ -276,6 +303,11 @@ private slots:
         QCOMPARE(json.value(QStringLiteral("period")).toObject().value(QStringLiteral("name")).toString(),
                  QStringLiteral("last 7 days"));
         QCOMPARE(json.value(QStringLiteral("period")).toObject().value(QStringLiteral("words")).toInt(), 120);
+
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not save")));
+        QVERIFY(!insights.saveJson(QUrl::fromLocalFile(folder.filePath(QStringLiteral("missing/mine.json")))));
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("came out empty")));
+        QVERIFY(!insights.copyImage(QImage()));
     }
 
     void homeLoadsOverTheRealInsightsAndCopiesItsPicture()
@@ -303,8 +335,13 @@ private slots:
         QVERIFY(home);
         QVERIFY(QTest::qWaitForWindowExposed(qobject_cast<QWindow *>(window.get())));
 
-        QVERIFY(QMetaObject::invokeMethod(home, "copyImage"));
+        // The picture says Copied once it is on the clipboard, not before.
+        auto *share = home->findChild<QObject *>(QStringLiteral("homeShare"));
+        QVERIFY(share);
+        QVERIFY(QMetaObject::invokeMethod(share, "picked", Q_ARG(QString, QStringLiteral("image"))));
+        QVERIFY(share->property("confirmation").toString().isEmpty());
         QTRY_VERIFY(!QGuiApplication::clipboard()->image().isNull());
+        QTRY_COMPARE(share->property("confirmation").toString(), QStringLiteral("Copied"));
         const QImage image = QGuiApplication::clipboard()->image();
         QVERIFY(image.width() >= 1400);
         // Drawn, not blank: paper, ink and the heatmap's levels.
@@ -315,6 +352,54 @@ private slots:
             }
         }
         QVERIFY(colours.size() > 4);
+
+        // Copy as text, worded by Home: the last 30 days.
+        QVERIFY(QMetaObject::invokeMethod(share, "picked", Q_ARG(QString, QStringLiteral("text"))));
+        QVERIFY(QGuiApplication::clipboard()->text().startsWith(
+            QStringLiteral("My Speecher stats, last 30 days\n420 words dictated\nAbout")));
+
+        // The best run, Thursday's, isn't the one going on today.
+        QVERIFY(findText(home, QStringLiteral("Longest streak")));
+        QVERIFY(findText(home, QStringLiteral("Ended Thursday")));
+    }
+
+    void learnedCorrectionsOpenTheirRows()
+    {
+        QTest::failOnWarning();
+        ApplicationController controller(true);
+        controller.insightsLog()->append(recordOn(kToday, 120));
+        QVERIFY(controller.settings()->recordCorrectionEvidence({QStringLiteral("cute"), QStringLiteral("Qt"), 0.95},
+                                                               QStringLiteral("org.kde.kate")));
+        QuickSettings settings(&controller);
+        QuickStatus status(&controller);
+        QuickDictation dictation(&controller);
+        QuickInsights insights(&controller);
+
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nimport Speecher.App\n"
+                          "Window { width: 1100; height: 900; property alias home: page\n"
+                          "    HomePage { id: page; anchors.fill: parent } }",
+                          QUrl());
+        std::unique_ptr<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        auto *home = window->property("home").value<QQuickItem *>();
+        auto *action = home->findChild<QObject *>(QStringLiteral("learnedCorrectionsAction"));
+        QVERIFY(action);
+        auto *navigation = engine.singletonInstance<QObject *>("Speecher.App", "Navigation");
+        QVERIFY(navigation);
+
+        QCOMPARE(action->property("text").toString(), QStringLiteral("Review learned corrections"));
+        QVERIFY(QMetaObject::invokeMethod(action, "clicked"));
+        QCOMPARE(navigation->property("current").toString(), QStringLiteral("vocabulary"));
+        QCOMPARE(navigation->property("pendingRow").toString(), QStringLiteral("learnedCorrections"));
+
+        AppSettings off = controller.settings()->snapshot();
+        off.correctionLearningEnabled = false;
+        controller.settings()->applySnapshot(off);
+        QCOMPARE(action->property("text").toString(), QStringLiteral("Turn on learning"));
+        QVERIFY(QMetaObject::invokeMethod(action, "clicked"));
+        QCOMPARE(navigation->property("pendingRow").toString(), QStringLiteral("correctionLearningControl"));
     }
 };
 

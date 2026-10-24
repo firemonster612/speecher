@@ -3,7 +3,6 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
-import Speecher.Wording
 import "words.js" as T
 
 // The picture Share copies: the period's words, streak, dictations and audio
@@ -13,12 +12,6 @@ Rectangle {
     id: card
 
     readonly property var summary: Insights.summary
-    readonly property var figures: [
-        { label: "Words", value: Words.num(summary.words) },
-        { label: "Streak", value: Words.count(summary.streak.current, "day", "days") },
-        { label: "Dictations", value: Words.num(summary.dictations) },
-        { label: "Audio", value: T.audioText(summary.audioMs) }
-    ]
 
     width: 760
     height: body.implicitHeight + 2 * Theme.space6
@@ -45,7 +38,7 @@ Rectangle {
         Row {
             spacing: Theme.space8
             Repeater {
-                model: card.figures
+                model: T.shareFigures(card.summary)
                 Column {
                     required property var modelData
                     spacing: 2
@@ -56,7 +49,7 @@ Rectangle {
         }
         Txt {
             visible: card.summary.wordsPerMinute > 0
-            text: card.summary.bookComparison + ", " + Words.num(card.summary.wordsPerMinute) + " words a minute"
+            text: T.shareLine(card.summary)
             tone: "secondary"
         }
         Heatmap { width: parent.width }

@@ -20,9 +20,9 @@ QtObject {
     property string period: "30d"
     property string heatMeasure: "dictations"
 
-    function copyText() { System.copy("My Speecher stats") }
-    function copyImage(image) {}
-    function saveJson() { return "/home/you/Documents/speecher-stats.json" }
+    function copyText(text) { System.copy(text) }
+    function copyImage(image) { return true }
+    function saveJson(file) { return true }
     function copyLatest() { if (latest) System.copy(latest.text) }
 
     readonly property date today: new Date(2026, 9, 23)
@@ -98,7 +98,7 @@ QtObject {
         const hourCounts = weights.map(w => Math.round(w / total * dictations))
 
         const apps = [["Slack", "Work", 0.31], ["Thunderbird", "Email", 0.21], ["Visual Studio Code", "AI coding", 0.19],
-                      ["Firefox", "Personal", 0.12], ["Obsidian", "Personal", 0.09], ["4 other apps", "", 0.08]]
+                      ["Firefox", "Personal", 0.12], ["Obsidian", "Personal", 0.09], ["", "", 0.08]]
         const profiles = [["Work", 0.31], ["Email", 0.21], ["Personal", 0.21], ["AI coding", 0.19], ["Other", 0.08]]
 
         let current = 0
@@ -110,19 +110,19 @@ QtObject {
         const next = steps.findIndex(m => m > allTimeWords)
 
         return {
-            words: words, dictations: dictations, audioMs: audioMs, activeDays: activeDays,
+            words: words, dictations: dictations, audioMs: audioMs,
             averageAudioMs: dictations ? audioMs / dictations : 0,
             dictationsPerActiveDay: activeDays ? dictations / activeDays : 0,
             wordsDelta: prev ? _percent(words, _sum(prev, "words")) : null,
             dictationsDelta: prev ? _percent(dictations, _sum(prev, "dictations")) : null,
-            bookComparison: "About half of Hamlet",
+            bookComparison: { book: "Hamlet", times: 0.5 },
             wordsPerMinute: wpm, typingWordsPerMinute: 40, minutesSaved: Math.max(0, Math.round(words / 40 - audioMs / 60000)),
             hourCounts: hourCounts, peakHour: hourCounts.indexOf(Math.max(...hourCounts)), busiestWeekday: 2,
             hasHourData: dictations >= 20,
-            apps: apps.map(([name, profile, s]) => ({ name: name, profile: profile, words: Math.round(words * s), percent: Math.round(s * 100) })),
+            apps: apps.map(([name, profile, s]) => ({ name: name, otherApps: name ? 0 : 4, profile: profile, words: Math.round(words * s), percent: Math.round(s * 100) })),
             profiles: profiles.map(([name, s]) => ({ name: name, words: Math.round(words * s), percent: Math.round(s * 100) })),
-            streak: { current: current, best: best, bestEnd: today, dictatedToday: true, brokenLength: 0, brokenEnded: null,
-                      week: [true, true, true, true, true, false, false] },
+            streak: { current: current, best: best, bestEnd: today, bestEndsToday: current === best, dictatedToday: true,
+                      brokenLength: 0, brokenEnded: null },
             activeDaysLastYear: all.filter(d => d.dictations > 0).length,
             allTimeWords: allTimeWords,
             milestones: steps.slice(Math.max(0, next - 3), next + 2).map(m => {

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
-#include <limits>
 
 namespace speecher {
 namespace {
@@ -16,6 +15,8 @@ constexpr int kTypingWpm = 40;
 constexpr int kHeatmapWeeks = 53;
 constexpr int kHourDataMinimum = 20;
 constexpr int kTopApps = 5;
+// The all-time word counts that are milestones, smallest first.
+constexpr std::array<int, 7> kWordMilestones{1000, 10000, 50000, 100000, 250000, 500000, 1000000};
 
 // Word counts: the Gettysburg Address from the Bliss copy; The Raven, The
 // Tell-Tale Heart and An Occurrence at Owl Creek Bridge from their Project
@@ -49,18 +50,11 @@ constexpr Book kBooks[] = {
 // the others need to fit noticeably better to win.
 struct Share {
     double of;
-    const char *say;
     double cost;
 };
 constexpr Share kShares[] = {
-    {1.0 / 4, "a quarter of", 0.2},
-    {1.0 / 3, "a third of", 0.2},
-    {1.0 / 2, "half of", 0},
-    {3.0 / 4, "three-quarters of", 0.2},
-    {1, "as long as", 0},
-    {2, "twice the length of", 0},
-    {3, "three times the length of", 0.2},
-    {4, "four times the length of", 0.2},
+    {1.0 / 4, 0.2}, {1.0 / 3, 0.2}, {1.0 / 2, 0}, {3.0 / 4, 0.2},
+    {1, 0},         {2, 0},         {3, 0.2},     {4, 0.2},
 };
 
 // JavaScript's Math.round, which the mockup's numbers come from: halves go up.
@@ -99,90 +93,30 @@ QList<DictationRecord> between(const QList<DictationRecord> &records, const QDat
     return inside;
 }
 
-QString formatNumber(qint64 value)
-{
-    return QLocale().toString(value);
-}
-
-struct Comparison {
-    QString text;
-    const Book *book = nullptr;
-};
-
-// "About half of Hamlet": the book and plain fraction closest to the count.
-Comparison compareToBook(qint64 words)
+// The book and plain share of it closest to the count.
+BookComparison compareToBook(qint64 words)
 {
     if (words < kBooks[0].words * kShares[0].of) {
-        return {QStringLiteral("A few sentences so far")};
+        return {};
+    }
+    const Book &last = kBooks[std::size(kBooks) - 1];
+    if (words > last.words * 5.0) {
+        return {QLatin1String(last.title), double(roundHalfUp(double(words) / last.words))};
     }
     const Book *bestBook = nullptr;
-    QString say;
+    double times = 0;
     double bestScore = 0;
     for (const Book &book : kBooks) {
         for (const Share &share : kShares) {
             const double score = std::abs(std::log(words / (book.words * share.of))) + share.cost;
             if (!bestBook || score < bestScore) {
                 bestBook = &book;
-                say = QLatin1String(share.say);
+                times = share.of;
                 bestScore = score;
             }
         }
     }
-    const Book &last = kBooks[std::size(kBooks) - 1];
-    if (words > last.words * 5.0) {
-        bestBook = &last;
-        say = QStringLiteral("%1 times the length of").arg(formatNumber(roundHalfUp(double(words) / last.words)));
-    }
-    return {QStringLiteral("About %1 %2").arg(say, QLatin1String(bestBook->title)), bestBook};
-}
-
-// The smallest count above `words` that reads differently, or 0 if none does.
-// Each text covers a single run of counts, so a binary search finds its end.
-qint64 nextChange(qint64 words)
-{
-    constexpr qint64 most = std::numeric_limits<qint64>::max();
-    if (words < 0 || words == most) return 0;
-    const QString now = compareToBook(words).text;
-    qint64 same = words;
-    qint64 other = words + 1;
-    while (compareToBook(other).text == now) {
-        if (other == most) return 0;
-        same = other;
-        other = other > most / 2 ? most : other * 2;
-    }
-    while (other - same > 1) {
-        const qint64 middle = same + (other - same) / 2;
-        (compareToBook(middle).text == now ? same : other) = middle;
-    }
-    return other;
-}
-
-QString capitalized(QString text)
-{
-    text[0] = text[0].toUpper();
-    return text;
-}
-
-void describeAsBook(qint64 words, InsightsSummary &summary)
-{
-    if (words == 0) {
-        summary.bookComparison = QStringLiteral("Nothing yet");
-        return;
-    }
-    const Comparison comparison = compareToBook(words);
-    summary.bookComparison = comparison.text;
-    QStringList tip;
-    if (comparison.book) {
-        tip << QStringLiteral("%1 is about %2 words")
-                   .arg(capitalized(QLatin1String(comparison.book->title)),
-                        formatNumber(comparison.book->words));
-    }
-    if (const qint64 next = nextChange(words)) {
-        QString nextText = compareToBook(next).text;
-        nextText[0] = nextText[0].toLower();
-        tip << QStringLiteral("Changes to %1 at %2 words").arg(nextText, formatNumber(next));
-    }
-    summary.bookComparisonTip = tip.join(u'\n');
+    return {QLatin1String(bestBook->title), times};
 }
 
 std::optional<qint64> percentChange(qint64 current, qint64 previous)
@@ -191,15 +125,6 @@ std::optional<qint64> percentChange(qint64 current, qint64 previous)
         return std::nullopt;
     }
     return roundHalfUp(double(current - previous) / previous * 100);
-}
-
-QString personaFor(int hour)
-{
-    if (hour < 5) return QStringLiteral("Night owl");
-    if (hour < 12) return QStringLiteral("Morning talker");
-    if (hour < 17) return QStringLiteral("Afternoon talker");
-    if (hour < 21) return QStringLiteral("Evening talker");
-    return QStringLiteral("Night owl");
 }
 
 void summarizeStreaks(const QMap<QDate, DayTotals> &days, const QDate &today, InsightsSummary &summary)
@@ -257,7 +182,6 @@ void summarizeHours(const QList<DictationRecord> &period, InsightsSummary &summa
     }
     summary.peakHour = int(std::max_element(summary.hourCounts.begin(), summary.hourCounts.end())
                            - summary.hourCounts.begin());
-    summary.persona = personaFor(summary.peakHour);
     // Sunday first, as the mockup counts, so a tie resolves the same way.
     int busiest = Qt::Sunday;
     for (int day : {Qt::Monday, Qt::Tuesday, Qt::Wednesday, Qt::Thursday, Qt::Friday, Qt::Saturday}) {
@@ -287,7 +211,7 @@ void summarizeApps(const QList<DictationRecord> &period,
             app = totals.end() - 1;
         }
         app->words += record.words;
-        app->profileLabel = dictationProfileLabel(record, profiles);
+        app->profileName = dictationProfileName(record, profiles);
     }
     std::stable_sort(totals.begin(), totals.end(),
                      [](const AppShare &a, const AppShare &b) { return a.words > b.words; });
@@ -298,9 +222,7 @@ void summarizeApps(const QList<DictationRecord> &period,
     }
     if (rest > 0) {
         const qsizetype others = totals.size() - kTopApps;
-        summary.apps.append({others == 1 ? QStringLiteral("1 other app")
-                                         : QStringLiteral("%1 other apps").arg(others),
-                             QString(), rest});
+        summary.apps.append({QString(), int(others), QString(), rest});
     }
     for (AppShare &app : summary.apps) {
         app.percent = percentOf(app.words, summary.words);
@@ -312,19 +234,37 @@ void summarizeProfiles(const QList<DictationRecord> &period,
                        InsightsSummary &summary)
 {
     for (const DictationRecord &record : period) {
-        const QString label = dictationProfileLabel(record, profiles);
         auto share = std::find_if(summary.profiles.begin(), summary.profiles.end(),
-                                  [&](const ProfileShare &each) { return each.label == label; });
+                                  [&](const ProfileShare &each) { return each.profile == record.profile; });
         if (share == summary.profiles.end()) {
-            summary.profiles.append({label});
+            summary.profiles.append({record.profile});
             share = summary.profiles.end() - 1;
         }
+        share->name = dictationProfileName(record, profiles);
         share->words += record.words;
     }
     std::stable_sort(summary.profiles.begin(), summary.profiles.end(),
                      [](const ProfileShare &a, const ProfileShare &b) { return a.words > b.words; });
     for (ProfileShare &share : summary.profiles) {
         share.percent = percentOf(share.words, summary.words);
+    }
+}
+
+void summarizeMilestones(InsightsSummary &summary)
+{
+    const auto next = std::find_if(kWordMilestones.begin(), kWordMilestones.end(),
+                                   [&](int words) { return words > summary.allTimeWords; });
+    const qsizetype nextIndex = next - kWordMilestones.begin();
+    const qsizetype first = std::max<qsizetype>(0, nextIndex - 3);
+    const qsizetype end = std::min<qsizetype>(qsizetype(kWordMilestones.size()), nextIndex + 2);
+    for (qsizetype index = first; index < end; ++index) {
+        const int words = kWordMilestones[index];
+        const int from = index > 0 ? kWordMilestones[index - 1] : 0;
+        const Milestone::State state = index < nextIndex ? Milestone::State::Passed
+            : index == nextIndex                         ? Milestone::State::Next
+                                                         : Milestone::State::Later;
+        summary.milestones.append(
+            {words, state, std::clamp(double(summary.allTimeWords - from) / (words - from), 0.0, 1.0)});
     }
 }
 
@@ -355,22 +295,15 @@ void summarizeRecords(const QList<DictationRecord> &records,
             summary.wordiestDay = {it.key(), it->words};
         }
     }
-    for (int milestone : kWordMilestones) {
-        if (milestone <= summary.allTimeWords) {
-            summary.passedMilestone = milestone;
-        } else if (summary.nextMilestone == 0) {
-            summary.nextMilestone = milestone;
-        }
-    }
+    summarizeMilestones(summary);
 }
 
 } // namespace
 
-QString dictationProfileLabel(const DictationRecord &record, const QList<WritingProfileSettings> &profiles)
+QString dictationProfileName(const DictationRecord &record, const QList<WritingProfileSettings> &profiles)
 {
     const QString label = writingProfileLabel(record.profile, profiles);
-    if (!label.isEmpty()) return label;
-    return record.profileName.isEmpty() ? QStringLiteral("Deleted profile") : record.profileName;
+    return label.isEmpty() ? record.profileName : label;
 }
 
 InsightsSummary summarize(const QList<DictationRecord> &records,
@@ -383,11 +316,9 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     switch (range) {
     case InsightsRange::Last7Days:
         from = today.addDays(-6);
-        summary.deltaPeriodLabel = QStringLiteral("week");
         break;
     case InsightsRange::Last30Days:
         from = today.addDays(-29);
-        summary.deltaPeriodLabel = QStringLiteral("30 days");
         break;
     case InsightsRange::ThisYear:
         from = QDate(today.year(), 1, 1);
@@ -408,7 +339,7 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
         summary.averageAudioMs = roundHalfUp(double(summary.audioMs) / summary.dictations);
         summary.dictationsPerActiveDay = double(summary.dictations) / summary.activeDays;
     }
-    if (!summary.deltaPeriodLabel.isEmpty()) {
+    if (range == InsightsRange::Last7Days || range == InsightsRange::Last30Days) {
         const qint64 span = from.daysTo(today) + 1;
         const QList<DictationRecord> previous = between(records, from.addDays(-span), from.addDays(-1));
         qint64 previousWords = 0;
@@ -418,7 +349,7 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
         summary.wordsDelta = percentChange(summary.words, previousWords);
         summary.dictationsDelta = percentChange(summary.dictations, previous.size());
     }
-    describeAsBook(summary.words, summary);
+    summary.bookComparison = compareToBook(summary.words);
 
     summary.typingWordsPerMinute = kTypingWpm;
     if (summary.audioMs > 0) {
@@ -426,10 +357,6 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
         summary.wordsPerMinute = roundHalfUp(summary.words / minutes);
         const double typingMinutes = double(summary.words) / kTypingWpm;
         summary.minutesSavedVersusTyping = roundHalfUp(std::max(0.0, typingMinutes - minutes));
-        summary.speedupText =
-            QStringLiteral("That's %1× faster than typing at %2 words per minute.")
-                .arg(QLocale().toString(double(summary.wordsPerMinute) / kTypingWpm, 'f', 1))
-                .arg(kTypingWpm);
     }
     summarizeHours(period, summary);
     summarizeApps(period, profiles, summary);
@@ -495,21 +422,6 @@ QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown)
         }
     }
     return labels;
-}
-
-QString audioTotalText(qint64 audioMs)
-{
-    constexpr qint64 hourMs = 3600 * 1000;
-    if (audioMs >= hourMs) {
-        return QStringLiteral("%1 hours").arg(QLocale().toString(double(audioMs) / hourMs, 'f', 1));
-    }
-    return QStringLiteral("%1 min").arg(roundHalfUp(audioMs / 60000.0));
-}
-
-QString hourLabel(int hour)
-{
-    // A no-break space keeps "10 am" on one line in a wrapped sentence.
-    return QStringLiteral("%1\u00a0%2").arg(hour % 12 == 0 ? 12 : hour % 12).arg(hour < 12 ? u"am" : u"pm");
 }
 
 } // namespace speecher

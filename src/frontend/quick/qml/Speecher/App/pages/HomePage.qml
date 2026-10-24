@@ -1,5 +1,7 @@
 pragma ComponentBehavior: Bound
+import QtCore
 import QtQuick
+import QtQuick.Dialogs
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -20,9 +22,15 @@ Page {
 
     // The share picture, drawn off screen only while it is copied.
     function copyImage() { shareImage.active = true }
+    function shareFailed(title, detail) {
+        share.confirm(title)
+        Toaster.show(detail, { icon: "alert-triangle", tone: "negative" })
+    }
 
     title: Schema.page("home").title
     headerActions: MenuButton {
+        id: share
+        objectName: "homeShare"
         opacity: Insights.hasData ? 1 : 0
         enabled: Insights.hasData
         Behavior on opacity { Ease {} }
@@ -34,12 +42,27 @@ Page {
             { id: "json", label: T.share.saveJson, icon: "file-json" }
         ]
         onPicked: id => {
-            if (id === "image") page.copyImage()
-            if (id === "text") Insights.copyText()
-            if (id !== "json") return confirm(Words.copied)
-            const saved = Insights.saveJson() !== ""
-            confirm(saved ? T.share.saved : T.share.saveFailed)
-            if (!saved) Toaster.show(T.share.saveFailedDetail, { icon: "alert-triangle", tone: "negative" })
+            if (id === "image") return page.copyImage()
+            if (id === "json") return jsonFile.ask()
+            Insights.copyText(T.shareText(page.summary, Insights.period))
+            confirm(Words.copied)
+        }
+    }
+
+    // The desktop's own save dialog, which asks before saving over a file.
+    FileDialog {
+        id: jsonFile
+        function ask() {
+            jsonFile.selectedFile = jsonFile.currentFolder + "/" + T.jsonFileName(Insights.today)
+            jsonFile.open()
+        }
+        title: T.share.saveTitle
+        fileMode: FileDialog.SaveFile
+        nameFilters: [T.share.jsonFilter]
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: {
+            if (Insights.saveJson(jsonFile.selectedFile)) share.confirm(T.share.saved)
+            else page.shareFailed(T.share.saveFailed, T.share.saveFailedDetail)
         }
     }
 
@@ -51,10 +74,16 @@ Page {
         x: -(card ? card.width : 0) - 100
         active: false
         sourceComponent: ShareCard {}
-        onLoaded: Qt.callLater(() => card.grabToImage(result => {
-            Insights.copyImage(result.image)
+        function done(copied) {
             shareImage.active = false
-        }, Qt.size(card.width * 2, card.height * 2)))
+            if (copied) share.confirm(Words.copied)
+            else page.shareFailed(T.share.copyFailed, T.share.copyFailedDetail)
+        }
+        onLoaded: Qt.callLater(() => {
+            const grabbing = card.grabToImage(result => shareImage.done(Insights.copyImage(result.image)),
+                                              Qt.size(card.width * 2, card.height * 2))
+            if (!grabbing) shareImage.done(false)
+        })
     }
 
     SessionSection {}
@@ -101,7 +130,7 @@ Page {
                     title: page.t.profilesUsed
                     RuledTable {
                         columns: [{}, { width: 110, align: "right", tone: "secondary" }, { width: 40, align: "right", variant: "label" }]
-                        values: page.summary ? page.summary.profiles.map(p => [p.name, Words.count(p.words, "word", "words"), p.percent + "%"]) : []
+                        values: page.summary ? page.summary.profiles.map(p => [T.profileName(p.name), Words.count(p.words, "word", "words"), p.percent + "%"]) : []
                     }
                 }
                 Section {
@@ -112,7 +141,7 @@ Page {
                     title: page.t.apps
                     RuledTable {
                         columns: [{}, { width: 76, tone: "secondary" }, { width: 104, align: "right", tone: "secondary" }]
-                        values: page.summary ? page.summary.apps.map(a => [a.name, a.profile, Words.count(a.words, "word", "words")]) : []
+                        values: page.summary ? page.summary.apps.map(a => [T.appName(a), a.otherApps ? "" : T.profileName(a.profile), Words.count(a.words, "word", "words")]) : []
                     }
                 }
             }
@@ -190,17 +219,18 @@ Page {
             // What dictation learned from your edits: heard above, fixed below.
             Section {
                 id: learned
-                readonly property string action: T.correctionsAction(Insights.corrections)
+                readonly property var action: T.correctionsAction(Insights.corrections)
                 title: page.t.learnedCorrections
                 // An empty card says it in the caption's place.
                 caption: Insights.corrections.count ? T.correctionsCaption(Insights.corrections) : ""
                 actions: Button {
-                    text: learned.action
+                    objectName: "learnedCorrectionsAction"
+                    text: learned.action.label
                     size: "small"
-                    opacity: learned.action ? 1 : 0
-                    enabled: learned.action !== ""
+                    opacity: learned.action.label ? 1 : 0
+                    enabled: learned.action.label !== ""
                     Behavior on opacity { Ease {} }
-                    onClicked: Navigation.go("vocabulary")
+                    onClicked: Navigation.goToRow(learned.action.row)
                 }
                 Reveal {
                     width: parent.width
