@@ -10,7 +10,9 @@ import "speech"
 Page {
     id: page
     title: Schema.page("models").title
-    subtitle: Models.text.ratedFor.arg(Models.computer)
+    subtitle: ModelText.ratedFor.arg(ModelText.computer)
+
+    Component.onCompleted: Models.checkComputer()
 
     readonly property var library: Schema.row("localModelBrowser")
     // The library, or only what is on this computer (or on its way).
@@ -34,7 +36,7 @@ Page {
             SegmentedControl {
                 id: filter
                 objectName: "modelFilter"
-                options: Models.libraryFilters
+                options: ModelText.libraryFilters
                 currentId: page.show
                 onActivated: id => page.show = id
             }
@@ -48,7 +50,7 @@ Page {
             delegate: ModelCard {
                 required property string key
                 // From the catalog, which still has a card the filter is folding away.
-                entry: Models.catalogModel(key)
+                entry: ModelText.catalogModel(key)
                 expanded: key === (Models.inUse || Models.suggestedModel)
             }
         }
@@ -62,7 +64,7 @@ Page {
         Txt {
             width: parent.width
             topPadding: Theme.space2
-            text: Models.text.compareNote
+            text: ModelText.compareNote
             variant: "small"
             tone: "tertiary"
             wrapMode: Text.WordWrap
@@ -75,22 +77,31 @@ Page {
         SchemaRow {
             id: acceleration
             rowId: "localAcceleration"
-            help: acceleration.spec.help + " " + acceleration.spec.runningHelp.arg(Models.runningOn)
+            help: acceleration.spec.help + (Models.runningOn ? " " + acceleration.spec.runningHelp.arg(Models.runningOn) : "")
+            Select {
+                placeholder: Words.choose
+                options: ModelText.accelerationOptions
+                currentId: Settings.values.localAcceleration || ""
+                onChosen: id => Settings.set("localAcceleration", id)
+            }
         }
+        // Worth asking only when the backend reaches more than one card, or
+        // to show the card an older Automatic choice is pinned to.
         SchemaRow {
             rowId: "localGraphicsCard"
             shown: Models.graphicsCards.length > 1
+                   || (Settings.values.localAcceleration === "auto" && !!Settings.values.localGraphicsCard)
             Select {
                 placeholder: Words.choose
-                options: Models.graphicsCards
-                currentId: Settings.values.localGraphicsCard
+                options: ModelText.graphicsCards
+                currentId: Settings.values.localGraphicsCard || ""
                 onChosen: id => Settings.set("localGraphicsCard", id)
             }
         }
         SchemaRow {
             id: folder
             rowId: "localModelFolder"
-            help: Models.modelFolder
+            help: ModelText.modelFolder
             Button {
                 text: folder.spec.actionLabel
                 iconName: "folder-open"

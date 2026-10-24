@@ -68,7 +68,7 @@ Column {
         caption: TranscribeWords.serviceHelp
         ChoiceRows {
             recommendedText: Words.recommended
-            options: States.withTones(Models.serviceChoices)
+            options: States.withTones(ModelText.speechChoices(Models.speechServices))
             currentId: view.options.service
             onActivated: id => Transcription.setOption("service", id)
         }
@@ -128,7 +128,7 @@ Column {
         caption: TranscribeWords.refinerHelp
         ChoiceRows {
             recommendedText: Words.recommended
-            options: Library.providerChoices
+            options: ModelText.refinementChoices(Models.refinementProviders)
             currentId: view.options.refiner
             onActivated: id => Transcription.setOption("refiner", id)
         }

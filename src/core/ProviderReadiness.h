@@ -50,8 +50,13 @@ struct LiveFacts {
     // use is filled in, as well as when asked.
     QString speechEndpointStatus;
     QStringList speechEndpointModels;
+    // Whether a check runs, and whether the last one reached the server.
+    bool speechEndpointChecking = false;
+    bool speechEndpointOk = false;
     QString refinementEndpointStatus;
     QStringList refinementEndpointModels;
+    bool refinementEndpointChecking = false;
+    bool refinementEndpointOk = false;
     QList<FoundRunner> runners;
     // What each found runner can serve, by runner id.
     QHash<QString, QStringList> runnerModels;

@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "core/PasteRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickSettings.h"
@@ -129,15 +130,48 @@ private slots:
         settings.set(QStringLiteral("defaultWritingProfile"), QStringLiteral("made-up"));
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
 
-        for (const char *id : {"speechEndpointApiKey", "audioDevice", "speechLocalModel",
-                               "localRunner", "openAiCliproxyAccount", "anthropicCliproxyAccount",
-                               "defaultWritingProfile"}) {
+        for (const char *id : {"speechEndpointApiKey", "audioDevice", "openAiCliproxyAccount",
+                               "anthropicCliproxyAccount", "defaultWritingProfile"}) {
             QVERIFY2(!settings.saves(QLatin1String(id)), id);
         }
         for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
-                               "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules"}) {
+                               "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules",
+                               "speechLocalModel", "localRunner", "localAcceleration", "localGraphicsCard"}) {
             QVERIFY2(settings.saves(QLatin1String(id)), id);
         }
+    }
+
+    // The Local Model is a choice once picked; acceleration and the card are
+    // where models run, a new backend leaving the card to it; the runner is
+    // the one named.
+    void localModelRowsSaveWhereModelsRun()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+
+        settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("qwen3-asr"));
+        settings.set(QStringLiteral("localGraphicsCard"), QStringLiteral("0000:01:00.0"));
+        settings.set(QStringLiteral("localAcceleration"), QStringLiteral("vulkan"));
+        settings.set(QStringLiteral("localRunner"), QStringLiteral("llama-server"));
+        AppSettings saved = SettingsStore().dictationSnapshot();
+        QCOMPARE(saved.speech.local.modelId, QStringLiteral("qwen3-asr"));
+        QVERIFY(saved.speech.local.modelChosen);
+        QCOMPARE(saved.speech.local.runsOn, (LocalRunsOn{QStringLiteral("vulkan"), QString()}));
+        QCOMPARE(saved.refinement.localRunner.runner, QStringLiteral("llama-server"));
+
+        settings.set(QStringLiteral("localGraphicsCard"), QStringLiteral("0000:01:00.0"));
+        saved = SettingsStore().dictationSnapshot();
+        QCOMPARE(saved.speech.local.runsOn, (LocalRunsOn{QStringLiteral("vulkan"), QStringLiteral("0000:01:00.0")}));
+        QCOMPARE(settings.values().value(QStringLiteral("localAcceleration")).toString(), QStringLiteral("vulkan"));
+        QCOMPARE(settings.values().value(QStringLiteral("localGraphicsCard")).toString(), QStringLiteral("0000:01:00.0"));
+
+        // LocalSetup saves a model it moves dictation to without a snapshot,
+        // as deleting the one in use does, and the row follows its news.
+        LocalSpeechSettings local = controller.settings()->localSpeechSettings();
+        local.modelId = QStringLiteral("parakeet");
+        controller.settings()->setLocalSpeechSettings(local);
+        emit controller.localSetup()->changed();
+        QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("parakeet"));
     }
 
     // SchemaRow decides in QML, so its binding follows Settings.values:

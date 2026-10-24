@@ -519,6 +519,67 @@ private slots:
         QCOMPARE(setup.fitLabel(qwen), QStringLiteral("Fits"));
     }
 
+    // Acceleration offers Automatic, the CPU and each backend a card here
+    // reaches, and keeps a saved one no card reaches; a backend names its own
+    // cards once each, and a card saved under Automatic, or gone, stays listed.
+    void accelerationAndCardChoicesFollowTheCardsHere()
+    {
+        const QString nvidia = QStringLiteral("0000:01:00.0");
+        const QString amd = QStringLiteral("0000:0e:00.0");
+        const QList<LocalGpu> gpus{{QStringLiteral("vulkan"), nvidia, QStringLiteral("RTX 4070")},
+                                   {QStringLiteral("vulkan"), amd, QStringLiteral("Radeon")},
+                                   {QStringLiteral("cuda"), nvidia, QStringLiteral("RTX 4070")}};
+        const auto backends = [](const QList<LocalAccelerationChoice> &choices) {
+            QStringList ids;
+            for (const LocalAccelerationChoice &choice : choices) {
+                ids.append(choice.backend + (choice.available ? QString() : QStringLiteral(" (unavailable)")));
+            }
+            return ids;
+        };
+        const auto cards = [](const QList<LocalGpu> &choices) {
+            QStringList ids;
+            for (const LocalGpu &card : choices) {
+                ids.append(card.deviceId + QLatin1Char('=') + card.description);
+            }
+            return ids;
+        };
+
+        QCOMPARE(backends(localAccelerationChoices(gpus, {})), QStringList({"auto", "cpu", "vulkan", "cuda"}));
+        QCOMPARE(backends(localAccelerationChoices({}, {QStringLiteral("metal"), {}})),
+                 QStringList({"auto", "cpu", "metal (unavailable)"}));
+
+        QVERIFY(localGraphicsCardChoices(gpus, {}).isEmpty());
+        QVERIFY(localGraphicsCardChoices(gpus, {QStringLiteral("cpu"), {}}).isEmpty());
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("vulkan"), {}})),
+                 QStringList({nvidia + "=RTX 4070", amd + "=Radeon"}));
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("auto"), amd})), QStringList({amd + "=Radeon"}));
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("cuda"), amd})),
+                 QStringList({nvidia + "=RTX 4070", amd + "="}));
+    }
+
+    // Cancelling a pull ends it without an error to show.
+    void cancellingAPullEndsItQuietly()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        QSignalSpy changed(&setup, &LocalSetup::changed);
+
+        setup.pullCleanupModel(QStringLiteral("gemma4:e4b"));
+        QVERIFY(setup.pull().running);
+        setup.cancelPull();
+        QVERIFY(!setup.pull().running);
+        QVERIFY(setup.pull().error.isEmpty());
+        QCOMPARE(changed.count(), 2);
+        QTest::qWait(100);
+        QVERIFY(!setup.pull().running);
+        QVERIFY(setup.pull().error.isEmpty());
+        QCOMPARE(changed.count(), 2);
+    }
+
     void catalogEntriesArePinned()
     {
         for (const LocalModel &model : localModelCatalog()) {

@@ -32,11 +32,13 @@ QtObject {
     function _status(id) {
         switch (id) {
         case "transcription": {
-            const service = Models.serviceChoices.find(s => s.id === speech)
-            // A model still downloading counts: the download carries on while setup does.
+            const known = Models.speechServices.find(s => s.id === speech)
+            const service = known ? ModelText.service(speech) : null
+            // A model still downloading counts: the download carries on while
+            // setup does. So does a sign-in nobody has checked yet.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
-            const done = !!service && (service.state === "ready" || downloading)
-            return { done: done, verdict: !service ? Setup.text.notChosen : service.state === "ready" ? service.label : service.status }
+            const done = !!service && (service.state === "ready" || service.state === "unknown" || downloading)
+            return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label : ModelText.status(service) }
         }
         case "microphone": {
             // Allowed, a microphone that is there, and speech heard from it.
@@ -54,7 +56,7 @@ QtObject {
             return { done: Setup.settled(check), verdict: Health.status(check) }
         }
         case "refinement":
-            return { done: true, verdict: Library.providerChoices.find(p => p.id === cleanup).label }
+            return { done: true, verdict: ModelText.provider(cleanup).label }
         case "shortcut": {
             const keys = Settings.values.globalShortcut || []
             const check = Health.find(System.checks, "globalShortcuts")

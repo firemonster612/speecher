@@ -174,6 +174,54 @@ HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn
     return profile;
 }
 
+QList<LocalAccelerationChoice> localAccelerationChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
+{
+    QList<LocalAccelerationChoice> choices;
+    for (const LocalBackend &backend : localBackends) {
+        const QString kind = QString::fromLatin1(backend.kind);
+        const bool gpuBackend = kind != QStringLiteral("auto") && kind != QStringLiteral("cpu");
+        const bool present =
+            std::any_of(gpus.cbegin(), gpus.cend(), [&kind](const LocalGpu &gpu) { return gpu.backend == kind; });
+        if (!gpuBackend || present) {
+            choices.append({kind});
+        }
+    }
+    if (std::none_of(choices.cbegin(), choices.cend(),
+                     [&chosen](const LocalAccelerationChoice &choice) { return choice.backend == chosen.backend; })) {
+        choices.append({chosen.backend, false});
+    }
+    return choices;
+}
+
+QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
+{
+    if (chosen.backend == QStringLiteral("cpu")) {
+        return {};
+    }
+    // Automatic names no card of its own, except one saved before
+    // acceleration could be chosen: then the card decides the backend.
+    const bool automatic = chosen.backend == QStringLiteral("auto");
+    if (automatic && chosen.deviceId.isEmpty()) {
+        return {};
+    }
+    QList<LocalGpu> cards;
+    const auto listed = [&cards](const QString &deviceId) {
+        return std::any_of(cards.cbegin(), cards.cend(), [&deviceId](const LocalGpu &card) {
+            return card.deviceId == deviceId;
+        });
+    };
+    for (const LocalGpu &gpu : gpus) {
+        const bool matches = automatic ? gpu.deviceId == chosen.deviceId : gpu.backend == chosen.backend;
+        if (matches && !listed(gpu.deviceId)) {
+            cards.append(gpu);
+        }
+    }
+    if (!chosen.deviceId.isEmpty() && !listed(chosen.deviceId)) {
+        cards.append({chosen.backend, chosen.deviceId, QString()});
+    }
+    return cards;
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -600,6 +648,17 @@ void LocalSetup::pullCleanupModel(const QString &ollamaTag)
     emit changed();
 }
 
+void LocalSetup::cancelPull()
+{
+    if (!m_pull.running) {
+        return;
+    }
+    // The pull's reply goes quietly, so nothing else reports the end.
+    m_ollamaPull.cancel();
+    m_pull.running = false;
+    emit changed();
+}
+
 LocalSetup::Pull LocalSetup::pull() const
 {
     return m_pull;
@@ -722,10 +781,14 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     if (m_checkedSpeech == connection(draft.speech.endpoint)) {
         facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
         facts.speechEndpointModels = m_speechEndpoint.result.models;
+        facts.speechEndpointChecking = m_speechEndpoint.checking;
+        facts.speechEndpointOk = m_speechEndpoint.result.ok;
     }
     if (m_checkedRefinement == connection(resolvedRefinementEndpoint(draft.refinement))) {
         facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
         facts.refinementEndpointModels = m_refinementEndpoint.result.models;
+        facts.refinementEndpointChecking = m_refinementEndpoint.checking;
+        facts.refinementEndpointOk = m_refinementEndpoint.result.ok;
     }
     for (const DetectedRunner &runner : m_runners) {
         facts.runners.append({runner.id,

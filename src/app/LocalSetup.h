@@ -68,6 +68,20 @@ struct SetupFallbackOffer {
 // A card that has gone away counts as the CPU, where nothing else would run.
 HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn);
 
+// One choice of where Local Models run, as a localBackends kind. A saved
+// backend that no card here reaches is still offered, as unavailable.
+struct LocalAccelerationChoice {
+    QString backend;
+    bool available = true;
+};
+// Automatic and the CPU, then each backend that reaches a card here, in
+// localBackends order.
+QList<LocalAccelerationChoice> localAccelerationChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// The cards a Runs on choice can name, once each: those of its backend, or
+// for Automatic only the card an older choice is pinned to. A saved card that
+// has gone away is listed last with no description. None for the CPU.
+QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
@@ -157,8 +171,10 @@ public:
     // Nothing when cleanup here would be slower than a cloud provider or none.
     std::optional<CleanupModel> suggestedCleanupModel() const;
 
-    // Downloads a cleanup model into Ollama.
+    // Downloads a cleanup model into Ollama. Cancelling stops it with no
+    // error; Ollama keeps what it has for the next pull to resume.
     void pullCleanupModel(const QString &ollamaTag);
+    void cancelPull();
     struct Pull {
         QString tag;
         qint64 completedBytes = 0;

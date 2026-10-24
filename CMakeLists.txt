@@ -245,6 +245,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/ProviderReadiness.cpp
+  src/core/ProviderRatings.cpp
   src/core/ReleaseNotes.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
@@ -284,6 +285,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/ProviderReadiness.h
+  src/core/ProviderRatings.h
   src/core/ReleaseNotes.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
@@ -1395,6 +1397,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_updates.cpp
       tests/test_quick_transcription.cpp
       tests/test_quick_system.cpp
+      tests/test_quick_models.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1432,7 +1435,7 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
-    quick_transcription quick_system)
+    quick_transcription quick_system quick_models)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)
