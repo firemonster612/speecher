@@ -4,10 +4,12 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "../pages/text"
 
 // A spoken sentence marked up the way refinement edits it, like a proof:
 // removed words struck through, added ones in blue pencil. Then the
-// providers to do it, or none, which shows the sentence as it was said.
+// providers to do it, or none, which shows the sentence as it was said, and
+// under them what a Local Runner or a Custom Endpoint needs.
 StepPage {
     id: page
 
@@ -29,8 +31,18 @@ StepPage {
             recommendedText: Words.recommended
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
-            ruleBelow: offer.open
+            ruleBelow: runner.open || endpoint.open || offer.open
             onActivated: id => page.choices.cleanup = id
+        }
+        Reveal {
+            id: runner
+            open: page.choices.cleanup === "local"
+            LocalRunnerRows {}
+        }
+        Reveal {
+            id: endpoint
+            open: page.choices.cleanup === "endpoint"
+            RefinementEndpointRows {}
         }
         // A runner on this computer, offered as a fallback.
         Reveal {
@@ -40,7 +52,11 @@ StepPage {
                   && (Settings.values.refinementFallbacks || []).indexOf("local") < 0
             SettingRow {
                 title: ModelText.fallbackOfferText(offer.local)
-                Button { text: ModelText.addFallback; size: "small"; onClicked: Models.acceptFallbackOffer("refinement") }
+                Button {
+                    text: ModelText.addFallback
+                    size: "small"
+                    onClicked: Models.acceptFallbackOffer("refinement", page.choices.cleanup)
+                }
             }
         }
     }

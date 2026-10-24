@@ -222,6 +222,14 @@ QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const Loca
     return cards;
 }
 
+LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend)
+{
+    LocalRunsOn runsOn{backend, QString()};
+    const QList<LocalGpu> cards = localGraphicsCardChoices(gpus, runsOn);
+    runsOn.deviceId = cards.isEmpty() ? QString() : cards.first().deviceId;
+    return runsOn;
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -736,7 +744,7 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
 }
 
-void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
+void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
 {
     const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role);
     if (!offer) {
@@ -746,20 +754,21 @@ void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
     // it; then nothing changes, not even the model or the runner it names.
     const AppSettings settings = m_settings.dictationSnapshot();
     const bool speech = role == ProviderRole::Speech;
-    const QString &primary = speech ? settings.speech.providerId : settings.refinement.providerId;
-    const QStringList &saved = speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
-    const QStringList fallbacks =
-        normalizedFallbackProviders(role, primary, normalizedFallbackProviders(role, primary, saved) << offer->providerId);
-    if (fallbacks.size() <= saved.size()) {
+    const QStringList kept = normalizedFallbackProviders(
+        role, primary, speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds);
+    const QStringList fallbacks = normalizedFallbackProviders(role, primary, QStringList(kept) << offer->providerId);
+    if (fallbacks.size() <= kept.size()) {
         return;
     }
     if (speech) {
+        m_settings.setSpeechProvider(primary);
         m_settings.setSpeechFallbackProviders(fallbacks);
         chooseSpeechModel(offer->modelId);
         download(*findLocalModel(offer->modelId));
         return;
     }
     m_settings.setLocalRunnerSettings(runnerChoice().selection);
+    m_settings.setRefinementProvider(primary);
     m_settings.setRefinementFallbackProviders(fallbacks);
     emit changed();
 }

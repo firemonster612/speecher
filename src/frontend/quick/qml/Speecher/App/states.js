@@ -9,7 +9,7 @@ var tones = {
     signedIn: "positive", ok: "positive", ready: "positive",
     expired: "warning", attention: "warning", signedOut: "warning",
     offline: "warning", noModel: "warning", noRunner: "warning", noServer: "warning", language: "warning",
-    missing: "negative", off: "negative"
+    missing: "negative", off: "negative", checkFailed: "negative"
 };
 
 function tone(state) { return tones[state] || "neutral"; }

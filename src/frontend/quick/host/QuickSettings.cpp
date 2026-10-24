@@ -99,6 +99,9 @@ struct SettingRow {
     QVariant (*read)(const AppSettings &);
     void (*write)(AppSettings &, const QVariant &);
     QString (*refuse)(const QVariant &) = nullptr;
+    // In place of write, for a row whose saved value depends on this
+    // computer, such as which graphics cards it has.
+    void (*writeHere)(AppSettings &, const QVariant &, const LiveFacts &) = nullptr;
 };
 
 // A row that is one AppSettings field, stored as QML hands it over.
@@ -262,9 +265,11 @@ const SettingRow settingRows[] = {
 
     {"localIdleUnload", [](const AppSettings &s) { return QVariant(QString::number(s.speech.local.idleUnloadMinutes)); },
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
-    // A new acceleration leaves the card to its backend until one is chosen.
-    {"localAcceleration", [](const AppSettings &s) { return QVariant(s.speech.local.runsOn.backend); },
-     [](AppSettings &s, const QVariant &v) { s.speech.local.runsOn = {v.toString(), QString()}; }},
+    {.id = "localAcceleration",
+     .read = [](const AppSettings &s) { return QVariant(s.speech.local.runsOn.backend); },
+     .writeHere = [](AppSettings &s, const QVariant &v, const LiveFacts &facts) {
+         s.speech.local.runsOn = localRunsOnFor(facts.localGpus, v.toString());
+     }},
     FIELD_ROW("localGraphicsCard", speech.local.runsOn.deviceId),
 
     FIELD_ROW("themeControl", ui.theme),
@@ -444,7 +449,11 @@ void QuickSettings::set(const QString &id, const QVariant &value)
     // keeps them, so saving one row never clears a key.
     SettingsStore *store = m_controller->settings();
     AppSettings draft = store->dictationSnapshot();
-    row->write(draft, value);
+    if (row->writeHere) {
+        row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
+    } else {
+        row->write(draft, value);
+    }
     store->applySnapshot(draft);
 }
 

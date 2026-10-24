@@ -88,6 +88,8 @@ enum class FallbackProblem {
     NoModel,
     NoRunner,
     NoServer,
+    // A Custom Endpoint whose last connection check failed.
+    CheckFailed,
     // A speech fallback that can't listen for the Spoken Language is skipped.
     SpokenLanguage,
 };
@@ -110,10 +112,14 @@ struct ProviderReport {
     // nothing has seen; signsIn tells them apart.
     std::optional<bool> signedIn;
     // Empty while the verdict turns on what nobody has checked: a sign-in not
-    // seen, or whether the Local Runner is running.
+    // seen, whether the Local Runner is running, or whether a Custom
+    // Endpoint's server answers.
     std::optional<bool> usable;
     // "Not signed in to ChatGPT."; empty while nothing known stops it.
     QString problem;
+    // What stops it, as fallbackProblem() judges it. Not part of the
+    // report `speecher providers` sends, which says it as problem.
+    FallbackProblem problemKind = FallbackProblem::None;
 };
 
 // A report for each provider id, speech first, in their order. labels names

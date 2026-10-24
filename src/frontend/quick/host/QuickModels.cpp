@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/ProviderAvailability.h"
 #include "core/ProviderRatings.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
@@ -41,6 +42,8 @@ QString problemState(FallbackProblem problem)
         return QStringLiteral("noRunner");
     case FallbackProblem::NoServer:
         return QStringLiteral("noServer");
+    case FallbackProblem::CheckFailed:
+        return QStringLiteral("checkFailed");
     case FallbackProblem::SpokenLanguage:
         return QStringLiteral("language");
     }
@@ -49,12 +52,13 @@ QString problemState(FallbackProblem problem)
 
 // A provider as the choice lists show it, judged as `speecher providers`
 // judges it: unknown while what decides it, such as a sign-in, is unseen.
-QVariantMap providerEntry(const ProviderReport &report, const AppSettings &settings, const LiveFacts &facts)
+QVariantMap providerEntry(const ProviderReport &report)
 {
-    const QString problem = problemState(fallbackProblem(report.role, report.id, settings, facts));
+    const QString problem = problemState(report.problemKind);
     return {
         {QStringLiteral("id"), report.id},
         {QStringLiteral("label"), report.label},
+        {QStringLiteral("signsIn"), report.signsIn},
         {QStringLiteral("state"), !problem.isEmpty() ? problem
                                   : report.usable.value_or(false) ? QStringLiteral("ready")
                                                                   : QStringLiteral("unknown")},
@@ -264,7 +268,7 @@ void QuickModels::refresh()
     QVariantList refinementProviders;
     for (const ProviderReport &report :
          providerReports(settings, facts, speechIds, refinementIds, registry.labels())) {
-        QVariantMap entry = providerEntry(report, settings, facts);
+        QVariantMap entry = providerEntry(report);
         if (report.role == ProviderRole::Speech) {
             speechServices.append(entry);
             continue;
@@ -408,9 +412,13 @@ QString QuickModels::builtInSystemPrompt() const
 
 void QuickModels::checkComputer()
 {
-    LocalSetup *local = m_controller->localSetup();
-    local->probeHardware();
-    local->detectRunners();
+    m_controller->localSetup()->probeHardware();
+}
+
+void QuickModels::checkSignIns()
+{
+    m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
+                                                             m_controller->settings()->dictationSnapshot().speech);
 }
 
 QVariantMap QuickModels::service(const QString &id) const
@@ -450,14 +458,12 @@ void QuickModels::use(const QString &id)
         qWarning().noquote() << "Models.use:" << id << "is not a Local Model";
         return;
     }
+    // The store drops Local Model from the fallbacks once it is the primary.
     SettingsStore *store = m_controller->settings();
     AppSettings draft = store->dictationSnapshot();
-    draft.speech.local.modelId = id;
-    draft.speech.local.modelChosen = true;
     draft.speech.providerId = QStringLiteral("local");
-    draft.speech.fallbackProviderIds =
-        normalizedFallbackProviders(ProviderRole::Speech, draft.speech.providerId, draft.speech.fallbackProviderIds);
     store->applySnapshot(draft);
+    m_controller->localSetup()->chooseSpeechModel(id);
 }
 
 void QuickModels::testSpeed(const QString &id)
@@ -500,10 +506,10 @@ void QuickModels::cancelPull()
     m_controller->localSetup()->cancelPull();
 }
 
-void QuickModels::acceptFallbackOffer(const QString &role)
+void QuickModels::acceptFallbackOffer(const QString &role, const QString &primary)
 {
-    m_controller->localSetup()->acceptSetupFallbackOffer(role == QLatin1String("refinement") ? ProviderRole::Refinement
-                                                                                             : ProviderRole::Speech);
+    m_controller->localSetup()->acceptSetupFallbackOffer(
+        role == QLatin1String("refinement") ? ProviderRole::Refinement : ProviderRole::Speech, primary);
 }
 
 } // namespace speecher

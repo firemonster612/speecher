@@ -1,3 +1,4 @@
+#include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
 #include "common/test_suites.h"
@@ -10,8 +11,12 @@
 #include "frontend/quick/host/QuickSettings.h"
 #include "providers/LocalModelStore.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQmlProperty>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -66,6 +71,26 @@ void serveJson(QTcpServer &server, const QByteArray &body)
     socket->flush();
     socket->waitForBytesWritten(2000);
     socket->disconnectFromHost();
+}
+
+// Puts a file of the model's size where the store looks, which is all a
+// finished download is to it.
+void placeDownloaded(ApplicationController &controller, const QString &id)
+{
+    const LocalModel &model = *findLocalModel(id);
+    const QString path = controller.localModelStore()->modelPath(model);
+    QDir().mkpath(QFileInfo(path).path());
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY(file.resize(model.sizeBytes));
+    file.close();
+    emit controller.localSetup()->changed();
+}
+
+// The step in setup's choices with this id.
+QVariantMap setupStep(QObject *choices, const QString &id)
+{
+    return entry(choices->property("steps").toList(), id);
 }
 
 } // namespace
@@ -239,6 +264,87 @@ private slots:
         QVERIFY(check.value(QStringLiteral("models")).toStringList().isEmpty());
     }
 
+    // Setup's Transcription step is done once the chosen service is ready,
+    // or while Local Model's download runs. A sign-in nobody has checked, a
+    // server never tested and one whose test failed are not; the failure is
+    // the endpoint's problem, in core's words.
+    void setupTranscriptionIsDoneOnlyOnceTheServiceIsReady()
+    {
+        ApplicationController controller(true);
+        // A Codex whose sign-in check finds one.
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->prepareResult.ok = true;
+                return codex;
+            });
+        QuickSettings settings(&controller);
+        QuickModels models(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(component.create());
+        QVERIFY2(choices, qPrintable(component.errorString()));
+        const auto transcription = [&] { return setupStep(choices.get(), QStringLiteral("transcription")); };
+
+        // As a step's choice does, which leaves Settings behind.
+        const auto choose = [&](const QString &id) { QQmlProperty::write(choices.get(), QStringLiteral("speech"), id); };
+        choose(QStringLiteral("codex"));
+        QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
+        QCOMPARE(transcription().value(QStringLiteral("verdict")).toString(), QStringLiteral("Checking…"));
+        models.checkSignIns();
+        QTRY_VERIFY(transcription().value(QStringLiteral("done")).toBool());
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        settings.set(QStringLiteral("speechEndpointUrl"), QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        choose(QStringLiteral("endpoint"));
+        QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
+        QCOMPARE(entry(models.speechServices(), QStringLiteral("endpoint")).value(QStringLiteral("state")).toString(),
+                 QStringLiteral("unknown"));
+        models.testSpeechEndpoint();
+        serveJson(server, R"({"data":[{"id":"whisper-1"}]})");
+        QTRY_COMPARE(entry(models.speechServices(), QStringLiteral("endpoint")).value(QStringLiteral("state")).toString(),
+                     QStringLiteral("ready"));
+        QVERIFY(transcription().value(QStringLiteral("done")).toBool());
+
+        server.close();
+        models.testSpeechEndpoint();
+        QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());
+        QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
+        const QVariantMap endpoint = entry(models.speechServices(), QStringLiteral("endpoint"));
+        QCOMPARE(endpoint.value(QStringLiteral("state")).toString(), QStringLiteral("checkFailed"));
+        QCOMPARE(endpoint.value(QStringLiteral("problem")).toString(),
+                 models.speechEndpoint().value(QStringLiteral("status")).toString());
+    }
+
+    // Setup's Transcription step offers the chosen Local Model's download
+    // until that model is here, whichever others are.
+    void setupOffersTheChosenModelsDownload()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller);
+        placeDownloaded(controller, QStringLiteral("moonshine-small"));
+        settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
+        QQmlEngine engine;
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+        QQmlProperty::write(choices.get(), QStringLiteral("speech"), QStringLiteral("local"));
+        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/TranscriptionStep.qml")));
+        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
+        QVERIFY2(step, qPrintable(stepComponent.errorString()));
+        step->setProperty("choices", QVariant::fromValue(choices.get()));
+        stepComponent.completeCreate();
+        QObject *download = step->findChild<QObject *>(QStringLiteral("localModelDownload"));
+        QVERIFY(download);
+
+        QVERIFY(download->property("shown").toBool());
+        placeDownloaded(controller, QStringLiteral("parakeet"));
+        QVERIFY(!download->property("shown").toBool());
+    }
+
     // Every runner is listed, those found running with their version and
     // models; Ollama without the suggested cleanup model offers to pull it.
     void runnersAndTheCleanupPull()
@@ -274,12 +380,13 @@ private slots:
         QVERIFY(pulled.count() >= 2);
     }
 
-    // The pages that read Models load over the C++ one without a warning,
-    // so its properties and the preview's mock agree.
+    // The pages and setup steps that read Models load over the C++ one
+    // without a warning, so its properties and the preview's mock agree.
     void thePagesLoadOverIt_data()
     {
         QTest::addColumn<QString>("page");
-        for (const char *page : {"SpeechPage", "ModelsPage", "RefinementPage"}) {
+        for (const char *page : {"pages/SpeechPage", "pages/ModelsPage", "pages/RefinementPage",
+                                 "setup/TranscriptionStep", "setup/RefinementStep"}) {
             QTest::newRow(page) << QString::fromLatin1(page);
         }
     }
@@ -295,9 +402,17 @@ private slots:
         settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});
         LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/%1.qml").arg(page)));
-        const std::unique_ptr<QObject> loaded(component.create());
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/%1.qml").arg(page)));
+        const std::unique_ptr<QObject> loaded(component.beginCreate(engine.rootContext()));
         QVERIFY2(loaded, qPrintable(component.errorString()));
+        // A setup step reads the choices the assistant hands it.
+        if (page.startsWith(QLatin1String("setup/"))) {
+            loaded->setProperty("choices", QVariant::fromValue(choices.get()));
+        }
+        component.completeCreate();
     }
 };
 

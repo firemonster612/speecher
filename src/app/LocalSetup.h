@@ -81,6 +81,10 @@ QList<LocalAccelerationChoice> localAccelerationChoices(const QList<LocalGpu> &g
 // for Automatic only the card an older choice is pinned to. A saved card that
 // has gone away is listed last with no description. None for the CPU.
 QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// Where choosing an acceleration puts Local Models: a backend on its first
+// card here, so fit measures the card the engine uses; Automatic and the CPU
+// on none.
+LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend);
 
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
@@ -194,10 +198,12 @@ public:
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
     std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role) const;
-    // Adds that fallback after the others, leaving the primary alone: a Local
-    // Model is chosen and downloaded the way the Local card does it, a runner
-    // and its model are selected.
-    void acceptSetupFallbackOffer(ProviderRole role);
+    // Adds that fallback after the others, behind primary, setup's choice for
+    // the role, which is saved with it: the saved chain is kept in step with
+    // its primary, so a fallback behind a primary not yet saved would be
+    // dropped. A Local Model is chosen and downloaded the way the Local card
+    // does it, a runner and its model are selected.
+    void acceptSetupFallbackOffer(ProviderRole role, const QString &primary);
 
     // Adds reachability and the sign-ins last seen to liveFacts(), and
     // announces their changes as changed().

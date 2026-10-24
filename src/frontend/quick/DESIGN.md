@@ -62,10 +62,12 @@ Backend is the C++ types plus the mocks not yet replaced.
   checks and setup's fallback offers. `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
   so pages read `ModelText.service(id)` or `ModelText.catalogModel(id)`
-  rather than Models' lists. A page that shows hardware or runners calls
+  rather than Models' lists. A page that shows hardware calls
   `Models.checkComputer()` when it opens, which probes the hardware the
   first time; the daemon never loads the speech engine's backends for that
-  on its own.
+  on its own. The Local Runner rows look for runners when they load, and
+  setup's Transcription step asks `Models.checkSignIns()` for the speech
+  sign-ins.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's

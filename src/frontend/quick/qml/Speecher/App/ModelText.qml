@@ -57,6 +57,8 @@ QtObject {
         }
         return provider.problem.replace(/\.$/, "")
     }
+    // What setup says of a service while its sign-in is checked.
+    readonly property string checking: "Checking…"
     // A provider as ChoiceRows shows it.
     function _choice(provider, help) {
         return { id: provider.id, label: provider.label, icon: provider.icon, help: help,

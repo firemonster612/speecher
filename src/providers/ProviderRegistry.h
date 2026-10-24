@@ -10,23 +10,14 @@
 
 namespace speecher {
 
-// One user-facing fact about a provider ("Languages" / "About 60").
-struct ProviderStat {
-    QString label;
-    QString value;
-};
-
+// A provider as the registry offers it. What the UI says about one is the
+// UI's wording.
 struct ProviderDescriptor {
     QString id;
     QString label;
-    QString setupHint;
     // Refinement providers only: this one can read a screenshot of the target
     // as context, which is what the setting offering that is gated on.
     bool supportsScreenshotContext = false;
-    // One-or-two-line digest of the stats, for settings rows and tooltips.
-    QString summary;
-    // Shown as a label/value block on the setup assistant's provider steps.
-    QVector<ProviderStat> stats;
 };
 // The descriptors' ids, in their order.
 QStringList providerIds(const QList<ProviderDescriptor> &providers);

@@ -5,6 +5,7 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "text"
 
 Page {
     id: page
@@ -35,12 +36,6 @@ Page {
         openAccounts: "Open Accounts",
         ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
         ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Standard.",
-        running: "running",
-        notRunning: "not running",
-        looking: "Looking…",
-        lookAgain: "Look again",
-        cleanupModel: "Cleanup model",
-        pull: "Download through Ollama",
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
         promptCaption: "The rules refinement follows. Most people never change them."
     })
@@ -182,143 +177,8 @@ Page {
                     SchemaRow { rowId: "anthropicFastMode" }
                 }
 
-                Column {
-                    id: local
-                    readonly property var running: Models.runners.filter(r => r.running)
-                    readonly property var chosen: Models.runners.find(r => r.id === Settings.values.localRunner)
-
-                    SchemaRow {
-                        rowId: "localRunnerDetect"
-                        help: ModelText.runnersText
-                        stacked: true
-                        Row {
-                            spacing: Theme.space5
-                            Repeater {
-                                model: Models.runners
-                                Row {
-                                    id: runner
-                                    required property var modelData
-                                    spacing: Theme.space2
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    Txt { text: runner.modelData.label; variant: "label"; anchors.verticalCenter: parent.verticalCenter }
-                                    // While a search runs, each says so with a spinner rather than greying out.
-                                    StatusText {
-                                        busy: Models.detectingRunners
-                                        text: runner.modelData.running ? page.t.running : page.t.notRunning
-                                        tone: runner.modelData.running ? "positive" : "neutral"
-                                        indicator: runner.modelData.running ? "dot" : "none"
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                }
-                            }
-                            Button {
-                                text: Models.detectingRunners ? page.t.looking : page.t.lookAgain
-                                iconName: "radar"
-                                size: "small"
-                                busy: Models.detectingRunners
-                                enabled: !Models.detectingRunners
-                                anchors.verticalCenter: parent.verticalCenter
-                                onClicked: Models.detectRunners()
-                            }
-                        }
-                    }
-                    SchemaRow {
-                        id: runnerRow
-                        rowId: "localRunner"
-                        Select {
-                            options: local.running.map(r => ({ id: r.id, label: r.label }))
-                                     .concat(local.chosen && !local.chosen.running ? [{ id: local.chosen.id, label: ModelText.stoppedRunner(local.chosen.label) }] : [])
-                            currentId: Settings.values.localRunner || ""
-                            placeholder: runnerRow.spec.placeholder
-                            onChosen: id => Settings.set("localRunner", id)
-                        }
-                    }
-                    SchemaRow {
-                        id: runnerModelRow
-                        rowId: "localRunnerModel"
-                        SuggestField {
-                            suggestionsText: Words.suggestions
-                            text: Settings.values.localRunnerModel || ""
-                            suggestions: (local.chosen ? local.chosen.models : []).map(m => ({ id: m, label: m }))
-                            placeholderText: runnerModelRow.spec.placeholder
-                            onCommitted: v => Settings.set("localRunnerModel", v)
-                        }
-                    }
-                    // The cleanup model suggested here, which Ollama can
-                    // download, and its download while it runs.
-                    SettingRow {
-                        shown: Settings.values.localRunner === "ollama" && (Models.offerPull || Models.pull.running || !Models.cleanupSuggestion.name)
-                        title: page.t.cleanupModel
-                        help: ModelText.pullText
-                        Switcher {
-                            width: implicitWidth
-                            currentIndex: Models.pull.running ? 1 : 0
-                            Button {
-                                text: page.t.pull
-                                iconName: "download"
-                                size: "small"
-                                enabled: Models.offerPull
-                                onClicked: Models.pullCleanupModel()
-                            }
-                            Row {
-                                spacing: Theme.space2
-                                ProgressBar {
-                                    width: 120
-                                    value: Models.pull.totalBytes > 0 ? Models.pull.completedBytes / Models.pull.totalBytes : 0
-                                    indeterminate: Models.pull.totalBytes <= 0
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                IconButton {
-                                    size: 22
-                                    iconName: "x"
-                                    tooltip: Words.cancel
-                                    onClicked: Models.cancelPull()
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Column {
-                    SchemaRow { rowId: "refinementEndpointServer" }
-                    SchemaRow { rowId: "refinementEndpointFormat" }
-                    SchemaRow { rowId: "refinementEndpointUrl" }
-                    SchemaRow { rowId: "refinementEndpointApiKey" }
-                    SchemaRow {
-                        id: endpointModelRow
-                        rowId: "refinementEndpointModel"
-                        SuggestField {
-                            suggestionsText: Words.suggestions
-                            text: Settings.values.refinementEndpointModel || ""
-                            suggestions: Models.refinementEndpoint.models.map(m => ({ id: m, label: m }))
-                            placeholderText: endpointModelRow.spec.placeholder
-                            onCommitted: v => Settings.set("refinementEndpointModel", v)
-                        }
-                    }
-                    SchemaRow {
-                        id: endpointTestRow
-                        readonly property var check: ModelText.endpointCheck(Models.refinementEndpoint)
-                        rowId: "refinementEndpointTest"
-                        Row {
-                            spacing: Theme.space3
-                            StatusText {
-                                text: endpointTestRow.check.text
-                                busy: endpointTestRow.check.busy
-                                tone: endpointTestRow.check.tone
-                                indicator: endpointTestRow.check.dot ? "dot" : "none"
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-                            Button {
-                                text: endpointTestRow.spec.actionLabel
-                                iconName: "plug-zap"
-                                size: "small"
-                                enabled: !endpointTestRow.check.busy
-                                onClicked: Models.testRefinementEndpoint()
-                            }
-                        }
-                    }
-                }
+                LocalRunnerRows {}
+                RefinementEndpointRows {}
             }
         }
     }

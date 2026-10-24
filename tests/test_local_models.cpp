@@ -141,23 +141,32 @@ private slots:
                                                   {QStringLiteral("gemma4:e4b")}}});
         settings.setRefinementProvider(QStringLiteral("anthropic"));
 
+        const QString anthropic = QStringLiteral("anthropic");
         const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
         settings.setRefinementFallbackProviders(full);
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), full);
         QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
 
         settings.setRefinementFallbackProviders({});
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
-        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
+        QCOMPARE(settings.refinementProvider(), anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
         QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
 
         // Already a fallback.
         settings.setLocalRunnerSettings({});
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
         QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+
+        // Setup's choice, saved with the fallback: with None saved, a chain
+        // behind it could hold no fallback at all.
+        settings.setRefinementProvider(QStringLiteral("none"));
+        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
     }
 
     void endpointChecksDiscardSupersededResults_data()
@@ -390,7 +399,7 @@ private slots:
         ProviderRegistry providers;
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
-        providers.registerSpeechProvider({"local", "Local model", {}},
+        providers.registerSpeechProvider({"local", "Local model"},
             [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
 #endif
         LocalSetup setup(settings, providers, models);

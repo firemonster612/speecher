@@ -22,10 +22,12 @@ class QuickModels final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Models)
     QML_SINGLETON
-    // [{id, label, state, problem}] in the registry's order. state is ready,
-    // unknown (nothing seen says whether it works, such as a sign-in nobody
-    // has checked), offline, signedOut, noModel, noRunner, noServer or
-    // language; problem is core's sentence for any but ready and unknown.
+    // [{id, label, signsIn, state, problem}] in the registry's order. state
+    // is ready, unknown (nothing seen says whether it works, such as a
+    // sign-in nobody has checked or a server not yet tested), offline,
+    // signedOut, noModel, noRunner, noServer, checkFailed (the server's last
+    // connection check failed) or language; problem is core's sentence for
+    // any but ready and unknown.
     Q_PROPERTY(QVariantList speechServices READ speechServices NOTIFY changed)
     // As speechServices, each with readsScreenshots.
     Q_PROPERTY(QVariantList refinementProviders READ refinementProviders NOTIFY changed)
@@ -149,10 +151,15 @@ public:
     QString builtInSystemPrompt() const;
     QVariantMap fallbackOffers() const { return m_fallbackOffers; }
 
-    // Probes the hardware the first time and looks for Local Runners again:
-    // what a page that shows them asks for when it opens. Probing loads the
-    // speech engine's backends, so the daemon waits for a window to want it.
+    // Probes the hardware the first time: what a page that shows fits,
+    // suggestions or ratings asks for when it opens. Probing loads the speech
+    // engine's backends, so the daemon waits for a window to want it. A page
+    // that shows the Local Runners looks for them with detectRunners().
     Q_INVOKABLE void checkComputer();
+    // Asks the speech services that sign in whether they are signed in, for
+    // setup, where each is otherwise unknown until the first dictation; their
+    // state follows the answers.
+    Q_INVOKABLE void checkSignIns();
     // {id, label} of a speech service, the id as its label for one this
     // build lacks. Labels never change, so bindings may call it.
     Q_INVOKABLE QVariantMap service(const QString &id) const;
@@ -178,8 +185,9 @@ public:
     // runner's model once it is there.
     Q_INVOKABLE void pullCleanupModel();
     Q_INVOKABLE void cancelPull();
-    // Adds the local fallback offered for a role, speech or refinement.
-    Q_INVOKABLE void acceptFallbackOffer(const QString &role);
+    // Adds the local fallback offered for a role, speech or refinement,
+    // behind primary, setup's choice for it, which is saved with it.
+    Q_INVOKABLE void acceptFallbackOffer(const QString &role, const QString &primary);
 
 signals:
     void changed();

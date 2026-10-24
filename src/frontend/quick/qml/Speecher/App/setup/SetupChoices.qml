@@ -14,8 +14,10 @@ import Speecher.App
 //
 // The shortcut step has no draft: its rows write Settings as you record, as
 // the existing assistant binds shortcuts live, so the shortcut can be tried
-// before setup ends. The custom endpoint's URL and the microphone are written
-// live the same way, so the microphone test listens to the one picked.
+// before setup ends. The Local Model, the Custom Endpoints' and Local
+// Runner's rows, the fallback offers and the microphone are written live the
+// same way, so a connection check tests the server typed and the microphone
+// test listens to the one picked.
 QtObject {
     id: choices
 
@@ -35,10 +37,14 @@ QtObject {
             const known = Models.speechServices.find(s => s.id === speech)
             const service = known ? ModelText.service(speech) : null
             // A model still downloading counts: the download carries on while
-            // setup does. So does a sign-in nobody has checked yet.
+            // setup does. A sign-in being checked or a server not yet tested
+            // doesn't, until it answers.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
-            const done = !!service && (service.state === "ready" || service.state === "unknown" || downloading)
-            return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label : ModelText.status(service) }
+            const done = !!service && (service.state === "ready" || downloading)
+            return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label
+                                          : service.state !== "unknown" ? ModelText.status(service)
+                                          : speech === "endpoint" ? ModelText.endpointCheck(Models.speechEndpoint).text
+                                          : ModelText.checking }
         }
         case "microphone": {
             // Allowed, a microphone that is there, and speech heard from it.

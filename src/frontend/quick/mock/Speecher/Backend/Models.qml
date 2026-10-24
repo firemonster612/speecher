@@ -24,20 +24,27 @@ QtObject {
 
     // In the registry's order: by label. state as QuickModels.h lists them.
     readonly property var speechServices: [
-        { id: "codex", label: "ChatGPT Codex", state: "ready", problem: "" },
-        { id: "claude", label: "Claude Voice", state: "ready", problem: "" },
-        { id: "endpoint", label: "Custom Endpoint", state: Settings.values.speechEndpointUrl ? "ready" : "noServer",
-          problem: Settings.values.speechEndpointUrl ? "" : "No server URL is set." },
-        { id: "local", label: "Local Model", state: downloaded.indexOf(localModelChoice) >= 0 ? "ready" : "noModel",
+        { id: "codex", label: "ChatGPT Codex", signsIn: true, state: "ready", problem: "" },
+        { id: "claude", label: "Claude Voice", signsIn: true, state: "ready", problem: "" },
+        Object.assign({ id: "endpoint", label: "Custom Endpoint", signsIn: false },
+                      _endpointState(Settings.values.speechEndpointUrl, speechEndpoint)),
+        { id: "local", label: "Local Model", signsIn: false, state: downloaded.indexOf(localModelChoice) >= 0 ? "ready" : "noModel",
           problem: downloaded.indexOf(localModelChoice) >= 0 ? "" : "No model downloaded." }
     ]
     readonly property var refinementProviders: [
-        { id: "anthropic", label: "Anthropic", state: "ready", problem: "", readsScreenshots: true },
-        { id: "endpoint", label: "Custom Endpoint", state: Settings.values.refinementEndpointUrl ? "ready" : "noServer",
-          problem: Settings.values.refinementEndpointUrl ? "" : "No server URL is set.", readsScreenshots: false },
-        { id: "local", label: "Local Runner", state: "ready", problem: "", readsScreenshots: false },
-        { id: "openai", label: "OpenAI", state: "ready", problem: "", readsScreenshots: true }
+        { id: "anthropic", label: "Anthropic", signsIn: true, state: "ready", problem: "", readsScreenshots: true },
+        Object.assign({ id: "endpoint", label: "Custom Endpoint", signsIn: false, readsScreenshots: false },
+                      _endpointState(Settings.values.refinementEndpointUrl, refinementEndpoint)),
+        { id: "local", label: "Local Runner", signsIn: false, state: "ready", problem: "", readsScreenshots: false },
+        { id: "openai", label: "OpenAI", signsIn: true, state: "ready", problem: "", readsScreenshots: true }
     ]
+    // A Custom Endpoint's state, as core judges it from its server and its
+    // last connection check.
+    function _endpointState(url, check) {
+        if (!url) return { state: "noServer", problem: "No server URL is set." }
+        if (!check.checked || check.checking) return { state: "unknown", problem: "" }
+        return check.ok ? { state: "ready", problem: "" } : { state: "checkFailed", problem: check.status }
+    }
     readonly property var speechRatings: ({
         codex: { ratedModel: "", bars: [{ measure: "accuracy", value: 8.5 }, { measure: "speed", value: 7 }] },
         claude: { ratedModel: "", bars: [{ measure: "accuracy", value: 5.5 }, { measure: "speed", value: 10 }] },
@@ -126,6 +133,7 @@ QtObject {
                                     ? localModelChoice : ""
 
     function checkComputer() {}
+    function checkSignIns() {}
     function download(id) {
         const next = Object.assign({}, downloads)
         next[id] = 0
@@ -246,10 +254,12 @@ QtObject {
         speech: downloaded.length ? {} : { modelId: "parakeet", name: "Parakeet 0.6B" },
         refinement: { modelId: "qwen3:8b", name: "Ollama" }
     })
-    function acceptFallbackOffer(role) {
+    function acceptFallbackOffer(role, primary) {
         const key = role === "speech" ? "speechFallbackList" : "refinementFallbacks"
         const list = Settings.values[key] || []
-        if (list.indexOf("local") < 0) Settings.set(key, list.concat(["local"]))
+        if (list.indexOf("local") >= 0) return
+        Settings.set(role === "speech" ? "speechProvider" : "refinementProvider", primary)
+        Settings.set(key, list.concat(["local"]))
         if (role === "speech") download("parakeet")
     }
 
