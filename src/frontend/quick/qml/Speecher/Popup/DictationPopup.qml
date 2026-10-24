@@ -123,14 +123,14 @@ Item {
     implicitHeight: Math.max(holder.height, target.height)
 
     // Only the live dictation's popup carries them, not a page's demo, and
-    // not over a review, the tallest phase.
+    // not over a review (a follow-up's too), the tallest phase.
     OfferChips {
         id: offers
         width: popup.widest
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: holder.top
         anchors.bottomMargin: 10
-        active: popup.source === Dictation && popup.shown && popup.phase !== "review"
+        active: popup.source === Dictation && popup.shown && !popup.reviewShown
     }
 
     Item {
