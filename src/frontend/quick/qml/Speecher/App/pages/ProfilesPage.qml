@@ -21,9 +21,9 @@ Page {
 
     function addProfile() {
         const id = Library.newId("custom_profile")
-        Library.add("profiles", { id: id, name: "New profile", icon: "pen-line", builtIn: false, cleanup: "balanced", tone: "none",
-                                  language: "", instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" })
-        selectedId = id
+        if (Library.add("profiles", { id: id, name: Library.newProfileName(), cleanup: "balanced", tone: "none", language: "",
+                                      instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }))
+            selectedId = id
     }
 
     // Profiles on the left, the chosen one's settings on the right, on one
@@ -57,7 +57,7 @@ Page {
                         first: index === 0
                         title: profile.name
                         detail: Library.profileSummary(profile)
-                        iconName: profile.icon
+                        iconName: Library.profileIcon(key)
                         clickable: true
                         selected: key === page.selected.id
                         Accessible.selected: selected
@@ -104,7 +104,7 @@ Page {
         SchemaRow {
             rowId: "defaultWritingProfile"
             Select {
-                options: page.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon }))
+                options: page.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
                 currentId: Settings.values.defaultWritingProfile || ""
                 onChosen: id => Settings.set("defaultWritingProfile", id)
             }
@@ -121,9 +121,9 @@ Page {
             stacked: true
             TextArea {
                 width: parent.width
-                text: Library.additionalInstructions
+                text: Settings.values.additionalInstructions || ""
                 placeholderText: Schema.row("additionalInstructions").placeholder
-                onEditingFinished: Library.additionalInstructions = text
+                onEditingFinished: Settings.set("additionalInstructions", text)
             }
         }
     }
@@ -149,7 +149,7 @@ Page {
                 formOpen: toneForm.open
                 emptyText: Library.profilesText.tonesEmpty
                 onEditClicked: i => toneForm.startEdit(i)
-                onRemoveClicked: i => { const name = Library.customTones[i].name; const undo = Library.removeTone(Library.customTones[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) }
+                onRemoveClicked: i => { const name = Library.customTones[i].name; const undo = Library.removeTone(Library.customTones[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) }
 
                 InlineForm {
                     cancelText: Words.cancel
@@ -169,9 +169,9 @@ Page {
                     onCancelled: open = false
                     onSaved: {
                         const tone = { name: toneName.text.trim(), instruction: toneText.text }
-                        if (editing < 0) Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone))
-                        else Library.update("customTones", editing, tone)
-                        open = false
+                        if (editing < 0 ? Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone))
+                                        : Library.update("customTones", editing, tone))
+                            open = false
                     }
                     FormField { label: Library.profilesText.name; TextField { id: toneName; width: parent.width; placeholderText: Library.profilesText.toneNamePlaceholder } }
                     FormField {
@@ -199,7 +199,7 @@ Page {
                 formOpen: levelForm.open
                 emptyText: Library.profilesText.levelsEmpty
                 onEditClicked: i => levelForm.startEdit(i)
-                onRemoveClicked: i => { const name = Library.customCleanupLevels[i].name; const undo = Library.removeLevel(Library.customCleanupLevels[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) }
+                onRemoveClicked: i => { const name = Library.customCleanupLevels[i].name; const undo = Library.removeLevel(Library.customCleanupLevels[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) }
 
                 InlineForm {
                     cancelText: Words.cancel
@@ -222,9 +222,9 @@ Page {
                     onCancelled: open = false
                     onSaved: {
                         const level = { name: levelName.text.trim(), base: base, instructions: levelText.text }
-                        if (editing < 0) Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level))
-                        else Library.update("customCleanupLevels", editing, level)
-                        open = false
+                        if (editing < 0 ? Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level))
+                                        : Library.update("customCleanupLevels", editing, level))
+                            open = false
                     }
                     FormField { label: Library.profilesText.name; TextField { id: levelName; width: parent.width; placeholderText: Library.profilesText.levelNamePlaceholder } }
                     FormField {

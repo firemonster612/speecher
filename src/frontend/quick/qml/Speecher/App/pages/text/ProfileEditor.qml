@@ -76,7 +76,8 @@ Column {
                     width: Math.min(parent.width, 300)
                     variant: "title"
                     text: editor.profile.name || ""
-                    onEditingFinished: editor.edited({ name: text })
+                    // Back to the saved name, which a blank or taken one never replaces.
+                    onEditingFinished: { editor.edited({ name: text }); text = Qt.binding(() => editor.profile.name || "") }
                 }
                 Txt { text: editor.usedIn; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
             }

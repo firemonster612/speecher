@@ -28,6 +28,7 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
+#include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickStatus.h"
@@ -964,6 +965,8 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
+        // Setup's choices read Library.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         // The step's check is System's.
         QuickSystem system(&controller);

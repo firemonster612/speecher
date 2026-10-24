@@ -74,10 +74,10 @@ void store(QSettings &settings, const QList<VocabularyEntry> &entries)
     settings.setValue(SettingsKeys::LegacyVocabulary, legacyTerms);
 }
 
-void recordUsage(QSettings &settings, const QString &text)
+bool recordUsage(QSettings &settings, const QString &text)
 {
     if (text.trimmed().isEmpty()) {
-        return;
+        return false;
     }
     QList<VocabularyEntry> entries = load(settings);
     bool changed = false;
@@ -91,6 +91,7 @@ void recordUsage(QSettings &settings, const QString &text)
     if (changed) {
         store(settings, entries);
     }
+    return changed;
 }
 
 } // namespace speecher::VocabularySettingsCodec

@@ -14,7 +14,7 @@ Section {
     id: section
 
     readonly property var categoryOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.appCategories.map(c => ({ id: c.id, label: c.label, icon: c.icon })))
-    readonly property var profileOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon })))
+    readonly property var profileOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })))
     // The page scrolls to item, for the form a built-in chip opens.
     signal revealRequested(Item item)
 
@@ -35,8 +35,8 @@ Section {
         open: Launch.arg("pasting-form", "") === "match"
         onCancelled: open = false
         onSaved: {
-            Library.add("recognitionRules", { match: matchText.text.trim(), category: category, profile: profile })
-            open = false
+            if (Library.add("recognitionRules", { match: matchText.text.trim(), category: category, profile: profile }))
+                open = false
         }
         FormField {
             label: Library.pastingText.matchApp
@@ -108,7 +108,7 @@ Section {
                 onChosen: id => Library.update("recognitionRules", matchRow.index, { profile: id })
             }
             actions: [
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch; onClicked: { const name = matchRow.rule.match; const undo = Library.remove("recognitionRules", matchRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch; onClicked: { const name = matchRow.rule.match; const undo = Library.remove("recognitionRules", matchRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) } }
             ]
         }
     }

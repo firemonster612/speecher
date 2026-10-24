@@ -15,7 +15,7 @@ Page {
     subtitle: Schema.page("vocabulary").subtitle
 
     // Preview state: --vocab=terms|corrections|replacements picks the list,
-    // --vocab-form=add|edit opens its form.
+    // --vocab-form=add|edit|import opens its form.
 
     // The list on show.
     property string tab: Launch.arg("vocab", "terms")
@@ -70,7 +70,7 @@ Page {
                     layoutDirection: Qt.RightToLeft
                     spacing: Theme.space2
                     Button { text: Library.vocabularyText.addTerm; iconName: "plus"; size: "small"; onClicked: terms.startAdd() }
-                    Button { text: Library.vocabularyText.importTerms; iconName: "file-up"; size: "small"; onClicked: Library.importTerms() }
+                    Button { text: Library.vocabularyText.importTerms; iconName: "file-up"; size: "small"; onClicked: terms.startImport() }
                 }
                 Row {
                     layoutDirection: Qt.RightToLeft
@@ -79,14 +79,18 @@ Page {
                         iconName: "undo-2"
                         size: "small"
                         enabled: Library.corrections.length > 0
-                        onClicked: Library.undoLastCorrection()
+                        onClicked: {
+                            const name = Library.corrections[0].corrected
+                            const undo = Library.undoLastCorrection()
+                            Toaster.show(Words.deleted(name), { icon: "undo-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                        }
                     }
                 }
                 Row {
                     layoutDirection: Qt.RightToLeft
                     spacing: Theme.space2
                     Button { text: Library.vocabularyText.addReplacement; iconName: "plus"; size: "small"; onClicked: replacements.startAdd() }
-                    Button { text: Library.vocabularyText.importReplacements; iconName: "file-up"; size: "small"; onClicked: Library.importReplacements() }
+                    Button { text: Library.vocabularyText.importReplacements; iconName: "file-up"; size: "small"; onClicked: replacements.startImport() }
                 }
             }
         }

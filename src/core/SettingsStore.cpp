@@ -375,6 +375,15 @@ bool SettingsStore::recordCorrectionEvidence(const CorrectionEvidence &evidence,
     return true;
 }
 
+bool SettingsStore::recordVocabularyUsage(const QString &text)
+{
+    if (!SettingsCodecs::recordVocabularyUsage(text)) {
+        return false;
+    }
+    emit vocabularyUsageRecorded();
+    return true;
+}
+
 QString SettingsStore::audioInputDeviceId() const
 {
     return audioCaptureSettings().deviceId;

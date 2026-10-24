@@ -18,7 +18,7 @@ Card {
         target: view
     }
 
-    property string startForm   // "add" or "edit", for previews
+    property string startForm   // "add", "edit" or "import", for previews
 
     readonly property var terms: Library.terms
     // The terms the search matches, each with its place in the full list.
@@ -32,18 +32,20 @@ Card {
     property var draftProfiles: []
     function startAdd() {
         editing = -1; termName.text = ""; termContext.text = ""; keyTerm.checked = true; draftProfiles = []
-        form.open = true
+        importForm.open = false; form.open = true
     }
     function startEdit(i) {
         const t = terms[i]
         editing = i; termName.text = t.term; termContext.text = t.context; keyTerm.checked = t.keyTerm; draftProfiles = t.profiles.slice()
-        form.open = true
+        importForm.open = false; form.open = true
     }
+    function startImport() { form.open = false; importForm.start() }
     function toggleProfile(id) {
         draftProfiles = draftProfiles.includes(id) ? draftProfiles.filter(p => p !== id) : draftProfiles.concat([id])
     }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && terms.length) startEdit(1)
+    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && terms.length) startEdit(1); else if (startForm === "import") startImport()
 
+    VocabImport { id: importForm; list: "terms" }
     InlineForm {
         cancelText: Words.cancel
         id: form
@@ -53,9 +55,8 @@ Card {
         onCancelled: open = false
         onSaved: {
             const term = { term: termName.text.trim(), context: termContext.text.trim(), keyTerm: keyTerm.checked, profiles: view.draftProfiles }
-            if (view.editing < 0) Library.add("terms", Object.assign({ source: "Added", uses: 0 }, term))
-            else Library.update("terms", view.editing, term)
-            open = false
+            if (view.editing < 0 ? Library.add("terms", term) : Library.update("terms", view.editing, term))
+                open = false
         }
         Row {
             width: parent.width
@@ -85,7 +86,7 @@ Card {
                     Chip {
                         required property var modelData
                         text: modelData.name
-                        iconName: modelData.icon
+                        iconName: Library.profileIcon(modelData.id)
                         checkable: true
                         checked: view.draftProfiles.includes(modelData.id)
                         onClicked: view.toggleProfile(modelData.id)
@@ -136,7 +137,6 @@ Card {
             required property string key
             required property int index
             readonly property var term: list.entry(key)
-            readonly property string source: Library.termSource(term)
             width: ListView.view.width
             first: index === 0 && list.first
             height: Math.max(Theme.rowHeight, main.implicitHeight + Theme.space6)
@@ -161,7 +161,7 @@ Card {
                 }
                 Txt {
                     visible: text.length > 0
-                    text: [row.term.context, row.source].filter(s => s).join(" ")
+                    text: Library.termDetail(row.term)
                     variant: "small"
                     tone: "secondary"
                     width: parent.width
@@ -188,7 +188,7 @@ Card {
             }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.term.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.term.term; const undo = Library.remove("terms", row.term.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.term.term; const undo = Library.remove("terms", row.term.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) } }
             ]
         }
     }
@@ -202,7 +202,7 @@ Card {
         }
     }
     Reveal {
-        open: view.terms.length === 0 && !form.open
+        open: view.terms.length === 0 && !form.open && !importForm.open
         EmptyState {
             compact: true
             title: Library.vocabularyText.noTerms

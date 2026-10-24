@@ -5,6 +5,7 @@
 #include "app/LocalSetup.h"
 #include "core/PasteRules.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJSEngine>
@@ -125,14 +126,8 @@ private slots:
         settings.set(QStringLiteral("speechEndpointApiKey"), QStringLiteral("sk-made-up"));
         QVERIFY(!settings.values().contains(QStringLiteral("speechEndpointApiKey")));
 
-        // A placeholder area's made-up choice never reaches the config.
-        const QString profile = SettingsStore().dictationSnapshot().refinement.defaultWritingProfile;
-        QTest::ignoreMessage(QtWarningMsg, "Settings.set: defaultWritingProfile is not saved from the UI yet");
-        settings.set(QStringLiteral("defaultWritingProfile"), QStringLiteral("made-up"));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
-
         // Accounts saves the secrets.
-        for (const char *id : {"speechEndpointApiKey", "defaultWritingProfile"}) {
+        for (const char *id : {"speechEndpointApiKey"}) {
             QVERIFY2(!settings.saves(QLatin1String(id)), id);
         }
         for (const char *id : {"pauseMedia", "audioDevice", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
@@ -226,6 +221,8 @@ private slots:
     void pasteRulesSaveByScope()
     {
         ApplicationController controller(true);
+        // The page's app matches are Library's.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         // A copy, since the list it was found in goes with the lambda.
         const auto rule = [](PasteRuleScope scope, const char *match) -> std::optional<PasteRule> {

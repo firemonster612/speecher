@@ -25,10 +25,12 @@ Card {
     }
 
     property int editing: -1
-    function startAdd() { editing = -1; phrase.text = ""; replacement.text = ""; form.open = true }
-    function startEdit(i) { editing = i; phrase.text = items[i].phrase; replacement.text = items[i].replacement; form.open = true }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && items.length) startEdit(2)
+    function startAdd() { editing = -1; phrase.text = ""; replacement.text = ""; importForm.open = false; form.open = true }
+    function startEdit(i) { editing = i; phrase.text = items[i].phrase; replacement.text = items[i].replacement; importForm.open = false; form.open = true }
+    function startImport() { form.open = false; importForm.start() }
+    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && items.length) startEdit(2); else if (startForm === "import") startImport()
 
+    VocabImport { id: importForm; list: "replacements" }
     InlineForm {
         cancelText: Words.cancel
         id: form
@@ -38,9 +40,8 @@ Card {
         onCancelled: open = false
         onSaved: {
             const item = { phrase: phrase.text.trim(), replacement: replacement.text }
-            if (view.editing < 0) Library.add("replacements", item)
-            else Library.update("replacements", view.editing, item)
-            open = false
+            if (view.editing < 0 ? Library.add("replacements", item) : Library.update("replacements", view.editing, item))
+                open = false
         }
         FormField { label: Library.vocabularyText.whenYouSay; TextField { id: phrase; width: parent.width; iconName: "mic" } }
         FormField {
@@ -99,13 +100,13 @@ Card {
             }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.item.phrase; const undo = Library.remove("replacements", row.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.item.phrase; const undo = Library.remove("replacements", row.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) } }
             ]
         }
     }
 
     Reveal {
-        open: view.items.length === 0 && !form.open
+        open: view.items.length === 0 && !form.open && !importForm.open
         EmptyState {
             compact: true
             title: Library.vocabularyText.noReplacements

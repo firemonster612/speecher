@@ -6,6 +6,7 @@
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickInsights.h"
+#include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
@@ -78,6 +79,7 @@ private:
     QuickModels m_models;
     QuickInsights m_insights;
     QuickAccounts m_accounts;
+    QuickLibrary::ControllerScope m_library;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

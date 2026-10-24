@@ -45,7 +45,7 @@ Card {
                     anchors.verticalCenter: parent.verticalCenter
                     opacity: row.dim
                     Behavior on opacity { Ease {} }
-                    AppIcon { name: row.correction.app; size: 16; anchors.verticalCenter: parent.verticalCenter }
+                    AppIcon { name: row.correction.app.split(".").pop(); size: 16; anchors.verticalCenter: parent.verticalCenter }
                     Txt {
                         text: Library.correctionSource(row.correction)
                         variant: "small"

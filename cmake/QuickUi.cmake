@@ -66,6 +66,7 @@ speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DI
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
   EXCLUDE Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
     Transcription.qml System.qml Models.qml Insights.qml Accounts.qml Audio.qml
+    LibraryLists.qml
   SOURCES
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
@@ -77,6 +78,8 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QuickModels.h"
     "${SPEECHER_QUICK_DIR}/host/QuickInsights.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickInsights.h"
+    "${SPEECHER_QUICK_DIR}/host/QuickLibrary.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickLibrary.h"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.h"
     "${SPEECHER_QUICK_DIR}/host/QuickStatus.cpp"

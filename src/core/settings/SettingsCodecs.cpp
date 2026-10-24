@@ -435,9 +435,9 @@ void SettingsCodecs::setVocabularyEntries(const QList<VocabularyEntry> &entries)
     VocabularySettingsCodec::store(m_settings, withOfferedProfiles(entries, writingProfileSettings()));
 }
 
-void SettingsCodecs::recordVocabularyUsage(const QString &text)
+bool SettingsCodecs::recordVocabularyUsage(const QString &text)
 {
-    VocabularySettingsCodec::recordUsage(m_settings, text);
+    return VocabularySettingsCodec::recordUsage(m_settings, text);
 }
 
 std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList &terms)

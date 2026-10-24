@@ -93,6 +93,14 @@ Backend is the C++ types plus the mocks not yet replaced.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
+- `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`; the
+  preview's `LibraryLists.qml` mocks it): the Writing Profiles, custom tones
+  and cleanup levels, vocabulary terms, Learned Corrections, replacements and
+  app matches, read from and saved through the daemon's `SettingsStore`.
+  `add(list, item)` and `update(list, index, patch)` refuse an invalid entry
+  and return false; a removal returns a token for `undo(token)`. Library.qml
+  words the lists; its other lists stay placeholders until their areas are
+  wired.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version and the shortcut's keys.
 - `Updates` is the updater as `QuickUpdates.h` documents it: its state
