@@ -108,8 +108,8 @@ int main(int argc, char **argv)
     if (selected("settings")) result |= runSettingsTests(argc, argv);
     if (selected("provider_registry")) result |= runProviderRegistryTests(argc, argv);
     if (selected("platform_composition")) result |= runPlatformCompositionTests(argc, argv);
+    if (selected("tray")) result |= runTrayTests(argc, argv);
 #ifdef Q_OS_LINUX
-    if (selected("linux_tray")) result |= runLinuxTrayTests(argc, argv);
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
     if (selected("quick_settings")) result |= runQuickSettingsTests(argc, argv);

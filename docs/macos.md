@@ -1,10 +1,11 @@
 # Speecher on macOS
 
-The desktop UI is being replaced: the SwiftUI menu bar front end is gone, and
-one Qt Quick UI will run on every platform
-([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Until it is ported
-to macOS, `speecher.app` runs as a background app with no windows, and the
-command line talks to it.
+`speecher.app` is one process: the daemon, with the same Qt Quick UI as on
+Linux inside it ([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Its
+menu bar item offers Open Speecher, Start or Stop dictation, Settings and
+Quit; a click on the Dock icon opens Speecher too. The dictation popup is a
+non-activating panel, so the app being dictated into keeps the keyboard. The
+command line talks to the running app.
 
 ## Building
 
@@ -30,9 +31,16 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix /Applications
 ```
 
+The UI needs Qt 6.9 or newer. Its own QML modules and fonts are compiled into
+the `speecher` binary (`cmake/QuickUi.cmake`); Qt's QML modules load from Qt
+at run time.
+
 The bundle's Info.plist carries the microphone and Apple Events usage
 descriptions, so permission prompts work from a plain developer build. For a
-distributable app, `make dmg` runs `macdeployqt` on a staged copy of the bundle.
+distributable app, `make dmg` runs `macdeployqt` on a staged copy of the
+bundle, with `-qmldir` pointed at the UI so it bundles the Qt QML modules the
+UI imports. `packaging/macos/verify-dmg.sh build/speecher.dmg` checks the app
+in the image opens Main from the bundle alone; CI runs it after packaging.
 Sign and notarize release builds as usual.
 
 Echo cancellation for recordings needs webrtc-audio-processing 1.3, which

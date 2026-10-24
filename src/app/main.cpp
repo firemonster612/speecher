@@ -11,19 +11,16 @@
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
-#ifdef Q_OS_LINUX
-#include "app/LinuxTrayIcon.h"
+#include "app/TrayIcon.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacReopen.h"
 #endif
 #ifdef Q_OS_WIN
 #include "platform/win/WinSessionEnd.h"
 #endif
 
-#ifdef Q_OS_LINUX
 #include <QApplication>
-#else
-#include <QGuiApplication>
-#endif
 #include <QDateTime>
 #ifdef Q_OS_WIN
 #include <QDeadlineTimer>
@@ -525,15 +522,13 @@ int main(int argc, char **argv)
         return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
-#ifdef Q_OS_LINUX
     // Qt Widgets, for the tray icon's QSystemTrayIcon.
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
     AppImageUpdater::waitForRestartParent();
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }
-#else
-    QGuiApplication app(argc, argv);
 #endif
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
@@ -545,11 +540,9 @@ int main(int argc, char **argv)
                      &app,
                      &QCoreApplication::quit,
                      Qt::QueuedConnection);
-#ifdef Q_OS_LINUX
     // From launch: in daemon mode it is the only sign the process is running
     // and the global shortcut has something to reach.
-    LinuxTrayIcon tray(&controller);
-#endif
+    TrayIcon tray(&controller);
 #ifdef Q_OS_WIN
     win::quitWhenWindowsEndsSession(&controller, [&controller] {
         // Queued: Windows waits on the message until this returns.
@@ -607,11 +600,14 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-#ifdef Q_OS_LINUX
     // After the socket, so a launch that only hands its command to the
     // running instance never builds a QML engine. Opens no window until the
     // controller asks for one.
     QuickFrontEnd frontEnd(&controller);
+#ifdef Q_OS_MACOS
+    // A click on the Dock icon, or opening Speecher again, brings up Main, as
+    // a second launch does elsewhere.
+    mac::onReopen(&controller, [&controller] { controller.showMain(); });
 #endif
 
     if (opensSetupAtLaunch(decision, controller.setupPending())) {

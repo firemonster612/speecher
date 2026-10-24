@@ -9,6 +9,11 @@ $InstallerPath = Resolve-Path $InstallerPath
 $InstallDir = Join-Path $env:TEMP "speecher-installer-test-$PID"
 $OriginalPath = $env:Path
 $OriginalPlatform = $env:QT_QPA_PLATFORM
+# Main opens at launch on a profile that has finished setup, so the check that
+# it opens marks the profile finished; the profile's own value goes back at
+# the end.
+$SetupKey = "HKCU:\Software\io.github.firemonster612\speecher\app"
+$OriginalSetupCompleted = (Get-ItemProperty $SetupKey -ErrorAction SilentlyContinue).setupCompleted
 $App = $null
 
 # Starts the installed app and fails unless it is still running after startup.
@@ -129,21 +134,37 @@ try {
 
     # Launch with only system directories on PATH to prove the install is
     # self-contained, on the runner's interactive desktop rather than the
-    # offscreen QPA platform.
+    # offscreen QPA platform. The Qt Quick UI loads from the deployed QML
+    # modules alone: Main opens, which SPEECHER_GRAB_MAIN_WINDOW saves once it
+    # is shown.
     $env:Path = "$env:SystemRoot;$env:SystemRoot\System32;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
     $env:QT_QPA_PLATFORM = $null
-    $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
-    Start-Sleep -Seconds 8
-    $App.Refresh()
+    $MainShot = Join-Path $env:TEMP "speecher-main-$PID.png"
+    $Log = Join-Path $env:LOCALAPPDATA "io.github.firemonster612\speecher\cache\speecher.log"
+    $LogLines = if (Test-Path $Log) { @(Get-Content $Log).Count } else { 0 }
+    if (-not (Test-Path $SetupKey)) {
+        New-Item $SetupKey -Force | Out-Null
+    }
+    Set-ItemProperty $SetupKey setupCompleted "true"
+    $env:SPEECHER_GRAB_MAIN_WINDOW = $MainShot
+    $App = Start-Process $Exe -PassThru
+    $env:SPEECHER_GRAB_MAIN_WINDOW = $null
+    for ($Tries = 0; $Tries -lt 150 -and -not (Test-Path $MainShot) -and -not $App.HasExited; $Tries++) {
+        Start-Sleep -Milliseconds 200
+    }
     # A missing runtime dependency (Qt, a plugin) makes the process fault
-    # during startup, so surviving several seconds is the self-containment
-    # signal.
+    # during startup.
     if ($App.HasExited) {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
-    Write-Output "Installed application launched and stayed alive without Qt on PATH"
+    $QmlErrors = @(Get-Content $Log | Select-Object -Skip $LogLines | Select-String -SimpleMatch " QML: ")
+    if (-not (Test-Path $MainShot) -or $QmlErrors) {
+        throw "The installed Qt Quick UI did not open Main: $($QmlErrors -join "`n")"
+    }
+    Write-Output "Installed application opened Main without Qt on PATH"
     $App | Stop-Process -Force
     $App.WaitForExit()
+    Remove-Item $MainShot
 
     # A run that goes on in the background releases the launcher, so the
     # prompt comes back while Speecher keeps running.
@@ -290,6 +311,11 @@ public static class RestartManager {
     }
     $env:Path = $OriginalPath
     $env:QT_QPA_PLATFORM = $OriginalPlatform
+    if ($null -eq $OriginalSetupCompleted) {
+        Remove-ItemProperty $SetupKey setupCompleted -ErrorAction SilentlyContinue
+    } else {
+        Set-ItemProperty $SetupKey setupCompleted $OriginalSetupCompleted
+    }
     $Uninstaller = Join-Path $InstallDir "unins000.exe"
     if (Test-Path $Uninstaller) {
         Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait

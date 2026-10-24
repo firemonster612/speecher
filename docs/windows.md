@@ -2,20 +2,21 @@
 
 Speecher supports Windows 11 build 22000 or newer.
 
-The desktop UI is being replaced: the WinUI 3 front end is gone, and one Qt
-Quick UI will run on every platform
-([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Until it is ported
-to Windows, `speecher.exe` runs as a background app with no windows, and the
-command line talks to it.
+`speecher.exe` is one process: the daemon, with the same Qt Quick UI as on
+Linux inside it ([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Its
+tray icon opens Speecher on a click and offers Open Speecher, Start or Stop
+dictation, Settings and Quit in its menu. The dictation popup never takes
+focus, so the app being dictated into keeps the keyboard. The command line
+talks to the running app.
 
 ## Building
 
 Install Visual Studio 2022 Build Tools with the MSVC x64 toolchain and Windows
-11 SDK, CMake, Ninja, Git, Python, and Qt 6.8.3 `msvc2022_64` with Qt Multimedia
-and Qt WebSockets. In a developer PowerShell:
+11 SDK, CMake, Ninja, Git, Python, and Qt 6.9 or newer (CI uses 6.10.3)
+`msvc2022_64` with Qt Multimedia and Qt WebSockets. In a developer PowerShell:
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEECHER_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=C:\Qt\6.8.3\msvc2022_64
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEECHER_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=C:\Qt\6.10.3\msvc2022_64
 cmake --build build
 $env:QT_QPA_PLATFORM = "offscreen"
 ctest --test-dir build --output-on-failure
@@ -27,12 +28,19 @@ Inno Setup 6 is also required to make an installer:
 pwsh packaging/windows/build-installer.ps1 -BuildDir build
 ```
 
-The script runs `windeployqt`, copies the Visual C++ runtime DLLs from the MSVC
-redist folder next to `speecher.exe`, and writes
+The UI's own QML modules and fonts are compiled into `speecher.exe`
+(`cmake/QuickUi.cmake`). The script runs `windeployqt` with `--qmldir` pointed
+at the UI, so it deploys the Qt QML modules the UI imports, copies the Visual
+C++ runtime DLLs from the MSVC redist folder next to `speecher.exe`, and writes
 `dist\Speecher-Setup-x64.exe` plus its checksum. Run it from an MSVC developer
 shell so that `VCToolsRedistDir` is set. Windows Update does not service these
 app-local runtime copies; each Speecher release brings the build toolset's
 current runtime.
+
+`pwsh packaging/windows/verify-installer.ps1 -InstallerPath
+dist\Speecher-Setup-x64.exe` installs it into a temporary folder and checks the
+result, including that the installed app opens Main with only system folders
+on Path. CI runs it after packaging.
 
 ## Installing
 

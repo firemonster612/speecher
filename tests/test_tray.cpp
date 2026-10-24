@@ -2,7 +2,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
-#include "app/LinuxTrayIcon.h"
+#include "app/TrayIcon.h"
 #include "core/SettingsStore.h"
 
 #include <QAction>
@@ -31,7 +31,7 @@ public:
 
 } // namespace
 
-class LinuxTrayTests : public QObject {
+class TrayTests : public QObject {
     Q_OBJECT
 
 private slots:
@@ -44,7 +44,7 @@ private slots:
     void menuOffersDictationSettingsAndQuit()
     {
         ApplicationController controller(true);
-        LinuxTrayIcon tray(&controller);
+        TrayIcon tray(&controller);
 
         auto *icon = tray.findChild<QSystemTrayIcon *>();
         QVERIFY(icon);
@@ -52,7 +52,13 @@ private slots:
 
         QMenu *menu = icon->contextMenu();
         QVERIFY(menu);
-        const QList<QAction *> actions = menu->actions();
+        QList<QAction *> actions = menu->actions();
+#ifndef Q_OS_LINUX
+        // Where a click opens the menu, the menu opens Speecher.
+        QVERIFY(!actions.isEmpty());
+        QCOMPARE(actions.first()->objectName(), QStringLiteral("trayOpen"));
+        QCOMPARE(actions.takeFirst()->text(), QStringLiteral("Open Speecher"));
+#endif
         QCOMPARE(actions.size(), 4);
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
         QCOMPARE(actions.at(0)->text(), QStringLiteral("Start dictation"));
@@ -66,9 +72,9 @@ private slots:
     void listeningStateFlipsToggleTextAndTooltip()
     {
         ApplicationController controller(true);
-        LinuxTrayIcon tray(&controller);
+        TrayIcon tray(&controller);
         auto *icon = tray.findChild<QSystemTrayIcon *>();
-        QAction *toggle = icon->contextMenu()->actions().first();
+        auto *toggle = icon->contextMenu()->findChild<QAction *>(QStringLiteral("trayToggleDictation"));
 
         emit controller.stateChanged(QStringLiteral("listening"));
         QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
@@ -98,7 +104,7 @@ private slots:
     void quitActionRequestsApplicationQuit()
     {
         ApplicationController controller(true);
-        LinuxTrayIcon tray(&controller);
+        TrayIcon tray(&controller);
         auto *icon = tray.findChild<QSystemTrayIcon *>();
 
         QSignalSpy quitRequests(&controller, &ApplicationController::quitRequested);
@@ -112,10 +118,17 @@ private slots:
         ApplicationController controller(true);
         WindowRequests windows;
         controller.setFrontEnd(&windows);
-        LinuxTrayIcon tray(&controller);
+        TrayIcon tray(&controller);
         auto *icon = tray.findChild<QSystemTrayIcon *>();
 
+#ifdef Q_OS_MACOS
+        // A click there opens the menu, and Open Speecher in it.
         emit icon->activated(QSystemTrayIcon::Trigger);
+        QVERIFY(windows.requests.isEmpty());
+        icon->contextMenu()->findChild<QAction *>(QStringLiteral("trayOpen"))->trigger();
+#else
+        emit icon->activated(QSystemTrayIcon::Trigger);
+#endif
         QCOMPARE(windows.requests, QStringList{QStringLiteral("main")});
 
         icon->contextMenu()->findChild<QAction *>(QStringLiteral("traySettings"))->trigger();
@@ -124,10 +137,10 @@ private slots:
     }
 };
 
-int runLinuxTrayTests(int argc, char **argv)
+int runTrayTests(int argc, char **argv)
 {
-    LinuxTrayTests suite;
+    TrayTests suite;
     return runTestSuite(&suite, argc, argv);
 }
 
-#include "test_linux_tray.moc"
+#include "test_tray.moc"

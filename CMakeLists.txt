@@ -198,11 +198,11 @@ if(SPEECHER_RELEASE_BUILD)
 else()
   find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
 endif()
+# The Qt Quick UI (cmake/QuickUi.cmake). Its QML needs 6.9, for
+# QtQuick.Effects' RectangularShadow.
+find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
-  # The Qt Quick UI, Linux first (cmake/QuickUi.cmake). Its QML needs 6.9,
-  # for QtQuick.Effects' RectangularShadow.
-  find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
   if(SPEECHER_WITH_KDE)
     find_package(KF6GlobalAccel REQUIRED)
     find_package(LayerShellQt REQUIRED)
@@ -503,6 +503,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacMediaController.cpp
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
+  src/platform/mac/MacReopen.mm
   src/platform/mac/MacWindowBackdrop.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
@@ -518,6 +519,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h
+  src/platform/mac/MacReopen.h
   src/platform/mac/MacWindowBackdrop.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
@@ -1049,14 +1051,27 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
 target_link_libraries(speecher PRIVATE speecher_app)
-if(UNIX AND NOT APPLE)
-  # The tray icon is a Qt Widgets QSystemTrayIcon. A library of its own so the
-  # tests link the same build of it.
-  add_library(speecher_linux_tray STATIC src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
-  target_link_libraries(speecher_linux_tray PUBLIC speecher_app Qt6::Widgets)
-  target_link_libraries(speecher PRIVATE speecher_linux_tray)
-  include(cmake/QuickUi.cmake)
+# The tray icon (the menu bar item on macOS) is a Qt Widgets QSystemTrayIcon.
+# A library of its own so the tests link the same build of it.
+add_library(speecher_tray STATIC src/app/TrayIcon.cpp src/app/TrayIcon.h)
+target_link_libraries(speecher_tray PUBLIC speecher_app Qt6::Widgets)
+# Speecher's own tray icons where the desktop has no icon theme: a template
+# image for the menu bar, and one for each taskbar theme.
+if(APPLE)
+  qt_add_resources(speecher_tray speecher_tray_icons
+    PREFIX /speecher/tray
+    BASE packaging/macos
+    FILES packaging/macos/speecher-menubar.png packaging/macos/speecher-menubar@2x.png
+  )
+elseif(WIN32)
+  qt_add_resources(speecher_tray speecher_tray_icons
+    PREFIX /speecher/tray
+    BASE packaging/windows
+    FILES packaging/windows/tray-dark.ico packaging/windows/tray-light.ico
+  )
 endif()
+target_link_libraries(speecher PRIVATE speecher_tray)
+include(cmake/QuickUi.cmake)
 
 if(WIN32)
   target_sources(speecher PRIVATE packaging/windows/speecher.manifest packaging/windows/speecher.rc)
@@ -1429,12 +1444,11 @@ if(SPEECHER_BUILD_TESTS)
     SPEECHER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(speecher_tests PRIVATE
-    speecher_app Qt6::Widgets Qt6::Test speecher_monocypher
+    speecher_app speecher_tray Qt6::Widgets Qt6::Test speecher_monocypher
   )
+  target_sources(speecher_tests PRIVATE tests/test_tray.cpp)
   if(UNIX AND NOT APPLE)
-    target_link_libraries(speecher_tests PRIVATE speecher_linux_tray)
     target_sources(speecher_tests PRIVATE
-      tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
@@ -1470,6 +1484,7 @@ if(SPEECHER_BUILD_TESTS)
     settings
     provider_registry
     platform_composition
+    tray
     platform_live
     single_instance_ipc
     delivery
@@ -1490,7 +1505,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_appearance quick_dictation quick_updates
+    list(APPEND SPEECHER_TEST_SUITES keywatch helper_install quick_settings quick_appearance quick_dictation quick_updates
     quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio quick_library)
   endif()
   if(UNIX)

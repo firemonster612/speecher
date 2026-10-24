@@ -53,8 +53,8 @@ int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
 int runPlatformCompositionTests(int argc, char **argv);
+int runTrayTests(int argc, char **argv);
 #ifdef Q_OS_LINUX
-int runLinuxTrayTests(int argc, char **argv);
 int runKeywatchTests(int argc, char **argv);
 int runHelperInstallTests(int argc, char **argv);
 int runQuickSettingsTests(int argc, char **argv);

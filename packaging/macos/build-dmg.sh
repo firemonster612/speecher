@@ -20,6 +20,9 @@ OUTPUT_DMG="$BUILD_DIR/speecher.dmg"
 LOG="$BUILD_DIR/speecher-dmg.log"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKGROUND="$SCRIPT_DIR/dmg-background.png"
+# The Qt Quick UI's own QML modules are compiled into Speecher; macdeployqt
+# reads their imports from here to bundle the Qt modules they need.
+QML_DIR="$SCRIPT_DIR/../../src/frontend/quick/qml"
 
 if [[ ! -d "$SOURCE_APP" ]]; then
   echo "App bundle not found: $SOURCE_APP" >&2
@@ -86,7 +89,12 @@ SIGN_IDENTITY="${SPEECHER_SIGN_IDENTITY:--}"
 step "Bundling Qt into the app (the slow part)"
 # Without signing the deployed binary and Qt dylibs are unsigned and macOS
 # refuses to launch the copy a user drags out of the image.
-run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
+run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY" \
+  -qmldir="$QML_DIR"
+# macdeployqt copies an imported QML module's whole directory, so QtQuick
+# brings QtQuick.LocalStorage, and with it Qt SQL's database drivers, some of
+# which load client libraries from outside the bundle. Speecher uses no SQL.
+rm -rf "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers"
 
 step "Verifying the bundled libraries"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
@@ -101,11 +109,18 @@ if ! grep -q 'QDarwinMicrophonePermissionPlugin' "$SPEECHER_SYMBOLS"; then
   exit 1
 fi
 # macdeployqt brings it along with QtNetwork; without it Speecher can't tell
-# when the Mac is offline.
-if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" ]]; then
+# when the Mac is offline. Newer Qt names it libqapplenetworkinformation.
+if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" \
+   && ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqapplenetworkinformation.dylib" ]]; then
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
   exit 1
 fi
+for module in QtQml QtQuick QtQuick/Templates QtQuick/Window QtQuick/Effects QtQuick/Shapes; do
+  if [[ ! -f "$STAGING_DIR/speecher.app/Contents/Resources/qml/$module/qmldir" ]]; then
+    echo "macdeployqt did not bundle the $module QML module the UI imports." >&2
+    exit 1
+  fi
+done
 # macdeployqt also copies libraries from outside Qt, such as
 # webrtc-audio-processing, into Frameworks; neither Speecher nor a library or
 # plugin it bundles may still load one from where the build found it.

@@ -250,7 +250,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: 6.8.3
+          version: 6.11.3
           arch: clang_64
           modules: qtmultimedia qtwebsockets
           cache: true
@@ -363,6 +363,9 @@ jobs:
             test -s build/designated-requirement.txt
           fi
 
+      - name: Verify DMG
+        run: bash packaging/macos/verify-dmg.sh build/speecher.dmg
+
       - name: Sign DMG for Sparkle
         if: github.event_name != 'pull_request'
         env:
@@ -410,7 +413,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: 6.8.3
+          version: 6.10.3
           arch: win64_msvc2022_64
           modules: qtmultimedia qtwebsockets
           cache: true
