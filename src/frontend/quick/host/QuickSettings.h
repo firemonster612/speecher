@@ -43,17 +43,23 @@ public:
     // binds and keeps them; an empty list clears the shortcut. Why the
     // controller refused one lands in errors.
     Q_INVOKABLE void set(const QString &id, const QVariant &value);
-    // Runs an action row, such as runSetup.
+    // Runs an action row, such as runSetup. On a shortcut row whose keys the
+    // desktop picks (desktopPicksKeys), it opens the desktop's chooser.
     Q_INVOKABLE void act(const QString &id);
     // Whether set saves this row, or act runs it. A constant, so QML may call
     // it in a binding.
     Q_INVOKABLE bool saves(const QString &id) const;
+    // Whether the desktop picks this shortcut row's keys itself (the portal),
+    // so the row opens its chooser through act instead of recording keys. A
+    // constant, so QML may call it in a binding.
+    Q_INVOKABLE bool desktopPicksKeys(const QString &id) const;
     // While the shortcut row id records, every Global Shortcut lets go of its
     // keys, so pressing the bound ones records them instead of dictating.
-    // stopRecordingShortcut takes them back. Repeating either call changes
-    // nothing.
+    // stopRecordingShortcut takes them back. Recording moves to the latest
+    // row started, and a stop for any other row changes nothing, so moving
+    // from one row to the next keeps the keys let go.
     Q_INVOKABLE void startRecordingShortcut(const QString &id);
-    Q_INVOKABLE void stopRecordingShortcut();
+    Q_INVOKABLE void stopRecordingShortcut(const QString &id);
 
 signals:
     void valuesChanged();
@@ -67,7 +73,8 @@ private:
     ApplicationController *m_controller;
     QVariantMap m_values;
     QVariantMap m_errors;
-    bool m_recordingShortcut = false;
+    // The shortcut row recording, or empty.
+    QString m_recordingShortcut;
 };
 
 } // namespace speecher

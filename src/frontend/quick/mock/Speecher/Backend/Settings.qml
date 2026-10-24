@@ -23,10 +23,14 @@ QtObject {
     // Whether set saves this row: the preview saves every one.
     function saves(id) { return true }
 
+    // Whether the desktop picks this shortcut row's keys: the preview records
+    // them all.
+    function desktopPicksKeys(id) { return false }
+
     // A shortcut row is recording. The app lets go of the bound shortcuts
     // meanwhile; the preview binds none.
     function startRecordingShortcut(id) {}
-    function stopRecordingShortcut() {}
+    function stopRecordingShortcut(id) {}
 
     Component.onCompleted: {
         const start = {}

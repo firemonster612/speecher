@@ -284,6 +284,13 @@ QuickSettings::QuickSettings(ApplicationController *controller, QObject *parent)
     connect(store, &SettingsStore::correctionLearningEnabledChanged, this, &QuickSettings::refresh);
     connect(store, &SettingsStore::updateSettingsChanged, this, &QuickSettings::refresh);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSettings::refresh);
+    // The desktop's chooser answers later, and may refuse.
+    connect(controller,
+            &ApplicationController::globalShortcutRegistrationFinished,
+            this,
+            [this](bool bound, const QString &detail, GlobalShortcutRole role) {
+                setError(shortcutRowId(role), bound ? QString() : detail);
+            });
     refresh();
 }
 
@@ -336,6 +343,11 @@ void QuickSettings::act(const QString &id)
         m_controller->showSetup();
         return;
     }
+    if (desktopPicksKeys(id)) {
+        setError(id, {});
+        m_controller->registerGlobalShortcut(findRow(shortcutRows, id)->role);
+        return;
+    }
     qWarning().noquote() << "Settings.act:" << id << "is not an action the UI runs yet";
 }
 
@@ -344,23 +356,29 @@ bool QuickSettings::saves(const QString &id) const
     return findRow(settingRows, id) || findRow(shortcutRows, id) || id == runSetupAction;
 }
 
+bool QuickSettings::desktopPicksKeys(const QString &id) const
+{
+    const ShortcutRow *shortcut = findRow(shortcutRows, id);
+    return shortcut && m_controller->globalShortcutUsesDesktopChooser(shortcut->role);
+}
+
 void QuickSettings::startRecordingShortcut(const QString &id)
 {
     // A refusal from the last attempt would read as a verdict on this one.
     setError(id, {});
-    if (m_recordingShortcut) {
-        return;
+    const bool suspended = !m_recordingShortcut.isEmpty();
+    m_recordingShortcut = id;
+    if (!suspended) {
+        m_controller->suspendGlobalShortcut();
     }
-    m_recordingShortcut = true;
-    m_controller->suspendGlobalShortcut();
 }
 
-void QuickSettings::stopRecordingShortcut()
+void QuickSettings::stopRecordingShortcut(const QString &id)
 {
-    if (!m_recordingShortcut) {
+    if (id != m_recordingShortcut) {
         return;
     }
-    m_recordingShortcut = false;
+    m_recordingShortcut.clear();
     GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
     const QString error = m_controller->resumeGlobalShortcut(&failedRole);
     if (!error.isEmpty()) {
@@ -374,12 +392,6 @@ void QuickSettings::setShortcut(const QString &id, GlobalShortcutRole role, cons
     const ShortcutBinding binding = ShortcutBinding::fromString(text);
     if (!keys.isEmpty() && binding.isEmpty()) {
         qWarning().noquote() << "Settings.set: the keys" << text << "are not a shortcut";
-        return;
-    }
-    // A desktop that picks the keys itself (the shortcuts portal) takes no
-    // recorded combination: it opens its own chooser instead.
-    if (!binding.isEmpty() && m_controller->globalShortcutUsesDesktopChooser(role)) {
-        m_controller->registerGlobalShortcut(role);
         return;
     }
     QString error;
@@ -408,9 +420,16 @@ void QuickSettings::refresh()
         values.insert(QLatin1String(row.id), row.read(settings));
     }
     for (const auto &row : shortcutRows) {
+        const QString id = QLatin1String(row.id);
         // The display, not the binding: where the desktop picks the keys (the
         // portal), the binding is a stand-in and only the display is real.
-        values.insert(QLatin1String(row.id), shortcutKeys(m_controller->globalShortcutDisplay(row.role)));
+        const QStringList keys = shortcutKeys(m_controller->globalShortcutDisplay(row.role));
+        // A refusal was about the keys the row showed; keys changed from
+        // anywhere else, such as the CLI, leave it stale.
+        if (keys != m_values.value(id).toStringList()) {
+            setError(id, {});
+        }
+        values.insert(id, keys);
     }
     if (values == m_values) {
         return;

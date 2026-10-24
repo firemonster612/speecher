@@ -74,7 +74,7 @@ Page {
                             required property var modelData
                             rowId: "categoryPasteRule_" + modelData.id
                             help: modelData.examples
-                            enabled: System.accessibility
+                            enabled: System.accessibility && Settings.saves(rowId)
                         }
                     }
                 }

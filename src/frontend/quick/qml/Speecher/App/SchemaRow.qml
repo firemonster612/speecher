@@ -100,10 +100,14 @@ SettingRow {
             // The keys that act while dictating may be Escape itself.
             escapeRecords: root.rowId === "cancelShortcut" || root.rowId === "pauseShortcut"
             keys: root.value || []
+            // Where the desktop picks the keys (the portal), clicking opens its
+            // chooser, and nothing records or lets go here.
+            recordsKeys: !Settings.desktopPicksKeys(root.rowId)
+            onClicked: if (!recordsKeys) Settings.act(root.rowId)
             // The bound shortcuts let go while it listens, so pressing them
             // records them; every way listening ends takes them back.
-            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut()
-            Component.onDestruction: if (listening) Settings.stopRecordingShortcut()
+            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut(root.rowId)
+            Component.onDestruction: if (listening) Settings.stopRecordingShortcut(root.rowId)
             onRecorded: keys => Settings.set(root.rowId, keys)
         }
     }

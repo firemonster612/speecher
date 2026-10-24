@@ -955,8 +955,7 @@ private slots:
 
 #ifdef Q_OS_LINUX
     // Recording on the Shortcuts page's row hands the keys to the controller,
-    // and setup's shortcut step then counts the shortcut as set. A desktop
-    // that picks the keys itself opens its chooser instead.
+    // and setup's shortcut step then counts the shortcut as set.
     void aShortcutRecordedInTheUiIsBound()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -990,18 +989,36 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("globalShortcut")).toStringList(),
                  (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Alt"), QStringLiteral("D")}));
         QTRY_VERIFY(shortcutStep().value(QStringLiteral("done")).toBool());
+    }
 
+    // Where the desktop picks the keys itself (the portal), clicking the row
+    // opens its chooser. The row never listens, so no shortcut lets go of its
+    // keys and pressing them records nothing.
+    void aDesktopThatPicksTheKeysOpensItsChooserFromTheRow()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
         platform->binder->desktopChooser = true;
+        QuickSettings settings(&controller);
         QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
-        record();
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(field);
+
+        QTest::mouseClick(window.get(), Qt::LeftButton, {}, field->mapToScene(field->boundingRect().center()).toPoint());
         QCOMPARE(platform->binder->registerCount, 1);
+        QVERIFY(!field->property("listening").toBool());
+        QTest::keyClick(window.get(), Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(platform->binder->suspendCount, 0);
         QCOMPARE(controller.globalShortcut(), ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_K)));
     }
 
     // While a row records, every Global Shortcut lets go of its keys, so the
     // bound ones record rather than start dictation. They come back however
-    // recording ends: a recorded shortcut, Escape, focus moving away, or the
-    // page closing.
+    // recording ends: a recorded shortcut, Escape, focus moving away, the
+    // window hiding (as closing it does), or the page closing.
     void recordingInTheUiSuspendsTheShortcuts()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -1034,13 +1051,21 @@ private slots:
         QCOMPARE(binder->resumeCount, 3);
 
         startListening(window.get(), field);
-        window.reset();
-        QCOMPARE(binder->suspendCount, 4);
+        window->hide();
+        QVERIFY(!field->property("listening").toBool());
         QCOMPARE(binder->resumeCount, 4);
+        window->show();
+        QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+
+        startListening(window.get(), field);
+        window.reset();
+        QCOMPARE(binder->suspendCount, 5);
+        QCOMPARE(binder->resumeCount, 5);
     }
 
-    // A shortcut the controller refuses says why in its row, and the next
-    // recording starts without the old reason.
+    // A shortcut the controller or the desktop's chooser refuses says why in
+    // its row. The next recording starts without the old reason, as do keys
+    // changed elsewhere, such as from the CLI.
     void aRefusedShortcutSaysWhyInItsRow()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -1061,6 +1086,13 @@ private slots:
         QCOMPARE(row->property("help").toString(), owned);
 
         startListening(window.get(), field);
+        QCOMPARE(row->property("help").toString(), help);
+
+        const QString refused = QStringLiteral("The desktop refused the shortcut");
+        platform->binder->publishRegistrationResult(false, refused);
+        QCOMPARE(row->property("help").toString(), refused);
+        platform->binder->setShortcutError.clear();
+        QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
         QCOMPARE(row->property("help").toString(), help);
     }
 

@@ -178,6 +178,32 @@ private slots:
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
     }
 
+    // A page that greys rows for its own reason keeps SchemaRow's: the Pasting
+    // page's app type rows need accessibility, which the preview's System has,
+    // and stay greyed while the backend saves none of their rules.
+    void pastingTypeRowsGreyOutWhatIsNotSaved()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
+        const std::unique_ptr<QObject> page(component.create());
+        QVERIFY2(page, qPrintable(component.errorString()));
+
+        int typeRows = 0;
+        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(page.get())};
+        while (!items.isEmpty()) {
+            QQuickItem *item = items.takeLast();
+            items += item->childItems();
+            const QString rowId = item->property("rowId").toString();
+            if (rowId.startsWith(QLatin1String("categoryPasteRule_"))) {
+                ++typeRows;
+                QVERIFY2(!item->property("enabled").toBool(), qPrintable(rowId));
+            }
+        }
+        QCOMPARE(typeRows, 7);
+    }
+
     // Each save is a whole snapshot through the store, so a drag saves once,
     // when it lets go; a key press saves its one step.
     void aSliderSavesWhenLetGo()

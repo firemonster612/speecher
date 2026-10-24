@@ -47,11 +47,13 @@ Backend is the C++ types plus the mocks not yet replaced.
   wired. A row whose choices come from a placeholder area waits for that
   area. The shortcut rows go to the controller, which binds and keeps them,
   and show the keys the controller displays. While one records,
-  `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut()` make the
-  bound shortcuts let go of their keys.
+  `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
+  the bound shortcuts let go of their keys. Where the desktop picks the keys
+  (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
+  `Settings.act(id)` opens the desktop's chooser.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
-  that gives a row its own help sets `note`, not `help`.
+  that gives a shortcut row its own help sets `note`, not `help`.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version, a waiting update and the shortcut's keys.
 - `Schema` is the UI's own: pages and rows with label, help, kind and

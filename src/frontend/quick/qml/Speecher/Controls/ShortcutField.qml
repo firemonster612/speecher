@@ -6,9 +6,10 @@ import Speecher.Theme
 // which recorded brings back as key names (["Ctrl", "Shift", "F1"]). Escape
 // stops listening without recording, unless escapeRecords (for a shortcut
 // that may be Escape itself, such as cancel). Tab and Shift+Tab move focus
-// on, which stops listening too, as does any other loss of focus. While it
-// listens a clear button records an empty shortcut.
-// emptyText, listeningText and clearText are the words it shows.
+// on, which stops listening too, as does any other loss of focus or its
+// window hiding. While it listens a clear button records an empty shortcut.
+// Where something else picks the keys (recordsKeys false), clicking it only
+// emits clicked. emptyText, listeningText and clearText are the words it shows.
 T.AbstractButton {
     id: control
 
@@ -18,6 +19,7 @@ T.AbstractButton {
     property string clearText
     property bool listening: false
     property bool escapeRecords: false
+    property bool recordsKeys: true
     signal recorded(var keys)
 
     // The name Qt's key sequences give a key ("Esc", "PgUp", "F1", "A"), or
@@ -41,7 +43,7 @@ T.AbstractButton {
     implicitWidth: content.width + clear.width + 16
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
-    onClicked: { listening = true; forceActiveFocus() }
+    onClicked: if (recordsKeys) { listening = true; forceActiveFocus() }
 
     // While listening, a combination such as Ctrl+K goes to the field rather
     // than to the window's shortcuts.
@@ -64,6 +66,8 @@ T.AbstractButton {
         recorded(mods.concat([name]))
     }
     onActiveFocusChanged: if (!activeFocus) listening = false
+    // Closing a window hides it, and a hidden window keeps its focus item.
+    Window.onVisibilityChanged: if (Window.visibility === Window.Hidden) listening = false
 
     background: Rectangle {
         id: bg
