@@ -439,7 +439,6 @@ private slots:
         QCOMPARE(summary.allTimeWords, 1150);
         QCOMPARE(summary.passedMilestone, std::optional<int>(1000));
         QCOMPARE(summary.nextMilestone, 10000);
-        QCOMPARE(milestoneText(summary), QStringLiteral("8,850 to go. You passed 1,000 already."));
         QCOMPARE(summary.longest.audioMs, 90000);
         QCOMPARE(summary.longest.words, 200);
         QCOMPARE(summary.longest.appName, QStringLiteral("Slack"));
@@ -456,15 +455,6 @@ private slots:
         const InsightsSummary summary =
             summarize({recordOn(kToday, 1'200'000)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.nextMilestone, 0);
-        QCOMPARE(milestoneText(summary), QStringLiteral("You passed 1,000,000 words"));
-    }
-
-    void relativeDayNamesRecentDays()
-    {
-        QCOMPARE(relativeDay(kToday, kToday), QStringLiteral("today"));
-        QCOMPARE(relativeDay(kToday.addDays(-1), kToday), QStringLiteral("yesterday"));
-        QCOMPARE(relativeDay(QDate(2026, 9, 22), kToday), QStringLiteral("Tuesday"));
-        QCOMPARE(relativeDay(QDate(2026, 9, 19), kToday), QStringLiteral("Sep 19, 2026"));
     }
 
     void paceComparesWithTyping()
@@ -479,41 +469,11 @@ private slots:
                  QStringLiteral("That's 3.6× faster than typing at 40 words per minute."));
     }
 
-    void deltaTextWordsTheChange()
-    {
-        QCOMPARE(deltaText(29, QStringLiteral("30 days")), QStringLiteral("▲ 29% vs previous 30 days"));
-        QCOMPARE(deltaText(-4, QStringLiteral("week")), QStringLiteral("▼ 4% vs previous week"));
-        QCOMPARE(deltaText(0, QStringLiteral("week")), QStringLiteral("Same as previous week"));
-        QCOMPARE(deltaText(std::nullopt, QStringLiteral("week")), QString());
-    }
-
-    void streakTextWordsTheRun()
-    {
-        const auto streakOf = [](const QList<QDate> &days) {
-            QList<DictationRecord> records;
-            for (const QDate &day : days) records.append(recordOn(day));
-            return streakText(summarize(records, InsightsRange::AllTime, kToday), kToday);
-        };
-        QCOMPARE(streakOf({kToday.addDays(-1), kToday}), QStringLiteral("Your longest yet"));
-        QCOMPARE(streakOf({QDate(2026, 8, 1), QDate(2026, 8, 2), QDate(2026, 8, 3), kToday}),
-                 QStringLiteral("Best: 3 days"));
-        QCOMPARE(streakOf({kToday.addDays(-1)}), QStringLiteral("Dictate today to keep it going"));
-        QCOMPARE(streakOf({QDate(2026, 9, 20), QDate(2026, 9, 21), QDate(2026, 9, 22)}),
-                 QStringLiteral("3-day run ended Wednesday"));
-        QCOMPARE(streakOf({}), QString());
-    }
-
-    void audioAndClockText()
+    void audioTotalTextRoundsToHoursOrMinutes()
     {
         QCOMPARE(audioTotalText(4 * 3'600'000), QStringLiteral("4.0 hours"));
         QCOMPARE(audioTotalText(34 * 60'000), QStringLiteral("34 min"));
         QCOMPARE(audioTotalText(2'500'000'000LL), QStringLiteral("694.4 hours"));
-        QCOMPARE(clockText(67'000), QStringLiteral("1:07"));
-        InsightsSummary summary;
-        QCOMPARE(averageDictationText(summary), QStringLiteral("Nothing yet"));
-        summary.dictations = 3;
-        summary.averageAudioMs = 67'000;
-        QCOMPARE(averageDictationText(summary), QStringLiteral("Average dictation 1:07"));
     }
 
     void hourLabelUsesTwelveHourTime()

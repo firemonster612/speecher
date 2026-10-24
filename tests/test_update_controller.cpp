@@ -897,7 +897,8 @@ private slots:
                      qPrintable(notes.at(index).version));
         }
         QCOMPARE(notes.last().version, QStringLiteral("0.1.0"));
-        QVERIFY(notes.first().markdown.startsWith(QStringLiteral("## Added")));
+        // docs/releases/README.md: every note starts at a level-two heading.
+        QVERIFY(notes.first().markdown.startsWith(QStringLiteral("## ")));
     }
 
     void historyRecordsSplitIntoCommits()

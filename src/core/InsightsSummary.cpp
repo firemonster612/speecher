@@ -105,11 +105,6 @@ QString formatNumber(qint64 value)
     return QLocale().toString(value);
 }
 
-QString plural(qint64 count, const QString &noun)
-{
-    return QStringLiteral("%1 %2").arg(formatNumber(count), count == 1 ? noun : noun + u's');
-}
-
 struct Comparison {
     QString text;
     const Book *book = nullptr;
@@ -476,56 +471,6 @@ QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown)
     return labels;
 }
 
-QString relativeDay(const QDate &date, const QDate &today)
-{
-    const qint64 daysAgo = date.daysTo(today);
-    if (daysAgo == 0) return QStringLiteral("today");
-    if (daysAgo == 1) return QStringLiteral("yesterday");
-    const QLocale locale;
-    if (daysAgo > 1 && daysAgo < 7) return locale.dayName(date.dayOfWeek(), QLocale::LongFormat);
-    return locale.toString(date, QStringLiteral("MMM d, yyyy"));
-}
-
-QString deltaText(const std::optional<qint64> &delta, const QString &period)
-{
-    if (!delta) return {};
-    if (*delta == 0) return QStringLiteral("Same as previous %1").arg(period);
-    return QStringLiteral("%1 %2% vs previous %3")
-        .arg(*delta > 0 ? QStringLiteral("▲") : QStringLiteral("▼"))
-        .arg(std::abs(*delta))
-        .arg(period);
-}
-
-QString streakText(const InsightsSummary &summary, const QDate &today)
-{
-    if (summary.currentStreak > 0) {
-        if (!summary.weekActivity[summary.todayIndex]) {
-            return QStringLiteral("Dictate today to keep it going");
-        }
-        return summary.currentStreak >= summary.bestStreak
-            ? QStringLiteral("Your longest yet")
-            : QStringLiteral("Best: %1").arg(plural(summary.bestStreak, QStringLiteral("day")));
-    }
-    if (summary.brokenStreakLength > 0) {
-        return QStringLiteral("%1-day run ended %2")
-            .arg(summary.brokenStreakLength)
-            .arg(relativeDay(summary.brokenStreakEnded, today));
-    }
-    return {};
-}
-
-QString milestoneText(const InsightsSummary &summary)
-{
-    if (summary.nextMilestone == 0) {
-        return QStringLiteral("You passed %1 words").arg(formatNumber(summary.passedMilestone.value_or(0)));
-    }
-    QString text = QStringLiteral("%1 to go").arg(formatNumber(summary.nextMilestone - summary.allTimeWords));
-    if (summary.passedMilestone) {
-        text += QStringLiteral(". You passed %1 already.").arg(formatNumber(*summary.passedMilestone));
-    }
-    return text;
-}
-
 QString audioTotalText(qint64 audioMs)
 {
     constexpr qint64 hourMs = 3600 * 1000;
@@ -533,19 +478,6 @@ QString audioTotalText(qint64 audioMs)
         return QStringLiteral("%1 hours").arg(QLocale().toString(double(audioMs) / hourMs, 'f', 1));
     }
     return QStringLiteral("%1 min").arg(roundHalfUp(audioMs / 60000.0));
-}
-
-QString averageDictationText(const InsightsSummary &summary)
-{
-    return summary.dictations
-        ? QStringLiteral("Average dictation %1").arg(clockText(summary.averageAudioMs))
-        : QStringLiteral("Nothing yet");
-}
-
-QString clockText(qint64 ms)
-{
-    const qint64 seconds = (ms + 500) / 1000;
-    return QStringLiteral("%1:%2").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
 }
 
 QString hourLabel(int hour)

@@ -77,7 +77,7 @@ struct InsightsSummary {
     // Streak. A streak survives until the end of today.
     int currentStreak = 0;
     int bestStreak = 0;
-    QDate bestStreakEnd; // for "Ended <relativeDay>"
+    QDate bestStreakEnd;
     bool bestStreakEndsToday = false; // "That's the one you're on"
     // When currentStreak is 0: the last run and the first day it was missed.
     int brokenStreakLength = 0;
@@ -152,25 +152,8 @@ inline constexpr std::array<double, 5> kHeatStrengths{0, 0.30, 0.52, 0.76, 1};
 // of those for every week.
 QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown);
 
-// Wording every Home shares.
-
-// "today", "yesterday", a weekday within the last six days, else "Mar 1, 2026".
-QString relativeDay(const QDate &date, const QDate &today);
-// "▲ 29% vs previous 30 days", "▼ 4% vs previous week", "Same as previous
-// week"; empty without a delta.
-QString deltaText(const std::optional<qint64> &delta, const QString &period);
-// The line under the streak: "Your longest yet", "Best: 12 days", "Dictate
-// today to keep it going", "3-day run ended Tuesday"; empty with no history.
-QString streakText(const InsightsSummary &summary, const QDate &today);
-// "4,000 to go. You passed 1,000 already.", or "You passed 1,000,000 words"
-// once every milestone is.
-QString milestoneText(const InsightsSummary &summary);
-// "4.0 hours" from an hour up, else "34 min".
+// "4.0 hours" from an hour up, else "34 min", for the share text.
 QString audioTotalText(qint64 audioMs);
-// "Average dictation 1:07", or "Nothing yet" for an empty period.
-QString averageDictationText(const InsightsSummary &summary);
-// "m:ss".
-QString clockText(qint64 ms);
 // "12 am", "10 am", "6 pm", with a no-break space.
 QString hourLabel(int hour);
 
