@@ -73,6 +73,9 @@ Item {
     WheelHandler {
         id: wheel
         target: null
+        // A WheelHandler takes only mice unless told; a touchpad's scrolls
+        // would go to the Flickable's own slow, coastless handling.
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         orientation: Qt.Vertical
         acceptedModifiers: Qt.NoModifier
         enabled: scroll.flickable !== null
@@ -83,6 +86,13 @@ Item {
             const dy = precise ? scroll._touchpadMove(event)
                                : -event.angleDelta.y / 120 * scroll.wheelLines * scroll.lineHeight
 
+            // Fingers down: stop any coast, and keep the gesture from the
+            // Flickable, which would otherwise start its own drag.
+            if (event.phase === Qt.ScrollBegin) {
+                scroll._stop()
+                event.accepted = true
+                return
+            }
             if (event.phase === Qt.ScrollEnd) {
                 scroll._coast()
                 event.accepted = true
