@@ -1436,39 +1436,6 @@ private slots:
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
     }
 
-    // Codex dictates with a ChatGPT sign-in or a CLI Proxy API account, never
-    // an API key, so its sign-in is checked apart from OpenAI's.
-    void speechSignInIsTheSpeechProvidersOwn()
-    {
-        QTemporaryDir dir;
-        const QString codexAuth = dir.filePath(QStringLiteral(".codex/auth.json"));
-        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(codexAuth));
-        const QByteArray openAiKey = qgetenv("OPENAI_API_KEY");
-        qputenv("OPENAI_API_KEY", "sk-test-key");
-        const auto restore = qScopeGuard([openAiKey] {
-            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
-            openAiKey.isNull() ? qunsetenv("OPENAI_API_KEY") : qputenv("OPENAI_API_KEY", openAiKey);
-        });
-        AppSettings settings;
-        settings.refinement.openAiAuthMode = QStringLiteral("env");
-        settings.speech.codexAuthMode = QStringLiteral("env");
-
-        QCOMPARE(checkSignIn(SignInService::OpenAi, settings, nullptr).state, SignInState::SignedIn);
-        QCOMPARE(checkSpeechSignIn(SignInService::OpenAi, settings.speech).state, SignInState::Missing);
-        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(3600))));
-        QCOMPARE(checkSpeechSignIn(SignInService::OpenAi, settings.speech).state, SignInState::SignedIn);
-
-        // Claude Voice through CLI Proxy API reads the account chosen for it.
-        settings.speech.claudeAuthMode = QStringLiteral("cliproxy");
-        settings.speech.cliproxyOauthDir = dir.path();
-        settings.speech.claudeCliproxyAccount = QStringLiteral("claude-a@example.com.json");
-        QCOMPARE(checkSpeechSignIn(SignInService::Anthropic, settings.speech).state, SignInState::Missing);
-        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
-                                     QStringLiteral("claude"), QStringLiteral("token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
-        QCOMPARE(checkSpeechSignIn(SignInService::Anthropic, settings.speech).state, SignInState::Expired);
-    }
-
     // "Sign in again" on CLI Proxy API renews the account OpenAI and
     // Anthropic each chose and no other, since each renewal rotates tokens.
     // An account with no refresh token stays expired and says why.

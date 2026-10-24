@@ -25,14 +25,15 @@ class QuickAccounts final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Accounts)
     QML_SINGLETON
-    // [{ id, name, state, found, detail, server, directory, speech? }] for
+    // [{ id, name, state, found, detail, server, directory }] for
     // openai, anthropic and cliproxy. state is signedIn, expired, missing,
     // unknown (the keyring did not answer) or checking. found is the last
     // check's state, which the rest describe: detail is core's line, server
     // the CLI Proxy API server the sign-in goes through, directory the account
     // directory it reads, each possibly empty; they stay until the next check
-    // answers. speech, for openai and anthropic, is { state, detail } of the
-    // sign-in their speech provider (Codex, Claude Voice) dictates with.
+    // answers. The speech providers' sign-ins (Codex, Claude Voice) are
+    // ProviderAvailability's, which Models shows; renewing a service checks
+    // those again.
     Q_PROPERTY(QVariantList services READ services NOTIFY servicesChanged)
     // [{ id, type, label, state }]: the file name, codex or claude, the
     // account it holds, and signedIn, expired, disabled, unusable (a file
@@ -89,17 +90,14 @@ signals:
 private:
     using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
 
-    // A service's last answer: its own sign-in, and its speech provider's.
-    struct Check {
-        SignInCheck signIn;
-        SignInCheck speech;
-    };
-
     void start();
     // One of services by id, or an empty map.
     QVariantMap service(const QString &id) const;
     void run(const QString &id, SignInRun signIn);
     void recheckAll();
+    // Asks ProviderAvailability for the speech providers' sign-ins, which
+    // share credentials with these services.
+    void checkSpeechSignIns();
     void readSavedSecrets();
     void showCliproxyAccounts(const QVariantList &accounts);
     // Saves value, or clears the secret when it is empty, once any write of
@@ -110,7 +108,7 @@ private:
 
     ApplicationController *m_controller;
     bool m_started = false;
-    QHash<QString, Check> m_checks;
+    QHash<QString, SignInCheck> m_checks;
     // The check each service waits for, by its number.
     QHash<QString, quint64> m_pending;
     quint64 m_lastCheck = 0;

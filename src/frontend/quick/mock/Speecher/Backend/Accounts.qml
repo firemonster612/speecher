@@ -6,9 +6,8 @@ import Speecher.Theme
 // Mock of the sign-ins core finds (host/QuickAccounts in the app). Every
 // service has a state (signedIn, expired, missing, unknown, checking), the
 // state its last check found, core's line on it (possibly empty, for Words to
-// word from server and directory), and for OpenAI and Anthropic their speech
-// provider's own sign-in. Secrets are write-only: savedSecrets says which are
-// saved.
+// word from server and directory). The speech providers' own sign-ins are
+// Models'. Secrets are write-only: savedSecrets says which are saved.
 //
 // --accounts=expired starts with Anthropic's sign-in expired;
 // --accounts=none starts with nothing found.
@@ -25,14 +24,11 @@ QtObject {
             id: "openai", name: "OpenAI",
             state: _start === "none" ? "missing" : "signedIn", found: _start === "none" ? "missing" : "signedIn",
             detail: _start === "none" ? "No OpenAI credential found" : "Signed in with the Codex app",
-            server: "", directory: "",
-            speech: { state: _start === "none" ? "missing" : "signedIn",
-                      detail: _start === "none" ? "The Codex app has no sign-in to reuse" : "" }
+            server: "", directory: ""
         },
         {
             id: "anthropic", name: "Anthropic",
-            state: _anthropic, found: _anthropic, detail: _anthropicDetail, server: "", directory: "",
-            speech: { state: _anthropic, detail: _anthropicDetail }
+            state: _anthropic, found: _anthropic, detail: _anthropicDetail, server: "", directory: ""
         },
         {
             id: "cliproxy", name: "CLI Proxy API",
@@ -86,8 +82,7 @@ QtObject {
             for (const id in accounts._pending) {
                 const found = accounts._pending[id]
                 accounts._set(id, accounts._renewed[id]
-                    ? { state: found, found: found, detail: id === "openai" ? "Signed in with the Codex app" : "",
-                        speech: { state: found, detail: "" } }
+                    ? { state: found, found: found, detail: id === "openai" ? "Signed in with the Codex app" : "" }
                     : { state: found })
             }
             accounts._pending = {}

@@ -5,6 +5,7 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderProbe.h"
+#include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QDebug>
@@ -22,13 +23,12 @@ const struct ServiceRow {
     const char *id;
     const char *name;
     SignInService service;
-    // The refinement and speech providers whose sign-in this is, if any.
+    // The refinement provider whose sign-in this is, if any.
     const char *provider;
-    const char *speechProvider;
 } serviceRows[] = {
-    {"openai", "OpenAI", SignInService::OpenAi, "openai", "codex"},
-    {"anthropic", "Anthropic", SignInService::Anthropic, "anthropic", "claude"},
-    {"cliproxy", "CLI Proxy API", SignInService::CliProxy, nullptr, nullptr},
+    {"openai", "OpenAI", SignInService::OpenAi, "openai"},
+    {"anthropic", "Anthropic", SignInService::Anthropic, "anthropic"},
+    {"cliproxy", "CLI Proxy API", SignInService::CliProxy, nullptr},
 };
 
 // The schema's secret rows, each one SecretStore entry.
@@ -106,7 +106,6 @@ QVariantList readCliproxyAccounts(SettingsStore &store)
 // What a check's worker hands back.
 struct ServiceAnswer {
     SignInCheck signIn;
-    SignInCheck speech;
     // CLI Proxy API's account files, read for its own check only.
     QVariantList accounts;
 };
@@ -201,24 +200,16 @@ QVariantMap QuickAccounts::service(const QString &id) const
     }
     const bool answered = m_checks.contains(id);
     const bool checking = m_pending.contains(id) || !answered;
-    const Check check = m_checks.value(id);
-    QVariantMap service{
+    const SignInCheck check = m_checks.value(id);
+    return {
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), QLatin1String(row->name)},
-        {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check.signIn.state)},
-        {QStringLiteral("found"), answered ? stateName(check.signIn.state) : QString()},
-        {QStringLiteral("detail"), check.signIn.detail},
-        {QStringLiteral("server"), check.signIn.server},
-        {QStringLiteral("directory"), check.signIn.directory},
+        {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check.state)},
+        {QStringLiteral("found"), answered ? stateName(check.state) : QString()},
+        {QStringLiteral("detail"), check.detail},
+        {QStringLiteral("server"), check.server},
+        {QStringLiteral("directory"), check.directory},
     };
-    if (row->speechProvider) {
-        service.insert(QStringLiteral("speech"),
-                       QVariantMap{
-                           {QStringLiteral("state"), checking ? QStringLiteral("checking") : stateName(check.speech.state)},
-                           {QStringLiteral("detail"), check.speech.detail},
-                       });
-    }
-    return service;
 }
 
 QVariantList QuickAccounts::cliproxyAccounts() const
@@ -263,19 +254,15 @@ void QuickAccounts::run(const QString &id, SignInRun signIn)
     m_pending.insert(id, number);
     emit servicesChanged();
     const SignInService service = row->service;
-    const bool speaks = row->speechProvider;
     runProviderProbe<ServiceAnswer>(
         this,
         this,
-        [service, signIn, speaks] {
+        [service, signIn] {
             // This thread's own store, so the keyring is read here and never
             // through the daemon's cache.
             SettingsStore store;
             const AppSettings settings = store.dictationSnapshot();
             ServiceAnswer answer{signIn(service, settings, store.secrets())};
-            if (speaks) {
-                answer.speech = checkSpeechSignIn(service, settings.speech);
-            }
             if (service == SignInService::CliProxy) {
                 answer.accounts = readCliproxyAccounts(store);
             }
@@ -286,12 +273,11 @@ void QuickAccounts::run(const QString &id, SignInRun signIn)
             const bool latest = m_pending.value(id) == number;
             if (latest) {
                 m_pending.remove(id);
-                m_checks.insert(id, {answer.signIn, answer.speech});
+                m_checks.insert(id, answer.signIn);
                 if (row->service == SignInService::CliProxy) {
                     showCliproxyAccounts(answer.accounts);
                 }
                 noteSignIn(m_controller, row->provider, answer.signIn);
-                noteSignIn(m_controller, row->speechProvider, answer.speech);
                 emit servicesChanged();
             }
             if (!renewing) {
@@ -300,12 +286,14 @@ void QuickAccounts::run(const QString &id, SignInRun signIn)
             // Renewing rewrote credentials the others may read: Codex's and
             // Claude's files, or CLI Proxy API's account files. A check that
             // superseded the renewal may have read them before it rewrote
-            // them, so the service itself is checked again too.
+            // them, so the service itself is checked again too. The speech
+            // providers dictate with the same credentials.
             for (const ServiceRow &other : serviceRows) {
                 if (!latest || &other != row) {
                     run(QLatin1String(other.id), checkSignIn);
                 }
             }
+            checkSpeechSignIns();
         });
 }
 
@@ -314,6 +302,12 @@ void QuickAccounts::recheckAll()
     for (const ServiceRow &row : serviceRows) {
         run(QLatin1String(row.id), checkSignIn);
     }
+}
+
+void QuickAccounts::checkSpeechSignIns()
+{
+    m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
+                                                             m_controller->settings()->dictationSnapshot().speech);
 }
 
 void QuickAccounts::readSavedSecrets()

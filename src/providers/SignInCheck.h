@@ -6,7 +6,6 @@ namespace speecher {
 
 class SecretStore;
 struct AppSettings;
-struct SpeechSettings;
 
 // The services whose sign-ins the Accounts page shows.
 enum class SignInService { OpenAi, Anthropic, CliProxy };
@@ -44,10 +43,5 @@ SignInCheck checkSignIn(SignInService service, AppSettings settings, SecretStore
 // renews the account each of OpenAI and Anthropic has chosen. Worker threads
 // only.
 SignInCheck renewSignIn(SignInService service, AppSettings settings, SecretStore *secrets);
-// The sign-in dictation uses for the service's speech provider: Codex for
-// OpenAI, Claude Voice for Anthropic (the only services it takes). Neither
-// takes an API key or the CLI Proxy API server, so it can differ from
-// checkSignIn's answer. Reads files only; worker threads only.
-SignInCheck checkSpeechSignIn(SignInService service, const SpeechSettings &settings);
 
 } // namespace speecher

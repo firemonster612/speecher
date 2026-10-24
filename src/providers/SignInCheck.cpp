@@ -4,7 +4,6 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/AnthropicTranscriptRefiner.h"
-#include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
 
@@ -170,16 +169,6 @@ QString renew(SignInService service, const RefinementSettings &settings, SecretS
     return {};
 }
 
-SignInCheck checkCliproxyAccount(const SpeechSettings &settings, const QString &type, const QString &chosen)
-{
-    const CliProxyCredentialResult loaded = CliProxyCredentials::load(settings.cliproxyOauthDir, type, chosen);
-    if (loaded.ok) {
-        return {SignInState::SignedIn, {}, {}, settings.cliproxyOauthDir};
-    }
-    const bool expired = CliProxyCredentials::accountNeedsRefresh(settings.cliproxyOauthDir, type, chosen);
-    return {expired ? SignInState::Expired : SignInState::Missing, loaded.error, {}, settings.cliproxyOauthDir};
-}
-
 } // namespace
 
 SignInCheck checkSignIn(SignInService service, AppSettings settings, SecretStore *secrets)
@@ -202,30 +191,6 @@ SignInCheck renewSignIn(SignInService service, AppSettings settings, SecretStore
         renewed.detail = failure;
     }
     return renewed;
-}
-
-SignInCheck checkSpeechSignIn(SignInService service, const SpeechSettings &settings)
-{
-    if (service == SignInService::OpenAi) {
-        if (settings.codexAuthMode == cliproxyMode) {
-            return checkCliproxyAccount(settings, QStringLiteral("codex"), settings.codexCliproxyAccount);
-        }
-        const OpenAiAuthProvider codex(nullptr, QStringLiteral("codex_oauth"));
-        const OpenAiAuthStatus status = codex.status();
-        if (status.ready) {
-            return {SignInState::SignedIn, status.text};
-        }
-        return {codex.requiresCodexOauthRefresh() ? SignInState::Expired : SignInState::Missing, status.text};
-    }
-    if (settings.claudeAuthMode == cliproxyMode) {
-        return checkCliproxyAccount(settings, QStringLiteral("claude"), settings.claudeCliproxyAccount);
-    }
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath);
-    if (credentials.ok) {
-        return {SignInState::SignedIn};
-    }
-    const bool expired = ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
-    return {expired ? SignInState::Expired : SignInState::Missing, credentials.error};
 }
 
 } // namespace speecher

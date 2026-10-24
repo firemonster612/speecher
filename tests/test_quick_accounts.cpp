@@ -194,14 +194,9 @@ private slots:
         const QVariantMap openAi = service(accounts, QStringLiteral("openai"));
         QCOMPARE(openAi.value(QStringLiteral("state")).toString(), QStringLiteral("missing"));
         QCOMPARE(openAi.value(QStringLiteral("detail")).toString(), QStringLiteral("OPENAI_API_KEY not found"));
-        // Codex dictates with its own sign-in, never the OpenAI key.
-        QCOMPARE(openAi.value(QStringLiteral("speech")).toMap().value(QStringLiteral("state")).toString(),
-                 QStringLiteral("missing"));
         const QVariantMap anthropic = service(accounts, QStringLiteral("anthropic"));
         QCOMPARE(anthropic.value(QStringLiteral("state")).toString(), QStringLiteral("expired"));
         QCOMPARE(anthropic.value(QStringLiteral("directory")).toString(), dir.path());
-        QCOMPARE(anthropic.value(QStringLiteral("speech")).toMap().value(QStringLiteral("state")).toString(),
-                 QStringLiteral("expired"));
         const QVariantMap cliproxy = service(accounts, QStringLiteral("cliproxy"));
         QCOMPARE(cliproxy.value(QStringLiteral("state")).toString(), QStringLiteral("signedIn"));
         QCOMPARE(cliproxy.value(QStringLiteral("found")).toString(), QStringLiteral("signedIn"));
@@ -209,11 +204,13 @@ private slots:
         QCOMPARE(cliproxy.value(QStringLiteral("directory")).toString(), dir.path());
 
         // What was found definitely reaches fallbacks and `speecher
-        // providers`; an expired sign-in, which dictation may renew, does not.
+        // providers`; an expired sign-in, which dictation may renew, does
+        // not. Checking renews nothing, so the speech sign-ins wait for
+        // setup, a renewal or a dictation.
         const QHash<QString, bool> noted = notedSignIns(controller);
         QCOMPARE(noted.value(QStringLiteral("openai"), true), false);
-        QCOMPARE(noted.value(QStringLiteral("codex"), true), false);
         QVERIFY(!noted.contains(QStringLiteral("anthropic")));
+        QVERIFY(!noted.contains(QStringLiteral("codex")));
         QVERIFY(!noted.contains(QStringLiteral("claude")));
 
         const QVariantList files = accounts.cliproxyAccounts();
@@ -517,6 +514,8 @@ private slots:
         QCOMPARE(serviceState(accounts, QStringLiteral("cliproxy")), QStringLiteral("signedIn"));
         QCOMPARE(accountState(accounts, fileName), QStringLiteral("signedIn"));
         QCOMPARE(notedSignIns(controller).value(QStringLiteral("openai")), true);
+        // Codex dictates with the account renewed, and is checked again.
+        QTRY_COMPARE(notedSignIns(controller).value(QStringLiteral("codex")), true);
     }
 
     // Checking everything while a renewal waits on the network shows what
