@@ -592,6 +592,51 @@ private slots:
         QVERIFY2(syncsWhenPresented >= 1, "presented by the frame synchronized before the show");
     }
 
+    // Before any review, Dictation names the keys the configured shortcuts
+    // give one, so the window is as wide as its buttons when it shows and a
+    // review keeps the capsule where it is; one answered by longer keys
+    // places the window again.
+    void aReviewKeepsThePopupWhereItShowed()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        const QVariantMap idle = dictation.property("review").toMap();
+        QCOMPARE(idle.value(QStringLiteral("keepKeys")).toStringList(), QStringList{QStringLiteral("Esc")});
+        QCOMPARE(idle.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{QStringLiteral("Enter")});
+        QCOMPARE(idle.value(QStringLiteral("followUpKeys")).toStringList(), shortcutKeys(controller.globalShortcutDisplay()));
+
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
+        QQmlEngine engine;
+        auto *positioner = new RecordingPositioner;
+        QuickPopupWindow popup(&engine, positioner);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        DictationSession *session = controller.session();
+        const auto review = [session, &controller](bool escapeHeld, const QString &cancelShortcut) {
+            emit session->stateChanged(QStringLiteral("reviewing"));
+            emit session->popupSelectionEditReviewRequested(selectionEditReview(
+                QStringLiteral("the deck"), QStringLiteral("the slides"), {QStringLiteral("say slides")},
+                reviewKeysFor(escapeHeld, true, cancelShortcut, controller.globalShortcutDisplay())));
+        };
+
+        emit session->stateChanged(QStringLiteral("starting"));
+        const QSize shown = window->size();
+        popup.show(1);
+        QTRY_VERIFY(window->isExposed());
+        review(true, QString());
+        QTest::qWait(200);
+        QCOMPARE(window->size(), shown);
+        QCOMPARE(positioner->positioned, 1);
+
+        // Escape not held: a long Cancel Shortcut keeps the original.
+        review(false, QStringLiteral("Ctrl+Alt+Shift+Meta+Backspace"));
+        QTRY_VERIFY(window->width() > shown.width());
+        QCOMPARE(positioner->positioned, 2);
+    }
+
     // The capsule takes the pointer wherever it is drawn, also while it
     // arrives scaled and lifted and while it grows or shrinks to the next
     // phase.

@@ -102,14 +102,16 @@ Item {
     // The capsule's width in review, the widest phase: 500, or wider when
     // the review's buttons, with their keys, need it to stay on one row.
     // From the buttons, which keep their size while hidden, unlike the row.
+    // The live Dictation names their keys before a review comes, so this is
+    // settled before its window shows.
     readonly property int widest: Math.max(500, Math.ceil(contentX + 16 + replaceButton.implicitWidth + askButton.implicitWidth
                                                           + cancelButton.implicitWidth + reviewActions.spacing * 2))
     // The most the capsule ever grows to: the review with its edit at the
     // scroll limit, with its buttons or, during a follow-up, with the live
-    // bar and the most lines of words under it. A window this size never
-    // resizes. It adds up the review's fixed parts rather than subtracting
-    // the edit from the column, which lags the edit by a frame while it lays
-    // out.
+    // bar and the most lines of words under it. A window this size resizes
+    // only when the keys do. It adds up the review's fixed parts rather than
+    // subtracting the edit from the column, which lags the edit by a frame
+    // while it lays out.
     readonly property size largest: Qt.size(widest, reviewHeading.height + review.spacing + textMax
         + Math.max(review.spacing + reviewActions.height + review.y * 2,
                    review.y + barHeight + words.y + words.maxLines * words.lineHeight - 4))
@@ -435,13 +437,16 @@ Item {
                 Item {
                     id: reviewHeading
                     width: parent.width
-                    height: reviewTitle.height
+                    // From its lines, not the column, which lays out only
+                    // once the window shows; the window's size counts this.
+                    height: reviewTitleLine.implicitHeight + reviewTitle.spacing + reviewSaid.implicitHeight
                     Column {
                         id: reviewTitle
                         width: parent.width - reviewSummary.width - 12
                         spacing: 2
-                        Txt { text: popup.t.reviewTitle; variant: "label"; strong: true }
+                        Txt { id: reviewTitleLine; text: popup.t.reviewTitle; variant: "label"; strong: true }
                         Txt {
+                            id: reviewSaid
                             width: parent.width
                             text: popup.t.youSaid(popup.selectionEdit.instruction || "")
                             variant: "small"

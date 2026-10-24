@@ -46,6 +46,7 @@ private:
     void moveTo(const QPoint &topLeft) override;
     QWindow *nativeWindow() override;
 
+    void placeAgainWhileShown();
     void framePresented(quint64 generation);
     void captureWhenAsked();
 

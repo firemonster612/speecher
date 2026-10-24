@@ -16,7 +16,7 @@ Rectangle {
     signal activated()
 
     radius: Theme.radiusLarge
-    color: selected ? Theme.accentSoft : hover.hovered ? Theme.fill : "transparent"
+    color: selected ? Theme.accentSoft : tap.pressed ? Theme.fillStrong : hover.hovered ? Theme.fill : "transparent"
     border.width: 1
     border.color: selected ? Theme.accent : hover.hovered ? Theme.borderStrong : Theme.border
     scale: tap.pressed ? Theme.motionScale(0.98) : 1

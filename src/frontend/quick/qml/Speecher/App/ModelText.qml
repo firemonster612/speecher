@@ -72,7 +72,7 @@ QtObject {
     // Speech services as a choice for dictation, saying what each is good
     // at, how its text arrives and what it was rated on; Transcribe files',
     // whose text all arrives at the end, leave out how it arrives. Setup's
-    // say what each needs, and no more, so a step shows every choice.
+    // say what each needs and what it was rated on.
     function speechChoices(services) {
         return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
                                          [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
@@ -81,7 +81,10 @@ QtObject {
         return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
                                          [ratedAsNote(Models.speechRatings[s.id])]))
     }
-    function setupSpeechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings)) }
+    function setupSpeechChoices(services) {
+        return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings,
+                                         [ratedAsNote(Models.speechRatings[s.id])]))
+    }
 
     // Where a speech service stands in the chain: 0 for the service itself,
     // then its place among the fallbacks.
@@ -205,15 +208,10 @@ QtObject {
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }
         return Object.assign({ icon: "circle", help: "" }, _refiners[id], known, { refines: true })
     }
-    // The providers, then None, as a choice, with what each was rated on;
-    // setup's without, so the step shows every choice.
+    // The providers, then None, as a choice, with what each was rated on.
     function refinementChoices(providers) {
         return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings,
                                           [ratedAsNote(Models.refinementRatings[p.id])]))
-            .concat([_choice(provider("none"), _refiners.none.help)])
-    }
-    function setupRefinementChoices(providers) {
-        return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings))
             .concat([_choice(provider("none"), _refiners.none.help)])
     }
     // The model a provider refines with, as its settings name it.

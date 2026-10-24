@@ -67,6 +67,11 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
     }, Qt::DirectConnection);
     connect(m_window, SIGNAL(inputRegionChanged()), this, SLOT(applyInputRegion()));
     connect(m_window, SIGNAL(emptyChanged()), this, SLOT(hideOnceEmpty()));
+    // The window is sized before it shows, but a size that still changes
+    // while it is up (a review answered by other keys than the configured
+    // ones) would keep its top-left corner and move the capsule off centre.
+    connect(m_window, &QWindow::widthChanged, this, &QuickPopupWindow::placeAgainWhileShown);
+    connect(m_window, &QWindow::heightChanged, this, &QuickPopupWindow::placeAgainWhileShown);
     applyInputRegion();
     captureWhenAsked();
 }
@@ -94,6 +99,13 @@ void QuickPopupWindow::hide()
     m_pendingGeneration = 0;
     if (m_window) {
         m_window->hide();
+    }
+}
+
+void QuickPopupWindow::placeAgainWhileShown()
+{
+    if (m_window->isVisible()) {
+        m_positioner->positionBottomCenter(*this);
     }
 }
 

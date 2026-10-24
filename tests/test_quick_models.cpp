@@ -27,6 +27,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 
+#include <algorithm>
 #include <memory>
 
 // The UI's QML modules are linked into the tests by test_quick_settings.cpp,
@@ -425,6 +426,49 @@ private slots:
         QVERIFY(offer->property("open").toBool());
         QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("local"));
         QVERIFY(!offer->property("open").toBool());
+    }
+
+    // Setup's Refinement step says what Local Runner's rating was taken
+    // with, under its ratings and to assistive tech, as the settings page
+    // does.
+    void setupSaysWhatARatingWasTakenWith()
+    {
+        ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller);
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
+        QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        // Their key rows read Accounts, which the host always makes. Its
+        // keyring reads fail at once, so none is left waiting on this thread
+        // when it goes.
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QuickAccounts accounts(&controller);
+        LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
+        const QString ratedModel =
+            models.refinementRatings().value(QStringLiteral("local")).toMap().value(QStringLiteral("ratedModel")).toString();
+        QVERIFY(!ratedModel.isEmpty());
+        QQmlEngine engine;
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/RefinementStep.qml")));
+        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
+        QVERIFY2(step, qPrintable(stepComponent.errorString()));
+        step->setProperty("choices", QVariant::fromValue(choices.get()));
+        stepComponent.completeCreate();
+        const QList<QObject *> found = step->findChildren<QObject *>();
+        const auto cards = std::find_if(found.begin(), found.end(), [](QObject *object) {
+            return QByteArray(object->metaObject()->className()).startsWith("ServiceCards");
+        });
+        QVERIFY(cards != found.end());
+
+        const QVariantMap local = entry((*cards)->property("options").toList(), QStringLiteral("local"));
+        QCOMPARE(local.value(QStringLiteral("note")).toString(), QStringLiteral("Rated as ") + ratedModel);
     }
 
     // Setup's Transcription step offers the chosen Local Model's download
