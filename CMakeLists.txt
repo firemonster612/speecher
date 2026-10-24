@@ -63,12 +63,6 @@ option(SPEECHER_BUILD_TESTS "Build tests" ON)
 # builds; distributed builds must not carry env-activated fake providers.
 option(SPEECHER_E2E_HOOKS "Compile end-to-end test hooks" OFF)
 option(SPEECHER_RELEASE_BUILD "Require every Linux release integration" OFF)
-set(SPEECHER_WINUI_DEFAULT OFF)
-if(WIN32)
-  set(SPEECHER_WINUI_DEFAULT ON)
-endif()
-option(SPEECHER_WITH_WINUI "Build the WinUI Windows front end"
-  ${SPEECHER_WINUI_DEFAULT})
 set(SPEECHER_WITH_KDE_DEFAULT OFF)
 if(UNIX AND NOT APPLE)
   set(SPEECHER_WITH_KDE_DEFAULT ON)
@@ -83,28 +77,7 @@ if(SPEECHER_RELEASE_BUILD AND (NOT SPEECHER_WITH_KDE OR NOT SPEECHER_WITH_QKEYCH
     "SPEECHER_RELEASE_BUILD requires SPEECHER_WITH_KDE=ON and SPEECHER_WITH_QKEYCHAIN=ON.")
 endif()
 
-# The native macOS front end. Turning it off leaves the Qt front end driving the
-# mac build, which is why the Swift language stays behind the option too.
-set(SPEECHER_SWIFT_UI_DEFAULT OFF)
-if(APPLE)
-  set(SPEECHER_SWIFT_UI_DEFAULT ON)
-endif()
-option(SPEECHER_WITH_SWIFT_UI "Build the AppKit/SwiftUI macOS front end"
-  ${SPEECHER_SWIFT_UI_DEFAULT})
-if(APPLE AND SPEECHER_WITH_SWIFT_UI)
-  enable_language(Swift)
-endif()
-
-if(WIN32 AND SPEECHER_WITH_WINUI)
-  include(cmake/WindowsAppSdk.cmake)
-endif()
-
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
-# The provider marks are SVGs, which QIcon renders through Qt's SVG image
-# plugin. Linking Qt6::Svg pulls that plugin into a deployed build; where the
-# module's development files are absent, the plugin installed beside Qt is
-# enough and the marks still render.
-find_package(Qt6 6.5 QUIET COMPONENTS Svg)
 
 function(speecher_assert_single_qt_prefix context)
   get_filename_component(qt6_dir_real "${Qt6_DIR}" REALPATH)
@@ -226,13 +199,9 @@ if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
   if(SPEECHER_WITH_KDE)
     find_package(KF6GlobalAccel REQUIRED)
-    find_package(KF6WidgetsAddons REQUIRED)
-    find_package(KF6ColorScheme REQUIRED)
     find_package(LayerShellQt REQUIRED)
   else()
     find_package(KF6GlobalAccel QUIET)
-    find_package(KF6WidgetsAddons QUIET)
-    find_package(KF6ColorScheme QUIET)
     if(SPEECHER_WITH_LAYER_SHELL)
       find_package(LayerShellQt QUIET)
     endif()
@@ -241,12 +210,6 @@ if(UNIX AND NOT APPLE)
   speecher_assert_single_qt_prefix("KDE package discovery")
   if(KF6GlobalAccel_FOUND)
     speecher_assert_package_qt_version("KF6GlobalAccel" "KF6::GlobalAccel" EXACT)
-  endif()
-  if(KF6WidgetsAddons_FOUND)
-    speecher_assert_package_qt_version("KF6WidgetsAddons" "KF6::WidgetsAddons")
-  endif()
-  if(KF6ColorScheme_FOUND)
-    speecher_assert_package_qt_version("KF6ColorScheme" "KF6::ColorScheme" EXACT)
   endif()
   if(LayerShellQt_FOUND)
     speecher_assert_package_qt_version("LayerShellQt" "LayerShellQt::Interface" EXACT)
@@ -275,14 +238,11 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderChain.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
-  src/core/ReleaseNotesPresentation.cpp
+  src/core/ProviderReadiness.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
-  src/core/settings/FallbackPresentation.cpp
-  src/core/settings/ProviderRatings.cpp
   src/core/settings/SettingsCodecs.cpp
-  src/core/settings/SettingsSchema.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
@@ -315,15 +275,12 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
-  src/core/ReleaseNotesPresentation.h
+  src/core/ProviderReadiness.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
-  src/core/settings/FallbackPresentation.h
-  src/core/settings/ProviderRatings.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
-  src/core/settings/SettingsSchema.h
   src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
@@ -334,7 +291,6 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/WordPreview.h
   src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h
-  src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h
   src/dictation/SelectionEditPresentation.h
   src/recording/SystemAudioPresentation.h
@@ -476,7 +432,6 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
-  src/platform/LinuxStyleChoice.cpp
   src/platform/MediaPauseController.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
@@ -503,7 +458,6 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/KeywatchSetup.h
   src/platform/KeywatchShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h
-  src/platform/LinuxStyleChoice.h
   src/platform/MediaPauseController.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
@@ -583,7 +537,6 @@ set(SPEECHER_APP_SOURCES
   src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
   src/app/CommandLineTool.cpp
-  src/app/CommandLineToolPresentation.cpp
   src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -591,14 +544,10 @@ set(SPEECHER_APP_SOURCES
   src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
   src/app/PhoneTransfer.cpp
-  src/app/PhoneTransferPresentation.cpp
   src/app/ProviderSetup.cpp
   src/app/ProvidersCommand.cpp
-  src/app/AccessibilityPresentation.cpp
-  src/app/SetupSteps.cpp
   src/app/ShellCompletions.cpp
   src/app/SingleInstanceIpc.cpp
-  src/app/UpdateBanner.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
   src/recording/RecordingStatus.cpp
@@ -616,7 +565,6 @@ set(SPEECHER_APP_HEADERS
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
   src/app/CommandLineTool.h
-  src/app/CommandLineToolPresentation.h
   src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
@@ -624,14 +572,10 @@ set(SPEECHER_APP_HEADERS
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
   src/app/PhoneTransfer.h
-  src/app/PhoneTransferPresentation.h
   src/app/ProviderSetup.h
   src/app/ProvidersCommand.h
-  src/app/AccessibilityPresentation.h
-  src/app/SetupSteps.h
   src/app/ShellCompletions.h
   src/app/SingleInstanceIpc.h
-  src/app/UpdateBanner.h
   src/app/UpdateController.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
@@ -669,179 +613,9 @@ set(SPEECHER_APP_MAC_HEADERS
   src/app/MacSparkleUpdater.h
 )
 
-set(SPEECHER_FRONTEND_QT_SOURCES
-  src/frontend/qt/BindingRows.cpp
-  src/frontend/qt/CollectionRow.cpp
-  src/frontend/qt/FallbackList.cpp
-  src/frontend/qt/LocalModelRows.cpp
-  src/frontend/qt/MicrophoneTestRow.cpp
-  src/frontend/qt/PhoneTransferDialog.cpp
-  src/frontend/qt/OutputCustomRows.cpp
-  src/frontend/qt/ProviderCustomRows.cpp
-  src/frontend/qt/QtFrontEnd.cpp
-  src/frontend/qt/QtPopupSurface.cpp
-  src/frontend/qt/SchemaSettingsPage.cpp
-  src/frontend/qt/WritingProfileList.cpp
-  src/ui/AccessibilityNotice.cpp
-  src/ui/AppWindow.cpp
-  src/ui/HomePage.cpp
-  src/ui/InsightsCharts.cpp
-  src/ui/SetupAssistant.cpp
-  src/ui/setup/SetupPages.cpp
-  src/ui/settings/SettingsPageSupport.cpp
-  src/ui/settings/SettingsPageSet.cpp
-  src/ui/HostStylePlugin.cpp
-  src/ui/InlineMessage.cpp
-  src/ui/Theme.cpp
-  src/ui/TranscribeLoomWidget.cpp
-  src/ui/TranscribeModel.cpp
-  src/ui/TranscribePage.cpp
-  src/ui/TranscribeWindow.cpp
-  src/ui/TranscriberPopup.cpp
-  src/ui/WaveformWidget.cpp
-)
-
-set(SPEECHER_FRONTEND_QT_HEADERS
-  src/frontend/qt/BindingRows.h
-  src/frontend/qt/CollectionRow.h
-  src/frontend/qt/FallbackList.h
-  src/frontend/qt/LocalModelRows.h
-  src/frontend/qt/MicrophoneTestRow.h
-  src/frontend/qt/OutputCustomRows.h
-  src/frontend/qt/PhoneTransferDialog.h
-  src/frontend/qt/ProviderCustomRows.h
-  src/frontend/qt/QtFrontEnd.h
-  src/frontend/qt/QtPopupSurface.h
-  src/frontend/qt/SchemaSettingsPage.h
-  src/frontend/qt/WritingProfileList.h
-  src/ui/AccessibilityNotice.h
-  src/ui/AppWindow.h
-  src/ui/HomePage.h
-  src/ui/InsightsCharts.h
-  src/ui/SetupAssistant.h
-  src/ui/setup/SetupPages.h
-  src/ui/settings/SettingsPageSupport.h
-  src/ui/settings/SettingsPageSet.h
-  src/ui/HostStylePlugin.h
-  src/ui/InlineMessage.h
-  src/ui/Theme.h
-  src/ui/TranscribeLoomWidget.h
-  src/ui/TranscribeModel.h
-  src/ui/TranscribePage.h
-  src/ui/TranscribeWindow.h
-  src/ui/TranscriberPopup.h
-  src/ui/WaveformModel.h
-  src/ui/WaveformWidget.h
-)
-
-set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
-  src/frontend/qt/LinuxAuthPrompt.cpp
-  src/frontend/qt/LinuxTrayIcon.cpp
-  src/frontend/qt/TrayStatusPanel.cpp
-  src/output/YdotoolSetupFlow.cpp
-  src/ui/setup/LinuxGlobalShortcutSetupPage.cpp
-)
-
-set(SPEECHER_FRONTEND_QT_LINUX_HEADERS
-  src/frontend/qt/LinuxAuthPrompt.h
-  src/frontend/qt/LinuxTrayIcon.h
-  src/frontend/qt/TrayStatusPanel.h
-  src/output/YdotoolSetupFlow.h
-  src/ui/setup/LinuxGlobalShortcutSetupPage.h
-)
-
-set(SPEECHER_FRONTEND_QT_MAC_SOURCES
-  src/platform/mac/MacWindowChrome.mm
-)
-
-set(SPEECHER_FRONTEND_QT_MAC_HEADERS
-  src/platform/mac/MacWindowChrome.h
-)
-
-set(SPEECHER_FRONTEND_MAC_SOURCES
-  src/frontend/mac/MacCustomRows.cpp
-  src/frontend/mac/MacFrontEnd.mm
-  src/frontend/mac/SpeecherBridge.mm
-)
-
-set(SPEECHER_FRONTEND_MAC_HEADERS
-  src/frontend/mac/MacCustomRows.h
-  src/frontend/mac/MacFrontEnd.h
-  src/frontend/mac/SpeecherBridge.h
-)
-
-set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
-  src/frontend/mac/swift/AppModel.swift
-  src/frontend/mac/swift/Collections.swift
-  src/frontend/mac/swift/DictationPanel.swift
-  src/frontend/mac/swift/HomePane.swift
-  src/frontend/mac/swift/LocalModels.swift
-  src/frontend/mac/swift/MenuBarExtra.swift
-  src/frontend/mac/swift/Panes.swift
-  src/frontend/mac/swift/Rows.swift
-  src/frontend/mac/swift/SettingsWindow.swift
-  src/frontend/mac/swift/SetupAssistant.swift
-  src/frontend/mac/swift/ShortcutRecorderRow.swift
-  src/frontend/mac/swift/SpeecherMacUI.swift
-  src/frontend/mac/swift/TranscribePane.swift
-  src/frontend/mac/swift/UpdatePreview.swift
-)
-
-set(SPEECHER_FRONTEND_WIN_SOURCES
-  src/frontend/win/CollectionEditor.cpp
-  src/frontend/win/CustomRows.cpp
-  src/frontend/win/DictationPanel.cpp
-  src/frontend/win/HomePage.cpp
-  src/frontend/win/LocalModelBrowser.cpp
-  src/frontend/win/SettingsModel.cpp
-  src/frontend/win/SettingsPage.cpp
-  src/frontend/win/SettingsWindow.cpp
-  src/frontend/win/ShortcutRecorder.cpp
-  src/frontend/win/SetupWindow.cpp
-  src/frontend/win/TrayFlyout.cpp
-  src/frontend/win/TrayIcon.cpp
-  src/frontend/win/TranscribePane.cpp
-  src/frontend/win/TranscribeWindow.cpp
-  src/frontend/win/WaveformBars.cpp
-  src/frontend/win/WinFrontEnd.cpp
-  src/frontend/win/WinUiHost.cpp
-)
-
-set(SPEECHER_FRONTEND_WIN_HEADERS
-  src/frontend/win/CollectionEditor.h
-  src/frontend/win/CustomRows.h
-  src/frontend/win/DictationPanel.h
-  src/frontend/win/HomePage.h
-  src/frontend/win/LocalModelBrowser.h
-  src/frontend/win/SettingsModel.h
-  src/frontend/win/SettingsPage.h
-  src/frontend/win/SettingsWindow.h
-  src/frontend/win/ShortcutRecorder.h
-  src/frontend/win/SetupWindow.h
-  src/frontend/win/TrayFlyout.h
-  src/frontend/win/TrayIcon.h
-  src/frontend/win/TranscribePane.h
-  src/frontend/win/TranscribeWindow.h
-  src/frontend/win/WinFrontEnd.h
-  src/frontend/win/WinUiHost.h
-)
-
 add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
-)
-file(GLOB SPEECHER_RELEASE_NOTES CONFIGURE_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases/[0-9]*.md"
-)
-qt_add_resources(speecher_domain release_notes
-  PREFIX "/releases"
-  BASE "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases"
-  FILES ${SPEECHER_RELEASE_NOTES}
-)
-qt_add_resources(speecher_domain release_history
-  PREFIX "/releases"
-  BASE "${SPEECHER_RELEASE_HISTORY_DIR}"
-  FILES "${SPEECHER_RELEASE_HISTORY_DIR}/history.log"
 )
 target_include_directories(speecher_domain PUBLIC src)
 # Gui for QKeySequence, which ShortcutBinding carries for key combinations.
@@ -1032,8 +806,8 @@ add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_HEADERS}
 )
 target_include_directories(speecher_platform PUBLIC src)
-# Gui, not Widgets: the popup port speaks PopupSurface so that a front end
-# built on something other than Qt Widgets can still be positioned.
+# Gui, not Widgets: the popup port speaks PopupSurface, so the Qt Quick popup
+# can be positioned through it.
 target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Gui Qt6::Multimedia)
 if(UNIX AND NOT APPLE)
   target_sources(speecher_platform PRIVATE
@@ -1103,13 +877,14 @@ if(WIN32)
   target_link_libraries(speecher_platform PUBLIC
     uiautomationcore user32 ole32 shell32 gdi32 windowsapp
   )
-  if(TARGET winappsdk)
-    target_link_libraries(speecher_platform PRIVATE winappsdk)
-  endif()
 endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
+endif()
+if(KF6GlobalAccel_FOUND)
+  target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
+  target_link_libraries(speecher_platform PRIVATE KF6::GlobalAccel)
 endif()
 
 # The phone transfer's QR code and cipher (docs/adr/0008-phone-transfer-over-the-lan.md).
@@ -1134,9 +909,7 @@ add_library(speecher_monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.
 target_include_directories(speecher_monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
 
 # The application: sessions, permissions and single-instance IPC, with no user
-# interface of its own. Deliberately free of Qt Widgets so that a front end
-# built on something else can drive it; see
-# docs/adr/0001-per-platform-front-ends.md.
+# interface of its own; see docs/adr/0009-one-quick-ui-inside-the-daemon.md.
 add_library(speecher_app STATIC
   ${SPEECHER_APP_SOURCES}
   ${SPEECHER_APP_HEADERS}
@@ -1184,127 +957,6 @@ if(WIN32)
   )
 endif()
 
-add_library(speecher_frontend_qt STATIC
-  ${SPEECHER_FRONTEND_QT_SOURCES}
-  ${SPEECHER_FRONTEND_QT_HEADERS}
-)
-target_include_directories(speecher_frontend_qt PUBLIC src)
-target_link_libraries(speecher_frontend_qt PUBLIC speecher_app Qt6::Widgets)
-if(Qt6Svg_FOUND)
-  target_link_libraries(speecher_frontend_qt PUBLIC Qt6::Svg)
-endif()
-# The setup assistant renders these at the screen's device pixel ratio.
-qt_add_resources(speecher_frontend_qt brand_marks
-  PREFIX "/brand"
-  BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand"
-  FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/chatgpt.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/claude.svg"
-)
-if(UNIX AND NOT APPLE)
-  target_sources(speecher_frontend_qt PRIVATE
-    ${SPEECHER_FRONTEND_QT_LINUX_SOURCES}
-    ${SPEECHER_FRONTEND_QT_LINUX_HEADERS}
-  )
-  # The setup assistant and the output page drive ydotool, which only exists on
-  # the Linux side of the platform layer.
-  target_compile_definitions(speecher_frontend_qt PUBLIC SPEECHER_WITH_YDOTOOL=1)
-endif()
-if(APPLE)
-  target_sources(speecher_frontend_qt PRIVATE
-    ${SPEECHER_FRONTEND_QT_MAC_SOURCES}
-    ${SPEECHER_FRONTEND_QT_MAC_HEADERS}
-  )
-endif()
-if(KF6WidgetsAddons_FOUND)
-  target_compile_definitions(speecher_frontend_qt PUBLIC
-    SPEECHER_WITH_KASSISTANT=1
-    SPEECHER_WITH_KPAGEWIDGET=1
-  )
-  target_link_libraries(speecher_frontend_qt PUBLIC KF6::WidgetsAddons)
-endif()
-if(KF6GlobalAccel_FOUND)
-  target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
-  target_link_libraries(speecher_platform PRIVATE KF6::GlobalAccel)
-endif()
-if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
-  target_compile_definitions(speecher_frontend_qt PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)
-  target_link_libraries(speecher_frontend_qt PRIVATE KF6::ColorScheme)
-endif()
-
-if(APPLE AND SPEECHER_WITH_SWIFT_UI)
-  # swiftc writes the generated header itself, so the directory has to be there
-  # before the first compile.
-  set(SPEECHER_SWIFT_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/swift")
-  file(MAKE_DIRECTORY "${SPEECHER_SWIFT_HEADER_DIR}")
-
-  # Swift only: CMake cannot mix Swift with another language in one target.
-  add_library(speecher_frontend_mac_swift STATIC
-    ${SPEECHER_FRONTEND_MAC_SWIFT_SOURCES}
-  )
-  set_target_properties(speecher_frontend_mac_swift PROPERTIES
-    Swift_MODULE_NAME SpeecherUI
-    Swift_LANGUAGE_VERSION 5
-    AUTOMOC OFF
-    AUTORCC OFF
-    AUTOUIC OFF
-  )
-  # SpeecherBridge.h is both the Objective-C facade and the bridging header, so
-  # Swift sees the app through it and through nothing else. The header swiftc
-  # emits in return is what lets Objective-C++ open the window.
-  target_compile_options(speecher_frontend_mac_swift PRIVATE
-    "SHELL:-import-objc-header ${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/mac/SpeecherBridge.h"
-    "SHELL:-emit-objc-header -emit-objc-header-path ${SPEECHER_SWIFT_HEADER_DIR}/SpeecherUI-Swift.h"
-  )
-
-  add_library(speecher_frontend_mac STATIC
-    ${SPEECHER_FRONTEND_MAC_SOURCES}
-    ${SPEECHER_FRONTEND_MAC_HEADERS}
-  )
-  target_include_directories(speecher_frontend_mac
-    PUBLIC src
-    PRIVATE "${SPEECHER_SWIFT_HEADER_DIR}"
-  )
-  set_target_properties(speecher_frontend_mac PROPERTIES
-    AUTOMOC OFF
-    # Otherwise the Swift dependency below makes CMake archive this one with
-    # swiftc, which rejects the Objective-C++ flags.
-    LINKER_LANGUAGE OBJCXX
-  )
-  # ARC in these two files only: they hold Objective-C objects in C++ members and
-  # pass blocks across the wall, which manual retain/release would only obscure.
-  target_compile_options(speecher_frontend_mac PRIVATE
-    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
-  )
-  # Qt, still: the bridge reads the schema context and the theme through the Qt
-  # front end's helpers rather than reassembling them. Every window this front
-  # end shows is AppKit/SwiftUI. AVFoundation is the setup assistant's
-  # microphone permission; UserNotifications says a download finished.
-  target_link_libraries(speecher_frontend_mac PUBLIC
-    speecher_frontend_qt speecher_frontend_mac_swift
-    "-framework AppKit"
-    "-framework AVFoundation"
-    "-framework UserNotifications"
-  )
-  # Ninja cannot see that the .mm files need the generated header, so order the
-  # whole Swift target ahead of them.
-  add_dependencies(speecher_frontend_mac speecher_frontend_mac_swift)
-endif()
-
-if(WIN32 AND SPEECHER_WITH_WINUI)
-  add_library(speecher_frontend_win STATIC
-    ${SPEECHER_FRONTEND_WIN_SOURCES}
-    ${SPEECHER_FRONTEND_WIN_HEADERS}
-  )
-  target_include_directories(speecher_frontend_win PUBLIC src)
-  target_link_libraries(speecher_frontend_win PUBLIC speecher_app winappsdk)
-  qt_add_resources(speecher_frontend_win "win_xaml"
-    PREFIX "/win"
-    BASE "src/frontend/win"
-    FILES src/frontend/win/xaml/styles.xaml
-  )
-endif()
-
 qt_add_executable(speecher
   src/app/main.cpp
 )
@@ -1320,25 +972,15 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${SPEECHER_VERSION}"
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
-if(TARGET speecher_frontend_win)
-  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_WINUI=1)
-  target_link_libraries(speecher PRIVATE speecher_frontend_win Qt6::Widgets)
-else()
-  target_link_libraries(speecher PRIVATE speecher_frontend_qt)
-endif()
-if(TARGET speecher_frontend_mac)
-  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_SWIFT_UI=1)
-  target_link_libraries(speecher PRIVATE speecher_frontend_mac)
-  # Same reason as the front end itself: swiftc would otherwise be handed the
-  # linker flags Qt's plugin importer contributes, and reject them. The Swift
-  # runtime still arrives, autolinked from the Swift objects.
-  set_target_properties(speecher PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(speecher PRIVATE speecher_app)
+if(UNIX AND NOT APPLE)
+  # The tray icon is a Qt Widgets QSystemTrayIcon.
+  target_sources(speecher PRIVATE src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
+  target_link_libraries(speecher PRIVATE Qt6::Widgets)
 endif()
 
 if(WIN32)
   target_sources(speecher PRIVATE packaging/windows/speecher.manifest packaging/windows/speecher.rc)
-endif()
-if(TARGET speecher_frontend_win)
   set_target_properties(speecher PROPERTIES WIN32_EXECUTABLE TRUE)
   # The console launcher for the command line, which cmd and PowerShell wait
   # for. Plain Win32, no Qt. The installer ships it as speecher.com.
@@ -1349,32 +991,12 @@ if(TARGET speecher_frontend_win)
     AUTORCC OFF
     AUTOUIC OFF
   )
-  add_custom_command(TARGET speecher POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      ${SPEECHER_WASDK_WINMDS} "$<TARGET_FILE_DIR:speecher>"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/speecher.ico"
-      "$<TARGET_FILE_DIR:speecher>"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-light.ico"
-      "$<TARGET_FILE_DIR:speecher>/tray-light.ico"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-dark.ico"
-      "$<TARGET_FILE_DIR:speecher>/tray-dark.ico"
-    COMMAND_EXPAND_LISTS
-    COMMENT "Copying Windows App SDK runtime files"
-    VERBATIM
-  )
 endif()
 
 if(APPLE)
   find_program(SPEECHER_DITTO_EXECUTABLE ditto REQUIRED)
   set(SPEECHER_MACOS_RESOURCES
     packaging/macos/speecher.icns
-    packaging/macos/speecher-menubar.png
-    packaging/macos/speecher-menubar@2x.png
   )
   if(SPEECHER_WITH_LOCAL_SPEECH)
     list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
@@ -1596,7 +1218,7 @@ endif()
 
 message(STATUS "Speecher feature summary:")
 message(STATUS "  release profile: ${SPEECHER_RELEASE_BUILD}")
-message(STATUS "  KDE GlobalAccel/WidgetsAddons/ColorScheme: ${KF6GlobalAccel_FOUND}/${KF6WidgetsAddons_FOUND}/${KF6ColorScheme_FOUND}")
+message(STATUS "  KDE GlobalAccel: ${KF6GlobalAccel_FOUND}")
 message(STATUS "  LayerShellQt: ${LayerShellQt_FOUND}")
 message(STATUS "  Qt WebSockets: ${Qt6WebSockets_FOUND}")
 message(STATUS "  QtKeychain: ${Qt6Keychain_FOUND}")
@@ -1672,12 +1294,9 @@ if(SPEECHER_BUILD_TESTS)
   enable_testing()
   qt_add_executable(speecher_tests
     tests/test_main.cpp
-    tests/test_ui.cpp
-    tests/test_app_window.cpp
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
     tests/test_settings.cpp
-    tests/test_settings_schema.cpp
     tests/test_provider_registry.cpp
     tests/test_platform_composition.cpp
     tests/test_platform_live.cpp
@@ -1725,45 +1344,21 @@ if(SPEECHER_BUILD_TESTS)
     SPEECHER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(speecher_tests PRIVATE
-    speecher_frontend_qt Qt6::Test speecher_monocypher
+    speecher_app Qt6::Widgets Qt6::Test speecher_monocypher
   )
   if(UNIX AND NOT APPLE)
     target_sources(speecher_tests PRIVATE
-      tests/test_linux_style_choice.cpp
+      src/app/LinuxTrayIcon.cpp
+      src/app/LinuxTrayIcon.h
       tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
     )
   endif()
-  if(TARGET speecher_frontend_mac)
-    target_sources(speecher_tests PRIVATE tests/test_mac_frontend.mm)
-    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_SWIFT_UI=1)
-    # The generated Swift header is private to the front-end library; the test
-    # exercises the Swift panel through it, so it needs the same include.
-    target_include_directories(speecher_tests PRIVATE "${SPEECHER_SWIFT_HEADER_DIR}")
-    # ARC, as the bridge itself is built: an unmanaged bridge in one test would
-    # outlive its controller and every suite after it.
-    target_compile_options(speecher_tests PRIVATE
-      $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
-    )
-    target_link_libraries(speecher_tests PRIVATE speecher_frontend_mac)
-    set_target_properties(speecher_tests PROPERTIES LINKER_LANGUAGE CXX)
-  endif()
-  if(TARGET speecher_frontend_win)
-    target_sources(speecher_tests PRIVATE
-      tests/test_win_frontend.cpp
-      packaging/windows/speecher.manifest
-    )
-    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_WINUI=1)
-    target_link_libraries(speecher_tests PRIVATE speecher_frontend_win)
-  endif()
   set(SPEECHER_TEST_SUITES
-    ui
-    app_window
     transcript_state
     bindings
     settings
-    settings_schema
     provider_registry
     platform_composition
     platform_live
@@ -1786,22 +1381,16 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)
-  endif()
-  if(TARGET speecher_frontend_mac)
-    list(APPEND SPEECHER_TEST_SUITES mac_front_end)
   endif()
   if(APPLE)
     list(APPEND SPEECHER_TEST_SUITES mac_platform)
   endif()
   if(WIN32)
     list(APPEND SPEECHER_TEST_SUITES win_platform)
-  endif()
-  if(TARGET speecher_frontend_win)
-    list(APPEND SPEECHER_TEST_SUITES win_front_end)
   endif()
   foreach(suite IN LISTS SPEECHER_TEST_SUITES)
     add_test(NAME speecher_${suite} COMMAND speecher_tests --suite ${suite})
@@ -1810,13 +1399,6 @@ if(SPEECHER_BUILD_TESTS)
   endforeach()
   # Its drift calls play over half an hour of audio through AEC3.
   set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)
-
-  # Wording drift checks (docs/adr/0007-presentation-lives-in-core.md).
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  add_test(NAME speecher_ui_wording_lint
-    COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py lint)
-  add_test(NAME speecher_ui_wording_front_ends
-    COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py front-ends)
 
   if(ATSPI_FOUND AND UNIX AND NOT APPLE)
     qt_add_executable(speecher_atspi_peer_test tests/atspi_peer_test.cpp)

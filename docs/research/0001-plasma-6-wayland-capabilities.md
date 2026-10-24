@@ -37,7 +37,7 @@ Release handling must be defensive. Cancel capture if the shortcut session close
 
 ### Focus-preserving overlay
 
-Speecher already asks Qt not to activate its popup and, when LayerShellQt is present, sets keyboard interactivity to none and `activateOnShow` to false ([`src/ui/WaylandLayerShell.cpp:19`](../../src/ui/WaylandLayerShell.cpp)). That is the right base. It lets the original editable control retain focus while the overlay is visible.
+Speecher already asks Qt not to activate its popup and, when LayerShellQt is present, sets keyboard interactivity to none and `activateOnShow` to false ([`src/platform/WaylandLayerShell.cpp:19`](../../src/platform/WaylandLayerShell.cpp)). That is the right base. It lets the original editable control retain focus while the overlay is visible.
 
 This is a behavior to test, not a Target identity. Another window can take focus during transcription, the original control can disappear, or a modal can open. Speecher still needs a start snapshot and a delivery-time comparison.
 

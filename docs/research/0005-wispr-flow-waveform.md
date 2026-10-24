@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 
-Reference notes behind the popup waveform port in `src/ui/WaveformWidget.cpp`.
+Reference notes behind the Qt Widgets popup waveform port, since removed.
 
 
 Source: Wispr Flow for Windows 1.6.793, extracted from `WisprFlow-1.6.793-full.nupkg` (`app.asar`, webpack bundles). The waveform lives in the `status` renderer window, the little floating pill Wispr Flow docks at the bottom (or left/right edge) of the screen.

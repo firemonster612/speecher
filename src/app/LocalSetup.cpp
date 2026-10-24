@@ -3,7 +3,7 @@
 #include "app/ProviderAvailability.h"
 #include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
-#include "core/settings/FallbackPresentation.h"
+#include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderProbe.h"
@@ -12,10 +12,8 @@
 #include "providers/LocalSpeechTranscriber.h"
 #endif
 
-#include <QDesktopServices>
 #include <QDir>
 #include <QTimer>
-#include <QUrl>
 
 #include <algorithm>
 
@@ -662,23 +660,6 @@ QString LocalSetup::endpointStatus(const EndpointState &state)
     return state.checking ? QStringLiteral("Checking…") : state.result.message;
 }
 
-bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &shown)
-{
-    if (rowId == QStringLiteral("speechEndpointTest")) {
-        checkSpeechEndpoint(shown.speech.endpoint);
-    } else if (rowId == QStringLiteral("refinementEndpointTest")) {
-        checkRefinementEndpoint(shown.refinement);
-    } else if (rowId == QStringLiteral("localRunnerDetect")) {
-        detectRunners();
-    } else if (rowId == QStringLiteral("localModelFolder")) {
-        QDir().mkpath(m_models.directory());
-        QDesktopServices::openUrl(QUrl::fromLocalFile(m_models.directory()));
-    } else {
-        return false;
-    }
-    return true;
-}
-
 std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole role) const
 {
     const QString local = QStringLiteral("local");
@@ -705,13 +686,15 @@ void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
     // A full chain, or the offer already the primary or a fallback, would drop
     // it; then nothing changes, not even the model or the runner it names.
     const AppSettings settings = m_settings.dictationSnapshot();
-    const QStringList &saved =
-        role == ProviderRole::Speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
-    const QStringList fallbacks = withFallbackAdded(settings, role, offer->providerId);
+    const bool speech = role == ProviderRole::Speech;
+    const QString &primary = speech ? settings.speech.providerId : settings.refinement.providerId;
+    const QStringList &saved = speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
+    const QStringList fallbacks =
+        normalizedFallbackProviders(role, primary, normalizedFallbackProviders(role, primary, saved) << offer->providerId);
     if (fallbacks.size() <= saved.size()) {
         return;
     }
-    if (role == ProviderRole::Speech) {
+    if (speech) {
         m_settings.setSpeechFallbackProviders(fallbacks);
         chooseSpeechModel(offer->modelId);
         download(*findLocalModel(offer->modelId));

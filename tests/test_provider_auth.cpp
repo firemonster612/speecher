@@ -1208,13 +1208,6 @@ private slots:
         QCOMPARE(accounts.first().label, QStringLiteral("a@example.com"));
         QVERIFY(!accounts.first().disabled);
         QVERIFY(accounts.last().disabled);
-        const auto options = cliproxyAccountOptions("claude", {}, dir.path());
-        QCOMPARE(options.size(), 3);
-        QCOMPARE(options.first().label, QStringLiteral("Choose an account…"));
-        QCOMPARE(options[1].label, QStringLiteral("a@example.com"));
-        QVERIFY(!options.last().enabled);
-        const auto missing = cliproxyAccountOptions("claude", "missing.json", dir.path());
-        QCOMPARE(missing.last().label, QStringLiteral("missing.json (missing)"));
     }
 
     void cliproxyLoadResolvesAccounts()

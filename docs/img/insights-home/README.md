@@ -7,7 +7,7 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
 - `linux-*`: Qt Widgets renders offscreen with the KDE platform theme and
   Breeze style in isolated configuration directories, 1040×900 (the narrow
   one 720×900), from `e4ed5d05`.
-- `mac-*`: the `insights-evidence` workflow on a macOS 26 runner at
+- `mac-*`: the Insights evidence workflow (since removed) on a macOS 26 runner at
   `eb803ca6`. `mac-home.png` and `mac-home-bottom.png` are screen captures of
   the composited window; `mac-general-insights-off.png` is the window's
   backing store, which leaves the sidebar blank.
@@ -18,7 +18,7 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
 
 - `badge-linux-dark.png`, `badge-linux-light.png`: Where your words go with
   the Writing Profile badges, from the same Linux rig at `eb803ca6`.
-- `badge-windows.png`, `badge-macos.png`: cropped from the `insights-evidence`
+- `badge-windows.png`, `badge-macos.png`: cropped from the Insights evidence
   run at `eb803ca6` (Windows `win-home-middle.png`, macOS
   `mac-home-bottom-screen.png`).
 - `hover-linux-dark.png`, `hover-linux-light.png`: the year heatmap and the hour
@@ -29,5 +29,5 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
 ## Heatmap gap hover
 
 - `gap-windows-heatmap.png`, `gap-macos-heatmap.png`: the heatmap cropped from
-  the `insights-evidence` run at `ad77d035`, after each cell took in half the
+  the Insights evidence run at `ad77d035`, after each cell took in half the
   gap for hover. They show the layout is unchanged; CI captures no pointer.

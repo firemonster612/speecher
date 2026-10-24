@@ -1,8 +1,7 @@
 #pragma once
 
-#include "app/SetupSteps.h"
 #include "core/LocalModelCatalog.h"
-#include "core/settings/SettingsSchema.h"
+#include "core/ProviderReadiness.h"
 #include "providers/CustomEndpoints.h"
 #include "providers/HardwareProbe.h"
 #include "providers/LocalRunner.h"
@@ -52,6 +51,17 @@ RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
 // What the Ready step names for an own-model refinement choice: "Ollama with
 // gemma4:e4b", "qwen3 on your server". Empty for any other provider.
 QString ownModelRefinementSummary(const RefinementSettings &settings);
+
+// A local fallback this computer can run, which setup suggests adding.
+// LocalSetup::setupFallbackOffer() decides whether there is one;
+// LocalSetup::acceptSetupFallbackOffer() adds it.
+struct SetupFallbackOffer {
+    QString providerId;
+    // The Local Model to download, or the cleanup model the runner serves.
+    QString modelId;
+    // What the suggestion names: "Parakeet 0.6B", or "Ollama".
+    QString name;
+};
 
 // The machine as a model placed by runsOn sees it, for fit: the CPU budgets
 // system RAM, a chosen card its own memory, and Automatic the probe's pick.
@@ -164,11 +174,6 @@ public:
     void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
     void checkRefinementEndpoint(const RefinementSettings &settings);
 
-    // The settings rows' actions this class answers: the endpoint tests (of
-    // the settings shown), runner detection and the model folder. False for
-    // any other row.
-    bool runSettingsAction(const QString &rowId, const AppSettings &shown);
-
     // The local fallback setup suggests for a role: the suggested Local Model
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
@@ -182,7 +187,9 @@ public:
     // announces their changes as changed().
     void setProviderAvailability(const ProviderAvailability &availability);
 
-    // What the schema's rows report; see LiveFacts.
+    // What the app knows now about this computer and the servers in the
+    // settings; see LiveFacts. draft is the settings on screen, whose
+    // endpoints the verdicts must match.
     LiveFacts liveFacts() const;
     LiveFacts liveFacts(const AppSettings &draft) const;
 

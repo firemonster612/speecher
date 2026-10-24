@@ -11,26 +11,15 @@
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
-#ifndef SPEECHER_WITH_WINUI
-#include "frontend/qt/QtFrontEnd.h"
-#include "ui/Theme.h"
+#ifdef Q_OS_LINUX
+#include "app/LinuxTrayIcon.h"
 #endif
 
 #ifdef Q_OS_LINUX
-#include "ui/HostStylePlugin.h"
-#include "platform/LinuxStyleChoice.h"
-#endif
-
-#ifdef SPEECHER_WITH_SWIFT_UI
-#include "frontend/mac/MacFrontEnd.h"
-#endif
-#ifdef SPEECHER_WITH_WINUI
-#include "frontend/win/WinFrontEnd.h"
-#include "frontend/win/WinUiHost.h"
-#include <windows.h>
-#endif
-
 #include <QApplication>
+#else
+#include <QGuiApplication>
+#endif
 #include <QDateTime>
 #ifdef Q_OS_WIN
 #include <QDeadlineTimer>
@@ -42,11 +31,6 @@
 #include <QIcon>
 #include <QSettings>
 #include <QStandardPaths>
-#ifdef Q_OS_LINUX
-#include <QStyle>
-#include <QStyleFactory>
-#include <QStyleHints>
-#endif
 #include <QTextStream>
 #include <QTimer>
 #include <QMutex>
@@ -462,65 +446,6 @@ static bool microphoneAccessGranted(const PlatformComposition &platform, QObject
     return *granted;
 }
 
-#ifdef Q_OS_LINUX
-static QString kdeWidgetStyle()
-{
-    const QStringList paths = QStandardPaths::locateAll(
-        QStandardPaths::GenericConfigLocation,
-        QStringLiteral("kdeglobals"));
-    for (const QString &path : paths) {
-        QSettings kdeglobals(path, QSettings::IniFormat);
-        if (kdeglobals.contains(QStringLiteral("KDE/widgetStyle"))) {
-            return kdeglobals.value(QStringLiteral("KDE/widgetStyle")).toString();
-        }
-    }
-    return {};
-}
-
-static void applyHostWidgetStyle(const QString &applicationTheme)
-{
-    const QString currentStyle = qApp->style()->objectName();
-    const LinuxStyleChoice choice = chooseLinuxStyle(
-        qEnvironmentVariable("QT_STYLE_OVERRIDE"),
-        kdeWidgetStyle(),
-        qEnvironmentVariable("XDG_CURRENT_DESKTOP"),
-        qEnvironmentVariable("QT_QPA_PLATFORMTHEME"),
-        currentStyle,
-        QStyleFactory::keys(),
-        applicationTheme,
-        qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
-
-    // The desktop asked for a style this Qt does not carry: try the plugin
-    // installed on the system before settling for the fallback. Qt refuses a
-    // plugin built for a newer Qt than the one running, so this is best effort.
-    if (!choice.requested.isEmpty()
-        && choice.chosen.compare(choice.requested, Qt::CaseInsensitive) != 0) {
-        QStringList attempts;
-        if (QStyle *host = loadHostStyle(choice.requested, hostStylePluginDirs(), &attempts)) {
-            QApplication::setStyle(host);
-            qInfo().noquote() << "widget style requested=" + choice.requested
-                                    + " chosen=" + qApp->style()->objectName() + " (system plugin)";
-            return;
-        }
-        for (const QString &attempt : attempts) {
-            qInfo().noquote() << "system style plugin " + attempt;
-        }
-    }
-    if (currentStyle.compare(choice.chosen, Qt::CaseInsensitive) != 0
-        && !QApplication::setStyle(choice.chosen)) {
-        qWarning().noquote() << "Could not load widget style " + choice.chosen;
-        if (currentStyle.compare(choice.fallback, Qt::CaseInsensitive) != 0
-            && choice.chosen.compare(choice.fallback, Qt::CaseInsensitive) != 0
-            && !QApplication::setStyle(choice.fallback)) {
-            qWarning().noquote() << "Could not load fallback widget style " + choice.fallback;
-        }
-    }
-    const QString requested = choice.requested.isEmpty() ? QStringLiteral("<none>") : choice.requested;
-    qInfo().noquote() << "widget style requested=" + requested
-                            + " chosen=" + qApp->style()->objectName();
-}
-#endif
-
 int main(int argc, char **argv)
 {
     QCoreApplication::setApplicationName(QStringLiteral("speecher"));
@@ -596,29 +521,15 @@ int main(int argc, char **argv)
         return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
-#ifdef SPEECHER_WITH_WINUI
-    auto winUiHost = std::make_unique<WinUiHost>();
-#endif
+#ifdef Q_OS_LINUX
+    // Qt Widgets, for the tray icon's QSystemTrayIcon.
     QApplication app(argc, argv);
-#ifdef SPEECHER_WITH_WINUI
-    winUiHost->installNativeEventFilter();
-#endif
-    // A second store, because the theme has to be applied before the first
-    // widget exists and the controller's store is not built yet.
-    SettingsStore startupSettings;
-#ifdef Q_OS_LINUX
-    if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
-        applyHostWidgetStyle(startupSettings.theme());
-    }
-#endif
-#ifdef Q_OS_LINUX
     AppImageUpdater::waitForRestartParent();
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }
-#endif
-#ifndef SPEECHER_WITH_WINUI
-    Theme::apply(startupSettings.theme());
+#else
+    QGuiApplication app(argc, argv);
 #endif
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
@@ -630,34 +541,14 @@ int main(int argc, char **argv)
                      &app,
                      &QCoreApplication::quit,
                      Qt::QueuedConnection);
-    // The one place a platform's front end is chosen; see
-    // docs/adr/0001-per-platform-front-ends.md.
-#ifdef SPEECHER_WITH_WINUI
-    WinFrontEnd frontEnd(&controller, std::move(winUiHost));
-#elif defined(SPEECHER_WITH_SWIFT_UI)
-    MacFrontEnd frontEnd(&controller);
-#else
-    QtFrontEnd frontEnd(&controller);
-#endif
-    controller.setFrontEnd(&frontEnd);
-#ifdef SPEECHER_WITH_WINUI
-    if (arguments.contains(QStringLiteral("--winui-spike"))) {
-        QTimer::singleShot(0, &controller, [&frontEnd] {
-            frontEnd.showDictationError(QStringLiteral("WinUI hosting spike"));
-        });
-    }
+#ifdef Q_OS_LINUX
+    // From launch: in daemon mode it is the only sign the process is running
+    // and the global shortcut has something to reach.
+    LinuxTrayIcon tray(&controller);
 #endif
     controller.updates()->start();
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
-        if (!decision.grabPath.isEmpty()) {
-            if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
-                std::cerr << "--grab cannot be used while another Speecher instance is running\n";
-            } else {
-                std::cerr << ipcError.toStdString() << "\n";
-            }
-            return 1;
-        }
         const QString showCommand = !decision.transcribeFiles.isEmpty()
             ? QStringLiteral("transcribe")
             : decision.showSettings ? QStringLiteral("showSettings")
@@ -707,7 +598,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if ((!controller.settings()->setupCompleted() && decision.grabPath.isEmpty()) || decision.showSetup) {
+    if (!controller.settings()->setupCompleted() || decision.showSetup) {
         QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
             // Held by the controller until setup completes, then opened.
@@ -748,9 +639,7 @@ int main(int argc, char **argv)
             && restore.contains(QStringLiteral("settings"))) {
             QTimer::singleShot(0, &controller, &ApplicationController::showMain);
         }
-        if (!decision.grabPath.isEmpty()) {
-            controller.showMainWindow();
-        } else if (!daemon && decision.transcribeFiles.isEmpty()) {
+        if (!daemon && decision.transcribeFiles.isEmpty()) {
             // A launch that opens files brings up the Transcribe window alone.
             // macOS hands Finder's files over as events once the loop runs,
             // so let those arrive before deciding.
@@ -768,14 +657,6 @@ int main(int argc, char **argv)
             });
         }
     }
-    // A grab ends by itself, so it keeps the console and the launcher waits
-    // for its exit status.
-    if (!decision.grabPath.isEmpty()) {
-        QTimer::singleShot(600, &controller, [&controller, &app, &decision] {
-            app.exit(controller.grabMainWindow(decision.grabPath) ? 0 : 1);
-        });
-    } else {
-        detachParentConsole();
-    }
+    detachParentConsole();
     return app.exec();
 }

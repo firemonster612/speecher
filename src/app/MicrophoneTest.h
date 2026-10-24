@@ -1,7 +1,5 @@
 #pragma once
 
-#include "core/settings/SettingsSchema.h"
-
 #include <QObject>
 #include <QString>
 
@@ -11,6 +9,9 @@ namespace speecher {
 
 class ApplicationController;
 class AudioInput;
+
+// Where the test is: Starting while the device opens.
+enum class MicrophoneTestState { Stopped, Starting, Running };
 
 // The Test microphone row's test: a live level from one input device, read
 // through an audio input of its own so no Dictation Session starts or is

@@ -1,8 +1,7 @@
 # Stats image on every platform
 
 What Home's "Copy image with stats" puts on the clipboard, read back from the
-clipboard by `SPEECHER_GRAB_PAGE=stats-image` in the Insights evidence
-workflow. Today is pinned to 2026-09-26 and the period is Last 30 days.
+clipboard by the Insights evidence workflow (since removed). Today is pinned to 2026-09-26 and the period is Last 30 days.
 
 - `<platform>-stats-image.png`: the insights mockup seed
   (`docs/insights-mockup/seed-active.jsonl`).

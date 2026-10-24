@@ -1,12 +1,9 @@
-#include "frontend/qt/LinuxTrayIcon.h"
-
-#include <utility>
+#include "app/LinuxTrayIcon.h"
 
 #include "app/ApplicationController.h"
 #include "dictation/DictationTypes.h"
 
 #include <QAction>
-#include <QCursor>
 #include <QIcon>
 #include <QSystemTrayIcon>
 
@@ -36,14 +33,10 @@ QIcon trayIcon(bool listening, bool recording)
 LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
-    , m_panel(controller)
     , m_tray(new QSystemTrayIcon(this))
 {
     m_toggleAction = m_menu.addAction(QString(), controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
-    QAction *settings = m_menu.addAction(traySettingsCaption(),
-                                         controller, &ApplicationController::showSettingsWindow);
-    settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();
     QAction *quit = m_menu.addAction(trayQuitCaption(),
                                      controller, &ApplicationController::quitApplication);
@@ -55,38 +48,14 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     connect(controller, &ApplicationController::recordingChanged, this,
             [this, controller] { applyState(controller->stateName()); });
     connect(m_tray, &QSystemTrayIcon::activated,
-            this, [this, controller](QSystemTrayIcon::ActivationReason reason) {
-                if (reason == QSystemTrayIcon::Trigger) {
-                    // A StatusNotifierItem tray reports no geometry, so the
-                    // pointer, which just clicked the icon, stands in.
-                    const QRect icon = m_tray->geometry();
-                    m_panel.popUp(icon.isValid() ? icon : QRect(QCursor::pos(), QSize(1, 1)));
-                } else if (reason == QSystemTrayIcon::MiddleClick) {
+            this, [controller](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::MiddleClick) {
                     controller->toggle();
                 }
             });
 
-    connect(m_tray, &QSystemTrayIcon::messageClicked, this, &LinuxTrayIcon::messageClicked);
-    connect(this, &LinuxTrayIcon::messageClicked, this, [this] {
-        if (const std::function<void()> clicked = std::exchange(m_messageClicked, {})) {
-            clicked();
-        }
-    });
-
     applyState(controller->stateName());
     m_tray->show();
-}
-
-TrayStatusPanel *LinuxTrayIcon::panel()
-{
-    return &m_panel;
-}
-
-void LinuxTrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
-{
-    m_messageClicked = std::move(clicked);
-    m_tray->showMessage(title, message);
-    emit messageShown(title, message);
 }
 
 void LinuxTrayIcon::applyState(const QString &stateName)

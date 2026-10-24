@@ -2,7 +2,6 @@
 
 #ifdef SPEECHER_WITH_X11
 
-#include "core/settings/SettingsSchema.h"
 
 #include <QSocketNotifier>
 

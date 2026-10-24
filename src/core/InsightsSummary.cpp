@@ -1,7 +1,5 @@
 #include "core/InsightsSummary.h"
 
-#include "core/settings/SettingsSchema.h"
-
 #include <QHash>
 #include <QLocale>
 #include <QMap>
@@ -691,7 +689,13 @@ QString learnedCorrectionsNote(int count, bool learningOn, bool accessibilityOn)
         return QStringLiteral("Learning is off.");
     }
     if (!accessibilityOn) {
-        return accessibilityGateHelp(QStringLiteral("learn corrections"));
+#ifdef Q_OS_MACOS
+        return QStringLiteral("Grant Accessibility permission to learn corrections.");
+#elif defined(Q_OS_WIN)
+        return QStringLiteral("UI Automation must be available to learn corrections.");
+#else
+        return QStringLiteral("Turn on desktop accessibility to learn corrections.");
+#endif
     }
     return count == 0 ? QStringLiteral("Fix a dictated word the same way twice and it appears here.")
                       : QStringLiteral("Speecher learned these from edits you made after dictating.");

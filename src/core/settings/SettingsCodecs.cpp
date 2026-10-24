@@ -3,7 +3,6 @@
 #include "core/EndpointUrl.h"
 #include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SettingsSchema.h"
 
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
@@ -742,17 +741,28 @@ void SettingsCodecs::setDefaultWritingProfile(const QString &value)
                         offeredWritingProfile(writingProfileFromName(value), writingProfileSettings()));
 }
 
+// The id when it is built in or one of the custom choices, otherwise fallback.
+template<typename Custom>
+static QString offeredChoice(const QString &value, const QStringList &builtIn, const QList<Custom> &custom,
+                             const QString &fallback)
+{
+    const QString id = value.trimmed().toLower();
+    const bool offered = builtIn.contains(id)
+        || std::any_of(custom.cbegin(), custom.cend(), [&id](const Custom &choice) { return choice.id == id; });
+    return offered ? id : fallback;
+}
+
 // A profile whose tone or level was deleted falls back to no tone override or
 // Medium, here where settings are read and written, so no stored profile
 // names one that is gone.
 static QString cleanupStrength(const QString &value, const QList<CustomCleanupLevel> &levels)
 {
-    return offeredCleanupLevel(value.trimmed().toLower(), levels);
+    return offeredChoice(value, kBuiltInCleanupLevels, levels, QStringLiteral("balanced"));
 }
 
 static QString writingTone(const QString &value, const QList<CustomTone> &tones)
 {
-    return offeredTone(value.trimmed().toLower(), tones);
+    return offeredChoice(value, kBuiltInTones, tones, QStringLiteral("none"));
 }
 
 // The profiles the user added, which follow the built-ins in stored order.

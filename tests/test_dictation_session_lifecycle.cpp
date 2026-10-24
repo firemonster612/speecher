@@ -71,12 +71,9 @@ private slots:
         }
         QVERIFY(!dictationPausable(QStringLiteral("Idle")));
         QVERIFY(!dictationCancelable(QStringLiteral("Idle")));
-        // Cancel keeps the original while an edit is reviewed, from the
-        // review's own buttons rather than the popup's cancel circle.
+        // Cancel keeps the original while an edit is reviewed.
         QVERIFY(dictationCancelable(QStringLiteral("Reviewing")));
         QVERIFY(!dictationPausable(QStringLiteral("Reviewing")));
-        const SessionControls review = sessionControls(QStringLiteral("reviewing"));
-        QVERIFY(!review.cancelVisible && !review.pauseVisible && !review.busyVisible);
     }
 
     void sessionKeysAreTakenOnlyWhileTheyAct_data()
@@ -1894,129 +1891,6 @@ private slots:
         QCOMPARE(refiner->refreshCalls, 1);
         QCOMPARE(speech->startCalls, 1);
         QVERIFY(audio->started);
-    }
-
-    void transcriberPopupReplacesOAuthLabelWithPreview()
-    {
-        TranscriberPopup popup(new FakePopupPositioner);
-        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
-        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
-        auto *waveform = popup.findChild<WaveformWidget *>();
-        QVERIFY(previewPill);
-        QVERIFY(rawTranscript);
-        QVERIFY(waveform);
-        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupStatus")));
-        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupMetadata")));
-        QCOMPARE(previewPill->minimumHeight(), waveform->height());
-        QCOMPARE(previewPill->maximumHeight(), waveform->height());
-        QVERIFY(!rawTranscript->wordWrap());
-
-        popup.showOAuthRefreshIndicator();
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!waveform->isHidden());
-
-        popup.setPreview(QStringLiteral("hello world"));
-        QCOMPARE(rawTranscript->text(), QStringLiteral("hello world"));
-        QVERIFY(!rawTranscript->isHidden());
-
-        popup.showOAuthRefreshIndicator();
-        popup.hidePreview();
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(!waveform->isHidden());
-
-        const QString longRaw = QStringLiteral(
-            "one two three four five six seven eight nine ten eleven twelve");
-        popup.setPreview(longRaw);
-        QVERIFY(!rawTranscript->text().contains(QLatin1Char('\n')));
-        popup.setRefining(true);
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(!waveform->isHidden());
-    }
-
-    void transcriberPopupStreamsRefinementInsteadOfSpeechPreview()
-    {
-        TranscriberPopup popup(new FakePopupPositioner);
-        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
-        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
-        auto *waveform = popup.findChild<WaveformWidget *>();
-        QVERIFY(previewPill);
-        QVERIFY(rawTranscript);
-        QVERIFY(waveform);
-
-        popup.setPreview(QStringLiteral("hello world"));
-        QVERIFY(!previewPill->isHidden());
-
-        // Mic toggled off: the speech preview disappears for the whole
-        // transcribe-then-refine stretch, even when late partials arrive.
-        popup.setSessionState(DictationState::Stopping);
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!waveform->isHidden());
-        popup.setPreview(QStringLiteral("late speech words"));
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!waveform->isHidden());
-
-        popup.setFrozen(true);
-        popup.setRefining(true);
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!waveform->isHidden());
-
-        popup.setRefinementPreview(QStringLiteral("Polished words"));
-        QVERIFY(!previewPill->isHidden());
-        QCOMPARE(rawTranscript->text(), QStringLiteral("Polished words"));
-        popup.setPreview(QStringLiteral("speech again"));
-        QCOMPARE(rawTranscript->text(), QStringLiteral("Polished words"));
-
-        popup.setRefining(false);
-        popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(rawTranscript->isHidden());
-        QVERIFY(!waveform->isHidden());
-
-        // The next dictation session starts clean.
-        popup.showListeningIndicator();
-        popup.setPreview(QStringLiteral("fresh"));
-        QCOMPARE(rawTranscript->text(), QStringLiteral("fresh"));
-    }
-
-    void transcriberPopupShowsLongErrorsInOneReadablePill()
-    {
-        TranscriberPopup popup(new FakePopupPositioner);
-        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
-        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
-        auto *waveform = popup.findChild<WaveformWidget *>();
-        auto *dismissProgress = popup.findChild<QProgressBar *>(
-            QStringLiteral("errorDismissProgress"));
-        QVERIFY(previewPill);
-        QVERIFY(rawTranscript);
-        QVERIFY(waveform);
-        QVERIFY(dismissProgress);
-        const QString error = QStringLiteral(
-            "Claude login cannot be refreshed; run `claude` in a terminal and use the `/login` command");
-
-        // Clear of the test's pointer: resting on the capsule holds the countdown.
-        popup.move(QCursor::pos() + QPoint(50, 50));
-        popup.show();
-        QVERIFY(QMetaObject::invokeMethod(
-            &popup,
-            "showErrorMessage",
-            Q_ARG(QString, error)));
-
-        QVERIFY(waveform->isHidden());
-        QVERIFY(!previewPill->isHidden());
-        QVERIFY(rawTranscript->wordWrap());
-        QCOMPARE(rawTranscript->text(), error);
-        QVERIFY(previewPill->width() > waveform->width());
-        QVERIFY(dismissProgress->isVisible());
-        QCOMPARE(dismissProgress->value(), dismissProgress->maximum());
-        QTest::qWait(150);
-        QVERIFY(dismissProgress->value() < dismissProgress->maximum());
-        QVERIFY(dismissProgress->value() > dismissProgress->minimum());
-        QTRY_VERIFY_WITH_TIMEOUT(popup.isHidden(), popupErrorDismissMs(error) + 500);
     }
 };
 

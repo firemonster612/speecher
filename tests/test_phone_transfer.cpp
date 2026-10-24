@@ -1,7 +1,5 @@
 #include "common/test_suites.h"
 #include "app/PhoneTransfer.h"
-#include "app/PhoneTransferPresentation.h"
-#include "core/PasteRules.h"
 
 #include <monocypher.h>
 
@@ -205,7 +203,6 @@ private slots:
 
         QTRY_COMPARE(transfer.state(), PhoneTransferState::Interrupted);
         QCOMPARE(transfer.link(), QString());
-        QVERIFY(!phoneTransferText(settings, transfer.state()).steps.isEmpty());
     }
 
     // The dialog closes, and destroys its transfer, while a send is stuck.
@@ -272,33 +269,6 @@ private slots:
         PhoneTransfer transfer(AppSettings{}, QStringList{});
         QCOMPARE(transfer.state(), PhoneTransferState::NoNetwork);
         QCOMPARE(transfer.link(), QString());
-        QVERIFY(phoneTransferText(AppSettings(), transfer.state()).steps.isEmpty());
-    }
-
-    void dialogListsWhatMovesAndWhatStays()
-    {
-        AppSettings settings = sampleSettings();
-        WritingProfileSettings standup;
-        standup.profile = QStringLiteral("custom_standup");
-        standup.name = QStringLiteral("Standup");
-        settings.refinement.writingProfiles.append(standup);
-        settings.learnedCorrections = {LearnedCorrection(), LearnedCorrection()};
-        settings.output.pasteRules.append(
-            {PasteRuleScope::Application, QStringLiteral("org.kde.konsole"),
-             PasteMethod::TerminalPaste, true});
-
-        const PhoneTransferText text = phoneTransferText(settings, PhoneTransferState::Waiting);
-        QCOMPARE(text.included,
-                 QStringList({QStringLiteral("1 vocabulary term, with its context and profiles"),
-                              QStringLiteral("1 replacement or snippet"),
-                              QStringLiteral("1 built-in Writing Profile and 1 of your own"),
-                              QStringLiteral("1 tone of your own"),
-                              QStringLiteral("1 cleanup level of your own"),
-                              QStringLiteral("Additional instructions")}));
-        QCOMPARE(text.stays, QStringList({QStringLiteral("2 learned corrections"),
-                                          QStringLiteral("1 app-specific paste rule")}));
-        QCOMPARE(text.staysHeading, QStringLiteral("Stays on this computer"));
-        QVERIFY(phoneTransferText(AppSettings(), PhoneTransferState::Waiting).stays.isEmpty());
     }
 };
 

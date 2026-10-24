@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/settings/FallbackPresentation.h"
+#include "core/ProviderReadiness.h"
 
 #include <QByteArray>
 
@@ -15,8 +15,8 @@ class ProviderRegistry;
 class SettingsStore;
 class SingleInstancePlatform;
 
-// Every provider this build offers, judged from what the settings pages read:
-// the saved settings and the setup's LiveFacts.
+// Every provider this build offers, judged from the saved settings and the
+// setup's LiveFacts.
 QList<ProviderReport> providerReports(const SettingsStore &settings, const LocalSetup &local,
                                       const ProviderRegistry &providers);
 

@@ -41,9 +41,6 @@
 #include "platform/audio/QtAudioInput.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
-#include "ui/Theme.h"
-#include "ui/TranscriberPopup.h"
-#include "ui/WaveformWidget.h"
 
 #include <QBoxLayout>
 #include <QApplication>

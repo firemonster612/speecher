@@ -1,9 +1,7 @@
 #include "app/LocalSetup.h"
-#include "app/SetupSteps.h"
 #include "core/SettingsStore.h"
 #include "core/SecretStore.h"
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
@@ -247,59 +245,6 @@ private slots:
                  QString("LM Studio with m"));
     }
 
-    void setupStepsEndOnReadyAfterTheShortcut()
-    {
-        QStringList ids;
-        for (const SetupStepInfo &step : setupSteps()) ids.append(step.id);
-        QCOMPARE(ids.last(), QString("ready"));
-        QCOMPARE(ids.indexOf("shortcut"), ids.size() - 2);
-        QVERIFY(!ids.contains("profiles"));
-#ifdef Q_OS_WIN
-        const bool accessibilityStep = false;
-#else
-        const bool accessibilityStep = true;
-#endif
-        QCOMPARE(ids.contains("accessibility"), accessibilityStep);
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        QVERIFY(!ids.contains("delivery"));
-#else
-        QVERIFY(ids.contains("delivery"));
-#endif
-        QCOMPARE(findSetupStep("shortcut")->title, QString("Global Shortcut"));
-        QCOMPARE(setupChecklistLine("microphone", "Built-in"), QString("Microphone — Built-in"));
-        QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
-        QCOMPARE(setupProviderVerdict("endpoint", false), QString("Not set up"));
-        QCOMPARE(setupRefinementStatus("none", std::nullopt), QString("No cleanup"));
-        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("When the app isn't recognized"));
-    }
-
-    void theTranscriptionDeadEndNamesTheWayOut()
-    {
-        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
-        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
-        const auto cleanup = qScopeGuard([] {
-            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
-            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
-        });
-        // Nothing on this machine can transcribe: say how to get something,
-        // and that a server of one's own is a choice on the step.
-        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
-                 QString("This computer can't run a local speech model, and no ChatGPT, Claude, "
-                         "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
-                         "account and install Claude Code or Claude Desktop, or Codex. To use your "
-                         "own speech server, choose Custom Endpoint."));
-        // Any way out silences it, Custom Endpoint chosen included.
-        QVERIFY(setupTranscriptionDeadEnd(true, false, false, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, true, false, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, false, true, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, false, false, false).isEmpty());
-        // An installed CLI makes signing in the missing step.
-        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
-        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
-                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found. To use your own "
-                         "speech server, choose Custom Endpoint."));
-    }
-
     void theTranscriptionStepOffersCustomEndpointAlways()
     {
         // Custom Endpoint is set up on the step, so it is a choice whatever
@@ -309,15 +254,6 @@ private slots:
         QVERIFY(offersSetupSpeechProvider("claude", false));
         QVERIFY(offersSetupSpeechProvider("local", true));
         QVERIFY(!offersSetupSpeechProvider("local", false));
-    }
-
-    void theTranscriptionGateSaysWhatTheChosenServiceNeeds()
-    {
-        QCOMPARE(setupTranscriptionBlocked("local", "Local Model"), QString("Download a speech model to continue."));
-        QCOMPARE(setupTranscriptionBlocked("endpoint", "Custom Endpoint"),
-                 QString("Enter your server's URL to continue."));
-        QCOMPARE(setupTranscriptionBlocked("codex", "ChatGPT Codex"), QString("ChatGPT Codex is not signed in."));
-        QCOMPARE(setupTranscriptionBlocked(QString(), QString()), QString("No transcription service is available."));
     }
 
     void tooSmallAMachineCannotRunAnyModel()

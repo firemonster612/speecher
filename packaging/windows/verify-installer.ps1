@@ -9,7 +9,6 @@ $InstallerPath = Resolve-Path $InstallerPath
 $InstallDir = Join-Path $env:TEMP "speecher-installer-test-$PID"
 $OriginalPath = $env:Path
 $OriginalPlatform = $env:QT_QPA_PLATFORM
-$OriginalGrabPage = $env:SPEECHER_GRAB_PAGE
 $App = $null
 
 # Starts the installed app and fails unless it is still running after startup.
@@ -65,8 +64,7 @@ try {
     # with Windows. The runner's System32 has the Visual C++ runtime and a clean
     # Windows install does not, so any DLL from the MSVC redist folder counts only
     # when it is app-local. API sets are resolved by the loader, not found as
-    # files. Delay-load imports are left out: the WinUI ones come from the
-    # Windows App Runtime package.
+    # files. Delay-load imports are left out.
     if (-not $env:VCToolsRedistDir) {
         throw "VCToolsRedistDir is not set; run this from an MSVC developer shell"
     }
@@ -130,19 +128,16 @@ try {
     Write-Output "speecher.com returned speecher.exe's output and exit status"
 
     # Launch with only system directories on PATH to prove the install is
-    # self-contained. WinUI 3 cannot render into the offscreen QPA platform
-    # (it needs a real HWND), so this opens the settings window on the runner's
-    # interactive desktop and checks the process comes up and stays alive
-    # rather than grabbing an offscreen frame.
+    # self-contained, on the runner's interactive desktop rather than the
+    # offscreen QPA platform.
     $env:Path = "$env:SystemRoot;$env:SystemRoot\System32;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
     $env:QT_QPA_PLATFORM = $null
     $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
     Start-Sleep -Seconds 8
     $App.Refresh()
-    # A missing runtime dependency (Qt, the WinUI bootstrap, a plugin) makes the
-    # process fault during startup, so surviving several seconds is the
-    # self-containment signal. WinUI windows do not set the Win32
-    # MainWindowHandle, so that is not a reliable readiness check here.
+    # A missing runtime dependency (Qt, a plugin) makes the process fault
+    # during startup, so surviving several seconds is the self-containment
+    # signal.
     if ($App.HasExited) {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
@@ -194,46 +189,6 @@ try {
         throw "speecher.exe quit did not stop the background app started with captured output"
     }
     Write-Output "Capturing speecher.com --daemon's output returned while the background app ran"
-
-    # Restart Manager closing the running app without forcing, the way Setup
-    # does when it replaces files in use. Only the tray window answers it;
-    # before it did, Speecher stayed running here even with a window open.
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class RestartManager {
-    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
-    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
-    [DllImport("rstrtmgr.dll")]
-    static extern int RmEndSession(uint session);
-    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
-    static extern int RmRegisterResources(uint session, uint fileCount, string[] files,
-                                          uint appCount, IntPtr apps, uint serviceCount, string[] services);
-    [DllImport("rstrtmgr.dll")]
-    static extern int RmShutdown(uint session, uint flags, IntPtr progress);
-
-    public static int Shutdown(string path) {
-        uint session;
-        int error = RmStartSession(out session, 0, new StringBuilder(33));
-        if (error != 0) {
-            return error;
-        }
-        try {
-            error = RmRegisterResources(session, 1, new[] { path }, 0, IntPtr.Zero, 0, null);
-            return error != 0 ? error : RmShutdown(session, 0, IntPtr.Zero);
-        } finally {
-            RmEndSession(session);
-        }
-    }
-}
-"@
-    $App = Start-Speecher "--daemon"
-    $Shutdown = [RestartManager]::Shutdown($Exe)
-    if ($Shutdown -ne 0 -or -not $App.WaitForExit(10000)) {
-        throw "Restart Manager could not close the running application (error $Shutdown)"
-    }
-    Write-Output "Restart Manager closed the running application"
 
     # Installing over the running app: Setup asks it to quit before replacing
     # its files.
@@ -295,7 +250,6 @@ public static class RestartManager {
     }
     $env:Path = $OriginalPath
     $env:QT_QPA_PLATFORM = $OriginalPlatform
-    $env:SPEECHER_GRAB_PAGE = $OriginalGrabPage
     $Uninstaller = Join-Path $InstallDir "unins000.exe"
     if (Test-Path $Uninstaller) {
         Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait

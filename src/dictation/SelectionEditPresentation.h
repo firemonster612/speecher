@@ -64,11 +64,6 @@ SelectionEditReview selectionEditReview(const QString &original,
                                         const QStringList &instructions,
                                         const ReviewKeys &keys);
 
-// The review's captions.
-QString keepOriginalCaption();
-QString replaceSelectionCaption();
-QString showWholeEditCaption();
-QString showChangesOnlyCaption();
 // The keys as the review names them.
 QString escapeKeyName();
 QString enterKeyName();

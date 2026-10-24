@@ -1,6 +1,5 @@
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
 
-#include "core/settings/SettingsSchema.h"
 
 #include <QTimer>
 

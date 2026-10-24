@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/settings/SettingsSchema.h"
+#include "core/ProviderReadiness.h"
 
 #include <QNetworkInformation>
 #include <QObject>

@@ -12,81 +12,13 @@ Triage uses the five default labels. See `docs/agents/triage-labels.md`.
 
 Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
 
-## UI changes: scope and rules
+## Architecture and UI changes
 
-These rules cover the desktop app under `src/`. The Android client under
+Speecher is a daemon, a CLI and a UI that share state through the daemon. The
+CLI talks to the running daemon over the local socket
+(`src/app/SingleInstanceIpc`); the Qt Quick UI runs inside the daemon process.
+See `docs/adr/0009-one-quick-ui-inside-the-daemon.md`. The Android client under
 `android/` follows `android/AGENTS.md` instead.
 
-These exist because a "make the settings rows nicer" request once turned into
-a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
-
-- **Change only what was asked.** A request about settings rows touches
-  `src/ui/settings/SettingsPageSupport.*` (row and card widgets) and
-  `src/frontend/qt/SchemaSettingsPage.cpp` (how schema rows are rendered).
-  The sidebar and header live in `src/ui/AppWindow.cpp`; the Home page in
-  `src/ui/HomePage.cpp`; page content in `src/core/settings/SettingsSchema.cpp`.
-  Do not edit a file outside the request's area without saying so first.
-- **The style draws, we do not.** No stylesheets, no hand-painted frames,
-  highlights, hover states or shadows, no colours other than palette roles, no
-  pixel constants beyond the spacing helpers in `SettingsPageSupport.h`. If a
-  widget style draws something square, that is the style's decision; the fix
-  is a different native widget or a newer style, never a `paintEvent`. The one
-  exception is the settings card container, which mirrors Kirigami Addons'
-  FormCard (a rounded rectangle in the Base colour with a frame at
-  Kirigami's frame contrast) because Qt Widgets has no such container; it uses
-  palette colours only and lives in `SettingsPageSupport.cpp`. Hover on button
-  rows comes from the style's own item primitive, not from us. Home's activity
-  heatmap and hour bar chart are the other exception, because Qt Widgets has
-  no chart widgets; they paint rounded cells and bars from Highlight mixed over
-  Base. Badges (Home's Writing Profiles, Local models' ratings) are the third:
-  Qt Widgets has no badge widget, so `Badge` paints Kirigami.Badge's pill, a
-  border in a palette role (Highlight, the frame colour, or the colour
-  scheme's NegativeText) with a fifth of it over Base inside, and
-  `BadgeDelegate` paints the same pill in list and table items, and under an item's text it
-  has the style draw one more line in the PlaceholderText role, such as a vocabulary term's
-  context. All of these
-  live in `src/ui/InsightsCharts.cpp`. Home's progress bars use the
-  same tint: every bar but the leading one gets a palette whose Highlight and
-  Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`). The dictation
-  popup's pause and cancel buttons are the last: the popup is a painted
-  rounded capsule and the style's square tool buttons clash with it, so
-  `CircleButton` in `src/ui/TranscriberPopup.cpp` paints them as circles in
-  palette colours (Button inside a ring at the frame contrast, more ButtonText
-  mixed in on hover and press), leaving the icon and behaviour to the tool
-  button. Beside them, `BusyCircle` paints the spinner that takes pause's
-  place while transcribing and refining, an arc of PlaceholderText over a
-  faint ring of it, because Qt Widgets has no circular busy indicator; macOS
-  and Windows use their native spinners there. The QR code in "Copy settings
-  to your phone" is black on white in every theme, not palette roles, because
-  scanners read dark-on-light codes most reliably; `qrCodeImage` in
-  `src/app/PhoneTransfer.cpp` draws it for every front end. The popup's review of a
-  selection edit marks words in rich text rather than paint: added words over
-  a fifth of the colour scheme's PositiveText on Base (Highlight where no
-  scheme names one), removed ones struck
-  through in PlaceholderText over a fifth of its NegativeText, as Badge fills.
-  Its buttons name their key in a PlaceholderText label inside the frame the
-  style draws (`KeyedButton` in `src/ui/TranscriberPopup.cpp`), because a push
-  button draws its text in one colour. While a follow-up instruction is
-  dictated the edit fades through a `QGraphicsOpacityEffect`, as the preview
-  line's start does, because disabling the label would leave its marks at full
-  strength.
-- **Settings pages follow Kirigami Addons FormCard.** Bold header above the
-  card, title and small grey description on the left, control on the right,
-  inset separators, button rows with a trailing arrow, cards capped at 30
-  grid units and centred. See https://develop.kde.org/docs/getting-started/kirigami/addons-delegates/.
-- **Native widgets first.** Group boxes for groups, list views for lists,
-  form rows for settings. Prefer the widget the toolkit already has over a
-  custom-looking replacement.
-- **Look before you claim.** Any UI change must be checked in screenshots you
-  looked at yourself: `SPEECHER_GRAB_PAGE=<page> speecher --grab out.png` with
-  `QT_QPA_PLATFORM=offscreen`, `QT_QPA_PLATFORMTHEME=kde` and a Breeze kdeglobals
-  in an isolated `XDG_CONFIG_HOME`, or the Plasma rig described in the memory
-  notes. A test passing is not evidence that a page looks right.
-- **Keep the page set stable.** Adding, removing or moving a page is a product
-  decision the user makes, not a side effect of a layout change.
-- **Presentation lives in core.** Front ends map core values to native widgets
-  and never write their own wording; see
-  `docs/adr/0007-presentation-lives-in-core.md`. Two ctests enforce it:
-  `speecher_ui_wording_lint` (house wording in core strings) and
-  `speecher_ui_wording_front_ends` (no front-end copies of core strings). Fix
-  a failure at the source; `tests/ui_wording_allowlist.txt` only shrinks.
+Before changing the desktop UI, read `src/frontend/quick/DESIGN.md`. Change
+only what was asked: adding, removing or moving a page is the user's decision.

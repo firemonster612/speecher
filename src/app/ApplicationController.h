@@ -35,7 +35,6 @@ class ProviderRegistry;
 class RecordingSession;
 class SecretStore;
 class SettingsStore;
-class UpdateBanner;
 class UpdateController;
 
 class ApplicationController : public QObject {
@@ -74,8 +73,6 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
-    // What every update banner and the Check for updates row show.
-    UpdateBanner *updateBanner() const;
     InsightsLog *insightsLog() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
@@ -120,7 +117,6 @@ public:
     bool enableAccessibility(QString *error = nullptr);
     // Platforms that do not push grants to a running process poll this.
     void refreshAccessibilityState();
-    bool grabMainWindow(const QString &path) const;
     // Each Global Shortcut question and change names the shortcut it is about:
     // the one that toggles dictation unless it says otherwise.
     bool globalShortcutsSupported(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
@@ -264,7 +260,6 @@ private:
     // The main window is up only because a plain launch shows it.
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
-    UpdateBanner *m_updateBanner = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;

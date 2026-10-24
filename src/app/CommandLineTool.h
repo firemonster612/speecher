@@ -5,8 +5,8 @@
 namespace speecher {
 
 // On macOS the speecher binary lives inside the app bundle, off the PATH.
-// The menu bar panel's "Install command line tool…" puts a speecher command
-// here, in a folder on the default PATH (/etc/paths).
+// Installing the command line tool puts a speecher command here, in a folder
+// on the default PATH (/etc/paths).
 inline constexpr auto kCommandLineToolPath = "/usr/local/bin/speecher";
 
 // value as one sh word, inside single quotes.
@@ -20,7 +20,7 @@ QString commandLineToolInstallCommand(const QString &binaryPath, const QString &
 
 // commandLineToolInstallCommand as AppleScript for osascript. With
 // administrator privileges, for when toolPath's folder is not writable, the
-// password prompt says what it is for (commandLineToolPasswordPrompt).
+// password prompt says what it is for ("Speecher is installing the speecher command.").
 QString commandLineToolInstallScript(const QString &binaryPath, const QString &toolPath,
                                      bool withAdministratorPrivileges);
 

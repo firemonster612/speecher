@@ -1,5 +1,4 @@
 #include "providers/LocalSpeechTranscriber.h"
-#include "core/settings/SettingsSchema.h"
 
 #include "core/LocalModelCatalog.h"
 #include "providers/LocalModelStore.h"
@@ -170,12 +169,11 @@ QString LocalSpeechTranscriber::downloadedModelPath(const QString &modelId, QStr
 {
     const LocalModel *model = findLocalModel(modelId);
     if (!model) {
-        *error = QStringLiteral("Choose a local model on the %1 page.").arg(paneTitle(QStringLiteral("localModels")));
+        *error = QStringLiteral("Choose a local model on the Local models page.");
         return {};
     }
     if (!m_store.isDownloaded(*model)) {
-        *error = QStringLiteral("%1 is not downloaded yet. Download it on the %2 page.")
-                     .arg(model->name, paneTitle(QStringLiteral("localModels")));
+        *error = QStringLiteral("%1 is not downloaded yet. Download it on the Local models page.").arg(model->name);
         return {};
     }
     return m_store.modelPath(*model);

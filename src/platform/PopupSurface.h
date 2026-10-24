@@ -8,9 +8,8 @@ class QWindow;
 namespace speecher {
 
 // The dictation popup as a positioner sees it: a native window with a size and
-// a place to sit, and no widget toolkit. Naming QWidget here is what used to
-// tie the platform layer to Qt Widgets; see
-// docs/adr/0001-per-platform-front-ends.md.
+// a place to sit, and no widget toolkit, so the platform layer needs neither
+// Qt Widgets nor Qt Quick.
 class PopupSurface {
 public:
     virtual ~PopupSurface() = default;

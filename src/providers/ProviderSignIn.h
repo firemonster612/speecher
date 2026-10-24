@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/settings/SettingsSchema.h"
 #include "providers/CliProxyCredentials.h"
 
 #include <QHash>
@@ -11,11 +10,10 @@ namespace speecher {
 
 class SettingsStore;
 
-// The sign-in decisions every setup assistant shares, so the Qt, WinUI, and
-// SwiftUI front ends render this logic instead of each owning a copy: which
-// speech providers a CLI Proxy API account can back, whether usable accounts
-// exist (the Welcome page's gate), and the opt-in to a CLI Proxy API account
-// with a lossless way back to the sign-in it replaced.
+// The sign-in decisions setup makes: which speech providers a CLI Proxy API
+// account can back, whether usable accounts exist (the Welcome page's gate),
+// and the opt-in to a CLI Proxy API account with a lossless way back to the
+// sign-in it replaced.
 class ProviderSignIn {
 public:
     explicit ProviderSignIn(SettingsStore &settings);
@@ -62,41 +60,5 @@ private:
     SettingsStore &m_settings;
     QHash<QString, QString> m_fallbackModes;
 };
-
-// The rows of a CLI Proxy API account picker, shared by the settings pages and
-// the setup assistants on every platform: an explicit choice when several
-// accounts exist and none is stored, expired/missing markers, disabled
-// accounts kept visible but not selectable, and a disabled placeholder naming
-// the directory when it holds nothing.
-inline QList<RowOption> cliproxyAccountOptions(const QString &type,
-                                               const QString &selected,
-                                               const QString &directory)
-{
-    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
-    QList<RowOption> options;
-    if (selected.isEmpty() && accounts.size() > 1) {
-        options.append({QString(), QStringLiteral("Choose an account…")});
-    }
-    bool selectedFound = selected.isEmpty();
-    for (const CliProxyAccount &account : accounts) {
-        options.append({account.fileName,
-                        account.expired ? account.label + QStringLiteral(" (expired)") : account.label,
-                        account.disabled ? QStringLiteral("Disabled in CLI Proxy API") : QString(),
-                        !account.disabled});
-        selectedFound = selectedFound || account.fileName == selected;
-    }
-    // Keep a stored selection visible even if its file is currently missing.
-    if (!selectedFound) {
-        options.append({selected, selected + QStringLiteral(" (missing)")});
-    }
-    if (options.isEmpty()) {
-        options.append({QString(),
-                        QStringLiteral("No accounts found"),
-                        QStringLiteral("Sign in with CLI Proxy API first; Speecher looks for its accounts in %1.")
-                            .arg(directory),
-                        false});
-    }
-    return options;
-}
 
 } // namespace speecher

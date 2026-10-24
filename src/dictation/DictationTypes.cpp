@@ -70,18 +70,6 @@ QString dictationStatusLabel(const QString &stateName, const QString &message)
     return QStringLiteral("Idle");
 }
 
-QString dictationFailureNote(const QString &stateName, const QString &lastFailure)
-{
-    return stateName.toLower() == QStringLiteral("error") ? QString() : lastFailure;
-}
-
-QString dictationShortcutHint(const QString &shortcut)
-{
-    return shortcut.isEmpty()
-        ? QStringLiteral("Set a Global Shortcut to dictate from anywhere.")
-        : QStringLiteral("Press %1 anywhere to dictate into the app you're using.").arg(shortcut);
-}
-
 bool dictationListeningPresentation(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
@@ -120,38 +108,6 @@ SessionKeys sessionKeysWanted(const QString &stateName,
     return {cancelShortcut != escape && (keepsReview || cancels), waiting};
 }
 
-QString cancelDictationCaption()
-{
-    return QStringLiteral("Cancel dictation");
-}
-
-SessionControls sessionControls(const QString &stateName)
-{
-    const QString lowered = stateName.toLower();
-    const bool paused = lowered == QStringLiteral("paused");
-    const bool listening = lowered == QStringLiteral("listening");
-    const bool pauseVisible = lowered == QStringLiteral("starting") || listening || paused;
-    // A review has buttons of its own.
-    const bool cancelVisible = dictationCancelable(lowered) && lowered != QStringLiteral("reviewing");
-    return {pauseVisible, listening || paused, paused, cancelVisible,
-            cancelVisible && !pauseVisible};
-}
-
-QString pauseCaption()
-{
-    return QStringLiteral("Pause");
-}
-
-QString resumeCaption()
-{
-    return QStringLiteral("Resume");
-}
-
-QString cancelCaption()
-{
-    return QStringLiteral("Cancel");
-}
-
 QString trayToolTip(bool listening, bool recording)
 {
     if (listening && recording) {
@@ -163,34 +119,9 @@ QString trayToolTip(bool listening, bool recording)
     return listening ? QStringLiteral("Speecher is listening") : QStringLiteral("Speecher");
 }
 
-QString traySettingsCaption()
-{
-    return QStringLiteral("Settings…");
-}
-
 QString trayQuitCaption()
 {
     return QStringLiteral("Quit Speecher");
-}
-
-QString copyTranscriptCaption()
-{
-    return QStringLiteral("Copy transcript");
-}
-
-QString copiedCaption()
-{
-    return QStringLiteral("Copied");
-}
-
-QString noTranscriptYetText()
-{
-    return QStringLiteral("Nothing dictated yet.");
-}
-
-QString inputLevelLabel()
-{
-    return QStringLiteral("Input level");
 }
 
 QString dictationStateLabel(DictationState state, const QString &message)

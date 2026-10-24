@@ -293,26 +293,6 @@ SelectionEditReview selectionEditReview(const QString &original,
     return review;
 }
 
-QString keepOriginalCaption()
-{
-    return QStringLiteral("Keep original");
-}
-
-QString replaceSelectionCaption()
-{
-    return QStringLiteral("Replace");
-}
-
-QString showWholeEditCaption()
-{
-    return QStringLiteral("Show all");
-}
-
-QString showChangesOnlyCaption()
-{
-    return QStringLiteral("Show less");
-}
-
 QString escapeKeyName()
 {
     return QStringLiteral("Esc");

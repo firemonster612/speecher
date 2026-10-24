@@ -1,7 +1,5 @@
 #include "app/CommandLineTool.h"
 
-#include "app/CommandLineToolPresentation.h"
-
 #include <QFileInfo>
 
 namespace speecher {
@@ -44,7 +42,7 @@ QString commandLineToolInstallScript(const QString &binaryPath, const QString &t
         + appleScriptString(commandLineToolInstallCommand(binaryPath, toolPath));
     if (withAdministratorPrivileges) {
         script += QStringLiteral(" with prompt %1 with administrator privileges")
-                      .arg(appleScriptString(commandLineToolPasswordPrompt()));
+                      .arg(appleScriptString(QStringLiteral("Speecher is installing the speecher command.")));
     }
     return script;
 }

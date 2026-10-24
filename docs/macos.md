@@ -1,5 +1,11 @@
 # Speecher on macOS
 
+The desktop UI is being replaced: the SwiftUI menu bar front end is gone, and
+one Qt Quick UI will run on every platform
+([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Until it is ported
+to macOS, `speecher.app` runs as a background app with no windows, and the
+command line talks to it.
+
 ## Building
 
 ```sh
@@ -113,18 +119,12 @@ last category's partition.
 ## The speecher command
 
 The CLI binary lives inside the bundle, at
-`speecher.app/Contents/MacOS/speecher`, which is not on the PATH. Choose
-**Install command line tool…** in the menu bar panel to write
-`/usr/local/bin/speecher`, a two-line script that runs the bundle's binary
-with your arguments. macOS asks for an administrator's password when
-`/usr/local/bin` is not writable; cancelling changes nothing. The script
-points at the app where it is now, so after moving the app, install it again.
-It refuses while Speecher runs from a read-only volume, such as a disk image
-or the temporary location Gatekeeper runs a downloaded app from until it is
-moved (App Translocation), since either path goes away; move the app to
-Applications and open it again first.
-
-The manual equivalent, for an app in `/Applications`:
+`speecher.app/Contents/MacOS/speecher`, which is not on the PATH. The menu bar
+panel's **Install command line tool…** went with the SwiftUI front end; until
+the Qt Quick UI offers it again, write `/usr/local/bin/speecher` yourself, a
+two-line script that runs the bundle's binary with your arguments. The script
+points at the app where it is now, so after moving the app, write it again.
+For an app in `/Applications`:
 
 ```sh
 sudo mkdir -p /usr/local/bin

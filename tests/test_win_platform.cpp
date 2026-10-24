@@ -2,7 +2,6 @@
 #include "app/PlatformComposition.h"
 
 #include "core/OutputMethod.h"
-#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
 #include "output/TextDelivery.h"
@@ -35,30 +34,6 @@
 using namespace speecher;
 
 namespace {
-
-const SettingsRow &rowById(const SettingsPage &page, const QString &id)
-{
-    for (const SettingsSection &section : page.sections) {
-        for (const SettingsRow &row : section.rows) {
-            if (row.id == id) {
-                return row;
-            }
-        }
-    }
-    qFatal("no row %s", qPrintable(id));
-}
-
-bool hasRow(const SettingsPage &page, const QString &id)
-{
-    for (const SettingsSection &section : page.sections) {
-        for (const SettingsRow &row : section.rows) {
-            if (row.id == id) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 bool interactiveWindowStation()
 {
@@ -172,15 +147,6 @@ private:
     const int m_failures;
 };
 
-SchemaContext context()
-{
-    return {
-        {{QStringLiteral("claude"), QStringLiteral("Claude Voice")}},
-        {{QStringLiteral("openai"), QStringLiteral("OpenAI"), true}},
-        [] { return QList<RowOption>{}; },
-    };
-}
-
 } // namespace
 
 class WinPlatformTests : public QObject {
@@ -291,7 +257,7 @@ private slots:
         const auto release = qScopeGuard([] { UnregisterHotKey(nullptr, 0x5ee8); });
         const ShortcutBinding owned{QKeySequence(Qt::Key_F21)};
         QVERIFY(!binder.setShortcut(owned, &error));
-        QCOMPARE(error, globalShortcutOwnedElsewhereText(owned));
+        QCOMPARE(error, QStringLiteral("%1 is already a shortcut in another app.").arg(owned.displayText()));
         binder.suspend();
         QVERIFY(!binder.setShortcut(owned, &error));
         QCOMPARE(binder.resume(), QString());
@@ -300,7 +266,7 @@ private slots:
         // A key Windows cannot register at all says so, not that it is owned.
         QVERIFY(!binder.setShortcut(QKeySequence(Qt::Key_F12), &error));
         QVERIFY(!WinGlobalShortcutBinder::describesConflict(error));
-        QVERIFY(error != globalShortcutOwnedElsewhereText(ShortcutBinding{QKeySequence(Qt::Key_F12)}));
+        QVERIFY(!error.contains(QStringLiteral("already a shortcut in another app")));
 
         // A single key took over through the router: arming must not bring
         // the replaced hot key back beside it.
@@ -317,7 +283,10 @@ private slots:
         const ShortcutBinding letter = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
             WinSingleKeyShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
-            QCOMPARE(binder.unsupportedBindingReason(letter), watchedKeyStillTypesText(letter));
+            QCOMPARE(binder.unsupportedBindingReason(letter),
+                     QStringLiteral("Speecher can only watch %1, not take it from other apps, so it would "
+                                    "still type while you dictate. Use another key or a key combination.")
+                         .arg(letter.displayText()));
             for (const char *code : {"ControlRight", "F13", "CapsLock"}) {
                 QCOMPARE(binder.unsupportedBindingReason(
                              ShortcutBinding::singleKey(QString::fromLatin1(code))),
@@ -708,27 +677,6 @@ private slots:
         }
         QTRY_COMPARE(control->sets.load(), 2);
         microphone.stop();
-    }
-
-    void schemaUsesWindowsCopyAndRows()
-    {
-        const SettingsSchema schema = buildSettingsSchema(context());
-        const SettingsPage &general = schema.page(QStringLiteral("general"));
-        QVERIFY(hasRow(general, QStringLiteral("launchAtLogin")));
-        // The recorder is a custom row every front end draws, at the top of
-        // Dictation.
-        QVERIFY(hasRow(general, QStringLiteral("globalShortcut")));
-        QVERIFY(!hasRow(general, QStringLiteral("removeSpeecher")));
-
-        const SettingsRow &globalPaste = rowById(
-            schema.page(QStringLiteral("output")), QStringLiteral("globalPasteRule"));
-        const QList<RowOption> options = globalPaste.options(AppSettings{});
-        QCOMPARE(options.at(0).label, QStringLiteral("Standard paste (Ctrl+V)"));
-        QCOMPARE(options.at(1).label, QStringLiteral("Terminal paste (Ctrl+Shift+V)"));
-
-        const SettingsRow &rules = rowById(
-            schema.page(QStringLiteral("output")), QStringLiteral("applicationPasteRules"));
-        QVERIFY(rules.help.contains(QStringLiteral("executable"), Qt::CaseInsensitive));
     }
 
     void liveHotkeyTargetAndDeliveryToNotepad()
