@@ -176,8 +176,10 @@ Page {
                     onCancelled: open = false
                     onSaved: {
                         const tone = { name: toneName.text.trim(), instruction: toneText.text }
-                        const refused = editing ? Library.update("customTones", editing, tone)
-                                                : Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone))
+                        // A profile's tone choices list the built-in ones by these names too.
+                        const builtIns = Library.tones.map(t => t.label)
+                        const refused = editing ? Library.update("customTones", editing, tone, builtIns)
+                                                : Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone), builtIns)
                         error = Library.refusalText("customTones", refused)
                         if (!refused) open = false
                     }
@@ -236,8 +238,9 @@ Page {
                     onCancelled: open = false
                     onSaved: {
                         const level = { name: levelName.text.trim(), base: base, instructions: levelText.text }
-                        const refused = editing ? Library.update("customCleanupLevels", editing, level)
-                                                : Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level))
+                        const builtIns = Library.cleanupLevels.map(l => l.label)
+                        const refused = editing ? Library.update("customCleanupLevels", editing, level, builtIns)
+                                                : Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level), builtIns)
                         error = Library.refusalText("customCleanupLevels", refused)
                         if (!refused) open = false
                     }

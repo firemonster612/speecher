@@ -92,6 +92,12 @@ Section {
             required property string key
             required property int index
             readonly property var rule: matches.entry(key)
+            // Saves a choice from the row, or says why it can't: a match
+            // with neither app type nor profile does nothing.
+            function change(patch) {
+                const refused = Library.update("recognitionRules", key, patch)
+                if (refused) Toaster.show(Library.refusalText("recognitionRules", refused), { icon: "triangle-alert", tone: "negative" })
+            }
             width: ListView.view.width
             first: index === 0 && matches.first
             Row {
@@ -106,7 +112,7 @@ Section {
                 implicitWidth: 184
                 options: section.categoryOptions
                 currentId: matchRow.rule.category
-                onChosen: id => Library.update("recognitionRules", matchRow.key, { category: id })
+                onChosen: id => matchRow.change({ category: id })
             }
             Select {
                 x: heads.typeX - Theme.rowInset + 196
@@ -114,7 +120,7 @@ Section {
                 implicitWidth: 170
                 options: section.profileOptions
                 currentId: matchRow.rule.profile
-                onChosen: id => Library.update("recognitionRules", matchRow.key, { profile: id })
+                onChosen: id => matchRow.change({ profile: id })
             }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: { matchForm.startEdit(matchRow.rule); section.revealRequested(matchForm) } },

@@ -32,19 +32,23 @@ EditRefusal editWritingProfile(AppSettings &settings, const QString &id,
 bool removeWritingProfile(AppSettings &settings, const QString &id);
 
 // Adds a custom tone, after the others: a fresh custom id, a name no other
-// custom tone goes by, and an instruction.
-EditRefusal addCustomTone(AppSettings &settings, CustomTone tone);
-EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change);
+// custom tone goes by, and an instruction. builtInNames are what the page
+// calls the built-in tones, which a custom one can't be called either, since
+// a profile's choices would show two by one name.
+EditRefusal addCustomTone(AppSettings &settings, CustomTone tone, const QStringList &builtInNames);
+EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change,
+                           const QStringList &builtInNames);
 // The same for a custom cleanup level, based on light_cleanup, balanced,
 // strong_polish or custom_only; a Custom only level needs instructions.
-EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level);
+EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level, const QStringList &builtInNames);
 EditRefusal editCustomCleanupLevel(AppSettings &settings, const QString &id,
-                                   const EntryChange<CustomCleanupLevel> &change);
+                                   const EntryChange<CustomCleanupLevel> &change, const QStringList &builtInNames);
 
 // Removes the custom tone id, and every profile that chose it gets no tone.
 // Returns the edit that puts the tone back where it was and points back the
-// profiles that still have no tone, so changes made in between stay. Empty
-// for an id the settings do not hold.
+// profiles that still have no tone, so changes made in between stay; it does
+// nothing once a tone by that name was added since. Empty for an id the
+// settings do not hold.
 SettingsEdit removeCustomTone(AppSettings &settings, const QString &id);
 // The same for a custom cleanup level. Its profiles get the built-in level it
 // was based on, or Medium for one based on no level (Custom only).

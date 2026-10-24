@@ -89,15 +89,18 @@ public:
     Q_INVOKABLE QString newId(const QString &prefix) const;
     // Adds item to the list named (profiles, customTones, customCleanupLevels,
     // terms, replacements, recognitionRules), with the fields its records
-    // show; one of the first three carries its newId. Returns why it was
-    // refused, as EditRefusal says: blank, taken, incomplete, missing or
-    // builtIn, or invalid for a field the records lack. Empty when saved.
-    Q_INVOKABLE QString add(const QString &list, const QVariantMap &item);
+    // show; one of the first three carries its newId. A tone or level takes
+    // builtInNames, the names the page shows the built-in ones by, which it
+    // can't be called. Returns why it was refused, as EditRefusal says: blank,
+    // taken, incomplete, missing or builtIn, or invalid for a field the
+    // records lack. Empty when saved.
+    Q_INVOKABLE QString add(const QString &list, const QVariantMap &item, const QStringList &builtInNames = {});
     // Changes the fields patch names on the entry `key` names in the list
     // named: a profile's, tone's, level's or correction's id, a term, a
     // replacement's phrase or a match's app. What the record does not show
     // stays. Returns as add does; missing once the entry is gone.
-    Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch);
+    Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch,
+                               const QStringList &builtInNames = {});
     // Removes the entry key names from terms, corrections, replacements or
     // recognitionRules. Returns the token undo takes to put it back, or -1
     // when nothing was removed.

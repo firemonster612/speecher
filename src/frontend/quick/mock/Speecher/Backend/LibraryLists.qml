@@ -101,21 +101,23 @@ QtObject {
         return lists[list].findIndex(e => String(e[field]).toLowerCase() === String(key).toLowerCase())
     }
     // The mock refuses only what a page would show differently: a name
-    // another entry has, as the app does with the reason taken.
-    function _taken(list, item, self) {
+    // another entry has, or a tone or level named as a built-in one in
+    // builtInNames, as the app does with the reason taken.
+    function _taken(list, item, self, builtInNames) {
         const field = list === "profiles" || list === "customTones" || list === "customCleanupLevels" ? "name" : _keys[list]
-        return field in item && lists[list].some((e, i) => i !== self && String(e[field]).toLowerCase() === String(item[field]).toLowerCase())
+        const same = name => String(name).toLowerCase() === String(item[field]).toLowerCase()
+        return field in item && ((builtInNames || []).some(same) || lists[list].some((e, i) => i !== self && same(e[field])))
     }
-    function add(list, item) {
-        if (_taken(list, item, -1)) return "taken"
+    function add(list, item, builtInNames) {
+        if (_taken(list, item, -1, builtInNames)) return "taken"
         const defaults = list === "terms" ? { source: "manual", uses: 0 } : list === "profiles" ? { builtIn: false } : {}
         lists[list] = lists[list].concat([Object.assign(defaults, item)])
         return ""
     }
-    function update(list, key, patch) {
+    function update(list, key, patch, builtInNames) {
         const index = _indexOf(list, key)
         if (index < 0) return "missing"
-        if (_taken(list, patch, index)) return "taken"
+        if (_taken(list, patch, index, builtInNames)) return "taken"
         const next = lists[list].slice()
         next[index] = Object.assign({}, next[index], patch)
         lists[list] = next

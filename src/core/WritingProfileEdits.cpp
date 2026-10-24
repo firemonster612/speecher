@@ -116,25 +116,36 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
     return offered ? EditRefusal::None : EditRefusal::Missing;
 }
 
-EditRefusal checkTone(CustomTone &tone, qsizetype self, const QList<CustomTone> &tones)
+// Whether a custom tone or level may go by name: no other custom one of
+// list but the one at `self`, and no built-in one the page shows by
+// builtInNames, is called that, ignoring case.
+template <typename Choice>
+bool choiceNameFree(const QList<Choice> &list, qsizetype self, const QString &name, const QStringList &builtInNames)
+{
+    return !builtInNames.contains(name, Qt::CaseInsensitive)
+        && nameFree(list, self, name, [](const Choice &other) { return other.name; });
+}
+
+EditRefusal checkTone(CustomTone &tone, qsizetype self, const QList<CustomTone> &tones, const QStringList &builtInNames)
 {
     tone.name = tone.name.trimmed();
     if (tone.name.isEmpty()) {
         return EditRefusal::Blank;
     }
-    if (!nameFree(tones, self, tone.name, [](const CustomTone &other) { return other.name; })) {
+    if (!choiceNameFree(tones, self, tone.name, builtInNames)) {
         return EditRefusal::Taken;
     }
     return tone.instruction.trimmed().isEmpty() ? EditRefusal::Incomplete : EditRefusal::None;
 }
 
-EditRefusal checkLevel(CustomCleanupLevel &level, qsizetype self, const QList<CustomCleanupLevel> &levels)
+EditRefusal checkLevel(CustomCleanupLevel &level, qsizetype self, const QList<CustomCleanupLevel> &levels,
+                       const QStringList &builtInNames)
 {
     level.name = level.name.trimmed();
     if (level.name.isEmpty()) {
         return EditRefusal::Blank;
     }
-    if (!nameFree(levels, self, level.name, [](const CustomCleanupLevel &other) { return other.name; })) {
+    if (!choiceNameFree(levels, self, level.name, builtInNames)) {
         return EditRefusal::Taken;
     }
     if (!cleanupBases.contains(level.base)) {
@@ -191,8 +202,9 @@ EditRefusal checkRule(AppRecognitionRule &rule, qsizetype self, const AppSetting
 }
 
 // Removes entry id from `entries` and points every profile field that chose
-// it at `instead`. The edit it returns puts the entry back at its place and
-// points back the fields that still hold `instead`.
+// it at `instead`. The edit it returns puts the entry back at its place,
+// unless one by its id or name is there by then, and once it is back points
+// back the fields that still hold `instead`.
 template <typename Choice>
 SettingsEdit removeChoice(QList<Choice> RefinementSettings::*entries,
                           QString WritingProfileSettings::*field,
@@ -206,7 +218,7 @@ SettingsEdit removeChoice(QList<Choice> RefinementSettings::*entries,
         return {};
     }
     const auto putBack = takeEntry(list, index, [](const Choice &entry, const Choice &removed) {
-        return entry.id == removed.id;
+        return entry.id == removed.id || entry.name.compare(removed.name, Qt::CaseInsensitive) == 0;
     });
     QStringList moved;
     for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
@@ -216,7 +228,11 @@ SettingsEdit removeChoice(QList<Choice> RefinementSettings::*entries,
         }
     }
     return [=](AppSettings &draft) {
-        putBack(draft.refinement.*entries);
+        QList<Choice> &back = draft.refinement.*entries;
+        putBack(back);
+        if (indexOf(back, [](const Choice &choice) { return choice.id; }, id) < 0) {
+            return;
+        }
         for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
             if (moved.contains(profile.profile) && profile.*field == instead) {
                 profile.*field = id;
@@ -266,38 +282,43 @@ bool removeWritingProfile(AppSettings &settings, const QString &id)
         > 0;
 }
 
-EditRefusal addCustomTone(AppSettings &settings, CustomTone tone)
+EditRefusal addCustomTone(AppSettings &settings, CustomTone tone, const QStringList &builtInNames)
 {
     QList<CustomTone> &tones = settings.refinement.customTones;
     if (!idFree(tones, toneId, tone.id)) {
         return EditRefusal::Taken;
     }
-    return appendEntry(tones, tone, [&tones](CustomTone &added, qsizetype self) { return checkTone(added, self, tones); });
+    return appendEntry(tones, tone, [&](CustomTone &added, qsizetype self) {
+        return checkTone(added, self, tones, builtInNames);
+    });
 }
 
-EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change)
+EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change,
+                           const QStringList &builtInNames)
 {
     QList<CustomTone> &tones = settings.refinement.customTones;
     return changeEntry(tones, indexOf(tones, toneId, id), change,
-                       [&tones](CustomTone &tone, qsizetype self) { return checkTone(tone, self, tones); });
+                       [&](CustomTone &tone, qsizetype self) { return checkTone(tone, self, tones, builtInNames); });
 }
 
-EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level)
+EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level, const QStringList &builtInNames)
 {
     QList<CustomCleanupLevel> &levels = settings.refinement.customCleanupLevels;
     if (!idFree(levels, levelId, level.id)) {
         return EditRefusal::Taken;
     }
-    return appendEntry(levels, level,
-                       [&levels](CustomCleanupLevel &added, qsizetype self) { return checkLevel(added, self, levels); });
+    return appendEntry(levels, level, [&](CustomCleanupLevel &added, qsizetype self) {
+        return checkLevel(added, self, levels, builtInNames);
+    });
 }
 
 EditRefusal editCustomCleanupLevel(AppSettings &settings, const QString &id,
-                                   const EntryChange<CustomCleanupLevel> &change)
+                                   const EntryChange<CustomCleanupLevel> &change, const QStringList &builtInNames)
 {
     QList<CustomCleanupLevel> &levels = settings.refinement.customCleanupLevels;
-    return changeEntry(levels, indexOf(levels, levelId, id), change,
-                       [&levels](CustomCleanupLevel &level, qsizetype self) { return checkLevel(level, self, levels); });
+    return changeEntry(levels, indexOf(levels, levelId, id), change, [&](CustomCleanupLevel &level, qsizetype self) {
+        return checkLevel(level, self, levels, builtInNames);
+    });
 }
 
 SettingsEdit removeCustomTone(AppSettings &settings, const QString &id)

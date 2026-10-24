@@ -7,6 +7,7 @@
 
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQuickItem>
 #include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -174,6 +175,62 @@ private slots:
         library.undo(undo);
         QCOMPARE(SettingsStore().customTones().size(), 1);
         QCOMPARE(library.removeTone(QStringLiteral("custom_tone_gone")), -1);
+    }
+
+    // A custom tone or level can't go by a built-in one's name either: a
+    // profile's choices would show two by that name.
+    void customChoicesCantTakeABuiltInName()
+    {
+        ApplicationController controller(true);
+        QuickLibrary library(&controller);
+        const QStringList builtInTones{QStringLiteral("No tone"), QStringLiteral("Formal")};
+        const QString tones = QStringLiteral("customTones");
+        const QString tone = library.newId(QStringLiteral("custom_tone"));
+        QCOMPARE(library.add(tones, {{QStringLiteral("id"), tone}, {QStringLiteral("name"), QStringLiteral(" formal ")},
+                                     {QStringLiteral("instruction"), QStringLiteral("Stiff.")}},
+                             builtInTones),
+                 QStringLiteral("taken"));
+        QCOMPARE(library.add(tones, {{QStringLiteral("id"), tone}, {QStringLiteral("name"), QStringLiteral("Dry")},
+                                     {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}},
+                             builtInTones),
+                 saved);
+        QCOMPARE(library.update(tones, tone, {{QStringLiteral("name"), QStringLiteral("no tone")}}, builtInTones),
+                 QStringLiteral("taken"));
+
+        const QString levels = QStringLiteral("customCleanupLevels");
+        const QString level = library.newId(QStringLiteral("custom_level"));
+        QCOMPARE(library.add(levels, {{QStringLiteral("id"), level}, {QStringLiteral("name"), QStringLiteral("Notes")},
+                                      {QStringLiteral("base"), QStringLiteral("balanced")}},
+                             {QStringLiteral("Medium")}),
+                 saved);
+        QCOMPARE(library.update(levels, level, {{QStringLiteral("name"), QStringLiteral("MEDIUM")}}, {QStringLiteral("Medium")}),
+                 QStringLiteral("taken"));
+        QCOMPARE(SettingsStore().customTones().first().name, QStringLiteral("Dry"));
+        QCOMPARE(SettingsStore().customCleanupLevels().first().name, QStringLiteral("Notes"));
+    }
+
+    // Undoing a tone's removal after another tone took its name keeps the
+    // new one alone, and leaves the profiles on the tone they have.
+    void undoingAToneLeavesOneByItsNameAlone()
+    {
+        ApplicationController controller(true);
+        QuickLibrary library(&controller);
+        const QString tones = QStringLiteral("customTones");
+        const QString old = library.newId(QStringLiteral("custom_tone"));
+        QCOMPARE(library.add(tones, {{QStringLiteral("id"), old}, {QStringLiteral("name"), QStringLiteral("Dry")},
+                                     {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}}),
+                 saved);
+        QCOMPARE(library.update(QStringLiteral("profiles"), WritingProfile::Work, {{QStringLiteral("tone"), old}}), saved);
+        const int undo = library.removeTone(old);
+        const QString again = library.newId(QStringLiteral("custom_tone"));
+        QCOMPARE(library.add(tones, {{QStringLiteral("id"), again}, {QStringLiteral("name"), QStringLiteral("dry")},
+                                     {QStringLiteral("instruction"), QStringLiteral("Flat.")}}),
+                 saved);
+
+        library.undo(undo);
+        QCOMPARE(SettingsStore().customTones().size(), 1);
+        QCOMPARE(SettingsStore().customTones().first().id, again);
+        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
     }
 
     void removingAProfileResetsTheFallbackSetting()
@@ -422,6 +479,40 @@ private slots:
         QCOMPARE(SettingsStore().learnedCorrections().first().id, QStringLiteral("c2"));
         library.undo(undo);
         QCOMPARE(SettingsStore().learnedCorrections().last(), edited);
+    }
+
+    // A choice in a match's row that core refuses, such as clearing the
+    // only thing a match sets, is said in a toast and saves nothing.
+    void anAppMatchRowSaysWhyAChoiceWasRefused()
+    {
+        SettingsStore().setAppRecognitionRules({{QStringLiteral("obsidian"), AppCategory::Office, std::nullopt}});
+        ApplicationController controller(true);
+        const QuickLibrary::ControllerScope scope(&controller);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
+        const std::unique_ptr<QObject> section(component.create());
+        QVERIFY2(section, qPrintable(component.errorString()));
+        // A row is a ListView delegate: an item child, not a QObject one.
+        QObject *typeSelect = nullptr;
+        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(section.get())};
+        while (!items.isEmpty()) {
+            QQuickItem *item = items.takeLast();
+            items += item->childItems();
+            if (QByteArray(item->metaObject()->className()).startsWith("Select_")
+                && item->property("currentId").toString() == QLatin1String("office")) {
+                typeSelect = item;
+            }
+        }
+        QVERIFY(typeSelect);
+        QObject *toaster = engine.singletonInstance<QObject *>("Speecher.Controls", "Toaster");
+        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
+
+        QMetaObject::invokeMethod(typeSelect, "chosen", Q_ARG(QString, QString()));
+        QCOMPARE(posted.count(), 1);
+        QCOMPARE(posted.first().first().toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("Choose an app type, a profile or both."));
+        QCOMPARE(SettingsStore().appRecognitionRules().first().category, std::optional(AppCategory::Office));
     }
 
     // The app's Library is Library.qml over this type: its wording reads the

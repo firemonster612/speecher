@@ -150,14 +150,15 @@ void setRuleFields(AppRecognitionRule &rule, const QVariantMap &fields)
 }
 
 // One list the UI edits: the fields its records take, adding to it, changing
-// the entry a key names, and removing that entry. A list removed from
-// another way (profiles, tones, levels) has no remove; one only dictation
-// adds to (corrections) has no add.
+// the entry a key names, and removing that entry. Adding and changing take
+// the built-in names the page shows, which only tones and levels use. A list
+// removed from another way (profiles, tones, levels) has no remove; one only
+// dictation adds to (corrections) has no add.
 struct EditedList {
     const char *name;
     QStringList fields;
-    EditRefusal (*add)(AppSettings &, const QVariantMap &);
-    EditRefusal (*update)(AppSettings &, const QString &, const QVariantMap &);
+    EditRefusal (*add)(AppSettings &, const QVariantMap &, const QStringList &);
+    EditRefusal (*update)(AppSettings &, const QString &, const QVariantMap &, const QStringList &);
     SettingsEdit (*remove)(AppSettings &, const QString &);
 };
 
@@ -166,77 +167,78 @@ const EditedList editedLists[] = {
      {QStringLiteral("name"), QStringLiteral("cleanup"), QStringLiteral("tone"), QStringLiteral("language"),
       QStringLiteral("instructions"), QStringLiteral("speech"), QStringLiteral("speechModel"),
       QStringLiteral("refinement"), QStringLiteral("refinementModel")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          WritingProfileSettings profile;
          profile.profile = item.value(QStringLiteral("id")).toString();
          setProfileFields(profile, item);
          return addWritingProfile(s, profile);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
          return editWritingProfile(s, id, [&patch](WritingProfileSettings &profile) { setProfileFields(profile, patch); });
      },
      nullptr},
     {"customTones",
      {QStringLiteral("name"), QStringLiteral("instruction")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &builtInNames) {
          CustomTone tone;
          tone.id = item.value(QStringLiteral("id")).toString();
          setToneFields(tone, item);
-         return addCustomTone(s, tone);
+         return addCustomTone(s, tone, builtInNames);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
-         return editCustomTone(s, id, [&patch](CustomTone &tone) { setToneFields(tone, patch); });
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &builtInNames) {
+         return editCustomTone(s, id, [&patch](CustomTone &tone) { setToneFields(tone, patch); }, builtInNames);
      },
      nullptr},
     {"customCleanupLevels",
      {QStringLiteral("name"), QStringLiteral("base"), QStringLiteral("instructions")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &builtInNames) {
          CustomCleanupLevel level;
          level.id = item.value(QStringLiteral("id")).toString();
          setLevelFields(level, item);
-         return addCustomCleanupLevel(s, level);
+         return addCustomCleanupLevel(s, level, builtInNames);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
-         return editCustomCleanupLevel(s, id, [&patch](CustomCleanupLevel &level) { setLevelFields(level, patch); });
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &builtInNames) {
+         return editCustomCleanupLevel(
+             s, id, [&patch](CustomCleanupLevel &level) { setLevelFields(level, patch); }, builtInNames);
      },
      nullptr},
     {"terms",
      {QStringLiteral("term"), QStringLiteral("keyTerm"), QStringLiteral("context"), QStringLiteral("profiles")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          VocabularyEntry entry;
          setTermFields(entry, item);
          return addVocabularyEntry(s, entry);
      },
-     [](AppSettings &s, const QString &term, const QVariantMap &patch) {
+     [](AppSettings &s, const QString &term, const QVariantMap &patch, const QStringList &) {
          return editVocabularyEntry(s, term, [&patch](VocabularyEntry &entry) { setTermFields(entry, patch); });
      },
      removeVocabularyEntry},
     {"corrections",
      {QStringLiteral("heard"), QStringLiteral("corrected"), QStringLiteral("enabled")},
      nullptr,
-     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
          return editLearnedCorrection(s, id, [&patch](LearnedCorrection &correction) { setCorrectionFields(correction, patch); });
      },
      removeLearnedCorrection},
     {"replacements",
      {QStringLiteral("phrase"), QStringLiteral("replacement")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          BindingRule rule;
          setReplacementFields(rule, item);
          return addBindingRule(s, rule);
      },
-     [](AppSettings &s, const QString &phrase, const QVariantMap &patch) {
+     [](AppSettings &s, const QString &phrase, const QVariantMap &patch, const QStringList &) {
          return editBindingRule(s, phrase, [&patch](BindingRule &rule) { setReplacementFields(rule, patch); });
      },
      removeBindingRule},
     {"recognitionRules",
      {QStringLiteral("match"), QStringLiteral("category"), QStringLiteral("profile")},
-     [](AppSettings &s, const QVariantMap &item) {
+     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          AppRecognitionRule rule;
          setRuleFields(rule, item);
          return addAppRecognitionRule(s, rule);
      },
-     [](AppSettings &s, const QString &match, const QVariantMap &patch) {
+     [](AppSettings &s, const QString &match, const QVariantMap &patch, const QStringList &) {
          return editAppRecognitionRule(s, match, [&patch](AppRecognitionRule &rule) { setRuleFields(rule, patch); });
      },
      removeAppRecognitionRule},
@@ -353,24 +355,25 @@ QString QuickLibrary::newId(const QString &prefix) const
     return newCustomId(prefix, taken);
 }
 
-QString QuickLibrary::add(const QString &list, const QVariantMap &item)
+QString QuickLibrary::add(const QString &list, const QVariantMap &item, const QStringList &builtInNames)
 {
     const EditedList *edited = findList(list);
     if (!edited || !edited->add || !convertible(*edited, item)) {
         qWarning().noquote() << "Library.add(" + list + ") takes no entry with" << item.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->add(s, item); });
+    return saveUnlessRefused([&](AppSettings &s) { return edited->add(s, item, builtInNames); });
 }
 
-QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch)
+QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch,
+                            const QStringList &builtInNames)
 {
     const EditedList *edited = findList(list);
     if (!edited || !edited->update || patch.contains(QStringLiteral("id")) || !convertible(*edited, patch)) {
         qWarning().noquote() << "Library.update(" + list + ") takes no fields" << patch.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->update(s, key, patch); });
+    return saveUnlessRefused([&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
 }
 
 int QuickLibrary::remove(const QString &list, const QString &key)
