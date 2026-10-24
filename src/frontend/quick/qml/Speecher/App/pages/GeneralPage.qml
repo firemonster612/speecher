@@ -26,10 +26,7 @@ Page {
         confirmRemove: "Remove Speecher",
         removeQuestion: "Remove Speecher from this computer?",
         removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
-        removeSettings: "Also delete my settings, vocabulary and API keys",
-        removed: "Speecher is removed from this computer.",
-        removedPartly: "Speecher is removed, with some things left to do by hand.",
-        quit: "Quit Speecher"
+        removeSettings: "Also delete my settings, vocabulary and API keys"
     })
     // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
     function phoneSummary(bundle) {
@@ -47,37 +44,6 @@ Page {
         default: return "In Speecher for Android, go to Settings, then Import from computer. The code works once, while it shows, on the same network as " + System.computerName + "."
         }
     }
-    // How each of System.removal's steps reads, by part and outcome. A
-    // failure gets the part's own error, which may be empty.
-    readonly property var removalWords: ({
-        shortcutRegistration: { removed: "Removed the Global Shortcut registration.",
-            failed: e => e ? "Global Shortcut: " + e : "The Global Shortcut registration could not be removed." },
-        virtualKeyboardService: { failed: e => "Virtual keyboard service: " + e },
-        virtualKeyboard: { removed: "Removed the virtual keyboard setup.",
-            failed: e => e ? "Virtual keyboard: " + e : "The virtual keyboard setup could not be removed." },
-        keyHelper: { removed: "Removed the single-key helper.",
-            failed: e => e ? "Key helper: " + e : "The single-key helper could not be removed." },
-        keyring: { removed: "Deleted your API keys from the desktop keyring.",
-            failed: e => "Could not delete your API keys from the desktop keyring" + (e ? ": " + e : ".") },
-        settings: { removed: "Deleted your settings.", kept: "Kept your settings.",
-            failed: e => "Could not delete the settings file at " + e + "." }
-    })
-    function removalFailed(report) { return report.files.failed.length > 0 || report.steps.some(s => s.outcome === "failed") }
-    // What removing did, item by item, then what it couldn't, then what is
-    // left: the program file stays.
-    function removalText(report) {
-        const said = step => step.outcome === "failed" ? removalWords[step.part].failed(step.error)
-                                                       : removalWords[step.part][step.outcome]
-        return report.files.removed.map(item => "Removed the " + item + ".")
-            .concat(report.files.absent.map(item => "There was no " + item + " to remove."),
-                    report.steps.filter(s => s.outcome !== "failed").map(said),
-                    report.files.failed.map(item => "Could not remove the " + item + "."),
-                    report.steps.filter(s => s.outcome === "failed").map(said),
-                    [report.programFile ? "To finish, quit Speecher and delete " + report.programFile + "."
-                                        : "To finish, quit Speecher and delete its program file."])
-            .join(" ")
-    }
-
     // The code works only while it shows: hiding the window takes it away,
     // and showing it again makes a new one.
     function showPhoneCode(open) {
@@ -239,15 +205,7 @@ Page {
         }
         Reveal {
             open: page._removed
-            Notice {
-                tone: page._removed && page.removalFailed(System.removal) ? "warning" : "info"
-                indicator: "icon"
-                inset: Theme.rowInset
-                text: !page._removed ? ""
-                    : ((page.removalFailed(System.removal) ? page.t.removedPartly : page.t.removed) + " " + page.removalText(System.removal))
-                actionText: page.t.quit
-                onAction: System.quit()
-            }
+            RemovalReport { inset: Theme.rowInset }
         }
     }
 }

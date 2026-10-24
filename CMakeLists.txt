@@ -250,6 +250,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
+  src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
@@ -288,6 +289,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
   src/core/settings/SettingsCodecs.h
+  src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h

@@ -233,6 +233,7 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::changed);
+    connect(&m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::startAskedRemoval);
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::failed, this, [this](Failure failure, const QString &error) {
         m_failures[keyboardId].append(failureEntry(failureName(failure), error));
         emit changed();
@@ -337,7 +338,7 @@ QVariantMap QuickSystem::phoneBundle() const
 
 bool QuickSystem::removing() const
 {
-    return m_removal.running();
+    return m_removalAsked || m_removal.running();
 }
 
 QVariantMap QuickSystem::removal() const
@@ -368,6 +369,9 @@ void QuickSystem::fixFromSetup(const QString &id)
 
 void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp)
 {
+    if (removing()) {
+        return;
+    }
     const QString action = check(id).value(QStringLiteral("fix")).toString();
     if (action.isEmpty()) {
         return;
@@ -405,12 +409,18 @@ void QuickSystem::disableVirtualKeyboard()
 
 void QuickSystem::removeVirtualKeyboard()
 {
+    if (removing()) {
+        return;
+    }
     clearFailures(keyboardId);
     m_virtualKeyboard.remove();
 }
 
 void QuickSystem::runVirtualKeyboardTest()
 {
+    if (removing()) {
+        return;
+    }
     clearFailures(keyboardId);
     m_virtualKeyboard.runTest();
 }
@@ -477,11 +487,24 @@ void QuickSystem::stopPhoneTransfer()
 
 void QuickSystem::uninstall(bool keepSettings)
 {
-    if (m_removal.running()) {
+    if (removing()) {
         return;
     }
-    m_removal.start(!keepSettings);
+    m_removalAsked = keepSettings ? RemovalAsked::KeepSettings : RemovalAsked::DeleteSettings;
+    startAskedRemoval();
     emit removalChanged();
+}
+
+void QuickSystem::startAskedRemoval()
+{
+    // The keyboard's setup saves settings and runs the helper removal runs
+    // too, so removal waits for an operation under way and ends the test.
+    if (!m_removalAsked || m_virtualKeyboard.operation() != Operation::None) {
+        return;
+    }
+    const bool deleteSettings = *std::exchange(m_removalAsked, std::nullopt) == RemovalAsked::DeleteSettings;
+    m_virtualKeyboard.cancelTest();
+    m_removal.start(deleteSettings);
 }
 
 void QuickSystem::quit()

@@ -31,7 +31,6 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
-    ~SettingsStore() override;
     // Carries every saved endpoint and CLI Proxy API key, so a settings
     // surface shows and saves them all. A key SecretStore::prefetch has not
     // cached yet waits for the keyring (1.5 s at most).
@@ -49,10 +48,10 @@ public:
     // Saves the draft, unless deleteAll ran.
     void applySnapshot(const AppSettings &draft);
     // Clears every setting and deletes the settings file, as removing
-    // Speecher with its settings does. Afterwards applySnapshot saves
-    // nothing, so an edit made before Speecher quits can't bring the file
-    // back, and the file is deleted again when the store goes, for anything
-    // written meanwhile. A file that won't go puts its path in path.
+    // Speecher with its settings does. Afterwards nothing the store holds is
+    // saved: not a snapshot, a setter, a codec's write or a sync of raw()
+    // (SettingsFile), so an edit made before Speecher quits can't bring the
+    // file back. A file that won't go puts its path in path.
     bool deleteAll(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
@@ -65,6 +64,7 @@ public:
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
     // SettingsCodecs::addVocabularyTerms, announcing the terms it saved.
+    // Saves nothing, returning nullopt, once deleteAll ran.
     std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
 
     using SettingsCodecs::anthropicAuthMode;
@@ -216,7 +216,7 @@ public:
     void setAutoInstallUpdates(bool value);
     void setUpdateCheckIntervalMinutes(int value);
 
-    QSettings &raw();
+    SettingsFile &raw();
 
 signals:
     // After applySnapshot, with what dictationSnapshot read just before it.
@@ -238,7 +238,6 @@ private:
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
     SecretStore *m_secrets = nullptr;
-    bool m_deleted = false;
 };
 
 } // namespace speecher

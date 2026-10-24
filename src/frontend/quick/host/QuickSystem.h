@@ -10,6 +10,7 @@
 #include <QVariantMap>
 
 #include <memory>
+#include <optional>
 
 namespace speecher {
 
@@ -112,8 +113,10 @@ public:
     Q_INVOKABLE void startPhoneTransfer();
     Q_INVOKABLE void stopPhoneTransfer();
     // Removes Speecher from this computer, keeping the settings or not;
-    // removal then holds the report. Once the settings are deleted, nothing
-    // saves them again (SettingsStore::deleteAll), and quitting is left.
+    // removal then holds the report. It starts once a virtual keyboard
+    // operation under way ends, and none starts while removing. Once the
+    // settings are deleted, nothing saves them again
+    // (SettingsStore::deleteAll), and quitting is left.
     Q_INVOKABLE void uninstall(bool keepSettings);
     Q_INVOKABLE void quit();
 
@@ -127,13 +130,22 @@ signals:
     void announced(const QString &text, const QString &icon);
 
 private:
+    enum class RemovalAsked {
+        KeepSettings,
+        DeleteSettings,
+    };
+
     void runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp);
+    // Starts the removal uninstall asked for, once the keyboard is idle.
+    void startAskedRemoval();
     // Forgets the check's failures as something new is tried on it.
     void clearFailures(const QString &id);
 
     ApplicationController *m_controller;
     VirtualKeyboardSetup m_virtualKeyboard;
     SpeecherRemoval m_removal;
+    // A removal uninstall asked for that waits for the keyboard.
+    std::optional<RemovalAsked> m_removalAsked;
     QVariantMap m_removalReport;
     std::unique_ptr<PhoneTransfer> m_phone;
     QVariantMap m_phoneBundle;

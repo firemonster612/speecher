@@ -5,7 +5,9 @@
 #include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickSystem.h"
 
 #include <QFile>
@@ -376,7 +378,8 @@ private slots:
     }
 
     // Once removal has deleted the settings, an edit made before quitting
-    // doesn't bring the file back.
+    // doesn't bring the file back, whether it goes through a snapshot or a
+    // setter.
     void deletedSettingsStayDeleted()
     {
         ApplicationController controller(true);
@@ -396,8 +399,69 @@ private slots:
         QVERIFY(!QFile::exists(file));
 
         settings.set(QStringLiteral("themeControl"), QStringLiteral("light"));
+        controller.settings()->setYdotoolEnabled(true);
+        QCoreApplication::processEvents();
         controller.settings()->raw().sync();
         QVERIFY(!QFile::exists(file));
+        QVERIFY(controller.settings()->ydotoolEnabled());
+    }
+
+    // A keyboard setup under way finishes, saving what it saves, before
+    // removal starts and deletes the settings.
+    void removalWaitsForTheKeyboardSetup()
+    {
+        ApplicationController controller(true);
+        FakeKeyboard keyboard;
+        SpeecherRemoval::Steps steps = quietRemoval();
+        QString methodAtStart;
+        steps.removeDesktopIntegration = [&controller, &methodAtStart] {
+            methodAtStart = controller.settings()->outputMethod();
+            return DesktopIntegrationRemoval{};
+        };
+        steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
+        QuickSystem system(&controller, keyboard.system(), steps);
+        controller.settings()->setOutputMethod(QStringLiteral("clipboard"));
+        const QString file = controller.settings()->raw().fileName();
+
+        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.uninstall(false);
+        QVERIFY(system.removing());
+        QTRY_VERIFY(!system.removing());
+        QCOMPARE(methodAtStart, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
+        QCoreApplication::processEvents();
+        QVERIFY(!QFile::exists(file));
+    }
+
+    // Closing Main while removal runs quits once removal has deleted the
+    // settings, and from then on Main holds only the report.
+    void closingMainBeforeRemovalFinishesQuits()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickStatus status(&controller);
+        QuickDictation dictation(&controller);
+        FakeKeyboard keyboard;
+        SpeecherRemoval::Steps steps = quietRemoval();
+        steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
+        QuickSystem system(&controller, keyboard.system(), steps);
+        QSignalSpy quit(&controller, &ApplicationController::quitRequested);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/Main.qml")));
+        const std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+
+        system.uninstall(false);
+        window->hide();
+        QVERIFY(system.removing());
+        QCOMPARE(quit.count(), 0);
+        QTRY_COMPARE(quit.count(), 1);
+        auto *report = window->findChild<QQuickItem *>(QStringLiteral("removalReport"));
+        QVERIFY(report);
+        QVERIFY(report->isVisible());
+        QVERIFY(!window->findChild<QQuickItem *>(QStringLiteral("sidebar"))->isVisible());
     }
 
     // The code exists only between start and stop, and a new one replaces it.

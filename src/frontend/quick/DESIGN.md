@@ -49,7 +49,8 @@ Backend is the C++ types plus the mocks not yet replaced.
   copy). The phone code lives from `startPhoneTransfer()` to
   `stopPhoneTransfer()`, and `QrCode` draws it through the host's
   `image://qr` provider. `uninstall` reports in `System.removal` by part and
-  outcome, and General words it. The paste rules are Settings rows: `globalPasteRule`,
+  outcome, and `RemovalReport` words it: under General's row, and alone in
+  Main once the settings are deleted. The paste rules are Settings rows: `globalPasteRule`,
   `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
   `applicationPasteRules`, a list of `{app, method, enabled}`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
