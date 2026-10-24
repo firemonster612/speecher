@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QObject>
 #include <QQmlEngine>
@@ -21,8 +22,8 @@ class QuickAppearance final : public QObject {
     QML_NAMED_ELEMENT(Appearance)
     QML_SINGLETON
     // The desktop's current colours: on Plasma, its colour scheme as
-    // kdeglobals holds it, followed as it changes; elsewhere only the
-    // platform's accent.
+    // kdeglobals holds it, followed as it changes; elsewhere none, and the
+    // UI takes the platform palette's accent.
     Q_PROPERTY(QVariantMap systemColors READ systemColors NOTIFY systemColorsChanged)
     // The desktop's installed colour schemes, { id, name, colors }, by name.
     Q_PROPERTY(QVariantList installedSchemes READ installedSchemes NOTIFY installedSchemesChanged)
@@ -51,17 +52,17 @@ signals:
     void installedSchemesChanged();
     void canBlurChanged();
 
-protected:
-    // Follows the platform palette's accent off Plasma.
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
 private:
     void readSystemColors();
     void readInstalledSchemes();
 
     WindowBackdrop *m_backdrop;
+    const bool m_onPlasma;
     QFileSystemWatcher m_watcher;
+    QStringList m_configFolders;
+    // The kdeglobals in effect, and when it was last changed, as last read.
     QString m_kdeglobals;
+    QDateTime m_kdeglobalsModified;
     QVariantMap m_systemColors;
     QVariantList m_installedSchemes;
 };

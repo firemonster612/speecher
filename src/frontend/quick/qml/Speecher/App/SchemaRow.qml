@@ -12,7 +12,9 @@ SettingRow {
 
     required property string rowId
     readonly property var spec: Schema.row(rowId)
-    readonly property var value: Settings.values[rowId]
+    // What the control shows: the saved value, unless a page shows what is
+    // in effect instead.
+    property var value: Settings.values[rowId]
 
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place.

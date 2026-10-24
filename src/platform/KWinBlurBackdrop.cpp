@@ -34,46 +34,87 @@ QRegion roundedRegion(const QRect &area, int radius)
 
 struct KWinBlurBackdrop::Wayland {
 #ifdef SPEECHER_WITH_KWIN_BLUR
+    KWinBlurBackdrop *owner = nullptr;
     wl_compositor *compositor = nullptr;
+    wl_registry *registry = nullptr;
     org_kde_kwin_blur_manager *manager = nullptr;
+    // The manager's global, to know it when KWin removes it.
+    uint32_t managerName = 0;
 #endif
 };
 
+#ifdef SPEECHER_WITH_KWIN_BLUR
+namespace {
+
+QNativeInterface::QWaylandApplication *qtWayland()
+{
+    return qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>() : nullptr;
+}
+
+} // namespace
+
 KWinBlurBackdrop::KWinBlurBackdrop(QObject *parent)
+    : KWinBlurBackdrop(qtWayland() ? qtWayland()->display() : nullptr, qtWayland() ? qtWayland()->compositor() : nullptr,
+                       parent)
+{
+}
+#else
+KWinBlurBackdrop::KWinBlurBackdrop(QObject *parent)
+    : KWinBlurBackdrop(nullptr, nullptr, parent)
+{
+}
+#endif
+
+KWinBlurBackdrop::KWinBlurBackdrop(wl_display *display, wl_compositor *compositor, QObject *parent)
     : WindowBackdrop(parent)
     , m_wayland(std::make_unique<Wayland>())
 {
 #ifdef SPEECHER_WITH_KWIN_BLUR
-    auto *app = qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>() : nullptr;
-    if (!app) {
+    if (!display) {
         return;
     }
-    m_wayland->compositor = app->compositor();
-    // Looks for KWin's blur manager on a queue of its own, so the round trip
-    // dispatches nothing of Qt's.
-    wl_display *display = app->display();
+    m_wayland->owner = this;
+    m_wayland->compositor = compositor;
+    // KWin adds the manager while its Blur effect is on and removes it when
+    // it goes off, so the registry stays to hear both.
+    static const wl_registry_listener listener = {
+        .global = [](void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t) {
+            auto *wayland = static_cast<Wayland *>(data);
+            if (wayland->manager || std::strcmp(interface, org_kde_kwin_blur_manager_interface.name) != 0) {
+                return;
+            }
+            wayland->manager = static_cast<org_kde_kwin_blur_manager *>(
+                wl_registry_bind(registry, name, &org_kde_kwin_blur_manager_interface, 1));
+            wayland->managerName = name;
+            emit wayland->owner->availableChanged();
+        },
+        .global_remove = [](void *data, wl_registry *, uint32_t name) {
+            auto *wayland = static_cast<Wayland *>(data);
+            if (wayland->manager && name == wayland->managerName) {
+                wayland->owner->managerRemoved();
+            }
+        },
+    };
+    // The first look is on a queue of its own, so the round trip dispatches
+    // nothing of Qt's; then the registry and manager move to the default
+    // queue, which Qt dispatches on this thread.
     wl_event_queue *queue = wl_display_create_queue(display);
     auto *wrapper = static_cast<wl_display *>(wl_proxy_create_wrapper(display));
     wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(wrapper), queue);
-    wl_registry *registry = wl_display_get_registry(wrapper);
-    static const wl_registry_listener listener = {
-        .global = [](void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t) {
-            if (std::strcmp(interface, org_kde_kwin_blur_manager_interface.name) == 0) {
-                static_cast<Wayland *>(data)->manager = static_cast<org_kde_kwin_blur_manager *>(
-                    wl_registry_bind(registry, name, &org_kde_kwin_blur_manager_interface, 1));
-            }
-        },
-        .global_remove = [](void *, wl_registry *, uint32_t) {},
-    };
-    wl_registry_add_listener(registry, &listener, m_wayland.get());
+    m_wayland->registry = wl_display_get_registry(wrapper);
+    wl_proxy_wrapper_destroy(wrapper);
+    wl_registry_add_listener(m_wayland->registry, &listener, m_wayland.get());
     wl_display_roundtrip_queue(display, queue);
-    // The manager has no events; it goes back to Qt's queue before ours goes.
+    wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->registry), nullptr);
     if (m_wayland->manager) {
         wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->manager), nullptr);
     }
-    wl_registry_destroy(registry);
-    wl_proxy_wrapper_destroy(wrapper);
+    // Whatever arrived for the registry since the round trip.
+    wl_display_dispatch_queue_pending(display, queue);
     wl_event_queue_destroy(queue);
+#else
+    Q_UNUSED(display);
+    Q_UNUSED(compositor);
 #endif
 }
 
@@ -86,7 +127,22 @@ KWinBlurBackdrop::~KWinBlurBackdrop()
     if (m_wayland->manager) {
         org_kde_kwin_blur_manager_destroy(m_wayland->manager);
     }
+    if (m_wayland->registry) {
+        wl_registry_destroy(m_wayland->registry);
+    }
 #endif
+}
+
+void KWinBlurBackdrop::managerRemoved()
+{
+    for (Blur &blur : m_windows) {
+        release(blur);
+    }
+#ifdef SPEECHER_WITH_KWIN_BLUR
+    org_kde_kwin_blur_manager_destroy(m_wayland->manager);
+    m_wayland->manager = nullptr;
+#endif
+    emit availableChanged();
 }
 
 bool KWinBlurBackdrop::available() const

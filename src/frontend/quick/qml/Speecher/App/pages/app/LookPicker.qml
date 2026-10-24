@@ -6,7 +6,9 @@ import Speecher.Controls
 // Looks to choose from as small pictures over their names, in rows of
 // columns: the theme, the colours, the layout. One pencil outline glides to
 // the chosen one, and fades when the choice is in another picker; arrows
-// move it. thumbnail draws a picture: its root takes the option as option.
+// move it, and Return or Space choose the first while it is elsewhere. To
+// assistive technology it is a list of radio buttons. thumbnail draws a
+// picture: its root takes the option as option.
 FocusScope {
     id: root
 
@@ -29,10 +31,14 @@ FocusScope {
     opacity: enabled ? 1 : Theme.disabledOpacity
     Behavior on opacity { Ease {} }
     activeFocusOnTab: true
+    Accessible.role: Accessible.List
     Keys.onLeftPressed: _step(-1)
     Keys.onRightPressed: _step(1)
     Keys.onUpPressed: _step(-columns)
     Keys.onDownPressed: _step(columns)
+    Keys.onReturnPressed: _step(0)
+    Keys.onEnterPressed: _step(0)
+    Keys.onSpacePressed: _step(0)
     function _step(by) {
         focusVisible.keyed()
         _choose(Math.max(0, Math.min(options.length - 1, currentIndex < 0 ? 0 : currentIndex + by)))
@@ -67,11 +73,18 @@ FocusScope {
             required property var modelData
             required property int index
             readonly property bool selected: index === root.currentIndex
+            function choose() { focusVisible.pointed(); root.forceActiveFocus(); root._choose(index) }
 
             x: root._x(index)
             y: root._y(index) + 4
             width: root._cellWidth
             height: root._cellHeight - 4
+            Accessible.role: Accessible.RadioButton
+            Accessible.name: modelData.label
+            Accessible.checkable: true
+            Accessible.checked: selected
+            Accessible.onPressAction: choose()
+            Accessible.onToggleAction: choose()
 
             Item {
                 width: parent.width
@@ -108,7 +121,7 @@ FocusScope {
             }
 
             HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { id: tap; onTapped: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(option.index) } }
+            TapHandler { id: tap; onTapped: option.choose() }
         }
     }
 }

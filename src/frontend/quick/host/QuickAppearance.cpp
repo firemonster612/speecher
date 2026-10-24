@@ -7,7 +7,6 @@
 
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QPalette>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QWindow>
@@ -24,12 +23,9 @@ QuickAppearance *g_instance = nullptr;
 
 // Plasma keeps its current scheme's colours in kdeglobals. Off Plasma, a
 // copy left by KDE apps says nothing about the desktop's colours.
-QString plasmaGlobals()
+bool onPlasma()
 {
-    if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"))) {
-        return {};
-    }
-    return QStandardPaths::locate(QStandardPaths::GenericConfigLocation, QStringLiteral("kdeglobals"));
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"));
 }
 
 // A scheme's roles for Theme, leaving out the ones it lacks.
@@ -62,7 +58,7 @@ bool prefersHighContrast()
 QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_backdrop(controller->platform()->createWindowBackdrop(this))
-    , m_kdeglobals(plasmaGlobals())
+    , m_onPlasma(onPlasma())
 {
     g_instance = this;
     if (m_backdrop) {
@@ -73,12 +69,16 @@ QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *par
             &QuickAppearance::canBlurChanged);
 #endif
 
-    // KConfig saves kdeglobals by replacing it, so its folder is watched too.
-    const QString globalsFolder = QFileInfo(m_kdeglobals).absolutePath();
-    if (!m_kdeglobals.isEmpty()) {
-        m_watcher.addPaths({m_kdeglobals, globalsFolder});
-    } else {
-        qGuiApp->installEventFilter(this);
+    // KConfig saves kdeglobals by replacing it, and the one in effect may be
+    // made later or appear ahead of the system's, so the folders that may
+    // hold it are watched as well as the file.
+    if (m_onPlasma) {
+        for (const QString &folder : QStandardPaths::standardLocations(QStandardPaths::GenericConfigLocation)) {
+            if (QFileInfo(folder).isDir()) {
+                m_configFolders.append(folder);
+            }
+        }
+        m_watcher.addPaths(m_configFolders);
     }
     for (const QString &dataDir : QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
         if (QFileInfo(colorSchemesFolder(dataDir)).isDir()) {
@@ -86,8 +86,8 @@ QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *par
         }
     }
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, &QuickAppearance::readSystemColors);
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this, globalsFolder](const QString &folder) {
-        if (!m_kdeglobals.isEmpty() && folder == globalsFolder) {
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString &folder) {
+        if (m_configFolders.contains(folder)) {
             readSystemColors();
         } else {
             readInstalledSchemes();
@@ -123,32 +123,27 @@ void QuickAppearance::setBlurBehind(QWindow *window, const QRectF &area, int rad
     }
 }
 
-bool QuickAppearance::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == qGuiApp && event->type() == QEvent::ApplicationPaletteChange) {
-        readSystemColors();
-    }
-    return false;
-}
-
 void QuickAppearance::readSystemColors()
 {
-    QVariantMap colors;
-    if (!m_kdeglobals.isEmpty()) {
-        const ColorScheme scheme = readKdeColorScheme(m_kdeglobals);
-        if (scheme.isValid()) {
-            colors = colorsOf(scheme);
-        }
-        // Replacing the file drops it from the watcher.
-        if (!m_watcher.files().contains(m_kdeglobals) && QFileInfo::exists(m_kdeglobals)) {
-            m_watcher.addPath(m_kdeglobals);
-        }
+    if (!m_onPlasma) {
+        return;
     }
-    // Off Plasma, or with Plasma's defaults, which kdeglobals leaves out, the
-    // platform's accent is what the desktop says.
-    if (colors.isEmpty()) {
-        colors.insert(QStringLiteral("accent"), QGuiApplication::palette().color(QPalette::Accent));
+    const QString kdeglobals = QStandardPaths::locate(QStandardPaths::GenericConfigLocation, QStringLiteral("kdeglobals"));
+    const QDateTime modified = QFileInfo(kdeglobals).lastModified();
+    // The config folder changes with every KDE app's save; kdeglobals rarely.
+    if (kdeglobals == m_kdeglobals && modified == m_kdeglobalsModified) {
+        return;
     }
+    m_kdeglobals = kdeglobals;
+    m_kdeglobalsModified = modified;
+    // Replacing the file drops it from the watcher.
+    if (!kdeglobals.isEmpty() && !m_watcher.files().contains(kdeglobals)) {
+        m_watcher.addPath(kdeglobals);
+    }
+    // Plasma's defaults, which kdeglobals leaves out, are no colours here:
+    // the UI takes the platform's accent then.
+    const ColorScheme scheme = readKdeColorScheme(kdeglobals);
+    const QVariantMap colors = scheme.isValid() ? colorsOf(scheme) : QVariantMap{};
     if (colors == m_systemColors) {
         return;
     }

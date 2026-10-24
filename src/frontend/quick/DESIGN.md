@@ -230,10 +230,15 @@ nothing else.
   `Theme.schemeOf` maps them, in one place: as light or dark as the theme,
   its window colour is the paper and its text the ink; the other way round,
   its hue tints our own paper and ink. The page and cards are steps lighter
-  than the paper. Text is pushed to 7:1 against the page and cards, quieter
-  text and the accent to 4.5:1, failures to 4.5:1, and ink on the accent
-  takes white or the accent's deep shade, whichever reads better.
-  `test_quick_appearance` checks every preset and a few garish schemes.
+  than the paper. Its text must reach 7:1 on the page, the cards and the
+  translucent sidebar over any desktop; where the text can go no further,
+  the paper gives way.
+- Every scheme's inks are pushed until they read wherever they are laid:
+  text at 7:1 and quieter text at 4.5:1 on the page, cards and sidebar, the
+  accent at 4.5:1 on the page and cards, failures at 3:1 everywhere. Ink on
+  the accent takes white or the accent's deep shade, whichever reads better.
+  `test_quick_appearance` checks every preset and a few garish schemes,
+  opaque and translucent.
 - Light, Dark and System work with every scheme; `ColorSchemes.source(id)`
   is what `Theme.colorSource` takes, and a scheme that has gone is Steno.
 - Thumbnails of a scheme, a theme or a layout are `MiniWindow`s in a
@@ -241,9 +246,13 @@ nothing else.
   the chosen one.
 
 Translucency: with Translucent sidebar on and `Appearance.canBlur`,
-`Theme.translucent` makes the window's paper (`Theme.sidePaper`) let 22%
+`Theme.translucent` makes the window's paper (`Theme.sidePaper`) let 15%
 (light) or 16% (dark) of the desktop through, and `ClientWindow` asks the
-compositor to blur behind its frame. The page and cards stay opaque. Where
+compositor to blur behind its frame. The sidebar's inks are checked against
+that paper over a black and a white desktop. The page and cards stay
+opaque; search lays its blurred copy of the window on opaque paper. On
+Windows, whose Mica fills the whole window, the window drops its drawn
+shadow margin and corners for DWM's. Where
 the platform cannot blur (no KWin blur, X11, Reduce transparency,
 Transparency effects off, high contrast) it stays opaque, and the row says
 why. Never make paper translucent without the blur: text over a sharp

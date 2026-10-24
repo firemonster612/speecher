@@ -10,14 +10,17 @@ import Speecher.Backend
 // shadow margin. Maximized or full screen, the margin and corners go.
 // Content goes inside and should leave the top titleBarHeight free of
 // controls, since the strip lies over it. While Theme is translucent, the
-// frame's paper lets the desktop through, blurred by the compositor.
+// frame's paper lets the desktop through, blurred by the compositor; on
+// Windows, whose backdrop fills the whole window, DWM draws the shadow and
+// corners instead.
 Window {
     id: client
 
     default property alias content: body.data
     readonly property bool framed: visibility !== Window.Maximized && visibility !== Window.FullScreen
-    readonly property int margin: framed ? Theme.windowShadow : 0
-    readonly property int cornerRadius: framed ? Theme.radiusWindow : 0
+    readonly property bool _drawsShadow: framed && !(Theme.translucent && Qt.platform.os === "windows")
+    readonly property int margin: _drawsShadow ? Theme.windowShadow : 0
+    readonly property int cornerRadius: _drawsShadow ? Theme.radiusWindow : 0
     readonly property int titleBarHeight: Theme.titleBarHeight
 
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -35,7 +38,7 @@ Window {
     Component.onCompleted: Appearance.setBlurBehind(client, _blur.area, _blur.radius, _blur.dark)
 
     RectangularShadow {
-        visible: client.framed
+        visible: client._drawsShadow
         anchors.fill: frame
         radius: frame.radius
         blur: 24
@@ -58,7 +61,7 @@ Window {
             anchors.fill: parent
             radius: parent.radius
             color: "transparent"
-            border.width: client.framed ? 1 : 0
+            border.width: client._drawsShadow ? 1 : 0
             border.color: Theme.sheetBorder
         }
 
@@ -85,8 +88,9 @@ Window {
         }
     }
 
-    // The resize grip: the shadow margin along each edge, and a little
-    // further in at the corners, where the frame is rounded away.
+    // The resize grip: the shadow margin along each edge, or without one a
+    // strip just inside it, and a little further in at the corners, where
+    // the frame is rounded away.
     component Grip: MouseArea {
         property int edges
         acceptedButtons: Qt.LeftButton
@@ -94,8 +98,8 @@ Window {
     }
     Item {
         id: grips
-        readonly property int edge: client.margin
-        readonly property int corner: client.margin + Theme.radiusWindow
+        readonly property int edge: client.margin > 0 ? client.margin : Theme.space2
+        readonly property int corner: edge + client.cornerRadius
         anchors.fill: parent
         visible: client.framed
 

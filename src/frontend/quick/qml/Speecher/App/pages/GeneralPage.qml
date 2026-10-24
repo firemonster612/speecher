@@ -27,6 +27,7 @@ Page {
         removeQuestion: "Remove Speecher from this computer?",
         removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
         removeSettings: "Also delete my settings, vocabulary and API keys",
+        systemColors: "System",
         installedSchemes: "On this computer"
     })
     // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
@@ -75,6 +76,7 @@ Page {
             ColorSchemePicker {
                 width: parent.width
                 currentId: Settings.values.colorScheme || "steno"
+                systemLabel: page.t.systemColors
                 installedTitle: page.t.installedSchemes
                 onActivated: id => Settings.set("colorScheme", id)
             }
@@ -92,9 +94,11 @@ Page {
                 onActivated: id => Settings.set("windowLayout", id)
             }
         }
-        // Greyed out, with why, where the desktop can't blur behind windows.
+        // Greyed out and off, with why, where the desktop can't blur behind
+        // windows; the saved choice comes back when it can.
         SchemaRow {
             rowId: "translucency"
+            value: Settings.values.translucency === true && Appearance.canBlur
             enabled: Appearance.canBlur && Settings.saves(rowId)
             note: Appearance.canBlur ? spec.help : spec.disabledHelp
         }

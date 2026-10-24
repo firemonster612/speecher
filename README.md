@@ -29,6 +29,12 @@ brew install cmake ninja pkgconf qt qtkeychain
 On Linux the libpulse development package enables system audio capture; a
 build without it leaves system audio out.
 
+Qt's private GUI headers (`qt6-base-private-dev`, `qt6-qtbase-private-devel`;
+Arch's `qt6-base` has them) enable KWin's blur behind the translucent sidebar
+on Plasma's Wayland session. They tie the binary to the exact Qt it was built
+against, so a distribution package needs a rebuild with every Qt update. A
+build without them, and Plasma's X11 session, keep the sidebar opaque.
+
 The webrtc-audio-processing 1.x development package enables echo
 cancellation, which takes system audio out of a recording's microphone. Debian
 13 and Ubuntu 26.04 ship it as `libwebrtc-audio-processing-dev`. Arch and

@@ -1457,6 +1457,12 @@ if(SPEECHER_BUILD_TESTS)
     # QML modules load from the shared Qt, as in the app.
     target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
     set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+    # The KWin blur test runs a compositor of its own.
+    pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
+    if(SPEECHER_KWIN_BLUR_FOUND AND WAYLAND_SERVER_FOUND)
+      target_compile_definitions(speecher_tests PRIVATE SPEECHER_TEST_KWIN_BLUR=1)
+      target_link_libraries(speecher_tests PRIVATE PkgConfig::WAYLAND_SERVER PkgConfig::WAYLAND_CLIENT)
+    endif()
   endif()
   set(SPEECHER_TEST_SUITES
     transcript_state

@@ -4,9 +4,10 @@
 
 namespace speecher {
 
-// macOS's sidebar vibrancy behind a window: an NSVisualEffectView placed
-// under Qt's view, with rounded corners, showing the desktop blurred where
-// the UI is translucent. Unavailable while Reduce transparency is on.
+// macOS's sidebar vibrancy behind a window: an NSVisualEffectView with
+// rounded corners in a borderless child window just below it, showing the
+// desktop blurred where the UI is translucent. Unavailable while Reduce
+// transparency is on.
 class MacWindowBackdrop final : public WindowBackdrop {
     Q_OBJECT
 

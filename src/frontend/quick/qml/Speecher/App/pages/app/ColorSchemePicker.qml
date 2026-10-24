@@ -10,7 +10,9 @@ Column {
     id: root
 
     property string currentId
-    // The heading over the installed schemes.
+    // The desktop's own colours' name, and the heading over the installed
+    // schemes.
+    property string systemLabel
     property string installedTitle
     signal activated(string id)
 
@@ -25,7 +27,7 @@ Column {
     LookPicker {
         width: parent.width
         columns: root._columns
-        options: [ColorSchemes.system].concat(ColorSchemes.presets)
+        options: [Object.assign({ label: root.systemLabel }, ColorSchemes.system)].concat(ColorSchemes.presets)
         currentId: root.currentId
         thumbnail: SchemeThumb {}
         onActivated: id => root.activated(id)

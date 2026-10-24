@@ -26,8 +26,8 @@ ClientWindow {
     onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()
     onLeftToQuitChanged: if (leftToQuit) System.quit()
 
-    // Opaque, so the search palette's blurred copy of it hides what is
-    // under; translucent, the window's own paper shows the desktop instead.
+    // What the search palette blurs. Clear while translucent, so the
+    // window's own paper shows the desktop.
     Rectangle {
         id: content
         anchors.fill: parent
@@ -99,6 +99,7 @@ ClientWindow {
         objectName: "searchPalette"
         anchors.fill: parent
         backdrop: content
+        cornerRadius: window.cornerRadius
     }
 
     // Notes posted to Toaster rise in at the bottom, over everything.
