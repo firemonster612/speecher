@@ -16,10 +16,6 @@ struct ProviderStat {
     QString value;
 };
 
-// Which sign-in a speech provider reads, named the way the user would go
-// looking for it: setup needs the CLI's login, not the transcription brand.
-QString credentialSourceLabel(const QString &providerId, const QString &fallback);
-
 struct ProviderDescriptor {
     QString id;
     QString label;
@@ -32,6 +28,8 @@ struct ProviderDescriptor {
     // Shown as a label/value block on the setup assistant's provider steps.
     QVector<ProviderStat> stats;
 };
+// The descriptors' ids, in their order.
+QStringList providerIds(const QList<ProviderDescriptor> &providers);
 
 class ProviderRegistry : public QObject {
     Q_OBJECT

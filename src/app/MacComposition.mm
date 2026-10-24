@@ -1,6 +1,5 @@
 #include "app/MacComposition.h"
 
-#include "app/CommandLineTool.h"
 #include "app/CompositionEchoCanceller.h"
 #include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
@@ -42,6 +41,12 @@ namespace {
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+
+// value as one sh word, inside single quotes.
+QString shellQuote(QString value)
+{
+    return QStringLiteral("'") + value.replace(QLatin1Char('\''), QStringLiteral("'\"'\"'")) + QStringLiteral("'");
+}
 
 bool runsFromAppBundle()
 {

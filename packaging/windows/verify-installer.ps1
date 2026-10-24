@@ -190,6 +190,46 @@ try {
     }
     Write-Output "Capturing speecher.com --daemon's output returned while the background app ran"
 
+    # Restart Manager closing the running app without forcing, the way Setup
+    # does when it replaces files in use. Only the hidden session-end window
+    # answers it; without one, Speecher stayed running here.
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class RestartManager {
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint session);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint session, uint fileCount, string[] files,
+                                          uint appCount, IntPtr apps, uint serviceCount, string[] services);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmShutdown(uint session, uint flags, IntPtr progress);
+
+    public static int Shutdown(string path) {
+        uint session;
+        int error = RmStartSession(out session, 0, new StringBuilder(33));
+        if (error != 0) {
+            return error;
+        }
+        try {
+            error = RmRegisterResources(session, 1, new[] { path }, 0, IntPtr.Zero, 0, null);
+            return error != 0 ? error : RmShutdown(session, 0, IntPtr.Zero);
+        } finally {
+            RmEndSession(session);
+        }
+    }
+}
+"@
+    $App = Start-Speecher "--daemon"
+    $Shutdown = [RestartManager]::Shutdown($Exe)
+    if ($Shutdown -ne 0 -or -not $App.WaitForExit(10000)) {
+        throw "Restart Manager could not close the running application (error $Shutdown)"
+    }
+    Write-Output "Restart Manager closed the running application"
+
     # Installing over the running app: Setup asks it to quit before replacing
     # its files.
     $App = Start-Speecher "--show-settings"

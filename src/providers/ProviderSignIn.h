@@ -24,14 +24,6 @@ public:
     // and refinement sides share one account.
     static QString cliproxyAccountType(const QString &providerId);
 
-    // The CLI Proxy API copy every assistant renders: the Welcome step's two
-    // hints and the opt-in label the found-hint quotes. Shared because the
-    // instruction names the control; a copy edited on one platform would send
-    // readers to a checkbox that no longer says that.
-    static QString cliproxyOptInLabel();
-    static QString cliproxyAccountsFoundHint();
-    static QString cliproxyAccountsMissingHint();
-
     bool usingCliproxy(const QString &providerId) const;
     // Opting out returns to the mode this model first saw the provider leave,
     // so a sign-in chosen in Settings (an OpenAI API key, say) survives a

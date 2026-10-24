@@ -14,6 +14,9 @@
 #ifdef Q_OS_LINUX
 #include "app/LinuxTrayIcon.h"
 #endif
+#ifdef Q_OS_WIN
+#include "platform/win/WinSessionEnd.h"
+#endif
 
 #ifdef Q_OS_LINUX
 #include <QApplication>
@@ -546,6 +549,12 @@ int main(int argc, char **argv)
     // and the global shortcut has something to reach.
     LinuxTrayIcon tray(&controller);
 #endif
+#ifdef Q_OS_WIN
+    win::quitWhenWindowsEndsSession(&controller, [&controller] {
+        // Queued: Windows waits on the message until this returns.
+        QMetaObject::invokeMethod(&controller, &ApplicationController::quitApplication, Qt::QueuedConnection);
+    });
+#endif
     controller.updates()->start();
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
@@ -598,7 +607,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!controller.settings()->setupCompleted() || decision.showSetup) {
+    if (controller.setupPending() || decision.showSetup) {
         QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
             // Held by the controller until setup completes, then opened.

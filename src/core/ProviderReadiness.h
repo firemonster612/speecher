@@ -40,7 +40,10 @@ struct LocalGpu {
 
 // What the app layer last learned about this computer and the servers a
 // person named. LocalSetup builds it, and ProviderAvailability adds
-// reachability and the sign-ins last seen.
+// reachability and the sign-ins last seen. fallbackProblem() and
+// `speecher providers` judge readiness from part of it; the rest, such as the
+// model folder, the graphics cards and the endpoints' and runners' model
+// lists, is for the UI's Local models and Speech pages to show.
 struct LiveFacts {
     // The last connection check's verdict, "Checking…" while one runs, empty
     // before the first. LocalSetup runs one on its own once an endpoint in

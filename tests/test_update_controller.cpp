@@ -8,6 +8,7 @@
 #ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
 #endif
+#include "core/ReleaseNotes.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 
@@ -857,6 +858,60 @@ private slots:
         QVERIFY(automaticCheckDue(last, 7 * 24 * 60, last + 7 * 24 * 60 * minuteMs));
         // A last check in the future: the clock went back.
         QVERIFY(automaticCheckDue(last, 30, last - minuteMs));
+    }
+
+    void baseVersionsCompareNumericallyWithoutNightlySuffixes()
+    {
+        QCOMPARE(compareBaseVersions(QStringLiteral("0.2.0-nightly.20260901+gabc1234"),
+                                     QStringLiteral("0.2.0")),
+                 0);
+        QVERIFY(compareBaseVersions(QStringLiteral("0.10.0"), QStringLiteral("0.2.0")) > 0);
+        QVERIFY(compareBaseVersions(QStringLiteral("0.2.0"), QStringLiteral("0.2.1")) < 0);
+        QCOMPARE(compareBaseVersions(QStringLiteral("0.2.9+g1"), QStringLiteral("0.2.9")), 0);
+        QVERIFY(compareBaseVersions(QString(), QStringLiteral("0.1.0")) < 0);
+    }
+
+    void releaseNotesShowOnlyThisPlatformsBullets()
+    {
+        const QString notes = QStringLiteral("## Added\n\n- A shared change that wraps\n  onto a second line.\n"
+                                             "- Linux: the tray.\n\n## Fixed\n\n- Windows: a fix.");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("macOS")),
+                 QStringLiteral("## Added\n\n- A shared change that wraps onto a second line."));
+    }
+
+    void releaseNotesDropThisPlatformsPrefixAndKeepNestedBullets()
+    {
+        const QString notes = QStringLiteral("- Linux: the tray, with\n  two parts:\n  - a menu\n  - a panel\n"
+                                             "- Windows: a fix:\n  - its detail");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("Linux")),
+                 QStringLiteral("- The tray, with two parts:\n  - a menu\n  - a panel"));
+    }
+
+    // Every docs/releases note is built in, newest first.
+    void bundledReleaseNotesComeNewestFirst()
+    {
+        const QList<ReleaseNote> notes = bundledReleaseNotes();
+        QCOMPARE(notes.size(), 7);
+        QCOMPARE(notes.first().version, QStringLiteral("0.2.0"));
+        QCOMPARE(notes.last().version, QStringLiteral("0.1.0"));
+        QVERIFY(notes.first().markdown.startsWith(QStringLiteral("## Added")));
+    }
+
+    void historyRecordsSplitIntoCommits()
+    {
+        const QChar rs(0x1e);
+        const QChar us(0x1f);
+        const QString log = rs + QStringLiteral("def5678") + us + QStringLiteral("Add the thing (#91)") + us
+            + QStringLiteral("A longer description.\n\nOver two paragraphs.\n") + rs + QStringLiteral("abc1234")
+            + us + QStringLiteral("Tidy the tray icon") + us + QStringLiteral("\n") + rs
+            + QStringLiteral("truncated");
+        const QList<HistoryCommit> commits = parseHistory(log);
+        QCOMPARE(commits.size(), 2);
+        QCOMPARE(commits.at(0).sha, QStringLiteral("def5678"));
+        QCOMPARE(commits.at(0).subject, QStringLiteral("Add the thing (#91)"));
+        QCOMPARE(commits.at(0).body, QStringLiteral("A longer description.\n\nOver two paragraphs."));
+        QCOMPARE(commits.at(1).subject, QStringLiteral("Tidy the tray icon"));
+        QVERIFY(commits.at(1).body.isEmpty());
     }
 
     void downgradeDoesNotCreatePendingWhatsNewState()

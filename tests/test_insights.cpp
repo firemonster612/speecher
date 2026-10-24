@@ -469,16 +469,6 @@ private slots:
         QCOMPARE(rows.last().value, QStringLiteral("1 day ago"));
     }
 
-    void learnedCorrectionsSayHowLearningStands()
-    {
-        QCOMPARE(learnedCorrectionsNote(0, true, true),
-                 QStringLiteral("Fix a dictated word the same way twice and it appears here."));
-        QCOMPARE(learnedCorrectionsAction(0, true), QString());
-        QCOMPARE(learnedCorrectionsNote(3, false, false), QStringLiteral("Learning is off."));
-        QCOMPARE(learnedCorrectionsAction(3, false), QStringLiteral("Turn on learning"));
-        QCOMPARE(learnedCorrectionsAction(3, true), QStringLiteral("Review learned corrections"));
-    }
-
     void everyMilestonePassed()
     {
         const InsightsSummary summary =
@@ -628,8 +618,6 @@ private slots:
         const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
         QCOMPARE(heatmapRowLabels().at(0), QLocale().dayName(Qt::Monday, QLocale::ShortFormat));
         QVERIFY(heatmapRowLabels().at(1).isEmpty());
-        QCOMPARE(learnedCorrectionsCaption(1), QStringLiteral("Correction learned"));
-        QCOMPARE(learnedCorrectionsCaption(2), QStringLiteral("Corrections learned"));
 
         // Vietnamese narrow names are two letters, "T2" for Monday; Hindi's
         // Monday is one letter with a vowel sign, two code units.

@@ -126,6 +126,40 @@ private slots:
         QVERIFY(!settings.secrets()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
     }
 
+    // Setup's fallback offer joins the chain behind the primary, and changes
+    // nothing, not even the runner selection, when the chain would drop it.
+    void setupFallbackOfferJoinsOnlyAChainThatWouldKeepIt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
+                                                  QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                  {QStringLiteral("gemma4:e4b")}}});
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+
+        const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
+        settings.setRefinementFallbackProviders(full);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementFallbackProviders(), full);
+        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+
+        settings.setRefinementFallbackProviders({});
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
+
+        // Already a fallback.
+        settings.setLocalRunnerSettings({});
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+    }
+
     void endpointChecksDiscardSupersededResults_data()
     {
         QTest::addColumn<bool>("refinement");

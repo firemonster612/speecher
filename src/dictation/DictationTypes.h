@@ -53,10 +53,10 @@ struct DictationToggleAction {
 
 DictationToggleAction dictationToggleAction(const QString &stateName);
 
-// What a status line (Home, a tray panel's heading) says for a session state
-// name. message is the session's own words, DictationSession::lastMessage():
-// an error's reason, or while delivering the receipt ("Input sent"); the
-// other states ignore it.
+// What a status line, such as Home's, says for a session state name. message
+// is the session's own words, DictationSession::lastMessage(): an error's
+// reason, or while delivering the receipt ("Input sent"); the other states
+// ignore it.
 QString dictationStatusLabel(const QString &stateName, const QString &message = {});
 
 // Whether a tray shows the listening icon, tooltip and level meter for a

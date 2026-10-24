@@ -144,7 +144,7 @@ private slots:
         QCOMPARE(popupErrorDismissMs(QString(2000, u'a')), 30000);
     }
 
-    // The tray panels' transcript is the preview, then the delivered text, and
+    // The last transcript is the preview, then the delivered text, and
     // outlives the session: a new one starting keeps it until it hears words,
     // and a failed one leaves what it heard.
     void theControllerKeepsTheLastTranscriptAcrossSessions()

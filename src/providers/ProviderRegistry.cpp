@@ -20,6 +20,15 @@ void sortProviders(QList<ProviderDescriptor> &providers)
 
 } // namespace
 
+QStringList providerIds(const QList<ProviderDescriptor> &providers)
+{
+    QStringList ids;
+    for (const ProviderDescriptor &provider : providers) {
+        ids << provider.id;
+    }
+    return ids;
+}
+
 ProviderRegistry::ProviderRegistry(QObject *parent)
     : QObject(parent)
 {
@@ -106,17 +115,6 @@ TranscriptRefiner *ProviderRegistry::createRefinementProvider(const QString &id,
 {
     const auto it = m_refinement.constFind(id);
     return it == m_refinement.constEnd() ? nullptr : it->factory(parent);
-}
-
-QString credentialSourceLabel(const QString &providerId, const QString &fallback)
-{
-    if (providerId == QStringLiteral("claude")) {
-        return QStringLiteral("Claude Code");
-    }
-    if (providerId == QStringLiteral("codex")) {
-        return QStringLiteral("Codex CLI or the ChatGPT app");
-    }
-    return fallback;
 }
 
 TranscriptRefiner *ProviderRegistry::refinementProvider(const QString &id)

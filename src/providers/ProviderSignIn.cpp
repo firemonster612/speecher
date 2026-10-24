@@ -48,25 +48,6 @@ QString ProviderSignIn::cliproxyAccountType(const QString &providerId)
     return openAiFamily ? QStringLiteral("codex") : QStringLiteral("claude");
 }
 
-QString ProviderSignIn::cliproxyOptInLabel()
-{
-    return QStringLiteral("Use a CLI Proxy API account instead of the service's own sign-in");
-}
-
-QString ProviderSignIn::cliproxyAccountsFoundHint()
-{
-    return QStringLiteral(
-        "To use one of these accounts, turn on \"Use a CLI Proxy API account\" on the "
-        "Transcription step.");
-}
-
-QString ProviderSignIn::cliproxyAccountsMissingHint()
-{
-    return QStringLiteral(
-        "Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in "
-        "a custom directory, enter it below.");
-}
-
 bool ProviderSignIn::usingCliproxy(const QString &providerId) const
 {
     return signInMode(m_settings, providerId) == kCliproxyMode;

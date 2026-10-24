@@ -64,6 +64,11 @@ public:
     bool startFileTranscription(const QStringList &paths,
                                 const TranscribeOptions &options,
                                 QString *error = nullptr);
+    // Whether the setup assistant still has to run before dictation, recording
+    // or a window opens. Onboarding happens in the front end, so with none
+    // attached nothing waits for it; each start still checks its provider and
+    // the microphone.
+    bool setupPending() const;
     // Called by the front end once its first window is on screen. Startup work
     // that would compete with the first paint waits for this.
     void frontEndReady();
@@ -101,8 +106,8 @@ public:
     // What a status line says about dictation now (dictationStatusLabel);
     // statusChanged carries it.
     QString statusLabel() const;
-    // The last transcript Speecher heard, which tray panels offer to copy
-    // again: the running preview, then the text as delivered. It outlives the
+    // The last transcript Speecher heard, which `speecher last` prints and
+    // Home offers to copy again: the running preview, then the text as delivered. It outlives the
     // dictation that produced it, including a failed one, so it is empty only
     // until the first dictation says something.
     QString lastTranscript() const;

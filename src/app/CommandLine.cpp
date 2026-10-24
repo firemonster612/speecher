@@ -210,31 +210,34 @@ Options:
   --help                   print this help
 )";
 
-// Each stored id and the name the command line gives it. Spelled out rather
-// than derived from the settings labels, so renaming a label never changes the
+// Each stored id and the name the command line gives it. Made from the ids
+// rather than the settings labels, so renaming a label never changes the
 // command line.
 using CliNames = QList<std::pair<QString, QString>>;
 
-const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
-                             {QStringLiteral("light_cleanup"), QStringLiteral("light")},
-                             {QStringLiteral("balanced"), QStringLiteral("medium")},
-                             {QStringLiteral("strong_polish"), QStringLiteral("high")}};
-const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
-                          {QStringLiteral("formal"), QStringLiteral("formal")},
-                          {QStringLiteral("casual"), QStringLiteral("casual")},
-                          {QStringLiteral("very_casual"), QStringLiteral("very-casual")},
-                          {QStringLiteral("excited"), QStringLiteral("excited")},
-                          {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
+// The cleanup levels the command line names by how much they change.
+const QHash<QString, QString> kCleanupCliNames{{QStringLiteral("light_cleanup"), QStringLiteral("light")},
+                                               {QStringLiteral("balanced"), QStringLiteral("medium")},
+                                               {QStringLiteral("strong_polish"), QStringLiteral("high")}};
 
-// The built-in names, then each custom tone or level the settings hold, by
-// its id without custom_ and with - for _.
+// The built-in ids, then each custom tone or level the settings hold, each
+// named by its id without custom_ and with - for _ unless renamed says
+// otherwise.
 template<typename Custom>
-CliNames withCustomNames(CliNames names, const QList<Custom> &custom)
+CliNames cliNamesFor(const QStringList &builtIn, const QList<Custom> &custom,
+                     const QHash<QString, QString> &renamed = {})
 {
+    const auto name = [](const QString &id) {
+        QString name = id.startsWith(kCustomIdPrefix) ? id.mid(kCustomIdPrefix.size()) : id;
+        return name.replace(QLatin1Char('_'), QLatin1Char('-'));
+    };
+    CliNames names;
+    for (const QString &id : builtIn) {
+        names.append({id, renamed.value(id, name(id))});
+    }
     for (const Custom &choice : custom) {
         if (choice.id.startsWith(kCustomIdPrefix)) {
-            names.append({choice.id,
-                          choice.id.mid(kCustomIdPrefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
+            names.append({choice.id, name(choice.id)});
         }
     }
     return names;
@@ -242,12 +245,12 @@ CliNames withCustomNames(CliNames names, const QList<Custom> &custom)
 
 CliNames cleanupNames()
 {
-    return withCustomNames(kCleanupNames, SettingsCodecs().customCleanupLevels());
+    return cliNamesFor(kBuiltInCleanupLevels, SettingsCodecs().customCleanupLevels(), kCleanupCliNames);
 }
 
 CliNames toneNames()
 {
-    return withCustomNames(kToneNames, SettingsCodecs().customTones());
+    return cliNamesFor(kBuiltInTones, SettingsCodecs().customTones());
 }
 
 QStringList cliNames(const CliNames &choices)
@@ -259,12 +262,10 @@ QStringList cliNames(const CliNames &choices)
     return names;
 }
 
-QStringList providerIds(const QList<ProviderDescriptor> &providers)
+// Alphabetical: the registry orders providers by label.
+QStringList sortedProviderIds(const QList<ProviderDescriptor> &providers)
 {
-    QStringList ids;
-    for (const ProviderDescriptor &provider : providers) {
-        ids << provider.id;
-    }
+    QStringList ids = providerIds(providers);
     ids.sort();
     return ids;
 }
@@ -387,8 +388,8 @@ QString helpText()
     registerProviders(registry, nullptr, nullptr);
     const QString separator = QStringLiteral(", ");
     return QString::fromUtf8(kHelp)
-        .arg(providerIds(registry.speechProviders()).join(separator),
-             providerIds(registry.refinementProviders()).join(separator),
+        .arg(sortedProviderIds(registry.speechProviders()).join(separator),
+             sortedProviderIds(registry.refinementProviders()).join(separator),
              cliNames(cleanupNames()).join(separator),
              writingProfileNames(writingProfiles()),
              cliNames(toneNames()).join(separator));
@@ -399,7 +400,7 @@ CompletionChoices completionChoices()
 {
     ProviderRegistry registry;
     registerProviders(registry, nullptr, nullptr);
-    return {providerIds(registry.speechProviders()), providerIds(registry.refinementProviders()),
+    return {sortedProviderIds(registry.speechProviders()), sortedProviderIds(registry.refinementProviders()),
             knownSpokenLanguages()};
 }
 

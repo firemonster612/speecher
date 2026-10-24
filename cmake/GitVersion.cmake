@@ -134,3 +134,32 @@ if("${git_repository_result}" STREQUAL "0"
     endif()
   endif()
 endif()
+
+# The Updates page lists the commits a nightly update brought in, so every
+# build embeds the recent first-parent history. Record separator 0x1e and field
+# separator 0x1f keep multi-line commit bodies parseable; core/ReleaseNotes.cpp
+# reads the format back. Non-git builds embed an empty file.
+set(SPEECHER_RELEASE_HISTORY_DIR "${CMAKE_CURRENT_BINARY_DIR}/release-history")
+file(MAKE_DIRECTORY "${SPEECHER_RELEASE_HISTORY_DIR}")
+set(speecher_history_staging "${SPEECHER_RELEASE_HISTORY_DIR}/history.log.new")
+file(WRITE "${speecher_history_staging}" "")
+if("${git_repository_result}" STREQUAL "0"
+   AND "${git_repository}" STREQUAL "true"
+   AND "${git_toplevel_result}" STREQUAL "0"
+   AND "${git_toplevel}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
+  execute_process(
+    COMMAND git log -n 200 --first-parent --format=%x1e%h%x1f%s%x1f%b
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE git_history_result
+    OUTPUT_FILE "${speecher_history_staging}"
+    ERROR_QUIET
+  )
+  if(NOT git_history_result STREQUAL "0")
+    file(WRITE "${speecher_history_staging}" "")
+  endif()
+endif()
+# copy_if_different keeps the mtime stable across reconfigures so the resource
+# only recompiles when the history actually changed.
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+  "${speecher_history_staging}" "${SPEECHER_RELEASE_HISTORY_DIR}/history.log")
+file(REMOVE "${speecher_history_staging}")

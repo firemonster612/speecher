@@ -68,7 +68,7 @@ QString noModel(ProviderRole role)
 // The reason a provider's report gives, "Not signed in to ChatGPT.". label is
 // the provider's registry label.
 QString problemText(FallbackProblem problem, ProviderRole role, const AppSettings &settings,
-                           const QString &providerId, const QString &label)
+                    const QString &providerId, const QString &label)
 {
     switch (problem) {
     case FallbackProblem::None:

@@ -239,6 +239,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/ProviderReadiness.cpp
+  src/core/ReleaseNotes.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
@@ -276,6 +277,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/ProviderReadiness.h
+  src/core/ReleaseNotes.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
@@ -510,6 +512,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinMediaController.cpp
   src/platform/win/WinRawKeyboard.cpp
   src/platform/win/WinScreenshotContextProvider.cpp
+  src/platform/win/WinSessionEnd.cpp
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
@@ -525,6 +528,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
   src/platform/win/WinMediaController.h
   src/platform/win/WinRawKeyboard.h
   src/platform/win/WinScreenshotContextProvider.h
+  src/platform/win/WinSessionEnd.h
   src/platform/win/WinSingleKeyShortcutBinder.h
   src/platform/win/WinSystemAudioInput.h
   src/platform/win/WinTargetProvider.h
@@ -536,7 +540,6 @@ set(SPEECHER_APP_SOURCES
   src/app/NetworkReachability.cpp
   src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
-  src/app/CommandLineTool.cpp
   src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -564,7 +567,6 @@ set(SPEECHER_APP_HEADERS
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
-  src/app/CommandLineTool.h
   src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
@@ -616,6 +618,19 @@ set(SPEECHER_APP_MAC_HEADERS
 add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
+)
+file(GLOB SPEECHER_RELEASE_NOTES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases/[0-9]*.md"
+)
+qt_add_resources(speecher_domain release_notes
+  PREFIX "/releases"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases"
+  FILES ${SPEECHER_RELEASE_NOTES}
+)
+qt_add_resources(speecher_domain release_history
+  PREFIX "/releases"
+  BASE "${SPEECHER_RELEASE_HISTORY_DIR}"
+  FILES "${SPEECHER_RELEASE_HISTORY_DIR}/history.log"
 )
 target_include_directories(speecher_domain PUBLIC src)
 # Gui for QKeySequence, which ShortcutBinding carries for key combinations.
@@ -974,9 +989,11 @@ target_compile_definitions(speecher PRIVATE
 )
 target_link_libraries(speecher PRIVATE speecher_app)
 if(UNIX AND NOT APPLE)
-  # The tray icon is a Qt Widgets QSystemTrayIcon.
-  target_sources(speecher PRIVATE src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
-  target_link_libraries(speecher PRIVATE Qt6::Widgets)
+  # The tray icon is a Qt Widgets QSystemTrayIcon. A library of its own so the
+  # tests link the same build of it.
+  add_library(speecher_linux_tray STATIC src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
+  target_link_libraries(speecher_linux_tray PUBLIC speecher_app Qt6::Widgets)
+  target_link_libraries(speecher PRIVATE speecher_linux_tray)
 endif()
 
 if(WIN32)
@@ -1347,9 +1364,8 @@ if(SPEECHER_BUILD_TESTS)
     speecher_app Qt6::Widgets Qt6::Test speecher_monocypher
   )
   if(UNIX AND NOT APPLE)
+    target_link_libraries(speecher_tests PRIVATE speecher_linux_tray)
     target_sources(speecher_tests PRIVATE
-      src/app/LinuxTrayIcon.cpp
-      src/app/LinuxTrayIcon.h
       tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp

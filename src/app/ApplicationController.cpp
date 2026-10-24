@@ -853,7 +853,7 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 void ApplicationController::showTranscribeFiles(const QStringList &paths)
 {
     m_filesOpened = true;
-    if (!m_settings->setupCompleted()) {
+    if (setupPending()) {
         m_pendingTranscribeFiles += paths;
         showSetupAssistant();
         return;
@@ -1311,9 +1311,14 @@ void ApplicationController::setupAssistantClosed()
     }
 }
 
+bool ApplicationController::setupPending() const
+{
+    return m_frontEnd && !m_settings->setupCompleted();
+}
+
 bool ApplicationController::ensureSetupCompleted()
 {
-    if (m_settings->setupCompleted()) {
+    if (!setupPending()) {
         return true;
     }
     showSetupAssistant();

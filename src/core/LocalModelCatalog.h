@@ -114,14 +114,10 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware, const QSt
 // The words every front end shows for these facts, so the setup assistants
 // and Local models pages agree.
 QString modelFitLabel(ModelFit fit);
-// The badge's words: "Recommended", "Good", "Situational", "Not recommended".
-QString modelRatingLabel(ModelRating rating);
 // "731 MB", "2.4 GB": decimal units, as download sizes are quoted.
 QString downloadSizeText(qint64 bytes);
 // "0.3 s", never below 0.1 s.
 QString speechSecondsText(double seconds);
-// Where the two word error rates come from, for a tooltip on them.
-QString wordErrorRateSources();
 // The fact names beside a model in the Local models page's detail.
 struct LocalModelFactLabels {
     QString bestFor = QStringLiteral("Best for");
@@ -147,18 +143,8 @@ enum class LocalModelText {
     DeleteBody,
 };
 QString localModelText(LocalModelText text);
-// The delete confirmation's question, "Delete Whisper Small?".
-QString deleteModelQuestion(const QString &modelName);
 // "As you speak" for a streaming model, else "After you stop".
 QString textShowsValue(bool streams);
-// The Language fact: the one language a model takes, "English", or how many,
-// "14 languages".
-QString languagesValue(const LocalModel &model);
-// "Download 731 MB".
-QString downloadCaption(qint64 bytes);
-// The comparison table's columns: Model, Download, Word errors, 10 s of
-// speech, Text shows, Memory.
-QStringList compareTableHeaders();
 
 // How long 10 s of speech takes here: the Speed Test's measurement when there
 // is one, else the catalog's estimate for this kind of machine.

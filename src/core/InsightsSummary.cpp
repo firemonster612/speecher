@@ -111,6 +111,11 @@ QString plural(qint64 count, const QString &noun)
     return QStringLiteral("%1 %2").arg(formatNumber(count), count == 1 ? noun : noun + u's');
 }
 
+QString wordCountText(qint64 words)
+{
+    return plural(words, QStringLiteral("word"));
+}
+
 struct Comparison {
     QString text;
     const Book *book = nullptr;
@@ -585,11 +590,6 @@ QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate 
     };
 }
 
-QString wordCountText(qint64 words)
-{
-    return plural(words, QStringLiteral("word"));
-}
-
 QString dictationCountText(int dictations)
 {
     return plural(dictations, QStringLiteral("dictation"));
@@ -621,15 +621,10 @@ std::array<QString, 7> heatmapRowLabels()
     return labels;
 }
 
-QString activeDaysLastYearText(int days)
-{
-    return QStringLiteral("%1 with dictation in the last year").arg(dayCountText(days));
-}
-
 QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks)
 {
     if (drawnWeeks >= kHeatmapWeeks || summary.heatmap.isEmpty()) {
-        return activeDaysLastYearText(summary.activeDaysLastYear);
+        return QStringLiteral("%1 with dictation in the last year").arg(dayCountText(summary.activeDaysLastYear));
     }
     const QDate today = summary.heatmap.last().date;
     const QDate firstMonday = today.addDays(-(today.dayOfWeek() - 1) - (drawnWeeks - 1) * 7);
@@ -640,73 +635,10 @@ QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks)
     return QStringLiteral("%1 with dictation in the last %2 weeks").arg(dayCountText(active)).arg(drawnWeeks);
 }
 
-QString heatLegendLessText()
-{
-    return QStringLiteral("Less");
-}
-
-QString heatLegendMoreText()
-{
-    return QStringLiteral("More");
-}
-
 ChartTip hourTip(int hour, int dictations)
 {
     return {QStringLiteral("%1 to %2").arg(hourLabel(hour), hourLabel((hour + 1) % 24)),
             dictationCountText(dictations)};
-}
-
-ChartTip appTip(const AppShare &app)
-{
-    return {app.name, wordCountText(app.words)};
-}
-
-QString personaText(const InsightsSummary &summary)
-{
-    return summary.persona + u'.';
-}
-
-QString peakText(const InsightsSummary &summary)
-{
-    return QStringLiteral("You dictate most around %1, and %2s are your busiest day.")
-        .arg(hourLabel(summary.peakHour),
-             QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat));
-}
-
-QString learnedCorrectionsTitle()
-{
-    return QStringLiteral("Learned corrections");
-}
-
-QString learnedCorrectionsCaption(int count)
-{
-    return count == 1 ? QStringLiteral("Correction learned") : QStringLiteral("Corrections learned");
-}
-
-QString learnedCorrectionsNote(int count, bool learningOn, bool accessibilityOn)
-{
-    if (!learningOn) {
-        return QStringLiteral("Learning is off.");
-    }
-    if (!accessibilityOn) {
-#ifdef Q_OS_MACOS
-        return QStringLiteral("Grant Accessibility permission to learn corrections.");
-#elif defined(Q_OS_WIN)
-        return QStringLiteral("UI Automation must be available to learn corrections.");
-#else
-        return QStringLiteral("Turn on desktop accessibility to learn corrections.");
-#endif
-    }
-    return count == 0 ? QStringLiteral("Fix a dictated word the same way twice and it appears here.")
-                      : QStringLiteral("Speecher learned these from edits you made after dictating.");
-}
-
-QString learnedCorrectionsAction(int count, bool learningOn)
-{
-    if (!learningOn) {
-        return QStringLiteral("Turn on learning");
-    }
-    return count == 0 ? QString() : QStringLiteral("Review learned corrections");
 }
 
 QString homeText(HomeText text)
@@ -775,109 +707,6 @@ QString minutesText(qint64 minutes)
     if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
     return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(formatNumber(minutes / 60)).arg(minutes % 60)
                         : QStringLiteral("%1 h").arg(formatNumber(minutes / 60));
-}
-
-QString heatMeasureLabel(HeatMeasure measure)
-{
-    switch (measure) {
-    case HeatMeasure::Words:
-        return QStringLiteral("Words");
-    case HeatMeasure::Audio:
-        return QStringLiteral("Minutes of audio");
-    case HeatMeasure::Dictations:
-        break;
-    }
-    return QStringLiteral("Dictations");
-}
-
-namespace {
-
-// "45 s", or minutesText from a minute up: one heatmap day's audio.
-QString dayAudioText(qint64 audioMs)
-{
-    const qint64 seconds = (audioMs + 500) / 1000;
-    return seconds < 60 ? QStringLiteral("%1 s").arg(seconds) : minutesText((seconds + 30) / 60);
-}
-
-QString dayValueText(const HeatmapDay &day, HeatMeasure measure)
-{
-    switch (measure) {
-    case HeatMeasure::Words:
-        return wordCountText(day.words);
-    case HeatMeasure::Audio:
-        return QStringLiteral("%1 of audio").arg(dayAudioText(day.audioMs));
-    case HeatMeasure::Dictations:
-        break;
-    }
-    return dictationCountText(day.dictations);
-}
-
-qint64 dayValue(const HeatmapDay &day, HeatMeasure measure)
-{
-    switch (measure) {
-    case HeatMeasure::Words:
-        return day.words;
-    case HeatMeasure::Audio:
-        return day.audioMs;
-    case HeatMeasure::Dictations:
-        break;
-    }
-    return day.dictations;
-}
-
-} // namespace
-
-ChartTip heatmapDayTip(const HeatmapDay &day, HeatMeasure measure)
-{
-    const QString date = QLocale().toString(day.date, QStringLiteral("ddd, MMM d, yyyy"));
-    if (day.dictations == 0) {
-        return {QStringLiteral("No dictation"), date};
-    }
-    switch (measure) {
-    case HeatMeasure::Words:
-        return {QStringLiteral("%1 from %2").arg(wordCountText(day.words), dictationCountText(day.dictations)), date};
-    case HeatMeasure::Audio:
-        return {dayValueText(day, measure), date};
-    case HeatMeasure::Dictations:
-        break;
-    }
-    return {QStringLiteral("%1, %2").arg(dictationCountText(day.dictations), wordCountText(day.words)), date};
-}
-
-QString heatmapDescription(const InsightsSummary &summary, HeatMeasure measure)
-{
-    const QString active = activeDaysLastYearText(summary.activeDaysLastYear) + u'.';
-    const auto busiest = std::max_element(summary.heatmap.cbegin(), summary.heatmap.cend(),
-                                          [measure](const HeatmapDay &a, const HeatmapDay &b) {
-                                              return dayValue(a, measure) < dayValue(b, measure);
-                                          });
-    if (busiest == summary.heatmap.cend() || busiest->dictations == 0) {
-        return active;
-    }
-    return QStringLiteral("%1 Busiest: %2, %3.")
-        .arg(active, QLocale().toString(busiest->date, QStringLiteral("MMM d, yyyy")),
-             dayValueText(*busiest, measure));
-}
-
-QString hourChartDescription(const InsightsSummary &summary)
-{
-    return QStringLiteral("Dictations by hour of day. Most around %1, with %2.")
-        .arg(hourLabel(summary.peakHour), dictationCountText(summary.hourCounts[summary.peakHour]));
-}
-
-QString weekDescription(const InsightsSummary &summary)
-{
-    const QLocale locale;
-    QStringList days;
-    for (int index = 0; index <= summary.todayIndex; ++index) {
-        if (summary.weekActivity[index]) days << locale.dayName(index + 1, QLocale::LongFormat);
-    }
-    if (days.isEmpty()) {
-        return QStringLiteral("No dictation yet this week.");
-    }
-    const QString last = days.takeLast();
-    return QStringLiteral("Dictated this week on %1.")
-        .arg(days.isEmpty() ? last : QStringLiteral("%1 and %2").arg(days.join(QStringLiteral(", ")), last));
 }
 
 QList<InsightRecordText> insightRecords(const InsightsSummary &summary, const QDate &today)
