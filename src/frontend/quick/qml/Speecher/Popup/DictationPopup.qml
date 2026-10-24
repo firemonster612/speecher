@@ -281,6 +281,7 @@ Item {
                 VoiceOrb { id: receiptOrb; phase: popup.receiptMark; size: 30; anchors.verticalCenter: parent.verticalCenter }
                 Flickable {
                     id: receiptScroll
+                    objectName: "noticeScroll"
                     // The words take what the widest capsule has left once the
                     // orb, the buttons and the spacing are in, and wrap past
                     // it, so a long error never pushes its buttons out. The
@@ -460,7 +461,10 @@ Item {
                 Flow {
                     id: reviewActions
                     visible: !popup.followingUp
-                    width: parent.width
+                    // The review's width, not the capsule's now: the window's
+                    // size counts this row's height, and must not change
+                    // between phases.
+                    width: popup.widest - review.x - 20
                     layoutDirection: Qt.RightToLeft
                     spacing: 8
                     Button {

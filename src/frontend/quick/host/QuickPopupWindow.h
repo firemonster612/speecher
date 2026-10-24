@@ -6,7 +6,6 @@
 
 class QQmlEngine;
 class QQuickWindow;
-class QTimer;
 
 namespace speecher {
 

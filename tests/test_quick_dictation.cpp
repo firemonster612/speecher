@@ -308,6 +308,27 @@ private slots:
 
     // An error offers Dismiss beside its countdown, which waits while the
     // pointer rests on the capsule, also when the error shows under it.
+    // A long notice scrolls; the next one starts at its first line.
+    void eachNoticeStartsAtItsTop()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        QQmlEngine engine;
+        QuickPopupWindow popup(&engine, new RecordingPositioner);
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached. ").repeated(40));
+        popup.show(0);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        auto *scroll = window->findChild<QQuickItem *>(QStringLiteral("noticeScroll"));
+        QVERIFY(scroll);
+        QTRY_VERIFY(scroll->property("contentHeight").toReal() > scroll->height());
+        scroll->setProperty("contentY", scroll->property("contentHeight").toReal() - scroll->height());
+
+        dictation.showError(QStringLiteral("Claude couldn't be reached. ").repeated(40));
+        QTRY_COMPARE(scroll->property("contentY").toReal(), 0.0);
+    }
+
     void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
     {
         QuickDictation::setErrorDismissMs(300);
@@ -561,10 +582,19 @@ private slots:
             return qAbs(mask.left() - drawn.left()) <= 1 && qAbs(mask.top() - drawn.top()) <= 1
                 && qAbs(mask.right() + 1 - drawn.right()) <= 1 && qAbs(mask.bottom() + 1 - drawn.bottom()) <= 1;
         };
-        // Arriving: smaller than it will be and below where it settles.
-        QTRY_VERIFY(capsule->scale() > 0.87 && capsule->scale() < 0.99);
-        QVERIFY(masksDrawn());
+        // Arriving: every frame while it is still smaller than it settles.
+        int arrivingFrames = 0;
+        bool everyFrameMasked = true;
+        connect(capsule, &QQuickItem::scaleChanged, &popup, [&] {
+            if (capsule->scale() < 0.99) {
+                ++arrivingFrames;
+                everyFrameMasked = everyFrameMasked && masksDrawn();
+            }
+        });
         QTRY_COMPARE(capsule->width(), 360.0);
+        QTRY_COMPARE(capsule->scale(), 1.0);
+        QVERIFY(arrivingFrames > 0);
+        QVERIFY(everyFrameMasked);
 
         // From the bare bar to the receipt's 320 by 64.
         emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
