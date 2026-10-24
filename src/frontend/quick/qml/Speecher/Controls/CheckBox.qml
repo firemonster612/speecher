@@ -20,7 +20,7 @@ T.CheckBox {
         y: (control.height - height) / 2
         radius: Theme.radiusSmall
         readonly property color shade: control.checked ? Theme.accent : control.hovered ? Theme.fillStrong : Theme.fill
-        // Pressing deepens the box by a fill, checked or not.
+        // Pressing tints the box toward fillStrong, checked or not.
         color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
         border.width: control.checked ? 0 : 1
         border.color: Theme.borderStrong

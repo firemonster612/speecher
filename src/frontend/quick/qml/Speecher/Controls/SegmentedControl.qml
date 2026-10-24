@@ -75,6 +75,7 @@ FocusScope {
                 Accessible.role: Accessible.PageTab
                 Accessible.name: seg.modelData.label
                 Accessible.selected: seg.selected
+                Accessible.onPressAction: root._choose(seg.index)
 
                 // Hovering or pressing an option other than the chosen one
                 // shows a grey pill where the thumb will land, deeper while
