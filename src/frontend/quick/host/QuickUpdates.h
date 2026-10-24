@@ -47,8 +47,10 @@ class QuickUpdates final : public QObject {
     // An update was installed and its news has not been seen.
     Q_PROPERTY(bool whatsNewPending READ whatsNewPending NOTIFY whatsNewPendingChanged)
     // The news, fixed for the run, so it stays on the page once seen:
-    // { commits: [title] (a nightly's commits since the one it replaced),
-    //   releases: [{ version, sections: [{ title, items: [text] }] }] }.
+    // { commits: [{ title, pullRequest (0 for none), sha, url }] (a nightly's
+    //     commits since the one it replaced),
+    //   comparison: GitHub's comparison of the two nightlies, or empty,
+    //   releases: [{ version, sections: [{ title, items: [Markdown] }] }] }.
     Q_PROPERTY(QVariantMap whatsNew READ whatsNew CONSTANT)
 
 public:

@@ -20,6 +20,8 @@ namespace speecher {
 
 namespace {
 
+const QString repository = QStringLiteral("https://github.com/firemonster612/speecher");
+
 void ensureResourcesInitialized()
 {
     static const bool initialized = [] {
@@ -47,16 +49,9 @@ QString versionCommit(const QString &version)
     return sha.match(version).captured(1);
 }
 
-// The history's commits after the one lastVersion was built from, or none
-// when that commit is not in it.
-QList<HistoryCommit> commitsSince(const QList<HistoryCommit> &history, const QString &lastVersion,
-                                  const QString &currentVersion)
+// The history's commits after lastSha, or none when it is not in it.
+QList<HistoryCommit> commitsSince(const QList<HistoryCommit> &history, const QString &lastSha)
 {
-    const QString lastSha = versionCommit(lastVersion);
-    if (!currentVersion.contains(QStringLiteral("-nightly")) || lastSha.isEmpty()
-        || versionCommit(currentVersion).isEmpty()) {
-        return {};
-    }
     QList<HistoryCommit> commits;
     for (const HistoryCommit &commit : history) {
         // Short SHAs grow with the repository, so either recording may be the
@@ -71,6 +66,11 @@ QList<HistoryCommit> commitsSince(const QList<HistoryCommit> &history, const QSt
 }
 
 } // namespace
+
+QUrl releasesPage()
+{
+    return QUrl(repository + QStringLiteral("/releases"));
+}
 
 QList<ReleaseNote> bundledReleaseNotes()
 {
@@ -188,7 +188,12 @@ WhatsNew whatsNew(const QList<ReleaseNote> &notes,
                   const QString &currentVersion)
 {
     WhatsNew news;
-    news.commits = commitsSince(history, lastSeenVersion, currentVersion);
+    const QString lastSha = versionCommit(lastSeenVersion);
+    const QString currentSha = versionCommit(currentVersion);
+    if (currentVersion.contains(QStringLiteral("-nightly")) && !lastSha.isEmpty() && !currentSha.isEmpty()) {
+        news.commits = commitsSince(history, lastSha);
+        news.comparison = QUrl(repository + QStringLiteral("/compare/%1...%2").arg(lastSha, currentSha));
+    }
     if (!lastSeenVersion.isEmpty()) {
         // A nightly's base is the last stable tag patch+1, so it predates the
         // Stable Release of its own base version. An update that moves past
@@ -205,8 +210,8 @@ WhatsNew whatsNew(const QList<ReleaseNote> &notes,
         }
     }
     // A nightly-to-nightly update that crosses no Stable Release reports its
-    // own commits; only without those does the newest stable note stand in.
-    if (news.releases.isEmpty() && news.commits.isEmpty()) {
+    // own changes; only without those does the newest stable note stand in.
+    if (news.releases.isEmpty() && news.comparison.isEmpty()) {
         const auto newest = std::find_if(notes.cbegin(), notes.cend(), [&currentVersion](const ReleaseNote &note) {
             return compareBaseVersions(note.version, currentVersion) <= 0;
         });
@@ -217,11 +222,21 @@ WhatsNew whatsNew(const QList<ReleaseNote> &notes,
     return news;
 }
 
-QString commitTitle(const HistoryCommit &commit)
+CommitSummary commitSummary(const HistoryCommit &commit)
 {
-    static const QRegularExpression mergedPullRequest(QStringLiteral("^Merge pull request #\\d+ from \\S+$"));
-    const QString bodyTitle = commit.body.section(u'\n', 0, 0).trimmed();
-    return mergedPullRequest.match(commit.subject).hasMatch() && !bodyTitle.isEmpty() ? bodyTitle : commit.subject;
+    static const QRegularExpression mergedPullRequest(QStringLiteral("^Merge pull request #(\\d+) from \\S+$"));
+    static const QRegularExpression squashedPullRequest(QStringLiteral("^(.+) \\(#(\\d+)\\)$"));
+    const auto pullRequest = [](const QString &title, const QString &number) {
+        return CommitSummary{title, number.toInt(), QUrl(repository + QStringLiteral("/pull/") + number)};
+    };
+    if (const QRegularExpressionMatch merged = mergedPullRequest.match(commit.subject); merged.hasMatch()) {
+        const QString bodyTitle = commit.body.section(u'\n', 0, 0).trimmed();
+        return pullRequest(bodyTitle.isEmpty() ? commit.subject : bodyTitle, merged.captured(1));
+    }
+    if (const QRegularExpressionMatch squashed = squashedPullRequest.match(commit.subject); squashed.hasMatch()) {
+        return pullRequest(squashed.captured(1), squashed.captured(2));
+    }
+    return {commit.subject, 0, QUrl(repository + QStringLiteral("/commit/") + commit.sha)};
 }
 
 int compareBaseVersions(const QString &left, const QString &right)

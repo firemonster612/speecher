@@ -3,12 +3,16 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 
 namespace speecher {
 
 // The release notes and commit history every build embeds, read as data, and
 // which of them tell someone what changed since the version they last ran.
 // The Updates page words them.
+
+// Every release, on GitHub.
+QUrl releasesPage();
 
 // One Stable Release's notes, docs/releases/<version>.md, as Markdown.
 struct ReleaseNote {
@@ -59,9 +63,13 @@ struct WhatsNew {
     // for a stable build, or when that nightly's commit is older than the
     // history the build embedded.
     QList<HistoryCommit> commits;
+    // GitHub's comparison of the nightly replaced with this one, set for any
+    // nightly-to-nightly update: the only way to see the commits when the
+    // replaced nightly is older than the embedded history.
+    QUrl comparison;
     // The Stable Releases crossed, newest first. With nothing crossed and no
-    // commits, the newest release at or before currentVersion, so there is
-    // always something to read when a release's notes exist.
+    // nightly changes, the newest release at or before currentVersion, so
+    // there is always something to read when a release's notes exist.
     QList<ReleaseNote> releases;
 };
 // lastSeenVersion is empty when no update happened; notes come from
@@ -71,10 +79,18 @@ WhatsNew whatsNew(const QList<ReleaseNote> &notes,
                   const QString &lastSeenVersion,
                   const QString &currentVersion);
 
-// What a commit is called in a list of changes: its subject, or for a merge
-// commit, whose subject names only a branch, the pull request's title on the
-// first line of its body.
-QString commitTitle(const HistoryCommit &commit);
+// A commit as a list of changes shows it, with where to read more.
+struct CommitSummary {
+    // The subject, or the pull request's title it carries: a merge commit's
+    // subject names only a branch, so the title is its body's first line; a
+    // squash merge's subject ends in " (#N)", which the title leaves off.
+    QString title;
+    // The pull request it merged, 0 for a commit pushed on its own.
+    int pullRequest = 0;
+    // The pull request's page, or else the commit's.
+    QUrl url;
+};
+CommitSummary commitSummary(const HistoryCommit &commit);
 
 // Nightly metadata does not make a new Stable Release, and dotted components
 // are numbers rather than text (0.10 follows 0.2). Negative, zero or positive

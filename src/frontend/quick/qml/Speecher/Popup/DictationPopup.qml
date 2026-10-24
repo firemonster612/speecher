@@ -43,6 +43,8 @@ Item {
         if (phase === "idle") wholeEdit = false
         // An error may show under a pointer that is already resting there.
         if (phase === "error") source.errorHoldRequested(hover.hovered)
+        // Each dictation starts as a new popup, even while the last one's is up.
+        if (phase === "starting") offers.newPopup()
     }
     readonly property var selectionEdit: source.review
     readonly property bool canFold: (selectionEdit.folded || []).length > 0
@@ -109,7 +111,7 @@ Item {
                                             holder.width * holder.scale, holder.height * holder.scale)
     // Room over the capsule for both offers (OfferChips), the update's and
     // What's New's.
-    readonly property int offerRoom: 98
+    readonly property int offerRoom: offers.fullHeight + offers.anchors.bottomMargin
     // What takes the pointer: the capsule, and while an offer shows, the
     // room over it.
     readonly property rect touchable: offers.offering ? Qt.rect((width - widest) / 2, capsule.y - offerRoom, widest, capsule.height + offerRoom)

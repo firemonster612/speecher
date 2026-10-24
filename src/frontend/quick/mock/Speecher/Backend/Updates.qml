@@ -9,7 +9,8 @@ import Speecher.Theme
 // through the states with fake delays.
 //
 // --update-state=<state> starts in that state; --whats-new-pending=true
-// starts with news not yet seen.
+// starts with news not yet seen; --whats-new=nightly shows a nightly's
+// commits rather than a release's notes.
 QtObject {
     id: updates
 
@@ -29,12 +30,24 @@ QtObject {
     // Whether the preview pretends an update from _lastSeen was installed.
     readonly property bool _updated: Launch.arg("whats-new-pending", "false") === "true"
     property bool whatsNewPending: _updated
-    readonly property var whatsNew: ({
+    readonly property bool _nightly: Launch.arg("whats-new", "") === "nightly"
+    readonly property var whatsNew: _nightly ? ({
+        commits: [
+            { title: "Keep the popup's offers clear of the capsule", pullRequest: 214, sha: "3f9c2e1",
+              url: "https://github.com/firemonster612/speecher/pull/214" },
+            { title: "Fix `--cancel` while a recording is paused", pullRequest: 0, sha: "b71d0aa",
+              url: "https://github.com/firemonster612/speecher/commit/b71d0aa" }
+        ],
+        comparison: "https://github.com/firemonster612/speecher/compare/9e04c1b...3f9c2e1",
+        releases: []
+    }) : ({
         commits: [],
+        comparison: "",
         releases: [
             { version: "0.9.3", sections: [
                 { title: "Added", items: [
                     "CLI Proxy API accounts work end to end: setup recognises them, and you can pick the account without leaving setup.",
+                    "`speecher --toggle` starts or stops a dictation from a script or a desktop shortcut.",
                     "An opt-in accuracy pass retranscribes the whole recording when you stop, catching mistakes the live stream made.",
                     "Hesitation self-corrections apply: \"meet at five, no, six\" delivers six."
                 ] },

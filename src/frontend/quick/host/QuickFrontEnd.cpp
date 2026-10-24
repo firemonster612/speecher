@@ -124,11 +124,18 @@ QuickFrontEnd::~QuickFrontEnd()
 
 void QuickFrontEnd::showMainWindow()
 {
+    // After an update, Main first opens on its news.
+    showPage(!m_main && m_updates.whatsNewPending() ? QStringLiteral("updates") : QString());
+}
+
+void QuickFrontEnd::showPage(const QString &pageId)
+{
+    // Before a first Main is made, so it builds only the page asked for:
+    // building Updates on the way to another page would mark the news seen.
+    if (!pageId.isEmpty()) {
+        setPage(pageId);
+    }
     if (!m_main) {
-        // After an update, Main first opens on its news.
-        if (m_updates.whatsNewPending()) {
-            setPage(QStringLiteral("updates"));
-        }
         m_main = createWindow(QStringLiteral("Main"));
         if (!m_main) {
             return;
@@ -227,12 +234,6 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QObject::eventFilter(watched, event);
-}
-
-void QuickFrontEnd::showPage(const QString &pageId)
-{
-    showMainWindow();
-    setPage(pageId);
 }
 
 void QuickFrontEnd::setPage(const QString &pageId)

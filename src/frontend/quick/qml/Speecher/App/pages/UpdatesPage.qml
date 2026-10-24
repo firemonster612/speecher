@@ -13,15 +13,18 @@ Page {
     subtitle: Schema.page("updates").subtitle
 
     readonly property var _channel: Schema.row("updateChannel").options.find(o => o.id === Settings.values.updateChannel)
-    // A nightly's commits, then the releases' notes, each one Section.
-    // Fixed for the run, so nothing comes or goes while the page is open.
+    // A nightly's commits and their comparison, then the releases' notes,
+    // each one Section. Fixed for the run, so nothing comes or goes while the
+    // page is open.
     readonly property var _news: {
-        const commits = Updates.whatsNew.commits || []
-        const builds = commits.length ? [{ version: "", sections: [{ title: page.t.commits, items: commits }] }] : []
-        return builds.concat(Updates.whatsNew.releases || [])
+        const news = Updates.whatsNew
+        const lines = (news.commits || []).map(page.t.commit)
+        if (news.comparison) lines.push(page.t.compareCommits(news.comparison))
+        const builds = lines.length ? [{ version: "", sections: [{ title: page.t.commits, items: lines }] }] : []
+        return builds.concat(news.releases || [])
     }
     // Settings added since the version run before the update.
-    readonly property var _newSettings: Object.keys(Schema.introduced).filter(id => Updates.newSince(Schema.introduced[id]))
+    readonly property var _newSettings: Object.keys(Schema.since).filter(id => Updates.newSince(Schema.since[id]))
 
     readonly property var t: ({
         current: v => "Speecher " + v,
@@ -29,6 +32,9 @@ Page {
         whatsNewIn: v => v ? "What's new in " + v : "What's new in this build",
         release: v => "Speecher " + v,
         commits: "Commits",
+        // A line of Markdown: the title, then its pull request or commit as a link.
+        commit: c => c.title + " ([" + (c.pullRequest ? "#" + c.pullRequest : c.sha) + "](" + c.url + "))",
+        compareCommits: url => "[Compare commits](" + url + ")",
         allReleases: "All releases",
         newSettings: "New settings",
         newSettingsCaption: "Added since the version you used before.",

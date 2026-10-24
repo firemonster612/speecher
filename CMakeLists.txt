@@ -1385,6 +1385,8 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_settings.cpp
       tests/test_quick_dictation.cpp
       tests/test_quick_updates.cpp
+      src/frontend/quick/host/QuickFrontEnd.cpp
+      src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
       src/frontend/quick/host/QuickPopupWindow.h
     )

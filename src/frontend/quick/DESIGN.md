@@ -62,10 +62,11 @@ Backend is the C++ types plus the mocks not yet replaced.
   for. `attention` says the update needs the person, which the popup's
   update chip and the sidebar's link follow; `later()` puts a waiting
   restart off until another version. What's New is `whatsNew` (a nightly's
-  commits and the releases crossed, from core's `whatsNew`), fixed for the
+  commits with their links and GitHub's comparison, and the releases
+  crossed, from core's `whatsNew`), fixed for the
   run, and `whatsNewPending` until the Updates page is opened, which the
   popup's What's New chip offers and Main opens on after an update. New
-  settings are the rows `Schema.introduced` dates after the version run
+  settings are the rows whose `Schema.since` comes after the version run
   before (`Updates.newSince`).
 - `Dictation` is the session as the popup shows it: `state` (the popup's
   phase: idle, starting, listening, paused, transcribing, refining,

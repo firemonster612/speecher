@@ -38,10 +38,10 @@ var rows = [
       keywords: "auto install background appimage" }
 ];
 
-// The version each settings row came in, by row id, for What's New's new
+// Each settings row's Since Version, by row id, for What's New's new
 // settings. A row reached only through another, such as the custom check
 // interval, is left out.
-var introduced = {
+var since = {
     updateChannel: "0.1.0",
     autoCheckUpdates: "0.1.0",
     autoInstallUpdates: "0.1.0",

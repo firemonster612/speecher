@@ -978,16 +978,37 @@ private slots:
         const WhatsNew news = whatsNew(sampleNotes(), history, QStringLiteral("0.2.1-nightly.20260901+gaaa1111"),
                                        QStringLiteral("0.2.1-nightly.20260902+gccc3333"));
         QCOMPARE(news.commits.size(), 2);
-        QCOMPARE(commitTitle(news.commits.at(0)), QStringLiteral("Tidy the tray"));
-        QCOMPARE(commitTitle(news.commits.at(1)), QStringLiteral("Fix the popup (#11)"));
+        QCOMPARE(news.commits.at(0).sha, QStringLiteral("ccc3333"));
+        QCOMPARE(news.commits.at(1).sha, QStringLiteral("bbb2222"));
+        QCOMPARE(news.comparison, QUrl(QStringLiteral("https://github.com/firemonster612/speecher/compare/aaa1111...ccc3333")));
         QVERIFY(news.releases.isEmpty());
 
-        // A nightly older than the embedded history has no commits to list,
-        // so the newest release's notes stand in.
+        // A nightly older than the embedded history has no commits to list;
+        // GitHub's comparison stands in for them.
         const WhatsNew old = whatsNew(sampleNotes(), history, QStringLiteral("0.2.1-nightly.20260801+gfff0000"),
                                       QStringLiteral("0.2.1-nightly.20260902+gccc3333"));
         QVERIFY(old.commits.isEmpty());
-        QCOMPARE(versions(old.releases), QStringList{QStringLiteral("0.2.1")});
+        QCOMPARE(old.comparison, QUrl(QStringLiteral("https://github.com/firemonster612/speecher/compare/fff0000...ccc3333")));
+        QVERIFY(old.releases.isEmpty());
+    }
+
+    void aCommitIsSummedUpByItsPullRequest()
+    {
+        const CommitSummary merged = commitSummary({QStringLiteral("ccc3333"), QStringLiteral("Merge pull request #12 from me/tray"),
+                                                    QStringLiteral("Tidy the tray\n\nMore.")});
+        QCOMPARE(merged.title, QStringLiteral("Tidy the tray"));
+        QCOMPARE(merged.pullRequest, 12);
+        QCOMPARE(merged.url, QUrl(QStringLiteral("https://github.com/firemonster612/speecher/pull/12")));
+
+        const CommitSummary squashed = commitSummary({QStringLiteral("bbb2222"), QStringLiteral("Fix the popup (#11)"), QString()});
+        QCOMPARE(squashed.title, QStringLiteral("Fix the popup"));
+        QCOMPARE(squashed.pullRequest, 11);
+        QCOMPARE(squashed.url, QUrl(QStringLiteral("https://github.com/firemonster612/speecher/pull/11")));
+
+        const CommitSummary pushed = commitSummary({QStringLiteral("aaa1111"), QStringLiteral("Tidy the tray icon"), QString()});
+        QCOMPARE(pushed.title, QStringLiteral("Tidy the tray icon"));
+        QCOMPARE(pushed.pullRequest, 0);
+        QCOMPARE(pushed.url, QUrl(QStringLiteral("https://github.com/firemonster612/speecher/commit/aaa1111")));
     }
 
     void downgradeDoesNotCreatePendingWhatsNewState()

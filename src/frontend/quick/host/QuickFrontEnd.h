@@ -56,7 +56,7 @@ private:
     // Makes a window from Speecher.App, or logs why it could not.
     QQuickWindow *createWindow(const QString &typeName);
     void setupClosed();
-    // Main, on one of its pages.
+    // Main, on pageId, or on the page it is on when pageId is empty.
     void showPage(const QString &pageId);
     // The page Main shows, or opens on.
     void setPage(const QString &pageId);

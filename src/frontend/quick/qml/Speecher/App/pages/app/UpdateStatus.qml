@@ -21,20 +21,11 @@ Item {
         checking: channel => channel ? "Checking the " + channel + " channel…" : "Checking for updates…",
         checkNow: "Check now",
         upToDate: "Speecher is up to date",
-        available: v => "Speecher " + v + " is available",
-        stableReplacement: v => "Switch to Stable Release " + v,
-        stableReplacementDetail: "Replaces the nightly build you have now.",
+        stableReplacementDetail: "Replaces the Nightly Build you have now.",
         updateNow: "Update now",
-        openReleasePage: "Open release page",
-        downloading: v => "Downloading Speecher " + v,
         downloadingDetail: "Keep dictating; it takes effect when Speecher restarts.",
-        readyTitle: "Restart to finish updating",
         readyDetail: v => "Speecher " + v + " is downloaded and ready.",
-        restart: ({ "": "Restart now", dictation: "Restart after this dictation", recording: "Restart after this recording" }),
-        restarting: ({ "": "Restarting…", dictation: "Restarting after this dictation…", recording: "Restarting after this recording…" }),
-        checkFailed: "Update check failed",
-        failed: "Update failed",
-        tryAgain: "Try again"
+        failed: "Update failed"
     })
 
     readonly property list<StateLine> _lines: [idle, checking, upToDate, available, downloading, ready, restarting, failed]
@@ -67,11 +58,11 @@ Item {
         id: available
         stateId: "available"
         dot: Theme.accent
-        title: Updates.stableReplacement ? root.t.stableReplacement(Updates.availableVersion) : root.t.available(Updates.availableVersion)
+        title: Updates.stableReplacement ? Words.updates.stableReplacement(Updates.availableVersion) : Words.updates.available(Updates.availableVersion)
         detail: Updates.stableReplacement ? root.t.stableReplacementDetail : ""
         actions: [
             Button {
-                text: Updates.automaticDownloads ? root.t.updateNow : root.t.openReleasePage
+                text: Updates.automaticDownloads ? root.t.updateNow : Words.updates.openReleasePage
                 variant: "primary"
                 size: "small"
                 onClicked: Updates.updateNow()
@@ -81,7 +72,7 @@ Item {
     StateLine {
         id: downloading
         stateId: "downloading"
-        title: root.t.downloading(Updates.availableVersion)
+        title: Words.updates.downloading(Updates.availableVersion)
         detail: root.t.downloadingDetail
         Item {
             width: parent.width
@@ -112,10 +103,15 @@ Item {
         id: ready
         stateId: "ready"
         dot: Theme.accent
-        title: root.t.readyTitle
+        title: Words.updates.ready
         // A restart that could not start says why.
         detail: Updates.error || root.t.readyDetail(Updates.availableVersion)
-        actions: [ Button { text: root.t.restart[Updates.restartBlocker]; variant: "primary"; size: "small"; onClicked: Updates.updateNow() } ]
+        // Later puts the restart off, which also takes the update from the
+        // popup and the sidebar until another version comes.
+        actions: [
+            Button { text: Words.updates.later; variant: "ghost"; size: "small"; onClicked: Updates.later() },
+            Button { text: Words.updates.restart[Updates.restartBlocker]; variant: "primary"; size: "small"; onClicked: Updates.updateNow() }
+        ]
     }
     // A restart asked for waits for the dictation or recording in the way.
     StateLine {
@@ -123,17 +119,17 @@ Item {
         stateId: "restarting"
         shown: Updates.state === "restarting" || Updates.state === "restartPending"
         busy: true
-        title: root.t.restarting[Updates.state === "restartPending" ? Updates.restartBlocker : ""]
+        title: Words.updates.restarting[Updates.state === "restartPending" ? Updates.restartBlocker : ""]
     }
     StateLine {
         id: failed
         stateId: "error"
         shown: Updates.state === "error" || Updates.state === "checkFailed"
         dot: Theme.negative
-        title: Updates.state === "checkFailed" ? root.t.checkFailed : root.t.failed
+        title: Updates.state === "checkFailed" ? Words.updates.checkFailed : root.t.failed
         detail: Updates.error
         // Where only installing by hand can work, the release page is the retry.
-        actions: [ Button { text: Updates.manualInstall ? root.t.openReleasePage : root.t.tryAgain; size: "small"; onClicked: Updates.updateNow() } ]
+        actions: [ Button { text: Updates.manualInstall ? Words.updates.openReleasePage : Words.updates.tryAgain; size: "small"; onClicked: Updates.updateNow() } ]
     }
 
     // One updater state: a title and detail, extra content under them and

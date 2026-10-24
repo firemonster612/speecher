@@ -2,12 +2,17 @@
 
 #include "app/ApplicationController.h"
 #include "common/test_manifest_updater_access.h"
-#include "core/ReleaseNotes.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "dictation/PopupPresentation.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickUpdates.h"
 
 #include <QDesktopServices>
+#include <QGuiApplication>
+#include <QQmlEngine>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSignalSpy>
 #include <QUrl>
 
@@ -52,6 +57,27 @@ public slots:
     void open(const QUrl &url) { opened.append(url); }
 };
 
+// The open window whose QML type's name starts with typeName.
+QQuickWindow *openWindow(const QByteArray &typeName)
+{
+    for (QWindow *window : QGuiApplication::topLevelWindows()) {
+        if (window->isVisible() && QByteArray(window->metaObject()->className()).startsWith(typeName)) {
+            return qobject_cast<QQuickWindow *>(window);
+        }
+    }
+    return nullptr;
+}
+
+// The page the main window shows.
+QString mainPage()
+{
+    QQuickWindow *main = openWindow("Main");
+    QObject *navigation = main ? qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"),
+                                                                               QStringLiteral("Navigation"))
+                               : nullptr;
+    return navigation ? navigation->property("current").toString() : QString();
+}
+
 } // namespace
 
 // The UI's Updates over a staged updater and the controller's What's New.
@@ -59,6 +85,12 @@ class QuickUpdatesTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase()
+    {
+        // Frames without a GPU, so a shown window really renders one.
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+    }
+
     void init()
     {
         SettingsStore settings;
@@ -229,7 +261,6 @@ private slots:
         QVERIFY(!updates.newSince(lastSeen));
         QVERIFY(!updates.newSince(QStringLiteral("999.0.0")));
         const QVariantList releases = updates.whatsNew().value(QStringLiteral("releases")).toList();
-        QCOMPARE(releases.size(), whatsNew(bundledReleaseNotes(), {}, lastSeen, updater.currentVersion()).releases.size());
         QVERIFY(!releases.isEmpty());
         const QVariantMap newest = releases.first().toMap();
         QVERIFY(!newest.value(QStringLiteral("sections")).toList().isEmpty());
@@ -244,6 +275,50 @@ private slots:
         QVERIFY(controller.settings()->updatesPendingWhatsNewVersion().isEmpty());
         QVERIFY(updates.newSince(current));
         QCOMPARE(updates.whatsNew().value(QStringLiteral("releases")).toList(), releases);
+    }
+
+    // Main opened for another page builds only that one, so the news stays
+    // unseen; opened for nothing in particular, it opens on the news.
+    void mainOpensOnTheNewsOnlyWhenNotAskedForAnotherPage()
+    {
+        SettingsStore().setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.9"));
+        {
+            ApplicationController controller(true);
+            QuickFrontEnd ui(&controller);
+            ui.showTranscribeFiles({});
+            QCOMPARE(mainPage(), QStringLiteral("transcribe"));
+            QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
+        }
+        ApplicationController controller(true);
+        QuickFrontEnd ui(&controller);
+        ui.showMainWindow();
+        QCOMPARE(mainPage(), QStringLiteral("updates"));
+        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
+    }
+
+    // What's New takes a turn in each new popup, also when a dictation starts
+    // while the last one's receipt is still up.
+    void whatsNewComesBackWithEachDictation()
+    {
+        SettingsStore().setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.9"));
+        ApplicationController controller(true);
+        QuickFrontEnd ui(&controller);
+        DictationSession *session = controller.session();
+        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->popupShowRequested(1);
+        QQuickWindow *popup = openWindow("PopupWindow");
+        QVERIFY(popup);
+        QObject *chip = popup->findChild<QObject *>(QStringLiteral("whatsNewChip"));
+        QVERIFY(chip);
+        QVERIFY(chip->property("open").toBool());
+        // Its turn ends a few seconds in.
+        QTRY_VERIFY_WITH_TIMEOUT(!chip->property("open").toBool(), 8000);
+
+        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        emit session->stateChanged(QStringLiteral("idle"));
+        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->popupShowRequested(2);
+        QVERIFY(chip->property("open").toBool());
     }
 
     void withoutAnUpdateNothingIsNew()

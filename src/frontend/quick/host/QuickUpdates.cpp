@@ -17,13 +17,15 @@ using State = UpdateController::State;
 
 QuickUpdates *g_instance = nullptr;
 
-const QUrl releasesPage(QStringLiteral("https://github.com/firemonster612/speecher/releases"));
-
 QVariantMap whatsNewMap(const WhatsNew &news)
 {
-    QStringList commits;
+    QVariantList commits;
     for (const HistoryCommit &commit : news.commits) {
-        commits.append(commitTitle(commit));
+        const CommitSummary summary = commitSummary(commit);
+        commits.append(QVariantMap{{QStringLiteral("title"), summary.title},
+                                   {QStringLiteral("pullRequest"), summary.pullRequest},
+                                   {QStringLiteral("sha"), commit.sha},
+                                   {QStringLiteral("url"), summary.url.toString()}});
     }
     QVariantList releases;
     for (const ReleaseNote &note : news.releases) {
@@ -35,7 +37,9 @@ QVariantMap whatsNewMap(const WhatsNew &news)
         releases.append(QVariantMap{{QStringLiteral("version"), note.version},
                                     {QStringLiteral("sections"), sections}});
     }
-    return {{QStringLiteral("commits"), commits}, {QStringLiteral("releases"), releases}};
+    return {{QStringLiteral("commits"), commits},
+            {QStringLiteral("comparison"), news.comparison.toString()},
+            {QStringLiteral("releases"), releases}};
 }
 
 } // namespace
@@ -199,7 +203,7 @@ void QuickUpdates::dismiss()
 
 void QuickUpdates::openAllReleases()
 {
-    QDesktopServices::openUrl(releasesPage);
+    QDesktopServices::openUrl(releasesPage());
 }
 
 bool QuickUpdates::newSince(const QString &sinceVersion) const

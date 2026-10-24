@@ -23,8 +23,8 @@
 #include <memory>
 #include <utility>
 
-// The UI's QML modules are linked into the tests by test_quick_settings.cpp,
-// which imports their plugins for the whole binary.
+// The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
+// imports their plugins for the whole binary.
 
 using namespace speecher;
 

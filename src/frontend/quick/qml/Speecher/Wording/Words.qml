@@ -57,6 +57,21 @@ QtObject {
         restore: "Restore",
         close: "Close"
     })
+    // The updater's states and actions, as the Updates page and the popup's
+    // update offer both word them. restart and restarting are keyed by what
+    // the restart waits for (Updates.restartBlocker).
+    readonly property var updates: ({
+        available: v => "Speecher " + v + " is available",
+        stableReplacement: v => "Switch to Stable Release " + v,
+        openReleasePage: "Open release page",
+        downloading: v => "Downloading Speecher " + v,
+        ready: "Restart to finish updating",
+        restart: ({ "": "Restart now", dictation: "Restart after this dictation", recording: "Restart after this recording" }),
+        restarting: ({ "": "Restarting…", dictation: "Restarting after this dictation…", recording: "Restarting after this recording…" }),
+        later: "Later",
+        checkFailed: "Update check failed",
+        tryAgain: "Try again"
+    })
     // The toast after deleting something a person made, which offers Undo.
     function deleted(name) { return "Deleted “" + name + "”" }
     function version(v) { return "Version " + v }
