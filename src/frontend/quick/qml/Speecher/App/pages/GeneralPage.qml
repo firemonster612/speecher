@@ -152,9 +152,11 @@ Page {
             }
             SchemaRow {
                 rowId: "clearInsights"
-                help: Insights.keptText
+                help: Insights.kept > 0
+                      ? Words.count(Insights.kept, "dictation", "dictations") + " kept since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + "."
+                      : "Nothing is kept right now."
                 Button {
-                    text: Insights.clearActionText
+                    text: "Clear history…"
                     variant: "danger"
                     size: "small"
                     enabled: Insights.kept > 0 && !page._confirmClear
@@ -164,11 +166,16 @@ Page {
             InlineConfirm {
                 cancelText: Words.cancel
                 open: page._confirmClear
-                text: Insights.clearQuestion
+                text: "Delete " + Words.count(Insights.kept, "dictation", "dictations") + "?"
                 detail: Words.cantUndo
                 confirmText: Words.delete_
                 onCancelled: page._confirmClear = false
-                onConfirmed: { Insights.clear(); page._confirmClear = false }
+                onConfirmed: {
+                    page._confirmClear = false
+                    if (!Insights.clear())
+                        Toaster.show("Speecher couldn't delete the insights history. Close any app that has the history file open, then try again.",
+                                     { icon: "alert-triangle", tone: "negative" })
+                }
             }
         }
     }

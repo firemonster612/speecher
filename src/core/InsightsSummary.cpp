@@ -62,7 +62,6 @@ constexpr Share kShares[] = {
     {3, "three times the length of", 0.2},
     {4, "four times the length of", 0.2},
 };
-constexpr int kMilestones[] = {1000, 10000, 50000, 100000, 250000, 500000, 1000000};
 
 // JavaScript's Math.round, which the mockup's numbers come from: halves go up.
 qint64 roundHalfUp(double value)
@@ -270,11 +269,9 @@ void summarizeHours(const QList<DictationRecord> &period, InsightsSummary &summa
     summary.hasHourData = period.size() >= kHourDataMinimum;
 }
 
-QString profileLabel(const DictationRecord &record, const QList<WritingProfileSettings> &profiles)
+int percentOf(qint64 part, qint64 whole)
 {
-    const QString label = writingProfileLabel(record.profile, profiles);
-    if (!label.isEmpty()) return label;
-    return record.profileName.isEmpty() ? QStringLiteral("Deleted profile") : record.profileName;
+    return whole ? int(roundHalfUp(100.0 * part / whole)) : 0;
 }
 
 void summarizeApps(const QList<DictationRecord> &period,
@@ -290,7 +287,7 @@ void summarizeApps(const QList<DictationRecord> &period,
             app = totals.end() - 1;
         }
         app->words += record.words;
-        app->profileLabel = profileLabel(record, profiles);
+        app->profileLabel = dictationProfileLabel(record, profiles);
     }
     std::stable_sort(totals.begin(), totals.end(),
                      [](const AppShare &a, const AppShare &b) { return a.words > b.words; });
@@ -306,7 +303,28 @@ void summarizeApps(const QList<DictationRecord> &period,
                              QString(), rest});
     }
     for (AppShare &app : summary.apps) {
-        app.percent = summary.words ? roundHalfUp(100.0 * app.words / summary.words) : 0;
+        app.percent = percentOf(app.words, summary.words);
+    }
+}
+
+void summarizeProfiles(const QList<DictationRecord> &period,
+                       const QList<WritingProfileSettings> &profiles,
+                       InsightsSummary &summary)
+{
+    for (const DictationRecord &record : period) {
+        const QString label = dictationProfileLabel(record, profiles);
+        auto share = std::find_if(summary.profiles.begin(), summary.profiles.end(),
+                                  [&](const ProfileShare &each) { return each.label == label; });
+        if (share == summary.profiles.end()) {
+            summary.profiles.append({label});
+            share = summary.profiles.end() - 1;
+        }
+        share->words += record.words;
+    }
+    std::stable_sort(summary.profiles.begin(), summary.profiles.end(),
+                     [](const ProfileShare &a, const ProfileShare &b) { return a.words > b.words; });
+    for (ProfileShare &share : summary.profiles) {
+        share.percent = percentOf(share.words, summary.words);
     }
 }
 
@@ -337,7 +355,7 @@ void summarizeRecords(const QList<DictationRecord> &records,
             summary.wordiestDay = {it.key(), it->words};
         }
     }
-    for (int milestone : kMilestones) {
+    for (int milestone : kWordMilestones) {
         if (milestone <= summary.allTimeWords) {
             summary.passedMilestone = milestone;
         } else if (summary.nextMilestone == 0) {
@@ -347,6 +365,13 @@ void summarizeRecords(const QList<DictationRecord> &records,
 }
 
 } // namespace
+
+QString dictationProfileLabel(const DictationRecord &record, const QList<WritingProfileSettings> &profiles)
+{
+    const QString label = writingProfileLabel(record.profile, profiles);
+    if (!label.isEmpty()) return label;
+    return record.profileName.isEmpty() ? QStringLiteral("Deleted profile") : record.profileName;
+}
 
 InsightsSummary summarize(const QList<DictationRecord> &records,
                           InsightsRange range,
@@ -408,6 +433,7 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     }
     summarizeHours(period, summary);
     summarizeApps(period, profiles, summary);
+    summarizeProfiles(period, profiles, summary);
 
     const QMap<QDate, DayTotals> allDays = byDay(records);
     summarizeStreaks(allDays, today, summary);

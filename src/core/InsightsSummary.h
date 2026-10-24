@@ -35,6 +35,14 @@ struct AppShare {
     int percent = 0;
 };
 
+// One Writing Profile's words in the period, under the label its latest
+// dictation had.
+struct ProfileShare {
+    QString label;
+    qint64 words = 0;
+    int percent = 0;
+};
+
 struct LongestDictation {
     int audioMs = 0;
     int words = 0;
@@ -105,6 +113,8 @@ struct InsightsSummary {
 
     // Top five apps by words, then an "N other apps" fold when the rest has words.
     QList<AppShare> apps;
+    // Every Writing Profile with words in the period, most first.
+    QList<ProfileShare> profiles;
 
     // Records, all time.
     qint64 allTimeWords = 0; // the milestone progress
@@ -115,6 +125,13 @@ struct InsightsSummary {
     WordiestDay wordiestDay;
     QDate firstDictation;
 };
+
+// The all-time word counts that are milestones, smallest first.
+inline constexpr std::array<int, 7> kWordMilestones{1000, 10000, 50000, 100000, 250000, 500000, 1000000};
+
+// The Writing Profile a dictation was in, by its current name: the name the
+// record stored when the profile is gone, or "Deleted profile".
+QString dictationProfileLabel(const DictationRecord &record, const QList<WritingProfileSettings> &profiles);
 
 // `profiles` names the custom profiles the records' labels come from. A record
 // whose profile is gone reads as the name it stored, or "Deleted profile".

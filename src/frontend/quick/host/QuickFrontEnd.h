@@ -3,6 +3,7 @@
 #include "app/AppFrontEnd.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
@@ -72,6 +73,7 @@ private:
     QuickTranscription m_transcription;
     QuickSystem m_system;
     QuickModels m_models;
+    QuickInsights m_insights;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

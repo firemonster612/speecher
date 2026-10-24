@@ -427,6 +427,27 @@ private slots:
         QVERIFY(summary.apps.last().profileLabel.isEmpty());
     }
 
+    void profilesShareThePeriodsWordsMostFirst()
+    {
+        const InsightsSummary summary = summarize(
+            {recordIn(QStringLiteral("A"), 30, WritingProfile::Email),
+             recordIn(QStringLiteral("B"), 50, WritingProfile::Work),
+             recordIn(QStringLiteral("C"), 20, WritingProfile::Email),
+             recordIn(QStringLiteral("D"), 100),
+             {QDateTime(kToday.addDays(-10), QTime(10, 0)), 5000, 400, QStringLiteral("A"), WritingProfile::Work}},
+            InsightsRange::Last7Days, kToday);
+        // 200 words this week; the Work dictation ten days ago is outside it.
+        QCOMPARE(summary.profiles.size(), 3);
+        QCOMPARE(summary.profiles.at(0).label, QStringLiteral("Other"));
+        QCOMPARE(summary.profiles.at(0).words, 100);
+        QCOMPARE(summary.profiles.at(0).percent, 50);
+        QCOMPARE(summary.profiles.at(1).label, QStringLiteral("Email"));
+        QCOMPARE(summary.profiles.at(1).words, 50);
+        QCOMPARE(summary.profiles.at(1).percent, 25);
+        QCOMPARE(summary.profiles.at(2).label, QStringLiteral("Work"));
+        QCOMPARE(summary.profiles.at(2).percent, 25);
+    }
+
     void recordsFindTheLongestBusiestAndWordiest()
     {
         const QList<DictationRecord> records{

@@ -369,7 +369,11 @@ bool SettingsStore::recordCorrectionEvidence(const CorrectionEvidence &evidence,
     if (!correctionLearningEnabled()) {
         return false;
     }
-    return CorrectionSettingsCodec::recordEvidence(m_settings, evidence, applicationId);
+    if (!CorrectionSettingsCodec::recordEvidence(m_settings, evidence, applicationId)) {
+        return false;
+    }
+    emit learnedCorrectionsChanged();
+    return true;
 }
 
 QString SettingsStore::audioInputDeviceId() const
