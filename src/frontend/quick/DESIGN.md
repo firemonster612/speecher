@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights` and `Accounts` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights` and `Accounts` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts` and `Audio` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts` and `Audio` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -38,8 +38,8 @@ Backend is the C++ types plus the mocks not yet replaced.
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`) and `Accounts` (`host/QuickAccounts`).
-  Placeholders until their wiring PRs: `Audio` and `Library`.
+  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`) and `Audio`
+  (`host/QuickAudio`). Placeholder until its wiring PR: `Library`.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
@@ -107,6 +107,13 @@ Backend is the C++ types plus the mocks not yet replaced.
   popup's What's New chip offers and Main opens on after an update. New
   settings are the rows whose `Schema.since` comes after the version run
   before (`Updates.newSince`).
+- `Audio` is the microphones the platform sees, `devices` ({ id, label,
+  isDefault }), relisted as they come and go, and the microphone test on the
+  saved Input device: `testState`, `level`, `heard` (input since it started),
+  `testError` (core's message) and `canToggleTest` (not while dictating).
+  The test moves to a newly chosen device, and stops when its page or window
+  goes (`stopTest`). `Microphones` (Speecher.App) words them: the device
+  choices, a saved microphone that has gone, and what the test says.
 - `Dictation` is the session as the popup shows it: `state` (the popup's
   phase: idle, starting, listening, paused, transcribing, refining,
   delivering, delivered, review, error), `level`, `elapsed`, `words`,

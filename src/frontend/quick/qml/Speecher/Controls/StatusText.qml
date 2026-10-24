@@ -8,6 +8,8 @@ import Speecher.Theme
 // states that are only waiting their turn. indicator: auto (as described),
 // dot (a dot for every settled state, for lists read at a glance) or none.
 // Changes of wording roll in place and the indicator fades between kinds.
+// wrap sets the text to the width left beside the indicator, over several
+// lines.
 Row {
     id: root
 
@@ -16,6 +18,7 @@ Row {
     property bool busy: false
     property string indicator: "auto"
     property string variant: "small"
+    property bool wrap: false
 
     readonly property bool _attention: tone === "warning" || tone === "negative"
     readonly property bool _live: tone === "live"
@@ -48,6 +51,8 @@ Row {
         }
     }
     MorphText {
+        width: root.wrap ? root.width - mark.width - root.spacing : implicitWidth
+        wrap: root.wrap
         text: root.text
         variant: root.variant
         color: root._attention || root.tone === "accent" || root.tone === "tertiary" ? Theme.tone(root.tone) : Theme.textSecondary

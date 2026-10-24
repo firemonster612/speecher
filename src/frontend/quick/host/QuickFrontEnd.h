@@ -2,6 +2,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickInsights.h"
@@ -68,6 +69,7 @@ private:
     ApplicationController *m_controller;
     // Before the engine, which reads them until it goes.
     QuickSettings m_settings;
+    QuickAudio m_audio;
     QuickStatus m_status;
     QuickDictation m_dictation;
     QuickUpdates m_updates;

@@ -27,28 +27,18 @@ Page {
             Select {
                 placeholder: Words.choose
                 enabled: Audio.hasMicrophones
-                options: Audio.deviceOptions
+                options: Microphones.deviceOptions
                 currentId: Settings.values.audioDevice || ""
                 onChosen: id => Settings.set("audioDevice", id)
             }
         }
         Reveal {
-            open: Audio.deviceMissing
+            open: Microphones.deviceMissing
             Notice {
                 inset: Theme.rowInset
                 text: page.device.missingHelp
                 actionText: page.device.missingActionLabel
                 onAction: Settings.set("audioDevice", "")
-            }
-        }
-        SchemaRow {
-            id: systemSettings
-            rowId: "openMicrophoneSettings"
-            Button {
-                text: systemSettings.spec.actionLabel
-                trailingIcon: systemSettings.spec.actionIcon
-                size: "small"
-                onClicked: Audio.openSystemSettings()
             }
         }
     }

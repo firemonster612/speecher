@@ -99,6 +99,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_settings(controller)
+    , m_audio(controller)
     , m_status(controller)
     , m_dictation(controller)
     , m_updates(controller, controller->updates())
@@ -173,6 +174,12 @@ void QuickFrontEnd::showPage(const QString &pageId)
         // Startup work that would compete with the first paint waits for it.
         connect(m_main, &QQuickWindow::frameSwapped, m_controller, &ApplicationController::frontEndReady,
                 Qt::SingleShotConnection);
+        // A hidden window keeps its pages, so it lets go of the microphone here.
+        connect(m_main, &QWindow::visibleChanged, &m_audio, [this](bool visible) {
+            if (!visible) {
+                m_audio.stopTest();
+            }
+        });
     }
     m_main->show();
     m_main->raise();
@@ -275,6 +282,7 @@ void QuickFrontEnd::setPage(const QString &pageId)
 
 void QuickFrontEnd::setupClosed()
 {
+    m_audio.stopTest();
     std::exchange(m_setup, nullptr)->deleteLater();
     m_controller->setupAssistantClosed();
 }

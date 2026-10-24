@@ -120,14 +120,15 @@ struct SettingRow {
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
 // save. Rows missing here (the result duration) wait for the PR that wires
 // their page; launch at login is saved only where the platform can start
-// Speecher at login. So do the rows whose choices come from a placeholder
-// area, since a made-up choice would be saved as real: the microphone (Audio)
-// and the default Writing Profile (Library's profiles).
+// Speecher at login. So does the default Writing Profile, whose choices come
+// from a placeholder area (Library's profiles), since a made-up choice would
+// be saved as real.
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
      [](AppSettings &s, const QVariant &v) { s.shortcutActivationMode = shortcutActivationModeFromName(v.toString()); }},
 
+    FIELD_ROW("audioDevice", audio.deviceId),
     FIELD_ROW("captureMode", audio.mode),
     FIELD_ROW("readinessTimeoutMs", audio.readinessTimeoutMs),
     FIELD_ROW("preRollMs", audio.preRollMs),
