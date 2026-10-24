@@ -37,7 +37,7 @@ QuickStatus *QuickStatus::create(QQmlEngine *, QJSEngine *)
 
 QStringList QuickStatus::shortcutKeys() const
 {
-    return speecher::shortcutKeys(m_controller->globalShortcut());
+    return speecher::shortcutKeys(m_controller->globalShortcutDisplay());
 }
 
 QString QuickStatus::version() const

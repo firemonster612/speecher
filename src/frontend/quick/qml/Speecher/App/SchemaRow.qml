@@ -13,8 +13,12 @@ SettingRow {
     readonly property var spec: Schema.row(rowId)
     readonly property var value: Settings.values[rowId]
 
+    // The row's help; a page may give its own. Why the row's last save was
+    // refused shows in its place.
+    property string note: spec.help || ""
+
     title: spec.label
-    help: spec.help || ""
+    help: Settings.errors[rowId] || note
     iconName: spec.icon || ""
     // Usable once the backend saves the row or runs its action; a custom row
     // with no value draws content that has nothing to save. enabledWhen reads
@@ -44,15 +48,15 @@ SettingRow {
     Component { id: toggle; Switch { checked: !!root.value; onToggled: Settings.set(root.rowId, checked) } }
     Component {
         id: segmented
-        SegmentedControl { options: root.spec.options; currentId: root.value; onActivated: id => Settings.set(root.rowId, id) }
+        SegmentedControl { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: select
-        Select { placeholder: Words.choose; options: root.spec.options; currentId: root.value; onChosen: id => Settings.set(root.rowId, id) }
+        Select { placeholder: Words.choose; options: root.spec.options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: cards
-        OptionCards { options: root.spec.options; currentId: root.value; onActivated: id => Settings.set(root.rowId, id) }
+        OptionCards { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: slider
@@ -96,6 +100,10 @@ SettingRow {
             // The keys that act while dictating may be Escape itself.
             escapeRecords: root.rowId === "cancelShortcut" || root.rowId === "pauseShortcut"
             keys: root.value || []
+            // The bound shortcuts let go while it listens, so pressing them
+            // records them; every way listening ends takes them back.
+            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut()
+            Component.onDestruction: if (listening) Settings.stopRecordingShortcut()
             onRecorded: keys => Settings.set(root.rowId, keys)
         }
     }

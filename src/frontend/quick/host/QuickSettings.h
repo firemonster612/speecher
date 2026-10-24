@@ -10,8 +10,10 @@ namespace speecher {
 
 class ApplicationController;
 
-// A shortcut as the keycaps the UI draws: {"Ctrl", "Space"}.
-QStringList shortcutKeys(const ShortcutBinding &binding);
+// A shortcut's display text as the keycaps the UI draws: "Ctrl+Space" is
+// {"Ctrl", "Space"}. A "+" splits only between two keys, so "Ctrl++" and the
+// single key "Numpad +" keep their plus.
+QStringList shortcutKeys(const QString &display);
 
 // The UI's Settings singleton: the saved settings by the schema's row ids,
 // read from and written through the daemon's SettingsStore, so the UI, the
@@ -22,6 +24,7 @@ class QuickSettings final : public QObject {
     QML_NAMED_ELEMENT(Settings)
     QML_SINGLETON
     Q_PROPERTY(QVariantMap values READ values NOTIFY valuesChanged)
+    Q_PROPERTY(QVariantMap errors READ errors NOTIFY errorsChanged)
 
 public:
     explicit QuickSettings(ApplicationController *controller, QObject *parent = nullptr);
@@ -31,26 +34,40 @@ public:
     static QuickSettings *create(QQmlEngine *, QJSEngine *);
 
     QVariantMap values() const;
+    // Why a row's last save was refused, by row id, such as a shortcut another
+    // app owns; a row with nothing refused is absent.
+    QVariantMap errors() const;
     // Saves one row's value. A row this build does not save is refused with
     // a warning in the log. A shortcut row takes the keys ShortcutField
     // records (["Ctrl", "Space"]) and hands them to the controller, which
-    // binds and keeps them; an empty list clears the shortcut.
+    // binds and keeps them; an empty list clears the shortcut. Why the
+    // controller refused one lands in errors.
     Q_INVOKABLE void set(const QString &id, const QVariant &value);
     // Runs an action row, such as runSetup.
     Q_INVOKABLE void act(const QString &id);
     // Whether set saves this row, or act runs it. A constant, so QML may call
     // it in a binding.
     Q_INVOKABLE bool saves(const QString &id) const;
+    // While the shortcut row id records, every Global Shortcut lets go of its
+    // keys, so pressing the bound ones records them instead of dictating.
+    // stopRecordingShortcut takes them back. Repeating either call changes
+    // nothing.
+    Q_INVOKABLE void startRecordingShortcut(const QString &id);
+    Q_INVOKABLE void stopRecordingShortcut();
 
 signals:
     void valuesChanged();
+    void errorsChanged();
 
 private:
-    void setShortcut(GlobalShortcutRole role, const QStringList &keys);
+    void setShortcut(const QString &id, GlobalShortcutRole role, const QStringList &keys);
+    void setError(const QString &id, const QString &error);
     void refresh();
 
     ApplicationController *m_controller;
     QVariantMap m_values;
+    QVariantMap m_errors;
+    bool m_recordingShortcut = false;
 };
 
 } // namespace speecher

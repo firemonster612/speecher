@@ -82,8 +82,8 @@ target_sources(speecher PRIVATE
 # from the shared Qt at run time, so the import scan, which links them for a
 # static Qt, is off.
 set_target_properties(speecher PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
-target_link_libraries(speecher PRIVATE
-  Qt6::Quick
+# The UI's QML module plugins, linked statically into whatever loads the UI.
+set(SPEECHER_QUICK_PLUGINS
   speecher_quick_themeplugin
   speecher_quick_launchplugin
   speecher_quick_demoplugin
@@ -93,6 +93,7 @@ target_link_libraries(speecher PRIVATE
   speecher_quick_appplugin
   speecher_quick_popupplugin
 )
+target_link_libraries(speecher PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
 file(GLOB SPEECHER_QUICK_FONTS "${SPEECHER_QUICK_DIR}/assets/*/*.ttf")
 qt_add_resources(speecher speecher_quick_fonts
   PREFIX /speecher

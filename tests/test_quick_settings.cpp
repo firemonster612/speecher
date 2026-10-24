@@ -53,6 +53,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        // A row that loads with a warning, such as an absent value assigned to
+        // a string, is a broken row.
+        QTest::failOnWarning();
     }
 
     void setSavesThroughTheStore()
@@ -158,7 +161,17 @@ private slots:
         QVERIFY(threshold->property("enabled").toBool());
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
-        QVERIFY(!schemaRow(engine, "globalPasteRule")->property("enabled").toBool());
+        // A greyed choice the backend does not save shows no choice at all.
+        const std::unique_ptr<QObject> pasteRule = schemaRow(engine, "globalPasteRule");
+        QVERIFY(!pasteRule->property("enabled").toBool());
+        const QObject *select = nullptr;
+        for (const QObject *child : pasteRule->findChildren<QObject *>()) {
+            if (QByteArray(child->metaObject()->className()).startsWith("Select_")) {
+                select = child;
+            }
+        }
+        QVERIFY(select);
+        QCOMPARE(select->property("currentIndex").toInt(), -1);
         // A custom row with a value is a setting; one without draws the page's own content.
         QVERIFY(!schemaRow(engine, "audioDevice")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
@@ -255,11 +268,10 @@ private slots:
 
     void shortcutKeysSplitIntoKeycaps()
     {
-        QCOMPARE(shortcutKeys(ShortcutBinding(QKeySequence(QStringLiteral("Ctrl+Space")))),
-                 (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Space")}));
-        QCOMPARE(shortcutKeys(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_Plus))),
-                 (QStringList{QStringLiteral("Ctrl"), QStringLiteral("+")}));
-        QCOMPARE(shortcutKeys(ShortcutBinding()), QStringList());
+        QCOMPARE(shortcutKeys(QStringLiteral("Ctrl+Space")), (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Space")}));
+        QCOMPARE(shortcutKeys(QStringLiteral("Ctrl++")), (QStringList{QStringLiteral("Ctrl"), QStringLiteral("+")}));
+        QCOMPARE(shortcutKeys(QStringLiteral("Numpad +")), QStringList{QStringLiteral("Numpad +")});
+        QCOMPARE(shortcutKeys(QString()), QStringList());
     }
 };
 

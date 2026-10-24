@@ -7,6 +7,8 @@ import Speecher.Wording
 // values[id] in bindings so they update.
 QtObject {
     property var values: ({})
+    // Why a row's last save was refused, by id: the preview refuses nothing.
+    readonly property var errors: ({})
 
     function set(id, v) {
         const next = Object.assign({}, values)
@@ -20,6 +22,11 @@ QtObject {
 
     // Whether set saves this row: the preview saves every one.
     function saves(id) { return true }
+
+    // A shortcut row is recording. The app lets go of the bound shortcuts
+    // meanwhile; the preview binds none.
+    function startRecordingShortcut(id) {}
+    function stopRecordingShortcut() {}
 
     Component.onCompleted: {
         const start = {}

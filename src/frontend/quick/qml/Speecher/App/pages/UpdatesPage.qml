@@ -22,7 +22,7 @@ Page {
 
     Section {
         title: Schema.row("updateChannel").section
-        SchemaRow { rowId: "updateChannel"; help: page._channel ? page._channel.help : "" }
+        SchemaRow { rowId: "updateChannel"; note: page._channel ? page._channel.help : "" }
         SchemaRow { rowId: "autoCheckUpdates" }
         SchemaRow { rowId: "updateCheckInterval" }
         SchemaRow {

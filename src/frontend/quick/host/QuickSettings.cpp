@@ -231,6 +231,17 @@ const struct ShortcutRow {
 
 const QString runSetupAction = QStringLiteral("runSetup");
 
+// The id of the shortcut row for role.
+QString shortcutRowId(GlobalShortcutRole role)
+{
+    for (const ShortcutRow &row : shortcutRows) {
+        if (row.role == role) {
+            return QLatin1String(row.id);
+        }
+    }
+    return {};
+}
+
 // The row of either table with this id, or nullptr.
 template <typename Row, std::size_t count>
 const Row *findRow(const Row (&rows)[count], const QString &id)
@@ -245,25 +256,20 @@ const Row *findRow(const Row (&rows)[count], const QString &id)
 
 } // namespace
 
-QStringList shortcutKeys(const ShortcutBinding &binding)
+QStringList shortcutKeys(const QString &display)
 {
-    if (binding.isEmpty()) {
+    if (display.isEmpty()) {
         return {};
     }
-    const QString text = binding.displayText();
-    if (binding.isSingleKey()) {
-        return {text};
-    }
-    // Keys are joined with "+", and a "+" that starts a key is the plus key.
     QStringList keys;
     qsizetype start = 0;
-    for (qsizetype i = 0; i < text.size(); ++i) {
-        if (text.at(i) == QLatin1Char('+') && i > start) {
-            keys.append(text.mid(start, i - start));
+    for (qsizetype i = 0; i + 1 < display.size(); ++i) {
+        if (display.at(i) == QLatin1Char('+') && i > start) {
+            keys.append(display.mid(start, i - start));
             start = i + 1;
         }
     }
-    keys.append(text.mid(start));
+    keys.append(display.mid(start));
     return keys;
 }
 
@@ -300,10 +306,15 @@ QVariantMap QuickSettings::values() const
     return m_values;
 }
 
+QVariantMap QuickSettings::errors() const
+{
+    return m_errors;
+}
+
 void QuickSettings::set(const QString &id, const QVariant &value)
 {
     if (const ShortcutRow *shortcut = findRow(shortcutRows, id)) {
-        setShortcut(shortcut->role, value.toStringList());
+        setShortcut(id, shortcut->role, value.toStringList());
         return;
     }
     const SettingRow *row = findRow(settingRows, id);
@@ -333,7 +344,31 @@ bool QuickSettings::saves(const QString &id) const
     return findRow(settingRows, id) || findRow(shortcutRows, id) || id == runSetupAction;
 }
 
-void QuickSettings::setShortcut(GlobalShortcutRole role, const QStringList &keys)
+void QuickSettings::startRecordingShortcut(const QString &id)
+{
+    // A refusal from the last attempt would read as a verdict on this one.
+    setError(id, {});
+    if (m_recordingShortcut) {
+        return;
+    }
+    m_recordingShortcut = true;
+    m_controller->suspendGlobalShortcut();
+}
+
+void QuickSettings::stopRecordingShortcut()
+{
+    if (!m_recordingShortcut) {
+        return;
+    }
+    m_recordingShortcut = false;
+    GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
+    const QString error = m_controller->resumeGlobalShortcut(&failedRole);
+    if (!error.isEmpty()) {
+        setError(shortcutRowId(failedRole), error);
+    }
+}
+
+void QuickSettings::setShortcut(const QString &id, GlobalShortcutRole role, const QStringList &keys)
 {
     const QString text = keys.join(QLatin1Char('+'));
     const ShortcutBinding binding = ShortcutBinding::fromString(text);
@@ -348,9 +383,21 @@ void QuickSettings::setShortcut(GlobalShortcutRole role, const QStringList &keys
         return;
     }
     QString error;
-    if (!m_controller->setGlobalShortcut(binding, &error, role)) {
-        qWarning().noquote() << "Settings.set: could not bind" << text + ":" << error;
+    const bool bound = m_controller->setGlobalShortcut(binding, &error, role);
+    setError(id, bound ? QString() : error);
+}
+
+void QuickSettings::setError(const QString &id, const QString &error)
+{
+    if (m_errors.value(id).toString() == error) {
+        return;
     }
+    if (error.isEmpty()) {
+        m_errors.remove(id);
+    } else {
+        m_errors.insert(id, error);
+    }
+    emit errorsChanged();
 }
 
 void QuickSettings::refresh()
@@ -361,7 +408,9 @@ void QuickSettings::refresh()
         values.insert(QLatin1String(row.id), row.read(settings));
     }
     for (const auto &row : shortcutRows) {
-        values.insert(QLatin1String(row.id), shortcutKeys(m_controller->globalShortcut(row.role)));
+        // The display, not the binding: where the desktop picks the keys (the
+        // portal), the binding is a stand-in and only the display is real.
+        values.insert(QLatin1String(row.id), shortcutKeys(m_controller->globalShortcutDisplay(row.role)));
     }
     if (values == m_values) {
         return;
