@@ -404,6 +404,9 @@ private slots:
         controller.settings()->raw().sync();
         QVERIFY(!QFile::exists(file));
         QVERIFY(controller.settings()->ydotoolEnabled());
+        // A reader made afterwards, as a provider check makes one.
+        { SettingsStore reader; Q_UNUSED(reader.ydotoolEnabled()); }
+        QVERIFY(!QFile::exists(file));
     }
 
     // A keyboard setup under way finishes, saving what it saves, before

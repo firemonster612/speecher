@@ -111,7 +111,9 @@ bool SettingsStore::deleteAll(QString *path)
     if (m_settings.deleteFile()) {
         return true;
     }
-    *path = m_settings.fileName();
+    if (path) {
+        *path = m_settings.fileName();
+    }
     return false;
 }
 

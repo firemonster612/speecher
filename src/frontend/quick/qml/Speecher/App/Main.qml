@@ -22,6 +22,8 @@ ClientWindow {
     title: Words.shell.appName
     readonly property bool settingsDeleted: System.removal.settingsDeleted === true
     readonly property bool leftToQuit: settingsDeleted && !visible
+    // Search opened while removal ran goes with the rest of the window.
+    onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()
     onLeftToQuitChanged: if (leftToQuit) System.quit()
 
     // Opaque, so the search palette's blurred copy of it hides what is under.

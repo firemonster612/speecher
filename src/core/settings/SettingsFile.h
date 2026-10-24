@@ -8,8 +8,10 @@ namespace speecher {
 // write to disk passes: deleteFile deletes it and closes the gate. From then
 // on changes stay in memory, so the running app reads what it set, and
 // neither sync nor the save QSettings makes on its own after a change brings
-// the file back. Other QSettings on the same file share its unsaved changes,
-// so a write through one of them still saves them.
+// the file back. QSettings made after it keep their files in a throwaway
+// folder, so a new reader can't save its unsaved changes either; ones made
+// before on the same file (a shortcut binder's) still could, and none writes
+// after a removal.
 class SettingsFile final : public QSettings {
 public:
     SettingsFile(const QString &organization, const QString &application);
