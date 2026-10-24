@@ -8,6 +8,8 @@
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickStatus.h"
+#include "frontend/quick/host/QuickUpdates.h"
 #include "platform/PopupPositioner.h"
 
 #include <QGuiApplication>
@@ -314,6 +316,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         dictation.showError(QStringLiteral("OpenAI couldn't be reached. ").repeated(40));
@@ -350,6 +355,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         const auto state = [&dictation] { return dictation.property("state").toString(); };
@@ -472,6 +480,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         auto *positioner = new RecordingPositioner;
         QuickPopupWindow popup(&engine, positioner);
@@ -493,6 +504,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         QSignalSpy presented(&popup, &QuickPopupWindow::presented);
@@ -517,6 +531,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         QQuickWindow *window = popupWindow();
@@ -544,6 +561,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         QQuickWindow *window = popupWindow();
@@ -580,6 +600,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         DictationSession *session = controller.session();
@@ -624,6 +647,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        // The popup's offers read Status and Updates, as the host always has them.
+        QuickStatus status(&controller);
+        QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         DictationSession *session = controller.session();
