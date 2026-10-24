@@ -18,22 +18,22 @@ Item {
 
     // How long momentum takes to fade to about a third of its speed, in
     // seconds, and the speed below which it stops, in pixels a second.
-    readonly property real friction: 0.6
+    readonly property real friction: 0.45
     readonly property real stopSpeed: 20
-    readonly property real maxSpeed: 6000
+    readonly property real maxSpeed: 12000
     // Pixels one line of a mouse wheel moves, and the system's lines per
     // notch (qmllint's type data lacks the style hint, hence the index).
     readonly property real lineHeight: 24
     readonly property int wheelLines: Qt.styleHints["wheelScrollLines"] || 3
-    // A touchpad's move in pixels, after the desktop's scroll speed. Qt
-    // rounds pixelDelta to whole pixels, so a slow scroll reads 0 or 1; the
-    // angle keeps the fraction: Wayland reports 12 per pixel, X11 8. Other
-    // platforms' pixelDelta is exact.
-    readonly property real _anglePerPixel: Qt.platform.pluginName.startsWith("wayland") ? 12
-                                         : Qt.platform.pluginName === "xcb" ? 8 : 0
+    // A touchpad's move. On Linux the angle is the one measure that keeps
+    // the desktop's touchpad speed (pixelDelta is rounded to whole pixels
+    // and is a sixth or so of what other apps scroll), so it scrolls as
+    // the desktop's own Qt apps do: 120 to the lines a wheel notch moves.
+    // macOS's pixelDelta is already the system's own scroll.
+    readonly property bool _anglesAreTouchpadSpeed: Qt.platform.os === "linux"
     function _touchpadMove(event) {
-        if (_anglePerPixel > 0 || event.pixelDelta.y === 0)
-            return -event.angleDelta.y / (_anglePerPixel || 8)
+        if (_anglesAreTouchpadSpeed || event.pixelDelta.y === 0)
+            return -event.angleDelta.y / 120 * wheelLines * lineHeight
         return -event.pixelDelta.y
     }
 
