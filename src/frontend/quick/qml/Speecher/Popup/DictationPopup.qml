@@ -99,8 +99,11 @@ Item {
     // A long edit or message scrolls past this height rather than growing
     // the capsule.
     readonly property int textMax: 180
-    // The capsule's width in review, the widest phase.
-    readonly property int widest: 500
+    // The capsule's width in review, the widest phase: 500, or wider when
+    // the review's buttons, with their keys, need it to stay on one row.
+    // From the buttons, which keep their size while hidden, unlike the row.
+    readonly property int widest: Math.max(500, Math.ceil(contentX + 16 + replaceButton.implicitWidth + askButton.implicitWidth
+                                                          + cancelButton.implicitWidth + reviewActions.spacing * 2))
     // The most the capsule ever grows to: the review with its edit at the
     // scroll limit, with its buttons or, during a follow-up, with the live
     // bar and the most lines of words under it. A window this size never
@@ -480,10 +483,9 @@ Item {
                 }
 
                 // Each button names its key, so the edit can be answered
-                // without the pointer. Right-aligned, last button first, so
-                // long shortcuts wrap onto a second line instead of pushing
-                // Cancel out.
-                Flow {
+                // without the pointer. One row, right-aligned, last button
+                // first; the capsule widens for long shortcuts.
+                Row {
                     id: reviewActions
                     visible: !popup.followingUp
                     // The review's width, not the capsule's now: the window's
@@ -493,6 +495,7 @@ Item {
                     layoutDirection: Qt.RightToLeft
                     spacing: 8
                     Button {
+                        id: replaceButton
                         text: popup.t.replace
                         size: "small"
                         variant: "primary"
@@ -500,12 +503,14 @@ Item {
                         onClicked: popup.source.replaceRequested()
                     }
                     Button {
+                        id: askButton
                         text: popup.t.askForMore
                         size: "small"
                         trailing: KeyCombo { keys: popup.selectionEdit.followUpKeys || []; size: "small" }
                         onClicked: popup.source.followUpRequested()
                     }
                     Button {
+                        id: cancelButton
                         text: Words.cancel
                         size: "small"
                         trailing: KeyCombo { keys: popup.selectionEdit.keepKeys || []; size: "small" }

@@ -10,10 +10,11 @@ import Speecher.Theme
 // columns as fit, the fewest rows with the fewest gaps; a narrow place gets
 // fewer, smaller columns rather than another layout. Arrow keys move the
 // choice through the grid.
-//   options: [{ id, label, help?, icon?, status?, tone?, bars? }]
+//   options: [{ id, label, help?, icon?, status?, tone?, bars?, note? }]
 //            tone colours the status (warning, negative, positive). bars
 //            are RatingBars' bars; null shows unratedText, and an option
-//            without bars (such as None) shows no rating at all.
+//            without bars (such as None) shows no rating at all. note is a
+//            line under the ratings, such as what they were rated on.
 FocusScope {
     id: root
 
@@ -23,7 +24,7 @@ FocusScope {
     signal activated(string id)
 
     readonly property int currentIndex: options.findIndex(o => o.id === currentId)
-    readonly property int minimumCardWidth: 236
+    readonly property int minimumCardWidth: 184
     readonly property int columns: {
         const n = options.length
         const fit = Math.max(1, Math.floor((grid.width + grid.spacing) / (minimumCardWidth + grid.spacing)))
@@ -36,6 +37,21 @@ FocusScope {
         const rows = Math.ceil(n / best)
         while (best > 1 && Math.ceil(n / (best - 1)) === rows) --best
         return best
+    }
+
+    // Every card is one height, so statuses and ratings line up across the
+    // grid: a status or note takes the room of the tallest one.
+    readonly property real statusHeight: _tallest("statusHeight")
+    readonly property real noteHeight: _tallest("noteHeight")
+    // Counts the cards made, so _tallest looks again as they arrive.
+    property int _made: 0
+    function _tallest(measure) {
+        let tallest = 0
+        for (let i = 0; i < _made && i < cards.count; ++i) {
+            const card = cards.itemAt(i)
+            if (card) tallest = Math.max(tallest, card[measure])
+        }
+        return tallest
     }
 
     implicitWidth: 520
@@ -64,23 +80,34 @@ FocusScope {
         spacing: Theme.space2
 
         Repeater {
+            id: cards
             model: root.options
+            onItemAdded: ++root._made
+            onItemRemoved: --root._made
             delegate: ChoiceCard {
                 id: card
                 required property var modelData
                 required property int index
                 readonly property bool rated: modelData.bars !== undefined
+                readonly property real statusHeight: status.height
+                readonly property real noteHeight: note.text ? note.implicitHeight : 0
+
+                // Narrow where three share a step, as in setup.
+                readonly property bool narrow: width < 220
 
                 width: (grid.width - grid.spacing * (root.columns - 1)) / root.columns
-                // One height for every card, so the statuses and ratings
-                // line up across the grid.
-                height: padding * 2 + ratings.y + ratings.height
-                // Tighter where the cards are narrow, as in setup.
-                padding: width < 260 ? 12 : 14
+                height: padding * 2 + ratings.y + ratings.height + (root.noteHeight > 0 ? Theme.space1 + root.noteHeight : 0)
+                // Tighter where the cards are narrow.
+                padding: narrow ? 10 : width < 260 ? 12 : 14
                 selected: index === root.currentIndex
                 focused: focusVisible.shown && selected
                 Accessible.name: modelData.label
-                Accessible.description: [modelData.help, modelData.status].filter(t => !!t).join(". ")
+                // Everything the card shows, as sentences.
+                Accessible.description: {
+                    const rating = !rated ? "" : modelData.bars === null ? root.unratedText : bars.spoken
+                    const said = [modelData.help, modelData.status, rating, modelData.note].filter(t => !!t)
+                    return said.length ? said.map(t => t.replace(/\.$/, "")).join(". ") + "." : ""
+                }
                 onActivated: { focusVisible.pointed(); root.forceActiveFocus(); root.activated(modelData.id) }
 
                 Icon {
@@ -102,6 +129,7 @@ FocusScope {
                 // its neighbours.
                 Txt {
                     id: help
+                    readonly property real room: Math.ceil(helpMetrics.lineSpacing * lineHeight * maximumLineCount)
                     y: glyph.height + Theme.space2
                     width: parent.width
                     text: card.modelData.help || ""
@@ -110,13 +138,17 @@ FocusScope {
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
+                    FontMetrics { id: helpMetrics; font: help.font }
                 }
-                Txt { id: twoLines; visible: false; text: "\n"; variant: "small" }
+                // Wrapped, and bounded at two lines, so a long problem stays
+                // on its card; assistive tech hears all of it.
                 StatusText {
                     id: status
-                    y: help.y + twoLines.implicitHeight + Theme.space1
-                    height: 18
+                    y: help.y + help.room + Theme.space1
                     width: parent.width
+                    wrap: true
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                     text: card.modelData.status || ""
                     // A state core has not settled yet has no words, and
                     // no dot either.
@@ -124,13 +156,14 @@ FocusScope {
                 }
                 Item {
                     id: ratings
-                    y: status.y + status.height + Theme.space2
+                    y: status.y + root.statusHeight + (card.narrow ? Theme.space1 : Theme.space2)
                     width: parent.width
                     height: bars.implicitHeight
                     RatingBars {
                         id: bars
-                        // A pip a little narrower where the card is.
-                        pipWidth: card.width < 260 ? 8 : 9
+                        // Pips and names a little narrower where the card is.
+                        pipWidth: card.narrow ? 6 : card.width < 260 ? 8 : 9
+                        labelWidth: card.narrow ? 50 : 58
                         // An unrated card keeps the bars' room, empty, so
                         // every card is one height.
                         bars: card.modelData.bars || [{ label: "", value: null }, { label: "", value: null }]
@@ -145,6 +178,17 @@ FocusScope {
                         opacity: card.rated && card.modelData.bars === null ? 1 : 0
                         Behavior on opacity { Ease {} }
                     }
+                }
+                Txt {
+                    id: note
+                    y: ratings.y + ratings.height + Theme.space1
+                    width: parent.width
+                    text: card.modelData.note || ""
+                    variant: "caption"
+                    tone: "tertiary"
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                 }
             }
         }

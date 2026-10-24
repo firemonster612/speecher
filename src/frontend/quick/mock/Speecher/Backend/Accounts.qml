@@ -9,7 +9,7 @@ import Speecher.Theme
 // word from server and directory). The speech providers' own sign-ins are
 // Models'. Secrets are write-only: savedSecrets says which are saved.
 //
-// --accounts=expired starts with Anthropic's sign-in expired;
+// --accounts=expired starts with Claude's sign-in expired;
 // --accounts=none starts with nothing found.
 QtObject {
     id: accounts

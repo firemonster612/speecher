@@ -42,8 +42,10 @@ T.Switch {
             readonly property real held: size + 5 * Theme.movement
             readonly property real start: inset
             readonly property real end: track.width - inset
-            // Between the ends only while a drag carries it.
-            readonly property bool dragging: control.pressed && control.position > 0 && control.position < 1
+            // Carried by a drag: held away from where it rests. Not
+            // "between the ends", since a drag past an end clamps position
+            // to that end and the knob must stay there until let go.
+            readonly property bool dragging: control.pressed && control.position !== (control.checked ? 1 : 0)
             readonly property real centre: Math.max(start + held / 2, Math.min(end - held / 2, control.position * track.width))
             readonly property real reach: control.pressed ? held : size
             property real leftEdge: dragging ? centre - held / 2 : control.checked ? end - reach : start

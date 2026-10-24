@@ -313,8 +313,9 @@ Press, hover, selection:
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
   and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`,
-  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy. Rows, menus, segments,
-  fields and the header of a card that opens never shrink.
+  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy.
+  Rows, menus, segments, fields and the header of a card that opens never
+  shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
   that turns over `Theme.base`; its body slides open. Opening never selects
   it. `SettingRow { clickable }`, `Disclosure` and ModelCard work this way.
@@ -481,7 +482,7 @@ Choosing:
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ServiceCards { options; currentId; unratedText }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status and ratings, and a check when chosen. `ChoiceCard` is the card both it and OptionCards use.
+- `ServiceCards { options; currentId; unratedText }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
 - `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.

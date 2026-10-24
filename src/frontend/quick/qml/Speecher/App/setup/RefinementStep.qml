@@ -27,7 +27,7 @@ StepPage {
 
     Card {
         ServiceCards {
-            options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
+            options: States.withTones(ModelText.setupRefinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
             unratedText: ModelText.unrated
             onActivated: id => page.choices.cleanup = id

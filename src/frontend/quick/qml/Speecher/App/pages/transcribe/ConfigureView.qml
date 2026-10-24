@@ -67,7 +67,7 @@ Column {
         title: TranscribeWords.transcription
         caption: TranscribeWords.serviceHelp
         ServiceCards {
-            options: States.withTones(ModelText.speechChoices(Models.speechServices))
+            options: States.withTones(ModelText.fileSpeechChoices(Models.speechServices))
             currentId: view.options.service
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("service", id)

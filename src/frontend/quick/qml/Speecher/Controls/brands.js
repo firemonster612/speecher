@@ -3,7 +3,9 @@
 // Company marks, as SVG path data on a 24 x 24 box, that Icon draws as a
 // shape so they take any colour like the Lucide glyphs. From Simple Icons
 // 16.35.0 (https://simpleicons.org, icons/openai.svg and icons/claude.svg),
-// released under CC0-1.0, so no notice is required.
+// released under CC0-1.0, so no notice is required. The marks are their
+// companies' trademarks, shown only to name the services Speecher connects
+// to; THIRD_PARTY_NOTICES.md says so.
 //   openai: OpenAI's mark, shown for ChatGPT.
 //   claude: Claude's mark.
 var paths = {

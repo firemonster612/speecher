@@ -84,8 +84,8 @@ var rows = [
       disabledHelp: "Turn on desktop accessibility to send the app's text.",
       keywords: "context surrounding text accessibility" },
     { id: "includeScreenshotContext", page: "refinement", section: "What refinement can see", kind: "toggle",
-      label: "A screenshot", help: "Kept only for the current dictation. Only OpenAI and Anthropic can read it.",
-      disabledHelp: "Only OpenAI and Anthropic refinement can use screenshots.",
+      label: "A screenshot", help: "Kept only for the current dictation. Only ChatGPT and Claude can read it.",
+      disabledHelp: "Only ChatGPT and Claude refinement can use screenshots.",
       value: false, keywords: "screen capture image context vision" },
 
     { id: "customSystemPromptEnabled", page: "refinement", section: "System prompt", kind: "toggle",
