@@ -37,6 +37,25 @@ public:
         Missed,
     };
 
+    // The step that went wrong, for the window to word.
+    enum class Failure {
+        SetUp,
+        Start,
+        Type,
+        Stop,
+        Remove,
+        // The helper finished, but some of the files it set up are still there.
+        FilesLeft,
+    };
+
+    // What the output method becomes once setUp has installed the keyboard.
+    // The setup assistant pastes Automatically: insert where it can, then the
+    // virtual keyboard.
+    enum class AfterSetUp {
+        KeepOutputMethod,
+        PasteAutomatically,
+    };
+
     static bool typeWithYdotool(const QString &text, QString *error);
 
     // What the setup touches outside the process, so tests can stand in for
@@ -67,7 +86,7 @@ public:
     void refresh();
     // Installs the setup through the helper and starts its service. A setup
     // that comes up ready goes on to the typing test.
-    void setUp();
+    void setUp(AfterSetUp after = AfterSetUp::KeepOutputMethod);
     void startService();
     // Opens the typing test for a keyboard that is ready but off in Speecher.
     void beginTest();
@@ -85,8 +104,10 @@ public:
 
 signals:
     void changed();
-    // An operation went wrong, in core's words, for the window to show.
-    void failed(const QString &message);
+    // An operation went wrong at the step failure names. error is why, in
+    // the words of the part that failed (the helper, systemd, ydotool), or
+    // empty where it said nothing.
+    void failed(VirtualKeyboardSetup::Failure failure, const QString &error);
 
 private:
     // Runs work off this thread; done then runs here, unless this went first.

@@ -3,18 +3,23 @@
 #include "app/ApplicationController.h"
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 
+#include <QFile>
+#include <QJSValue>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 
 #include <memory>
+#include <tuple>
 
 // The UI's QML modules are linked into the tests by test_quick_settings.cpp,
 // which imports their plugins for the whole binary.
@@ -105,6 +110,33 @@ QVariantMap keyboardCheck(const QuickSystem &system)
     return system.check(QStringLiteral("virtualKeyboardHealth"));
 }
 
+QVariantList keyboardFailures(const QuickSystem &system)
+{
+    return keyboardCheck(system).value(QStringLiteral("failures")).toList();
+}
+
+QVariantMap failure(const char *step, const QString &error)
+{
+    return {{QStringLiteral("step"), QLatin1String(step)}, {QStringLiteral("error"), error}};
+}
+
+// A QML var property as plain values.
+QVariant plain(const QVariant &value)
+{
+    return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
+}
+
+std::unique_ptr<QObject> createQml(QQmlEngine &engine, const QByteArray &qml, const char *url = "")
+{
+    QQmlComponent component(&engine);
+    component.setData(qml, QUrl(QLatin1String(url)));
+    std::unique_ptr<QObject> created(component.create());
+    if (!created) {
+        qWarning().noquote() << component.errorString();
+    }
+    return created;
+}
+
 } // namespace
 
 // The UI's System singleton over core's virtual keyboard setup, phone
@@ -173,11 +205,10 @@ private slots:
                                   VirtualKeyboardSetup::testArrivalMs * 3);
         QVERIFY(!SettingsStore().ydotoolEnabled());
 
-        // A keyboard that can't type says so in core's words, and stays off.
+        // A keyboard that can't type says so, and stays off.
         keyboard.typeSucceeds = false;
-        QSignalSpy announced(&system, &QuickSystem::announced);
         system.runVirtualKeyboardTest();
-        QTRY_COMPARE(announced.count(), 1);
+        QTRY_COMPARE(keyboardFailures(system), QVariantList{failure("type", QString())});
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("ready"));
         QVERIFY(!SettingsStore().ydotoolEnabled());
     }
@@ -190,11 +221,10 @@ private slots:
         keyboard.helperSucceeds = false;
         keyboard.helperError = QStringLiteral("Authorization was declined.");
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
-        QSignalSpy announced(&system, &QuickSystem::announced);
 
         system.fix(QStringLiteral("virtualKeyboardHealth"));
-        QTRY_COMPARE(announced.count(), 1);
-        QCOMPARE(announced.first().first().toString(), QStringLiteral("Authorization was declined."));
+        QTRY_COMPARE(keyboardFailures(system),
+                     QVariantList{failure("setUp", QStringLiteral("Authorization was declined."))});
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("notInstalled"));
         QCOMPARE(keyboard.calls, QStringList{QStringLiteral("install")});
@@ -208,14 +238,13 @@ private slots:
         keyboard.managed = true;
         SettingsStore().setYdotoolEnabled(true);
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
-        QSignalSpy announced(&system, &QuickSystem::announced);
 
         system.removeVirtualKeyboard();
         QVERIFY(system.virtualKeyboardActions().isEmpty());
         QTRY_COMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("notInstalled"));
         QCOMPARE(keyboard.calls, (QStringList{QStringLiteral("stop"), QStringLiteral("remove")}));
         QVERIFY(!SettingsStore().ydotoolEnabled());
-        QCOMPARE(announced.count(), 0);
+        QVERIFY(keyboardFailures(system).isEmpty());
 
         // A helper that fails keeps the setting and names the failure.
         keyboard.installed = YdotoolSetupState::Ready;
@@ -224,9 +253,32 @@ private slots:
         keyboard.helperError = QStringLiteral("pkexec failed");
         SettingsStore().setYdotoolEnabled(true);
         system.removeVirtualKeyboard();
-        QTRY_COMPARE(announced.count(), 1);
-        QCOMPARE(announced.first().first().toString(), QStringLiteral("pkexec failed"));
+        QTRY_COMPARE(keyboardFailures(system), QVariantList{failure("remove", QStringLiteral("pkexec failed"))});
         QVERIFY(SettingsStore().ydotoolEnabled());
+    }
+
+    // Only the setup assistant's own setup makes the output method Automatic,
+    // as the assistant did before.
+    void setupsKeyboardPastesAutomatically()
+    {
+        ApplicationController controller(true);
+        const QString ydotool = QString::fromLatin1(OutputMethod::Ydotool);
+        // The output method after setting up a keyboard that isn't there yet.
+        const auto afterSetUp = [&controller, &ydotool](bool fromSetup, bool helperSucceeds) {
+            controller.settings()->setOutputMethod(ydotool);
+            FakeKeyboard keyboard;
+            keyboard.helperSucceeds = helperSucceeds;
+            QuickSystem system(&controller, keyboard.system(), quietRemoval());
+            const QString id = QStringLiteral("virtualKeyboardHealth");
+            fromSetup ? system.fixFromSetup(id) : system.fix(id);
+            const bool finished = QTest::qWaitFor([&system] {
+                return keyboardCheck(system).value(QStringLiteral("state")).toString() != QLatin1String("working");
+            });
+            return finished ? SettingsStore().outputMethod() : QStringLiteral("still setting up");
+        };
+        QCOMPARE(afterSetUp(false, true), ydotool);
+        QCOMPARE(afterSetUp(true, true), QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(afterSetUp(true, false), ydotool);
     }
 
     // Removal goes on past a failed step and reports each one.
@@ -250,6 +302,11 @@ private slots:
             *error = QStringLiteral("Authorization was declined.");
             return false;
         };
+        steps.keyHelperInstalled = [] { return true; };
+        steps.removeKeyHelper = [](QString *error) {
+            *error = QStringLiteral("Authorization was declined.");
+            return false;
+        };
         steps.deleteSettings = [&ran](QString *) {
             ran.append(QStringLiteral("settings"));
             return true;
@@ -262,20 +319,37 @@ private slots:
         QVERIFY(removal.running());
         QTRY_COMPARE(finished.count(), 1);
         QVERIFY(!removal.running());
+        using Part = RemovalStep::Part;
+        using Outcome = RemovalStep::Outcome;
+        const auto outcomes = [](const RemovalReport &report) {
+            QList<std::tuple<Part, Outcome, QString>> outcomes;
+            for (const RemovalStep &step : report.steps) {
+                outcomes.append({step.part, step.outcome, step.error});
+            }
+            return outcomes;
+        };
         const auto report = finished.first().first().value<RemovalReport>();
-        QCOMPARE(report.removed, QStringList{QStringLiteral("app menu entry")});
-        QCOMPARE(report.problems,
-                 (QStringList{QStringLiteral("Could not remove the speecher command: the link does not point to a Speecher AppImage."),
-                              QStringLiteral("The portal did not answer."), QStringLiteral("Authorization was declined.")}));
-        QVERIFY(!report.settingsDeleted);
+        QCOMPARE(report.files.removed, QStringList{QStringLiteral("app menu entry")});
+        QCOMPARE(report.files.absent, QStringList{QStringLiteral("icon")});
+        QCOMPARE(report.files.failed,
+                 QStringList{QStringLiteral("speecher command: the link does not point to a Speecher AppImage")});
+        // Each failure is labelled by its part, so two declined prompts read apart.
+        QCOMPARE(outcomes(report),
+                 (QList<std::tuple<Part, Outcome, QString>>{
+                     {Part::ShortcutRegistration, Outcome::Failed, QStringLiteral("The portal did not answer.")},
+                     {Part::VirtualKeyboard, Outcome::Failed, QStringLiteral("Authorization was declined.")},
+                     {Part::KeyHelper, Outcome::Failed, QStringLiteral("Authorization was declined.")},
+                     {Part::Settings, Outcome::Kept, QString()},
+                 }));
+        QVERIFY(!report.settingsDeleted());
         QVERIFY(ran.isEmpty());
         QCOMPARE(report.programFile, QStringLiteral("/home/fox/Applications/Speecher.AppImage"));
 
         removal.start(true);
         QTRY_COMPARE(finished.count(), 2);
         const auto deleting = finished.last().first().value<RemovalReport>();
-        QVERIFY(deleting.settingsDeleted);
-        QVERIFY(deleting.removed.contains(QStringLiteral("settings")));
+        QVERIFY(deleting.settingsDeleted());
+        QCOMPARE(std::get<Part>(outcomes(deleting).last()), Part::Settings);
         QCOMPARE(ran, QStringList{QStringLiteral("settings")});
     }
 
@@ -289,10 +363,41 @@ private slots:
         system.uninstall(true);
         QVERIFY(system.removing());
         QTRY_VERIFY(!system.removing());
-        QCOMPARE(system.removal().value(QStringLiteral("removed")).toStringList(),
-                 QStringList{QStringLiteral("Global Shortcut registration")});
-        QVERIFY(system.removal().value(QStringLiteral("problems")).toStringList().isEmpty());
+        const auto step = [](const char *part, const char *outcome) {
+            return QVariantMap{{QStringLiteral("part"), QLatin1String(part)},
+                               {QStringLiteral("outcome"), QLatin1String(outcome)},
+                               {QStringLiteral("error"), QString()}};
+        };
+        QCOMPARE(system.removal().value(QStringLiteral("steps")).toList(),
+                 (QVariantList{step("shortcutRegistration", "removed"), step("settings", "kept")}));
+        QCOMPARE(system.removal().value(QStringLiteral("files")).toMap().value(QStringLiteral("removed")).toStringList(),
+                 QStringList{});
         QVERIFY(!system.removal().value(QStringLiteral("settingsDeleted")).toBool());
+    }
+
+    // Once removal has deleted the settings, an edit made before quitting
+    // doesn't bring the file back.
+    void deletedSettingsStayDeleted()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        SpeecherRemoval::Steps steps = quietRemoval();
+        steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
+        QuickSystem system(&controller, keyboard.system(), steps);
+        settings.set(QStringLiteral("themeControl"), QStringLiteral("dark"));
+        const QString file = controller.settings()->raw().fileName();
+        controller.settings()->raw().sync();
+        QVERIFY(QFile::exists(file));
+
+        system.uninstall(false);
+        QTRY_VERIFY(!system.removing());
+        QVERIFY(system.removal().value(QStringLiteral("settingsDeleted")).toBool());
+        QVERIFY(!QFile::exists(file));
+
+        settings.set(QStringLiteral("themeControl"), QStringLiteral("light"));
+        controller.settings()->raw().sync();
+        QVERIFY(!QFile::exists(file));
     }
 
     // The code exists only between start and stop, and a new one replaces it.
@@ -317,6 +422,113 @@ private slots:
         QCOMPARE(system.phoneTransfer(), QString());
         QCOMPARE(system.phoneLink(), QString());
         QCOMPARE(system.phoneBundle().value(QStringLiteral("terms")).toInt(), 0);
+    }
+
+    // A page that hides takes its code with it; showing it again starts
+    // without one, and the next code is new.
+    void hidingMainStopsThePhoneCode()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        QQmlEngine engine;
+        const std::unique_ptr<QObject> created = createQml(engine, R"(
+            import QtQuick
+            Window { width: 1000; height: 900; visible: true; GeneralPage { objectName: "page"; anchors.fill: parent } }
+        )", "qrc:/qt/qml/Speecher/App/pages/Test.qml");
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QObject *page = window->findChild<QObject *>(QStringLiteral("page"));
+        QVERIFY(page);
+
+        QMetaObject::invokeMethod(page, "showPhoneCode", Q_ARG(QVariant, true));
+        QVERIFY(!system.phoneTransfer().isEmpty());
+        const QString first = system.phoneLink();
+        window->hide();
+        QCOMPARE(system.phoneTransfer(), QString());
+        QVERIFY(!page->property("_phoneOpen").toBool());
+
+        window->show();
+        QCOMPARE(system.phoneTransfer(), QString());
+        QMetaObject::invokeMethod(page, "showPhoneCode", Q_ARG(QVariant, true));
+        QVERIFY(!system.phoneTransfer().isEmpty());
+        if (!first.isEmpty()) {
+            QVERIFY(system.phoneLink() != first);
+        }
+    }
+
+    // A row follows its check as it changes, and a fix that fails says why
+    // in the row, as the setup assistant's row does.
+    void aHealthRowFollowsItsCheck()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        keyboard.helperSucceeds = false;
+        keyboard.helperError = QStringLiteral("Authorization was declined.");
+        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        QQmlEngine engine;
+        const std::unique_ptr<QObject> row = createQml(engine, R"(
+            import Speecher.App
+            HealthRow { rowId: "virtualKeyboardHealth"; fromSetup: true }
+        )");
+        QVERIFY(row);
+        const auto reason = [&row] { return row->property("check").toMap().value(QStringLiteral("reason")).toString(); };
+        QCOMPARE(reason(), QStringLiteral("notInstalled"));
+
+        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        QCOMPARE(reason(), QStringLiteral("settingUp"));
+        QTRY_COMPARE(row->property("help").toString(),
+                     QStringLiteral("Setup failed: Authorization was declined."));
+        QCOMPARE(reason(), QStringLiteral("notInstalled"));
+
+        // Trying again clears it.
+        keyboard.helperSucceeds = true;
+        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        QVERIFY(!row->property("help").toString().startsWith(QLatin1String("Setup failed")));
+        QTRY_COMPARE(reason(), QStringLiteral("testing"));
+    }
+
+    // Setup goes on past a check that is as far as this computer gets, and
+    // the check still says so.
+    void setupSettlesForWhatTheComputerAllows()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        keyboard.installed = YdotoolSetupState::NeedsSignOut;
+        keyboard.managed = true;
+        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(component.create());
+        QVERIFY2(choices, qPrintable(component.errorString()));
+        QVariantMap delivery;
+        for (const QVariant &step : plain(choices->property("steps")).toList()) {
+            if (step.toMap().value(QStringLiteral("id")) == QLatin1String("delivery")) {
+                delivery = step.toMap();
+            }
+        }
+        QVERIFY(delivery.value(QStringLiteral("done")).toBool());
+        QCOMPARE(delivery.value(QStringLiteral("verdict")).toString(), QStringLiteral("Sign out first"));
+
+        const std::unique_ptr<QObject> settled = createQml(engine, R"(
+            import QtQuick
+            import Speecher.App
+            QtObject {
+                property var results: [
+                    { id: "desktopAccessibility", state: "off", reason: "unsupported" },
+                    { id: "desktopAccessibility", state: "attention", reason: "sessionOnly" },
+                    { id: "desktopAccessibility", state: "off", reason: "off" },
+                    { id: "virtualKeyboardHealth", state: "attention", reason: "daemonNotRunning" },
+                    { id: "globalShortcuts", state: "off", reason: "unsupported" }
+                ].map(check => Setup.settled(check))
+            }
+        )");
+        QVERIFY(settled);
+        QCOMPARE(plain(settled->property("results")).toList(), (QVariantList{true, true, false, false, false}));
     }
 
     // The Pasting page's app type rows need accessibility to know the app.

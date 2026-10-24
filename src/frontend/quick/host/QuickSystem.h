@@ -3,6 +3,7 @@
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
 
+#include <QHash>
 #include <QObject>
 #include <QQmlEngine>
 #include <QVariantList>
@@ -17,9 +18,9 @@ class PhoneTransfer;
 
 // The UI's System singleton: what Speecher knows and does about the computer
 // it runs on. The permission and health checks with their fixes, the virtual
-// keyboard's setup and typing test, the clipboard and opening links, sending
-// settings to the phone, and removing Speecher. It carries states and core's
-// messages; the UI words the states (health.js, the pages).
+// keyboard's setup and typing test, the route a paste takes, the clipboard
+// and opening links, sending settings to the phone, and removing Speecher.
+// It carries states and step ids; the UI words them (health.js, the pages).
 class QuickSystem final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(System)
@@ -28,6 +29,7 @@ class QuickSystem final : public QObject {
     Q_PROPERTY(QVariantList checks READ checks NOTIFY changed)
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
+    Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
     Q_PROPERTY(QString computerName READ computerName CONSTANT)
     Q_PROPERTY(QString phoneTransfer READ phoneTransfer NOTIFY phoneChanged)
@@ -48,17 +50,27 @@ public:
 
     // Desktop accessibility is on, so Speecher can tell which app it pastes into.
     bool accessibility() const;
-    // One entry per health row, {id, state, reason, fix}: id is the row's
-    // (microphoneAccess, desktopAccessibility, globalShortcuts,
+    // One entry per health row, {id, state, reason, fix, failures}: id is the
+    // row's (microphoneAccess, desktopAccessibility, globalShortcuts,
     // virtualKeyboardHealth); state is ok, attention, off or working; reason
     // says which of the check's cases it is; fix is the action fix(id) runs,
-    // or empty where there is nothing to run.
+    // or empty where there is nothing to run. failures are what went wrong
+    // in the last thing tried on the check, [{step, error}]: step is enable
+    // for accessibility, and setUp, start, type, stop, remove or filesLeft
+    // for the keyboard; error is why, in the words of the part that failed,
+    // or empty. They stay until the next try.
     QVariantList checks() const;
+    // The check with this id, as in checks. A binding that calls it does not
+    // follow the checks; bindings read checks (Health.find in QML).
+    Q_INVOKABLE QVariantMap check(const QString &id) const;
     // What can be done to a virtual keyboard that is set up: disable, remove.
     QStringList virtualKeyboardActions() const;
     // The typing test that turns the keyboard on: off, ready (waiting for its
     // field), typing, or missed (the text never arrived).
     QString virtualKeyboardTest() const;
+    // The steps the default paste takes with Paste with, in the order core's
+    // delivery tries them: insert, press, copy (TextDelivery::pasteRoute).
+    QStringList pasteRoute() const;
     // Whether openShortcutSettings knows this desktop's shortcut settings.
     bool canOpenShortcutSettings() const;
     QString computerName() const;
@@ -67,17 +79,21 @@ public:
     QString phoneTransfer() const;
     // What the code carries while it waits; empty otherwise.
     QString phoneLink() const;
-    // What the phone gets: {terms, replacements, profiles} counts.
+    // What the last code shown sends: {terms, replacements, profiles} counts.
     QVariantMap phoneBundle() const;
     bool removing() const;
-    // The last removal's report, {removed, problems, settingsDeleted,
-    // programFile}, or empty before one finishes.
+    // The last removal's report, or empty before one finishes:
+    // {files: {removed, absent, failed}, the desktop's item names;
+    // steps: [{part, outcome, error}], RemovalStep's, by name;
+    // settingsDeleted; programFile}.
     QVariantMap removal() const;
 
-    // The check with this id, as in checks.
-    Q_INVOKABLE QVariantMap check(const QString &id) const;
-    // Runs the fix the check offers. A fix that fails says why in announced.
+    // Runs the fix the check offers. A fix that fails says why in the
+    // check's failures.
     Q_INVOKABLE void fix(const QString &id);
+    // fix, for the setup assistant: a virtual keyboard it sets up pastes
+    // Automatically.
+    Q_INVOKABLE void fixFromSetup(const QString &id);
     Q_INVOKABLE void disableVirtualKeyboard();
     Q_INVOKABLE void removeVirtualKeyboard();
     // Types the test text into whatever has focus, which the caller focused
@@ -96,7 +112,8 @@ public:
     Q_INVOKABLE void startPhoneTransfer();
     Q_INVOKABLE void stopPhoneTransfer();
     // Removes Speecher from this computer, keeping the settings or not;
-    // removal then holds the report.
+    // removal then holds the report. Once the settings are deleted, nothing
+    // saves them again (SettingsStore::deleteAll), and quitting is left.
     Q_INVOKABLE void uninstall(bool keepSettings);
     Q_INVOKABLE void quit();
 
@@ -104,16 +121,24 @@ signals:
     void changed();
     void phoneChanged();
     void removalChanged();
-    // Something done out of sight that the window should mention, such as a
-    // fix that failed, in core's words.
+    // Something done out of sight that the window should mention. The app's
+    // System says what went wrong in place (a check's failures, the removal
+    // report), so only the preview's mock sends it.
     void announced(const QString &text, const QString &icon);
 
 private:
+    void runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp);
+    // Forgets the check's failures as something new is tried on it.
+    void clearFailures(const QString &id);
+
     ApplicationController *m_controller;
     VirtualKeyboardSetup m_virtualKeyboard;
     SpeecherRemoval m_removal;
     QVariantMap m_removalReport;
     std::unique_ptr<PhoneTransfer> m_phone;
+    QVariantMap m_phoneBundle;
+    // Each check's failures, by check id, as checks shows them.
+    QHash<QString, QVariantList> m_failures;
 };
 
 } // namespace speecher

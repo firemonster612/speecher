@@ -39,6 +39,10 @@ public:
     DeliveryResult deliver(const OutputSettings &settings,
                            const DeliveryContent &content,
                            const Target &target) override;
+    // The steps deliver takes for this paste method and these settings, in
+    // order: insert (straight into the app, through accessibility), press
+    // (the paste keys) and copy (the words left on the clipboard).
+    static QStringList pasteRoute(const OutputSettings &settings, PasteMethod pasteMethod);
     static QStringList orderedMethods(const OutputSettings &settings);
     static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
 

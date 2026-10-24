@@ -39,13 +39,17 @@ Backend is the C++ types plus the mocks not yet replaced.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`) and
   `System` (`host/QuickSystem`). Placeholders until their wiring PRs:
   `Insights`, `Audio`, `Models`, `Library` and `Accounts`.
-- `System.checks` are `{id, state, reason, fix}`; `Health` (health.js) words
-  each by id and reason, and `System.fix(id)` runs the fix. The virtual
-  keyboard turns on only after its typing test (`VirtualKeyboardTest`) puts
-  core's test text in the field. The phone code lives from
-  `startPhoneTransfer()` to `stopPhoneTransfer()`, and `QrCode` draws it
-  through the host's `image://qr` provider. `uninstall` reports in
-  `System.removal`. The paste rules are Settings rows: `globalPasteRule`,
+- `System.checks` are `{id, state, reason, fix, failures}`; `Health`
+  (health.js) words each by id and reason, and a failed fix by its steps.
+  Bindings look a check up with `Health.find(System.checks, id)`, so they
+  follow the checks. `System.fix(id)` runs the fix (`fixFromSetup` in the
+  setup assistant). The virtual keyboard turns on only after its typing test
+  (`VirtualKeyboardTest`) puts core's test text in the field.
+  `System.pasteRoute` is the steps core's delivery takes (insert, press,
+  copy). The phone code lives from `startPhoneTransfer()` to
+  `stopPhoneTransfer()`, and `QrCode` draws it through the host's
+  `image://qr` provider. `uninstall` reports in `System.removal` by part and
+  outcome, and General words it. The paste rules are Settings rows: `globalPasteRule`,
   `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
   `applicationPasteRules`, a list of `{app, method, enabled}`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,

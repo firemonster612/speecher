@@ -4,6 +4,9 @@
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
+#include <QDebug>
+#include <QFile>
+
 #include <utility>
 
 namespace speecher {
@@ -102,6 +105,28 @@ SettingsStore::SettingsStore(QObject *parent)
     , SettingsCodecs()
 {
     m_secrets = new SecretStore(this, this);
+}
+
+SettingsStore::~SettingsStore()
+{
+    if (m_deleted) {
+        deleteAll(nullptr);
+    }
+}
+
+bool SettingsStore::deleteAll(QString *path)
+{
+    m_deleted = true;
+    const QString file = m_settings.fileName();
+    m_settings.clear();
+    m_settings.sync();
+    if (QFile::exists(file) && !QFile::remove(file)) {
+        if (path) {
+            *path = file;
+        }
+        return false;
+    }
+    return true;
 }
 
 SecretStore *SettingsStore::secrets() const
@@ -217,6 +242,10 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    if (m_deleted) {
+        qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
+        return;
+    }
     const AppSettings previous = dictationSnapshot();
     const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
         if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;

@@ -1,5 +1,6 @@
 #include "app/VirtualKeyboardSetup.h"
 
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "output/YdotoolDelivery.h"
 
@@ -49,7 +50,7 @@ void VirtualKeyboardSetup::refresh()
     emit changed();
 }
 
-void VirtualKeyboardSetup::setUp()
+void VirtualKeyboardSetup::setUp(AfterSetUp after)
 {
     if (m_operation != Operation::None) {
         return;
@@ -73,14 +74,16 @@ void VirtualKeyboardSetup::setUp()
                 system.startService(&result->serviceError);
             }
         },
-        [this, result] {
+        [this, result, after] {
             if (!result->installed) {
-                emit failed(result->helperError.isEmpty() ? QStringLiteral("The virtual keyboard setup failed.")
-                                                          : result->helperError);
+                emit failed(Failure::SetUp, result->helperError);
                 return;
             }
+            if (after == AfterSetUp::PasteAutomatically) {
+                m_settings->setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
+            }
             if (!result->serviceError.isEmpty()) {
-                emit failed(result->serviceError);
+                emit failed(Failure::Start, result->serviceError);
             }
             // In the sign-out case the test can't run yet; the next sign-in
             // offers it.
@@ -101,7 +104,7 @@ void VirtualKeyboardSetup::startService()
         [system = m_system, error] { system.startService(error.get()); },
         [this, error] {
             if (!error->isEmpty()) {
-                emit failed(*error);
+                emit failed(Failure::Start, *error);
             }
         });
 }
@@ -129,7 +132,7 @@ void VirtualKeyboardSetup::runTest()
         }
         if (!*typed) {
             setTest(Test::Ready);
-            emit failed(error->isEmpty() ? QStringLiteral("The virtual keyboard could not type.") : *error);
+            emit failed(Failure::Type, *error);
             return;
         }
         m_arrival.start();
@@ -182,23 +185,15 @@ void VirtualKeyboardSetup::remove()
             // Everything that did not come off is named: a service still
             // running, or files the helper left, is access the person asked
             // to take away.
-            QStringList problems;
             if (!result->stopError.isEmpty()) {
-                problems.append(
-                    QStringLiteral("The virtual keyboard service could not be stopped: %1").arg(result->stopError));
+                emit failed(Failure::Stop, result->stopError);
             }
             if (!result->removed) {
-                problems.append(result->helperError.isEmpty()
-                                    ? QStringLiteral("The virtual keyboard setup could not be removed.")
-                                    : result->helperError);
+                emit failed(Failure::Remove, result->helperError);
             } else if (m_system.probe(false).speecherManagedSetupInstalled) {
-                problems.append(
-                    QStringLiteral("The removal finished, but some of the files Speecher set up are still there."));
+                emit failed(Failure::FilesLeft, QString());
             } else {
                 m_settings->setYdotoolEnabled(false);
-            }
-            if (!problems.isEmpty()) {
-                emit failed(problems.join(QLatin1Char(' ')));
             }
         });
 }

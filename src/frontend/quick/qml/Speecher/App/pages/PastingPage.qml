@@ -11,18 +11,13 @@ Page {
     title: Schema.page("pasting").title
     subtitle: Schema.page("pasting").subtitle
 
-    readonly property bool _keyboardReady: System.check("virtualKeyboardHealth").state === "ok"
     // The steps a paste takes with the default paste and Paste with, in the
-    // order core's delivery tries them: [{ icon, label }].
-    readonly property var _route: {
-        const rule = Settings.values.globalPasteRule
-        const copy = { icon: "clipboard", label: "Copy to clipboard" }
-        const insert = { icon: "text-cursor-input", label: "Insert directly" }
-        const press = _keyboardReady ? { icon: "keyboard", label: rule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" } : copy
-        if (rule === "clipboard_only") return [copy]
-        if (rule === "direct_insert") return [insert]
-        return Settings.values.outputMethod === "ydotool" ? [press] : [insert, press]
-    }
+    // order core's delivery tries them, in words: [{ icon, label }].
+    readonly property var _route: System.pasteRoute.map(step => ({
+        insert: { icon: "text-cursor-input", label: "Insert directly" },
+        press: { icon: "keyboard", label: Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
+        copy: { icon: "clipboard", label: "Copy to clipboard" }
+    })[step])
     readonly property string _routeCaption: (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
         + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
 

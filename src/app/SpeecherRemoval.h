@@ -2,6 +2,7 @@
 
 #include "platform/LinuxDesktopIntegration.h"
 
+#include <QList>
 #include <QObject>
 #include <QStringList>
 
@@ -11,22 +12,49 @@ namespace speecher {
 
 class ApplicationController;
 
-// What removing Speecher did: what came off, by name ("app menu entry",
-// "virtual keyboard setup"), and each thing that did not, in core's words.
-// The program file always stays, since a running AppImage can't safely
-// delete itself; programFile is where it is, when Speecher runs from one.
+// One part of Speecher that removal took off, or tried to: the Global
+// Shortcut registration, the virtual keyboard's service and setup, the
+// single-key helper, the API keys in the keyring, or the settings. error is
+// why a step failed, in the words of the part that failed, or empty where it
+// said nothing; for settings, it is the file that would not go.
+struct RemovalStep {
+    enum class Outcome {
+        Removed,
+        Failed,
+        // Settings the person chose to keep.
+        Kept,
+    };
+    enum class Part {
+        ShortcutRegistration,
+        VirtualKeyboardService,
+        VirtualKeyboard,
+        KeyHelper,
+        Keyring,
+        Settings,
+    };
+    Part part;
+    Outcome outcome;
+    QString error;
+};
+
+// What removing Speecher did: the desktop's files item by item, then each
+// other part in the order removal took them. The program file always stays,
+// since a running AppImage can't safely delete itself; programFile is where
+// it is, when Speecher runs from one.
 struct RemovalReport {
-    QStringList removed;
-    QStringList problems;
-    bool settingsDeleted = false;
+    DesktopIntegrationRemoval files;
+    QList<RemovalStep> steps;
     QString programFile;
+
+    bool settingsDeleted() const;
 };
 
 // Undoes everything Speecher set up for this user on Linux, then reports it
 // item by item: the desktop integration, the Global Shortcut registration,
 // the system helpers it installed (each through pkexec, off the calling
-// thread), and, when asked, the settings and keyring secrets. A step that
-// fails does not stop the rest.
+// thread), and, when asked, the keyring secrets and the settings. Those go
+// last, so no later step writes them again. A step that fails does not stop
+// the rest.
 class SpeecherRemoval final : public QObject {
     Q_OBJECT
 
@@ -43,6 +71,7 @@ public:
         std::function<bool()> keyHelperInstalled;
         std::function<bool(QString *error)> removeKeyHelper;
         std::function<bool(QString *error)> deleteSecrets;
+        // On failure, the settings file's path in error.
         std::function<bool(QString *error)> deleteSettings;
         QString programFile;
     };

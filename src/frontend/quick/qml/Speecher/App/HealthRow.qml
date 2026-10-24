@@ -7,17 +7,19 @@ import Speecher.App
 // One permission or health check: its schema row, with the state worded by
 // Health and the fix core offers for it. Starting a fix folds the button
 // away while the state turns to a spinner, so only one thing says it is
-// working. A page whose own row shows a check names it with checkId; items
-// declared inside follow the fix button.
+// working; a fix that fails says why in place of the help. A page whose own
+// row shows a check names it with checkId; items declared inside follow the
+// fix button. In the setup assistant, fromSetup runs the fix as setup does.
 SchemaRow {
     id: row
     property string checkId: rowId
+    property bool fromSetup: false
     default property alias extra: controls.data
-    readonly property var check: System.check(checkId)
+    readonly property var check: Health.find(System.checks, checkId)
     readonly property string _fix: Health.fix(check)
     readonly property bool _canFix: _fix.length > 0 && check.state !== "working"
 
-    help: Health.detail(check)
+    help: Health.failure(check) || Health.detail(check)
 
     Row {
         id: controls
@@ -43,7 +45,7 @@ SchemaRow {
                 opacity: row._canFix ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: row._canFix ? Theme.base : Theme.fast } }
-                onClicked: System.fix(row.checkId)
+                onClicked: row.fromSetup ? System.fixFromSetup(row.checkId) : System.fix(row.checkId)
             }
         }
     }

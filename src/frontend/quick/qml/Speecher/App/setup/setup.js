@@ -43,5 +43,17 @@ var text = {
     cancelShortcutHelp: "Optional. Throws away the dictation in progress."
 };
 
+// The cases where a check that does not pass still lets its step go on,
+// since this computer gets no further: accessibility it can't have or has
+// only until sign-out, and a keyboard waiting for the next sign-in. The
+// check keeps saying so.
+var settles = {
+    desktopAccessibility: ["unsupported", "sessionOnly"],
+    virtualKeyboardHealth: ["needsSignOut"]
+};
+
+// Whether the check lets its setup step go on.
+function settled(check) { return check.state === "ok" || (settles[check.id] || []).includes(check.reason); }
+
 // Ready's heading over the steps still open: "2 steps need attention".
 function stepsOpen(count) { return count === 1 ? "One step needs attention" : count + " steps need attention"; }

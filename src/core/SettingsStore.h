@@ -31,6 +31,7 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
+    ~SettingsStore() override;
     // Carries every saved endpoint and CLI Proxy API key, so a settings
     // surface shows and saves them all. A key SecretStore::prefetch has not
     // cached yet waits for the keyring (1.5 s at most).
@@ -45,7 +46,14 @@ public:
     // unreadable key never stops another. Run on the startup worker. Returns
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
+    // Saves the draft, unless deleteAll ran.
     void applySnapshot(const AppSettings &draft);
+    // Clears every setting and deletes the settings file, as removing
+    // Speecher with its settings does. Afterwards applySnapshot saves
+    // nothing, so an edit made before Speecher quits can't bring the file
+    // back, and the file is deleted again when the store goes, for anything
+    // written meanwhile. A file that won't go puts its path in path.
+    bool deleteAll(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
     void setCliproxyApiKey(const QString &value);
@@ -230,6 +238,7 @@ private:
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
     SecretStore *m_secrets = nullptr;
+    bool m_deleted = false;
 };
 
 } // namespace speecher

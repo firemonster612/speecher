@@ -1,7 +1,8 @@
 .pragma library
 
 // How each of System.checks reads: by the check's id and reason, the short
-// status, the line under it and its fix button's label, where it has one.
+// status, the line under it and its fix button's label, where it has one;
+// and by its failures' steps, what went wrong.
 
 var words = {
     microphoneAccess: {
@@ -35,12 +36,37 @@ var words = {
     }
 };
 
+// What went wrong in a fix, by the check's id and the failure's step.
+var failures = {
+    desktopAccessibility: { enable: "Desktop accessibility could not be turned on" },
+    virtualKeyboardHealth: {
+        setUp: "Setup failed",
+        start: "The virtual keyboard service could not start",
+        type: "The virtual keyboard could not type",
+        stop: "The virtual keyboard service could not be stopped",
+        remove: "The virtual keyboard setup could not be removed",
+        filesLeft: "The removal finished, but some of the files Speecher set up are still there"
+    }
+};
+
+// The check with this id. Pass System.checks itself, so a binding that asks
+// follows the checks as they change.
+function find(checks, id) { return checks.find(c => c.id === id) || {}; }
+
 function _words(check) { return (words[check.id] || {})[check.reason] || { status: "", detail: "" }; }
 
 function status(check) { return _words(check).status; }
 function detail(check) { return _words(check).detail; }
 // The fix button's label, or "" where the check offers none.
 function fix(check) { return check.fix ? _words(check).fix || "" : ""; }
+// What went wrong the last time something was tried on the check, or "":
+// "Setup failed: Authorization was declined."
+function failure(check) {
+    return (check.failures || []).map(f => {
+        const what = (failures[check.id] || {})[f.step] || "";
+        return f.error ? what + ": " + f.error : what + ".";
+    }).join(" ");
+}
 
 // The caption over the checks: "All 4 checks pass." or "3 of 4 checks pass."
 function summary(checks) {

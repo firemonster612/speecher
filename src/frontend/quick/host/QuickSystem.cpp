@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/PhoneTransfer.h"
 #include "core/SettingsStore.h"
+#include "output/TextDelivery.h"
 #include "platform/LinuxDesktopIntegration.h"
 
 #include <QClipboard>
@@ -24,6 +25,10 @@ QuickSystem *g_instance = nullptr;
 
 using Operation = VirtualKeyboardSetup::Operation;
 using Test = VirtualKeyboardSetup::Test;
+using Failure = VirtualKeyboardSetup::Failure;
+
+const QString accessibilityId = QStringLiteral("desktopAccessibility");
+const QString keyboardId = QStringLiteral("virtualKeyboardHealth");
 
 QVariantMap checkEntry(const char *id, const char *state, const char *reason, const char *fix = "")
 {
@@ -119,6 +124,78 @@ QString testName(Test test)
     return QStringLiteral("off");
 }
 
+QString failureName(Failure failure)
+{
+    switch (failure) {
+    case Failure::SetUp:
+        return QStringLiteral("setUp");
+    case Failure::Start:
+        return QStringLiteral("start");
+    case Failure::Type:
+        return QStringLiteral("type");
+    case Failure::Stop:
+        return QStringLiteral("stop");
+    case Failure::Remove:
+        return QStringLiteral("remove");
+    case Failure::FilesLeft:
+        break;
+    }
+    return QStringLiteral("filesLeft");
+}
+
+QVariantMap failureEntry(const QString &step, const QString &error)
+{
+    return {{QStringLiteral("step"), step}, {QStringLiteral("error"), error}};
+}
+
+QString partName(RemovalStep::Part part)
+{
+    switch (part) {
+    case RemovalStep::Part::ShortcutRegistration:
+        return QStringLiteral("shortcutRegistration");
+    case RemovalStep::Part::VirtualKeyboardService:
+        return QStringLiteral("virtualKeyboardService");
+    case RemovalStep::Part::VirtualKeyboard:
+        return QStringLiteral("virtualKeyboard");
+    case RemovalStep::Part::KeyHelper:
+        return QStringLiteral("keyHelper");
+    case RemovalStep::Part::Keyring:
+        return QStringLiteral("keyring");
+    case RemovalStep::Part::Settings:
+        break;
+    }
+    return QStringLiteral("settings");
+}
+
+QString outcomeName(RemovalStep::Outcome outcome)
+{
+    switch (outcome) {
+    case RemovalStep::Outcome::Removed:
+        return QStringLiteral("removed");
+    case RemovalStep::Outcome::Failed:
+        return QStringLiteral("failed");
+    case RemovalStep::Outcome::Kept:
+        break;
+    }
+    return QStringLiteral("kept");
+}
+
+QVariantMap reportMap(const RemovalReport &report)
+{
+    QVariantList steps;
+    for (const RemovalStep &step : report.steps) {
+        steps.append(QVariantMap{{QStringLiteral("part"), partName(step.part)},
+                                 {QStringLiteral("outcome"), outcomeName(step.outcome)},
+                                 {QStringLiteral("error"), step.error}});
+    }
+    return {{QStringLiteral("files"), QVariantMap{{QStringLiteral("removed"), report.files.removed},
+                                                  {QStringLiteral("absent"), report.files.absent},
+                                                  {QStringLiteral("failed"), report.files.failed}}},
+            {QStringLiteral("steps"), steps},
+            {QStringLiteral("settingsDeleted"), report.settingsDeleted()},
+            {QStringLiteral("programFile"), report.programFile}};
+}
+
 QString phoneStateName(PhoneTransferState state)
 {
     switch (state) {
@@ -154,14 +231,14 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
     connect(controller, &ApplicationController::accessibilityStateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
+    connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::changed);
-    connect(&m_virtualKeyboard, &VirtualKeyboardSetup::failed, this,
-            [this](const QString &message) { emit announced(message, QStringLiteral("triangle-alert")); });
+    connect(&m_virtualKeyboard, &VirtualKeyboardSetup::failed, this, [this](Failure failure, const QString &error) {
+        m_failures[keyboardId].append(failureEntry(failureName(failure), error));
+        emit changed();
+    });
     connect(&m_removal, &SpeecherRemoval::finished, this, [this](const RemovalReport &report) {
-        m_removalReport = {{QStringLiteral("removed"), report.removed},
-                           {QStringLiteral("problems"), report.problems},
-                           {QStringLiteral("settingsDeleted"), report.settingsDeleted},
-                           {QStringLiteral("programFile"), report.programFile}};
+        m_removalReport = reportMap(report);
         emit removalChanged();
     });
     // What changed while Speecher was in the background, such as a service
@@ -195,8 +272,13 @@ bool QuickSystem::accessibility() const
 
 QVariantList QuickSystem::checks() const
 {
-    return {microphoneCheck(), accessibilityCheck(m_controller), shortcutCheck(m_controller),
-            virtualKeyboardCheck(m_virtualKeyboard)};
+    QVariantList checks;
+    for (QVariantMap check : {microphoneCheck(), accessibilityCheck(m_controller), shortcutCheck(m_controller),
+                              virtualKeyboardCheck(m_virtualKeyboard)}) {
+        check.insert(QStringLiteral("failures"), m_failures.value(check.value(QStringLiteral("id")).toString()));
+        checks.append(check);
+    }
+    return checks;
 }
 
 QStringList QuickSystem::virtualKeyboardActions() const
@@ -217,6 +299,15 @@ QStringList QuickSystem::virtualKeyboardActions() const
 QString QuickSystem::virtualKeyboardTest() const
 {
     return testName(m_virtualKeyboard.test());
+}
+
+QStringList QuickSystem::pasteRoute() const
+{
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    // With no default paste of its own, Speecher copies, as delivery does.
+    const PasteRule *rule = findPasteRule(settings.output.pasteRules, PasteRuleScope::Global, QString());
+    return TextDelivery::pasteRoute(settings.output,
+                                    rule && rule->enabled ? rule->method : PasteMethod::ClipboardOnly);
 }
 
 bool QuickSystem::canOpenShortcutSettings() const
@@ -241,10 +332,7 @@ QString QuickSystem::phoneLink() const
 
 QVariantMap QuickSystem::phoneBundle() const
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    return {{QStringLiteral("terms"), settings.vocabulary.size()},
-            {QStringLiteral("replacements"), settings.bindings.size()},
-            {QStringLiteral("profiles"), settings.refinement.writingProfiles.size()}};
+    return m_phoneBundle;
 }
 
 bool QuickSystem::removing() const
@@ -270,20 +358,31 @@ QVariantMap QuickSystem::check(const QString &id) const
 
 void QuickSystem::fix(const QString &id)
 {
+    runFix(id, VirtualKeyboardSetup::AfterSetUp::KeepOutputMethod);
+}
+
+void QuickSystem::fixFromSetup(const QString &id)
+{
+    runFix(id, VirtualKeyboardSetup::AfterSetUp::PasteAutomatically);
+}
+
+void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp)
+{
     const QString action = check(id).value(QStringLiteral("fix")).toString();
     if (action.isEmpty()) {
         return;
     }
-    if (id == QLatin1String("desktopAccessibility")) {
+    clearFailures(id);
+    if (id == accessibilityId) {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
-            emit announced(error.isEmpty() ? QStringLiteral("Desktop accessibility could not be turned on.") : error,
-                           QStringLiteral("triangle-alert"));
+            m_failures[id] = {failureEntry(QStringLiteral("enable"), error)};
+            emit changed();
         }
         return;
     }
     if (action == QLatin1String("setUp")) {
-        m_virtualKeyboard.setUp();
+        m_virtualKeyboard.setUp(afterSetUp);
     } else if (action == QLatin1String("start")) {
         m_virtualKeyboard.startService();
     } else if (action == QLatin1String("enable")) {
@@ -291,18 +390,28 @@ void QuickSystem::fix(const QString &id)
     }
 }
 
+void QuickSystem::clearFailures(const QString &id)
+{
+    if (m_failures.remove(id) > 0) {
+        emit changed();
+    }
+}
+
 void QuickSystem::disableVirtualKeyboard()
 {
+    clearFailures(keyboardId);
     m_virtualKeyboard.disable();
 }
 
 void QuickSystem::removeVirtualKeyboard()
 {
+    clearFailures(keyboardId);
     m_virtualKeyboard.remove();
 }
 
 void QuickSystem::runVirtualKeyboardTest()
 {
+    clearFailures(keyboardId);
     m_virtualKeyboard.runTest();
 }
 
@@ -348,7 +457,11 @@ void QuickSystem::openShortcutSettings()
 void QuickSystem::startPhoneTransfer()
 {
     // A new transfer before the old one goes, so the old code stops working.
-    m_phone = std::make_unique<PhoneTransfer>(m_controller->settings()->dictationSnapshot());
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    m_phone = std::make_unique<PhoneTransfer>(settings);
+    m_phoneBundle = {{QStringLiteral("terms"), settings.vocabulary.size()},
+                     {QStringLiteral("replacements"), settings.bindings.size()},
+                     {QStringLiteral("profiles"), settings.refinement.writingProfiles.size()}};
     connect(m_phone.get(), &PhoneTransfer::stateChanged, this, &QuickSystem::phoneChanged);
     emit phoneChanged();
 }

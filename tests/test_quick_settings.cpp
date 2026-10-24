@@ -13,6 +13,7 @@
 #include <QSignalSpy>
 
 #include <memory>
+#include <optional>
 
 // The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
 // imports their plugins for the whole binary, as in the app.
@@ -178,9 +179,11 @@ private slots:
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        const auto rule = [](PasteRuleScope scope, const char *match) {
+        // A copy, since the list it was found in goes with the lambda.
+        const auto rule = [](PasteRuleScope scope, const char *match) -> std::optional<PasteRule> {
             const QList<PasteRule> rules = SettingsStore().pasteRules();
-            return findPasteRule(rules, scope, QLatin1String(match));
+            const PasteRule *found = findPasteRule(rules, scope, QLatin1String(match));
+            return found ? std::optional(*found) : std::nullopt;
         };
         const auto value = [&settings](const char *id) { return settings.values().value(QLatin1String(id)); };
 
@@ -191,7 +194,7 @@ private slots:
         settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
         QCOMPARE(rule(PasteRuleScope::Global, "")->method, PasteMethod::ClipboardOnly);
         QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
-        QCOMPARE(rule(PasteRuleScope::Category, "terminal"), nullptr);
+        QVERIFY(!rule(PasteRuleScope::Category, "terminal"));
         QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("inherit"));
         QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("direct_insert"));
 
@@ -212,7 +215,7 @@ private slots:
         QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
         QCOMPARE(SettingsStore().pasteRules().size(), 3);
         settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
-        QCOMPARE(rule(PasteRuleScope::Application, "org.kde.konsole"), nullptr);
+        QVERIFY(!rule(PasteRuleScope::Application, "org.kde.konsole"));
         QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
     }
 

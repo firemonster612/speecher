@@ -7,21 +7,32 @@
 #include "platform/KeywatchSetup.h"
 
 #include <QDir>
-#include <QFile>
-#include <QSettings>
 #include <QThread>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
 namespace speecher {
 
+bool RemovalReport::settingsDeleted() const
+{
+    return std::ranges::any_of(steps, [](const RemovalStep &step) {
+        return step.part == RemovalStep::Part::Settings && step.outcome == RemovalStep::Outcome::Removed;
+    });
+}
+
 namespace {
 
-// error, or what to say when a step failed without saying why.
-QString problem(const QString &error, const QString &fallback)
+using Part = RemovalStep::Part;
+using Outcome = RemovalStep::Outcome;
+
+// Runs a step that says why it failed, and records how it went.
+void record(QList<RemovalStep> &steps, Part part, const std::function<bool(QString *error)> &run)
 {
-    return error.isEmpty() ? fallback : error;
+    QString error;
+    const bool removed = run(&error);
+    steps.append({part, removed ? Outcome::Removed : Outcome::Failed, removed ? QString() : error});
 }
 
 } // namespace
@@ -50,17 +61,7 @@ SpeecherRemoval::Steps SpeecherRemoval::linuxSteps(ApplicationController *contro
         *error = controller->secretStore()->lastError();
         return false;
     };
-    steps.deleteSettings = [controller](QString *error) {
-        QSettings &raw = controller->settings()->raw();
-        const QString file = raw.fileName();
-        raw.clear();
-        raw.sync();
-        if (QFile::exists(file) && !QFile::remove(file)) {
-            *error = QStringLiteral("Could not delete the settings file at %1.").arg(file);
-            return false;
-        }
-        return true;
-    };
+    steps.deleteSettings = [controller](QString *error) { return controller->settings()->deleteAll(error); };
     steps.programFile = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
     return steps;
 }
@@ -79,42 +80,23 @@ void SpeecherRemoval::start(bool deleteSettings)
     m_running = true;
     RemovalReport report;
     report.programFile = m_steps.programFile;
-    const DesktopIntegrationRemoval files = m_steps.removeDesktopIntegration();
-    report.removed += files.removed;
-    for (const QString &failure : files.failed) {
-        report.problems.append(QStringLiteral("Could not remove the %1.").arg(failure));
-    }
-    QString shortcutError;
-    if (m_steps.removeShortcutRegistration(&shortcutError)) {
-        report.removed.append(QStringLiteral("Global Shortcut registration"));
-    } else {
-        report.problems.append(
-            problem(shortcutError, QStringLiteral("The Global Shortcut registration could not be removed.")));
-    }
+    report.files = m_steps.removeDesktopIntegration();
+    record(report.steps, Part::ShortcutRegistration, m_steps.removeShortcutRegistration);
 
     const bool virtualKeyboard = m_steps.virtualKeyboardInstalled();
     const bool keyHelper = m_steps.keyHelperInstalled();
     const auto helpers = std::make_shared<RemovalReport>(std::move(report));
     QThread *thread = QThread::create([steps = m_steps, helpers, virtualKeyboard, keyHelper] {
         if (virtualKeyboard) {
+            // A service that was not running is no failure.
             QString stopError;
             if (!steps.stopVirtualKeyboard(&stopError) && !stopError.isEmpty()) {
-                helpers->problems.append(QStringLiteral("Virtual keyboard service: %1").arg(stopError));
+                helpers->steps.append({Part::VirtualKeyboardService, Outcome::Failed, stopError});
             }
-            QString error;
-            if (steps.removeVirtualKeyboard(&error)) {
-                helpers->removed.append(QStringLiteral("virtual keyboard setup"));
-            } else {
-                helpers->problems.append(problem(error, QStringLiteral("The virtual keyboard setup could not be removed.")));
-            }
+            record(helpers->steps, Part::VirtualKeyboard, steps.removeVirtualKeyboard);
         }
         if (keyHelper) {
-            QString error;
-            if (steps.removeKeyHelper(&error)) {
-                helpers->removed.append(QStringLiteral("single-key helper"));
-            } else {
-                helpers->problems.append(problem(error, QStringLiteral("The single-key helper could not be removed.")));
-            }
+            record(helpers->steps, Part::KeyHelper, steps.removeKeyHelper);
         }
     });
     connect(thread, &QThread::finished, this,
@@ -126,20 +108,10 @@ void SpeecherRemoval::start(bool deleteSettings)
 void SpeecherRemoval::finish(RemovalReport report, bool deleteSettings)
 {
     if (deleteSettings) {
-        QString error;
-        if (m_steps.deleteSecrets(&error)) {
-            report.removed.append(QStringLiteral("API keys in the desktop keyring"));
-        } else {
-            report.problems.append(
-                QStringLiteral("Could not delete your API keys from the desktop keyring: %1").arg(error));
-        }
-        error.clear();
-        report.settingsDeleted = m_steps.deleteSettings(&error);
-        if (report.settingsDeleted) {
-            report.removed.append(QStringLiteral("settings"));
-        } else {
-            report.problems.append(error);
-        }
+        record(report.steps, Part::Keyring, m_steps.deleteSecrets);
+        record(report.steps, Part::Settings, m_steps.deleteSettings);
+    } else {
+        report.steps.append({Part::Settings, Outcome::Kept, QString()});
     }
     m_running = false;
     emit finished(report);

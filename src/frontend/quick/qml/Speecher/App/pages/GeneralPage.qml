@@ -17,6 +17,7 @@ Page {
     property bool _confirmClear: false
     property bool _confirmRemove: false
     property bool _removeSettings: false
+    readonly property bool _removed: System.removal.steps !== undefined
 
     readonly property var t: ({
         showCode: "Show code",
@@ -24,7 +25,7 @@ Page {
         remove: "Remove…",
         confirmRemove: "Remove Speecher",
         removeQuestion: "Remove Speecher from this computer?",
-        removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and asks for your password. Your settings stay unless you delete them as well.",
+        removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
         removeSettings: "Also delete my settings, vocabulary and API keys",
         removed: "Speecher is removed from this computer.",
         removedPartly: "Speecher is removed, with some things left to do by hand.",
@@ -46,14 +47,48 @@ Page {
         default: return "In Speecher for Android, go to Settings, then Import from computer. The code works once, while it shows, on the same network as " + System.computerName + "."
         }
     }
-    // What removing did, then what is left: the program file stays.
+    // How each of System.removal's steps reads, by part and outcome. A
+    // failure gets the part's own error, which may be empty.
+    readonly property var removalWords: ({
+        shortcutRegistration: { removed: "Removed the Global Shortcut registration.",
+            failed: e => e ? "Global Shortcut: " + e : "The Global Shortcut registration could not be removed." },
+        virtualKeyboardService: { failed: e => "Virtual keyboard service: " + e },
+        virtualKeyboard: { removed: "Removed the virtual keyboard setup.",
+            failed: e => e ? "Virtual keyboard: " + e : "The virtual keyboard setup could not be removed." },
+        keyHelper: { removed: "Removed the single-key helper.",
+            failed: e => e ? "Key helper: " + e : "The single-key helper could not be removed." },
+        keyring: { removed: "Deleted your API keys from the desktop keyring.",
+            failed: e => "Could not delete your API keys from the desktop keyring" + (e ? ": " + e : ".") },
+        settings: { removed: "Deleted your settings.", kept: "Kept your settings.",
+            failed: e => "Could not delete the settings file at " + e + "." }
+    })
+    function removalFailed(report) { return report.files.failed.length > 0 || report.steps.some(s => s.outcome === "failed") }
+    // What removing did, item by item, then what it couldn't, then what is
+    // left: the program file stays.
     function removalText(report) {
-        const lines = report.removed.length ? ["Removed the " + Words.list(report.removed) + "."] : []
-        return lines.concat(report.problems, [report.programFile
-            ? "To finish, quit Speecher and delete " + report.programFile + "."
-            : "To finish, quit Speecher and delete its program file."]).join(" ")
+        const said = step => step.outcome === "failed" ? removalWords[step.part].failed(step.error)
+                                                       : removalWords[step.part][step.outcome]
+        return report.files.removed.map(item => "Removed the " + item + ".")
+            .concat(report.files.absent.map(item => "There was no " + item + " to remove."),
+                    report.steps.filter(s => s.outcome !== "failed").map(said),
+                    report.files.failed.map(item => "Could not remove the " + item + "."),
+                    report.steps.filter(s => s.outcome === "failed").map(said),
+                    [report.programFile ? "To finish, quit Speecher and delete " + report.programFile + "."
+                                        : "To finish, quit Speecher and delete its program file."])
+            .join(" ")
     }
 
+    // The code works only while it shows: hiding the window takes it away,
+    // and showing it again makes a new one.
+    function showPhoneCode(open) {
+        _phoneOpen = open
+        if (open) System.startPhoneTransfer()
+        else System.stopPhoneTransfer()
+    }
+    Connections {
+        target: page.Window.window
+        function onVisibleChanged() { if (!page.Window.window.visible) page.showPhoneCode(false) }
+    }
     Component.onDestruction: System.stopPhoneTransfer()
 
     Section {
@@ -100,11 +135,7 @@ Page {
                     text: page._phoneOpen ? page.t.hideCode : page.t.showCode
                     iconName: page._phoneOpen ? "chevron-up" : "qr-code"
                     size: "small"
-                    onClicked: {
-                        page._phoneOpen = !page._phoneOpen
-                        if (page._phoneOpen) System.startPhoneTransfer()
-                        else System.stopPhoneTransfer()
-                    }
+                    onClicked: page.showPhoneCode(!page._phoneOpen)
                 }
             }
             Reveal {
@@ -127,7 +158,13 @@ Page {
                         anchors.rightMargin: Theme.rowInset
                         anchors.verticalCenter: qr.verticalCenter
                         spacing: Theme.space2
-                        Txt { width: parent.width; text: page.phoneSummary(System.phoneBundle); variant: "small"; wrapMode: Text.WordWrap }
+                        // Empty until the first code is shown.
+                        Txt {
+                            width: parent.width
+                            text: System.phoneBundle.terms === undefined ? "" : page.phoneSummary(System.phoneBundle)
+                            variant: "small"
+                            wrapMode: Text.WordWrap
+                        }
                         Txt {
                             width: parent.width
                             text: page.phoneNote(System.phoneTransfer)
@@ -179,7 +216,7 @@ Page {
                 variant: "danger"
                 size: "small"
                 busy: System.removing
-                enabled: !System.removing && !System.removal.removed && !page._confirmRemove
+                enabled: !System.removing && !page._removed && !page._confirmRemove
                 onClicked: page._confirmRemove = true
             }
         }
@@ -201,13 +238,13 @@ Page {
             }
         }
         Reveal {
-            open: System.removal.removed !== undefined
+            open: page._removed
             Notice {
-                tone: (System.removal.problems || []).length ? "warning" : "info"
+                tone: page._removed && page.removalFailed(System.removal) ? "warning" : "info"
                 indicator: "icon"
                 inset: Theme.rowInset
-                text: System.removal.removed === undefined ? ""
-                    : ((System.removal.problems.length ? page.t.removedPartly : page.t.removed) + " " + page.removalText(System.removal))
+                text: !page._removed ? ""
+                    : ((page.removalFailed(System.removal) ? page.t.removedPartly : page.t.removed) + " " + page.removalText(System.removal))
                 actionText: page.t.quit
                 onAction: System.quit()
             }

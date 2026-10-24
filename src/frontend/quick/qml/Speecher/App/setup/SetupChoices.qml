@@ -5,7 +5,8 @@ import Speecher.App
 
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()
-// writes them back. A step is done when its check passes, and one rule gates
+// writes them back. A step is done when its check passes, or for
+// accessibility and delivery settles (Setup.settled), and one rule gates
 // Continue, Finish, Skip and the rail: a step can be reached once every step
 // before it is done. A check only asks for what its step shows and lets you
 // fix there. Refinement has no check, since its default is a valid answer.
@@ -39,7 +40,7 @@ QtObject {
         }
         case "microphone": {
             // Allowed, a microphone that is there, and speech heard from it.
-            const access = System.check("microphoneAccess")
+            const access = Health.find(System.checks, "microphoneAccess")
             const microphone = Settings.values.audioDevice || ""
             const device = Audio.deviceOptions.find(o => o.id === microphone)
             const present = microphone === "" ? Audio.hasMicrophones : Audio.devices.some(d => d.id === microphone)
@@ -48,15 +49,15 @@ QtObject {
         }
         case "accessibility":
         case "delivery": {
-            const check = System.check(id === "delivery" ? "virtualKeyboardHealth" : "desktopAccessibility")
+            const check = Health.find(System.checks, id === "delivery" ? "virtualKeyboardHealth" : "desktopAccessibility")
             if (id === "delivery" && clipboardOnly) return { done: true, verdict: Setup.text.clipboardOnly }
-            return { done: check.state === "ok", verdict: Health.status(check) }
+            return { done: Setup.settled(check), verdict: Health.status(check) }
         }
         case "refinement":
             return { done: true, verdict: Library.providerChoices.find(p => p.id === cleanup).label }
         case "shortcut": {
             const keys = Settings.values.globalShortcut || []
-            const check = System.check("globalShortcuts")
+            const check = Health.find(System.checks, "globalShortcuts")
             return { done: keys.length > 0 && check.state === "ok", verdict: keys.length ? keys.join(" ") : Words.notSet }
         }
         default:

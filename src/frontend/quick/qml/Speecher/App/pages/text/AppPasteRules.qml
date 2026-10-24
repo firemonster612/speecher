@@ -57,7 +57,9 @@ Section {
         id: ruleForm
         objectName: "ruleForm"
         property string method: "standard_paste"
-        function startAdd() { ruleApp.text = ""; method = "standard_paste"; open = true }
+        // Why this form's last rule was refused; a new form starts without it.
+        property string refusal: ""
+        function startAdd() { ruleApp.text = ""; method = "standard_paste"; refusal = ""; open = true }
         title: section.t.newRule
         saveText: section.t.addRule
         canSave: ruleApp.text.trim().length > 0
@@ -66,7 +68,8 @@ Section {
         onSaved: {
             section.save(section.rules.concat([{ app: ruleApp.text.trim(), method: method, enabled: true }]))
             // A refused rule, such as a second one for the same app, keeps the form open.
-            open = Settings.errors.applicationPasteRules !== undefined
+            refusal = Settings.errors.applicationPasteRules || ""
+            open = refusal.length > 0
         }
         Row {
             width: parent.width
@@ -74,7 +77,7 @@ Section {
             FormField {
                 width: (parent.width - parent.spacing) * 0.55
                 label: section.t.ruleApp
-                help: Settings.errors.applicationPasteRules || section.t.ruleAppHelp
+                help: ruleForm.refusal || section.t.ruleAppHelp
                 TextField {
                     id: ruleApp
                     width: parent.width

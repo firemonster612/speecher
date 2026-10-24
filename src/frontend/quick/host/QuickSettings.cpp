@@ -257,6 +257,9 @@ const SettingRow settingRows[] = {
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
 
     FIELD_ROW("themeControl", ui.theme),
+    // Only macOS and Windows can start Speecher at login. The Quick UI builds
+    // only on Linux for now; the macOS and Windows PR in this stack builds it
+    // there, where General shows this row.
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     FIELD_ROW("launchAtLogin", launchAtLogin),
 #endif

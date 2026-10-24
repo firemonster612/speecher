@@ -9,6 +9,8 @@ import Speecher.Wording
 // The main window: sidebar on the window background, the current page on an
 // inset panel, the search palette above both, and toasts above that. The host
 // opens it, hides it on close and opens the setup assistant itself.
+// Once removing Speecher has deleted the settings, only quitting is left, so
+// closing the window quits, as the removal report's button does.
 ClientWindow {
     id: window
     width: 1240
@@ -17,6 +19,7 @@ ClientWindow {
     minimumHeight: 600
     visible: true
     title: Words.shell.appName
+    onVisibleChanged: if (!visible && System.removal.settingsDeleted) System.quit()
 
     // Opaque, so the search palette's blurred copy of it hides what is under.
     Rectangle {

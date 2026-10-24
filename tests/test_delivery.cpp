@@ -362,6 +362,25 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
     }
 
+    // The route the Pasting page draws is the one deliver takes.
+    void pasteRouteFollowsDelivery()
+    {
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        const auto route = [&settings](PasteMethod method) { return TextDelivery::pasteRoute(settings, method).join(u' '); };
+        QCOMPARE(route(PasteMethod::ClipboardOnly), QStringLiteral("copy"));
+        QCOMPARE(route(PasteMethod::DirectInsert), QStringLiteral("insert copy"));
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
+        QCOMPARE(route(PasteMethod::StandardPaste), QStringLiteral("insert press copy"));
+        settings.ydotoolEnabled = false;
+        QCOMPARE(route(PasteMethod::TerminalPaste), QStringLiteral("insert copy"));
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.ydotoolEnabled = true;
+        QCOMPARE(route(PasteMethod::StandardPaste), QStringLiteral("press"));
+#endif
+    }
+
     void pasteRulesPreferApplicationThenCategoryThenGlobal()
     {
         const QList<PasteRule> rules{
@@ -401,6 +420,28 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, terminal), nullptr);
         QCOMPARE(findPasteRule(rules, PasteRuleScope::Global, QString())->method, PasteMethod::StandardPaste);
         QCOMPARE(rules.size(), 2);
+    }
+
+    // A stored rule that differs only in case or spaces is the same rule to
+    // every edit, as it is when a paste resolves it.
+    void pasteRuleEditsMatchAsResolvingDoes()
+    {
+        QList<PasteRule> rules{
+            {PasteRuleScope::Application, QStringLiteral(" Org.KDE.Konsole "), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Category, QStringLiteral("Browser"), PasteMethod::DirectInsert, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.konsole");
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
+
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole")), &rules[0]);
+        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser")), &rules[1]);
+        setPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::ClipboardOnly);
+        QCOMPARE(rules.size(), 2);
+        QCOMPARE(rules[0].method, PasteMethod::ClipboardOnly);
+        removePasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser"));
+        QCOMPARE(rules.size(), 1);
+        QCOMPARE(validatePasteRules(rules + QList{PasteRule{PasteRuleScope::Application, QStringLiteral("org.kde.konsole")}}).size(), 1);
     }
 
     void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
