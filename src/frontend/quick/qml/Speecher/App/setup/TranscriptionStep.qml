@@ -107,11 +107,13 @@ StepPage {
             open: !!service.signsIn && service.state !== "ready"
             SettingRow {
                 title: signIn.service.label
-                help: signIn.service.access
+                // Why the last check failed wraps under the label, in place
+                // of the help, as a refused setting's reason does.
+                help: !signIn.checking && signIn.failure ? signIn.failure : signIn.service.access
                 Row {
                     spacing: Theme.space3
                     StatusText {
-                        text: signIn.checking ? ModelText.checking : signIn.failure || ModelText.status(signIn.service)
+                        text: signIn.checking ? ModelText.checking : ModelText.status(signIn.service)
                         busy: signIn.checking
                         tone: !signIn.checking && signIn.failure ? "warning" : States.tone(signIn.service.state)
                         indicator: "dot"
