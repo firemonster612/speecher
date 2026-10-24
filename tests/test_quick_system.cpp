@@ -5,6 +5,7 @@
 #include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickInsights.h"
@@ -459,6 +460,8 @@ private slots:
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        // The window and General read Appearance, as the host always has it.
+        QuickAppearance appearance(&controller);
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
@@ -516,8 +519,10 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
-        // General clears Insights' history, as the host always has one.
+        // General clears Insights' history and reads Appearance, as the host
+        // always has them.
         QuickInsights insights(&controller);
+        QuickAppearance appearance(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
             import QtQuick
