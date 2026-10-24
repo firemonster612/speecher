@@ -100,10 +100,12 @@ Item {
     readonly property size largest: Qt.size(widest, reviewHeading.height + review.spacing + textMax
         + Math.max(review.spacing + reviewActions.height + 36, review.y + barHeight + words.maxLines * words.lineHeight + 14))
 
-    // Where the capsule is, in the popup's coordinates, frame by frame as it
-    // grows and shrinks between phases (not the scale and lift it arrives
-    // with).
-    readonly property rect capsule: Qt.rect(holder.x, holder.y, holder.width, holder.height)
+    // Where the capsule is drawn, in the popup's coordinates, frame by frame
+    // as it grows and shrinks between phases and with the scale (about its
+    // bottom centre) and lift it arrives and leaves with.
+    readonly property rect capsule: Qt.rect(holder.x + holder.width * (1 - holder.scale) / 2,
+                                            holder.y + holder.height * (1 - holder.scale) + lift.y,
+                                            holder.width * holder.scale, holder.height * holder.scale)
 
     // As big as the capsule, or as it is while it grows or shrinks to the
     // target, so a scene that sizes to the popup never cuts it off.
@@ -123,7 +125,7 @@ Item {
         // Arrives from below with a small overshoot, leaves quickly.
         opacity: popup.shown ? 1 : 0
         scale: popup.shown ? 1 : Theme.motionScale(0.86)
-        transform: Translate { y: popup.shown ? 0 : 18 * Theme.movement; Behavior on y { Ease { duration: popup.shown ? Theme.page : Theme.base; curve: popup.shown ? Theme.springy : Theme.easeIn } } }
+        transform: Translate { id: lift; y: popup.shown ? 0 : 18 * Theme.movement; Behavior on y { Ease { duration: popup.shown ? Theme.page : Theme.base; curve: popup.shown ? Theme.springy : Theme.easeIn } } }
         transformOrigin: Item.Bottom
         Behavior on opacity { Ease { duration: Theme.base } }
         Behavior on scale { Ease { duration: popup.shown ? Theme.page : Theme.base; curve: popup.shown ? Theme.springy : Theme.easeIn } }
@@ -278,6 +280,7 @@ Item {
 
                 VoiceOrb { id: receiptOrb; phase: popup.receiptMark; size: 30; anchors.verticalCenter: parent.verticalCenter }
                 Flickable {
+                    id: receiptScroll
                     // The words take what the widest capsule has left once the
                     // orb, the buttons and the spacing are in, and wrap past
                     // it, so a long error never pushes its buttons out. The
@@ -296,6 +299,11 @@ Item {
                     clip: true
                     T.ScrollBar.vertical: ScrollBar {}
                     anchors.verticalCenter: parent.verticalCenter
+                    // A new notice starts at its first line.
+                    Connections {
+                        target: popup
+                        function onNoticeChanged() { receiptScroll.cancelFlick(); receiptScroll.contentY = 0 }
+                    }
                     Column {
                         id: receiptText
                         width: parent.width
@@ -446,16 +454,20 @@ Item {
                 }
 
                 // Each button names its key, so the edit can be answered
-                // without the pointer.
-                Row {
+                // without the pointer. Right-aligned, last button first, so
+                // long shortcuts wrap onto a second line instead of pushing
+                // Cancel out.
+                Flow {
                     id: reviewActions
                     visible: !popup.followingUp
-                    anchors.right: parent.right
+                    width: parent.width
+                    layoutDirection: Qt.RightToLeft
                     spacing: 8
                     Button {
-                        text: Words.cancel
-                        trailing: KeyCombo { keys: popup.selectionEdit.keepKeys || []; size: "small" }
-                        onClicked: popup.source.cancelRequested()
+                        text: popup.t.replace
+                        variant: "primary"
+                        trailing: KeyCombo { keys: popup.selectionEdit.replaceKeys || []; size: "small" }
+                        onClicked: popup.source.replaceRequested()
                     }
                     Button {
                         text: popup.t.askForMore
@@ -463,10 +475,9 @@ Item {
                         onClicked: popup.source.followUpRequested()
                     }
                     Button {
-                        text: popup.t.replace
-                        variant: "primary"
-                        trailing: KeyCombo { keys: popup.selectionEdit.replaceKeys || []; size: "small" }
-                        onClicked: popup.source.replaceRequested()
+                        text: Words.cancel
+                        trailing: KeyCombo { keys: popup.selectionEdit.keepKeys || []; size: "small" }
+                        onClicked: popup.source.cancelRequested()
                     }
                 }
             }

@@ -537,7 +537,8 @@ private slots:
     }
 
     // The capsule takes the pointer wherever it is drawn, also while it
-    // grows or shrinks to the next phase.
+    // arrives scaled and lifted and while it grows or shrinks to the next
+    // phase.
     void theInputRegionFollowsTheCapsuleAsItMorphs()
     {
         ApplicationController controller(true);
@@ -552,17 +553,23 @@ private slots:
         QVERIFY(window);
         QQuickItem *capsule = capsuleOf(window);
         QVERIFY(capsule);
-        // Its layout box, without the scale and lift it arrives with.
-        const auto drawn = [capsule] {
-            const QRectF box(capsule->x(), capsule->y(), capsule->width(), capsule->height());
-            return QRegion(capsule->parentItem()->mapRectToScene(box).toAlignedRect());
+        // The mask covers where it is drawn, its scale and lift included,
+        // to within the pixel the region rounds out to.
+        const auto masksDrawn = [window, capsule] {
+            const QRectF drawn = capsule->mapRectToScene(QRectF(0, 0, capsule->width(), capsule->height()));
+            const QRect mask = window->mask().boundingRect();
+            return qAbs(mask.left() - drawn.left()) <= 1 && qAbs(mask.top() - drawn.top()) <= 1
+                && qAbs(mask.right() + 1 - drawn.right()) <= 1 && qAbs(mask.bottom() + 1 - drawn.bottom()) <= 1;
         };
+        // Arriving: smaller than it will be and below where it settles.
+        QTRY_VERIFY(capsule->scale() > 0.87 && capsule->scale() < 0.99);
+        QVERIFY(masksDrawn());
         QTRY_COMPARE(capsule->width(), 360.0);
 
         // From the bare bar to the receipt's 320 by 64.
         emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         QTRY_VERIFY(capsule->width() > 321 && capsule->width() < 359);
-        QCOMPARE(window->mask(), drawn());
+        QVERIFY(masksDrawn());
     }
 
     // The window is as big as the popup ever grows; only the capsule, at
