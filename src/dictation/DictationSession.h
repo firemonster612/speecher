@@ -114,16 +114,13 @@ signals:
     void dictationRecorded(const DictationRecord &record);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
-    void popupStatusChanged(const QString &status);
     void popupShowRequested(quint64 generation);
     void popupHideRequested();
-    void popupFrozenChanged(bool frozen);
-    void popupRefiningChanged(bool refining);
     // Last words of the refinement stream so far, for the popup preview while
     // Refining; the speech preview keeps flowing through previewDisplayChanged.
     void popupRefinementPreviewChanged(const QString &preview);
+    // A provider's sign-in renews before the dictation can go on.
     void popupOAuthRefreshRequested();
-    void popupListeningIndicatorRequested();
     // A delivery's receipt, which kind of outcome it reports, and the fix it
     // offers when a fallback provider stood in for one that needs attention
     // (an expired sign-in); ErrorFix::None otherwise.
@@ -132,9 +129,8 @@ signals:
                                const speecher::PopupErrorAction &fix = {});
     void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
     // A selection edit to show against the selection, again with each
-    // change, until popupSelectionEditReviewEnded.
+    // change, a follow-up starting or ending among them.
     void popupSelectionEditReviewRequested(const speecher::SelectionEditReview &review);
-    void popupSelectionEditReviewEnded();
     // What a session learned about a provider's sign-in: present when it
     // prepared, missing or turned down when it failed for that.
     void providerSignInObserved(const QString &providerId, bool signedIn);

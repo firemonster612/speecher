@@ -51,8 +51,6 @@ struct SelectionEditReview {
     // "2 changes", "Rewritten", "Spacing changes only" or "No changes".
     QString summary;
     ReviewKeys keys;
-    // How to ask for more changes, naming keys.followUp; empty without one.
-    QString followUpHint;
     // A follow-up is being dictated: the edit stays up, dimmed and without
     // its buttons, above the dictation capsule.
     bool following = false;

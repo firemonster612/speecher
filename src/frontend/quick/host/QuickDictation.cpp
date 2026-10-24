@@ -5,12 +5,15 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickSettings.h"
 
+#include <utility>
+
 namespace speecher {
 
 namespace {
 
 QuickDictation *g_instance = nullptr;
-constexpr int clockTickMs = 1000;
+constexpr int msPerSecond = 1000;
+int g_errorDismissMs = 0;
 
 // The popup's phase for a session state name.
 QString phaseFor(const QString &stateName)
@@ -51,6 +54,13 @@ QVariantMap message(const QString &text, const PopupErrorAction &fix)
     return {{QStringLiteral("title"), parts.first()},
             {QStringLiteral("detail"), parts.mid(1).join(popupMessageSeparator())},
             {QStringLiteral("page"), fixPage(fix)}};
+}
+
+QVariantMap errorMessage(const QString &text, const PopupErrorAction &fix)
+{
+    QVariantMap error = message(text, fix);
+    error.insert(QStringLiteral("dismissMs"), g_errorDismissMs > 0 ? g_errorDismissMs : popupErrorDismissMs(text));
+    return error;
 }
 
 // Each run, and the spacing after it unmarked, so the marks on two
@@ -97,9 +107,11 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     , m_controller(controller)
 {
     g_instance = this;
+    // A session's error that says nothing still counts down.
+    m_error = errorMessage({}, {});
     m_errorDismissal.setSingleShot(true);
     connect(&m_errorDismissal, &QTimer::timeout, this, &QuickDictation::dismissError);
-    m_clock.setInterval(clockTickMs);
+    m_clock.setSingleShot(true);
     m_clock.setTimerType(Qt::PreciseTimer);
     connect(&m_clock, &QTimer::timeout, this, &QuickDictation::updateElapsed);
 
@@ -114,8 +126,11 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     connect(session, &DictationSession::popupRefinementPreviewChanged, this, [this](const QString &refined) {
         update(m_refined, refined, &QuickDictationState::refinedChanged);
     });
+    connect(session, &DictationSession::popupOAuthRefreshRequested, this, [this] {
+        update(m_renewing, true, &QuickDictationState::renewingChanged);
+    });
     connect(session, &DictationSession::popupMessageRequested, this, &QuickDictation::showReceipt);
-    connect(session, &DictationSession::popupErrorRequested, this, &QuickDictation::setError);
+    connect(session, &DictationSession::popupErrorRequested, this, &QuickDictation::showError);
     connect(session, &DictationSession::popupSelectionEditReviewRequested, this, &QuickDictation::setReview);
     connect(session, &DictationSession::popupHideRequested, this, [this] { setState(QStringLiteral("idle")); });
 
@@ -128,6 +143,7 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     // selection, as the Global Shortcut does.
     connect(this, &QuickDictationState::followUpRequested, controller, &ApplicationController::toggle);
     connect(this, &QuickDictationState::errorActionRequested, this, &QuickDictation::openFix);
+    connect(this, &QuickDictationState::errorHoldRequested, this, &QuickDictation::holdError);
 }
 
 QuickDictation::~QuickDictation()
@@ -144,19 +160,31 @@ QuickDictation *QuickDictation::create(QQmlEngine *, QJSEngine *)
     return g_instance;
 }
 
+// Another error over one on show counts down from the start.
 void QuickDictation::showError(const QString &text, const PopupErrorAction &fix)
 {
-    setError(text, fix);
+    const QVariantMap error = errorMessage(text, fix);
+    const bool another = m_state == QLatin1String("error") && error != m_error;
+    update(m_error, error, &QuickDictationState::errorChanged);
+    if (another) {
+        startErrorDismissal();
+    }
+    setState(QStringLiteral("error"));
+}
+
+void QuickDictation::setErrorDismissMs(int ms)
+{
+    g_errorDismissMs = ms;
 }
 
 void QuickDictation::followSession(const QString &stateName)
 {
     const QString phase = phaseFor(stateName);
     if (phase == QLatin1String("starting")) {
-        // The last dictation's refinement is not this one's.
+        // The last dictation's refinement and error are not this one's.
         update(m_refined, QString(), &QuickDictationState::refinedChanged);
+        update(m_error, errorMessage({}, {}), &QuickDictationState::errorChanged);
     }
-    updateElapsed();
     // A cancel's receipt follows the session going idle, and a receipt or an
     // error stays up until the session hides the popup.
     if (phase == QLatin1String("idle") && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
@@ -168,20 +196,13 @@ void QuickDictation::followSession(const QString &stateName)
 void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, const PopupErrorAction &fix)
 {
     if (outcome == PopupOutcome::Error) {
-        setError(text, fix);
+        showError(text, fix);
         return;
     }
     QVariantMap receipt = message(text, fix);
     receipt.insert(QStringLiteral("outcome"), outcomeName(outcome));
     update(m_receipt, receipt, &QuickDictationState::receiptChanged);
     setState(QStringLiteral("delivered"));
-}
-
-void QuickDictation::setError(const QString &text, const PopupErrorAction &fix)
-{
-    update(m_error, message(text, fix), &QuickDictationState::errorChanged);
-    setState(QStringLiteral("error"));
-    m_errorDismissal.start(popupErrorDismissMs(text));
 }
 
 void QuickDictation::setReview(const SelectionEditReview &review)
@@ -197,6 +218,31 @@ void QuickDictation::setReview(const SelectionEditReview &review)
         {QStringLiteral("following"), review.following},
     };
     update(m_review, value, &QuickDictationState::reviewChanged);
+}
+
+// Counts the error on show down from its full time, or keeps that time while
+// the pointer rests on it.
+void QuickDictation::startErrorDismissal()
+{
+    m_errorRemainingMs = m_error.value(QStringLiteral("dismissMs")).toInt();
+    if (m_errorHeld) {
+        m_errorDismissal.stop();
+        return;
+    }
+    m_errorDismissal.start(m_errorRemainingMs);
+}
+
+void QuickDictation::holdError(bool held)
+{
+    if (std::exchange(m_errorHeld, held) == held || m_state != QLatin1String("error")) {
+        return;
+    }
+    if (held) {
+        m_errorRemainingMs = m_errorDismissal.remainingTime();
+        m_errorDismissal.stop();
+        return;
+    }
+    m_errorDismissal.start(m_errorRemainingMs);
 }
 
 // As the session's own cancel does: it ends its error and hides the popup;
@@ -237,25 +283,38 @@ void QuickDictation::cancel()
     m_controller->cancel();
 }
 
+// While listening, ticks again on the next whole second listened, wherever
+// a pause left the count.
 void QuickDictation::updateElapsed()
 {
-    update(m_elapsed, m_controller->session()->listeningMs() / 1000, &QuickDictationState::elapsedChanged);
+    const int listenedMs = m_controller->session()->listeningMs();
+    update(m_elapsed, listenedMs / msPerSecond, &QuickDictationState::elapsedChanged);
+    if (m_state == QLatin1String("listening")) {
+        m_clock.start(msPerSecond - listenedMs % msPerSecond);
+    } else {
+        m_clock.stop();
+    }
 }
 
 void QuickDictation::setState(const QString &state)
 {
-    if (state != QLatin1String("error")) {
-        m_errorDismissal.stop();
+    const bool error = state == QLatin1String("error");
+    // However the state turned to error, a session's error with no words too.
+    if (error && m_state != QLatin1String("error")) {
+        startErrorDismissal();
     }
-    if (state == QLatin1String("listening")) {
-        m_clock.start();
-    } else {
-        m_clock.stop();
+    if (!error) {
+        m_errorDismissal.stop();
+        m_errorHeld = false;
+    }
+    if (state != m_state) {
+        update(m_renewing, false, &QuickDictationState::renewingChanged);
     }
     if (state == QLatin1String("idle")) {
         update(m_level, qreal(0), &QuickDictationState::levelChanged);
     }
     update(m_state, state, &QuickDictationState::stateChanged);
+    updateElapsed();
 }
 
 } // namespace speecher

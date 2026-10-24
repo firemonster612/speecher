@@ -264,9 +264,6 @@ SelectionEditReview selectionEditReview(const QString &original,
     review.instruction = (earlier ? QStringLiteral("… then ") : QString())
         + quoted.mid(quoted.size() - std::min(quoted.size(), kShownInstructions)).join(QStringLiteral(" then "));
     review.keys = keys;
-    review.followUpHint = keys.followUp.isEmpty()
-        ? QString()
-        : QStringLiteral("Press %1 to ask for more changes").arg(keys.followUp);
     const QStringList before = words(original);
     const QStringList after = words(revised);
     const std::optional<QList<EditRun>> runs = diff(before, after);

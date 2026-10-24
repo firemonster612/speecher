@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 // The UI's QML modules are linked into the tests by test_quick_settings.cpp,
 // which imports their plugins for the whole binary.
@@ -69,6 +70,16 @@ QString withoutSpaces(QString text)
     return text.remove(QRegularExpression(QStringLiteral("\\s")));
 }
 
+QQuickItem *capsuleOf(QQuickWindow *window)
+{
+    return window->findChild<QQuickItem *>(QStringLiteral("capsule"));
+}
+
+QPoint centreOf(QQuickItem *item)
+{
+    return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+}
+
 } // namespace
 
 // The UI's Dictation, over the controller's session, and the popup's window.
@@ -87,6 +98,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+    }
+
+    void cleanup()
+    {
+        QuickDictation::setErrorDismissMs(0);
     }
 
     void phasesFollowTheSession_data()
@@ -238,6 +254,103 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
+    // An error from outside the session goes by itself once its time is up.
+    void anErrorFromOutsideTheSessionDismissesItself()
+    {
+        QuickDictation::setErrorDismissMs(50);
+        ApplicationController controller(true);
+        QuickDictation dictation(&controller);
+
+        dictation.showError(QStringLiteral("Microphone access is off"), {ErrorFix::MicrophonePermission});
+        QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("dismissMs")).toInt(), 50);
+        QCOMPARE(dictation.property("state").toString(), QStringLiteral("error"));
+        QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
+    }
+
+    // The session's own error ends through the session, which hides the
+    // popup, as its cancel would.
+    void aSessionsErrorDismissesItselfThroughTheSession()
+    {
+        QuickDictation::setErrorDismissMs(50);
+        // Not built in here, so the dictation cannot start.
+        SettingsStore().setSpeechProvider(QStringLiteral("local"));
+        ApplicationController controller(true);
+        QuickDictation dictation(&controller);
+        DictationSession *session = controller.session();
+        QSignalSpy hidden(session, &DictationSession::popupHideRequested);
+
+        controller.startListening();
+        QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("error"));
+        QCOMPARE(session->state(), DictationState::Error);
+        QTRY_COMPARE(hidden.count(), 1);
+        QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
+    }
+
+    // A session error with no words still shows as an error, with nothing
+    // of the last one, and still goes.
+    void anErrorWithoutWordsShowsNothingOfTheLastAndGoes()
+    {
+        QuickDictation::setErrorDismissMs(50);
+        ApplicationController controller(true);
+        QuickDictation dictation(&controller);
+        DictationSession *session = controller.session();
+        dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        emit dictation.cancelRequested();
+
+        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(QStringLiteral("error"));
+        QCOMPARE(dictation.property("state").toString(), QStringLiteral("error"));
+        const QVariantMap error = dictation.property("error").toMap();
+        QCOMPARE(error.value(QStringLiteral("title")).toString(), QString());
+        QCOMPARE(error.value(QStringLiteral("page")).toString(), QString());
+        QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
+    }
+
+    // An error offers Dismiss beside its countdown, which waits while the
+    // pointer rests on the capsule, also when the error shows under it.
+    void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
+    {
+        QuickDictation::setErrorDismissMs(300);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        QQmlEngine engine;
+        QuickPopupWindow popup(&engine, new RecordingPositioner);
+        const auto state = [&dictation] { return dictation.property("state").toString(); };
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
+        popup.show(0);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        QQuickItem *capsule = capsuleOf(window);
+        QVERIFY(capsule);
+        QTRY_COMPARE(capsule->opacity(), 1.0);
+
+        QTest::mouseMove(window, centreOf(capsule));
+        QTest::qWait(600);
+        QCOMPARE(state(), QStringLiteral("error"));
+        QTest::mouseMove(window, QPoint(1, 1));
+        QTRY_COMPARE(state(), QStringLiteral("idle"));
+
+        // The pointer is already there when the next one shows.
+        QTest::mouseMove(window, centreOf(capsule));
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
+        popup.show(0);
+        QTest::qWait(600);
+        QCOMPARE(state(), QStringLiteral("error"));
+
+        QQuickItem *dismiss = nullptr;
+        for (QList<QQuickItem *> items{capsule}; !items.isEmpty() && !dismiss;) {
+            QQuickItem *item = items.takeFirst();
+            if (item->isVisible() && item->property("text").toString() == QStringLiteral("Dismiss")) {
+                dismiss = item;
+            }
+            items += item->childItems();
+        }
+        QVERIFY(dismiss);
+        QMetaObject::invokeMethod(dismiss, "clicked");
+        QCOMPARE(state(), QStringLiteral("idle"));
+    }
+
     void aReviewCarriesTheEditAndTheKeysThatAnswerIt()
     {
         ApplicationController controller(true);
@@ -357,6 +470,99 @@ private slots:
         popup.show(4);
         QTRY_COMPARE(presented.count(), 1);
         QCOMPARE(presented.first().first().toULongLong(), 4ull);
+    }
+
+    // A frame of an earlier show whose answer is still on its way when the
+    // popup is hidden and shown again does not answer for the later show.
+    // The test plays the render loop's signals itself: offscreen, a frame of
+    // the later show would render before the answer arrived.
+    void aQueuedFrameOfAnEarlierShowDoesNotPresentALaterOne()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        QQmlEngine engine;
+        QuickPopupWindow popup(&engine, new RecordingPositioner);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        QSignalSpy presented(&popup, &QuickPopupWindow::presented);
+        emit controller.session()->stateChanged(QStringLiteral("starting"));
+
+        popup.show(1);
+        emit window->afterSynchronizing();
+        emit window->frameSwapped();
+        popup.hide();
+        popup.show(2);
+        // The first show's answer, and nothing else yet.
+        QCoreApplication::sendPostedEvents(&popup);
+        QCOMPARE(presented.count(), 0);
+
+        QTRY_COMPARE(presented.count(), 1);
+        QCOMPARE(presented.first().first().toULongLong(), 2ull);
+    }
+
+    // A frame synchronized before a show and swapped after it shows what was
+    // there before; the show waits for the next one.
+    void aFrameInFlightAtAShowDoesNotPresentIt()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        QQmlEngine engine;
+        QuickPopupWindow popup(&engine, new RecordingPositioner);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        QSignalSpy presented(&popup, &QuickPopupWindow::presented);
+        emit controller.session()->stateChanged(QStringLiteral("starting"));
+        popup.show(1);
+        QTRY_COMPARE(presented.count(), 1);
+
+        bool showDuringNextSync = false;
+        int syncsSinceReshow = -1;
+        int syncsWhenPresented = -1;
+        connect(window, &QQuickWindow::afterSynchronizing, &popup, [&] {
+            if (syncsSinceReshow >= 0) {
+                ++syncsSinceReshow;
+            } else if (std::exchange(showDuringNextSync, false)) {
+                popup.show(2);
+                syncsSinceReshow = 0;
+            }
+        }, Qt::DirectConnection);
+        connect(&popup, &QuickPopupWindow::presented, &popup, [&] { syncsWhenPresented = syncsSinceReshow; });
+        showDuringNextSync = true;
+        window->update();
+        QTRY_COMPARE(presented.count(), 2);
+        QCOMPARE(presented.last().first().toULongLong(), 2ull);
+        QVERIFY2(syncsWhenPresented >= 1, "presented by the frame synchronized before the show");
+    }
+
+    // The capsule takes the pointer wherever it is drawn, also while it
+    // grows or shrinks to the next phase.
+    void theInputRegionFollowsTheCapsuleAsItMorphs()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickDictation dictation(&controller);
+        QQmlEngine engine;
+        QuickPopupWindow popup(&engine, new RecordingPositioner);
+        DictationSession *session = controller.session();
+        emit session->stateChanged(QStringLiteral("listening"));
+        popup.show(1);
+        QQuickWindow *window = popupWindow();
+        QVERIFY(window);
+        QQuickItem *capsule = capsuleOf(window);
+        QVERIFY(capsule);
+        // Its layout box, without the scale and lift it arrives with.
+        const auto drawn = [capsule] {
+            const QRectF box(capsule->x(), capsule->y(), capsule->width(), capsule->height());
+            return QRegion(capsule->parentItem()->mapRectToScene(box).toAlignedRect());
+        };
+        QTRY_COMPARE(capsule->width(), 360.0);
+
+        // From the bare bar to the receipt's 320 by 64.
+        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        QTRY_VERIFY(capsule->width() > 321 && capsule->width() < 359);
+        QCOMPARE(window->mask(), drawn());
     }
 
     // The window is as big as the popup ever grows; only the capsule, at

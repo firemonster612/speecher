@@ -47,12 +47,16 @@ private:
     void moveTo(const QPoint &topLeft) override;
     QWindow *nativeWindow() override;
 
-    void framePresented();
+    void framePresented(quint64 generation);
     void captureWhenAsked();
 
     QQuickWindow *m_window = nullptr;
     PopupPositioner *m_positioner;
+    // The show waiting for its first frame, 0 for none.
     quint64 m_pendingGeneration = 0;
+    // The render thread's: the show the frame being drawn was synchronized
+    // after.
+    quint64 m_syncedGeneration = 0;
 };
 
 } // namespace speecher

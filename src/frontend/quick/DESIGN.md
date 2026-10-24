@@ -65,7 +65,9 @@ Backend is the C++ types plus the mocks not yet replaced.
   fixes it; the popup words that page's button. Its `*Requested` signals go
   to the controller (start, stop, cancel, follow-up) and the session (pause,
   replace); the fix opens Main on that page. An error dismisses itself after
-  core's `popupErrorDismissMs`. `DictationState` is the same type with
+  core's `popupErrorDismissMs` (`error.dismissMs`), with Dismiss and a
+  countdown that waits while the pointer rests on the popup
+  (`errorHoldRequested`). `renewing` says a sign-in is renewing. `DictationState` is the same type with
   nothing behind it, for a page's demo popup.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
   options. Option ids are the values core stores. Pages place rows by id with
@@ -95,7 +97,9 @@ Backend is the C++ types plus the mocks not yet replaced.
 - The popup window is larger than the capsule, so only the capsule may take
   the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
-  input region on Wayland) whenever it changes, about once per phase.
+  input region on Wayland; on X11 the input shape alone, since a mask
+  would clip the shadow) whenever it changes, frame by frame as the
+  capsule morphs.
   `SPEECHER_POPUP_CAPTURE_DIR=<dir>` saves the popup's frames while it is up.
 - Wording belongs to the UI. It comes from the schema row, `Words` (shared
   words such as Cancel, Save and Copied, and the shell's: `Words.shell`,

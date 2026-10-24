@@ -8,8 +8,8 @@ import Speecher.Popup
 
 // A desktop with a chat app and the dictation popup over it. With
 // --popup-demo=story (the default) it plays one dictation from start to
-// paste; any other value (listening, paused, refining, delivered, review,
-// error) holds that state for a screenshot.
+// paste; any other value (renewing, listening, paused, refining, delivered,
+// review, following, error) holds that state for a screenshot.
 Window {
     id: scene
     width: 1200
@@ -42,7 +42,7 @@ Window {
     // What core says once the text is in, and an error with its fix.
     readonly property var delivered: ({ title: "Input sent", detail: "", outcome: "inserted", page: "" })
     readonly property var failed: ({ title: "Your Claude sign-in has expired.", detail: "Sign in again to keep using Claude Voice.",
-                                     page: "accounts" })
+                                     page: "accounts", dismissMs: 8000 })
 
     property var _queue: []
     property string _feedTarget: "words"
@@ -126,7 +126,12 @@ Window {
             Dictation.receipt = delivered
             Dictation.state = "delivered"
             break
+        case "renewing":
+            Dictation.renewing = true
+            Dictation.state = "starting"
+            break
         case "review":
+        case "following":
             chat.composerText = "Can you send me the deck when you get a chance? I need it for the meeting."
             chat.selecting = true
             Dictation.review = {
@@ -136,7 +141,7 @@ Window {
                 keepKeys: ["Esc"],
                 replaceKeys: ["Enter"],
                 followUpKeys: ["Ctrl", "Space"],
-                following: false,
+                following: demo === "following",
                 whole: [
                     { kind: "removed", text: "Can you send me the deck when you get a chance?" },
                     { kind: "same", text: " " },
@@ -147,7 +152,14 @@ Window {
                     { kind: "added", text: "call tomorrow." }
                 ]
             }
-            Dictation.state = "review"
+            if (demo === "following") {
+                Dictation.words = "and make it shorter"
+                Dictation.elapsed = 2
+                Dictation.level = 0.5
+                Dictation.state = "listening"
+            } else {
+                Dictation.state = "review"
+            }
             break
         case "error":
             Dictation.error = failed

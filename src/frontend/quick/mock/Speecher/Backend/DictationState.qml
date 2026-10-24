@@ -7,6 +7,7 @@ QtObject {
     // idle, starting, listening, paused, transcribing, refining, delivering,
     // delivered, review or error
     property string state: "idle"
+    property bool renewing: false
     property real level: 0
     property int elapsed: 0
     property string words: ""
@@ -16,8 +17,8 @@ QtObject {
     // { instruction, whole, folded, summary, keepKeys, replaceKeys, followUpKeys, following }
     property var review: ({ instruction: "", whole: [], folded: [], summary: "", keepKeys: [], replaceKeys: [],
                             followUpKeys: [], following: false })
-    // { title, detail, page }
-    property var error: ({ title: "", detail: "", page: "" })
+    // { title, detail, page, dismissMs }
+    property var error: ({ title: "", detail: "", page: "", dismissMs: 8000 })
 
     signal startRequested()
     signal stopRequested()
@@ -26,4 +27,5 @@ QtObject {
     signal replaceRequested()
     signal followUpRequested()
     signal errorActionRequested()
+    signal errorHoldRequested(bool held)
 }

@@ -4,12 +4,17 @@
 
 #include <QDebug>
 #include <QDir>
+#include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQuickWindow>
 #include <QRegion>
 #include <QTimer>
 
-#include <utility>
+#ifdef SPEECHER_WITH_X11
+// Last: Xlib's macros (None, Status, Bool) would clash with Qt's headers.
+#include <X11/Xlib.h>
+#include <X11/extensions/shape.h>
+#endif
 
 namespace speecher {
 
@@ -17,6 +22,19 @@ namespace {
 
 // About ten frames a second: enough to see every phase of a dictation.
 constexpr int captureIntervalMs = 100;
+
+#ifdef SPEECHER_WITH_X11
+// Only rect takes the pointer; the window's shape, which also clips what is
+// drawn, stays whole.
+void setX11InputShape(Display *display, const QWindow &window, const QRect &rect)
+{
+    const qreal ratio = window.devicePixelRatio();
+    const QRect native = QRectF(QPointF(rect.topLeft()) * ratio, QSizeF(rect.size()) * ratio).toAlignedRect();
+    XRectangle shape{short(native.x()), short(native.y()), ushort(native.width()), ushort(native.height())};
+    XShapeCombineRectangles(display, window.winId(), ShapeInput, 0, 0, &shape, 1, ShapeSet, Unsorted);
+    XFlush(display);
+}
+#endif
 
 } // namespace
 
@@ -35,8 +53,18 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
     }
     // Once, before the first show: a layer-shell surface takes its role then.
     m_positioner->configurePopup(*this);
-    // Emitted on the render thread.
-    connect(m_window, &QQuickWindow::frameSwapped, this, &QuickPopupWindow::framePresented, Qt::QueuedConnection);
+    // Both on the render thread. A frame answers for the show it was
+    // synchronized after, read while the GUI thread waits in the sync, so
+    // neither a frame already on its way at a show nor a late answer for an
+    // earlier show presents a later one.
+    connect(m_window, &QQuickWindow::afterSynchronizing, this, [this] {
+        m_syncedGeneration = m_pendingGeneration;
+    }, Qt::DirectConnection);
+    connect(m_window, &QQuickWindow::frameSwapped, this, [this] {
+        QMetaObject::invokeMethod(this, [this, generation = m_syncedGeneration] {
+            framePresented(generation);
+        }, Qt::QueuedConnection);
+    }, Qt::DirectConnection);
     connect(m_window, SIGNAL(inputRegionChanged()), this, SLOT(applyInputRegion()));
     connect(m_window, SIGNAL(emptyChanged()), this, SLOT(hideOnceEmpty()));
     applyInputRegion();
@@ -69,20 +97,31 @@ void QuickPopupWindow::hide()
     }
 }
 
-void QuickPopupWindow::framePresented()
+void QuickPopupWindow::framePresented(quint64 generation)
 {
-    if (m_pendingGeneration == 0 || !m_window->isVisible()) {
+    if (generation == 0 || generation != m_pendingGeneration) {
         return;
     }
-    emit presented(std::exchange(m_pendingGeneration, 0));
+    m_pendingGeneration = 0;
+    emit presented(generation);
 }
 
 // The window is as big as the capsule ever grows; the rest of it is
 // transparent and must let clicks through to the app underneath. On Wayland
-// the mask is the surface's input region.
+// the mask is the surface's input region. On X11 it would be the window's
+// shape, cutting off the shadow and the capsule wherever it moves past the
+// region, so there only the input shape is set.
 void QuickPopupWindow::applyInputRegion()
 {
-    m_window->setMask(QRegion(m_window->property("inputRegion").toRectF().toAlignedRect()));
+    const QRect region = m_window->property("inputRegion").toRectF().toAlignedRect();
+#ifdef SPEECHER_WITH_X11
+    // By name: offscreen also answers to QX11Application, with no display.
+    if (QGuiApplication::platformName() == QLatin1String("xcb")) {
+        setX11InputShape(qGuiApp->nativeInterface<QNativeInterface::QX11Application>()->display(), *m_window, region);
+        return;
+    }
+#endif
+    m_window->setMask(QRegion(region));
 }
 
 void QuickPopupWindow::hideOnceEmpty()

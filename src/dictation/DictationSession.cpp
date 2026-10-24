@@ -333,13 +333,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_lastTranscript.clear();
     m_transcript->clear();
     m_transcriptPipeline = {};
-    // Unfreeze before clearing: a popup whose preview honours the frozen flag
-    // would otherwise drop this clear and keep showing the previous
-    // dictation's delivered words until the first new partial arrives.
-    emit popupFrozenChanged(false);
     emit previewDisplayChanged({});
-    emit popupRefiningChanged(false);
-    emit popupStatusChanged(QStringLiteral("Preparing"));
     emit popupShowRequested(generation);
     QTimer::singleShot(s_popupPaintFallbackMs, this, [this, generation] {
         continueStartupAfterPopup(generation);
@@ -772,7 +766,6 @@ void DictationSession::stopListening()
             m_refiner->cancel();
         }
         m_refinementGeneration = 0;
-        emit popupRefiningChanged(false);
         if (m_transcriptPipeline.editsSelection) {
             clearScreenshotContext();
             m_sessionSettings.reset();
@@ -919,7 +912,6 @@ void DictationSession::discard()
     m_target = {};
     m_transcriptPipeline = {};
     resumePausedMedia();
-    emit popupRefiningChanged(false);
 }
 
 // Media the session paused stays paused: the person is still mid-dictation.
@@ -1034,7 +1026,6 @@ void DictationSession::refineAfterLastAttempt()
         }
         return;
     }
-    emit popupFrozenChanged(true);
     beginRefinement(m_generation);
 }
 
@@ -1123,7 +1114,6 @@ void DictationSession::setState(DictationState state, const QString &message, co
         m_lastFailure = message.simplified();
     }
     const QString label = dictationStateLabel(state, message);
-    emit popupStatusChanged(label);
     if (state == DictationState::Error && !message.isEmpty()) {
         emit popupErrorRequested(message, fix);
     }
@@ -1202,7 +1192,6 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     }
     qInfo() << "audio capture started";
     setState(DictationState::Listening);
-    emit popupListeningIndicatorRequested();
 }
 
 void DictationSession::failStartup(const QString &message, const PopupErrorAction &fix)
@@ -1365,7 +1354,6 @@ void DictationSession::enterRefining()
     }
     setState(DictationState::Refining, m_lastMessage);
     m_refinementGeneration = m_generation;
-    emit popupRefiningChanged(true);
 }
 
 // The pipeline's refinement settings for the refiner being tried, with the
@@ -1425,7 +1413,6 @@ void DictationSession::deliverWithoutRefinement()
 void DictationSession::failSelectionEdit(const QString &message)
 {
     m_refinementGeneration = 0;
-    emit popupRefiningChanged(false);
     clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};
@@ -1461,7 +1448,6 @@ void DictationSession::reviewSelectionEdit(const QString &revised)
     m_followingUp = false;
     m_review = std::move(review);
     m_refinementGeneration = 0;
-    emit popupRefiningChanged(false);
     enterReview();
 }
 
@@ -1486,7 +1472,6 @@ void DictationSession::returnToReview()
     m_usedRawTranscript = false;
     m_speechWarning = m_review->speechWarning;
     m_providerHistory = m_review->providerHistory;
-    emit popupRefiningChanged(false);
     enterReview();
 }
 
@@ -1504,9 +1489,7 @@ void DictationSession::enterReview()
 void DictationSession::endReview()
 {
     m_followingUp = false;
-    if (std::exchange(m_review, std::nullopt)) {
-        emit popupSelectionEditReviewEnded();
-    }
+    m_review.reset();
 }
 
 void DictationSession::emitReview()
@@ -1587,7 +1570,6 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         spokenWords.value_or(countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text));
     m_refinementGeneration = 0;
     m_lastTranscript = text;
-    emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
     m_settings->recordVocabularyUsage(text);
@@ -1637,7 +1619,6 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
             : std::max(popupErrorDismissMs(outcome.message), settings.output.completionStatusDurationMs);
         m_completionTimer->start(durationMs);
     } else {
-        emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
         setState(DictationState::Error,
                  m_speechWarning.isEmpty() ? result.message : result.message + popupMessageSeparator() + m_speechWarning);
@@ -1749,7 +1730,6 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
         if (hearing) {
             m_transcriber->cancelAttempt(m_attemptId);
             setState(DictationState::Stopping, failure.message);
-            emit popupFrozenChanged(true);
             const quint64 generation = m_generation;
             stopAudio();
             resumePausedMedia();

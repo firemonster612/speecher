@@ -26,6 +26,9 @@ Item {
     readonly property bool textOn: refinedPhase ? Settings.values.showRefinementText !== false
                                                 : Settings.values.showLiveText !== false
     readonly property bool showText: live && textOn && liveText.length > 0
+    // A sign-in renews before the dictation goes on; the bar says so in
+    // place of the sound.
+    readonly property bool renewing: recording && source.renewing
     // The last working phase, so its label holds while the bar fades out
     // and while the text is delivered.
     property string workPhase: "transcribing"
@@ -37,13 +40,22 @@ Item {
         if (phase === "transcribing" || phase === "refining") workPhase = phase
         if (phase === "delivered" || phase === "error") noticePhase = phase
         if (phase === "idle") wholeEdit = false
+        // An error may show under a pointer that is already resting there.
+        if (phase === "error") source.errorHoldRequested(hover.hovered)
     }
     readonly property var selectionEdit: source.review
     readonly property bool canFold: (selectionEdit.folded || []).length > 0
-    // The receipt's mark: what happened to the text.
+    // A follow-up is dictated under the edit it asks more of, which stays up
+    // dimmed and without its buttons.
+    readonly property bool followingUp: live && selectionEdit.following === true
+    readonly property bool reviewShown: phase === "review" || followingUp
+    readonly property real followUpDim: 0.5
+    // The receipt's mark: what happened to the text, when it is not plainly
+    // delivered.
     readonly property string receiptMark: noticePhase === "error" ? "error"
-        : ({ copied: "copied", fallback: "fallback", cancelled: "cancelled" })[source.receipt.outcome] || "delivered"
+        : ["copied", "fallback", "cancelled"].includes(source.receipt.outcome) ? source.receipt.outcome : "delivered"
     readonly property var notice: noticePhase === "error" ? source.error : source.receipt
+    readonly property bool noticeFix: (notice.page || "").length > 0
 
     readonly property var t: ({
         transcribing: "Transcribing…",
@@ -54,6 +66,8 @@ Item {
         replace: "Replace",
         wholeEdit: "Show whole edit",
         changesOnly: "Show changes only",
+        renewing: "Renewing sign-in…",
+        dismiss: "Dismiss",
         open: pageId => "Open " + Schema.page(pageId).title
     })
 
@@ -61,28 +75,35 @@ Item {
     // it, so the shape morphs between phases.
     readonly property size target: {
         if (phase === "review") return Qt.size(widest, review.implicitHeight + 36)
+        if (followingUp) return Qt.size(widest, review.y + review.implicitHeight + liveHeight)
         if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(320, receipt.implicitWidth + 40)),
                                                                       Math.max(64, receipt.implicitHeight + 28))
-        if (showText) return Qt.size(540, 58 + words.implicitHeight + 14)
-        return Qt.size(recording ? 360 : 300, 58)
+        return Qt.size(showText ? 540 : recording ? 360 : 300, liveHeight)
     }
+    // The live bar, and the words above it when they show.
+    readonly property real liveHeight: showText ? barHeight + words.implicitHeight + 14 : barHeight
+    readonly property int barHeight: 58
 
     // Where the margin rule falls inside the slip.
     readonly property int marginX: 54
-    // A long edit scrolls past this height rather than growing the capsule.
-    readonly property int reviewTextMax: 220
+    // A long edit or message scrolls past this height rather than growing
+    // the capsule.
+    readonly property int textMax: 220
     // The capsule's width in review, the widest phase.
     readonly property int widest: 580
     // The most the capsule ever grows to: the review with its edit at the
-    // scroll limit, the tallest phase. A window this size never resizes. It
-    // adds up the review's fixed parts rather than subtracting the edit from
-    // the column, which lags the edit by a frame while it lays out.
-    readonly property size largest: Qt.size(widest, reviewHeading.height + reviewActions.height + review.spacing * 2 + reviewTextMax + 36)
+    // scroll limit, with its buttons or, during a follow-up, with the live
+    // bar and the most lines of words under it. A window this size never
+    // resizes. It adds up the review's fixed parts rather than subtracting
+    // the edit from the column, which lags the edit by a frame while it lays
+    // out.
+    readonly property size largest: Qt.size(widest, reviewHeading.height + review.spacing + textMax
+        + Math.max(review.spacing + reviewActions.height + 36, review.y + barHeight + words.maxLines * words.lineHeight + 14))
 
-    // Where the capsule settles for the current phase, in the popup's
-    // coordinates. It moves with the phase and when the live words take
-    // another line, not on every frame of the morph between them.
-    readonly property rect capsule: Qt.rect((width - target.width) / 2, height - target.height, target.width, target.height)
+    // Where the capsule is, in the popup's coordinates, frame by frame as it
+    // grows and shrinks between phases (not the scale and lift it arrives
+    // with).
+    readonly property rect capsule: Qt.rect(holder.x, holder.y, holder.width, holder.height)
 
     // As big as the capsule, or as it is while it grows or shrinks to the
     // target, so a scene that sizes to the popup never cuts it off.
@@ -91,6 +112,7 @@ Item {
 
     Item {
         id: holder
+        objectName: "capsule"
         width: popup.target.width
         height: popup.target.height
         anchors.horizontalCenter: parent.horizontalCenter
@@ -105,6 +127,12 @@ Item {
         transformOrigin: Item.Bottom
         Behavior on opacity { Ease { duration: Theme.base } }
         Behavior on scale { Ease { duration: popup.shown ? Theme.page : Theme.base; curve: popup.shown ? Theme.springy : Theme.easeIn } }
+
+        // An error's countdown waits while the pointer rests on it.
+        HoverHandler {
+            id: hover
+            onHoveredChanged: popup.source.errorHoldRequested(hovered)
+        }
 
         RectangularShadow {
             anchors.fill: shell
@@ -136,7 +164,10 @@ Item {
             // Live: words above, the control bar below ----------------------
             Item {
                 id: liveLayer
-                anchors.fill: parent
+                width: parent.width
+                // Under the edit during a follow-up.
+                height: popup.followingUp ? popup.liveHeight : parent.height
+                anchors.bottom: parent.bottom
                 opacity: popup.live ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: popup.live ? Theme.base : Theme.fast } }
@@ -156,7 +187,7 @@ Item {
                 Item {
                     id: bar
                     width: parent.width
-                    height: 58
+                    height: popup.barHeight
                     anchors.bottom: parent.bottom
 
                     VoiceOrb {
@@ -176,17 +207,19 @@ Item {
                         bars: Math.max(8, Math.floor(width / 5.5))
                         level: popup.source.level
                         active: popup.phase === "listening"
-                        opacity: popup.recording ? 1 : 0
+                        opacity: popup.recording && !popup.renewing ? 1 : 0
                         Behavior on opacity { Ease {} }
                     }
 
                     MorphText {
                         x: popup.marginX + 16
                         anchors.verticalCenter: parent.verticalCenter
-                        text: popup.workPhase === "refining" ? popup.t.refining : popup.t.transcribing
+                        // While recording only a renewal shows here, and holds
+                        // as it fades out.
+                        text: popup.recording ? popup.t.renewing : popup.workPhase === "refining" ? popup.t.refining : popup.t.transcribing
                         variant: "label"
                         strong: true
-                        opacity: popup.phase === "transcribing" || popup.phase === "refining" || popup.phase === "delivering" ? 1 : 0
+                        opacity: popup.renewing || popup.phase === "transcribing" || popup.phase === "refining" || popup.phase === "delivering" ? 1 : 0
                         Behavior on opacity { Ease {} }
                     }
 
@@ -218,10 +251,16 @@ Item {
                                 onClicked: popup.source.pauseRequested()
                             }
                         }
-                        CircleButton {
-                            iconName: "x"
-                            tooltip: Words.cancel
-                            onClicked: popup.source.cancelRequested()
+                        // Delivering is past cancelling.
+                        Reveal {
+                            sideways: true
+                            open: popup.phase !== "delivering"
+                            anchors.verticalCenter: parent.verticalCenter
+                            CircleButton {
+                                iconName: "x"
+                                tooltip: Words.cancel
+                                onClicked: popup.source.cancelRequested()
+                            }
                         }
                     }
                 }
@@ -237,50 +276,103 @@ Item {
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
 
-                VoiceOrb { id: receiptOrb; phase: popup.phase === "delivered" || popup.phase === "error" ? popup.receiptMark : popup.phase; size: 30; anchors.verticalCenter: parent.verticalCenter }
-                Column {
+                VoiceOrb { id: receiptOrb; phase: popup.receiptMark; size: 30; anchors.verticalCenter: parent.verticalCenter }
+                Flickable {
                     // The words take what the widest capsule has left once the
-                    // orb, the action and the spacing are in, and wrap past it,
-                    // so a long error never pushes its action out.
-                    readonly property real room: popup.widest - 40 - receiptOrb.width - receiptEnd.width
-                                                 - (receiptAction.visible ? receiptAction.implicitWidth + receipt.spacing * 3 : receipt.spacing * 2)
+                    // orb, the buttons and the spacing are in, and wrap past
+                    // it, so a long error never pushes its buttons out. The
+                    // capsule grows taller for them up to textMax, and they
+                    // scroll past it.
+                    readonly property real room: popup.widest - 40 - receiptOrb.width - receiptEnd.width - receipt.spacing * 2
+                                                 - (receiptButtons.visible ? receiptButtons.implicitWidth + receipt.spacing : 0)
                     width: Math.min(Math.max(receiptTitle.implicitWidth, receiptDetail.implicitWidth), room)
+                    height: Math.min(receiptText.implicitHeight, popup.textMax)
+                    contentHeight: receiptText.implicitHeight
+                    interactive: contentHeight > height
+                    boundsBehavior: Flickable.StopAtBounds
+                    // A mouse drags nothing on a desktop; touch still does.
+                    acceptedButtons: Qt.NoButton
+                    WheelScroll {}
+                    clip: true
+                    T.ScrollBar.vertical: ScrollBar {}
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    // A long error wraps, and the capsule grows taller for it.
-                    Txt {
-                        id: receiptTitle
+                    Column {
+                        id: receiptText
                         width: parent.width
-                        text: popup.notice.title || ""
-                        variant: "label"
-                        strong: true
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 3
-                        elide: Text.ElideRight
-                    }
-                    Txt {
-                        id: receiptDetail
-                        width: parent.width
-                        text: popup.notice.detail || ""
-                        // No room kept for a detail there isn't.
-                        visible: text.length > 0
-                        variant: "small"
-                        tone: "secondary"
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 3
-                        elide: Text.ElideRight
+                        spacing: 2
+                        Txt {
+                            id: receiptTitle
+                            width: parent.width
+                            text: popup.notice.title || ""
+                            variant: "label"
+                            strong: true
+                            wrapMode: Text.Wrap
+                        }
+                        Txt {
+                            id: receiptDetail
+                            width: parent.width
+                            text: popup.notice.detail || ""
+                            // No room kept for a detail there isn't.
+                            visible: text.length > 0
+                            variant: "small"
+                            tone: "secondary"
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
-                Button {
-                    id: receiptAction
-                    visible: (popup.notice.page || "").length > 0
-                    text: visible ? popup.t.open(popup.notice.page) : ""
-                    size: "small"
-                    variant: "primary"
+                Row {
+                    id: receiptButtons
+                    visible: popup.noticeFix || popup.noticePhase === "error"
+                    spacing: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    onClicked: popup.source.errorActionRequested()
+                    Button {
+                        id: receiptAction
+                        visible: popup.noticeFix
+                        text: visible ? popup.t.open(popup.notice.page) : ""
+                        size: "small"
+                        variant: "primary"
+                        onClicked: popup.source.errorActionRequested()
+                    }
+                    Button {
+                        id: receiptDismiss
+                        visible: popup.noticePhase === "error"
+                        text: popup.t.dismiss
+                        size: "small"
+                        onClicked: popup.source.cancelRequested()
+                    }
                 }
                 Item { id: receiptEnd; width: 2; height: 1 }
+            }
+
+            // An error's countdown to dismissing itself, draining under it
+            // and waiting while the pointer rests on the capsule.
+            Rectangle {
+                id: countdown
+                property real remaining: 1
+                x: popup.marginX + 16
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 6
+                width: (parent.width - x - 20) * remaining
+                height: 3
+                radius: height / 2
+                color: Theme.soft(Theme.negative, 0.55)
+                opacity: popup.phase === "error" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { Ease { duration: Theme.slow } }
+                NumberAnimation on remaining {
+                    id: drain
+                    from: 1
+                    to: 0
+                    duration: popup.source.error.dismissMs || 0
+                    running: popup.phase === "error"
+                    paused: running && hover.hovered
+                }
+                // Another error over this one counts down from the start, as
+                // Dictation's own countdown does.
+                Connections {
+                    target: popup.source
+                    function onErrorChanged() { if (popup.phase === "error") drain.restart() }
+                }
             }
 
             // Review: the edit to a selection, waiting for Replace -----------
@@ -288,7 +380,7 @@ Item {
                 x: (popup.marginX - width) / 2
                 y: 16
                 phase: "review"
-                opacity: popup.phase === "review" ? 1 : 0
+                opacity: popup.reviewShown ? popup.followingUp ? popup.followUpDim : 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
             }
@@ -298,8 +390,9 @@ Item {
                 y: 18
                 width: parent.width - x - 20
                 spacing: 14
-                opacity: popup.phase === "review" ? 1 : 0
+                opacity: popup.reviewShown ? popup.followingUp ? popup.followUpDim : 1 : 0
                 visible: opacity > 0
+                enabled: !popup.followingUp
                 Behavior on opacity { Ease { duration: Theme.slow } }
 
                 Item {
@@ -336,7 +429,7 @@ Item {
 
                 Flickable {
                     width: parent.width
-                    height: Math.min(edit.implicitHeight, popup.reviewTextMax)
+                    height: Math.min(edit.implicitHeight, popup.textMax)
                     contentHeight: edit.implicitHeight
                     interactive: contentHeight > height
                     boundsBehavior: Flickable.StopAtBounds
@@ -356,6 +449,7 @@ Item {
                 // without the pointer.
                 Row {
                     id: reviewActions
+                    visible: !popup.followingUp
                     anchors.right: parent.right
                     spacing: 8
                     Button {

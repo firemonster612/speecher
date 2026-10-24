@@ -24,6 +24,8 @@ class QuickDictationState : public QObject {
     // delivering, delivered (a receipt on show, a cancel's too), review or
     // error.
     Q_PROPERTY(QString state MEMBER m_state NOTIFY stateChanged)
+    // A sign-in renews before the dictation can go on, until the next state.
+    Q_PROPERTY(bool renewing MEMBER m_renewing NOTIFY renewingChanged)
     // The input level, 0 to 1.
     Q_PROPERTY(qreal level MEMBER m_level NOTIFY levelChanged)
     // Seconds listened, pauses left out.
@@ -45,8 +47,9 @@ class QuickDictationState : public QObject {
     // replaceKeys and followUpKeys (the keys that answer it, each a list,
     // empty for none), following (a follow-up is being dictated) }.
     Q_PROPERTY(QVariantMap review MEMBER m_review NOTIFY reviewChanged)
-    // error: { title, detail, page }, page the settings page that fixes it,
-    // or empty.
+    // error: { title, detail, page, dismissMs }, page the settings page that
+    // fixes it, or empty; dismissMs how long it stays up before it dismisses
+    // itself, not counting while it is held.
     Q_PROPERTY(QVariantMap error MEMBER m_error NOTIFY errorChanged)
 
 public:
@@ -54,6 +57,7 @@ public:
 
 signals:
     void stateChanged();
+    void renewingChanged();
     void levelChanged();
     void elapsedChanged();
     void wordsChanged();
@@ -75,9 +79,14 @@ signals:
     void followUpRequested();
     // delivered or error: opens the page that fixes it.
     void errorActionRequested();
+    // The pointer rests on the popup (held) or has left it. An error's
+    // countdown waits while it is held; the popup says so again each time an
+    // error shows.
+    void errorHoldRequested(bool held);
 
 protected:
     QString m_state = QStringLiteral("idle");
+    bool m_renewing = false;
     qreal m_level = 0;
     int m_elapsed = 0;
     QString m_words;
@@ -90,7 +99,8 @@ protected:
 // The UI's Dictation singleton: the controller's Dictation Session as the
 // popup shows it, and the popup's commands carried to the controller and the
 // session. The popup comes and goes as the session asks; an error waits
-// popupErrorDismissMs before it dismisses itself.
+// popupErrorDismissMs, and as long again as it is held, before it dismisses
+// itself.
 class QuickDictation final : public QuickDictationState {
     Q_OBJECT
     QML_NAMED_ELEMENT(Dictation)
@@ -103,9 +113,12 @@ public:
     // The engine's instance: the one the host made before loading any QML.
     static QuickDictation *create(QQmlEngine *, QJSEngine *);
 
-    // An error from outside the session, such as a start the microphone was
-    // refused for. The host shows the popup for it.
+    // An error, the session's or one from outside it, such as a start the
+    // microphone was refused for; the host shows the popup for the latter.
     void showError(const QString &message, const PopupErrorAction &fix = {});
+    // Tests shorten every error's countdown to ms; 0 goes back to
+    // popupErrorDismissMs.
+    static void setErrorDismissMs(int ms);
 
 signals:
     // The settings page an error or a receipt offers as its fix.
@@ -114,8 +127,9 @@ signals:
 private:
     void followSession(const QString &stateName);
     void showReceipt(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix);
-    void setError(const QString &message, const PopupErrorAction &fix);
     void setReview(const SelectionEditReview &review);
+    void startErrorDismissal();
+    void holdError(bool held);
     void dismissError();
     void openFix();
     void cancel();
@@ -126,7 +140,10 @@ private:
 
     ApplicationController *m_controller;
     QTimer m_errorDismissal;
-    // Ticks elapsed while listening.
+    bool m_errorHeld = false;
+    // What is left of the countdown while it is held.
+    int m_errorRemainingMs = 0;
+    // Ticks elapsed on each whole second listened.
     QTimer m_clock;
 };
 
