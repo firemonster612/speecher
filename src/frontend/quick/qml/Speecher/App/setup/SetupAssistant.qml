@@ -12,7 +12,8 @@ import Speecher.App
 ClientWindow {
     id: window
     width: 960
-    height: 680
+    // Tall enough for the longest step, Refinement, to show whole.
+    height: 720
     minimumWidth: 860
     minimumHeight: 600
     visible: true
@@ -67,10 +68,10 @@ ClientWindow {
         }
 
         Txt {
-            x: Theme.space6
+            x: Theme.sideInset
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 26
-            width: parent.width - Theme.space6 * 2
+            width: parent.width - Theme.sideInset * 2
             text: System.setupText.runAgain
             variant: "small"
             tone: "tertiary"
@@ -127,13 +128,13 @@ ClientWindow {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 68
-            Rectangle { x: Theme.space6; width: parent.width - Theme.space6 * 2; height: 1; color: Theme.rule }
+            Rectangle { x: Theme.sideInset; width: parent.width - Theme.sideInset * 2; height: 1; color: Theme.rule }
 
             // Skip and Back fade where they stand rather than reflowing the
             // footer; the main button's label rolls to its new wording. Skip
             // only passes steps that are already done, never goes around one.
             Button {
-                x: Theme.space6
+                x: Theme.sideInset
                 anchors.verticalCenter: parent.verticalCenter
                 text: System.setupText.skip
                 variant: "ghost"
@@ -145,7 +146,7 @@ ClientWindow {
             }
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: Theme.space6
+                anchors.rightMargin: Theme.sideInset
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space2
                 Button {

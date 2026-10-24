@@ -7,9 +7,7 @@ Button 1.0 Button.qml
 Card 1.0 Card.qml
 Caret 1.0 Caret.qml
 CheckBox 1.0 CheckBox.qml
-CheckMark 1.0 CheckMark.qml
 Chip 1.0 Chip.qml
-ChoiceCard 1.0 ChoiceCard.qml
 ChoiceRows 1.0 ChoiceRows.qml
 CompactChoice 1.0 CompactChoice.qml
 CopyButton 1.0 CopyButton.qml

@@ -18,8 +18,10 @@ T.Switch {
         width: control.width
         height: control.height
         radius: height / 2
-        color: control.checked ? (control.hovered ? Theme.accentHover : Theme.accent)
-                               : (control.hovered ? Theme.fillStrong : Theme.fill)
+        readonly property color shade: control.checked ? (control.hovered ? Theme.accentHover : Theme.accent)
+                                                       : (control.hovered ? Theme.fillStrong : Theme.fill)
+        // Pressing deepens the track by a fill, whichever way it is set.
+        color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
         border.width: control.checked ? 0 : 1
         border.color: Theme.border
         Behavior on color { EaseColor {} }

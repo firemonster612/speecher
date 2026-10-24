@@ -17,6 +17,8 @@ FocusScope {
 
     implicitWidth: 520
     implicitHeight: row.implicitHeight
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     activeFocusOnTab: true
     Accessible.role: Accessible.List
     Keys.onLeftPressed: { focusVisible.keyed(); _choose(Math.max(0, currentIndex - 1)) }
@@ -30,20 +32,38 @@ FocusScope {
         spacing: Theme.space3
         Repeater {
             model: root.options
-            delegate: ChoiceCard {
+            // The chosen card takes a pencil wash, outline and check; the
+            // others lighten under the pointer, and every card gives a
+            // little when pressed, as a whole-card choice does.
+            delegate: Rectangle {
                 id: card
                 required property var modelData
                 required property int index
-                Accessible.name: modelData.label
+                readonly property bool selected: index === root.currentIndex
+                readonly property int padding: 14
+                function choose() { focusVisible.pointed(); root.forceActiveFocus(); root._choose(index) }
 
                 width: (row.width - row.spacing * (root.options.length - 1)) / root.options.length
-                height: Math.max(100, implicitHeight)
-                selected: index === root.currentIndex
-                onActivated: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(index) }
-                focused: focusVisible.shown && selected
+                height: Math.max(100, body.implicitHeight + padding * 2)
+                radius: Theme.radiusLarge
+                color: selected ? Theme.accentSoft : hover.hovered ? Theme.fill : "transparent"
+                border.width: 1
+                border.color: selected ? Theme.accent : hover.hovered ? Theme.borderStrong : Theme.border
+                scale: tap.pressed ? Theme.motionScale(0.98) : 1
+                Behavior on color { EaseColor {} }
+                Behavior on border.color { EaseColor {} }
+                Behavior on scale { Ease { duration: Theme.fast; curve: Theme.springy } }
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: modelData.label
+                Accessible.checked: selected
+                Accessible.onPressAction: choose()
+                Accessible.onToggleAction: choose()
 
                 Column {
-                    width: parent.width
+                    id: body
+                    x: card.padding
+                    y: card.padding
+                    width: card.width - card.padding * 2
                     spacing: 10
                     Icon {
                         name: card.modelData.icon || "circle"
@@ -57,6 +77,25 @@ FocusScope {
                         Txt { text: card.modelData.help || ""; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
                     }
                 }
+                // The check pops in on the chosen card and shrinks away.
+                Rectangle {
+                    width: 18
+                    height: 18
+                    radius: width / 2
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    color: Theme.accent
+                    scale: card.selected ? 1 : Theme.motionScale(0.2)
+                    opacity: card.selected ? 1 : 0
+                    Behavior on scale { Ease { duration: Theme.slow; curve: Theme.springy } }
+                    Behavior on opacity { Ease { duration: Theme.fast } }
+                    Icon { anchors.centerIn: parent; name: "check"; size: 12; color: Theme.accentText }
+                }
+                FocusRing { target: card; shown: focusVisible.shown && card.selected }
+
+                HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { id: tap; onTapped: card.choose() }
             }
         }
     }

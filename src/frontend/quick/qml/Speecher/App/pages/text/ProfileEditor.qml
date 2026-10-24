@@ -147,13 +147,17 @@ Column {
         // One tone, from a list that grows with your own, so a menu. Skipped
         // refinement leaves it editable for later; the help says so.
         Row {
+            id: toneRow
+            width: parent.width
             spacing: Theme.space2
             Select {
+                // Narrows rather than push New tone out of a narrow editor.
+                width: Math.min(implicitWidth, toneRow.width - newTone.width - toneRow.spacing)
                 options: editor.tones
                 currentId: editor.tone.id
                 onChosen: id => editor.edited({ tone: id })
             }
-            Button { text: Library.profilesText.newTone; iconName: "plus"; variant: "ghost"; onClicked: editor.newToneRequested() }
+            Button { id: newTone; text: Library.profilesText.newTone; iconName: "plus"; variant: "ghost"; onClicked: editor.newToneRequested() }
         }
     }
 

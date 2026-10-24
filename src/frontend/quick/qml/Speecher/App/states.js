@@ -2,7 +2,7 @@
 
 // How a sign-in, health or setup state reads on the app pages, as a
 // StatusText tone. States come from Accounts.services, System.checks and
-// Models.serviceChoices. Ready states are positive, which StatusText shows
+// Models.readiness. Ready states are positive, which StatusText shows
 // as plain text; states that need attention take a warning or negative tone.
 
 var tones = {

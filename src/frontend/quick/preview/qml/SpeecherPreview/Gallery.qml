@@ -246,7 +246,7 @@ Window {
                 }
             }
             Specimen {
-                title: "OptionCards, ChoiceCard, CheckMark"
+                title: "OptionCards"
                 OptionCards {
                     width: parent.width
                     options: [{ id: "paste", label: "Paste", icon: "clipboard", help: "Into the app you were in." }, { id: "type", label: "Type", icon: "keyboard", help: "Key by key." }]

@@ -115,11 +115,9 @@ Section {
     Reveal {
         open: Library.recognitionRules.length === 0
         EmptyState {
-            iconName: "scan-search"
+            compact: true
             title: Library.pastingText.noMatches
             text: Library.pastingText.noMatchesHelp
-            topPadding: Theme.space5
-            bottomPadding: Theme.space5
         }
     }
 

@@ -11,8 +11,7 @@ T.Popup {
 
     y: parent ? parent.height + 6 : 0
     x: parent && align === "right" ? parent.width - width : 0
-    // The entries' radius is the panel's less this.
-    padding: Theme.space1
+    padding: Theme.menuInset
     transformOrigin: align === "right" ? Item.TopRight : Item.TopLeft
 
     enter: Transition {

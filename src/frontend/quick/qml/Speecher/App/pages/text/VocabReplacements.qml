@@ -107,7 +107,7 @@ Card {
     Reveal {
         open: view.items.length === 0 && !form.open
         EmptyState {
-            iconName: "replace"
+            compact: true
             title: Library.vocabularyText.noReplacements
             text: Library.vocabularyText.noReplacementsHelp
         }

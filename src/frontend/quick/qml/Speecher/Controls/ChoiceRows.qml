@@ -75,6 +75,8 @@ FocusScope {
             Accessible.role: Accessible.RadioButton
             Accessible.name: entry.label
             Accessible.checked: selected
+            Accessible.onPressAction: root._choose(index)
+            Accessible.onToggleAction: root._choose(index)
 
             Rectangle {
                 anchors.fill: parent

@@ -16,6 +16,8 @@ Item {
 
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     activeFocusOnTab: true
     Accessible.role: Accessible.Link
     Accessible.name: text

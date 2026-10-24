@@ -39,7 +39,7 @@ T.Slider {
         height: 16
         radius: width / 2
         scale: Theme.motionScale(grow)
-        color: Theme.raised
+        color: Theme.sliderHandle
         border.width: 1
         border.color: Theme.knobEdge
         Behavior on scale { Ease { duration: Theme.base; curve: Theme.springy } }

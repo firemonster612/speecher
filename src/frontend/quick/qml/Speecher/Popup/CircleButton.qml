@@ -16,6 +16,8 @@ T.Button {
     implicitHeight: size
     hoverEnabled: true
     focusPolicy: Qt.NoFocus
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     Accessible.name: tooltip
 
     scale: down ? Theme.motionScale(0.92) : 1

@@ -25,6 +25,8 @@ Item {
 
     implicitWidth: size + (title.length ? Theme.space3 + Math.max(titleText.implicitWidth, detailText.implicitWidth) : 0)
     implicitHeight: Math.max(size, words.y + words.implicitHeight)
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     activeFocusOnTab: interactive
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: title

@@ -23,7 +23,7 @@ T.ItemDelegate {
     Accessible.checked: current
 
     background: Rectangle {
-        radius: Theme.radiusLarge - Theme.space1
+        radius: Theme.radiusLarge - Theme.menuInset
         color: item.down ? Theme.fillStrong : item.highlighted || item.hovered ? Theme.fill : "transparent"
         Behavior on color { EaseColor {} }
     }

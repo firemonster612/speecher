@@ -145,7 +145,7 @@ Press, hover, selection:
   pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
-  and chips to 0.965, icon buttons to 0.92, `ChoiceCard` and theme
+  and chips to 0.965, icon buttons to 0.92, `OptionCards` cards and theme
   thumbnails to 0.98, over `Theme.fast` springy. Rows, menus, segments,
   fields and the header of a card that opens never shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
@@ -311,7 +311,6 @@ Choosing:
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ChoiceCard { selected; checked; interactive }` and `CheckMark { shown }`: the card shell and tick of a whole-card choice. `interactive: false` hands the pointer to a part of the card, which sets `hovered` and `pressed`.
 - `ChoiceRows { options; currentId }`: a provider or service as rows on a card, each with its icon, help, status and a check when chosen.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
@@ -411,7 +410,7 @@ preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --record 19 --t
 preview/run.sh --page vocabulary --record 2 --time-scale 4 --poke vocabularyPage.tab=corrections@0.6 --out tab.mp4  # an interaction, on video
 preview/run.sh --page home --poke Speecher.Backend/Dictation.state=listening@0.5 --out live.png  # a singleton
 preview/run.sh --page home --record 2 --poke Speecher.App/Navigation.current=refinement@0.5 --out load.mp4  # a page loading
-preview/run.sh --root Speecher.App/SetupAssistant --size 960x680 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
+preview/run.sh --root Speecher.App/SetupAssistant --size 960x720 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
 preview/run.sh --page pasting --scroll 900 --out lower.png   # scrolled down first
 ```
 

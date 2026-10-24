@@ -77,14 +77,16 @@ FocusScope {
                 Accessible.selected: seg.selected
 
                 // Hovering or pressing an option other than the chosen one
-                // shows a faint pill where the thumb will land.
+                // shows a grey pill where the thumb will land, deeper while
+                // pressed.
                 Rectangle {
                     anchors.fill: parent
                     anchors.topMargin: root._inset
                     anchors.bottomMargin: root._inset
                     radius: root._innerRadius
-                    color: Theme.fillStrong
-                    opacity: hover.hovered && !seg.selected ? 1 : 0
+                    color: tap.pressed ? Theme.fillStrong : Theme.fill
+                    opacity: (hover.hovered || tap.pressed) && !seg.selected ? 1 : 0
+                    Behavior on color { EaseColor { duration: Theme.fast } }
                     Behavior on opacity { Ease { duration: Theme.fast } }
                 }
 
@@ -107,7 +109,7 @@ FocusScope {
                     }
                 }
                 HoverHandler { id: hover }
-                TapHandler { onTapped: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(seg.index) } }
+                TapHandler { id: tap; onTapped: { focusVisible.pointed(); root.forceActiveFocus(); root._choose(seg.index) } }
             }
         }
     }

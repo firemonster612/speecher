@@ -42,7 +42,7 @@ Item {
         width: parent.width - 24
         height: Theme.controlHeight
         radius: Theme.radius
-        color: searchTap.pressed ? Theme.surfacePressed : searchHover.hovered ? Theme.sheet : Theme.soft(Theme.sheet, 0.55)
+        color: searchTap.pressed ? Theme.fillStrong : searchHover.hovered ? Theme.fill : "transparent"
         border.width: 1
         border.color: Theme.border
         Behavior on color { EaseColor {} }
@@ -116,7 +116,7 @@ Item {
 
                     Txt {
                         visible: group.modelData.title.length > 0
-                        x: 22
+                        x: Theme.sideInset
                         text: group.modelData.title
                         variant: "small"
                         strong: true
@@ -187,8 +187,8 @@ Item {
         id: footer
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 18
-        x: 22
-        width: parent.width - 44
+        x: Theme.sideInset
+        width: parent.width - Theme.sideInset * 2
         open: Status.updateReady
 
         TextLink {

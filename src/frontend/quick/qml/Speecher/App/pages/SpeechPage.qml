@@ -42,10 +42,9 @@ Page {
         title: Schema.row("speechProvider").label
         caption: Schema.row("speechProvider").help
         SearchLanding { rowIds: ["speechProvider"]; target: serviceSection }
-        // Each says what it is good at, where setup says what it needs.
         ChoiceRows {
             recommendedText: Words.recommended
-            options: States.withTones(Models.serviceChoices).map(o => Object.assign({}, o, { help: Models.service(o.id).summary }))
+            options: States.withTones(Models.serviceChoices)
             currentId: page.primary
             onActivated: id => page.choose(id)
         }
@@ -72,7 +71,7 @@ Page {
         FallbackList {
             ids: page.fallbacks
             options: Models.speechServices.filter(s => s.id !== page.primary).map(s => ({ id: s.id, label: s.label }))
-            statusOf: (id, index) => Models.fallbackStatus(id, index)
+            statusOf: (id, index) => { const s = Models.fallbackStatus(id, index); return { text: s.text, tone: States.tone(s.state) } }
             maxCount: page.fallbackSpec.maxCount
             emptyText: page.fallbackSpec.emptyText.arg(page.primaryLabel)
             addLabel: page.fallbackSpec.addLabel

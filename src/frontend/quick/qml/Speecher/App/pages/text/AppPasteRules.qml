@@ -116,7 +116,7 @@ Section {
     Reveal {
         open: Library.appPasteRules.length === 0 && !ruleForm.open
         EmptyState {
-            iconName: "app-window"
+            compact: true
             title: Library.pastingText.noRules
             text: Library.pastingText.noRulesHelp
         }

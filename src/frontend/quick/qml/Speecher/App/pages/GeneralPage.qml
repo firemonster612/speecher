@@ -116,7 +116,7 @@ Page {
             InlineConfirm {
                 cancelText: Words.cancel
                 open: page._confirmClear
-                text: Insights.clearText + "?"
+                text: Insights.clearQuestion
                 detail: Words.cantUndo
                 confirmText: Words.delete_
                 onCancelled: page._confirmClear = false

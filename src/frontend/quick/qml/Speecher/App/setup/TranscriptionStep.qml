@@ -14,7 +14,8 @@ StepPage {
     Card {
         ChoiceRows {
             recommendedText: Words.recommended
-            options: States.withTones(Models.serviceChoices)
+            // What each needs, where the settings pages say what it is good at.
+            options: States.withTones(Models.serviceChoices).map(o => Object.assign({}, o, { help: Models.service(o.id).access }))
             currentId: page.choices.speech
             ruleBelow: download.open || endpoint.open || signIn.open
             onActivated: id => page.choices.speech = id

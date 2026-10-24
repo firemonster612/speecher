@@ -293,7 +293,8 @@ QtObject {
 
     // Deleting a profile, tone or level also drops what pointed at it, so
     // nothing names something that is gone. Deleting a tone or level
-    // returns a function that puts everything back, for an Undo.
+    // returns a function that puts back what the deletion changed, for an
+    // Undo.
     function removeProfile(id) {
         profiles = profiles.filter(p => p.id !== id)
         recognitionRules = recognitionRules.map(r => r.profile === id ? Object.assign({}, r, { profile: "" }) : r)
@@ -302,29 +303,25 @@ QtObject {
         if (Settings.values.defaultWritingProfile === id) Settings.set("defaultWritingProfile", "other")
         if (Transcription.options.profile === id) Transcription.setOption("profile", Settings.values.defaultWritingProfile)
     }
-    function removeTone(id) {
-        const undo = _restorer(["customTones", "profiles"], "tone")
-        customTones = customTones.filter(t => t.id !== id)
-        profiles = profiles.map(p => p.tone === id ? Object.assign({}, p, { tone: "none" }) : p)
-        if (Transcription.options.tone === id) Transcription.setOption("tone", "none")
-        return undo
-    }
+    function removeTone(id) { return _removeChoice("customTones", "tone", id, "none") }
     function removeLevel(id) {
-        const undo = _restorer(["customCleanupLevels", "profiles"], "cleanup")
-        const gone = customCleanupLevels.find(l => l.id === id)
-        const instead = gone.base === "custom_only" ? "balanced" : gone.base
-        customCleanupLevels = customCleanupLevels.filter(l => l.id !== id)
-        profiles = profiles.map(p => p.cleanup === id ? Object.assign({}, p, { cleanup: instead }) : p)
-        if (Transcription.options.cleanup === id) Transcription.setOption("cleanup", instead)
-        return undo
+        const base = customCleanupLevels.find(l => l.id === id).base
+        return _removeChoice("customCleanupLevels", "cleanup", id, base === "custom_only" ? "balanced" : base)
     }
-    // Puts back the lists named and Transcribe's option as they are now.
-    function _restorer(lists, option) {
-        const saved = lists.map(name => library[name])
-        const was = Transcription.options[option]
+    // Removes entry id from the list named and moves every profile's and
+    // Transcribe's field that chose it to instead. The Undo puts the entry
+    // back where it was and points back only the fields that still hold
+    // instead, so edits made while its toast is up stay.
+    function _removeChoice(list, field, id, instead) {
+        const putBack = remove(list, library[list].findIndex(e => e.id === id))
+        const moved = profiles.filter(p => p[field] === id).map(p => p.id)
+        const transcribe = Transcription.options[field] === id
+        profiles = profiles.map(p => moved.includes(p.id) ? Object.assign({}, p, { [field]: instead }) : p)
+        if (transcribe) Transcription.setOption(field, instead)
         return () => {
-            lists.forEach((name, i) => library[name] = saved[i])
-            Transcription.setOption(option, was)
+            putBack()
+            profiles = profiles.map(p => moved.includes(p.id) && p[field] === instead ? Object.assign({}, p, { [field]: id }) : p)
+            if (transcribe && Transcription.options[field] === instead) Transcription.setOption(field, id)
         }
     }
 

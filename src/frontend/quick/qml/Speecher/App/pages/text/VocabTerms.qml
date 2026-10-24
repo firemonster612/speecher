@@ -196,7 +196,7 @@ Card {
     Reveal {
         open: view.terms.length > 0 && view.matching.length === 0
         EmptyState {
-            iconName: "search-x"
+            compact: true
             title: Library.vocabularyText.noTermsMatch
             text: Library.vocabularyText.noTermsMatchHelp
         }
@@ -204,7 +204,7 @@ Card {
     Reveal {
         open: view.terms.length === 0 && !form.open
         EmptyState {
-            iconName: "book-a"
+            compact: true
             title: Library.vocabularyText.noTerms
             text: Library.vocabularyText.noTermsHelp
         }
