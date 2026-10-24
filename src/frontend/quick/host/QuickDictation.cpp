@@ -160,13 +160,14 @@ QuickDictation *QuickDictation::create(QQmlEngine *, QJSEngine *)
     return g_instance;
 }
 
-// Another error over one on show counts down from the start.
+// Another error over one on show, even the same one again, counts down from
+// the start; errorChanged always fires so the popup's bar starts over too.
 void QuickDictation::showError(const QString &text, const PopupErrorAction &fix)
 {
-    const QVariantMap error = errorMessage(text, fix);
-    const bool another = m_state == QLatin1String("error") && error != m_error;
-    update(m_error, error, &QuickDictationState::errorChanged);
-    if (another) {
+    const bool showing = m_state == QLatin1String("error");
+    m_error = errorMessage(text, fix);
+    emit errorChanged();
+    if (showing) {
         startErrorDismissal();
     }
     setState(QStringLiteral("error"));

@@ -329,6 +329,21 @@ private slots:
         QTRY_COMPARE(scroll->property("contentY").toReal(), 0.0);
     }
 
+    // The same failure again is a fresh one: its countdown starts over.
+    void theSameErrorAgainCountsDownFromTheStart()
+    {
+        QuickDictation::setErrorDismissMs(300);
+        ApplicationController controller(true);
+        QuickDictation dictation(&controller);
+        const auto state = [&dictation] { return dictation.property("state").toString(); };
+        dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
+        QTest::qWait(200);
+        dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
+        QTest::qWait(150);
+        QCOMPARE(state(), QStringLiteral("error"));
+        QTRY_COMPARE(state(), QStringLiteral("idle"));
+    }
+
     void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
     {
         QuickDictation::setErrorDismissMs(300);
