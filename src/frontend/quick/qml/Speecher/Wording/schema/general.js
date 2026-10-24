@@ -24,7 +24,7 @@ var rows = [
     { id: "translucency", page: "general", section: "Appearance", kind: "toggle",
       label: "Translucent sidebar", help: "Your desktop shows through the sidebar, blurred.",
       disabledHelp: "Your desktop can't blur behind windows, or has transparency turned down.",
-      value: true, keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
+      needsBlur: true, value: true, keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
     { id: "launchAtLogin", page: "general", section: "Appearance", kind: "toggle",
       label: "Start Speecher at login", help: "Dictation only works while Speecher is running.",
       value: true, keywords: "startup autostart boot launch" },

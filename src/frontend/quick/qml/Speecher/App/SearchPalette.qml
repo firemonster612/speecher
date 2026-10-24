@@ -210,9 +210,13 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         width: childrenRect.width
                         height: childrenRect.height
+                        // Off and greyed where the row needs blur and nothing
+                        // blurs, as on its page.
                         Switch {
+                            readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
                             visible: !!hit.spec && hit.spec.kind === "toggle"
-                            checked: !!Settings.values[hit.modelData.id]
+                            checked: blurs && !!Settings.values[hit.modelData.id]
+                            enabled: blurs && Settings.saves(hit.modelData.id)
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {

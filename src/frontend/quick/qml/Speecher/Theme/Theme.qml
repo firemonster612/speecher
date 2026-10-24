@@ -185,11 +185,11 @@ QtObject {
 
     // Ink: text, and the fill of primary buttons and lit keys. The quieter
     // inks are text faded toward the page.
-    // Text reads at AAA, and help and captions at AA, wherever they are laid,
-    // whatever the scheme.
+    // Text reads at AAA, help and captions at AA, and tertiary labels and
+    // placeholders at 3:1, wherever they are laid, whatever the scheme.
     readonly property color text: readableOn(scheme.text, _everyGround, 7, dark)
     readonly property color textSecondary: readableOn(mix(text, sheet, dark ? 0.32 : 0.28), _everyGround, 4.5, dark)
-    readonly property color textTertiary: mix(text, sheet, dark ? 0.58 : 0.5)
+    readonly property color textTertiary: readableOn(mix(text, sheet, dark ? 0.58 : 0.5), _everyGround, 3, dark)
     readonly property color textDisabled: mix(text, sheet, dark ? 0.76 : 0.72)
     readonly property color textHover: mix(text, sheet, dark ? 0.09 : 0.05)
     readonly property color textPressed: mix(text, sheet, dark ? 0.15 : 0.035)
@@ -209,9 +209,9 @@ QtObject {
     readonly property color positive: dark ? "#6CCB8F" : "#2E7D4F"
     readonly property color warning: dark ? "#E3B65C" : "#9A6A12"
     // The margin's red: live sound (the record dot, the level meter, the
-    // popup's margin rule) and failures, at the 3:1 of a mark wherever they
+    // popup's margin rule) and failures, which are text, at AA wherever they
     // are laid.
-    readonly property color negative: readableOn(scheme.negative, _everyGround, 3, dark)
+    readonly property color negative: readableOn(scheme.negative, _everyGround, 4.5, dark)
 
     // A key cap's base, the darker edge under its face; lit for an inked cap.
     readonly property color keyBase: dark ? mix(paper, "black", 0.2) : mix(paper, text, 0.1)

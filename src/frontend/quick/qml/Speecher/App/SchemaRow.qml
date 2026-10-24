@@ -12,13 +12,16 @@ SettingRow {
 
     required property string rowId
     readonly property var spec: Schema.row(rowId)
+    // A row that needs the desktop to blur behind windows shows off, greyed
+    // and with why where it can't; the saved value comes back when it can.
+    readonly property bool _blurs: !spec.needsBlur || Appearance.canBlur
     // What the control shows: the saved value, unless a page shows what is
     // in effect instead.
-    property var value: Settings.values[rowId]
+    property var value: _blurs ? Settings.values[rowId] : false
 
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place.
-    property string note: spec.help || ""
+    property string note: (_blurs ? spec.help : spec.disabledHelp) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
@@ -28,7 +31,7 @@ SettingRow {
     // Usable once the backend saves the row or runs its action; a custom row
     // with no value draws content that has nothing to save. enabledWhen reads
     // Settings.values here, in the binding, so the row follows that value.
-    enabled: (spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId))
+    enabled: _blurs && (spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId))
              && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
     // A row whose schema entry says hiddenWhen folds away rather than greying.
     shown: !spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals

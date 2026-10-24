@@ -20,12 +20,17 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <functional>
 #include <memory>
 
 #ifdef SPEECHER_TEST_KWIN_BLUR
 #include "platform/KWinBlurBackdrop.h"
 
-#include <functional>
+#include <QExposeEvent>
+#include <QWindow>
+
+#include <cctype>
+#include <cstring>
 #include <mutex>
 #include <sys/socket.h>
 #include <thread>
@@ -91,12 +96,50 @@ QColor over(const QColor &top, const QColor &bottom)
 }
 
 #ifdef SPEECHER_TEST_KWIN_BLUR
-// A Wayland compositor offering nothing but KWin's blur manager, on a thread
-// of its own, which takes the manager away and offers it again when asked,
-// as KWin does when its Blur effect goes off and on.
-class BlurOnlyCompositor {
+void acceptAnything(wl_resource *resource);
+
+// Any request to a stand-in's object: the objects it asks for are made, to
+// take any request in turn, and a destructor lets the object go.
+int acceptRequest(const void *, void *target, uint32_t, const wl_message *message, wl_argument *args)
+{
+    auto *resource = static_cast<wl_resource *>(target);
+    int arg = 0;
+    for (const char *type = message->signature; *type; ++type) {
+        // The signature's letters are arguments; '?' and versions are not.
+        if (!std::isalpha(static_cast<unsigned char>(*type))) {
+            continue;
+        }
+        if (*type == 'n') {
+            acceptAnything(wl_resource_create(wl_resource_get_client(resource), message->types[arg],
+                                              wl_resource_get_version(resource), args[arg].n));
+        }
+        ++arg;
+    }
+    if (std::strcmp(message->name, "destroy") == 0 || std::strcmp(message->name, "release") == 0) {
+        wl_resource_destroy(resource);
+    }
+    return 0;
+}
+
+void acceptAnything(wl_resource *resource)
+{
+    wl_resource_set_dispatcher(resource, acceptRequest, nullptr, nullptr, nullptr);
+}
+
+// A global, made with its interface as data, binds to an object that accepts
+// anything.
+void bindAnything(wl_client *client, void *interface, uint32_t version, uint32_t id)
+{
+    acceptAnything(wl_resource_create(client, static_cast<const wl_interface *>(interface), int(version), id));
+}
+
+// A Wayland compositor offering KWin's blur manager and a wl_compositor to
+// make surfaces and regions, which accept whatever is asked of them, on a
+// thread of its own. It takes the manager away and offers it again when
+// asked, as KWin does when its Blur effect goes off and on.
+class BlurCompositor {
 public:
-    BlurOnlyCompositor()
+    BlurCompositor()
         : m_display(wl_display_create())
     {
         int fds[2];
@@ -104,6 +147,8 @@ public:
             wl_client_create(m_display, fds[0]);
             m_clientFd = fds[1];
         }
+        wl_global_create(m_display, &wl_compositor_interface, 4, const_cast<wl_interface *>(&wl_compositor_interface),
+                         bindAnything);
         offerManager();
         m_thread = std::thread([this] {
             while (!m_stopped) {
@@ -120,7 +165,7 @@ public:
             }
         });
     }
-    ~BlurOnlyCompositor()
+    ~BlurCompositor()
     {
         m_stopped = true;
         m_thread.join();
@@ -141,10 +186,8 @@ public:
 private:
     void offerManager()
     {
-        m_manager = wl_global_create(m_display, &org_kde_kwin_blur_manager_interface, 1, nullptr,
-                                     [](wl_client *client, void *, uint32_t version, uint32_t id) {
-                                         wl_resource_create(client, &org_kde_kwin_blur_manager_interface, int(version), id);
-                                     });
+        m_manager = wl_global_create(m_display, &org_kde_kwin_blur_manager_interface, 1,
+                                     const_cast<wl_interface *>(&org_kde_kwin_blur_manager_interface), bindAnything);
     }
     void ask(std::function<void()> work)
     {
@@ -160,6 +203,36 @@ private:
     std::atomic<bool> m_stopped = false;
     std::thread m_thread;
 };
+
+// The client's wl_compositor, bound through a registry of the test's own.
+wl_compositor *bindCompositor(wl_display *display)
+{
+    wl_compositor *compositor = nullptr;
+    static const wl_registry_listener listener = {
+        .global = [](void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t) {
+            if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
+                *static_cast<wl_compositor **>(data) = static_cast<wl_compositor *>(
+                    wl_registry_bind(registry, name, &wl_compositor_interface, 4));
+            }
+        },
+        .global_remove = [](void *, wl_registry *, uint32_t) {},
+    };
+    wl_registry *registry = wl_display_get_registry(display);
+    wl_registry_add_listener(registry, &listener, &compositor);
+    wl_display_roundtrip(display);
+    wl_registry_destroy(registry);
+    return compositor;
+}
+
+// Round trips until changed has count signals, as Qt's dispatch of the
+// default queue would deliver them in the app.
+[[nodiscard]] bool dispatchUntil(wl_display *display, const QSignalSpy &changed, int count)
+{
+    for (int i = 0; i < 200 && changed.count() < count; ++i) {
+        wl_display_roundtrip(display);
+    }
+    return changed.count() == count;
+}
 #endif
 
 } // namespace
@@ -305,9 +378,9 @@ private slots:
 
     // Every preset, and desktop schemes from tame to garish, one with a
     // window too pale for its white text, in light and dark, opaque and
-    // translucent: each ink reads on every ground it is laid on. Text at AAA
-    // and quieter text at AA on the page, the cards and the sidebar; the
-    // accent at AA on the page and cards; failures at the 3:1 of a UI mark
+    // translucent: each ink reads on every ground it is laid on. Text at
+    // AAA, secondary text at AA and tertiary at 3:1 on the page, the cards
+    // and the sidebar; the accent at AA on the page and cards; failures at AA
     // wherever they show; ink on the accent at AA. Translucent, the sidebar
     // is its paper over anything from a black to a white desktop.
     void everySchemeKeepsTextReadable()
@@ -358,7 +431,8 @@ private slots:
                         return found;
                     };
                     const QString unread = unreadable("text", page + sidebar, 7) + unreadable("textSecondary", page + sidebar, 4.5)
-                                           + unreadable("accent", page, 4.5) + unreadable("negative", page + sidebar, 3)
+                                           + unreadable("textTertiary", page + sidebar, 3) + unreadable("accent", page, 4.5)
+                                           + unreadable("negative", page + sidebar, 4.5)
                                            + unreadable("accentText", {color("accent")}, 4.5);
                     if (!unread.isEmpty()) {
                         failures += label + unread;
@@ -375,29 +449,53 @@ private slots:
     // comes back.
     void kwinBlurFollowsTheBlurEffect()
     {
-        BlurOnlyCompositor compositor;
+        BlurCompositor compositor;
         wl_display *display = wl_display_connect_to_fd(compositor.clientFd());
         QVERIFY(display);
         {
-            KWinBlurBackdrop backdrop(display, nullptr);
+            KWinBlurBackdrop backdrop(display, nullptr, {});
             QVERIFY(backdrop.available());
             QSignalSpy changed(&backdrop, &WindowBackdrop::availableChanged);
-            // Qt dispatches the default queue in the app; round trips do here.
-            const auto dispatchUntil = [display, &changed](int count) {
-                for (int i = 0; i < 200 && changed.count() < count; ++i) {
-                    wl_display_roundtrip(display);
-                }
-                return changed.count() == count;
-            };
 
             compositor.takeManagerAway();
-            QVERIFY(dispatchUntil(1));
+            QVERIFY(dispatchUntil(display, changed, 1));
             QVERIFY(!backdrop.available());
 
             compositor.offerManagerAgain();
-            QVERIFY(dispatchUntil(2));
+            QVERIFY(dispatchUntil(display, changed, 2));
             QVERIFY(backdrop.available());
         }
+        wl_display_disconnect(display);
+    }
+
+    // A blurred window shown again after KWin took the manager away (Blur
+    // turned off, then the window minimised and restored) asks nothing of
+    // the manager that is gone.
+    void kwinBlurLeavesAWindowAloneOnceTheManagerGoes()
+    {
+        BlurCompositor compositor;
+        wl_display *display = wl_display_connect_to_fd(compositor.clientFd());
+        QVERIFY(display);
+        wl_compositor *surfaces = bindCompositor(display);
+        QVERIFY(surfaces);
+        wl_surface *surface = wl_compositor_create_surface(surfaces);
+        QWindow window;
+        window.resize(200, 100);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        {
+            KWinBlurBackdrop backdrop(display, surfaces, [surface](QWindow *) { return surface; });
+            QSignalSpy changed(&backdrop, &WindowBackdrop::availableChanged);
+            backdrop.set(&window, QRect(0, 0, 200, 100), 8, false);
+
+            compositor.takeManagerAway();
+            QVERIFY(dispatchUntil(display, changed, 1));
+            QExposeEvent expose(QRegion(0, 0, 200, 100));
+            QCoreApplication::sendEvent(&window, &expose);
+            QVERIFY(wl_display_roundtrip(display) >= 0);
+        }
+        wl_surface_destroy(surface);
+        wl_compositor_destroy(surfaces);
         wl_display_disconnect(display);
     }
 #endif
@@ -471,6 +569,51 @@ private slots:
         QCOMPARE(root->property("chosen").toString(), QStringLiteral("birch"));
         QTest::keyClick(window, Qt::Key_Space);
         QCOMPARE(root->property("chosen").toString(), QStringLiteral("birch"));
+    }
+
+    // Where nothing blurs, search shows the translucency switch as General
+    // does: off and greyed, the saved choice kept for when blur comes back.
+    void searchShowsTranslucencyAsGeneralDoes()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAppearance appearance(&controller);
+        QVERIFY(!appearance.canBlur());
+        QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.App
+            Window {
+                width: 700; height: 500; visible: true
+                SearchPalette { anchors.fill: parent; shown: true; query: "translucent sidebar" }
+            })",
+                          QUrl());
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto *window = qobject_cast<QQuickWindow *>(root.get());
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+
+        const std::function<QList<QQuickItem *>(QQuickItem *)> shownSwitches = [&](QQuickItem *item) {
+            QList<QQuickItem *> found;
+            if (!item->isVisible()) {
+                return found;
+            }
+            if (QLatin1String(item->metaObject()->className()).startsWith(QLatin1String("Switch_"))) {
+                found.append(item);
+            }
+            for (QQuickItem *child : item->childItems()) {
+                found += shownSwitches(child);
+            }
+            return found;
+        };
+        QTRY_COMPARE(shownSwitches(window->contentItem()).size(), 1);
+        QQuickItem *toggle = shownSwitches(window->contentItem()).first();
+        QVERIFY(!toggle->property("checked").toBool());
+        QVERIFY(!toggle->isEnabled());
+        QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
     }
 
 private:

@@ -51,23 +51,30 @@ QNativeInterface::QWaylandApplication *qtWayland()
     return qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>() : nullptr;
 }
 
+wl_surface *qtSurfaceOf(QWindow *window)
+{
+    return static_cast<wl_surface *>(
+        QGuiApplication::platformNativeInterface()->nativeResourceForWindow("surface", window));
+}
+
 } // namespace
 
 KWinBlurBackdrop::KWinBlurBackdrop(QObject *parent)
     : KWinBlurBackdrop(qtWayland() ? qtWayland()->display() : nullptr, qtWayland() ? qtWayland()->compositor() : nullptr,
-                       parent)
+                       qtSurfaceOf, parent)
 {
 }
 #else
 KWinBlurBackdrop::KWinBlurBackdrop(QObject *parent)
-    : KWinBlurBackdrop(nullptr, nullptr, parent)
+    : KWinBlurBackdrop(nullptr, nullptr, {}, parent)
 {
 }
 #endif
 
-KWinBlurBackdrop::KWinBlurBackdrop(wl_display *display, wl_compositor *compositor, QObject *parent)
+KWinBlurBackdrop::KWinBlurBackdrop(wl_display *display, wl_compositor *compositor, SurfaceOf surfaceOf, QObject *parent)
     : WindowBackdrop(parent)
     , m_wayland(std::make_unique<Wayland>())
+    , m_surfaceOf(std::move(surfaceOf))
 {
 #ifdef SPEECHER_WITH_KWIN_BLUR
     if (!display) {
@@ -135,8 +142,10 @@ KWinBlurBackdrop::~KWinBlurBackdrop()
 
 void KWinBlurBackdrop::managerRemoved()
 {
+    // An expose before set() asks again must not bring back a stale region.
     for (Blur &blur : m_windows) {
         release(blur);
+        blur.region = {};
     }
 #ifdef SPEECHER_WITH_KWIN_BLUR
     org_kde_kwin_blur_manager_destroy(m_wayland->manager);
@@ -184,9 +193,13 @@ bool KWinBlurBackdrop::eventFilter(QObject *watched, QEvent *event)
 void KWinBlurBackdrop::apply(QWindow *window)
 {
 #ifdef SPEECHER_WITH_KWIN_BLUR
+    // Without the manager there is nothing to blur with; KWin may take it
+    // away while a window still shows.
+    if (!m_wayland->manager) {
+        return;
+    }
     Blur &blur = m_windows[window];
-    auto *surface = static_cast<wl_surface *>(
-        QGuiApplication::platformNativeInterface()->nativeResourceForWindow("surface", window));
+    wl_surface *surface = m_surfaceOf(window);
     // Without a surface yet, the next expose applies it.
     if (!surface) {
         return;

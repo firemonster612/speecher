@@ -94,14 +94,7 @@ Page {
                 onActivated: id => Settings.set("windowLayout", id)
             }
         }
-        // Greyed out and off, with why, where the desktop can't blur behind
-        // windows; the saved choice comes back when it can.
-        SchemaRow {
-            rowId: "translucency"
-            value: Settings.values.translucency === true && Appearance.canBlur
-            enabled: Appearance.canBlur && Settings.saves(rowId)
-            note: Appearance.canBlur ? spec.help : spec.disabledHelp
-        }
+        SchemaRow { rowId: "translucency" }
         // Saved only where Speecher can start at login.
         SchemaRow { rowId: "launchAtLogin"; shown: Settings.saves(rowId) }
     }

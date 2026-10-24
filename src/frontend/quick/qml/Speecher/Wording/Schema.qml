@@ -28,6 +28,8 @@ import "schema/updates.js" as Updates
 // and actionIcon for actions, keywords for search, and enabledWhen
 // { id, equals } to grey a row out until another row has a value, and
 // hiddenWhen { id, equals } to fold it away while another row has a value.
+// needsBlur marks a row that is off and greyed, showing its disabledHelp,
+// where Appearance.canBlur is false; its saved value stays.
 // Custom rows may also carry wording for their own controls: emptyText and
 // addLabel for lists, disabledHelp for help shown while the row is greyed
 // out, and offHelp for help shown while its switch is off.

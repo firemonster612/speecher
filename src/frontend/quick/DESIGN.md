@@ -234,8 +234,9 @@ nothing else.
   translucent sidebar over any desktop; where the text can go no further,
   the paper gives way.
 - Every scheme's inks are pushed until they read wherever they are laid:
-  text at 7:1 and quieter text at 4.5:1 on the page, cards and sidebar, the
-  accent at 4.5:1 on the page and cards, failures at 3:1 everywhere. Ink on
+  text at 7:1, secondary text at 4.5:1 and tertiary at 3:1 on the page,
+  cards and sidebar, the accent at 4.5:1 on the page and cards, failures at
+  4.5:1 everywhere. Ink on
   the accent takes white or the accent's deep shade, whichever reads better.
   `test_quick_appearance` checks every preset and a few garish schemes,
   opaque and translucent.
