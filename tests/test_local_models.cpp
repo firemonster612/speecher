@@ -405,7 +405,9 @@ private slots:
         QCOMPARE(settings.localSpeechSettings().modelId, beforeProbe);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
-        QTRY_VERIFY(setup.hardwareKnown());
+        // The first Metal device init compiles ggml's shaders, which took
+        // about 45 s on a CI runner; the suite has 120 s.
+        QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
         QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
         QCOMPARE(setup.speechModelChoice().id, setup.suggestedModel().id);
         QVERIFY(!settings.localSpeechSettings().modelChosen);
