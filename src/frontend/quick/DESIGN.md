@@ -3,7 +3,7 @@
 A Qt Quick (QML) front end for every platform, replacing the Qt Widgets, SwiftUI
 and WinUI front ends. The daemon shows it in its own process
 (`docs/adr/0009-one-quick-ui-inside-the-daemon.md`); on Linux it reads and
-writes the real settings, and the areas not wired yet still run on mock data.
+writes the real settings, and every area runs on core's data.
 
 ## Layout
 
@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts` and `Audio` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts` and `Audio` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships only `Library.qml`, which words the real `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -32,14 +32,15 @@ Pages import `Speecher.Backend` and read only its singletons for data. The
 preview's module in `mock/` and the app's module expose the same API, so
 wiring an area means replacing its mock with a C++ type of the same name, not
 editing pages. Each Backend type comes from exactly one module: the app's
-Backend is the C++ types plus the mocks not yet replaced.
+Backend is the C++ types plus `Library.qml`.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`) and `Audio`
-  (`host/QuickAudio`). Placeholder until its wiring PR: `Library`.
+  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Audio`
+  (`host/QuickAudio`) and `Library` (`Library.qml` over
+  `host/QuickLibrary`). No placeholders are left.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
@@ -83,8 +84,7 @@ Backend is the C++ types plus the mocks not yet replaced.
   `SettingsStore`, so the CLI and the daemon see the same values. A row the
   table lacks reads as absent, and SchemaRow greys it out where
   `Settings.saves(id)` is false; add the row to the table when its page is
-  wired. A row whose choices come from a placeholder area waits for that
-  area. The shortcut rows go to the controller, which binds and keeps them,
+  wired. The shortcut rows go to the controller, which binds and keeps them,
   and show the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
   the bound shortcuts let go of their keys. Where the desktop picks the keys
@@ -102,8 +102,7 @@ Backend is the C++ types plus the mocks not yet replaced.
   `incomplete`, `missing`, `builtIn`), empty when saved, and
   `Library.refusalText(list, reason)` words it for the form. `remove(list,
   key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
-  take the file the page's FileDialog chose. Library.qml words the lists;
-  its other lists stay placeholders until their areas are wired.
+  take the file the page's FileDialog chose. Library.qml words the lists.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version and the shortcut's keys.
 - `Updates` is the updater as `QuickUpdates.h` documents it: its state

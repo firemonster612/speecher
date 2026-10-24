@@ -299,5 +299,4 @@ LibraryLists {
     function refusalText(list, reason) {
         return reason ? (_refusals[list] || {})[reason] || _refusals.any[reason] || "" : ""
     }
-
 }
