@@ -103,9 +103,9 @@ static void migrateSettings()
 {
     constexpr auto oldOrganization = "local.speecher";
     QSettings newSettings(QString::fromLatin1(SettingsKeys::Organization),
-                          QString::fromLatin1(SettingsKeys::Application));
+                          SettingsKeys::application());
     QSettings oldSettings(QString::fromLatin1(oldOrganization),
-                          QString::fromLatin1(SettingsKeys::Application));
+                          SettingsKeys::application());
     QString error;
     if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
         qWarning().noquote() << error;
@@ -449,7 +449,7 @@ static bool microphoneAccessGranted(const PlatformComposition &platform, QObject
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setApplicationName(QStringLiteral("speecher"));
+    QCoreApplication::setApplicationName(SettingsKeys::application());
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.firemonster612.speecher"));
     QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
     const QStringList arguments = commandLineArguments(argc, argv);

@@ -9,7 +9,8 @@ namespace speecher {
 // listener and a caller that disagree would start a second app instead of
 // reaching the running one.
 
-// "speecher-<user>", plus "-<suffix>" when one is given.
+// "speecher-<user>", plus "-<suffix>" when one is given; an isolated
+// instance's name stands in for "speecher".
 QString appSocketName(const QString &suffix = {});
 
 // Distinguishes builds installed at different paths for the same user.

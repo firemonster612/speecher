@@ -100,7 +100,7 @@ QKeySequence savedShortcut(const GlobalShortcutAction &action)
 {
     QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
                        QString::fromLatin1(SettingsKeys::Organization),
-                       QString::fromLatin1(SettingsKeys::Application));
+                       SettingsKeys::application());
     // The stored value can be a single key ("key:…"), which belongs to the
     // single-key binder and must not parse as a sequence here.
     const ShortcutBinding stored =
@@ -112,7 +112,7 @@ void storeShortcut(const QString &key, const QKeySequence &shortcut)
 {
     QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
                        QString::fromLatin1(SettingsKeys::Organization),
-                       QString::fromLatin1(SettingsKeys::Application));
+                       SettingsKeys::application());
     settings.setValue(key, shortcut.toString());
 }
 

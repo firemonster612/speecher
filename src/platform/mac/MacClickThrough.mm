@@ -3,7 +3,6 @@
 #include <QCursor>
 #include <QGuiApplication>
 #include <QRect>
-#include <QTimer>
 #include <QWindow>
 
 #import <AppKit/AppKit.h>
@@ -11,12 +10,13 @@
 namespace speecher::mac {
 namespace {
 
-// Fast enough that the capsule takes a click as soon as the pointer is on it.
-constexpr int pointerPollMs = 30;
 const QString followerName = QStringLiteral("speecherClickThrough");
 
-// Polls the pointer while its window is visible. AppKit sends a window
-// that ignores the mouse no events to learn the pointer's place from.
+// Follows the pointer while its window is visible, on every move, so the
+// window takes or passes on a click from the moment the pointer crosses the
+// region's edge. AppKit sends a window that ignores the mouse no events, so
+// the moves come from monitors: the global one sees those going to other
+// apps, the local one those going to Speecher's own windows, this one too.
 class PointerFollower final : public QObject {
 public:
     explicit PointerFollower(QWindow *window)
@@ -24,28 +24,65 @@ public:
         , m_window(window)
     {
         setObjectName(followerName);
-        m_poll.setInterval(pointerPollMs);
-        connect(&m_poll, &QTimer::timeout, this, &PointerFollower::follow);
         connect(window, &QWindow::visibleChanged, this, [this](bool visible) {
-            visible ? m_poll.start() : m_poll.stop();
+            visible ? watch() : unwatch();
         });
         if (window->isVisible()) {
-            m_poll.start();
+            watch();
         }
     }
 
-    QRect region;
+    ~PointerFollower() override { unwatch(); }
+
+    void setRegion(const QRect &region)
+    {
+        m_region = region;
+        if (m_window->isVisible()) {
+            follow();
+        }
+    }
 
 private:
+    void watch()
+    {
+        // At once: the pointer may already be over the capsule as it appears.
+        follow();
+        if (m_globalMonitor) {
+            return;
+        }
+        constexpr NSEventMask moves = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged
+            | NSEventMaskRightMouseDragged | NSEventMaskOtherMouseDragged;
+        m_globalMonitor = [[NSEvent addGlobalMonitorForEventsMatchingMask:moves
+                                                                  handler:^(NSEvent *) { follow(); }] retain];
+        m_localMonitor = [[NSEvent addLocalMonitorForEventsMatchingMask:moves
+                                                                 handler:^NSEvent *(NSEvent *event) {
+                                                                     follow();
+                                                                     return event;
+                                                                 }] retain];
+    }
+
+    void unwatch()
+    {
+        for (id *monitor : {&m_globalMonitor, &m_localMonitor}) {
+            if (*monitor) {
+                [NSEvent removeMonitor:*monitor];
+                [*monitor release];
+                *monitor = nil;
+            }
+        }
+    }
+
     void follow()
     {
         NSView *view = reinterpret_cast<NSView *>(m_window->winId());
-        const bool overRegion = region.translated(m_window->position()).contains(QCursor::pos());
+        const bool overRegion = m_region.translated(m_window->position()).contains(QCursor::pos());
         view.window.ignoresMouseEvents = !overRegion;
     }
 
     QWindow *m_window;
-    QTimer m_poll;
+    QRect m_region;
+    id m_globalMonitor = nil;
+    id m_localMonitor = nil;
 };
 
 } // namespace
@@ -62,7 +99,7 @@ void takeClicksOnlyIn(QWindow *window, const QRect &region)
     if (!follower) {
         follower = new PointerFollower(window);
     }
-    follower->region = region;
+    follower->setRegion(region);
 }
 
 } // namespace speecher::mac

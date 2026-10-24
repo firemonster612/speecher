@@ -9,11 +9,12 @@ $InstallerPath = Resolve-Path $InstallerPath
 $InstallDir = Join-Path $env:TEMP "speecher-installer-test-$PID"
 $OriginalPath = $env:Path
 $OriginalPlatform = $env:QT_QPA_PLATFORM
-# The runs here get a profile of their own; the person's own is set aside
-# and put back at the end.
-$ProfileKey = "HKCU\Software\io.github.firemonster612\speecher"
-$ProfileBackup = Join-Path $env:TEMP "speecher-profile-$PID.reg"
-$HadProfile = Test-Path "Registry::$ProfileKey"
+# Every Speecher started here, by this script, Setup or the uninstaller, is an
+# isolated instance with settings, data and a socket of its own. The person's
+# own Speecher, running or not, is left alone.
+$env:SPEECHER_INSTANCE = "verify-installer-$PID"
+$ProfileKey = "HKCU\Software\io.github.firemonster612\speecher-$env:SPEECHER_INSTANCE"
+$AppData = Join-Path $env:LOCALAPPDATA "io.github.firemonster612\speecher-$env:SPEECHER_INSTANCE"
 $App = $null
 
 # Starts the installed app and fails unless it is still running after startup.
@@ -43,14 +44,6 @@ function Get-PathEntryCount {
 }
 
 try {
-    if ($HadProfile) {
-        reg export $ProfileKey $ProfileBackup /y | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "reg export of $ProfileKey exited with $LASTEXITCODE"
-        }
-        Remove-Item "Registry::$ProfileKey" -Recurse -Force
-    }
-
     $Arguments = @(
         "/VERYSILENT",
         "/SUPPRESSMSGBOXES",
@@ -148,8 +141,7 @@ try {
     $env:Path = "$env:SystemRoot;$env:SystemRoot\System32;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
     $env:QT_QPA_PLATFORM = $null
     $MainShot = Join-Path $env:TEMP "speecher-main-$PID.png"
-    $Log = Join-Path $env:LOCALAPPDATA "io.github.firemonster612\speecher\cache\speecher.log"
-    $LogLines = if (Test-Path $Log) { @(Get-Content $Log).Count } else { 0 }
+    $Log = Join-Path $AppData "cache\speecher.log"
     # Main opens at launch on a profile that has finished setup.
     $SetupKey = "Registry::$ProfileKey\app"
     New-Item $SetupKey -Force | Out-Null
@@ -165,7 +157,7 @@ try {
     if ($App.HasExited) {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
-    $QmlErrors = @(Get-Content $Log | Select-Object -Skip $LogLines | Select-String -SimpleMatch " QML: ")
+    $QmlErrors = @(Select-String -Path $Log -SimpleMatch " QML: ")
     if (-not (Test-Path $MainShot) -or $QmlErrors) {
         throw "The installed Qt Quick UI did not open Main: $($QmlErrors -join "`n")"
     }
@@ -319,15 +311,13 @@ public static class RestartManager {
     }
     $env:Path = $OriginalPath
     $env:QT_QPA_PLATFORM = $OriginalPlatform
-    Remove-Item "Registry::$ProfileKey" -Recurse -Force -ErrorAction SilentlyContinue
-    if ($HadProfile) {
-        reg import $ProfileBackup 2>$null
-        Remove-Item $ProfileBackup
-    }
     $Uninstaller = Join-Path $InstallDir "unins000.exe"
     if (Test-Path $Uninstaller) {
         Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
     }
+    # Only once the uninstaller, which asks Speecher to quit, has run.
+    $env:SPEECHER_INSTANCE = $null
+    Remove-Item "Registry::$ProfileKey", $AppData -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path "HKCU:\Software\Classes\Speecher.AudioFile") {
         throw "Uninstall left the Speecher.AudioFile ProgId behind"
     }

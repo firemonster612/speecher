@@ -1,5 +1,7 @@
 #include "app/CompositionSockets.h"
 
+#include "core/settings/SettingsKeys.h"
+
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QFileInfo>
@@ -25,7 +27,7 @@ QString userToken()
 
 QString appSocketName(const QString &suffix)
 {
-    const QString base = QStringLiteral("speecher-%1").arg(userToken());
+    const QString base = SettingsKeys::application() + QLatin1Char('-') + userToken();
     return suffix.isEmpty() ? base : base + QLatin1Char('-') + suffix;
 }
 

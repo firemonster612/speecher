@@ -117,7 +117,7 @@ void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString 
 
 SettingsCodecs::SettingsCodecs()
     : m_settings(QString::fromLatin1(SettingsKeys::Organization),
-                 QString::fromLatin1(SettingsKeys::Application))
+                 SettingsKeys::application())
 {
 }
 
