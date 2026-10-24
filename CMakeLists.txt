@@ -343,6 +343,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeVoiceProtocol.cpp
   src/providers/CliProxyCredentials.cpp
   src/providers/ProviderSignIn.cpp
+  src/providers/SignInCheck.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
   src/providers/LocalModelStore.cpp
@@ -379,6 +380,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/CliProxyCredentials.h
   src/providers/ProviderProbe.h
   src/providers/ProviderSignIn.h
+  src/providers/SignInCheck.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
   src/providers/LocalModelStore.h
@@ -1399,6 +1401,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_system.cpp
       tests/test_quick_models.cpp
       tests/test_quick_insights.cpp
+      tests/test_quick_accounts.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1436,7 +1439,7 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
-    quick_transcription quick_system quick_models quick_insights)
+    quick_transcription quick_system quick_models quick_insights quick_accounts)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

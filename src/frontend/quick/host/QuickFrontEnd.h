@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppFrontEnd.h"
+#include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickInsights.h"
@@ -74,6 +75,7 @@ private:
     QuickSystem m_system;
     QuickModels m_models;
     QuickInsights m_insights;
+    QuickAccounts m_accounts;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

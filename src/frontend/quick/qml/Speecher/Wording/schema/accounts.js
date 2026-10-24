@@ -17,7 +17,7 @@ var rows = [
       label: "API key", help: "Stored in the system keychain when there is one.",
       placeholder: "sk-…", keywords: "openai key secret token" },
     { id: "openAiCliproxyAccount", page: "accounts", section: "OpenAI", kind: "custom",
-      label: "Account", help: "The CLI Proxy API account to use.", value: "codex-you@example.com.json",
+      label: "Account", help: "The CLI Proxy API account to use.", value: "",
       keywords: "codex cli proxy account" },
 
     { id: "anthropicAuthMode", page: "accounts", section: "Anthropic", kind: "choice", control: "select",
@@ -29,7 +29,7 @@ var rows = [
           { id: "cliproxy", label: "CLI Proxy API" }
       ] },
     { id: "anthropicCliproxyAccount", page: "accounts", section: "Anthropic", kind: "custom",
-      label: "Account", help: "The CLI Proxy API account to use.", value: "claude-you@example.com.json",
+      label: "Account", help: "The CLI Proxy API account to use.", value: "",
       keywords: "claude cli proxy account" },
 
     { id: "cliproxyOauthDir", page: "accounts", section: "CLI Proxy API", kind: "text",

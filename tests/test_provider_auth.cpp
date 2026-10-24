@@ -4,6 +4,7 @@
 #include "common/test_auth.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderSignIn.h"
+#include "providers/SignInCheck.h"
 #include "providers/ClaudeCredentialStorage.h"
 #include "providers/NativeCredentialStorage.h"
 #include "providers/CodexCredentialStorage.h"
@@ -1342,6 +1343,84 @@ private slots:
                                      QStringLiteral("codex"), QStringLiteral("token"), valid));
         QVERIFY(!signIn.anyUsableAccount({QStringLiteral("claude")}));
         QVERIFY(signIn.anyUsableAccount(both));
+    }
+
+    // A picker keeps showing the account chosen even after its file is gone,
+    // so the choice doesn't silently become "Choose…".
+    void providerSignInKeepsAChosenAccountWhoseFileIsGone()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("token"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-b@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60), true));
+        ProviderSignIn signIn(settings);
+
+        QList<CliProxyAccount> accounts = signIn.accounts(QStringLiteral("codex"));
+        QCOMPARE(accounts.size(), 2);
+        QCOMPARE(accounts.at(0).label, QStringLiteral("a@example.com"));
+        QVERIFY(!accounts.at(0).expired && !accounts.at(0).disabled && !accounts.at(0).missing);
+        QVERIFY(accounts.at(1).expired && accounts.at(1).disabled);
+
+        settings.setOpenAiCliproxyAccount(QStringLiteral("codex-gone@example.com.json"));
+        accounts = signIn.accounts(QStringLiteral("codex"));
+        QCOMPARE(accounts.size(), 3);
+        QCOMPARE(accounts.last().fileName, QStringLiteral("codex-gone@example.com.json"));
+        QVERIFY(accounts.last().missing);
+        // The other type's choice is the Anthropic one.
+        QVERIFY(signIn.accounts(QStringLiteral("claude")).isEmpty());
+    }
+
+    // What the Accounts page shows of each service, read without renewing.
+    void signInChecksSayWhatEachServiceHas()
+    {
+        QTemporaryDir dir;
+        RefinementSettings settings;
+        settings.cliproxyOauthDir = dir.path();
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.openAiAuthMode = QStringLiteral("settings");
+
+        SignInCheck cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
+        QCOMPARE(cliproxy.state, SignInState::Missing);
+        QVERIFY(cliproxy.detail.contains(dir.path()));
+        QCOMPARE(checkSignIn(SignInService::OpenAi, settings, nullptr).detail,
+                 QStringLiteral("Settings API key not found"));
+
+        // An expired token is expired, not missing: a refresh may renew it.
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::Expired);
+        const SignInCheck anthropic = checkSignIn(SignInService::Anthropic, settings, nullptr);
+        QCOMPARE(anthropic.state, SignInState::Expired);
+        QVERIFY2(anthropic.detail.contains(QStringLiteral("expired")), qPrintable(anthropic.detail));
+
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
+        QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::SignedIn);
+        QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::SignedIn);
+
+        // Through a server, its key is the whole sign-in.
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::Missing);
+        settings.cliproxyApiKey = QStringLiteral("server-key");
+        cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
+        QCOMPARE(cliproxy.state, SignInState::SignedIn);
+        QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
+
+        // Claude Code's own sign-in.
+        settings.anthropicAuthMode = QStringLiteral("oauth");
+        settings.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Missing);
+        QVERIFY(writeJsonCredentials(settings.claudeCredentialsPath, QStringLiteral("secret-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
     }
 
     void providerSignInRoundTripsTheFallbackMode()

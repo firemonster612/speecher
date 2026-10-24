@@ -12,6 +12,8 @@ struct CliProxyAccount {
     QString label;
     bool disabled = false;
     bool expired = false;
+    // A chosen account whose file is gone; see ProviderSignIn::accounts.
+    bool missing = false;
 };
 
 struct CliProxyCredentialResult {

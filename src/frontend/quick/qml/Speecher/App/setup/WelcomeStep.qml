@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // What Speecher does, shown as the shortcut that starts it, then the
@@ -52,7 +53,7 @@ StepPage {
                     first: index === 0 && found.first
                     title: service.name
                     help: service.detail
-                    StateText { stateId: foundRow.service.state; text: Accounts.stateLabels[foundRow.service.state]; indicator: "dot" }
+                    StateText { stateId: foundRow.service.state; text: Words.signInStates[foundRow.service.state]; indicator: "dot" }
                 }
             }
         }

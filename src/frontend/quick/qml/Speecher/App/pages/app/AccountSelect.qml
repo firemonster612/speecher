@@ -5,7 +5,8 @@ import Speecher.Backend
 import Speecher.Wording
 
 // Picks one of CLI Proxy API's saved accounts of a type (codex or claude)
-// for a row; expired accounts say so in the menu.
+// for a row; an account that is not signed in says so in the menu. A disabled
+// account can't be chosen, so it is listed only while it is the choice.
 Select {
     placeholder: Words.choose
     required property string rowId
@@ -13,12 +14,11 @@ Select {
 
     // As wide as a text field, for the email addresses accounts go by.
     implicitWidth: Theme.fieldWidth
-    options: Accounts.cliproxyAccounts.filter(a => a.type === type).map(a => ({
+    currentId: Settings.values[rowId] || ""
+    options: Accounts.cliproxyAccounts.filter(a => a.type === type && (a.state !== "disabled" || a.id === currentId)).map(a => ({
         id: a.id,
         label: a.label,
-        help: a.plan,
-        badge: a.state === "signedIn" ? "" : Accounts.stateLabels[a.state]
+        badge: a.state === "signedIn" ? "" : Words.signInStates[a.state]
     }))
-    currentId: Settings.values[rowId] || ""
     onChosen: id => Settings.set(rowId, id)
 }

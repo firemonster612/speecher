@@ -45,6 +45,9 @@ public:
     // skipped or failed read, not from the person. Failed deletions leave a
     // persisted marker that suppresses reads until deletion succeeds.
     bool saveSecret(Secret secret, const QString &value);
+    // Removes a secret whether or not it was read, the way saveSecret clears
+    // one it has read: a failed keyring deletion leaves the marker.
+    bool clearSecret(Secret secret);
     // Removes every Speecher entry from the keychain.
     bool deleteKeyringSecrets() const;
 
@@ -75,6 +78,7 @@ private:
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
     bool saveToKeyring(Secret secret, const QString &value);
+    bool storeSecret(Secret secret, const QString &cleaned);
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;

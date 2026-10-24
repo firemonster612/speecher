@@ -41,6 +41,21 @@ QtObject {
     readonly property string notSet: "Not set"
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
+    // A secret field: what it shows once a key is saved, and why one was not.
+    readonly property string savedSecret: "Saved"
+    function notSaved(why) { return why ? "Not saved: " + why : "Not saved" }
+    // A sign-in's state, on Accounts and in setup.
+    readonly property var signInStates: ({
+        signedIn: "Signed in", expired: "Expired", missing: "Not found", disabled: "Disabled", checking: "Checking"
+    })
+    readonly property string checkAll: "Check all"
+    readonly property string signInAgain: "Sign in again"
+    // What each service on Accounts is used for, by its id.
+    readonly property var serviceUses: ({
+        openai: "Used for dictation and cleanup.",
+        anthropic: "Used for Claude Voice dictation and Anthropic cleanup.",
+        cliproxy: "Only needed when a service above signs in through it, or cleanup goes through its server."
+    })
 
     readonly property var shell: ({
         appName: "Speecher",

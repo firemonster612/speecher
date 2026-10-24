@@ -7,13 +7,15 @@ import Speecher.App
 
 // One service on Accounts as a card: its name and sign-in state at the top,
 // what Speecher found and what the service is used for, then the service's
-// settings rows. An expired sign-in offers to sign in again; any other state
-// can be checked again. Rows declared inside follow the head and rule
-// themselves off from it.
+// settings rows. An expired sign-in offers to renew it; any state can be
+// checked again. Rows declared inside follow the head and rule themselves off
+// from it.
 Card {
     id: root
 
-    required property var service
+    required property string serviceId
+    // Looked up in services, so the card follows every check.
+    readonly property var service: Accounts.services.find(s => s.id === serviceId)
 
     Item {
         width: parent.width
@@ -36,7 +38,7 @@ Card {
                     spacing: Theme.space1
                     StateText {
                         stateId: root.service.state
-                        text: Accounts.stateLabels[root.service.state]
+                        text: Words.signInStates[root.service.state]
                         indicator: "dot"
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -51,7 +53,7 @@ Card {
                 }
             }
             Txt { width: parent.width; text: root.service.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
-            Txt { width: parent.width; text: root.service.use; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"
                 Item {
@@ -60,10 +62,10 @@ Card {
                     Button {
                         id: signIn
                         y: Theme.space2
-                        text: Accounts.text.signInAgain
+                        text: Words.signInAgain
                         variant: "primary"
                         size: "small"
-                        onClicked: Accounts.recheck(root.service.id)
+                        onClicked: Accounts.renew(root.service.id)
                     }
                 }
             }

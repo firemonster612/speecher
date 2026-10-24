@@ -10,11 +10,10 @@
 #include <memory>
 
 namespace speecher {
-namespace {
 
-RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
-                                             QString *accessToken,
-                                             bool refreshExpired)
+RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &settings,
+                                                 QString *accessToken,
+                                                 bool refreshExpired)
 {
     if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
         // Remote proxy: authenticate with the CLI Proxy API server key; the
@@ -29,7 +28,7 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
             if (accessToken) {
                 *accessToken = settings.cliproxyApiKey;
             }
-            return {true, QString()};
+            return {true, QStringLiteral("Using CLI Proxy API at %1").arg(settings.cliproxyBaseUrl)};
         }
         const CliProxyCredentialResult credentials = refreshExpired
             ? CliProxyCredentials::loadWithRefresh(settings.cliproxyOauthDir, QStringLiteral("claude"),
@@ -39,7 +38,10 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
         if (accessToken) {
             *accessToken = credentials.ok ? credentials.accessToken : QString();
         }
-        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
+        if (credentials.ok) {
+            return {true, QStringLiteral("CLI Proxy API Claude token found")};
+        }
+        return {false, credentials.error, credentials.kind, credentials.httpStatus};
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         settings.claudeCredentialsPath,
@@ -53,10 +55,20 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
     if (accessToken) {
         *accessToken = credentials.accessToken;
     }
-    return {true, QString()};
+    return {true, QStringLiteral("Signed in with Claude Code")};
 }
 
-} // namespace
+bool anthropicSignInNeedsRefresh(const RefinementSettings &settings)
+{
+    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
+        if (!settings.cliproxyBaseUrl.isEmpty()) {
+            return false; // the server owns and refreshes its accounts
+        }
+        return CliProxyCredentials::accountNeedsRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
+    }
+    return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
+}
 
 AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
     : TranscriptRefiner(parent)
@@ -79,14 +91,7 @@ QString AnthropicTranscriptRefiner::label() const
 
 bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
-    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
-        if (!settings.cliproxyBaseUrl.isEmpty()) {
-            return false; // the server owns and refreshes its accounts
-        }
-        return CliProxyCredentials::accountNeedsRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
-    }
-    return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
+    return anthropicSignInNeedsRefresh(settings);
 }
 
 bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
@@ -100,7 +105,7 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
     RefinementRefreshJob job;
     job.showRefreshIndicator = requiresRefresh(settings);
     job.run = [settings, accessToken] {
-        const RefinementPrepareResult result = loadClaudeOauthToken(settings, accessToken.get(), true);
+        const RefinementPrepareResult result = loadAnthropicAccessToken(settings, accessToken.get(), true);
         ClaudeCredentials::installedVersion();
         return RefinementRefreshResult{result.ok, result.message, result.kind, result.httpStatus};
     };
@@ -116,7 +121,7 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
 
 void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
-    loadClaudeOauthToken(settings, &m_accessToken, true);
+    loadAnthropicAccessToken(settings, &m_accessToken, true);
 }
 
 RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings)
@@ -125,7 +130,7 @@ RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSett
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. The refresh
     // helpers take the same one-second account lock the speech path uses.
-    return loadClaudeOauthToken(settings, &m_accessToken, true);
+    return loadAnthropicAccessToken(settings, &m_accessToken, true);
 }
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,

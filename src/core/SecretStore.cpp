@@ -86,15 +86,20 @@ namespace {
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 template <typename Job>
-auto makeKeychainJob()
-{
-    return std::unique_ptr<Job, void (*)(Job *)>(new Job(keyringService()),
-                                               [](Job *job) { job->deleteLater(); });
-}
+using KeychainJob = std::unique_ptr<Job, void (*)(Job *)>;
 
 template <typename Job>
-std::optional<QKeychain::Error> runKeychainJob(Job &job, QString *error)
+KeychainJob<Job> makeKeychainJob()
 {
+    return KeychainJob<Job>(new Job(keyringService()), [](Job *job) { job->deleteLater(); });
+}
+
+// Runs the job, waiting at most keyringTimeoutMs. A job that times out is
+// released from `owner`: the caller must not touch it again.
+template <typename Job>
+std::optional<QKeychain::Error> runKeychainJob(KeychainJob<Job> &owner, QString *error)
+{
+    Job &job = *owner;
     QEventLoop loop;
     QTimer watchdog;
     bool finished = false;
@@ -115,6 +120,11 @@ std::optional<QKeychain::Error> runKeychainJob(Job &job, QString *error)
         loop.exec();
     }
     if (!finished) {
+        // The backend still holds the job and calls it back when it answers,
+        // libsecret only after D-Bus's own timeout; deleting it now would
+        // crash that callback. It goes once it finishes instead.
+        QObject::connect(&job, &Job::finished, &job, &QObject::deleteLater);
+        owner.release();
         if (error) {
             *error = QStringLiteral("Desktop keyring request timed out");
         }
@@ -274,11 +284,21 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
 bool SecretStore::saveSecret(Secret secret, const QString &value)
 {
     const QString cleaned = value.trimmed();
-    const CachedSecret &entry = cached(secret);
-    if (entry.known && cleaned == entry.value) {
+    if (!cached(secret).known && cleaned.isEmpty()) {
         return true;
     }
-    if (!entry.known && cleaned.isEmpty()) {
+    return storeSecret(secret, cleaned);
+}
+
+bool SecretStore::clearSecret(Secret secret)
+{
+    return storeSecret(secret, {});
+}
+
+bool SecretStore::storeSecret(Secret secret, const QString &cleaned)
+{
+    const CachedSecret &entry = cached(secret);
+    if (entry.known && cleaned == entry.value) {
         return true;
     }
     if (saveToKeyring(secret, cleaned)) {
@@ -362,7 +382,7 @@ QString SecretStore::keyringSecret(Secret secret) const
     auto job = makeKeychainJob<QKeychain::ReadPasswordJob>();
     job->setKey(keyringEntry(secret));
     QString error;
-    const auto result = runKeychainJob(*job, &error);
+    const auto result = runKeychainJob(job, &error);
     if (result == QKeychain::NoError) {
         m_lastError.clear();
         return job->textData().trimmed();
@@ -380,11 +400,16 @@ QString SecretStore::keyringSecret(Secret secret) const
 
 bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 {
+    if (QStandardPaths::isTestModeEnabled()
+        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_WRITE_FAILURE") == 1) {
+        m_lastError = QStringLiteral("Keyring write denied");
+        return false;
+    }
 #ifdef SPEECHER_WITH_QKEYCHAIN
     auto job = makeKeychainJob<QKeychain::WritePasswordJob>();
     job->setKey(keyringEntry(secret));
     job->setTextData(value);
-    const bool ok = runKeychainJob(*job, &m_lastError) == QKeychain::NoError;
+    const bool ok = runKeychainJob(job, &m_lastError) == QKeychain::NoError;
     if (ok) {
         recordKeyringEntry(secret, true);
     }
@@ -408,7 +433,7 @@ bool SecretStore::deleteKeyringSecret(Secret secret) const
     auto job = makeKeychainJob<QKeychain::DeletePasswordJob>();
     job->setKey(keyringEntry(secret));
     QString error;
-    const auto result = runKeychainJob(*job, &error);
+    const auto result = runKeychainJob(job, &error);
     if (result == QKeychain::NoError || result == QKeychain::EntryNotFound) {
         m_lastError.clear();
         recordKeyringEntry(secret, false);

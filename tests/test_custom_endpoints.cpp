@@ -918,6 +918,23 @@ private slots:
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
+    // Clearing a key this store never read still removes it, where saveSecret
+    // takes an unread empty value for a failed read and keeps the key.
+    void clearSecretRemovesAKeyNeverRead()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        SettingsStore saved;
+        saved.raw().clear();
+        QVERIFY(saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("old-key")));
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("old-key"));
+
+        SettingsStore reopened;
+        QVERIFY(!reopened.secrets()->isSecretKnown(SecretStore::Secret::CliproxyApiKey));
+        QVERIFY(reopened.secrets()->clearSecret(SecretStore::Secret::CliproxyApiKey));
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
+    }
+
     void unreadDraftSurvivesPrefetchCompletion()
     {
         if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
