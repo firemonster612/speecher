@@ -98,7 +98,7 @@ LibraryLists {
     function profileApps(id) {
         const own = recognitionRules
         const builtIn = builtInRecognitionRules.filter(b => !own.some(r => r.match === b.match))
-        return own.concat(builtIn).filter(r => r.profile === id).map(r => appName(r.match))
+        return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
     // Where a profile is used, given its apps and whether it is the one for
     // apps no match names: "Used in Slack, Linear and 2 more apps."
@@ -181,12 +181,8 @@ LibraryLists {
         importTerms: "Import CSV",
         importTermsTitle: "Import terms from a CSV file",
         importReplacementsTitle: "Import snippets from a JSON file",
-        importFile: "File",
-        importTermsHelp: "One term per row, or a first row naming the term and context columns.",
-        importReplacementsHelp: "A list of phrase and replacement pairs.",
-        importTermsPlaceholder: "~/Documents/terms.csv",
-        importReplacementsPlaceholder: "~/Documents/snippets.json",
-        importAction: "Import",
+        termsFiles: ["CSV files (*.csv)", "All files (*)"],
+        replacementsFiles: ["JSON files (*.json)", "All files (*)"],
         noNewTerms: "That file has no terms you don't have.",
         noNewReplacements: "That file has no phrases you don't have.",
         newTerm: "New term",
@@ -200,6 +196,9 @@ LibraryLists {
         noTerms: "No vocabulary terms",
         noTermsHelp: "Add names and words the speech service should spell your way, or import a CSV.",
         undoCorrection: "Undo last correction",
+        editCorrection: "Edit correction",
+        heard: "Heard",
+        corrected: "Corrected",
         correctionsNeedAccessibility: "Turn on desktop accessibility to learn corrections after pasting.",
         noCorrections: "No learned corrections yet",
         noCorrectionsHelp: "When you fix a dictated word the same way more than once, the correction appears here.",
@@ -236,10 +235,10 @@ LibraryLists {
     // "Work and Chat only": the profiles a term is limited to.
     function termProfilesText(ids) { return Words.list(ids.map(profileName)) + " only" }
     function termUsesText(uses) { return Words.count(uses, "use", "uses") }
-    // "Learned in Konsole, 92% sure", from its app's id, or in several apps
+    // "Learned in org.kde.konsole, 92% sure", by its app's id, or in several apps
     // for one learned in more than one.
     function correctionSource(c) {
-        return "Learned in " + (c.app ? appName(c.app.split(".").pop()) : "several apps") + ", " + Math.round(c.confidence * 100) + "% sure"
+        return "Learned in " + (c.app || "several apps") + ", " + Math.round(c.confidence * 100) + "% sure"
     }
 
     // Pasting ------------------------------------------------------------
@@ -252,6 +251,7 @@ LibraryLists {
         automatic: "Automatic",
         addMatch: "Add match",
         newMatch: "New app match",
+        editMatch: "Edit app match",
         matchApp: "App name or ID",
         matchAppHelp: "Matches the application ID, application name, process name or accessible role.",
         app: "App",
@@ -276,9 +276,28 @@ LibraryLists {
         return [rule.category ? categoryLabel(rule.category) : "",
                 rule.profile ? profileName(rule.profile) + " profile" : ""].filter(s => s).join(", ")
     }
-    // How an app match reads in a sentence: each word capitalized, except the
-    // apps whose names are spelled otherwise.
-    readonly property var _appNames: ({ t3code: "T3 Code", chatgpt: "ChatGPT", kmail: "KMail", code: "VS Code", jetbrains: "JetBrains IDEs" })
-    function appName(match) { return _appNames[match] || match.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") }
+
+    // Refused edits ---------------------------------------------------------
+
+    // Why LibraryLists refused a form's save, for the list it edits: the
+    // reason add or update returned. Empty for none.
+    readonly property var _refusals: ({
+        profiles: { blank: "Give the profile a name.", taken: "Another profile has that name." },
+        customTones: { blank: "Give the tone a name.", taken: "Another tone has that name.",
+                       incomplete: "Add the instruction the tone follows." },
+        customCleanupLevels: { blank: "Give the level a name.", taken: "Another cleanup level has that name.",
+                               incomplete: "A Custom only level needs instructions." },
+        terms: { blank: "Type the term.", taken: "That term is in the list already." },
+        corrections: { blank: "Type what was heard.", taken: "Another correction fixes those words in that app.",
+                       incomplete: "Type what it's corrected to." },
+        replacements: { blank: "The phrase needs a letter or a number.", taken: "Another replacement has that phrase.",
+                        incomplete: "Type what Speecher writes." },
+        recognitionRules: { blank: "Type the app's name or ID.", taken: "You have a match for that app already.",
+                            incomplete: "Choose an app type, a profile or both." },
+        any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names." }
+    })
+    function refusalText(list, reason) {
+        return reason ? (_refusals[list] || {})[reason] || _refusals.any[reason] || "" : ""
+    }
 
 }

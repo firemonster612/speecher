@@ -1,10 +1,11 @@
 #pragma once
 
-#include "core/WritingProfileEdits.h"
+#include "core/SettingsEdit.h"
 
 #include <QHash>
 #include <QObject>
 #include <QQmlEngine>
+#include <QUrl>
 #include <QVariantList>
 
 namespace speecher {
@@ -15,10 +16,9 @@ class ApplicationController;
 // cleanup levels, the vocabulary terms, Learned Corrections, replacements
 // and app matches, as plain values read from and written through the
 // daemon's SettingsStore. The Library singleton (Library.qml) builds on it
-// and words it. Edits name a list by its property and an entry by its index
-// there; an edit that would store something invalid, such as a blank or
-// repeated name, is refused with a warning in the log, and what the record
-// does not show (a term's use history, a correction's evidence) is kept.
+// and words it. Edits name a list by its property and an entry by its key
+// there (see update). Core's WritingProfileEdits and VocabularyEdits make
+// them and say why one is refused; this converts the records.
 class QuickLibrary : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(LibraryLists)
@@ -89,14 +89,19 @@ public:
     Q_INVOKABLE QString newId(const QString &prefix) const;
     // Adds item to the list named (profiles, customTones, customCleanupLevels,
     // terms, replacements, recognitionRules), with the fields its records
-    // show; one of the first three carries its newId. Whether it was saved.
-    Q_INVOKABLE bool add(const QString &list, const QVariantMap &item);
-    // Changes the fields patch names on entry index of the list named, those
-    // and corrections' enabled. Whether it was saved.
-    Q_INVOKABLE bool update(const QString &list, int index, const QVariantMap &patch);
-    // Removes entry index of terms, replacements or recognitionRules. Returns
-    // the token undo takes to put it back, or -1 when nothing was removed.
-    Q_INVOKABLE int remove(const QString &list, int index);
+    // show; one of the first three carries its newId. Returns why it was
+    // refused, as EditRefusal says: blank, taken, incomplete, missing or
+    // builtIn, or invalid for a field the records lack. Empty when saved.
+    Q_INVOKABLE QString add(const QString &list, const QVariantMap &item);
+    // Changes the fields patch names on the entry `key` names in the list
+    // named: a profile's, tone's, level's or correction's id, a term, a
+    // replacement's phrase or a match's app. What the record does not show
+    // stays. Returns as add does; missing once the entry is gone.
+    Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch);
+    // Removes the entry key names from terms, corrections, replacements or
+    // recognitionRules. Returns the token undo takes to put it back, or -1
+    // when nothing was removed.
+    Q_INVOKABLE int remove(const QString &list, const QString &key);
     // Removes one of the user's profiles, and saving it drops what named it:
     // app matches lose it, terms limited to it lose the limit, and the
     // fallback profile becomes Other. No undo: the page asks first.
@@ -107,14 +112,14 @@ public:
     Q_INVOKABLE int removeLevel(const QString &id);
     // Forgets the newest Learned Correction; returns the undo token, or -1.
     Q_INVOKABLE int undoLastCorrection();
-    // Puts back what the removal with this token took. Each token works once.
+    // Puts back what the removal with this token took, unless an entry by
+    // its name was added since. Each token works once.
     Q_INVOKABLE void undo(int token);
-    // Add the terms of a CSV file, or the snippets of a JSON file, that the
-    // list does not hold yet. path is a local path, ~/ for the home folder,
-    // or a file: URL. Returns { added, error }: how many were added, and why
-    // the file could not be read or parsed, empty when it could.
-    Q_INVOKABLE QVariantMap importTerms(const QString &path);
-    Q_INVOKABLE QVariantMap importReplacements(const QString &path);
+    // Merge the terms of a CSV file, or add the snippets of a JSON file that
+    // the list does not hold yet. Returns { added, error }: how many are new,
+    // and why the file could not be read or parsed, empty when it could.
+    Q_INVOKABLE QVariantMap importTerms(const QUrl &file);
+    Q_INVOKABLE QVariantMap importReplacements(const QUrl &file);
 
 signals:
     void listsChanged();
@@ -122,6 +127,8 @@ signals:
 private:
     // Saves what edit makes of the current settings, when it returns true.
     bool save(const std::function<bool(AppSettings &)> &edit);
+    // Saves what edit makes when it refuses nothing, and names the refusal.
+    QString saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit);
     int keepUndo(const SettingsEdit &undo);
     void refresh();
 

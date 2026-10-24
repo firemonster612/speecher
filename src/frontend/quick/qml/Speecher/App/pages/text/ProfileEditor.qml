@@ -16,6 +16,8 @@ Column {
     property var profile: ({})
     property bool isFallback: false
     property var apps: []
+    // Why the page refused the last edit, under the name; empty after one it saved.
+    property string refusal
     signal edited(var patch)
     signal deleteRequested()
     signal newToneRequested()
@@ -40,6 +42,7 @@ Column {
     onProfileChanged: {
         confirmingDelete = false
         if (profile.id === _shownId) return
+        refusal = ""
         _shownId = profile.id
         if (!swapIn.running) { opacity = 0.2; slide.x = 10 * Theme.movement }
         swapIn.restart()
@@ -79,6 +82,7 @@ Column {
                     // Back to the saved name, which a blank or taken one never replaces.
                     onEditingFinished: { editor.edited({ name: text }); text = Qt.binding(() => editor.profile.name || "") }
                 }
+                Txt { visible: text.length > 0; text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
                 Txt { text: editor.usedIn; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
             }
             Button {

@@ -97,10 +97,13 @@ Backend is the C++ types plus the mocks not yet replaced.
   preview's `LibraryLists.qml` mocks it): the Writing Profiles, custom tones
   and cleanup levels, vocabulary terms, Learned Corrections, replacements and
   app matches, read from and saved through the daemon's `SettingsStore`.
-  `add(list, item)` and `update(list, index, patch)` refuse an invalid entry
-  and return false; a removal returns a token for `undo(token)`. Library.qml
-  words the lists; its other lists stay placeholders until their areas are
-  wired.
+  `add(list, item)` and `update(list, key, patch)` (a key is the entry's id,
+  term, phrase or app) return why core refused the entry (`blank`, `taken`,
+  `incomplete`, `missing`, `builtIn`), empty when saved, and
+  `Library.refusalText(list, reason)` words it for the form. `remove(list,
+  key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
+  take the file the page's FileDialog chose. Library.qml words the lists;
+  its other lists stay placeholders until their areas are wired.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version and the shortcut's keys.
 - `Updates` is the updater as `QuickUpdates.h` documents it: its state
@@ -402,7 +405,7 @@ Layout and rows:
 - `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.
 - `Switcher { currentIndex }`: one of several views, sliding between them. `width: implicitWidth` sizes it to the current view, for buttons that swap in a row.
 - `FormField { label; help }`: a label and help around one input in a form.
-- `InlineForm { open; title; saveText; canSave }`: an add or edit form in place, instead of a dialog.
+- `InlineForm { open; title; saveText; canSave; error }`: an add or edit form in place, instead of a dialog; `error` says why a save was refused.
 - `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone: always a question and what it costs; leading (a check box) goes under them.
 - `EmptyState { iconName; title; text; compact }`: what an empty list says. compact on a card, centred elsewhere.
 

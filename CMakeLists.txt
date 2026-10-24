@@ -259,6 +259,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/Target.cpp
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
+  src/core/VocabularyEdits.cpp
   src/core/WordPreview.cpp
   src/core/WritingProfileEdits.cpp
   src/core/WritingProfileProviders.cpp
@@ -297,10 +298,12 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
+  src/core/SettingsEdit.h
   src/core/TranscriptState.h
   src/core/Target.h
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
+  src/core/VocabularyEdits.h
   src/core/WordPreview.h
   src/core/WritingProfileEdits.h
   src/core/WritingProfileProviders.h

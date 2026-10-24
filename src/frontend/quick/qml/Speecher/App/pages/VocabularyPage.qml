@@ -15,7 +15,7 @@ Page {
     subtitle: Schema.page("vocabulary").subtitle
 
     // Preview state: --vocab=terms|corrections|replacements picks the list,
-    // --vocab-form=add|edit|import opens its form.
+    // --vocab-form=add|edit opens its form.
 
     // The list on show.
     property string tab: Launch.arg("vocab", "terms")
@@ -82,7 +82,7 @@ Page {
                         onClicked: {
                             const name = Library.corrections[0].corrected
                             const undo = Library.undoLastCorrection()
-                            Toaster.show(Words.deleted(name), { icon: "undo-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                            if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "undo-2", actionText: Words.undo, action: () => Library.undo(undo) })
                         }
                     }
                 }

@@ -24,24 +24,26 @@ Card {
         return text.split(/(\{date\}|\{time\})/).filter(t => t).map(t => ({ kind: /^\{(date|time)\}$/.test(t) ? "added" : "same", text: t }))
     }
 
-    property int editing: -1
-    function startAdd() { editing = -1; phrase.text = ""; replacement.text = ""; importForm.open = false; form.open = true }
-    function startEdit(i) { editing = i; phrase.text = items[i].phrase; replacement.text = items[i].replacement; importForm.open = false; form.open = true }
-    function startImport() { form.open = false; importForm.start() }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && items.length) startEdit(2); else if (startForm === "import") startImport()
+    // The phrase being edited, as saved, or empty while adding.
+    property string editing
+    function startAdd() { editing = ""; phrase.text = ""; replacement.text = ""; form.error = ""; form.open = true }
+    function startEdit(r) { editing = r.phrase; phrase.text = r.phrase; replacement.text = r.replacement; form.error = ""; form.open = true }
+    function startImport() { form.open = false; importChooser.open() }
+    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && items.length) startEdit(items[Math.min(2, items.length - 1)])
 
-    VocabImport { id: importForm; list: "replacements" }
+    VocabImport { id: importChooser; list: "replacements" }
     InlineForm {
         cancelText: Words.cancel
         id: form
-        title: view.editing < 0 ? Library.vocabularyText.newReplacement : Library.vocabularyText.editReplacement
-        saveText: view.editing < 0 ? Library.vocabularyText.addReplacement : Words.save
+        title: view.editing ? Library.vocabularyText.editReplacement : Library.vocabularyText.newReplacement
+        saveText: view.editing ? Words.save : Library.vocabularyText.addReplacement
         canSave: phrase.text.trim().length > 0 && replacement.text.length > 0
         onCancelled: open = false
         onSaved: {
             const item = { phrase: phrase.text.trim(), replacement: replacement.text }
-            if (view.editing < 0 ? Library.add("replacements", item) : Library.update("replacements", view.editing, item))
-                open = false
+            const refused = view.editing ? Library.update("replacements", view.editing, item) : Library.add("replacements", item)
+            error = Library.refusalText("replacements", refused)
+            if (!refused) open = false
         }
         FormField { label: Library.vocabularyText.whenYouSay; TextField { id: phrase; width: parent.width; iconName: "mic" } }
         FormField {
@@ -99,14 +101,21 @@ Card {
                 }
             }
             actions: [
-                IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.item.phrase; const undo = Library.remove("replacements", row.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) } }
+                IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.item) },
+                IconButton {
+                    iconName: "trash-2"; size: 28; tooltip: Words.delete_
+                    onClicked: {
+                        const name = row.item.phrase
+                        const undo = Library.remove("replacements", name)
+                        if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                    }
+                }
             ]
         }
     }
 
     Reveal {
-        open: view.items.length === 0 && !form.open && !importForm.open
+        open: view.items.length === 0 && !form.open
         EmptyState {
             compact: true
             title: Library.vocabularyText.noReplacements

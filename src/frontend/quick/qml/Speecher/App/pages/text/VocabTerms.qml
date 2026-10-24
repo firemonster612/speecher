@@ -18,45 +18,45 @@ Card {
         target: view
     }
 
-    property string startForm   // "add", "edit" or "import", for previews
+    property string startForm   // "add" or "edit", for previews
 
     readonly property var terms: Library.terms
-    // The terms the search matches, each with its place in the full list.
-    readonly property var matching: terms.map((t, i) => Object.assign({ index: i }, t))
-                                         .filter(t => !search.text || t.term.toLowerCase().includes(search.text.toLowerCase()))
+    // The terms the search matches.
+    readonly property var matching: terms.filter(t => !search.text || t.term.toLowerCase().includes(search.text.toLowerCase()))
     readonly property int keyTerms: terms.filter(t => t.keyTerm).length
 
 
-    // Add and edit share one form.
-    property int editing: -1
+    // Add and edit share one form. editing is the term being edited, as
+    // saved, or empty while adding.
+    property string editing
     property var draftProfiles: []
     function startAdd() {
-        editing = -1; termName.text = ""; termContext.text = ""; keyTerm.checked = true; draftProfiles = []
-        importForm.open = false; form.open = true
+        editing = ""; termName.text = ""; termContext.text = ""; keyTerm.checked = true; draftProfiles = []
+        form.error = ""; form.open = true
     }
-    function startEdit(i) {
-        const t = terms[i]
-        editing = i; termName.text = t.term; termContext.text = t.context; keyTerm.checked = t.keyTerm; draftProfiles = t.profiles.slice()
-        importForm.open = false; form.open = true
+    function startEdit(t) {
+        editing = t.term; termName.text = t.term; termContext.text = t.context; keyTerm.checked = t.keyTerm; draftProfiles = t.profiles.slice()
+        form.error = ""; form.open = true
     }
-    function startImport() { form.open = false; importForm.start() }
+    function startImport() { form.open = false; importChooser.open() }
     function toggleProfile(id) {
         draftProfiles = draftProfiles.includes(id) ? draftProfiles.filter(p => p !== id) : draftProfiles.concat([id])
     }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && terms.length) startEdit(1); else if (startForm === "import") startImport()
+    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && terms.length) startEdit(terms[1])
 
-    VocabImport { id: importForm; list: "terms" }
+    VocabImport { id: importChooser; list: "terms" }
     InlineForm {
         cancelText: Words.cancel
         id: form
-        title: view.editing < 0 ? Library.vocabularyText.newTerm : Library.vocabularyText.editTerm
-        saveText: view.editing < 0 ? Library.vocabularyText.addTerm : Words.save
+        title: view.editing ? Library.vocabularyText.editTerm : Library.vocabularyText.newTerm
+        saveText: view.editing ? Words.save : Library.vocabularyText.addTerm
         canSave: termName.text.trim().length > 0
         onCancelled: open = false
         onSaved: {
             const term = { term: termName.text.trim(), context: termContext.text.trim(), keyTerm: keyTerm.checked, profiles: view.draftProfiles }
-            if (view.editing < 0 ? Library.add("terms", term) : Library.update("terms", view.editing, term))
-                open = false
+            const refused = view.editing ? Library.update("terms", view.editing, term) : Library.add("terms", term)
+            error = Library.refusalText("terms", refused)
+            if (!refused) open = false
         }
         Row {
             width: parent.width
@@ -187,8 +187,15 @@ Card {
                 }
             }
             actions: [
-                IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.term.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.term.term; const undo = Library.remove("terms", row.term.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) } }
+                IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.term) },
+                IconButton {
+                    iconName: "trash-2"; size: 28; tooltip: Words.delete_
+                    onClicked: {
+                        const name = row.term.term
+                        const undo = Library.remove("terms", name)
+                        if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                    }
+                }
             ]
         }
     }
@@ -202,7 +209,7 @@ Card {
         }
     }
     Reveal {
-        open: view.terms.length === 0 && !form.open && !importForm.open
+        open: view.terms.length === 0 && !form.open
         EmptyState {
             compact: true
             title: Library.vocabularyText.noTerms

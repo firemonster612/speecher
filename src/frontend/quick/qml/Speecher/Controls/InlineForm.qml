@@ -6,7 +6,8 @@ import Speecher.Theme
 // and closes it on saved or cancelled. A faint fill sets it apart from the
 // rows around it. Fields go in the default slot, one per line, each a
 // FormField; put two in a Row with spacing Theme.space4 to set them side by
-// side.
+// side. error says why the last save was refused, above the buttons; the
+// caller sets it and clears it.
 Reveal {
     id: root
 
@@ -14,6 +15,7 @@ Reveal {
     property string saveText
     property string cancelText
     property bool canSave: true
+    property string error
     default property alias fields: fieldColumn.data
     signal saved()
     signal cancelled()
@@ -41,6 +43,7 @@ Reveal {
                 width: parent.width
                 spacing: Theme.space4
             }
+            Txt { visible: text.length > 0; text: root.error; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
             Row {
                 anchors.right: parent.right
                 spacing: Theme.space2

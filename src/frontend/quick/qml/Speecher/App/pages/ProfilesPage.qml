@@ -21,8 +21,8 @@ Page {
 
     function addProfile() {
         const id = Library.newId("custom_profile")
-        if (Library.add("profiles", { id: id, name: Library.newProfileName(), cleanup: "balanced", tone: "none", language: "",
-                                      instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }))
+        if (!Library.add("profiles", { id: id, name: Library.newProfileName(), cleanup: "balanced", tone: "none", language: "",
+                                       instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }))
             selectedId = id
     }
 
@@ -89,7 +89,7 @@ Page {
                 profile: page.selected
                 isFallback: page.selected.id === Settings.values.defaultWritingProfile
                 apps: Library.profileApps(page.selected.id)
-                onEdited: patch => Library.update("profiles", page.selectedIndex, patch)
+                onEdited: patch => refusal = Library.refusalText("profiles", Library.update("profiles", page.selected.id, patch))
                 onDeleteRequested: {
                     Library.removeProfile(page.selected.id)
                     page.selectedId = "work"
@@ -149,29 +149,37 @@ Page {
                 formOpen: toneForm.open
                 emptyText: Library.profilesText.tonesEmpty
                 onEditClicked: i => toneForm.startEdit(i)
-                onRemoveClicked: i => { const name = Library.customTones[i].name; const undo = Library.removeTone(Library.customTones[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) }
+                onRemoveClicked: i => {
+                    const name = Library.customTones[i].name
+                    const undo = Library.removeTone(Library.customTones[i].id)
+                    if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                }
 
                 InlineForm {
                     cancelText: Words.cancel
                     id: toneForm
-                    property int editing: -1
-                    function startAdd() { editing = -1; toneName.text = ""; toneText.text = ""; open = true }
+                    // The tone being edited, by id, or empty while adding.
+                    property string editing
+                    function startAdd() { editing = ""; toneName.text = ""; toneText.text = ""; error = ""; open = true }
                     function startEdit(i) {
-                        editing = i
-                        toneName.text = Library.customTones[i].name
-                        toneText.text = Library.customTones[i].instruction
+                        const t = Library.customTones[i]
+                        editing = t.id
+                        toneName.text = t.name
+                        toneText.text = t.instruction
+                        error = ""
                         open = true
                     }
-                    title: editing < 0 ? Library.profilesText.newTone : Library.profilesText.editTone
-                    saveText: editing < 0 ? Library.profilesText.addTone : Words.save
+                    title: editing ? Library.profilesText.editTone : Library.profilesText.newTone
+                    saveText: editing ? Words.save : Library.profilesText.addTone
                     canSave: toneName.text.trim().length > 0 && toneText.text.trim().length > 0
                     open: Launch.arg("profiles-form", "") === "tone"
                     onCancelled: open = false
                     onSaved: {
                         const tone = { name: toneName.text.trim(), instruction: toneText.text }
-                        if (editing < 0 ? Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone))
-                                        : Library.update("customTones", editing, tone))
-                            open = false
+                        const refused = editing ? Library.update("customTones", editing, tone)
+                                                : Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone))
+                        error = Library.refusalText("customTones", refused)
+                        if (!refused) open = false
                     }
                     FormField { label: Library.profilesText.name; TextField { id: toneName; width: parent.width; placeholderText: Library.profilesText.toneNamePlaceholder } }
                     FormField {
@@ -199,32 +207,39 @@ Page {
                 formOpen: levelForm.open
                 emptyText: Library.profilesText.levelsEmpty
                 onEditClicked: i => levelForm.startEdit(i)
-                onRemoveClicked: i => { const name = Library.customCleanupLevels[i].name; const undo = Library.removeLevel(Library.customCleanupLevels[i].id); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) }) }
+                onRemoveClicked: i => {
+                    const name = Library.customCleanupLevels[i].name
+                    const undo = Library.removeLevel(Library.customCleanupLevels[i].id)
+                    if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                }
 
                 InlineForm {
                     cancelText: Words.cancel
                     id: levelForm
-                    property int editing: -1
+                    // The level being edited, by id, or empty while adding.
+                    property string editing
                     property string base: "balanced"
-                    function startAdd() { editing = -1; levelName.text = ""; levelText.text = ""; base = "balanced"; open = true }
+                    function startAdd() { editing = ""; levelName.text = ""; levelText.text = ""; base = "balanced"; error = ""; open = true }
                     function startEdit(i) {
                         const l = Library.customCleanupLevels[i]
-                        editing = i
+                        editing = l.id
                         levelName.text = l.name
                         levelText.text = l.instructions
                         base = l.base
+                        error = ""
                         open = true
                     }
-                    title: editing < 0 ? Library.profilesText.newLevel : Library.profilesText.editLevel
-                    saveText: editing < 0 ? Library.profilesText.addLevel : Words.save
+                    title: editing ? Library.profilesText.editLevel : Library.profilesText.newLevel
+                    saveText: editing ? Words.save : Library.profilesText.addLevel
                     canSave: levelName.text.trim().length > 0 && (base !== "custom_only" || levelText.text.trim().length > 0)
                     open: Launch.arg("profiles-form", "") === "level"
                     onCancelled: open = false
                     onSaved: {
                         const level = { name: levelName.text.trim(), base: base, instructions: levelText.text }
-                        if (editing < 0 ? Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level))
-                                        : Library.update("customCleanupLevels", editing, level))
-                            open = false
+                        const refused = editing ? Library.update("customCleanupLevels", editing, level)
+                                                : Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level))
+                        error = Library.refusalText("customCleanupLevels", refused)
+                        if (!refused) open = false
                     }
                     FormField { label: Library.profilesText.name; TextField { id: levelName; width: parent.width; placeholderText: Library.profilesText.levelNamePlaceholder } }
                     FormField {

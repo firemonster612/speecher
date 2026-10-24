@@ -93,22 +93,44 @@ QtObject {
     property int _lastId: 0
     function newId(prefix) { return prefix + "_" + (++_lastId) }
 
-    // The mock keeps what the app refuses out only where a page would show
-    // the difference: blank names and repeated terms.
+    // Each list's key, which update and remove name an entry by.
+    readonly property var _keys: ({ profiles: "id", customTones: "id", customCleanupLevels: "id", terms: "term",
+                                    corrections: "id", replacements: "phrase", recognitionRules: "match" })
+    function _indexOf(list, key) {
+        const field = _keys[list]
+        return lists[list].findIndex(e => String(e[field]).toLowerCase() === String(key).toLowerCase())
+    }
+    // The mock refuses only what a page would show differently: a name
+    // another entry has, as the app does with the reason taken.
+    function _taken(list, item, self) {
+        const field = list === "profiles" || list === "customTones" || list === "customCleanupLevels" ? "name" : _keys[list]
+        return field in item && lists[list].some((e, i) => i !== self && String(e[field]).toLowerCase() === String(item[field]).toLowerCase())
+    }
     function add(list, item) {
-        if (list === "terms" && terms.some(t => t.term.toLowerCase() === item.term.toLowerCase())) return false
+        if (_taken(list, item, -1)) return "taken"
         const defaults = list === "terms" ? { source: "manual", uses: 0 } : list === "profiles" ? { builtIn: false } : {}
         lists[list] = lists[list].concat([Object.assign(defaults, item)])
-        return true
+        return ""
     }
-    function update(list, index, patch) {
+    function update(list, key, patch) {
+        const index = _indexOf(list, key)
+        if (index < 0) return "missing"
+        if (_taken(list, patch, index)) return "taken"
         const next = lists[list].slice()
         next[index] = Object.assign({}, next[index], patch)
         lists[list] = next
-        return true
+        return ""
     }
-    // Returns the token undo takes: here, the function that puts it back.
-    function remove(list, index) {
+    // Undo tokens: what puts each removal back, by number.
+    property var _undos: []
+    function _keepUndo(putBack) { _undos.push(putBack); return _undos.length - 1 }
+    // Returns the token undo takes, or -1 when nothing was removed.
+    function remove(list, key) {
+        const index = _indexOf(list, key)
+        if (index < 0) return -1
+        return _keepUndo(_takeOut(list, index))
+    }
+    function _takeOut(list, index) {
         const next = lists[list].slice()
         const gone = next.splice(index, 1)[0]
         lists[list] = next
@@ -118,7 +140,11 @@ QtObject {
             lists[list] = back
         }
     }
-    function undo(token) { if (token) token() }
+    function undo(token) {
+        const putBack = _undos[token]
+        _undos[token] = null
+        if (putBack) putBack()
+    }
 
     // Deleting a profile, tone or level also drops what pointed at it, so
     // nothing names something that is gone.
@@ -131,26 +157,28 @@ QtObject {
     }
     function removeTone(id) { return _removeChoice("customTones", "tone", id, "none") }
     function removeLevel(id) {
-        const base = customCleanupLevels.find(l => l.id === id).base
-        return _removeChoice("customCleanupLevels", "cleanup", id, base === "custom_only" ? "balanced" : base)
+        const level = customCleanupLevels.find(l => l.id === id)
+        return _removeChoice("customCleanupLevels", "cleanup", id, !level || level.base === "custom_only" ? "balanced" : level.base)
     }
     // Removes entry id from the list named and moves every profile's field
     // that chose it to instead. The undo puts the entry back where it was
     // and points back only the fields that still hold instead, so edits made
     // while its toast is up stay.
     function _removeChoice(list, field, id, instead) {
-        const putBack = remove(list, lists[list].findIndex(e => e.id === id))
+        const index = _indexOf(list, id)
+        if (index < 0) return -1
+        const putBack = _takeOut(list, index)
         const moved = profiles.filter(p => p[field] === id).map(p => p.id)
         profiles = profiles.map(p => moved.includes(p.id) ? Object.assign({}, p, { [field]: instead }) : p)
-        return () => {
+        return _keepUndo(() => {
             putBack()
             profiles = profiles.map(p => moved.includes(p.id) && p[field] === instead ? Object.assign({}, p, { [field]: id }) : p)
-        }
+        })
     }
-    function undoLastCorrection() { return corrections.length ? remove("corrections", 0) : null }
+    function undoLastCorrection() { return corrections.length ? remove("corrections", corrections[0].id) : -1 }
 
-    // Adds the terms of the CSV named; the mock reads one.
-    function importTerms(path) {
+    // Adds the terms of the CSV chosen; the mock reads one.
+    function importTerms(file) {
         const incoming = [
             { term: "Grafana", keyTerm: true, context: "", profiles: [], source: "csv", uses: 0 },
             { term: "Priya Raman", keyTerm: true, context: "", profiles: [], source: "csv", uses: 0 }
@@ -158,8 +186,8 @@ QtObject {
         terms = terms.concat(incoming)
         return { added: incoming.length, error: "" }
     }
-    // Adds the snippets of the JSON file named; the mock reads one.
-    function importReplacements(path) {
+    // Adds the snippets of the JSON file chosen; the mock reads one.
+    function importReplacements(file) {
         const incoming = [
             { phrase: "my phone", replacement: "+351 912 345 678" },
             { phrase: "meeting link", replacement: "https://meet.example.com/enzo" }

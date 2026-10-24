@@ -1,27 +1,45 @@
 #pragma once
 
-#include "core/AppSettings.h"
+#include "core/SettingsEdit.h"
 
 #include <QString>
 #include <QStringList>
 
-#include <functional>
-
-// Removing a custom tone or cleanup level from a draft of the settings
-// together with the profile choices that named it, and putting it back; and
-// the ids of what the user adds. (Saving a draft without a profile already
-// drops what named the profile: see SettingsCodecs.)
+// The edits the user makes to a draft of the settings' Writing Profiles,
+// custom tones and cleanup levels and app matches: adding and changing one,
+// refused with the reason when the list would hold something it can't, and
+// removing one together with what named it, with the edit that puts it back.
+// (Saving a draft without a profile already drops what named the profile:
+// see SettingsCodecs.) And the ids of what the user adds.
 
 namespace speecher {
-
-// A change to a draft of the settings, such as the one that undoes a removal.
-using SettingsEdit = std::function<void(AppSettings &)>;
 
 // An id for a profile, tone or cleanup level the user adds: prefix, which
 // starts with kCustomIdPrefix, then a random part. Random rather than
 // counted, so an id is never given twice and an undone deletion never finds
 // its id taken by something added meanwhile. Never one of `taken`.
 QString newCustomId(const QString &prefix, const QStringList &taken);
+
+// Adds one of the user's profiles, after the others. Its id must be a
+// newCustomId no profile has (Taken otherwise). It needs a name no other
+// profile goes by, and cleanup level, tone and services that are offered.
+EditRefusal addWritingProfile(AppSettings &settings, WritingProfileSettings profile);
+// Changes the profile id as change says, with the same rules; a choice the
+// profile held already stays valid. A built-in profile keeps its name.
+EditRefusal editWritingProfile(AppSettings &settings, const QString &id,
+                               const EntryChange<WritingProfileSettings> &change);
+// Removes one of the user's profiles; whether there was one by that id.
+bool removeWritingProfile(AppSettings &settings, const QString &id);
+
+// Adds a custom tone, after the others: a fresh custom id, a name no other
+// custom tone goes by, and an instruction.
+EditRefusal addCustomTone(AppSettings &settings, CustomTone tone);
+EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change);
+// The same for a custom cleanup level, based on light_cleanup, balanced,
+// strong_polish or custom_only; a Custom only level needs instructions.
+EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level);
+EditRefusal editCustomCleanupLevel(AppSettings &settings, const QString &id,
+                                   const EntryChange<CustomCleanupLevel> &change);
 
 // Removes the custom tone id, and every profile that chose it gets no tone.
 // Returns the edit that puts the tone back where it was and points back the
@@ -31,5 +49,16 @@ SettingsEdit removeCustomTone(AppSettings &settings, const QString &id);
 // The same for a custom cleanup level. Its profiles get the built-in level it
 // was based on, or Medium for one based on no level (Custom only).
 SettingsEdit removeCustomCleanupLevel(AppSettings &settings, const QString &id);
+
+// The user's app matches. Each edit first folds the per-application profile
+// overrides they replaced into them, which retires the overrides for good. A
+// match needs an app no other match names (ignoring case), and an app type,
+// an offered profile, or both. `match` finds the one edited, ignoring case.
+EditRefusal addAppRecognitionRule(AppSettings &settings, AppRecognitionRule rule);
+EditRefusal editAppRecognitionRule(AppSettings &settings, const QString &match,
+                                   const EntryChange<AppRecognitionRule> &change);
+// Removes the match; the edit it returns puts it back unless a match for the
+// app was added since. Empty when no match names it.
+SettingsEdit removeAppRecognitionRule(AppSettings &settings, const QString &match);
 
 } // namespace speecher
