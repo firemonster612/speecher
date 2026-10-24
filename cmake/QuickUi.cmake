@@ -59,9 +59,9 @@ speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUIC
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup")
-# Settings, Status and the dictation are C++ over core; the other areas ship
-# the preview's mocks as placeholders until each is wired. The mocks of the
-# wired ones stay with the preview.
+# Settings, Status, the dictation and Updates are C++ over core; the other
+# areas ship the preview's mocks as placeholders until each is wired. The
+# mocks of the wired ones stay with the preview.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
   EXCLUDE Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
   SOURCES
