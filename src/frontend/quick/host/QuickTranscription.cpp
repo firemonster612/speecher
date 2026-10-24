@@ -5,7 +5,6 @@
 
 #include <QClipboard>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QMimeDatabase>
@@ -189,6 +188,11 @@ QVariantList QuickTranscription::files() const
     return files;
 }
 
+QStringList QuickTranscription::extensions() const
+{
+    return transcribableExtensions();
+}
+
 QVariantMap QuickTranscription::options() const
 {
     const TranscribeOptions &options = m_queue.options();
@@ -203,6 +207,7 @@ QVariantMap QuickTranscription::options() const
          options.spokenLanguage.value_or(m_controller->settings()->snapshot().speech.language)},
         {QStringLiteral("destination"), idOf(kDestinations, options.destination)},
         {QStringLiteral("folder"), QDir::toNativeSeparators(options.folder)},
+        {QStringLiteral("folderUrl"), options.folder.isEmpty() ? QUrl() : QUrl::fromLocalFile(options.folder)},
     };
 }
 
@@ -310,16 +315,6 @@ QString QuickTranscription::problem() const
     return m_queue.problem();
 }
 
-void QuickTranscription::chooseFiles(const QString &title, const QString &filterName)
-{
-    auto *dialog = new QFileDialog(nullptr, title, QDir::homePath(),
-                                   QStringLiteral("%1 (*.%2)").arg(filterName, transcribableExtensions().join(QStringLiteral(" *."))));
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setFileMode(QFileDialog::ExistingFiles);
-    connect(dialog, &QFileDialog::filesSelected, this, &QuickTranscription::addFiles);
-    dialog->open();
-}
-
 void QuickTranscription::addUrls(const QList<QUrl> &urls)
 {
     QStringList paths;
@@ -364,18 +359,16 @@ void QuickTranscription::setOption(const QString &id, const QVariant &value)
     m_queue.setOptions(options);
 }
 
-void QuickTranscription::chooseFolder(const QString &title)
+void QuickTranscription::setFolder(const QUrl &folder)
 {
-    askForFolder(title, [this](const QString &folder) {
-        TranscribeOptions options = m_queue.options();
-        if (!folder.isEmpty()) {
-            options.folder = folder;
-        } else if (options.folder.isEmpty()) {
-            // One folder needs a folder; without one, back to beside each file.
-            options.destination = TranscriptDestination::BesideInput;
-        }
-        m_queue.setOptions(options);
-    });
+    TranscribeOptions options = m_queue.options();
+    if (folder.isLocalFile()) {
+        options.folder = folder.toLocalFile();
+    } else if (options.folder.isEmpty()) {
+        // One folder needs a folder; without one, back to beside each file.
+        options.destination = TranscriptDestination::BesideInput;
+    }
+    m_queue.setOptions(options);
 }
 
 void QuickTranscription::start()
@@ -410,77 +403,56 @@ void QuickTranscription::copyAll()
     QGuiApplication::clipboard()->setText(allTranscripts(m_queue.results(), m_showRaw));
 }
 
-void QuickTranscription::exportResult(int index, const QString &format, const QString &title, const QString &fileType)
+QUrl QuickTranscription::exportFile(int index, const QString &format) const
 {
     const std::optional<TranscriptFormat> chosen = valueOf(kFormats, format);
     if (!chosen || index < 0 || index >= m_queue.results().size()
         || !canExportAs(m_queue.results().at(index), *chosen)) {
-        qWarning().noquote() << "Transcription.exportResult: result" << index << "has no" << format << "to export";
-        return;
+        return {};
     }
-    const TranscribeFileResult result = m_queue.results().at(index);
-    const QString text = exportedTranscript(result, *chosen, m_showRaw);
-    const QFileInfo audio(result.path);
-    const QString extension = transcriptFileExtension(*chosen);
-    auto *dialog = new QFileDialog(nullptr, title, audio.dir().filePath(audio.completeBaseName() + QStringLiteral("-transcribed.") + extension),
-                                   QStringLiteral("%1 (*.%2)").arg(fileType, extension));
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setAcceptMode(QFileDialog::AcceptSave);
-    dialog->setDefaultSuffix(extension);
-    connect(dialog, &QFileDialog::fileSelected, this, [this, index, text](const QString &path) {
-        const QString error = writeTranscript(path, text);
-        m_queue.setProblem(error);
-        if (error.isEmpty()) {
-            emit exported(index);
-        }
-    });
-    dialog->open();
+    const QFileInfo audio(m_queue.results().at(index).path);
+    return QUrl::fromLocalFile(
+        audio.dir().filePath(audio.completeBaseName() + QStringLiteral("-transcribed.") + transcriptFileExtension(*chosen)));
 }
 
-void QuickTranscription::exportAll(const QString &format, const QString &title)
+void QuickTranscription::exportResult(int index, const QString &format, const QUrl &file)
 {
     const std::optional<TranscriptFormat> chosen = valueOf(kFormats, format);
-    if (!chosen) {
-        qWarning().noquote() << "Transcription.exportAll: no format" << format;
+    if (!chosen || index < 0 || index >= m_queue.results().size()
+        || !canExportAs(m_queue.results().at(index), *chosen) || !file.isLocalFile()) {
+        qWarning().noquote() << "Transcription.exportResult: result" << index << "has no" << format << "to save in" << file;
         return;
     }
-    // What to write, as it is now: the folder dialog takes a while.
-    QList<std::pair<QString, QString>> transcripts;
-    for (const TranscribeFileResult &result : m_queue.results()) {
-        if (canExportAs(result, *chosen)) {
-            transcripts << std::pair(result.path, exportedTranscript(result, *chosen, m_showRaw));
-        }
+    const QString error =
+        writeTranscript(file.toLocalFile(), exportedTranscript(m_queue.results().at(index), *chosen, m_showRaw));
+    m_queue.setProblem(error);
+    if (error.isEmpty()) {
+        emit exported(index);
     }
-    askForFolder(title, [this, transcripts, format = *chosen](const QString &folder) {
-        if (folder.isEmpty()) {
-            return;
-        }
-        QStringList errors;
-        for (const auto &[audioPath, text] : transcripts) {
-            QString error;
-            if (saveTranscript(audioPath, folder, text, format, &error).isEmpty()) {
-                errors << error;
-            }
-        }
-        m_queue.setProblem(errors.join(QLatin1Char('\n')));
-        if (errors.isEmpty()) {
-            emit exported(-1);
-        }
-    });
 }
 
-// chosen gets the folder, or empty when the dialog is dismissed.
-void QuickTranscription::askForFolder(const QString &title, const std::function<void(const QString &)> &chosen)
+void QuickTranscription::exportAll(const QString &format, const QUrl &folder)
 {
-    const QString start = m_queue.options().folder;
-    auto *dialog = new QFileDialog(nullptr, title, start.isEmpty() ? QDir::homePath() : start);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setFileMode(QFileDialog::Directory);
-    dialog->setOption(QFileDialog::ShowDirsOnly);
-    connect(dialog, &QFileDialog::finished, this, [dialog, chosen](int result) {
-        chosen(result == QDialog::Accepted ? dialog->selectedFiles().value(0) : QString());
-    });
-    dialog->open();
+    const std::optional<TranscriptFormat> chosen = valueOf(kFormats, format);
+    if (!chosen || !folder.isLocalFile()) {
+        qWarning().noquote() << "Transcription.exportAll: no format" << format << "or folder" << folder;
+        return;
+    }
+    QStringList errors;
+    for (const TranscribeFileResult &result : m_queue.results()) {
+        if (!canExportAs(result, *chosen)) {
+            continue;
+        }
+        QString error;
+        const QString text = exportedTranscript(result, *chosen, m_showRaw);
+        if (saveTranscript(result.path, folder.toLocalFile(), text, *chosen, &error).isEmpty()) {
+            errors << error;
+        }
+    }
+    m_queue.setProblem(errors.join(QLatin1Char('\n')));
+    if (errors.isEmpty()) {
+        emit exported(-1);
+    }
 }
 
 } // namespace speecher

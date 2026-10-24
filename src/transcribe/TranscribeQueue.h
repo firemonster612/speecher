@@ -41,7 +41,8 @@ public:
 
     // The next batch's choices, seeded from the settings dictation uses and
     // never written back to them. Until one is chosen here they follow the
-    // settings.
+    // settings; a profile, cleanup level or tone chosen here that the
+    // settings stop offering gives way to the profile's own.
     const TranscribeOptions &options() const;
     void setOptions(const TranscribeOptions &options);
     // Picks a Writing Profile and takes its services, cleanup level and tone,
@@ -102,6 +103,7 @@ signals:
 
 private:
     void seedOptions();
+    void dropWithdrawnChoices();
     void setStep(Step step);
     void resetFile();
     void enter(TranscribePhase phase);

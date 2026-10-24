@@ -1,5 +1,7 @@
 pragma ComponentBehavior: Bound
+import QtCore
 import QtQuick
+import QtQuick.Dialogs
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -49,7 +51,7 @@ Column {
                 y: parent.gap
                 width: parent.width - 2 * Theme.rowInset
                 compact: files.count > 0
-                onChooseRequested: Transcription.chooseFiles(TranscribeWords.filesDialog, TranscribeWords.mediaFiles)
+                onChooseRequested: fileChooser.open()
             }
         }
         // Why the batch did not start.
@@ -92,7 +94,7 @@ Column {
                 currentId: view.options.destination
                 onChosen: id => {
                     Transcription.setOption("destination", id)
-                    if (id === "folder" && !view.options.folder) Transcription.chooseFolder(TranscribeWords.folderDialog)
+                    if (id === "folder" && !view.options.folder) folderChooser.open()
                 }
             }
         }
@@ -100,8 +102,25 @@ Column {
             shown: view.options.destination === "folder"
             title: TranscribeWords.folder
             help: view.options.folder
-            Button { text: TranscribeWords.changeFolder; size: "small"; onClicked: Transcription.chooseFolder(TranscribeWords.folderDialog) }
+            Button { text: TranscribeWords.changeFolder; size: "small"; onClicked: folderChooser.open() }
         }
+    }
+
+    // The desktop's own choosers, attached to the window.
+    FileDialog {
+        id: fileChooser
+        title: TranscribeWords.filesDialog
+        fileMode: FileDialog.OpenFiles
+        currentFolder: StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        nameFilters: TranscribeWords.fileFilters(Transcription.extensions)
+        onAccepted: Transcription.addUrls(fileChooser.selectedFiles)
+    }
+    FolderDialog {
+        id: folderChooser
+        title: TranscribeWords.folderDialog
+        currentFolder: view.options.folderUrl || StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        onAccepted: Transcription.setFolder(folderChooser.selectedFolder)
+        onRejected: Transcription.setFolder("")
     }
 
     Section {

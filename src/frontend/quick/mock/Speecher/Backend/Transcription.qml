@@ -31,8 +31,8 @@ QtObject {
     ]
     property var files: _start === "empty" ? [] : _sampleFiles
 
-    function chooseFiles(title, filterName) { files = files.concat(_sampleFiles.filter(f => !files.some(g => g.path === f.path))) }
-    function addUrls(urls) { chooseFiles() }
+    readonly property var extensions: ["mp3", "m4a", "wav", "flac", "ogg", "opus", "mp4", "mov", "webm"]
+    function addUrls(urls) { files = files.concat(_sampleFiles.filter(f => !files.some(g => g.path === f.path))) }
     function removeFile(path) { files = files.filter(f => f.path !== path) }
 
     // Options ------------------------------------------------------------
@@ -46,14 +46,15 @@ QtObject {
         tone: "none",
         language: Settings.values.spokenLanguage || "en",
         destination: "beside",
-        folder: "/home/sam/Documents/Transcripts"
+        folder: "/home/sam/Documents/Transcripts",
+        folderUrl: "file:///home/sam/Documents/Transcripts"
     })
     function setOption(id, value) {
         const next = Object.assign({}, options)
         next[id] = value
         options = next
     }
-    function chooseFolder(title) { setOption("folder", "/home/sam/Documents/Meetings") }
+    function setFolder(url) { if (url.toString()) setOption("folder", decodeURIComponent(url.toString().replace("file://", ""))) }
     readonly property string refinerModel: Library.modelLabel(options.refiner)
 
     // Running ------------------------------------------------------------
@@ -156,8 +157,9 @@ QtObject {
     }
     function copy(index) { System.copy(results[index].text) }
     function copyAll() { System.copy(results.filter(r => !r.failed).map(r => r.text).join("\n\n\n")) }
-    function exportResult(index, format, title, fileType) { exported(index) }
-    function exportAll(format, title) { exported(-1) }
+    function exportFile(index, format) { return "file://" + results[index].path.replace(/\.[^.]*$/, "-transcribed." + (format === "text" ? "txt" : format)) }
+    function exportResult(index, format, file) { exported(index) }
+    function exportAll(format, folder) { exported(-1) }
 
     // A preview that starts mid-batch or finished starts from the files.
     Component.onCompleted: {

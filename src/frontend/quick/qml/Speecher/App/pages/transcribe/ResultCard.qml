@@ -17,6 +17,8 @@ Card {
     required property int index
     readonly property bool failed: !!result.failed
     property bool expanded: false
+    // Export picked a format; the view asks where to save it.
+    signal exportRequested(string format)
 
     ListRow {
         first: true
@@ -42,8 +44,7 @@ Card {
                     leadingIcon: "download"
                     size: "small"
                     items: card.result.timings ? TranscribeWords.exportFormats : TranscribeWords.exportFormats.slice(0, 1)
-                    onPicked: id => Transcription.exportResult(card.index, id, TranscribeWords.exportDialog,
-                                                               TranscribeWords.exportFormats.find(f => f.id === id).fileType)
+                    onPicked: id => card.exportRequested(id)
                     Connections {
                         target: Transcription
                         function onExported(index) {

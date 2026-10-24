@@ -7,6 +7,7 @@
 #include "providers/ProviderRegistry.h"
 
 #include <QClipboard>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QRegularExpression>
@@ -65,6 +66,26 @@ private slots:
         QCOMPARE(option("destination").toString(), QStringLiteral("none"));
         QCOMPARE(option("language").toString(), QStringLiteral("fr"));
         QCOMPARE(option("tone").toString(), QStringLiteral("casual"));
+    }
+
+    // One folder takes the chooser's folder; dismissed before there is one,
+    // the transcripts go beside each file instead.
+    void theFolderChooserSetsWhereTranscriptsGo()
+    {
+        ApplicationController controller(true);
+        QuickTranscription transcription(&controller);
+        const auto option = [&transcription](const char *id) { return transcription.options().value(QLatin1String(id)); };
+
+        transcription.setOption(QStringLiteral("destination"), QStringLiteral("folder"));
+        transcription.setFolder({});
+        QCOMPARE(option("destination").toString(), QStringLiteral("beside"));
+
+        transcription.setOption(QStringLiteral("destination"), QStringLiteral("folder"));
+        transcription.setFolder(QUrl::fromLocalFile(m_dir.path()));
+        transcription.setFolder({});
+        QCOMPARE(option("destination").toString(), QStringLiteral("folder"));
+        QCOMPARE(option("folder").toString(), QDir::toNativeSeparators(m_dir.path()));
+        QCOMPARE(option("folderUrl").toUrl(), QUrl::fromLocalFile(m_dir.path()));
     }
 
     // A refined batch's results show the refined text until Raw is chosen,

@@ -9,8 +9,6 @@
 #include <QVariantList>
 #include <QVariantMap>
 
-#include <functional>
-
 namespace speecher {
 
 class ApplicationController;
@@ -23,7 +21,8 @@ class ApplicationController;
 //     finished file what went wrong on the way), text (the transcript as
 //     shown, refined or raw), words, timings (it exports as subtitles),
 //     savedPath }
-// The choices and dialog titles are the UI's words, handed in.
+// The page asks for files and folders with its own choosers and hands the
+// chosen ones in.
 class QuickTranscription final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Transcription)
@@ -31,9 +30,11 @@ class QuickTranscription final : public QObject {
     // 0 configure, 1 transcribe, 2 export.
     Q_PROPERTY(int step READ step NOTIFY stepChanged)
     Q_PROPERTY(QVariantList files READ files NOTIFY filesChanged)
+    // The extensions, without the dot, of the files the chooser offers.
+    Q_PROPERTY(QStringList extensions READ extensions CONSTANT)
     // The next batch's choices: { service, vocabulary, refiner, cleanup,
     // profile, tone, language (a spoken language id), destination (beside,
-    // folder or none), folder }.
+    // folder or none), folder (as shown), folderUrl }.
     Q_PROPERTY(QVariantMap options READ options NOTIFY optionsChanged)
     // The model the chosen refiner runs, or empty.
     Q_PROPERTY(QString refinerModel READ refinerModel NOTIFY optionsChanged)
@@ -72,6 +73,7 @@ public:
 
     int step() const;
     QVariantList files() const;
+    QStringList extensions() const;
     QVariantMap options() const;
     QString refinerModel() const;
     QVariantMap batch() const;
@@ -87,16 +89,14 @@ public:
     void setShowRaw(bool raw);
     QString problem() const;
 
-    // Asks the desktop for audio files, filterName naming the ones offered.
-    Q_INVOKABLE void chooseFiles(const QString &title, const QString &filterName);
-    // Dropped files, as URLs.
+    // Chosen or dropped files, as URLs.
     Q_INVOKABLE void addUrls(const QList<QUrl> &urls);
     Q_INVOKABLE void removeFile(const QString &path);
     // Sets one of options; profile brings its services, cleanup and tone.
     Q_INVOKABLE void setOption(const QString &id, const QVariant &value);
-    // Asks for the folder transcripts go in. Dismissed while there is none
-    // yet, the transcripts go beside each file instead.
-    Q_INVOKABLE void chooseFolder(const QString &title);
+    // The folder transcripts go in. An empty one, the chooser dismissed,
+    // while there is none yet sends the transcripts beside each file instead.
+    Q_INVOKABLE void setFolder(const QUrl &folder);
     Q_INVOKABLE void start();
     Q_INVOKABLE void cancel();
     // Back to the setup step for the next batch.
@@ -104,12 +104,14 @@ public:
     Q_INVOKABLE void retry(int index);
     Q_INVOKABLE void copy(int index);
     Q_INVOKABLE void copyAll();
-    // Asks where to save one result as text, srt or vtt, and saves it there;
-    // fileType names the format in the dialog. exported(index) says it was.
-    Q_INVOKABLE void exportResult(int index, const QString &format, const QString &title, const QString &fileType);
-    // Asks for a folder and saves every result that has the format in it,
-    // numbering rather than overwriting; exported(-1) says it was.
-    Q_INVOKABLE void exportAll(const QString &format, const QString &title);
+    // Where Export offers to save a result as text, srt or vtt: beside its
+    // file, named after it. Empty for a result without that format.
+    Q_INVOKABLE QUrl exportFile(int index, const QString &format) const;
+    // Saves one result in the format to file; exported(index) says it was.
+    Q_INVOKABLE void exportResult(int index, const QString &format, const QUrl &file);
+    // Saves every result that has the format in folder, numbering rather
+    // than overwriting; exported(-1) says it was.
+    Q_INVOKABLE void exportAll(const QString &format, const QUrl &folder);
 
 signals:
     void stepChanged();
@@ -124,8 +126,6 @@ signals:
     void exported(int index);
 
 private:
-    void askForFolder(const QString &title, const std::function<void(const QString &)> &chosen);
-
     ApplicationController *m_controller;
     TranscribeQueue m_queue;
     bool m_showRaw = false;

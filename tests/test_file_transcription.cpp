@@ -61,6 +61,7 @@ struct Script {
     int attempts = 0;
     qsizetype bytes = 0;
     QStringList vocabulary;
+    QString language;
     bool timedSegments = false;
     // Sent with each finished input, timed from the start of its attempt.
     QList<TranscriptSegment> segments;
@@ -85,6 +86,7 @@ public:
     {
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
+        m_script->language = settings.language;
         m_script->timedSegments = settings.timedSegments;
         m_bytes = 0;
     }
@@ -3104,8 +3106,9 @@ private slots:
         QVERIFY(queue.results().isEmpty());
     }
 
-    // A retry runs the failed file again with the batch's choices and puts
-    // its result in the failed one's place, leaving the others alone.
+    // A retry runs the failed file again with the batch's choices, its
+    // language included when the settings changed since, and puts its result
+    // in the failed one's place, leaving the others alone.
     void aRetryReplacesOnlyTheFailedResult()
     {
         const QString broken = m_dir.filePath(QStringLiteral("broken.wav"));
@@ -3127,11 +3130,16 @@ private slots:
         const TranscribeFileResult kept = queue.results().at(1);
         writeWav(broken);
         queue.setOptions({});
+        AppSettings settings = controller.settings()->snapshot();
+        const QString batchLanguage = settings.speech.language;
+        settings.speech.language = QStringLiteral("fr");
+        controller.settings()->applySnapshot(settings);
 
         queue.retry(0);
 
         QCOMPARE(queue.retrying(), 0);
         QTRY_COMPARE_WITH_TIMEOUT(queue.retrying(), -1, 10000);
+        QCOMPARE(m_script.language, batchLanguage);
         QCOMPARE(queue.step(), TranscribeQueue::Step::Export);
         QVERIFY(!queue.results().at(0).failed());
         QCOMPARE(queue.results().at(0).path, broken);
@@ -3185,6 +3193,52 @@ private slots:
         controller.settings()->applySnapshot(settings);
         QCOMPARE(queue.options().speechProviderId, QStringLiteral("codex"));
         QCOMPARE(queue.options().tone, QStringLiteral("casual"));
+    }
+
+    // A profile, cleanup level or tone deleted after it was chosen gives way
+    // to the profile's own instead of reaching the refiner.
+    void aDeletedChoiceFallsBackToTheProfiles()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.refinement.customTones = {{QStringLiteral("custom_pirate"), QStringLiteral("Pirate"), {}}};
+        settings.refinement.customCleanupLevels = {{QStringLiteral("custom_terse"), QStringLiteral("Terse")}};
+        WritingProfileSettings notes;
+        notes.profile = QStringLiteral("custom_notes");
+        notes.name = QStringLiteral("Notes");
+        notes.cleanupStrength = QStringLiteral("strong_polish");
+        notes.tone = QStringLiteral("formal");
+        settings.refinement.writingProfiles << notes;
+        for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+            if (profile.profile == WritingProfile::Work) {
+                profile.cleanupStrength = QStringLiteral("light_cleanup");
+                profile.tone = QStringLiteral("casual");
+            }
+        }
+        controller.settings()->applySnapshot(settings);
+        TranscribeQueue queue(&controller);
+        queue.chooseProfile(WritingProfile::Work);
+        TranscribeOptions chosen = queue.options();
+        chosen.cleanupStrength = QStringLiteral("custom_terse");
+        chosen.tone = QStringLiteral("custom_pirate");
+        queue.setOptions(chosen);
+
+        settings.refinement.customTones.clear();
+        settings.refinement.customCleanupLevels.clear();
+        controller.settings()->applySnapshot(settings);
+
+        QCOMPARE(queue.options().writingProfile, WritingProfile::Work);
+        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("light_cleanup"));
+        QCOMPARE(queue.options().tone, QStringLiteral("casual"));
+
+        queue.chooseProfile(notes.profile);
+        settings.refinement.writingProfiles.removeLast();
+        controller.settings()->applySnapshot(settings);
+
+        QCOMPARE(queue.options().writingProfile, WritingProfile::Other);
+        const WritingProfileSettings other =
+            writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Other);
+        QCOMPARE(queue.options().tone, other.tone);
     }
 
 private:

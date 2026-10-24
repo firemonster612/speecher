@@ -76,7 +76,7 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.h"
     "${SPEECHER_QUICK_DIR}/host/QuickTranscription.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickTranscription.h"
-  LIBRARIES speecher_app Qt6::Qml Qt6::Widgets
+  LIBRARIES speecher_app Qt6::Qml
 )
 # The generated type registration includes those headers by file name.
 target_include_directories(speecher_quick_backend PRIVATE "${SPEECHER_QUICK_DIR}/host")

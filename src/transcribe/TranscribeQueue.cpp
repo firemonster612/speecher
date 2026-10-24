@@ -13,13 +13,24 @@ namespace speecher {
 
 namespace {
 
-// A cleanup level this build offers, or the middle one for a stored level it
-// does not know.
-QString offeredCleanupLevel(const QString &level, const QList<CustomCleanupLevel> &custom)
+bool cleanupLevelOffered(const QString &level, const QList<CustomCleanupLevel> &custom)
 {
-    const bool offered = kBuiltInCleanupLevels.contains(level)
+    return kBuiltInCleanupLevels.contains(level)
         || std::any_of(custom.cbegin(), custom.cend(), [&level](const CustomCleanupLevel &c) { return c.id == level; });
-    return offered ? level : QStringLiteral("balanced");
+}
+
+bool toneOffered(const QString &tone, const QList<CustomTone> &custom)
+{
+    return kBuiltInTones.contains(tone)
+        || std::any_of(custom.cbegin(), custom.cend(), [&tone](const CustomTone &c) { return c.id == tone; });
+}
+
+// The cleanup level a profile brings, or the middle one for a stored level
+// this build does not offer.
+QString profileCleanupLevel(const WritingProfileSettings &profile, const QList<CustomCleanupLevel> &custom)
+{
+    const QString level = refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage);
+    return cleanupLevelOffered(level, custom) ? level : QStringLiteral("balanced");
 }
 
 } // namespace
@@ -30,7 +41,9 @@ TranscribeQueue::TranscribeQueue(ApplicationController *controller, QObject *par
 {
     seedOptions();
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, [this] {
-        if (!m_optionsChosen) {
+        if (m_optionsChosen) {
+            dropWithdrawnChoices();
+        } else {
             seedOptions();
         }
     });
@@ -167,8 +180,7 @@ void TranscribeQueue::chooseProfile(const QString &profile)
     m_options.writingProfile = profile;
     m_options.speechProviderId = resolved.speech.providerId;
     m_options.refinementProviderId = resolved.refinement.providerId;
-    m_options.cleanupStrength = offeredCleanupLevel(refinedCleanupLevel(chosen.cleanupStrength, chosen.outputLanguage),
-                                                    settings.refinement.customCleanupLevels);
+    m_options.cleanupStrength = profileCleanupLevel(chosen, settings.refinement.customCleanupLevels);
     m_options.tone = chosen.tone;
     m_optionsChosen = true;
     emit optionsChanged();
@@ -197,6 +209,9 @@ bool TranscribeQueue::start()
         withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options);
     m_batch = m_files;
     m_batchOptions = m_options;
+    // Pinned, so a retry hears in this batch's language after the setting
+    // changes.
+    m_batchOptions.spokenLanguage = settings.speech.language;
     m_batchLabels = speecher::batchLabels(m_options, *m_controller->providerRegistry(), settings.refinement);
     m_batchRefines = refinesTranscripts(m_options, settings.refinement);
     m_results.clear();
@@ -348,6 +363,31 @@ void TranscribeQueue::seedOptions()
     m_options.folder = folder;
     chooseProfile(settings.refinement.defaultWritingProfile);
     m_optionsChosen = false;
+}
+
+// A profile, cleanup level or tone deleted since it was chosen gives way to
+// the profile's own, as it would for dictation.
+void TranscribeQueue::dropWithdrawnChoices()
+{
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    const QString profile = offeredWritingProfile(m_options.writingProfile, refinement.writingProfiles);
+    if (profile != m_options.writingProfile) {
+        chooseProfile(profile);
+        return;
+    }
+    const WritingProfileSettings own = writingProfileSettingsFor(refinement.writingProfiles, profile);
+    const bool levelKept = cleanupLevelOffered(m_options.cleanupStrength, refinement.customCleanupLevels);
+    const bool toneKept = toneOffered(m_options.tone, refinement.customTones);
+    if (levelKept && toneKept) {
+        return;
+    }
+    if (!levelKept) {
+        m_options.cleanupStrength = profileCleanupLevel(own, refinement.customCleanupLevels);
+    }
+    if (!toneKept) {
+        m_options.tone = own.tone;
+    }
+    emit optionsChanged();
 }
 
 void TranscribeQueue::setStep(Step step)

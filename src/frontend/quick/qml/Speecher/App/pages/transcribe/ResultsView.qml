@@ -1,5 +1,7 @@
 pragma ComponentBehavior: Bound
+import QtCore
 import QtQuick
+import QtQuick.Dialogs
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -39,9 +41,39 @@ Section {
             label: TranscribeWords.exportAll
             leadingIcon: "download"
             items: view.formats
-            onPicked: id => Transcription.exportAll(id, TranscribeWords.exportAllDialog)
+            onPicked: id => {
+                exportFolder.format = id
+                exportFolder.open()
+            }
         }
     ]
+
+    // The desktop's own choosers, attached to the window.
+    FileDialog {
+        id: exportFile
+        property int index: -1
+        property string format
+        function ask(index, format) {
+            exportFile.index = index
+            exportFile.format = format
+            exportFile.selectedFile = Transcription.exportFile(index, format)
+            exportFile.nameFilters = [TranscribeWords.exportFilter(format, exportFile.selectedFile)]
+            exportFile.open()
+        }
+        title: TranscribeWords.exportDialog
+        fileMode: FileDialog.SaveFile
+        // Saving over a file is what choosing its name means; no confirmation
+        // window on top.
+        options: FileDialog.DontConfirmOverwrite
+        onAccepted: Transcription.exportResult(exportFile.index, exportFile.format, exportFile.selectedFile)
+    }
+    FolderDialog {
+        id: exportFolder
+        property string format
+        title: TranscribeWords.exportAllDialog
+        currentFolder: Transcription.options.folderUrl || StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        onAccepted: Transcription.exportAll(exportFolder.format, exportFolder.selectedFolder)
+    }
 
     Connections {
         target: Transcription
@@ -56,9 +88,11 @@ Section {
         keyOf: r => r.path
         spacing: Theme.space3
         delegate: ResultCard {
+            id: card
             required property string key
             width: ListView.view.width
             result: results.entry(key)
+            onExportRequested: format => exportFile.ask(card.index, format)
         }
     }
     // Why the last export or retry did not happen.

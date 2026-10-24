@@ -16,6 +16,7 @@ QtObject {
     readonly property string addMore: "Add more files…"
     readonly property string filesDialog: "Choose audio or video files"
     readonly property string mediaFiles: "Audio and video files"
+    readonly property string allFiles: "All files"
     readonly property string serviceHelp: "The speech-to-text service that hears the files."
     readonly property string language: "Spoken language"
     readonly property string languageHelp: "The language the files are spoken in."
@@ -80,6 +81,15 @@ QtObject {
         { id: "srt", label: "SRT subtitles…", icon: "captions", fileType: "SubRip subtitles" },
         { id: "vtt", label: "WebVTT subtitles…", icon: "captions", fileType: "WebVTT subtitles" }
     ]
+    // The file chooser's filters: the files it may take, then anything, since
+    // a file's content decides, not its name.
+    function fileFilters(extensions) {
+        return [mediaFiles + " (" + extensions.map(e => "*." + e).join(" ") + ")", allFiles + " (*)"]
+    }
+    // The save dialog's filter for a format, from the file it suggests.
+    function exportFilter(format, file) {
+        return exportFormats.find(f => f.id === format).fileType + " (*." + file.toString().split(".").pop() + ")"
+    }
 
     // "3 min 7 s", or "42 s" under a minute.
     function durationLabel(ms) {
