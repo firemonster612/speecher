@@ -265,12 +265,34 @@ copy_plugin_dir wayland-decoration-client
 copy_plugin_dir wayland-graphics-integration-client
 copy_plugin_dir wayland-shell-integration
 
+# The Qt QML modules the UI (src/frontend/quick) imports, and those they import
+# in turn. The UI's own modules are compiled into speecher; these load at run
+# time from usr/qml, which qt.conf names.
+copy_qml_module() {
+  local name="$1"
+  local qt_qml
+  qt_qml="$("$QMAKE" -query QT_INSTALL_QML)"
+  if [[ ! -f "$qt_qml/$name/qmldir" ]]; then
+    echo "Missing Qt QML module: $qt_qml/$name" >&2
+    exit 1
+  fi
+  echo "Copying Qt QML module: $name"
+  mkdir -p "$APPDIR_PATH/usr/qml/$name"
+  # Files only: a module's subdirectories are modules of their own.
+  find "$qt_qml/$name" -maxdepth 1 -type f -exec cp -aL -t "$APPDIR_PATH/usr/qml/$name/" {} +
+}
+
+for module in QML QtQml QtQml/Models QtQml/WorkerScript \
+              QtQuick QtQuick/Templates QtQuick/Window QtQuick/Effects QtQuick/Shapes; do
+  copy_qml_module "$module"
+done
+
 echo "Copying runtime library dependencies"
 copy_deps_closure
-echo "Copying Qt plugin library dependencies"
+echo "Copying Qt plugin and QML module library dependencies"
 while IFS= read -r plugin; do
   copy_deps_for_elf "$plugin"
-done < <(find "$APPDIR_PATH/usr/plugins" -type f -name '*.so')
+done < <(find "$APPDIR_PATH/usr/plugins" "$APPDIR_PATH/usr/qml" -type f -name '*.so')
 echo "Finishing runtime dependency closure"
 copy_deps_closure
 
@@ -308,6 +330,10 @@ set_runpath_for_tree "$APPDIR_PATH/usr/bin" '$ORIGIN/../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/libexec/speecher" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/plugins" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/lib" '$ORIGIN'
+# QML plugins sit one or two directories down; each points back at usr/lib.
+while IFS= read -r -d '' plugin; do
+  patchelf --set-rpath "\$ORIGIN/$(realpath -m --relative-to="${plugin%/*}" "$APPDIR_PATH/usr/lib")" "$plugin"
+done < <(find "$APPDIR_PATH/usr/qml" -type f -name '*.so' -print0)
 
 echo "Checking bundled ELF dependencies"
 verify_elf_dependencies
@@ -316,6 +342,7 @@ echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'
 [Paths]
 Plugins = ../plugins
+QmlImports = ../qml
 EOF
 
 cat > "$APPDIR_PATH/AppRun" <<'EOF'
@@ -341,6 +368,9 @@ if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
 fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
+# The UI's QML modules come from usr/qml, built for the bundled Qt; a host's
+# import path would put its own Qt's modules first.
+unset QML_IMPORT_PATH QML2_IMPORT_PATH
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
 # Use Plasma's platform integration on KDE unless the user selected another one.
 if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then

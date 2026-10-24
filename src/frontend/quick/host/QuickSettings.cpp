@@ -8,6 +8,7 @@
 
 #include <QDebug>
 
+#include <cstddef>
 #include <type_traits>
 
 namespace speecher {
@@ -64,13 +65,16 @@ struct SettingRow {
 
 // Every row the UI saves, by the schema's row id. Rows missing here (secrets,
 // paste rules, the result duration, launch at login, acceleration and the
-// graphics card) wait for the PRs that wire their pages.
+// graphics card) wait for the PRs that wire their pages. So do the rows whose
+// choices come from a placeholder area, since a made-up choice would be
+// saved as real: the microphone (Audio), the local model (Models), the local
+// runner (Library's runners), the CLI Proxy accounts (Accounts) and the
+// default Writing Profile (Library's profiles).
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
      [](AppSettings &s, const QVariant &v) { s.shortcutActivationMode = shortcutActivationModeFromName(v.toString()); }},
 
-    FIELD_ROW("audioDevice", audio.deviceId),
     FIELD_ROW("captureMode", audio.mode),
     FIELD_ROW("readinessTimeoutMs", audio.readinessTimeoutMs),
     FIELD_ROW("preRollMs", audio.preRollMs),
@@ -92,11 +96,6 @@ const SettingRow settingRows[] = {
      }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
-    {"speechLocalModel", [](const AppSettings &s) { return QVariant(s.speech.local.modelId); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.local.modelId = v.toString();
-         s.speech.local.modelChosen = true;
-     }},
     FIELD_ROW("speechEndpointUrl", speech.endpoint.baseUrl),
     FIELD_ROW("speechEndpointPath", speech.endpoint.path),
     FIELD_ROW("speechEndpointModel", speech.endpoint.model),
@@ -130,7 +129,6 @@ const SettingRow settingRows[] = {
          return QVariant(s.refinement.anthropicFastMode ? QStringLiteral("fast") : QStringLiteral("standard"));
      },
      [](AppSettings &s, const QVariant &v) { s.refinement.anthropicFastMode = v.toString() == QLatin1String("fast"); }},
-    FIELD_ROW("localRunner", refinement.localRunner.runner),
     FIELD_ROW("localRunnerModel", refinement.localRunner.model),
     // Core stores the custom server as no preset.
     {"refinementEndpointServer",
@@ -155,7 +153,6 @@ const SettingRow settingRows[] = {
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),
     FIELD_ROW("customSystemPrompt", refinement.customSystemPrompt),
-    FIELD_ROW("defaultWritingProfile", refinement.defaultWritingProfile),
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
 
@@ -165,9 +162,7 @@ const SettingRow settingRows[] = {
     FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
 
     FIELD_ROW("openAiAuthMode", refinement.openAiAuthMode),
-    FIELD_ROW("openAiCliproxyAccount", refinement.openAiCliproxyAccount),
     FIELD_ROW("anthropicAuthMode", refinement.anthropicAuthMode),
-    FIELD_ROW("anthropicCliproxyAccount", refinement.anthropicCliproxyAccount),
     // What was typed, not the directory detected from it.
     {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyOauthDirConfigured); },
      [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyOauthDirConfigured = v.toString().trimmed(); }},
@@ -224,9 +219,8 @@ const SettingRow settingRows[] = {
 
 #undef FIELD_ROW
 
-// The Global Shortcuts, which the controller binds: shown, but recorded by a
-// later PR.
-const struct {
+// The Global Shortcuts, which the controller binds and keeps.
+const struct ShortcutRow {
     const char *id;
     GlobalShortcutRole role;
 } shortcutRows[] = {
@@ -237,9 +231,11 @@ const struct {
 
 const QString runSetupAction = QStringLiteral("runSetup");
 
-const SettingRow *findRow(const QString &id)
+// The row of either table with this id, or nullptr.
+template <typename Row, std::size_t count>
+const Row *findRow(const Row (&rows)[count], const QString &id)
 {
-    for (const SettingRow &row : settingRows) {
+    for (const Row &row : rows) {
         if (id == QLatin1String(row.id)) {
             return &row;
         }
@@ -306,7 +302,11 @@ QVariantMap QuickSettings::values() const
 
 void QuickSettings::set(const QString &id, const QVariant &value)
 {
-    const SettingRow *row = findRow(id);
+    if (const ShortcutRow *shortcut = findRow(shortcutRows, id)) {
+        setShortcut(shortcut->role, value.toStringList());
+        return;
+    }
+    const SettingRow *row = findRow(settingRows, id);
     if (!row) {
         qWarning().noquote() << "Settings.set:" << id << "is not saved from the UI yet";
         return;
@@ -328,17 +328,29 @@ void QuickSettings::act(const QString &id)
     qWarning().noquote() << "Settings.act:" << id << "is not an action the UI runs yet";
 }
 
-bool QuickSettings::rowEnabled(const QVariantMap &row) const
+bool QuickSettings::saves(const QString &id) const
 {
-    const QString id = row.value(QStringLiteral("id")).toString();
-    const QString kind = row.value(QStringLiteral("kind")).toString();
-    const bool backed = kind == QLatin1String("custom")
-        || (kind == QLatin1String("action") ? id == runSetupAction : findRow(id) != nullptr);
-    if (!backed) {
-        return false;
+    return findRow(settingRows, id) || findRow(shortcutRows, id) || id == runSetupAction;
+}
+
+void QuickSettings::setShortcut(GlobalShortcutRole role, const QStringList &keys)
+{
+    const QString text = keys.join(QLatin1Char('+'));
+    const ShortcutBinding binding = ShortcutBinding::fromString(text);
+    if (!keys.isEmpty() && binding.isEmpty()) {
+        qWarning().noquote() << "Settings.set: the keys" << text << "are not a shortcut";
+        return;
     }
-    const QVariantMap when = row.value(QStringLiteral("enabledWhen")).toMap();
-    return when.isEmpty() || m_values.value(when.value(QStringLiteral("id")).toString()) == when.value(QStringLiteral("equals"));
+    // A desktop that picks the keys itself (the shortcuts portal) takes no
+    // recorded combination: it opens its own chooser instead.
+    if (!binding.isEmpty() && m_controller->globalShortcutUsesDesktopChooser(role)) {
+        m_controller->registerGlobalShortcut(role);
+        return;
+    }
+    QString error;
+    if (!m_controller->setGlobalShortcut(binding, &error, role)) {
+        qWarning().noquote() << "Settings.set: could not bind" << text + ":" << error;
+    }
 }
 
 void QuickSettings::refresh()

@@ -42,7 +42,7 @@ var rows = [
       value: true, keywords: "retranscribe second pass accuracy chatgpt codex final" },
 
     { id: "speechLocalModel", page: "speech", section: "Local model", kind: "custom",
-      label: "Model", help: "Downloaded models. Get others on the Local models page.",
+      label: "Model", help: "Downloaded models. Get others on the Local models page.", value: "",
       emptyHelp: "No model is downloaded yet. Download one to dictate on this computer.",
       actionLabel: "Open Local models", keywords: "local model whisper parakeet offline choose" },
 

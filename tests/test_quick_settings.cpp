@@ -5,9 +5,43 @@
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJSEngine>
+#include <QQmlComponent>
+#include <QQmlEngine>
+#include <QQmlExtensionPlugin>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 
+#include <memory>
+
+// The UI's QML modules, linked in statically as the app links them.
+Q_IMPORT_QML_PLUGIN(Speecher_ThemePlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_LaunchPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_DemoPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_WordingPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_ControlsPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_BackendPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_AppPlugin)
+Q_IMPORT_QML_PLUGIN(Speecher_PopupPlugin)
+
 using namespace speecher;
+
+namespace {
+
+// A SchemaRow for one schema row, or null with the reason in the log.
+std::unique_ptr<QObject> schemaRow(QQmlEngine &engine, const char *rowId)
+{
+    QQmlComponent component(&engine);
+    component.setData(QStringLiteral("import Speecher.App\nSchemaRow { rowId: \"%1\" }").arg(QLatin1String(rowId)).toUtf8(),
+                      QUrl());
+    std::unique_ptr<QObject> row(component.create());
+    if (!row) {
+        qWarning().noquote() << component.errorString();
+    }
+    return row;
+}
+
+} // namespace
 
 // The UI's Settings singleton: values by schema row id, saved through the
 // daemon's store and read back by any other store, as the CLI's would be.
@@ -83,7 +117,7 @@ private slots:
         QCOMPARE(custom.value(QStringLiteral("unit")).toString(), QStringLiteral("days"));
     }
 
-    void rowsNotSavedYetAreRefusedAndGreyedOut()
+    void rowsNotSavedYetAreRefused()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
@@ -92,32 +126,90 @@ private slots:
         settings.set(QStringLiteral("globalPasteRule"), QStringLiteral("clipboard"));
         QVERIFY(!settings.values().contains(QStringLiteral("globalPasteRule")));
 
-        const auto row = [](const char *id, const char *kind) {
-            return QVariantMap{{QStringLiteral("id"), QString::fromLatin1(id)},
-                               {QStringLiteral("kind"), QString::fromLatin1(kind)}};
-        };
-        QVERIFY(!settings.rowEnabled(row("globalPasteRule", "choice")));
-        QVERIFY(!settings.rowEnabled(row("speechEndpointApiKey", "secret")));
-        QVERIFY(!settings.rowEnabled(row("globalShortcut", "shortcut")));
-        QVERIFY(settings.rowEnabled(row("pauseMedia", "toggle")));
-        QVERIFY(settings.rowEnabled(row("runSetup", "action")));
-        QVERIFY(settings.rowEnabled(row("speechModels", "custom")));
+        // A placeholder area's made-up choice never reaches the config.
+        const QString profile = SettingsStore().dictationSnapshot().refinement.defaultWritingProfile;
+        QTest::ignoreMessage(QtWarningMsg, "Settings.set: defaultWritingProfile is not saved from the UI yet");
+        settings.set(QStringLiteral("defaultWritingProfile"), QStringLiteral("made-up"));
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
+
+        for (const char *id : {"globalPasteRule", "speechEndpointApiKey", "audioDevice", "speechLocalModel",
+                               "localRunner", "openAiCliproxyAccount", "anthropicCliproxyAccount",
+                               "defaultWritingProfile"}) {
+            QVERIFY2(!settings.saves(QLatin1String(id)), id);
+        }
+        for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup"}) {
+            QVERIFY2(settings.saves(QLatin1String(id)), id);
+        }
     }
 
-    void enabledWhenFollowsTheValues()
+    // SchemaRow decides in QML, so its binding follows Settings.values:
+    // turning voice detection on enables its threshold with the page still up.
+    void schemaRowsGreyOutWhatIsNotSaved()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QVariantMap threshold{{QStringLiteral("id"), QStringLiteral("vadThresholdPercent")},
-                              {QStringLiteral("kind"), QStringLiteral("slider")},
-                              {QStringLiteral("enabledWhen"),
-                               QVariantMap{{QStringLiteral("id"), QStringLiteral("vadEnabled")},
-                                           {QStringLiteral("equals"), true}}}};
-
         settings.set(QStringLiteral("vadEnabled"), false);
-        QVERIFY(!settings.rowEnabled(threshold));
+        QQmlEngine engine;
+
+        const std::unique_ptr<QObject> threshold = schemaRow(engine, "vadThresholdPercent");
+        QVERIFY(threshold);
+        QVERIFY(!threshold->property("enabled").toBool());
         settings.set(QStringLiteral("vadEnabled"), true);
-        QVERIFY(settings.rowEnabled(threshold));
+        QVERIFY(threshold->property("enabled").toBool());
+
+        QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
+        QVERIFY(!schemaRow(engine, "globalPasteRule")->property("enabled").toBool());
+        // A custom row with a value is a setting; one without draws the page's own content.
+        QVERIFY(!schemaRow(engine, "audioDevice")->property("enabled").toBool());
+        QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
+        QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
+    }
+
+    // Each save is a whole snapshot through the store, so a drag saves once,
+    // when it lets go; a key press saves its one step.
+    void aSliderSavesWhenLetGo()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("preRollMs"), 0);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.App
+            Window {
+                width: 640; height: 120; visible: true
+                SchemaRow { rowId: "preRollMs"; width: parent.width }
+            }
+        )", QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QQuickItem *slider = nullptr;
+        for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
+            if (QByteArray(item->metaObject()->className()).startsWith("Slider_")) {
+                slider = item;
+            }
+        }
+        QVERIFY(slider);
+        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+
+        const QPointF start = slider->mapToScene(QPointF(2, slider->height() / 2));
+        const QPointF end = slider->mapToScene(QPointF(slider->width() * 0.8, slider->height() / 2));
+        QTest::mousePress(window, Qt::LeftButton, {}, start.toPoint());
+        for (int step = 1; step <= 8; ++step) {
+            QTest::mouseMove(window, (start + (end - start) * step / 8).toPoint());
+        }
+        QVERIFY(slider->property("value").toInt() > 0);
+        QCOMPARE(saved.count(), 0);
+        QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
+        QCOMPARE(saved.count(), 1);
+        QCOMPARE(SettingsStore().audioPreRollMs(), slider->property("value").toInt());
+
+        QTest::keyClick(window, Qt::Key_Left);
+        QCOMPARE(saved.count(), 2);
+        QCOMPARE(SettingsStore().audioPreRollMs(), slider->property("value").toInt());
     }
 
     void changesSavedElsewhereShowUp()

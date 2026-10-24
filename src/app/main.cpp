@@ -546,8 +546,6 @@ int main(int argc, char **argv)
                      &QCoreApplication::quit,
                      Qt::QueuedConnection);
 #ifdef Q_OS_LINUX
-    // Opens no window until the controller asks for one.
-    QuickFrontEnd frontEnd(&controller);
     // From launch: in daemon mode it is the only sign the process is running
     // and the global shortcut has something to reach.
     LinuxTrayIcon tray(&controller);
@@ -609,8 +607,14 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
+#ifdef Q_OS_LINUX
+    // After the socket, so a launch that only hands its command to the
+    // running instance never builds a QML engine. Opens no window until the
+    // controller asks for one.
+    QuickFrontEnd frontEnd(&controller);
+#endif
 
-    if (controller.setupPending() || decision.showSetup) {
+    if (opensSetupAtLaunch(decision, controller.setupPending())) {
         QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
             // Held by the controller until setup completes, then opened.

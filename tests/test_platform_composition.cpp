@@ -25,6 +25,12 @@
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "frontend/quick/host/QuickSettings.h"
+
+#include <QQmlComponent>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
 #endif
 
 #include <QApplication>
@@ -109,7 +115,8 @@ public:
             }
             return false;
         }
-        m_shortcut = shortcut;
+        // Announced, as every real binder announces a new binding.
+        publishShortcut(shortcut);
         return true;
     }
 
@@ -890,6 +897,69 @@ private slots:
         QVERIFY(controller.globalShortcut(GlobalShortcutRole::Pause).isEmpty());
     }
 
+#ifdef Q_OS_LINUX
+    // Recording on the Shortcuts page's row hands the keys to the controller,
+    // and setup's shortcut step then counts the shortcut as set. A desktop
+    // that picks the keys itself opens its chooser instead.
+    void aShortcutRecordedInTheUiIsBound()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.App
+            Window {
+                width: 640; height: 160; visible: true
+                SchemaRow { rowId: "globalShortcut"; width: parent.width }
+            }
+        )", QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+
+        QQuickItem *field = nullptr;
+        for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
+            if (QByteArray(item->metaObject()->className()).startsWith("ShortcutField")) {
+                field = item;
+            }
+        }
+        QVERIFY(field);
+        const auto record = [&] {
+            QTest::mouseClick(window, Qt::LeftButton, {}, field->mapToScene(field->boundingRect().center()).toPoint());
+            QTRY_VERIFY(field->property("listening").toBool());
+            QTest::keyClick(window, Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        };
+        const auto shortcutStep = [&] {
+            for (const QVariant &step : choices->property("steps").toList()) {
+                if (step.toMap().value(QStringLiteral("id")) == QStringLiteral("shortcut")) {
+                    return step.toMap();
+                }
+            }
+            return QVariantMap();
+        };
+        QVERIFY(!shortcutStep().value(QStringLiteral("done")).toBool());
+
+        record();
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D)));
+        QCOMPARE(settings.values().value(QStringLiteral("globalShortcut")).toStringList(),
+                 (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Alt"), QStringLiteral("D")}));
+        QTRY_VERIFY(shortcutStep().value(QStringLiteral("done")).toBool());
+
+        platform->binder->desktopChooser = true;
+        QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
+        record();
+        QCOMPARE(platform->binder->registerCount, 1);
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_K)));
+    }
+#endif
+
     // The Cancel and Pause Shortcuts hold their keys only while a Dictation
     // Session can use them, so a bare key types normally the rest of the time.
     void sessionShortcutsAreArmedOnlyDuringASession()
@@ -995,6 +1065,19 @@ private slots:
         controller.settings()->setLaunchAtLogin(controller.settings()->launchAtLogin());
         QVERIFY(controller.launchAtLoginAccepted());
         QCOMPARE(accepted.count(), 1);
+    }
+
+    // A fresh profile opens setup on a plain launch, but --daemon shows no
+    // window by itself; the daemon a CLI command starts for setup asks for it.
+    void onlyALaunchWithAWindowOpensPendingSetup()
+    {
+        const auto launch = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
+        };
+        QVERIFY(opensSetupAtLaunch(launch({}), true));
+        QVERIFY(!opensSetupAtLaunch(launch({}), false));
+        QVERIFY(!opensSetupAtLaunch(launch({QStringLiteral("--daemon")}), true));
+        QVERIFY(opensSetupAtLaunch(launch({QStringLiteral("--daemon"), QStringLiteral("--show-setup")}), false));
     }
 
 #if defined(Q_OS_LINUX) || defined(Q_OS_WIN)

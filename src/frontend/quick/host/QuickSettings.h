@@ -16,7 +16,7 @@ QStringList shortcutKeys(const ShortcutBinding &binding);
 // The UI's Settings singleton: the saved settings by the schema's row ids,
 // read from and written through the daemon's SettingsStore, so the UI, the
 // daemon and every CLI run see the same values. A row the table in the .cpp
-// does not save yet reads as absent and greys out (rowEnabled).
+// does not save yet reads as absent, and the UI greys it out (saves).
 class QuickSettings final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Settings)
@@ -32,19 +32,21 @@ public:
 
     QVariantMap values() const;
     // Saves one row's value. A row this build does not save is refused with
-    // a warning in the log.
+    // a warning in the log. A shortcut row takes the keys ShortcutField
+    // records (["Ctrl", "Space"]) and hands them to the controller, which
+    // binds and keeps them; an empty list clears the shortcut.
     Q_INVOKABLE void set(const QString &id, const QVariant &value);
     // Runs an action row, such as runSetup.
     Q_INVOKABLE void act(const QString &id);
-    // Whether a schema row (Schema.row(id)) can be used now: the backend
-    // saves its value or runs its action, and its enabledWhen holds. Rows the
-    // page draws itself (kind "custom") only answer to enabledWhen.
-    Q_INVOKABLE bool rowEnabled(const QVariantMap &row) const;
+    // Whether set saves this row, or act runs it. A constant, so QML may call
+    // it in a binding.
+    Q_INVOKABLE bool saves(const QString &id) const;
 
 signals:
     void valuesChanged();
 
 private:
+    void setShortcut(GlobalShortcutRole role, const QStringList &keys);
     void refresh();
 
     ApplicationController *m_controller;

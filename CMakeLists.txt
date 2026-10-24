@@ -1380,8 +1380,19 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
     )
-    # The Settings suite tests the C++ only; no QML module loads.
-    target_link_libraries(speecher_tests PRIVATE speecher_quick_backend)
+    # The Settings suite loads the UI's rows over the C++ Settings; Qt's own
+    # QML modules load from the shared Qt, as in the app.
+    target_link_libraries(speecher_tests PRIVATE
+      Qt6::Quick
+      speecher_quick_themeplugin
+      speecher_quick_launchplugin
+      speecher_quick_demoplugin
+      speecher_quick_wordingplugin
+      speecher_quick_controlsplugin
+      speecher_quick_backendplugin
+      speecher_quick_appplugin
+      speecher_quick_popupplugin
+    )
     set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
   endif()
   set(SPEECHER_TEST_SUITES

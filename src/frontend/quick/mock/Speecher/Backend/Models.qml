@@ -272,7 +272,9 @@ QtObject {
         downloaded = downloaded.filter(x => x !== id)
         if (Settings.values.speechLocalModel === id) Settings.set("speechLocalModel", "")
     }
+    // Saves nothing in the app, which does not save this catalog's choice yet.
     function use(id) {
+        if (!Settings.saves("speechLocalModel")) return
         Settings.set("speechLocalModel", id)
         Settings.set("speechProvider", "local")
     }

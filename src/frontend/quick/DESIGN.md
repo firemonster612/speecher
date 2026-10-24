@@ -42,8 +42,10 @@ Backend is the C++ types plus the mocks not yet replaced.
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
   `SettingsStore`, so the CLI and the daemon see the same values. A row the
-  table lacks reads as absent, and `Settings.rowEnabled(spec)` greys its
-  control out; add the row to the table when its page is wired.
+  table lacks reads as absent, and SchemaRow greys it out where
+  `Settings.saves(id)` is false; add the row to the table when its page is
+  wired. A row whose choices come from a placeholder area waits for that
+  area. The shortcut rows go to the controller, which binds and keeps them.
 - `Settings.act(id)` runs an action row (`runSetup`).
 - `Status` has the version, a waiting update and the shortcut's keys.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
@@ -334,3 +336,9 @@ preview/run.sh --root SpeecherPreview/Gallery --size 1640x1600 --theme dark --ou
 It runs a private headless KWin, so nothing appears on screen, and writes a
 2x PNG. Lines starting `QML:` are warnings; fix all of them. A page is done
 when you have looked at its screenshots in both themes yourself.
+
+The app has one hook of its own for the same job: with
+`SPEECHER_GRAB_MAIN_WINDOW=<file.png>` set, the daemon saves the real main
+window a moment after each time it shows it, since a headless compositor lets
+no other client take a screenshot. `packaging/verify-appimage.sh` uses it to
+check that the packaged UI opens.

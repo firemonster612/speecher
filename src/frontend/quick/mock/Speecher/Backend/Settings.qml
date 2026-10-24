@@ -18,11 +18,8 @@ QtObject {
     // preview has nothing to run.
     function act(id) {}
 
-    // Whether a row's enabledWhen condition holds.
-    function rowEnabled(row) {
-        if (!row || !row.enabledWhen) return true
-        return values[row.enabledWhen.id] === row.enabledWhen.equals
-    }
+    // Whether set saves this row: the preview saves every one.
+    function saves(id) { return true }
 
     Component.onCompleted: {
         const start = {}
