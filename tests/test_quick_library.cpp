@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickTranscription.h"
 
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -251,6 +252,45 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("defaultWritingProfile")).toString(), WritingProfile::Other);
         QVERIFY(SettingsStore().appRecognitionRules().isEmpty());
         QCOMPARE(library.profiles().size(), 5);
+    }
+
+    // Transcribe keeps a profile, tone or level only while the Library
+    // offers it: deleting one here gives way to the profile's own there, as
+    // it would for dictation.
+    void transcribeGivesUpWhatTheLibraryDeletes()
+    {
+        ApplicationController controller(true);
+        QuickLibrary library(&controller);
+        QuickTranscription transcription(&controller);
+        const QString tone = library.newId(QStringLiteral("custom_tone"));
+        QCOMPARE(library.add(QStringLiteral("customTones"), {{QStringLiteral("id"), tone},
+                                                             {QStringLiteral("name"), QStringLiteral("Dry")},
+                                                             {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}}),
+                 saved);
+        const QString level = library.newId(QStringLiteral("custom_level"));
+        QCOMPARE(library.add(QStringLiteral("customCleanupLevels"), {{QStringLiteral("id"), level},
+                                                                     {QStringLiteral("name"), QStringLiteral("Terse")},
+                                                                     {QStringLiteral("base"), QStringLiteral("light_cleanup")}}),
+                 saved);
+        const QString profile = library.newId(QStringLiteral("custom_profile"));
+        QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(profile, QStringLiteral("Notes"))), saved);
+        transcription.setOption(QStringLiteral("profile"), profile);
+        transcription.setOption(QStringLiteral("tone"), tone);
+        transcription.setOption(QStringLiteral("cleanup"), level);
+        const auto option = [&transcription](const char *id) {
+            return transcription.options().value(QLatin1String(id)).toString();
+        };
+        QCOMPARE(option("tone"), tone);
+        QCOMPARE(option("cleanup"), level);
+
+        QVERIFY(library.removeTone(tone) >= 0);
+        QCOMPARE(option("tone"), QStringLiteral("none"));
+        QCOMPARE(option("cleanup"), level);
+        QVERIFY(library.removeLevel(level) >= 0);
+        QCOMPARE(option("cleanup"), QStringLiteral("balanced"));
+
+        library.removeProfile(profile);
+        QCOMPARE(option("profile"), WritingProfile::Other);
     }
 
     void editingATermKeepsWhatTheListDoesNotShow()
