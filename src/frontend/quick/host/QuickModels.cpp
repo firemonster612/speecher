@@ -199,12 +199,21 @@ QVariantMap computerEntry(const LocalSetup &local)
     };
 }
 
-QVariantMap fallbackOffer(const std::optional<SetupFallbackOffer> &offer)
+QVariantMap fallbackOffer(const LocalSetup &local, ProviderRole role, const QStringList &primaries)
 {
+    const std::optional<SetupFallbackOffer> offer = local.setupFallbackOffer(role);
     if (!offer) {
         return {};
     }
-    return {{QStringLiteral("modelId"), offer->modelId}, {QStringLiteral("name"), offer->name}};
+    QStringList joins;
+    for (const QString &primary : primaries) {
+        if (local.setupFallbackOfferJoins(role, primary)) {
+            joins.append(primary);
+        }
+    }
+    return {{QStringLiteral("modelId"), offer->modelId},
+            {QStringLiteral("name"), offer->name},
+            {QStringLiteral("joins"), joins}};
 }
 
 QVariantList namedModels(const QString &providerId)
@@ -254,6 +263,7 @@ void QuickModels::refresh()
 {
     const LocalSetup &local = *m_controller->localSetup();
     const ProviderRegistry &registry = *m_controller->providerRegistry();
+    const ProviderAvailability &availability = *m_controller->providerAvailability();
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
     const LiveFacts facts = local.liveFacts(settings);
     const HardwareProfile &hardware = local.hardware().profile;
@@ -270,6 +280,8 @@ void QuickModels::refresh()
          providerReports(settings, facts, speechIds, refinementIds, registry.labels())) {
         QVariantMap entry = providerEntry(report);
         if (report.role == ProviderRole::Speech) {
+            entry.insert(QStringLiteral("signInChecking"), availability.checkingSignIn(report.id));
+            entry.insert(QStringLiteral("signInCheckFailure"), availability.signInCheckFailure(report.id));
             speechServices.append(entry);
             continue;
         }
@@ -359,9 +371,8 @@ void QuickModels::refresh()
     assign(m_cleanupSuggestion, cleanupSuggestion);
     assign(m_offerPull, local.runnerChoice().offerPull);
     assign(m_fallbackOffers,
-           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local.setupFallbackOffer(ProviderRole::Speech))},
-                        {QStringLiteral("refinement"),
-                         fallbackOffer(local.setupFallbackOffer(ProviderRole::Refinement))}}));
+           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local, ProviderRole::Speech, speechIds)},
+                        {QStringLiteral("refinement"), fallbackOffer(local, ProviderRole::Refinement, refinementIds)}}));
     if (dirty) {
         emit changed();
     }

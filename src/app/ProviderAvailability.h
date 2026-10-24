@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 
 namespace speecher {
 
@@ -32,8 +33,15 @@ public:
     // starts, which may renew one that has run out, off the GUI thread, and
     // notes what it finds. Setup's Transcription step asks, since nothing else
     // learns a sign-in before the first dictation. A check that can't reach
-    // the service says nothing about the sign-in and notes nothing.
+    // the service says nothing about the sign-in and notes nothing; it
+    // leaves its failure instead. A provider already being checked is left
+    // to that check.
     void checkSpeechSignIns(ProviderRegistry &registry, const SpeechSettings &speech);
+    // Whether that check runs for a provider, and why its last one couldn't
+    // reach the service: the provider's message, empty once one gets through
+    // and while one runs.
+    bool checkingSignIn(const QString &providerId) const { return m_checkingSignIns.contains(providerId); }
+    QString signInCheckFailure(const QString &providerId) const { return m_signInCheckFailures.value(providerId); }
     void addTo(LiveFacts &facts) const;
 
 signals:
@@ -42,6 +50,8 @@ signals:
 private:
     const NetworkReachability &m_reachability;
     QHash<QString, bool> m_signedIn;
+    QSet<QString> m_checkingSignIns;
+    QHash<QString, QString> m_signInCheckFailures;
 };
 
 } // namespace speecher

@@ -251,13 +251,23 @@ QtObject {
     // Setup's offers -------------------------------------------------------------
 
     readonly property var fallbackOffers: ({
-        speech: downloaded.length ? {} : { modelId: "parakeet", name: "Parakeet 0.6B" },
-        refinement: { modelId: "qwen3:8b", name: "Ollama" }
+        speech: downloaded.length ? {} : { modelId: "parakeet", name: "Parakeet 0.6B",
+                                           joins: _offerJoins(speechServices, Settings.values.speechFallbackList) },
+        refinement: { modelId: "qwen3:8b", name: "Ollama",
+                      joins: _offerJoins(refinementProviders, Settings.values.refinementFallbacks) }
     })
+    // The primaries whose chain would take "local" as another fallback: core
+    // drops the primary from its fallbacks and keeps at most two.
+    function _offerJoins(providers, fallbacks) {
+        return providers.map(p => p.id).filter(id => {
+            const kept = (fallbacks || []).filter(f => f !== id)
+            return id !== "local" && kept.indexOf("local") < 0 && kept.length < 2
+        })
+    }
     function acceptFallbackOffer(role, primary) {
         const key = role === "speech" ? "speechFallbackList" : "refinementFallbacks"
         const list = Settings.values[key] || []
-        if (list.indexOf("local") >= 0) return
+        if (fallbackOffers[role].joins.indexOf(primary) < 0) return
         Settings.set(role === "speech" ? "speechProvider" : "refinementProvider", primary)
         Settings.set(key, list.concat(["local"]))
         if (role === "speech") download("parakeet")

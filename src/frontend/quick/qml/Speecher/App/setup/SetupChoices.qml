@@ -38,13 +38,14 @@ QtObject {
             const service = known ? ModelText.service(speech) : null
             // A model still downloading counts: the download carries on while
             // setup does. A sign-in being checked or a server not yet tested
-            // doesn't, until it answers.
+            // doesn't, until it answers; one that couldn't reach the service
+            // says why.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
             const done = !!service && (service.state === "ready" || downloading)
             return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label
                                           : service.state !== "unknown" ? ModelText.status(service)
                                           : speech === "endpoint" ? ModelText.endpointCheck(Models.speechEndpoint).text
-                                          : ModelText.checking }
+                                          : service.signInCheckFailure || ModelText.checking }
         }
         case "microphone": {
             // Allowed, a microphone that is there, and speech heard from it.

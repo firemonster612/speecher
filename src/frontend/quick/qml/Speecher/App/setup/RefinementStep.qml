@@ -47,9 +47,9 @@ StepPage {
         // A runner on this computer, offered as a fallback.
         Reveal {
             id: offer
+            objectName: "fallbackOffer"
             readonly property var local: Models.fallbackOffers.refinement
-            open: !!local.name && page.choices.cleanup !== "none" && page.choices.cleanup !== "local"
-                  && (Settings.values.refinementFallbacks || []).indexOf("local") < 0
+            open: (local.joins || []).indexOf(page.choices.cleanup) >= 0
             SettingRow {
                 title: ModelText.fallbackOfferText(offer.local)
                 Button {

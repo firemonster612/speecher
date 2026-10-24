@@ -318,6 +318,83 @@ private slots:
                  models.speechEndpoint().value(QStringLiteral("status")).toString());
     }
 
+    // A sign-in check that can't reach the service ends, leaves the sign-in
+    // unknown and says why, and checking again can still find it.
+    void setupSaysWhyASignInCheckFailedAndChecksAgain()
+    {
+        SpeechPrepareResult answer;
+        answer.message = QStringLiteral("ChatGPT didn't answer in time.");
+        answer.kind = ProviderFailureKind::Timeout;
+        ApplicationController controller(true);
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&answer](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->backgroundPrepare = true;
+                codex->backgroundPrepareDelayMs = 50;
+                codex->prepareResult = answer;
+                return codex;
+            });
+        QuickSettings settings(&controller);
+        QuickModels models(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(component.create());
+        QVERIFY2(choices, qPrintable(component.errorString()));
+        QQmlProperty::write(choices.get(), QStringLiteral("speech"), QStringLiteral("codex"));
+        const auto codex = [&] { return entry(models.speechServices(), QStringLiteral("codex")); };
+        const auto transcription = [&] { return setupStep(choices.get(), QStringLiteral("transcription")); };
+
+        models.checkSignIns();
+        QVERIFY(codex().value(QStringLiteral("signInChecking")).toBool());
+        QTRY_VERIFY(!codex().value(QStringLiteral("signInChecking")).toBool());
+        QCOMPARE(codex().value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
+        QCOMPARE(codex().value(QStringLiteral("signInCheckFailure")).toString(), answer.message);
+        QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
+        QCOMPARE(transcription().value(QStringLiteral("verdict")).toString(), answer.message);
+
+        answer = {};
+        answer.ok = true;
+        models.checkSignIns();
+        QVERIFY(codex().value(QStringLiteral("signInCheckFailure")).toString().isEmpty());
+        QTRY_VERIFY(transcription().value(QStringLiteral("done")).toBool());
+        QVERIFY(!codex().value(QStringLiteral("signInChecking")).toBool());
+    }
+
+    // Setup's Refinement step offers the runner as a fallback only behind a
+    // choice whose chain would take it: not behind a full one, judged against
+    // the step's choice rather than the saved primary.
+    void setupOffersAFallbackOnlyWhereTheChainTakesIt()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller);
+        LocalSetupTestAccess::setRunners(*controller.localSetup(),
+                                         {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
+                                           QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("anthropic"));
+        QQmlEngine engine;
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/RefinementStep.qml")));
+        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
+        QVERIFY2(step, qPrintable(stepComponent.errorString()));
+        step->setProperty("choices", QVariant::fromValue(choices.get()));
+        stepComponent.completeCreate();
+        QObject *offer = step->findChild<QObject *>(QStringLiteral("fallbackOffer"));
+        QVERIFY(offer);
+
+        QVERIFY(offer->property("open").toBool());
+        settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("openai"), QStringLiteral("endpoint")});
+        QVERIFY(!offer->property("open").toBool());
+        // Behind OpenAI the chain keeps only the endpoint, so it has room.
+        QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("openai"));
+        QVERIFY(offer->property("open").toBool());
+        QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("local"));
+        QVERIFY(!offer->property("open").toBool());
+    }
+
     // Setup's Transcription step offers the chosen Local Model's download
     // until that model is here, whichever others are.
     void setupOffersTheChosenModelsDownload()

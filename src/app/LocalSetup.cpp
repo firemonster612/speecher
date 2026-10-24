@@ -744,32 +744,49 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
 }
 
-void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
+std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const
 {
     const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role);
     if (!offer) {
-        return;
+        return std::nullopt;
     }
-    // A full chain, or the offer already the primary or a fallback, would drop
-    // it; then nothing changes, not even the model or the runner it names.
+    // A full chain, or the offer already the primary or a fallback, would drop it.
     const AppSettings settings = m_settings.dictationSnapshot();
-    const bool speech = role == ProviderRole::Speech;
-    const QStringList kept = normalizedFallbackProviders(
-        role, primary, speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds);
+    const QStringList kept = normalizedFallbackProviders(role, primary,
+                                                         role == ProviderRole::Speech
+                                                             ? settings.speech.fallbackProviderIds
+                                                             : settings.refinement.fallbackProviderIds);
     const QStringList fallbacks = normalizedFallbackProviders(role, primary, QStringList(kept) << offer->providerId);
     if (fallbacks.size() <= kept.size()) {
+        return std::nullopt;
+    }
+    return fallbacks;
+}
+
+bool LocalSetup::setupFallbackOfferJoins(ProviderRole role, const QString &primary) const
+{
+    return fallbacksWithSetupOffer(role, primary).has_value();
+}
+
+void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
+{
+    // Where the chain would drop the offer, nothing changes, not even the
+    // model or the runner it names.
+    const std::optional<QStringList> fallbacks = fallbacksWithSetupOffer(role, primary);
+    if (!fallbacks) {
         return;
     }
-    if (speech) {
+    const SetupFallbackOffer offer = *setupFallbackOffer(role);
+    if (role == ProviderRole::Speech) {
         m_settings.setSpeechProvider(primary);
-        m_settings.setSpeechFallbackProviders(fallbacks);
-        chooseSpeechModel(offer->modelId);
-        download(*findLocalModel(offer->modelId));
+        m_settings.setSpeechFallbackProviders(*fallbacks);
+        chooseSpeechModel(offer.modelId);
+        download(*findLocalModel(offer.modelId));
         return;
     }
     m_settings.setLocalRunnerSettings(runnerChoice().selection);
     m_settings.setRefinementProvider(primary);
-    m_settings.setRefinementFallbackProviders(fallbacks);
+    m_settings.setRefinementFallbackProviders(*fallbacks);
     emit changed();
 }
 

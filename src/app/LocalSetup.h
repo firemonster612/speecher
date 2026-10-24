@@ -198,6 +198,10 @@ public:
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
     std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role) const;
+    // Whether accepting that offer behind primary would add it: not when
+    // there is none, the chain behind primary is full, or the offer is
+    // already primary or one of its fallbacks.
+    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary) const;
     // Adds that fallback after the others, behind primary, setup's choice for
     // the role, which is saved with it: the saved chain is kept in step with
     // its primary, so a fallback behind a primary not yet saved would be
@@ -224,6 +228,9 @@ signals:
 
 private:
     friend class LocalSetupTestAccess;
+    // The saved fallbacks behind primary with setup's offer added, or none
+    // where the chain would drop it.
+    std::optional<QStringList> fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;

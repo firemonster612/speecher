@@ -27,7 +27,9 @@ class QuickModels final : public QObject {
     // sign-in nobody has checked or a server not yet tested), offline,
     // signedOut, noModel, noRunner, noServer, checkFailed (the server's last
     // connection check failed) or language; problem is core's sentence for
-    // any but ready and unknown.
+    // any but ready and unknown. Each also has signInChecking and
+    // signInCheckFailure, setup's sign-in check apart from the state: whether
+    // it runs, and why the last one couldn't reach the service.
     Q_PROPERTY(QVariantList speechServices READ speechServices NOTIFY changed)
     // As speechServices, each with readsScreenshots.
     Q_PROPERTY(QVariantList refinementProviders READ refinementProviders NOTIFY changed)
@@ -108,8 +110,9 @@ class QuickModels final : public QObject {
     // The rules refinement follows unless a custom prompt replaces them.
     Q_PROPERTY(QString builtInSystemPrompt READ builtInSystemPrompt CONSTANT)
 
-    // The local fallback setup suggests for each role, {modelId, name} or
-    // empty, by role: speech and refinement.
+    // The local fallback setup suggests for each role, {modelId, name, joins}
+    // or empty, by role: speech and refinement. joins lists the primaries the
+    // offer would be added behind; behind any other the chain would drop it.
     Q_PROPERTY(QVariantMap fallbackOffers READ fallbackOffers NOTIFY changed)
 
 public:

@@ -87,8 +87,7 @@ StepPage {
         Reveal {
             id: offer
             readonly property var local: Models.fallbackOffers.speech
-            open: !!local.name && page.choices.speech !== "local"
-                  && (Settings.values.speechFallbackList || []).indexOf("local") < 0
+            open: (local.joins || []).indexOf(page.choices.speech) >= 0
             SettingRow {
                 title: ModelText.fallbackOfferText(offer.local)
                 Button {
@@ -98,11 +97,13 @@ StepPage {
                 }
             }
         }
-        // The sign-in the chosen service uses, as core last found it.
+        // The sign-in the chosen service uses, as core last found it, or why
+        // the last check couldn't reach the service.
         Reveal {
             id: signIn
             readonly property var service: ModelText.service(page.choices.speech)
-            readonly property bool checking: service.state === "unknown"
+            readonly property bool checking: !!service.signInChecking
+            readonly property string failure: service.signInCheckFailure || ""
             open: !!service.signsIn && service.state !== "ready"
             SettingRow {
                 title: signIn.service.label
@@ -110,9 +111,9 @@ StepPage {
                 Row {
                     spacing: Theme.space3
                     StatusText {
-                        text: signIn.checking ? ModelText.checking : ModelText.status(signIn.service)
+                        text: signIn.checking ? ModelText.checking : signIn.failure || ModelText.status(signIn.service)
                         busy: signIn.checking
-                        tone: States.tone(signIn.service.state)
+                        tone: !signIn.checking && signIn.failure ? "warning" : States.tone(signIn.service.state)
                         indicator: "dot"
                         anchors.verticalCenter: parent.verticalCenter
                     }
