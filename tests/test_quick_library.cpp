@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickTranscription.h"
 
@@ -529,6 +530,9 @@ private slots:
         ApplicationController controller(true);
         const QuickLibrary::ControllerScope scope(&controller);
         QuickSettings settings(&controller);
+        // Library's key-term line names Models' speech service, and the host
+        // always has Models.
+        QuickModels models(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
         const std::unique_ptr<QObject> section(component.create());
@@ -562,6 +566,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         const QuickLibrary::ControllerScope scope(&controller);
+        // Library's key-term line names Models' speech service, and the host
+        // always has Models.
+        QuickModels models(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine);
         component.setData("import QtQuick\nimport Speecher.Backend\nQtObject {\n"
