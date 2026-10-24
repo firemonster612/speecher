@@ -61,10 +61,10 @@ Section {
             exportFile.open()
         }
         title: TranscribeWords.exportDialog
+        // The desktop's save dialog asks before saving over a file, as it
+        // does for every app; the suggested name can be the transcript saved
+        // beside the recording.
         fileMode: FileDialog.SaveFile
-        // Saving over a file is what choosing its name means; no confirmation
-        // window on top.
-        options: FileDialog.DontConfirmOverwrite
         onAccepted: Transcription.exportResult(exportFile.index, exportFile.format, exportFile.selectedFile)
     }
     FolderDialog {
