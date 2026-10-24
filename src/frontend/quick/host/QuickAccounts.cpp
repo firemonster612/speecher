@@ -111,6 +111,13 @@ struct ServiceAnswer {
     QVariantList accounts;
 };
 
+// Which secrets a read found saved, and which wait for a refused clear to be
+// retried, by row id; a secret the keyring did not answer for is in neither.
+struct SecretPresence {
+    QVariantMap saved;
+    QVariantMap pendingClears;
+};
+
 // Saves value, or clears the secret when it is empty. The OpenAI key never
 // falls back to the settings file, so it goes through saveApiKey either way.
 bool storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
@@ -224,6 +231,11 @@ QVariantMap QuickAccounts::savedSecrets() const
     return m_savedSecrets;
 }
 
+QVariantMap QuickAccounts::pendingClears() const
+{
+    return m_pendingClears;
+}
+
 QVariantMap QuickAccounts::secretErrors() const
 {
     return m_secretErrors;
@@ -271,24 +283,26 @@ void QuickAccounts::run(const QString &id, SignInRun signIn)
         },
         [this, row, number, renewing = signIn == renewSignIn](const ServiceAnswer &answer) {
             const QString id = QLatin1String(row->id);
-            if (m_pending.value(id) != number) {
-                return;
+            const bool latest = m_pending.value(id) == number;
+            if (latest) {
+                m_pending.remove(id);
+                m_checks.insert(id, {answer.signIn, answer.speech});
+                if (row->service == SignInService::CliProxy) {
+                    showCliproxyAccounts(answer.accounts);
+                }
+                noteSignIn(m_controller, row->provider, answer.signIn);
+                noteSignIn(m_controller, row->speechProvider, answer.speech);
+                emit servicesChanged();
             }
-            m_pending.remove(id);
-            m_checks.insert(id, {answer.signIn, answer.speech});
-            if (row->service == SignInService::CliProxy) {
-                showCliproxyAccounts(answer.accounts);
-            }
-            noteSignIn(m_controller, row->provider, answer.signIn);
-            noteSignIn(m_controller, row->speechProvider, answer.speech);
-            emit servicesChanged();
             if (!renewing) {
                 return;
             }
             // Renewing rewrote credentials the others may read: Codex's and
-            // Claude's files, or CLI Proxy API's account files.
+            // Claude's files, or CLI Proxy API's account files. A check that
+            // superseded the renewal may have read them before it rewrote
+            // them, so the service itself is checked again too.
             for (const ServiceRow &other : serviceRows) {
-                if (&other != row) {
+                if (!latest || &other != row) {
                     run(QLatin1String(other.id), checkSignIn);
                 }
             }
@@ -306,27 +320,29 @@ void QuickAccounts::readSavedSecrets()
 {
     const quint64 number = ++m_lastSecretRead;
     m_secretsChanged.clear();
-    runProviderProbe<QVariantMap>(
+    runProviderProbe<SecretPresence>(
         this,
         this,
         [] {
             SettingsStore store;
-            QVariantMap saved;
+            SecretPresence presence;
             for (const SecretRow &row : secretRows) {
                 const bool present = !store.secrets()->secret(row.secret).isEmpty();
                 if (store.secrets()->isSecretKnown(row.secret)) {
-                    saved.insert(QLatin1String(row.id), present);
+                    presence.saved.insert(QLatin1String(row.id), present);
+                    presence.pendingClears.insert(QLatin1String(row.id), store.secrets()->deletionPending(row.secret));
                 }
             }
-            return saved;
+            return presence;
         },
-        [this, number](const QVariantMap &saved) {
+        [this, number](const SecretPresence &presence) {
             if (number != m_lastSecretRead) {
                 return;
             }
-            for (auto it = saved.cbegin(); it != saved.cend(); ++it) {
+            for (auto it = presence.saved.cbegin(); it != presence.saved.cend(); ++it) {
                 if (!m_secretsChanged.contains(it.key())) {
                     m_savedSecrets.insert(it.key(), it.value());
+                    m_pendingClears.insert(it.key(), presence.pendingClears.value(it.key()));
                 }
             }
             emit secretsChanged();
@@ -377,12 +393,19 @@ void QuickAccounts::writeSecret(const QString &rowId, const QString &value)
         m_writes.insert(rowId, std::nullopt);
         const bool done = storeSecret(m_controller->settings()->secrets(), secret, *next);
         finishSecretChange(rowId, done, !next->isEmpty());
+        // A field that asked for an earlier value meanwhile lets go of what
+        // it holds only once the value asked for last is kept.
+        if (done && !next->isEmpty() && !m_writes.value(rowId)) {
+            emit secretSaved(rowId);
+        }
     }
 }
 
 void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool saved)
 {
     m_secretsChanged.insert(rowId);
+    SecretStore *secrets = m_controller->settings()->secrets();
+    m_pendingClears.insert(rowId, secrets->deletionPending(findRow(secretRows, rowId)->secret));
     if (done) {
         m_savedSecrets.insert(rowId, saved);
         m_secretErrors.remove(rowId);
@@ -390,7 +413,7 @@ void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool sav
         m_secretErrors.insert(rowId,
                               QVariantMap{
                                   {QStringLiteral("action"), saved ? QStringLiteral("save") : QStringLiteral("clear")},
-                                  {QStringLiteral("reason"), m_controller->settings()->secrets()->lastError()},
+                                  {QStringLiteral("reason"), secrets->lastError()},
                               });
     }
     emit secretsChanged();

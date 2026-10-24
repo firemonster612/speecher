@@ -72,34 +72,54 @@ QHash<QString, bool> notedSignIns(ApplicationController &controller)
     return facts.signedIn;
 }
 
-// SchemaRow for the CLI Proxy API key in a window, and its text field.
+// A secret's SchemaRow in a window, its text field and its Clear button.
 struct SecretRowWindow {
     std::unique_ptr<QObject> window;
     QQuickItem *field = nullptr;
+    QQuickItem *clear = nullptr;
 };
 
-SecretRowWindow showSecretRow(QQmlEngine &engine)
+SecretRowWindow showSecretRow(QQmlEngine &engine, const QString &rowId = QStringLiteral("cliproxyApiKey"))
 {
     QQmlComponent component(&engine);
     component.setData(R"(
         import QtQuick
         import Speecher.App
         Window {
+            property alias rowId: row.rowId
             width: 640; height: 120; visible: true
-            SchemaRow { rowId: "cliproxyApiKey"; width: parent.width }
+            SchemaRow { id: row; width: parent.width }
         }
     )", QUrl());
-    SecretRowWindow shown{std::unique_ptr<QObject>(component.create())};
+    SecretRowWindow shown{std::unique_ptr<QObject>(component.createWithInitialProperties({{QStringLiteral("rowId"), rowId}}))};
     if (!shown.window) {
         qWarning().noquote() << component.errorString();
         return shown;
     }
     for (QQuickItem *item : shown.window->findChildren<QQuickItem *>()) {
-        if (QByteArray(item->metaObject()->className()).startsWith("TextField_")) {
+        const QByteArray type = item->metaObject()->className();
+        if (type.startsWith("TextField_")) {
             shown.field = item;
+        } else if (type.startsWith("IconButton_") && item->property("iconName") == QLatin1String("x")) {
+            shown.clear = item;
         }
     }
     return shown;
+}
+
+// Signs OpenAI in with a CLI Proxy API Codex account whose token has run out
+// but whose refresh token renews it. Returns the account's file name.
+QString useExpiredCodexAccount(SettingsStore &store, const QString &directory)
+{
+    const QString fileName = QStringLiteral("codex-a@example.com.json");
+    if (!writeCliProxyAccount(directory, fileName, QStringLiteral("codex"), QStringLiteral("token"),
+                              QDateTime::currentDateTimeUtc().addSecs(-60))) {
+        return {};
+    }
+    store.setCliproxyOauthDir(directory);
+    store.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+    store.setOpenAiCliproxyAccount(fileName);
+    return fileName;
 }
 
 const char *const proxyKeyFallbackWarning =
@@ -354,6 +374,31 @@ private slots:
         QCOMPARE(field->property("text").toString(), QString());
     }
 
+    // A save asked for during another waits its turn, and the field keeps
+    // its key until that save goes through: refused, the key stays to retry.
+    void aRefusedWaitingSaveKeepsItsKey()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine, QStringLiteral("openAiApiKey"));
+        QVERIFY(row.field);
+        QQuickItem *field = row.field;
+
+        field->setProperty("text", QStringLiteral("outer-key"));
+        QMetaObject::invokeMethod(
+            field,
+            [field] {
+                field->setProperty("text", QStringLiteral("newer-key"));
+                QMetaObject::invokeMethod(field, "editingFinished");
+            },
+            Qt::QueuedConnection);
+        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+        QVERIFY(accounts.secretErrors().contains(QStringLiteral("openAiApiKey")));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("newer-key"));
+    }
+
     // A keyring that does not answer leaves a sign-in that needs it unknown,
     // in the keyring's words, rather than "not found".
     void aKeyringTimeoutShowsTheKeyringsError()
@@ -417,6 +462,30 @@ private slots:
         QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refused);
     }
 
+    // A key the keyring refused to delete stays clearable after a check
+    // reads it as hidden rather than saved, so the clear can be retried.
+    void aRefusedClearCanBeRetried()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine);
+        QVERIFY(row.clear);
+        QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
+        accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("proxy-key"));
+        QVERIFY(row.clear->isVisible());
+
+        controller.settings()->raw().setValue(SettingsKeys::SecretsInKeyring,
+                                              QStringList{QStringLiteral("cliproxy-api-key")});
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+        accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
+        accounts.recheck(QStringLiteral("cliproxy"));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+        QVERIFY(row.clear->isVisible());
+    }
+
     // Renewing a sign-in shows everything it rewrote: OpenAI's renewed CLI
     // Proxy API account is current in the account list as well.
     void aRenewalRefreshesTheAccountFiles()
@@ -428,13 +497,8 @@ private slots:
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
         ApplicationController controller(true);
         QTemporaryDir dir;
-        const QString fileName = QStringLiteral("codex-a@example.com.json");
-        QVERIFY(writeCliProxyAccount(dir.path(), fileName, QStringLiteral("codex"), QStringLiteral("token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
-        SettingsStore *store = controller.settings();
-        store->setCliproxyOauthDir(dir.path());
-        store->setOpenAiAuthMode(QStringLiteral("cliproxy"));
-        store->setOpenAiCliproxyAccount(fileName);
+        const QString fileName = useExpiredCodexAccount(*controller.settings(), dir.path());
+        QVERIFY(!fileName.isEmpty());
         QuickAccounts accounts(&controller);
         QuickAccounts::create(nullptr, nullptr);
         QTRY_VERIFY(checked(accounts));
@@ -447,6 +511,40 @@ private slots:
         QCOMPARE(serviceState(accounts, QStringLiteral("cliproxy")), QStringLiteral("signedIn"));
         QCOMPARE(accountState(accounts, fileName), QStringLiteral("signedIn"));
         QCOMPARE(notedSignIns(controller).value(QStringLiteral("openai")), true);
+    }
+
+    // Checking everything while a renewal waits on the network shows what
+    // the files held then; once the renewal rewrites them, they are checked
+    // again rather than left showing the token expired.
+    void aCheckDuringARenewalIsFollowedByAFreshOne()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTcpSocket *request = nullptr;
+        connect(&server, &QTcpServer::newConnection, this, [&] { request = server.nextPendingConnection(); });
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        const QString fileName = useExpiredCodexAccount(*controller.settings(), dir.path());
+        QVERIFY(!fileName.isEmpty());
+        QuickAccounts accounts(&controller);
+        QuickAccounts::create(nullptr, nullptr);
+        QTRY_VERIFY(checked(accounts));
+
+        accounts.renew(QStringLiteral("openai"));
+        QTRY_VERIFY(request && hasWholeRequest(request));
+        for (const QVariant &service : accounts.services()) {
+            accounts.recheck(service.toMap().value(QStringLiteral("id")).toString());
+        }
+        QTRY_VERIFY(checked(accounts));
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("expired"));
+
+        request->write(httpResponse("200 OK", "application/json", R"({"access_token": "rotated", "expires_in": 3600})"));
+        request->disconnectFromHost();
+        QTRY_COMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("signedIn"));
+        QTRY_COMPARE(accountState(accounts, fileName), QStringLiteral("signedIn"));
     }
 
 private:

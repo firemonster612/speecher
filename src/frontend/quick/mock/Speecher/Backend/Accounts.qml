@@ -49,7 +49,10 @@ QtObject {
     ]
 
     property var savedSecrets: ({ openAiApiKey: _start !== "none" })
+    property var pendingClears: ({})
     property var secretErrors: ({})
+
+    signal secretSaved(string rowId)
 
     // Asks core to read the service's credentials again. Several checks can
     // run at once; each remembers the state it started from.
@@ -67,7 +70,9 @@ QtObject {
         _recheckTimer.restart()
     }
     function saveSecret(rowId, value) {
-        if (value.trim()) savedSecrets = Object.assign({}, savedSecrets, { [rowId]: true })
+        if (!value.trim()) return
+        savedSecrets = Object.assign({}, savedSecrets, { [rowId]: true })
+        secretSaved(rowId)
     }
     function clearSecret(rowId) {
         savedSecrets = Object.assign({}, savedSecrets, { [rowId]: false })

@@ -100,23 +100,34 @@ SettingRow {
         TextField {
             id: field
             readonly property bool saved: Accounts.savedSecrets[root.rowId] === true
+            // The key a refused clear left behind is still there to clear.
+            readonly property bool clearable: saved || Accounts.pendingClears[root.rowId] === true
+            // The draft handed to Accounts last.
+            property string _submitted
             showText: Words.show
             hideText: Words.hide
             secret: true
             placeholderText: saved ? Words.savedSecret : root.spec.placeholder || ""
             // Once saved, the key leaves the field; a refused one stays to
-            // retry. Typing goes on while the keyring answers, so only the
-            // draft that was saved leaves.
+            // retry. Typing goes on while the keyring answers, and a save
+            // asked for meanwhile waits its turn, so the field lets go only
+            // when Accounts says the draft submitted last was kept, and only
+            // if nothing was typed since.
             onEditingFinished: {
-                const draft = text
-                if (!draft.trim())
+                if (!text.trim())
                     return
-                Accounts.saveSecret(root.rowId, draft)
-                if (text === draft && !(root.rowId in Accounts.secretErrors))
-                    clear()
+                _submitted = text
+                Accounts.saveSecret(root.rowId, text)
+            }
+            Connections {
+                target: Accounts
+                function onSecretSaved(rowId) {
+                    if (rowId === root.rowId && field.text === field._submitted)
+                        field.clear()
+                }
             }
             trailing: IconButton {
-                visible: field.saved && !field.length
+                visible: field.clearable && !field.length
                 iconName: "x"
                 size: 24
                 tooltip: Words.clear

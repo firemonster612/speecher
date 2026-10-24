@@ -41,6 +41,10 @@ class QuickAccounts final : public QObject {
     // By secret row id: whether a value is saved. A secret the keyring could
     // not answer for is absent.
     Q_PROPERTY(QVariantMap savedSecrets READ savedSecrets NOTIFY secretsChanged)
+    // By secret row id: whether a clear the keyring refused is still to be
+    // retried. The secret reads as not saved meanwhile, though the keyring
+    // may still hold it.
+    Q_PROPERTY(QVariantMap pendingClears READ pendingClears NOTIFY secretsChanged)
     // By secret row id: { action, reason } for its last save or clear that
     // failed. action is save or clear, reason the keyring's words, possibly
     // empty.
@@ -58,6 +62,7 @@ public:
     QVariantList services() const;
     QVariantList cliproxyAccounts() const;
     QVariantMap savedSecrets() const;
+    QVariantMap pendingClears() const;
     QVariantMap secretErrors() const;
 
     // Checks the service's sign-in again on a worker, for CLI Proxy API with
@@ -77,6 +82,9 @@ signals:
     void servicesChanged();
     void cliproxyAccountsChanged();
     void secretsChanged();
+    // A save of the secret went through and no newer write of it waits: the
+    // value asked for last is the one kept.
+    void secretSaved(const QString &rowId);
 
 private:
     using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
@@ -108,6 +116,7 @@ private:
     quint64 m_lastCheck = 0;
     QVariantList m_cliproxyAccounts;
     QVariantMap m_savedSecrets;
+    QVariantMap m_pendingClears;
     QVariantMap m_secretErrors;
     // The latest read of which secrets are saved; an earlier one's answer is
     // dropped.
