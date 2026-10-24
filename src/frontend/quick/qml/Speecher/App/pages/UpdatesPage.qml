@@ -13,10 +13,34 @@ Page {
     subtitle: Schema.page("updates").subtitle
 
     readonly property var _channel: Schema.row("updateChannel").options.find(o => o.id === Settings.values.updateChannel)
+    // A nightly's commits, then the releases' notes, each one Section.
+    // Fixed for the run, so nothing comes or goes while the page is open.
+    readonly property var _news: {
+        const commits = Updates.whatsNew.commits || []
+        const builds = commits.length ? [{ version: "", sections: [{ title: page.t.commits, items: commits }] }] : []
+        return builds.concat(Updates.whatsNew.releases || [])
+    }
+    // Settings added since the version run before the update.
+    readonly property var _newSettings: Object.keys(Schema.introduced).filter(id => Updates.newSince(Schema.introduced[id]))
+
+    readonly property var t: ({
+        current: v => "Speecher " + v,
+        channel: label => label + " channel.",
+        whatsNewIn: v => v ? "What's new in " + v : "What's new in this build",
+        release: v => "Speecher " + v,
+        commits: "Commits",
+        allReleases: "All releases",
+        newSettings: "New settings",
+        newSettingsCaption: "Added since the version you used before.",
+        noAutomaticDownloads: "This copy of Speecher can't install updates itself. Get new versions from the release page."
+    })
+
+    // Opening the page is seeing the news.
+    Component.onCompleted: Updates.acknowledgeWhatsNew()
 
     Section {
-        title: Updates.currentTitle
-        caption: Updates.releasedText(page._channel ? page._channel.label : "")
+        title: page.t.current(Status.version)
+        caption: page._channel ? page.t.channel(page._channel.label) : ""
         UpdateStatus { channelLabel: page._channel ? page._channel.label : "" }
     }
 
@@ -47,24 +71,35 @@ Page {
                 }
             }
         }
-        SchemaRow { rowId: "autoInstallUpdates" }
+        // Only a copy that can replace itself installs in the background.
+        SchemaRow {
+            rowId: "autoInstallUpdates"
+            enabled: Settings.saves(rowId) && Updates.automaticDownloads
+            note: Updates.automaticDownloads ? spec.help : page.t.noAutomaticDownloads
+        }
     }
 
-    Section {
-        title: Updates.whatsNewTitle
-        actions: [ Button { text: Updates.text.allReleases; variant: "ghost"; size: "small"; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() } ]
-        ReleaseNotes { groups: Updates.releaseNotes }
+    Repeater {
+        model: page._news
+        Section {
+            id: news
+            required property var modelData
+            required property int index
+            title: index === 0 ? page.t.whatsNewIn(modelData.version) : page.t.release(modelData.version)
+            actions: [ Button { visible: news.index === 0; text: page.t.allReleases; variant: "ghost"; size: "small"; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() } ]
+            ReleaseNotes { groups: news.modelData.sections }
+        }
     }
 
     // Settings added since the version you used before, each a way to it.
     Reveal {
-        open: Updates.newSettings.length > 0
+        open: page._newSettings.length > 0
         Section {
-            title: Updates.text.newSettings
-            caption: Updates.text.newSettingsCaption
+            title: page.t.newSettings
+            caption: page.t.newSettingsCaption
             RowList {
                 id: newSettings
-                values: Updates.newSettings
+                values: page._newSettings
                 delegate: SettingRow {
                     required property string key
                     required property int index

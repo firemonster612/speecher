@@ -18,7 +18,6 @@ QuickStatus::QuickStatus(ApplicationController *controller, QObject *parent)
 {
     g_instance = this;
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickStatus::shortcutKeysChanged);
-    connect(controller->updates(), &UpdateController::changed, this, &QuickStatus::updateChanged);
 }
 
 QuickStatus::~QuickStatus()
@@ -43,16 +42,6 @@ QStringList QuickStatus::shortcutKeys() const
 QString QuickStatus::version() const
 {
     return m_controller->updates()->currentVersion();
-}
-
-bool QuickStatus::updateReady() const
-{
-    return m_controller->updates()->state() == UpdateController::State::ReadyToRestart;
-}
-
-QString QuickStatus::updateVersion() const
-{
-    return m_controller->updates()->availableVersionDisplay();
 }
 
 } // namespace speecher

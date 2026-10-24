@@ -3,8 +3,8 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 
-// Short notes as a bulleted list, each wrapping under its own text: release
-// notes and the highlights of an available update.
+// Short notes as a bulleted list, each wrapping under its own text, such as
+// release notes.
 Column {
     id: list
 

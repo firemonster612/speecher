@@ -55,7 +55,18 @@ Backend is the C++ types plus the mocks not yet replaced.
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Settings.act(id)` runs an action row (`runSetup`).
-- `Status` has the version, a waiting update and the shortcut's keys.
+- `Status` has the version and the shortcut's keys.
+- `Updates` is the updater as `QuickUpdates.h` documents it: its state
+  (checking through restarting, with check and install failures apart), the
+  offered version, progress, why a step failed, and what a restart waits
+  for. `attention` says the update needs the person, which the popup's
+  update chip and the sidebar's link follow; `later()` puts a waiting
+  restart off until another version. What's New is `whatsNew` (a nightly's
+  commits and the releases crossed, from core's `whatsNew`), fixed for the
+  run, and `whatsNewPending` until the Updates page is opened, which the
+  popup's What's New chip offers and Main opens on after an update. New
+  settings are the rows `Schema.introduced` dates after the version run
+  before (`Updates.newSince`).
 - `Dictation` is the session as the popup shows it: `state` (the popup's
   phase: idle, starting, listening, paused, transcribing, refining,
   delivering, delivered, review, error), `level`, `elapsed`, `words`,
@@ -94,8 +105,8 @@ Backend is the C++ types plus the mocks not yet replaced.
   after the first frame of that dictation (a later show or a hide drops the
   answer), and hides itself once `PopupWindow.empty`, faded out, so the
   popup works whether or not Main was ever opened.
-- The popup window is larger than the capsule, so only the capsule may take
-  the pointer: the host sets the window's input region to
+- The popup window is larger than the capsule, so only the capsule (and the
+  offers over it while they show) may take the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
   input region on Wayland; on X11 the input shape alone, since a mask
   would clip the shadow) whenever it changes, frame by frame as the

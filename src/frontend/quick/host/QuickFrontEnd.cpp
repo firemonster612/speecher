@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
 
@@ -76,6 +77,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     , m_settings(controller)
     , m_status(controller)
     , m_dictation(controller)
+    , m_updates(controller, controller->updates())
 {
     registerFonts();
     // Into the log with the rest, marked so a load's warnings are easy to find.
@@ -95,12 +97,20 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     connect(session, &DictationSession::popupShowRequested, m_popup, &QuickPopupWindow::show);
     connect(m_popup, &QuickPopupWindow::presented, session, &DictationSession::popupPresented);
     connect(&m_dictation, &QuickDictation::pageRequested, this, &QuickFrontEnd::showPage);
+    connect(&m_updates, &QuickUpdates::pageRequested, this, &QuickFrontEnd::showPage);
+    // An update restart brings back the windows that were on screen, never
+    // the microphone: the new process has no dictation gesture behind it.
+    controller->updates()->setRestoreStateProvider([this] {
+        return m_main && m_main->isVisible() ? QStringLiteral("settings") : QString();
+    });
     controller->setFrontEnd(this);
 }
 
 QuickFrontEnd::~QuickFrontEnd()
 {
     m_controller->setFrontEnd(nullptr);
+    // The updater outlives this object and its windows.
+    m_controller->updates()->setRestoreStateProvider({});
     // Going away is not the person closing setup.
     if (m_setup) {
         m_setup->disconnect(this);
@@ -115,6 +125,10 @@ QuickFrontEnd::~QuickFrontEnd()
 void QuickFrontEnd::showMainWindow()
 {
     if (!m_main) {
+        // After an update, Main first opens on its news.
+        if (m_updates.whatsNewPending()) {
+            setPage(QStringLiteral("updates"));
+        }
         m_main = createWindow(QStringLiteral("Main"));
         if (!m_main) {
             return;
@@ -218,6 +232,11 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 void QuickFrontEnd::showPage(const QString &pageId)
 {
     showMainWindow();
+    setPage(pageId);
+}
+
+void QuickFrontEnd::setPage(const QString &pageId)
+{
     if (QObject *navigation = m_engine.singletonInstance<QObject *>(appModule, QStringLiteral("Navigation"))) {
         navigation->setProperty("current", pageId);
     }

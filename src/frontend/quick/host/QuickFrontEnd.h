@@ -4,6 +4,7 @@
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
+#include "frontend/quick/host/QuickUpdates.h"
 
 #include <QObject>
 #include <QPointer>
@@ -57,12 +58,15 @@ private:
     void setupClosed();
     // Main, on one of its pages.
     void showPage(const QString &pageId);
+    // The page Main shows, or opens on.
+    void setPage(const QString &pageId);
 
     ApplicationController *m_controller;
     // Before the engine, which reads them until it goes.
     QuickSettings m_settings;
     QuickStatus m_status;
     QuickDictation m_dictation;
+    QuickUpdates m_updates;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

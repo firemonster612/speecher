@@ -9,7 +9,8 @@ import Speecher.Wording
 // The dictation popup: one capsule that grows, shrinks and changes its
 // content as a dictation moves from listening to delivered. It reads the
 // dictation from source (the live one by default; the settings page passes a
-// demo) and the popup rows from Settings, and words it itself (t).
+// demo) and the popup rows from Settings, and words it itself (t). The live
+// one carries the update and What's New offers over the capsule (OfferChips).
 Item {
     id: popup
 
@@ -106,11 +107,29 @@ Item {
     readonly property rect capsule: Qt.rect(holder.x + holder.width * (1 - holder.scale) / 2,
                                             holder.y + holder.height * (1 - holder.scale) + lift.y,
                                             holder.width * holder.scale, holder.height * holder.scale)
+    // Room over the capsule for both offers (OfferChips), the update's and
+    // What's New's.
+    readonly property int offerRoom: 98
+    // What takes the pointer: the capsule, and while an offer shows, the
+    // room over it.
+    readonly property rect touchable: offers.offering ? Qt.rect((width - widest) / 2, capsule.y - offerRoom, widest, capsule.height + offerRoom)
+                                                      : capsule
 
     // As big as the capsule, or as it is while it grows or shrinks to the
     // target, so a scene that sizes to the popup never cuts it off.
     implicitWidth: Math.max(holder.width, target.width)
     implicitHeight: Math.max(holder.height, target.height)
+
+    // Only the live dictation's popup carries them, not a page's demo, and
+    // not over a review, the tallest phase.
+    OfferChips {
+        id: offers
+        width: popup.widest
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: holder.top
+        anchors.bottomMargin: 10
+        active: popup.source === Dictation && popup.shown && popup.phase !== "review"
+    }
 
     Item {
         id: holder

@@ -918,6 +918,78 @@ private slots:
         QVERIFY(commits.at(1).body.isEmpty());
     }
 
+    void releaseNotesSplitAtTheirHeadings()
+    {
+        const QList<ReleaseNoteSection> sections = releaseNoteSections(
+            QStringLiteral("## Added\n\n- The tray, with two parts:\n  - a menu\n\n## Fixed\n\n- A crash."));
+        QCOMPARE(sections.size(), 2);
+        QCOMPARE(sections.at(0).title, QStringLiteral("Added"));
+        QCOMPARE(sections.at(0).items, (QStringList{QStringLiteral("The tray, with two parts:"), QStringLiteral("a menu")}));
+        QCOMPARE(sections.at(1).title, QStringLiteral("Fixed"));
+        QCOMPARE(sections.at(1).items, QStringList{QStringLiteral("A crash.")});
+    }
+
+    // Newest first, as bundledReleaseNotes() gives them.
+    static QList<ReleaseNote> sampleNotes()
+    {
+        return {{QStringLiteral("0.3.0"), QStringLiteral("three")},
+                {QStringLiteral("0.2.1"), QStringLiteral("two-one")},
+                {QStringLiteral("0.2.0"), QStringLiteral("two")}};
+    }
+
+    static QStringList versions(const QList<ReleaseNote> &notes)
+    {
+        QStringList names;
+        for (const ReleaseNote &note : notes) {
+            names.append(note.version);
+        }
+        return names;
+    }
+
+    void whatsNewListsTheStableReleasesAnUpdateCrossed()
+    {
+        const WhatsNew news = whatsNew(sampleNotes(), {}, QStringLiteral("0.2.0"), QStringLiteral("0.3.0"));
+        QCOMPARE(versions(news.releases), (QStringList{QStringLiteral("0.3.0"), QStringLiteral("0.2.1")}));
+        QVERIFY(news.commits.isEmpty());
+    }
+
+    // A nightly built on 0.2.1 predates the 0.2.1 release, so moving from it
+    // to 0.3.0 crosses 0.2.1 too.
+    void whatsNewCountsANightlysOwnBaseAsCrossed()
+    {
+        const WhatsNew news = whatsNew(sampleNotes(), {}, QStringLiteral("0.2.1-nightly.20260901+gaaa1111"),
+                                       QStringLiteral("0.3.0"));
+        QCOMPARE(versions(news.releases), (QStringList{QStringLiteral("0.3.0"), QStringLiteral("0.2.1")}));
+    }
+
+    void whatsNewWithoutAnUpdateShowsTheNewestReleaseNotAhead()
+    {
+        const WhatsNew news = whatsNew(sampleNotes(), {}, QString(), QStringLiteral("0.2.1"));
+        QCOMPARE(versions(news.releases), QStringList{QStringLiteral("0.2.1")});
+    }
+
+    void whatsNewBetweenNightliesListsTheCommitsInBetween()
+    {
+        const QList<HistoryCommit> history{
+            {QStringLiteral("ccc3333"), QStringLiteral("Merge pull request #12 from me/tray"), QStringLiteral("Tidy the tray\n\nMore.")},
+            {QStringLiteral("bbb2222"), QStringLiteral("Fix the popup (#11)"), QString()},
+            {QStringLiteral("aaa1111f"), QStringLiteral("The last nightly"), QString()},
+            {QStringLiteral("9990000"), QStringLiteral("Older"), QString()}};
+        const WhatsNew news = whatsNew(sampleNotes(), history, QStringLiteral("0.2.1-nightly.20260901+gaaa1111"),
+                                       QStringLiteral("0.2.1-nightly.20260902+gccc3333"));
+        QCOMPARE(news.commits.size(), 2);
+        QCOMPARE(commitTitle(news.commits.at(0)), QStringLiteral("Tidy the tray"));
+        QCOMPARE(commitTitle(news.commits.at(1)), QStringLiteral("Fix the popup (#11)"));
+        QVERIFY(news.releases.isEmpty());
+
+        // A nightly older than the embedded history has no commits to list,
+        // so the newest release's notes stand in.
+        const WhatsNew old = whatsNew(sampleNotes(), history, QStringLiteral("0.2.1-nightly.20260801+gfff0000"),
+                                      QStringLiteral("0.2.1-nightly.20260902+gccc3333"));
+        QVERIFY(old.commits.isEmpty());
+        QCOMPARE(versions(old.releases), QStringList{QStringLiteral("0.2.1")});
+    }
+
     void downgradeDoesNotCreatePendingWhatsNewState()
     {
         {

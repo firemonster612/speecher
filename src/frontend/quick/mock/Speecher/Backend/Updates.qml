@@ -3,107 +3,81 @@ import QtQuick
 import Speecher.Launch
 import Speecher.Theme
 
-// Placeholder: the app ships this mock until its wiring PR replaces it.
-// Mock of the updater: where it is in a check or install, and the release
-// notes for the running version. check(), install() and restart() walk
+// The preview's updater, with the members of the app's C++ Updates
+// (host/QuickUpdates.h documents them): where it is in a check, download or
+// restart, and What's New. check(), updateNow() and installAndRestart() walk
 // through the states with fake delays.
 //
-// state: idle, checking, upToDate, available, downloading, ready, error.
-// --update-state=<state> starts in that state.
+// --update-state=<state> starts in that state; --whats-new-pending=true
+// starts with news not yet seen.
 QtObject {
     id: updates
 
     property string state: Launch.arg("update-state", "ready")
-    property string currentVersion: "0.9.3"
-    property string releaseDate: "October 14, 2026"
     property string availableVersion: "0.9.4"
-    property string availableSize: "38 MB"
     property real progress: state === "downloading" ? 0.42 : 0
-    property string lastChecked: "Checked 4 minutes ago"
-    property string error: "Couldn't reach the update server."
-    // Installing replaces the AppImage in place; elsewhere it opens a page.
-    property bool automaticDownloads: true
-
-    // What the update would bring, shown before installing.
-    property var availableHighlights: [
-        "Faster first words with Claude Voice",
-        "Vocabulary terms sync to your phone",
-        "Fixes a crash when the target app closes mid-dictation"
-    ]
-
-    // Release notes for the running version, already filtered to this
-    // platform, in groups with core's heading for each.
-    property var releaseNotes: [
-        { title: "Added", items: [
-            "CLI Proxy API accounts work end to end: setup recognises them, and you can pick the account without leaving setup.",
-            "An opt-in accuracy pass retranscribes the whole recording when you stop, catching mistakes the live stream made.",
-            "Hesitation self-corrections apply: \"meet at five, no, six\" delivers six.",
-            "Push to talk on desktops that report key release, including Plasma and GNOME 48."
-        ] },
-        { title: "Changed", items: [
-            "Setting a shortcut is one control: click, press your combination or a single key, done.",
-            "The setup assistant checks what each step set up and holds Next until it works."
-        ] },
-        { title: "Fixed", items: [
-            "Dictations no longer lose text when a speech stream drops mid-sentence.",
-            "Dictated lists keep the numbers you spoke instead of renumbering from 1."
-        ] }
-    ]
-
-    // Settings added since the version you last saw, by row id.
-    property var newSettings: ["pauseShortcut", "cancelShortcut", "updateCheckInterval"]
-
-    // Wording -------------------------------------------------------------
-    readonly property var text: ({
-        checkNow: "Check now",
-        upToDate: "Speecher is up to date",
-        releaseNotes: "Release notes",
-        updateNow: "Update now",
-        openReleasePage: "Open release page",
-        downloadingDetail: "Keep dictating; it installs when you restart.",
-        readyTitle: "Restart to finish updating",
-        later: "Later",
-        restartNow: "Restart now",
-        checkFailed: "Update check failed",
-        tryAgain: "Try again",
-        allReleases: "All releases",
-        newSettings: "New settings",
-        newSettingsCaption: "Added since the version you used before."
+    property string error: state === "error" ? "Could not download the AppImage: Connection closed."
+                         : state === "checkFailed" ? "Could not check for updates: Host not found." : ""
+    readonly property bool automaticDownloads: true
+    property bool manualInstall: false
+    property bool stableReplacement: false
+    property string restartBlocker: ""
+    property date lastChecked: new Date(Date.now() - 4 * 60 * 1000)
+    property bool _putOff: false
+    readonly property bool attention: !["idle", "checking", "upToDate"].includes(state)
+                                      && !(_putOff && (state === "ready" || state === "restartPending"))
+    // Whether the preview pretends an update from _lastSeen was installed.
+    readonly property bool _updated: Launch.arg("whats-new-pending", "false") === "true"
+    property bool whatsNewPending: _updated
+    readonly property var whatsNew: ({
+        commits: [],
+        releases: [
+            { version: "0.9.3", sections: [
+                { title: "Added", items: [
+                    "CLI Proxy API accounts work end to end: setup recognises them, and you can pick the account without leaving setup.",
+                    "An opt-in accuracy pass retranscribes the whole recording when you stop, catching mistakes the live stream made.",
+                    "Hesitation self-corrections apply: \"meet at five, no, six\" delivers six."
+                ] },
+                { title: "Changed", items: [
+                    "Setting a shortcut is one control: click, press your combination or a single key, done."
+                ] },
+                { title: "Fixed", items: [
+                    "Dictations no longer lose text when a speech stream drops mid-sentence."
+                ] }
+            ] }
+        ]
     })
-    readonly property string currentTitle: "Speecher " + currentVersion
-    readonly property string whatsNewTitle: "What's new in " + currentVersion
-    readonly property string availableTitle: "Speecher " + availableVersion + " is available"
-    readonly property string downloadingTitle: "Downloading Speecher " + availableVersion
-    readonly property string readyDetail: "Speecher " + availableVersion + " is downloaded and ready."
-    // "Stable channel, released October 14, 2026.", or without a channel
-    // when none is chosen.
-    function releasedText(channel) { return (channel ? channel + " channel, released " : "Released ") + releaseDate + "." }
-    function checkingText(channel) { return "Checking the " + channel + " channel…" }
+    // The version run before the update the preview pretends happened.
+    readonly property string _lastSeen: "0.2.0"
 
-    function check() {
-        state = "checking"
-        _next = "available"
-        _step.interval = Theme.ms(1400)
-        _step.restart()
+    signal pageRequested(string pageId)
+
+    function check() { _go("checking", "available", 1400) }
+    function updateNow() {
+        if (state === "available") { state = "downloading"; progress = 0; _download.restart() }
+        else if (state === "ready") state = "restarting"
+        else if (state === "error" || state === "checkFailed") check()
     }
-    function install() {
-        state = "downloading"
-        progress = 0
-        _download.restart()
-    }
-    function restart() { state = "upToDate"; currentVersion = availableVersion; lastChecked = "Checked just now" }
-    function later() { state = "idle" }
+    function installAndRestart() { _restartWhenReady = true; updateNow() }
+    function later() { _putOff = true }
+    function dismiss() { state = "idle" }
     function openAllReleases() { System.open("the releases page in your browser") }
-    function openReleaseNotes() { System.open("the release notes for " + availableVersion + " in your browser") }
+    function newSince(version) { return _updated && version > _lastSeen }
+    function acknowledgeWhatsNew() { whatsNewPending = false }
+    function showWhatsNew() { pageRequested("updates") }
 
+    property bool _restartWhenReady: false
     property string _next: ""
+    function _go(now, next, ms) { state = now; _next = next; _step.interval = Theme.ms(ms); _step.restart() }
     property Timer _step: Timer { onTriggered: updates.state = updates._next }
     property Timer _download: Timer {
         interval: Theme.ms(120)
         repeat: true
         onTriggered: {
             updates.progress = Math.min(1, updates.progress + 0.035 + Math.random() * 0.04)
-            if (updates.progress >= 1) { stop(); updates.state = "ready" }
+            if (updates.progress < 1) return
+            stop()
+            updates.state = updates._restartWhenReady ? "restarting" : "ready"
         }
     }
 }

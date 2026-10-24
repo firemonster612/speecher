@@ -37,3 +37,21 @@ var rows = [
       help: "Updates install in the background and take effect after a restart.",
       keywords: "auto install background appimage" }
 ];
+
+// The version each settings row came in, by row id, for What's New's new
+// settings. A row reached only through another, such as the custom check
+// interval, is left out.
+var introduced = {
+    updateChannel: "0.1.0",
+    autoCheckUpdates: "0.1.0",
+    autoInstallUpdates: "0.1.0",
+    shortcutBehavior: "0.1.6",
+    codexFinalRetranscribe: "0.1.6",
+    cliproxyOauthDir: "0.2.0",
+    cancelShortcut: "0.2.1",
+    pauseShortcut: "0.2.1",
+    updateCheckInterval: "0.2.1",
+    insightsEnabled: "0.2.1",
+    reviewSelectionEdits: "0.2.1",
+    spokenLanguage: "0.2.1"
+};
