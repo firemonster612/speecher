@@ -15,10 +15,12 @@ Plate {
     readonly property var device: Schema.row("audioDevice")
     readonly property var test: Schema.row("microphoneTest")
     readonly property bool running: Audio.testState === "running"
+    // Whether the button's test is this page's: setup may hold it too.
+    readonly property bool holding: Audio.testHolders.indexOf(root) >= 0
     readonly property int levelHeight: 112
 
     // The page going away lets go of the microphone.
-    Component.onDestruction: Audio.stopTest()
+    Component.onDestruction: Audio.releaseTest(root)
 
     implicitHeight: views.height + Theme.space6 * 2
 
@@ -68,13 +70,14 @@ Plate {
                     id: testButton
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    variant: root.running ? "secondary" : "primary"
-                    iconName: root.running ? "square" : "mic"
+                    readonly property bool stops: root.holding && root.running
+                    variant: stops ? "secondary" : "primary"
+                    iconName: stops ? "square" : "mic"
                     busy: Audio.testState === "starting"
                     enabled: Audio.canToggleTest
-                    text: root.running ? root.test.stopLabel
+                    text: stops ? root.test.stopLabel
                         : Audio.testState === "starting" ? root.test.startingLabel : root.test.startLabel
-                    onClicked: Audio.toggleTest()
+                    onClicked: stops ? Audio.releaseTest(root) : Audio.holdTest(root)
                 }
             }
         }

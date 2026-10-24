@@ -111,9 +111,11 @@ Backend is the C++ types plus the mocks not yet replaced.
   isDefault }), relisted as they come and go, and the microphone test on the
   saved Input device: `testState`, `level`, `heard` (input since it started),
   `testError` (core's message) and `canToggleTest` (not while dictating).
-  The test moves to a newly chosen device, and stops when its page or window
-  goes (`stopTest`). `Microphones` (Speecher.App) words them: the device
-  choices, a saved microphone that has gone, and what the test says.
+  A page holds the test while it shows it (`holdTest`, `releaseTest`,
+  `testHolders`); it runs while anything holds it, starting again after a
+  dictation, and moves to a newly chosen device. `Microphones`
+  (Speecher.App) words them: the device choices, a saved microphone that
+  has gone, and what the test says.
 - `Dictation` is the session as the popup shows it: `state` (the popup's
   phase: idle, starting, listening, paused, transcribing, refining,
   delivering, delivered, review, error), `level`, `elapsed`, `words`,

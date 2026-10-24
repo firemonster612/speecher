@@ -31,8 +31,18 @@ QuickAudio::QuickAudio(ApplicationController *controller,
         connect(new QMediaDevices(this), &QMediaDevices::audioInputsChanged, this, &QuickAudio::refreshDevices);
     }
     connect(&m_test, &MicrophoneTest::changed, this, [this] {
-        if (m_test.state() == MicrophoneTestState::Starting) {
+        switch (m_test.state()) {
+        case MicrophoneTestState::Starting:
             m_testError.clear();
+            m_testRan = false;
+            break;
+        case MicrophoneTestState::Running:
+            m_testRan = true;
+            break;
+        case MicrophoneTestState::Stopped:
+            // Soon: a failure's reason arrives just after the stop.
+            keepTestRunningSoon();
+            break;
         }
         if (m_test.state() != MicrophoneTestState::Running) {
             setLevel(0);
@@ -42,7 +52,19 @@ QuickAudio::QuickAudio(ApplicationController *controller,
     connect(&m_test, &MicrophoneTest::levelChanged, this, &QuickAudio::setLevel);
     connect(&m_test, &MicrophoneTest::failed, this, [this](const QString &message) {
         m_testError = message;
+        // A device lost while running may be followed by one that opens; one
+        // that would not open fails the same way each time.
+        if (!m_testRan) {
+            m_failedDevice = m_controller->settings()->audioInputDeviceId();
+        }
         emit testChanged();
+    });
+    // Another device saved, or microphones coming and going, may open now.
+    connect(controller->settings(), &SettingsStore::audioCaptureSettingsChanged, this,
+            &QuickAudio::keepTestRunningSoon);
+    connect(this, &QuickAudio::devicesChanged, this, [this] {
+        m_failedDevice.reset();
+        keepTestRunningSoon();
     });
     refreshDevices();
 }
@@ -89,14 +111,45 @@ void QuickAudio::refreshDevices()
     emit devicesChanged();
 }
 
-void QuickAudio::toggleTest()
+void QuickAudio::holdTest(QObject *holder)
 {
-    m_test.toggle(m_controller->settings()->audioInputDeviceId());
+    if (!holder) {
+        return;
+    }
+    if (!m_holders.contains(holder)) {
+        m_holders.append(holder);
+        connect(holder, &QObject::destroyed, this, [this, holder] { releaseTest(holder); });
+        emit testChanged();
+    }
+    m_failedDevice.reset();
+    keepTestRunning();
 }
 
-void QuickAudio::stopTest()
+void QuickAudio::releaseTest(QObject *holder)
 {
-    m_test.stop();
+    if (!m_holders.removeOne(holder)) {
+        return;
+    }
+    disconnect(holder, &QObject::destroyed, this, nullptr);
+    if (m_holders.isEmpty()) {
+        m_test.stop();
+    }
+    emit testChanged();
+}
+
+void QuickAudio::keepTestRunning()
+{
+    const QString deviceId = m_controller->settings()->audioInputDeviceId();
+    if (m_holders.isEmpty() || m_failedDevice == deviceId) {
+        return;
+    }
+    // Does nothing unless the test is stopped and free to start.
+    m_test.start(deviceId);
+}
+
+void QuickAudio::keepTestRunningSoon()
+{
+    QMetaObject::invokeMethod(this, &QuickAudio::keepTestRunning, Qt::QueuedConnection);
 }
 
 void QuickAudio::setLevel(qreal level)

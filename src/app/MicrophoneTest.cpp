@@ -39,17 +39,30 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller,
         emit changed();
     });
     // The UI saves the device as it is chosen, and a running test moves to
-    // it so it hears the microphone that will record.
+    // it so it hears the microphone that will record. What it heard was the
+    // old device, so that goes even while Stopped.
     connect(controller.settings(), &SettingsStore::audioCaptureSettingsChanged, this,
             [this](const AudioCaptureSettings &settings) {
         if (settings.deviceId == m_deviceId) {
             return;
         }
-        const bool running = m_state == MicrophoneTestState::Running;
-        stop();
-        if (running) {
-            start(settings.deviceId);
+        m_deviceId = settings.deviceId;
+        if (std::exchange(m_heard, false)) {
+            emit changed();
         }
+        if (m_state == MicrophoneTestState::Starting) {
+            stop();
+            return;
+        }
+        // Queued: start() can wait in a nested event loop, which must not run
+        // inside the settings store's signal (a CLI's config set over IPC).
+        QMetaObject::invokeMethod(this, [this, deviceId = settings.deviceId] {
+            if (deviceId != m_deviceId || m_state != MicrophoneTestState::Running) {
+                return;
+            }
+            stop();
+            start(deviceId);
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -135,15 +148,6 @@ void MicrophoneTest::stop()
         return;
     }
     closeDevice();
-}
-
-void MicrophoneTest::toggle(const QString &deviceId)
-{
-    if (m_state == MicrophoneTestState::Stopped) {
-        start(deviceId);
-    } else {
-        stop();
-    }
 }
 
 void MicrophoneTest::setState(MicrophoneTestState state)

@@ -29,6 +29,7 @@ struct Rig {
               auto *input = new FakeAudioInput(parent);
               input->startResult = startResult;
               input->startError = startError;
+              input->onStart = onStart;
               inputs.append(input);
               return input;
           })
@@ -41,8 +42,12 @@ struct Rig {
                                             {builtIn, QStringLiteral("Built-in microphone"), true}};
     bool startResult = true;
     QString startError;
+    // Runs inside each input's start(), while the device opens.
+    std::function<void()> onStart;
     QList<QPointer<FakeAudioInput>> inputs;
     QuickAudio audio;
+    // What holds the test: the page showing it.
+    QObject page;
 };
 
 QVariantMap device(const QString &id, const QString &label, bool isDefault)
@@ -91,14 +96,14 @@ private slots:
         controller.settings()->setAudioInputDeviceId(yeti);
         Rig rig(controller);
 
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.input()->device, yeti);
 
         emit rig.input()->levelChanged(0.4f);
         QCOMPARE(rig.audio.level(), qreal(0.4f));
 
-        rig.audio.toggleTest();
+        rig.audio.releaseTest(&rig.page);
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
         QCOMPARE(rig.audio.level(), qreal(0));
     }
@@ -108,7 +113,7 @@ private slots:
         ApplicationController controller(true);
         Rig rig(controller);
 
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         // A dead microphone's hiss is not input.
         emit rig.input()->levelChanged(0.005f);
         QVERIFY(!rig.audio.heard());
@@ -116,9 +121,9 @@ private slots:
         QVERIFY(rig.audio.heard());
 
         // Stopping keeps it, for setup's check; starting again asks afresh.
-        rig.audio.stopTest();
+        rig.audio.releaseTest(&rig.page);
         QVERIFY(rig.audio.heard());
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         QVERIFY(!rig.audio.heard());
     }
 
@@ -126,14 +131,18 @@ private slots:
     {
         ApplicationController controller(true);
         Rig rig(controller);
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         emit rig.input()->levelChanged(0.2f);
         QVERIFY(rig.audio.heard());
 
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("audioDevice"), yeti);
-
         QCOMPARE(SettingsStore().audioInputDeviceId(), yeti);
+        QVERIFY(!rig.audio.heard());
+        // Not inside the settings store's signal: opening a device can wait.
+        QCOMPARE(rig.inputs.size(), 1);
+
+        QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.inputs.size(), 2);
         QCOMPARE(rig.input()->device, yeti);
@@ -147,12 +156,29 @@ private slots:
         rig.startResult = false;
         rig.startError = QStringLiteral("Microphone \"Blue Yeti\" is in use by another app.");
 
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
         QCOMPARE(rig.audio.testError(), rig.startError);
+        // Not tried again and again, nor for a setting that isn't the device.
+        QCoreApplication::processEvents();
+        AudioCaptureSettings capture = controller.settings()->audioCaptureSettings();
+        capture.preRollMs += 100;
+        controller.settings()->setAudioCaptureSettings(capture);
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.inputs.size(), 1);
 
+        // A microphone plugged in tries again, once.
+        rig.microphones.append({QStringLiteral("usb-rode"), QStringLiteral("Rode NT-USB"), false});
+        rig.audio.refreshDevices();
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.inputs.size(), 2);
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.inputs.size(), 2);
+
+        // So does holding it again, as Start test does.
         rig.startResult = true;
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.audio.testError(), QString());
     }
 
@@ -160,7 +186,7 @@ private slots:
     {
         ApplicationController controller(true);
         Rig rig(controller);
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
         emit rig.input()->levelChanged(0.2f);
 
         rig.input()->emitFailure(QStringLiteral("Microphone \"Blue Yeti\" was disconnected."));
@@ -168,22 +194,94 @@ private slots:
         QCOMPARE(rig.audio.testError(), QStringLiteral("Microphone \"Blue Yeti\" was disconnected."));
         // What it heard is gone with it, so setup asks again.
         QVERIFY(!rig.audio.heard());
+
+        // It tries again, on whatever records now.
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.inputs.size(), 2);
     }
 
     void dictationTakesTheMicrophone()
     {
         ApplicationController controller(true);
         Rig rig(controller);
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
 
         emit controller.stateChanged(QStringLiteral("listening"));
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
         QVERIFY(!rig.audio.canToggleTest());
-        rig.audio.toggleTest();
+        rig.audio.holdTest(&rig.page);
+        QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
 
+        // The page still shows it, so it listens again.
         emit controller.stateChanged(QStringLiteral("idle"));
         QVERIFY(rig.audio.canToggleTest());
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+    }
+
+    // Setup's step holds the test while Main's microphone page holds and
+    // releases it: nothing Main does stops it.
+    void setupKeepsItsTestWhateverMainDoes()
+    {
+        ApplicationController controller(true);
+        Rig rig(controller);
+        QObject micCheck;
+        rig.audio.holdTest(&rig.page);
+
+        rig.audio.holdTest(&micCheck);
+        rig.audio.releaseTest(&micCheck);
+        QVERIFY(!rig.audio.testHolders().contains(&micCheck));
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.inputs.size(), 1);
+
+        // Once nothing holds it, it stops; a holder going counts.
+        {
+            QObject other;
+            rig.audio.holdTest(&other);
+            rig.audio.releaseTest(&rig.page);
+            QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        }
+        QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
+    }
+
+    // Leaving setup's step and coming back while the device still opens.
+    void aQuickLeaveAndReturnKeepsTheTest()
+    {
+        ApplicationController controller(true);
+        Rig rig(controller);
+        QObject returned;
+        bool once = true;
+        rig.onStart = [&] {
+            if (std::exchange(once, false)) {
+                rig.audio.releaseTest(&rig.page);
+                rig.audio.holdTest(&returned);
+            }
+        };
+
+        rig.audio.holdTest(&rig.page);
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.audio.testHolders(), QObjectList{&returned});
+    }
+
+    // What was heard on one microphone does not vouch for another.
+    void savingAnotherDeviceForgetsWhatWasHeard()
+    {
+        ApplicationController controller(true);
+        Rig rig(controller);
+        rig.audio.holdTest(&rig.page);
+        emit rig.input()->levelChanged(0.2f);
+        rig.audio.releaseTest(&rig.page);
+        QVERIFY(rig.audio.heard());
+        QSignalSpy changed(&rig.audio, &QuickAudio::testChanged);
+
+        QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
+        QVERIFY(!rig.audio.heard());
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
     }
 
     // The device choices as the page and setup offer them.

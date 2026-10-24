@@ -11,27 +11,9 @@ import Speecher.App
 StepPage {
     id: page
 
-    // The microphone test runs while the step is on show. When its device
-    // goes mid-test, it moves to the one that records now; when one won't
-    // open, a microphone plugged in or chosen tries again.
-    function listen() { if (Audio.testState === "stopped") Audio.toggleTest() }
-    Component.onCompleted: listen()
-    Component.onDestruction: Audio.stopTest()
-    Connections {
-        target: Audio
-        function onDevicesChanged() { page.listen() }
-    }
-    readonly property string device: Settings.values.audioDevice || ""
-    onDeviceChanged: listen()
-    // The reason for a failure arrives just after the stop.
-    readonly property string testState: Audio.testState
-    property bool _running: false
-    onTestStateChanged: {
-        if (_running && testState === "stopped") {
-            Qt.callLater(() => { if (Audio.testError !== "") page.listen() })
-        }
-        _running = testState === "running"
-    }
+    // The microphone test runs while the step is on show.
+    Component.onCompleted: Audio.holdTest(page)
+    Component.onDestruction: Audio.releaseTest(page)
 
     readonly property var test: Schema.row("microphoneTest")
 
@@ -63,7 +45,9 @@ StepPage {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: Theme.space5
-            text: Audio.heard ? page.test.heardText : Microphones.testStatus
+            text: Audio.heard ? page.test.heardText
+                : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
+                : page.test.notHeardText
             tone: Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
         }
     }
