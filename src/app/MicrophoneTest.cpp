@@ -104,7 +104,7 @@ void MicrophoneTest::start(const QString &deviceId)
         }
         emit levelChanged(level);
     });
-    connect(input, &AudioInput::failed, this, [this](const QString &message) {
+    connect(input, &AudioInput::failed, this, [this, deviceId](const QString &message) {
         // While Starting, start() reports it once the input's start() returns.
         if (m_state == MicrophoneTestState::Starting) {
             m_startFailure = message;
@@ -114,7 +114,7 @@ void MicrophoneTest::start(const QString &deviceId)
         // What it heard came from a device that has gone.
         m_heard = false;
         stop();
-        emit failed(message);
+        emit failed(deviceId, message);
     });
     m_input = input;
     setState(MicrophoneTestState::Starting);
@@ -134,7 +134,7 @@ void MicrophoneTest::start(const QString &deviceId)
     if (!started || stopRequested) {
         closeDevice();
         if (!failure.isEmpty() || !started) {
-            emit failed(failure.isEmpty() ? error : failure);
+            emit failed(deviceId, failure.isEmpty() ? error : failure);
         }
         return;
     }

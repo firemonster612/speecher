@@ -199,6 +199,56 @@ private slots:
         QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.inputs.size(), 2);
+
+        // Once: failing again, it waits rather than reopening the device.
+        rig.input()->emitFailure(QStringLiteral("Microphone \"Blue Yeti\" was disconnected."));
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
+        QCOMPARE(rig.inputs.size(), 2);
+    }
+
+    // Choosing another microphone while the first still opens, and the first
+    // then failing: the failure is the first's, so the second is tried.
+    void aFailureCountsAgainstTheDeviceThatFailed()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setAudioInputDeviceId(yeti);
+        Rig rig(controller);
+        bool once = true;
+        rig.onStart = [&] {
+            if (std::exchange(once, false)) {
+                QuickSettings(&controller).set(QStringLiteral("audioDevice"), builtIn);
+                rig.input()->startResult = false;
+            }
+        };
+
+        rig.audio.holdTest(&rig.page);
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.input()->device, builtIn);
+    }
+
+    // A microphone that would not open is tried again once chosen again.
+    void choosingAFailedDeviceAgainTriesIt()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setAudioInputDeviceId(yeti);
+        Rig rig(controller);
+        QuickSettings settings(&controller);
+        rig.startResult = false;
+        rig.audio.holdTest(&rig.page);
+        rig.startResult = true;
+        settings.set(QStringLiteral("audioDevice"), builtIn);
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+
+        // Chosen during a dictation, so the test starts on it afterwards.
+        emit controller.stateChanged(QStringLiteral("listening"));
+        settings.set(QStringLiteral("audioDevice"), yeti);
+        emit controller.stateChanged(QStringLiteral("idle"));
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.input()->device, yeti);
     }
 
     void dictationTakesTheMicrophone()

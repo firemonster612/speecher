@@ -19,9 +19,9 @@ class ApplicationController;
 // carries data, not wording: the UI words the device choices and the test.
 // Whatever shows the test holds it, and the test runs while anything holds it
 // and it can: it starts again after a dictation, after a stop that was asked
-// for while a new hold arrived, and after its device fails while running. A
-// device that will not open is tried again only on a new hold, a microphone
-// coming or going, or another device saved.
+// for while a new hold arrived, and once after its device fails while
+// running. A device that will not open, or fails again, is tried again only
+// on a new hold, a microphone coming or going, or another device saved.
 class QuickAudio final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Audio)
@@ -101,9 +101,13 @@ private:
     QObjectList m_holders;
     // The test reached Running since it last started.
     bool m_testRan = false;
-    // The saved device the test last could not open, not tried again until
-    // something the class comment names changes.
-    std::optional<QString> m_failedDevice;
+    // The device the test last failed on, and whether it waits for something
+    // the class comment names before it is opened again.
+    struct DeviceFailure {
+        QString deviceId;
+        bool waits = false;
+    };
+    std::optional<DeviceFailure> m_failure;
 };
 
 } // namespace speecher

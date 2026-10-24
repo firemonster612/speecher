@@ -52,7 +52,9 @@ signals:
     // The audio input's level, 0 to 1: the same signal that drives the popup
     // waveform during a Dictation Session.
     void levelChanged(float level);
-    void failed(const QString &message);
+    // The device the test opened would not open or stopped working; it may
+    // no longer be the saved one.
+    void failed(const QString &deviceId, const QString &message);
 
 private:
     void setState(MicrophoneTestState state);

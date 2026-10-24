@@ -50,20 +50,25 @@ QuickAudio::QuickAudio(ApplicationController *controller,
         emit testChanged();
     });
     connect(&m_test, &MicrophoneTest::levelChanged, this, &QuickAudio::setLevel);
-    connect(&m_test, &MicrophoneTest::failed, this, [this](const QString &message) {
+    connect(&m_test, &MicrophoneTest::failed, this, [this](const QString &deviceId, const QString &message) {
         m_testError = message;
-        // A device lost while running may be followed by one that opens; one
-        // that would not open fails the same way each time.
-        if (!m_testRan) {
-            m_failedDevice = m_controller->settings()->audioInputDeviceId();
-        }
+        // A device lost while running may be back, or another may record in
+        // its place, so it is tried once more. One that would not open fails
+        // the same way each time, and one that fails twice may keep failing.
+        const bool failedBefore = m_failure && m_failure->deviceId == deviceId;
+        m_failure = DeviceFailure{deviceId, !m_testRan || failedBefore};
         emit testChanged();
     });
     // Another device saved, or microphones coming and going, may open now.
     connect(controller->settings(), &SettingsStore::audioCaptureSettingsChanged, this,
-            &QuickAudio::keepTestRunningSoon);
+            [this](const AudioCaptureSettings &capture) {
+        if (m_failure && m_failure->deviceId != capture.deviceId) {
+            m_failure.reset();
+        }
+        keepTestRunningSoon();
+    });
     connect(this, &QuickAudio::devicesChanged, this, [this] {
-        m_failedDevice.reset();
+        m_failure.reset();
         keepTestRunningSoon();
     });
     refreshDevices();
@@ -121,7 +126,7 @@ void QuickAudio::holdTest(QObject *holder)
         connect(holder, &QObject::destroyed, this, [this, holder] { releaseTest(holder); });
         emit testChanged();
     }
-    m_failedDevice.reset();
+    m_failure.reset();
     keepTestRunning();
 }
 
@@ -140,7 +145,7 @@ void QuickAudio::releaseTest(QObject *holder)
 void QuickAudio::keepTestRunning()
 {
     const QString deviceId = m_controller->settings()->audioInputDeviceId();
-    if (m_holders.isEmpty() || m_failedDevice == deviceId) {
+    if (m_holders.isEmpty() || (m_failure && m_failure->waits && m_failure->deviceId == deviceId)) {
         return;
     }
     // Does nothing unless the test is stopped and free to start.
