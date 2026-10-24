@@ -2,13 +2,15 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Effects
 import Speecher.Theme
+import Speecher.Backend
 
 // A window that draws its own frame, the same on every desktop: rounded
 // corners and a soft shadow, a strip along the top that moves it (a double
 // click maximizes), its buttons at the top right, and a resize grip in the
 // shadow margin. Maximized or full screen, the margin and corners go.
 // Content goes inside and should leave the top titleBarHeight free of
-// controls, since the strip lies over it.
+// controls, since the strip lies over it. While Theme is translucent, the
+// frame's paper lets the desktop through, blurred by the compositor.
 Window {
     id: client
 
@@ -23,6 +25,15 @@ Window {
 
     function toggleMaximized() { visibility === Window.Maximized ? showNormal() : showMaximized() }
 
+    // What the compositor blurs: the frame, without the shadow margin.
+    readonly property var _blur: ({
+        area: Theme.translucent ? Qt.rect(margin, margin, width - margin * 2, height - margin * 2) : Qt.rect(0, 0, 0, 0),
+        radius: cornerRadius,
+        dark: Theme.dark
+    })
+    on_BlurChanged: Appearance.setBlurBehind(client, _blur.area, _blur.radius, _blur.dark)
+    Component.onCompleted: Appearance.setBlurBehind(client, _blur.area, _blur.radius, _blur.dark)
+
     RectangularShadow {
         visible: client.framed
         anchors.fill: frame
@@ -36,7 +47,7 @@ Window {
         anchors.fill: parent
         anchors.margins: client.margin
         radius: client.cornerRadius
-        color: Theme.paper
+        color: Theme.sidePaper
 
         Item {
             id: body

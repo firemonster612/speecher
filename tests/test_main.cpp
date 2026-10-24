@@ -113,6 +113,7 @@ int main(int argc, char **argv)
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
     if (selected("quick_settings")) result |= runQuickSettingsTests(argc, argv);
+    if (selected("quick_appearance")) result |= runQuickAppearanceTests(argc, argv);
     if (selected("quick_dictation")) result |= runQuickDictationTests(argc, argv);
     if (selected("quick_updates")) result |= runQuickUpdatesTests(argc, argv);
     if (selected("quick_transcription")) result |= runQuickTranscriptionTests(argc, argv);

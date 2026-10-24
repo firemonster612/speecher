@@ -92,3 +92,17 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Plasma Wayland protocols: blur
+
+The translucent sidebar asks KWin for its blur through the `org_kde_kwin_blur`
+protocol, whose description `src/platform/protocols/kde-blur.xml` is copied
+from https://invent.kde.org/libraries/plasma-wayland-protocols. The build
+generates the client code from it.
+
+```
+SPDX-FileCopyrightText: 2015 Martin Gräßlin
+SPDX-FileCopyrightText: 2015 Marco Martin
+
+SPDX-License-Identifier: LGPL-2.1-or-later
+```

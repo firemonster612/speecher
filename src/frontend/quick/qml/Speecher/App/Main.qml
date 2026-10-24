@@ -26,12 +26,13 @@ ClientWindow {
     onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()
     onLeftToQuitChanged: if (leftToQuit) System.quit()
 
-    // Opaque, so the search palette's blurred copy of it hides what is under.
+    // Opaque, so the search palette's blurred copy of it hides what is
+    // under; translucent, the window's own paper shows the desktop instead.
     Rectangle {
         id: content
         anchors.fill: parent
         radius: window.cornerRadius
-        color: Theme.paper
+        color: Theme.translucent ? "transparent" : Theme.paper
 
         Sidebar {
             id: sidebar
@@ -45,7 +46,6 @@ ClientWindow {
         Sheet {
             visible: !window.settingsDeleted
             side: sidebar
-            anchors.topMargin: window.titleBarHeight
 
             T.StackView {
                 id: stack

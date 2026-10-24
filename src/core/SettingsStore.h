@@ -166,6 +166,9 @@ public:
     using SettingsCodecs::setRecordingConsentNoticeShown;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
+    using SettingsCodecs::setColorScheme;
+    using SettingsCodecs::setTranslucency;
+    using SettingsCodecs::setWindowLayout;
     using SettingsCodecs::setTranscriptionPreviewEnabled;
     using SettingsCodecs::setUseTargetContext;
     using SettingsCodecs::setVocabularyEntries;
@@ -187,6 +190,9 @@ public:
     using SettingsCodecs::shortcutActivationMode;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;
+    using SettingsCodecs::colorScheme;
+    using SettingsCodecs::translucency;
+    using SettingsCodecs::windowLayout;
     using SettingsCodecs::useTargetContext;
     using SettingsCodecs::vocabularyEntries;
     using SettingsCodecs::writingProfileOverrides;

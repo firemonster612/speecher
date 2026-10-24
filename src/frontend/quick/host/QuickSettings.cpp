@@ -277,6 +277,9 @@ const SettingRow settingRows[] = {
     FIELD_ROW("localGraphicsCard", speech.local.runsOn.deviceId),
 
     FIELD_ROW("themeControl", ui.theme),
+    FIELD_ROW("colorScheme", ui.colorScheme),
+    FIELD_ROW("translucency", ui.translucency),
+    FIELD_ROW("windowLayout", ui.windowLayout),
     // Only macOS and Windows can start Speecher at login. The Quick UI builds
     // only on Linux for now; the macOS and Windows PR in this stack builds it
     // there, where General shows this row.

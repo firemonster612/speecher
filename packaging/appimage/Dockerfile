@@ -41,6 +41,7 @@ RUN apt-get update \
         pulseaudio \
         python3 \
         qt6-base-dev \
+        qt6-base-private-dev \
         qt6-declarative-dev \
         qt6-gtk-platformtheme \
         qt6-multimedia-dev \

@@ -23,6 +23,7 @@
 #endif
 #include "platform/audio/QtAudioInput.h"
 #include "platform/audio/WavFileAudioInput.h"
+#include "platform/KWinBlurBackdrop.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -153,6 +154,11 @@ TextDeliveryAdapter *LinuxComposition::createTextDelivery(TargetProvider *target
 PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 {
     return new WaylandLayerShell(parent);
+}
+
+WindowBackdrop *LinuxComposition::createWindowBackdrop(QObject *parent) const
+{
+    return new KWinBlurBackdrop(parent);
 }
 
 namespace {

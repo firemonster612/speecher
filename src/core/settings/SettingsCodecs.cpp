@@ -219,6 +219,40 @@ void SettingsCodecs::setTheme(const QString &value)
     m_settings.setValue(SettingsKeys::UiTheme, QStringLiteral("system"));
 }
 
+// Any id: the UI owns its schemes, and one that is gone reads as its own.
+QString SettingsCodecs::colorScheme() const
+{
+    const QString scheme = value(SettingsKeys::UiColorScheme, QStringLiteral("steno")).toString();
+    return scheme.isEmpty() ? QStringLiteral("steno") : scheme;
+}
+
+void SettingsCodecs::setColorScheme(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::UiColorScheme, value.trimmed());
+}
+
+bool SettingsCodecs::translucency() const
+{
+    return value(SettingsKeys::UiTranslucency, true).toBool();
+}
+
+void SettingsCodecs::setTranslucency(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiTranslucency, value);
+}
+
+QString SettingsCodecs::windowLayout() const
+{
+    return value(SettingsKeys::UiWindowLayout, QString()).toString() == QStringLiteral("split") ? QStringLiteral("split")
+                                                                                     : QStringLiteral("framed");
+}
+
+void SettingsCodecs::setWindowLayout(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::UiWindowLayout,
+                        value == QStringLiteral("split") ? QStringLiteral("split") : QStringLiteral("framed"));
+}
+
 bool SettingsCodecs::pauseMediaDuringTranscription() const
 {
     return value(SettingsKeys::UiPauseMedia, true).toBool();
@@ -1493,6 +1527,9 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.selectionEditReviewEnabled = selectionEditReviewEnabled();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
+    settings.ui.colorScheme = colorScheme();
+    settings.ui.translucency = translucency();
+    settings.ui.windowLayout = windowLayout();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
     settings.ui.soundsEnabled = soundsEnabled();
 

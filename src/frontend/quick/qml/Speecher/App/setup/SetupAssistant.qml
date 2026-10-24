@@ -81,7 +81,6 @@ ClientWindow {
     // The current step -------------------------------------------------
     Sheet {
         side: sideColumn
-        anchors.topMargin: window.titleBarHeight
 
         T.StackView {
             id: stack
