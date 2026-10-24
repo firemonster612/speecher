@@ -226,6 +226,16 @@ private slots:
         QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.input()->device, builtIn);
+
+        // The first, chosen again during a dictation, is tried afterwards:
+        // its failure came after the choice had moved on, so holds nothing.
+        rig.input()->startResult = true;
+        emit controller.stateChanged(QStringLiteral("listening"));
+        QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
+        emit controller.stateChanged(QStringLiteral("idle"));
+        QCoreApplication::processEvents();
+        QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
+        QCOMPARE(rig.input()->device, yeti);
     }
 
     // A microphone that would not open is tried again once chosen again.

@@ -55,6 +55,12 @@ QuickAudio::QuickAudio(ApplicationController *controller,
         // A device lost while running may be back, or another may record in
         // its place, so it is tried once more. One that would not open fails
         // the same way each time, and one that fails twice may keep failing.
+        // A device no longer chosen holds nothing back: the choice moved on.
+        if (deviceId != m_controller->settings()->audioInputDeviceId()) {
+            m_failure.reset();
+            emit testChanged();
+            return;
+        }
         const bool failedBefore = m_failure && m_failure->deviceId == deviceId;
         m_failure = DeviceFailure{deviceId, !m_testRan || failedBefore};
         emit testChanged();
