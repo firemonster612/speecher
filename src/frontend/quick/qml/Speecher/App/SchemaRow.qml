@@ -102,8 +102,9 @@ SettingRow {
             readonly property bool saved: Accounts.savedSecrets[root.rowId] === true
             // The key a refused clear left behind is still there to clear.
             readonly property bool clearable: saved || Accounts.pendingClears[root.rowId] === true
-            // The draft handed to Accounts last.
-            property string _submitted
+            // Whether the field changed since its draft went to Accounts:
+            // a flag, so no copy of the key outlives the field's own text.
+            property bool _editedSinceSubmit: false
             showText: Words.show
             hideText: Words.hide
             secret: true
@@ -113,16 +114,17 @@ SettingRow {
             // asked for meanwhile waits its turn, so the field lets go only
             // when Accounts says the draft submitted last was kept, and only
             // if nothing was typed since.
+            onTextChanged: _editedSinceSubmit = true
             onEditingFinished: {
                 if (!text.trim())
                     return
-                _submitted = text
+                _editedSinceSubmit = false
                 Accounts.saveSecret(root.rowId, text)
             }
             Connections {
                 target: Accounts
                 function onSecretSaved(rowId) {
-                    if (rowId === root.rowId && field.text === field._submitted)
+                    if (rowId === root.rowId && !field._editedSinceSubmit)
                         field.clear()
                 }
             }

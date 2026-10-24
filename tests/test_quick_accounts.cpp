@@ -331,6 +331,12 @@ private slots:
         QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("proxy-key"));
         QCOMPARE(row.field->property("text").toString(), QString());
         QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("Saved"));
+        // No property of the field keeps a copy of the saved key.
+        const QMetaObject *meta = row.field->metaObject();
+        for (int i = 0; i < meta->propertyCount(); ++i) {
+            QVERIFY2(!meta->property(i).read(row.field).toString().contains(QStringLiteral("proxy-key")),
+                     meta->property(i).name());
+        }
 
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
         QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("A key the server accepts"));
