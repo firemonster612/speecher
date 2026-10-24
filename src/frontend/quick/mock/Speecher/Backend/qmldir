@@ -1,0 +1,15 @@
+module Speecher.Backend
+singleton Accounts 1.0 Accounts.qml
+singleton Audio 1.0 Audio.qml
+singleton Dictation 1.0 Dictation.qml
+DictationState 1.0 DictationState.qml
+singleton Insights 1.0 Insights.qml
+singleton Library 1.0 Library.qml
+singleton Models 1.0 Models.qml
+singleton Schema 1.0 Schema.qml
+singleton Settings 1.0 Settings.qml
+singleton Status 1.0 Status.qml
+singleton System 1.0 System.qml
+singleton Transcription 1.0 Transcription.qml
+singleton Updates 1.0 Updates.qml
+singleton Words 1.0 Words.qml

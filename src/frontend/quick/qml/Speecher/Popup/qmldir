@@ -1,0 +1,6 @@
+module Speecher.Popup
+DictationPopup 1.0 DictationPopup.qml
+PopupWindow 1.0 PopupWindow.qml
+VoiceOrb 1.0 VoiceOrb.qml
+LiveWords 1.0 LiveWords.qml
+CircleButton 1.0 CircleButton.qml

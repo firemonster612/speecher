@@ -1,0 +1,15 @@
+module Speecher.App
+singleton Navigation 1.0 Navigation.qml
+Main 1.0 Main.qml
+Sidebar 1.0 Sidebar.qml
+SearchPalette 1.0 SearchPalette.qml
+SchemaRow 1.0 SchemaRow.qml
+SetupAssistant 1.0 setup/SetupAssistant.qml
+SearchLanding 1.0 SearchLanding.qml
+AccessibilityNotice 1.0 AccessibilityNotice.qml
+HealthRow 1.0 HealthRow.qml
+StateText 1.0 StateText.qml
+Sheet 1.0 Sheet.qml
+States 1.0 states.js
+ClientWindow 1.0 ClientWindow.qml
+WindowControls 1.0 WindowControls.qml
