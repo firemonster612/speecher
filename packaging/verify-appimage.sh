@@ -45,6 +45,7 @@ REQUIRED_FILES=(
   usr/plugins/styles/adwaita.so
   usr/plugins/styles/libkvantum.so
   usr/plugins/iconengines/libqsvgicon.so
+  usr/plugins/imageformats/libqsvg.so
   usr/plugins/networkinformation/libqnetworkmanager.so
   usr/qml/QtCore/qmldir
   usr/qml/QtQml/qmldir

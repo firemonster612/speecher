@@ -2,7 +2,9 @@ import QtQuick
 import Speecher.Theme
 
 // One setting: title and help on the left, its control on the right. Set
-// stacked to put a wide control under the text instead. Inside a card, rows
+// stacked to put a wide control under the text instead. helpLink makes a
+// part of help a link, which calls helpLinkActivated with the help's text
+// to open something from. Inside a card, rows
 // after the first draw an inset divider above themselves; set first where
 // the row is not a direct child of the card's column.
 Item {
@@ -10,6 +12,7 @@ Item {
 
     property string title
     property string help
+    property string helpLink
     property string iconName
     property color iconTint: Theme.textSecondary
     property bool stacked: false
@@ -26,6 +29,7 @@ Item {
     property bool first: Positioner.isFirstItem
     default property alias control: slot.data
     signal clicked()
+    signal helpLinkActivated(Item at)
 
     // A pencil wash that comes and goes once, to show where a search landed.
     function highlight() { flash.restart() }
@@ -107,9 +111,12 @@ Item {
         spacing: 3
         opacity: row._ink
         Txt { text: row.title; variant: "label"; width: parent.width; wrapMode: Text.WordWrap }
-        Txt {
+        LinkedText {
+            id: helpText
             visible: row.help.length > 0
-            text: row.help
+            plainText: row.help
+            link: row.helpLink
+            onActivated: row.helpLinkActivated(helpText)
             variant: "small"
             tone: "secondary"
             width: parent.width

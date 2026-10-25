@@ -155,6 +155,23 @@ private slots:
         QCOMPARE(bars.at(0).toMap().value(QStringLiteral("value")).toDouble(), 8.5);
     }
 
+    // Each speech service lists the languages core says it listens for, so
+    // the UI can show them; Automatic is not one of them.
+    void speechServicesCarryTheirLanguages()
+    {
+        ApplicationController controller(true);
+        QuickModels models(&controller);
+        const auto languages = [&models](const QString &id) {
+            return entry(models.speechServices(), id).value(QStringLiteral("languages")).toStringList();
+        };
+
+        QCOMPARE(languages(QStringLiteral("codex")).size(), 67);
+        QVERIFY(languages(QStringLiteral("codex")).contains(QStringLiteral("cy")));
+        QCOMPARE(languages(QStringLiteral("claude")).size(), 52);
+        QVERIFY(!languages(QStringLiteral("claude")).contains(QStringLiteral("cy")));
+        QVERIFY(!languages(QStringLiteral("claude")).contains(QStringLiteral("auto")));
+    }
+
     // Before the probe answers nothing fits, is suggested, estimated or
     // rated on this computer; its answer brings all four and the hardware.
     void theHardwareProbeBringsFitsSuggestionsAndRatings()

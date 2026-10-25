@@ -18,6 +18,7 @@ EaseColor 1.0 EaseColor.qml
 EditableList 1.0 EditableList.qml
 EmptyState 1.0 EmptyState.qml
 FallbackList 1.0 FallbackList.qml
+Flag 1.0 Flag.qml
 FocusRing 1.0 FocusRing.qml
 FormField 1.0 FormField.qml
 Grow 1.0 Grow.qml
@@ -28,6 +29,9 @@ InlineForm 1.0 InlineForm.qml
 InputFrame 1.0 InputFrame.qml
 KeyCap 1.0 KeyCap.qml
 KeyCombo 1.0 KeyCombo.qml
+LanguagePopover 1.0 LanguagePopover.qml
+LanguageSelect 1.0 LanguageSelect.qml
+LinkedText 1.0 LinkedText.qml
 ListRow 1.0 ListRow.qml
 Menu 1.0 Menu.qml
 MenuButton 1.0 MenuButton.qml

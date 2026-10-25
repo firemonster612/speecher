@@ -50,7 +50,9 @@ Page {
             currentId: page.primary
             unratedText: ModelText.unrated
             onActivated: id => page.choose(id)
+            onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
+        LanguageList { id: serviceLanguages; objectName: "serviceLanguages" }
     }
 
     Section {

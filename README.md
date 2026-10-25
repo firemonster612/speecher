@@ -14,13 +14,13 @@ Sign in to at least one transcription service: Claude Code for Claude, or the Ch
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel libpulse
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-svg qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel libpulse
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-base-private-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libpulse-dev libwebrtc-audio-processing-dev
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-base-private-dev qt6-multimedia-dev qt6-websockets-dev qt6-svg-plugins qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libpulse-dev libwebrtc-audio-processing-dev
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel pulseaudio-libs-devel
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtsvg qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel pulseaudio-libs-devel
 
 # macOS
 brew install cmake ninja pkgconf qt qtkeychain

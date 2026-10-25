@@ -82,7 +82,9 @@ Column {
             currentId: view.options.service
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("service", id)
+            onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
+        LanguageList { id: serviceLanguages }
         // The model, for these files, of a service that has one to choose.
         // Without a downloaded Local Model the service's card says what to do.
         SettingRow {
@@ -110,7 +112,11 @@ Column {
         SettingRow {
             title: TranscribeWords.language
             help: TranscribeWords.languageHelp
-            Select { options: Schema.row("spokenLanguage").options; currentId: view.options.language; onChosen: id => Transcription.setOption("language", id) }
+            LanguageSelect {
+                placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+                options: Schema.row("spokenLanguage").options; currentId: view.options.language
+                onChosen: id => Transcription.setOption("language", id)
+            }
         }
         SettingRow {
             title: TranscribeWords.vocabulary

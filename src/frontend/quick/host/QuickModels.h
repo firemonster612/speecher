@@ -29,7 +29,9 @@ class QuickModels final : public QObject {
     // connection check failed) or language; problem is core's sentence for
     // any but ready and unknown. Each also has signInChecking and
     // signInCheckFailure, setup's sign-in check apart from the state: whether
-    // it runs, and why the last one couldn't reach the service.
+    // it runs, and why the last one couldn't reach the service, and
+    // languages, the codes core says it listens for (spokenLanguages, without
+    // Automatic; a Local Model's are the chosen model's).
     Q_PROPERTY(QVariantList speechServices READ speechServices NOTIFY changed)
     // As speechServices, each with readsScreenshots.
     Q_PROPERTY(QVariantList refinementProviders READ refinementProviders NOTIFY changed)

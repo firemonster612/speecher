@@ -51,9 +51,10 @@ Copy-Item (Join-Path $RootDir "src\frontend\quick\assets\icons\LICENSE-Lucide.tx
 $WinDeployQt = (Get-Command windeployqt.exe).Source
 # The Qt Quick UI's own QML modules are compiled into speecher.exe;
 # windeployqt reads their imports from --qmldir to deploy the Qt modules they
-# need.
+# need. --svg brings Qt SVG and its image plugin, which draws the UI's
+# language flags; nothing in speecher.exe links it for windeployqt to find.
 $QmlDir = Join-Path $RootDir "src\frontend\quick\qml"
-& $WinDeployQt --release --no-translations --no-compiler-runtime --qmldir $QmlDir (Join-Path $AppDir "speecher.exe")
+& $WinDeployQt --release --no-translations --no-compiler-runtime --svg --qmldir $QmlDir (Join-Path $AppDir "speecher.exe")
 if ($LASTEXITCODE -ne 0) {
     throw "windeployqt failed with exit code $LASTEXITCODE"
 }
@@ -98,6 +99,9 @@ foreach ($Module in Get-Content (Join-Path $RootDir "packaging\qt-qml-modules.tx
 # when the computer is offline.
 if (-not (Test-Path (Join-Path $AppDir "networkinformation\qnetworklistmanager.dll"))) {
     throw "windeployqt did not deploy Qt's network reachability plugin"
+}
+if (-not (Test-Path (Join-Path $AppDir "imageformats\qsvg.dll"))) {
+    throw "windeployqt did not deploy Qt's SVG image plugin, which draws the language flags"
 }
 
 $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
