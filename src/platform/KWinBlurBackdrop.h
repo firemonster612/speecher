@@ -58,9 +58,8 @@ private:
 
     void apply(QWindow *window);
     void release(Blur &blur);
-    // Which protocol blurs, or whether any does, changed: every blur is made
-    // again with the one that blurs now, or, with none, every blur and
-    // region goes until set() asks again.
+    // The protocol that blurs changed: each blur is made again with it, or,
+    // if none blurs, dropped with its region until set() asks again.
     void blurChanged();
 
     std::unique_ptr<Wayland> m_wayland;

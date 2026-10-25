@@ -158,10 +158,11 @@ void bindAnything(wl_client *client, void *interface, uint32_t version, uint32_t
 // surfaces and regions, which accept whatever is asked of them, on a thread
 // of its own. As KWin does when its Blur effect goes off and on, it takes
 // KWin's older blur manager away and offers it again, or has the background
-// effect manager say it can blur or not.
+// effect manager say it can blur or not. It can also take the background
+// effect manager away, at once as a client binds it if asked.
 class BlurCompositor {
 public:
-    enum class Offers { KWinBlur, BackgroundEffect };
+    enum class Offers { KWinBlur, BackgroundEffect, BackgroundEffectGoneAsBound };
 
     explicit BlurCompositor(Offers offers = Offers::KWinBlur)
         : m_display(wl_display_create())
@@ -173,8 +174,9 @@ public:
         }
         wl_global_create(m_display, &wl_compositor_interface, 4, const_cast<wl_interface *>(&wl_compositor_interface),
                          bindAnything);
-        if (offers == Offers::BackgroundEffect) {
-            wl_global_create(m_display, &ext_background_effect_manager_v1_interface, 1, this, bindEffects);
+        if (offers != Offers::KWinBlur) {
+            m_goneAsBound = offers == Offers::BackgroundEffectGoneAsBound;
+            m_manager = wl_global_create(m_display, &ext_background_effect_manager_v1_interface, 1, this, bindEffects);
         } else {
             offerManager();
         }
@@ -206,6 +208,7 @@ public:
 
     // The client end of the connection, for wl_display_connect_to_fd.
     int clientFd() const { return m_clientFd; }
+    // Whichever manager it offers.
     void takeManagerAway()
     {
         ask([this] {
@@ -235,9 +238,14 @@ private:
     static void postCapabilities(wl_resource *manager, bool blur) { wl_resource_post_event(manager, 0, blur ? 1u : 0u); }
     static void bindEffects(wl_client *client, void *data, uint32_t version, uint32_t id)
     {
+        auto *self = static_cast<BlurCompositor *>(data);
         wl_resource *manager = wl_resource_create(client, &ext_background_effect_manager_v1_interface, int(version), id);
         acceptAnything(manager);
-        postCapabilities(manager, static_cast<BlurCompositor *>(data)->m_effectsBlur);
+        postCapabilities(manager, self->m_effectsBlur);
+        if (self->m_goneAsBound) {
+            // Removed now; destroyed with the display.
+            wl_global_remove(self->m_manager);
+        }
     }
 
     void offerManager()
@@ -256,6 +264,7 @@ private:
     wl_global *m_manager = nullptr;
     // Only the compositor's thread reads it once that runs.
     bool m_effectsBlur = true;
+    bool m_goneAsBound = false;
     int m_clientFd = -1;
     std::mutex m_mutex;
     std::vector<std::function<void()>> m_asked;
@@ -595,9 +604,59 @@ private slots:
             compositor.setEffectsBlur(true);
             QVERIFY(dispatchUntil(display, changed, 2));
             QVERIFY(backdrop.available());
+            backdrop.set(&window, QRect(0, 0, 200, 100), 8, false);
+            QVERIFY(wl_display_roundtrip(display) >= 0);
+            QCOMPARE(requestsTaken().count(QStringLiteral("ext_background_effect_manager_v1.get_background_effect")), 2);
         }
         wl_surface_destroy(surface);
         wl_compositor_destroy(surfaces);
+        wl_display_disconnect(display);
+    }
+
+    // The background effect manager taken away while a window blurs: the
+    // blur goes with it, and the window shown again asks nothing more.
+    void backgroundEffectLeavesAWindowAloneOnceTheManagerGoes()
+    {
+        BlurCompositor compositor(BlurCompositor::Offers::BackgroundEffect);
+        wl_display *display = wl_display_connect_to_fd(compositor.clientFd());
+        QVERIFY(display);
+        wl_compositor *surfaces = bindCompositor(display);
+        QVERIFY(surfaces);
+        wl_surface *surface = wl_compositor_create_surface(surfaces);
+        QWindow window;
+        window.resize(200, 100);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        {
+            KWinBlurBackdrop backdrop(display, surfaces, [surface](QWindow *) { return surface; });
+            QSignalSpy changed(&backdrop, &WindowBackdrop::availableChanged);
+            backdrop.set(&window, QRect(0, 0, 200, 100), 8, false);
+
+            compositor.takeManagerAway();
+            QVERIFY(dispatchUntil(display, changed, 1));
+            QVERIFY(!backdrop.available());
+            QExposeEvent expose(QRegion(0, 0, 200, 100));
+            QCoreApplication::sendEvent(&window, &expose);
+            QVERIFY(wl_display_roundtrip(display) >= 0);
+            QCOMPARE(requestsTaken().count(QStringLiteral("ext_background_effect_surface_v1.set_blur_region")), 1);
+            QVERIFY(requestsTaken().contains(QStringLiteral("ext_background_effect_surface_v1.destroy")));
+        }
+        wl_surface_destroy(surface);
+        wl_compositor_destroy(surfaces);
+        wl_display_disconnect(display);
+    }
+
+    // A manager taken away while the backdrop is still binding it leaves
+    // nothing to blur with.
+    void backgroundEffectGoneWhileBindingIsUnavailable()
+    {
+        BlurCompositor compositor(BlurCompositor::Offers::BackgroundEffectGoneAsBound);
+        wl_display *display = wl_display_connect_to_fd(compositor.clientFd());
+        QVERIFY(display);
+        {
+            KWinBlurBackdrop backdrop(display, nullptr, {});
+            QVERIFY(!backdrop.available());
+        }
         wl_display_disconnect(display);
     }
 #endif

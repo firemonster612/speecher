@@ -38,15 +38,15 @@ struct KWinBlurBackdrop::Wayland {
     KWinBlurBackdrop *owner = nullptr;
     wl_compositor *compositor = nullptr;
     wl_registry *registry = nullptr;
-    ext_background_effect_manager_v1 *effects = nullptr;
+    ext_background_effect_manager_v1 *effectsManager = nullptr;
     // Whether the effects manager says it can blur now.
     bool effectsBlur = false;
-    org_kde_kwin_blur_manager *manager = nullptr;
+    org_kde_kwin_blur_manager *kwinManager = nullptr;
     // The managers' globals, to know them when the compositor removes them.
-    uint32_t effectsName = 0;
-    uint32_t managerName = 0;
+    uint32_t effectsManagerName = 0;
+    uint32_t kwinManagerName = 0;
 
-    bool usesEffects() const { return effects && effectsBlur; }
+    bool usesEffects() const { return effectsManager && effectsBlur; }
 #endif
 };
 
@@ -116,28 +116,28 @@ KWinBlurBackdrop::KWinBlurBackdrop(wl_display *display, wl_compositor *composito
     static const wl_registry_listener listener = {
         .global = [](void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t) {
             auto *wayland = static_cast<Wayland *>(data);
-            if (!wayland->effects && std::strcmp(interface, ext_background_effect_manager_v1_interface.name) == 0) {
-                wayland->effects = static_cast<ext_background_effect_manager_v1 *>(
+            if (!wayland->effectsManager && std::strcmp(interface, ext_background_effect_manager_v1_interface.name) == 0) {
+                wayland->effectsManager = static_cast<ext_background_effect_manager_v1 *>(
                     wl_registry_bind(registry, name, &ext_background_effect_manager_v1_interface, 1));
-                wayland->effectsName = name;
-                ext_background_effect_manager_v1_add_listener(wayland->effects, &effectsListener, wayland);
-            } else if (!wayland->manager && std::strcmp(interface, org_kde_kwin_blur_manager_interface.name) == 0) {
-                wayland->manager = static_cast<org_kde_kwin_blur_manager *>(
+                wayland->effectsManagerName = name;
+                ext_background_effect_manager_v1_add_listener(wayland->effectsManager, &effectsListener, wayland);
+            } else if (!wayland->kwinManager && std::strcmp(interface, org_kde_kwin_blur_manager_interface.name) == 0) {
+                wayland->kwinManager = static_cast<org_kde_kwin_blur_manager *>(
                     wl_registry_bind(registry, name, &org_kde_kwin_blur_manager_interface, 1));
-                wayland->managerName = name;
+                wayland->kwinManagerName = name;
                 wayland->owner->blurChanged();
             }
         },
         .global_remove = [](void *data, wl_registry *, uint32_t name) {
             auto *wayland = static_cast<Wayland *>(data);
-            if (wayland->effects && name == wayland->effectsName) {
-                ext_background_effect_manager_v1_destroy(wayland->effects);
-                wayland->effects = nullptr;
+            if (wayland->effectsManager && name == wayland->effectsManagerName) {
+                ext_background_effect_manager_v1_destroy(wayland->effectsManager);
+                wayland->effectsManager = nullptr;
                 wayland->effectsBlur = false;
                 wayland->owner->blurChanged();
-            } else if (wayland->manager && name == wayland->managerName) {
-                org_kde_kwin_blur_manager_destroy(wayland->manager);
-                wayland->manager = nullptr;
+            } else if (wayland->kwinManager && name == wayland->kwinManagerName) {
+                org_kde_kwin_blur_manager_destroy(wayland->kwinManager);
+                wayland->kwinManager = nullptr;
                 wayland->owner->blurChanged();
             }
         },
@@ -153,13 +153,16 @@ KWinBlurBackdrop::KWinBlurBackdrop(wl_display *display, wl_compositor *composito
     wl_proxy_wrapper_destroy(wrapper);
     wl_registry_add_listener(m_wayland->registry, &listener, m_wayland.get());
     wl_display_roundtrip_queue(display, queue);
-    if (m_wayland->effects) {
+    if (m_wayland->effectsManager) {
         wl_display_roundtrip_queue(display, queue);
-        wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->effects), nullptr);
     }
+    // Either round trip may have removed a manager it bound.
     wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->registry), nullptr);
-    if (m_wayland->manager) {
-        wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->manager), nullptr);
+    if (m_wayland->effectsManager) {
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->effectsManager), nullptr);
+    }
+    if (m_wayland->kwinManager) {
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_wayland->kwinManager), nullptr);
     }
     // Whatever arrived for the registry since the round trip.
     wl_display_dispatch_queue_pending(display, queue);
@@ -176,11 +179,11 @@ KWinBlurBackdrop::~KWinBlurBackdrop()
         release(blur);
     }
 #ifdef SPEECHER_WITH_KWIN_BLUR
-    if (m_wayland->effects) {
-        ext_background_effect_manager_v1_destroy(m_wayland->effects);
+    if (m_wayland->effectsManager) {
+        ext_background_effect_manager_v1_destroy(m_wayland->effectsManager);
     }
-    if (m_wayland->manager) {
-        org_kde_kwin_blur_manager_destroy(m_wayland->manager);
+    if (m_wayland->kwinManager) {
+        org_kde_kwin_blur_manager_destroy(m_wayland->kwinManager);
     }
     if (m_wayland->registry) {
         wl_registry_destroy(m_wayland->registry);
@@ -207,13 +210,13 @@ void KWinBlurBackdrop::blurChanged()
 bool KWinBlurBackdrop::available() const
 {
 #ifdef SPEECHER_WITH_KWIN_BLUR
-    return m_wayland->usesEffects() || m_wayland->manager;
+    return m_wayland->usesEffects() || m_wayland->kwinManager;
 #else
     return false;
 #endif
 }
 
-// KWin's blur has no material of its own; dark is the UI's to draw.
+// The compositor's blur has no material of its own; dark is the UI's to draw.
 void KWinBlurBackdrop::set(QWindow *window, const QRect &area, int radius, bool)
 {
     if (!window || !available()) {
@@ -254,6 +257,8 @@ void KWinBlurBackdrop::apply(QWindow *window)
     if (!surface) {
         return;
     }
+    // Qt tells of a surface going before it goes, so one at the same address
+    // is the same surface.
     if (blur.surface != surface) {
         release(blur);
         blur.surface = surface;
@@ -265,7 +270,7 @@ void KWinBlurBackdrop::apply(QWindow *window)
             blur.surface = surface;
         } else {
             if (!blur.effect) {
-                blur.effect = ext_background_effect_manager_v1_get_background_effect(m_wayland->effects, surface);
+                blur.effect = ext_background_effect_manager_v1_get_background_effect(m_wayland->effectsManager, surface);
             }
             wl_region *region = waylandRegion(m_wayland->compositor, blur.region);
             ext_background_effect_surface_v1_set_blur_region(blur.effect, region);
@@ -273,13 +278,13 @@ void KWinBlurBackdrop::apply(QWindow *window)
         }
     } else if (blur.region.isEmpty()) {
         if (blur.blur) {
-            org_kde_kwin_blur_manager_unset(m_wayland->manager, surface);
+            org_kde_kwin_blur_manager_unset(m_wayland->kwinManager, surface);
             release(blur);
             blur.surface = surface;
         }
     } else {
         if (!blur.blur) {
-            blur.blur = org_kde_kwin_blur_manager_create(m_wayland->manager, surface);
+            blur.blur = org_kde_kwin_blur_manager_create(m_wayland->kwinManager, surface);
         }
         wl_region *region = waylandRegion(m_wayland->compositor, blur.region);
         org_kde_kwin_blur_set_region(blur.blur, region);
