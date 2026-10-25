@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -14,8 +13,7 @@ Page {
     subtitle: Schema.page("profiles").subtitle
 
     readonly property var profiles: Library.profiles
-    // Preview state: --profile=<id> opens that profile, --profiles-form=tone|level opens a form.
-    property string selectedId: Launch.arg("profile", "work")
+    property string selectedId: "work"
     readonly property int selectedIndex: Math.max(0, profiles.findIndex(p => p.id === selectedId))
     readonly property var selected: profiles[selectedIndex]
 
@@ -172,7 +170,6 @@ Page {
                     title: editing ? Library.profilesText.editTone : Library.profilesText.newTone
                     saveText: editing ? Words.save : Library.profilesText.addTone
                     canSave: toneName.text.trim().length > 0 && toneText.text.trim().length > 0
-                    open: Launch.arg("profiles-form", "") === "tone"
                     onCancelled: open = false
                     onSaved: {
                         const tone = { name: toneName.text.trim(), instruction: toneText.text }
@@ -234,7 +231,6 @@ Page {
                     title: editing ? Library.profilesText.editLevel : Library.profilesText.newLevel
                     saveText: editing ? Words.save : Library.profilesText.addLevel
                     canSave: levelName.text.trim().length > 0 && (base !== "custom_only" || levelText.text.trim().length > 0)
-                    open: Launch.arg("profiles-form", "") === "level"
                     onCancelled: open = false
                     onSaved: {
                         const level = { name: levelName.text.trim(), base: base, instructions: levelText.text }

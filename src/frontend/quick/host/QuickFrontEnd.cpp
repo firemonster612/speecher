@@ -25,7 +25,6 @@
 
 // The UI's QML modules are linked in statically (cmake/QuickUi.cmake).
 Q_IMPORT_QML_PLUGIN(Speecher_ThemePlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_LaunchPlugin)
 Q_IMPORT_QML_PLUGIN(Speecher_DemoPlugin)
 Q_IMPORT_QML_PLUGIN(Speecher_WordingPlugin)
 Q_IMPORT_QML_PLUGIN(Speecher_ControlsPlugin)

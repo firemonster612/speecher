@@ -11,29 +11,24 @@ data.
 | Path | What lives there |
 |---|---|
 | `qml/Speecher/Theme/Theme.qml` | Every colour, size, font and motion value |
-| `qml/Speecher/Launch/Launch.qml` | `Launch.arg(name, fallback)`: the `--name=value` options the app started with |
 | `qml/Speecher/Controls/` | The design system: buttons, switches, rows, cards, pages |
 | `qml/Speecher/App/` | The window, sidebar, search palette and pages; `ThemeSetting`, which makes Theme follow the Appearance settings, and `ColorSchemes`, the colour schemes the Colors setting offers |
 | `qml/Speecher/App/pages/` | One file per page, local parts in `pages/<area>/` |
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
-| `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships only `Library.qml`, which words the real `LibraryLists` |
+| `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
+| `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
 | `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`) |
-| `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
-`cmake/QuickUi.cmake` builds each directory under `qml/` (and the Backend from
-`mock/` plus `host/`) into a QML module compiled into the binary; each
-directory's qmldir names its singletons for both the app and the preview.
+`cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
+`host/`'s C++) into a QML module compiled into the binary; each directory's
+qmldir names its singletons.
 
 ## Wiring plan
 
 Pages import `Speecher.Backend` and read only its singletons for data. The
-preview's module in `mock/` and the app's module expose the same API, so
-wiring an area means replacing its mock with a C++ type of the same name, not
-editing pages. Each Backend type comes from exactly one module: the app's
-Backend is the C++ types plus `Library.qml`.
+Backend is the C++ types in `host/` plus `Library.qml`.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
@@ -103,8 +98,8 @@ Backend is the C++ types plus `Library.qml`.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
-- `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`; the
-  preview's `LibraryLists.qml` mocks it): the Writing Profiles, custom tones
+- `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
+  Writing Profiles, custom tones
   and cleanup levels, vocabulary terms, Learned Corrections, replacements and
   app matches, read from and saved through the daemon's `SettingsStore`.
   `add(list, item)` and `update(list, key, patch)` (a key is the entry's id,
@@ -162,14 +157,10 @@ Backend is the C++ types plus `Library.qml`.
   `SchemaRow { rowId: "…" }`.
 - Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
   and state pages show. Keep their properties plain (strings, numbers, arrays
-  of objects) so a C++ `QObject` or model can replace them one for one.
+  of objects).
   Each list has one owner (speech services and refinement providers in `Models`, profiles, tones and
   levels in `Library`, microphones in `Audio`, app types in the pasting
-  schema); every other place derives from it with the same ids. A button
-  that would leave the app (open settings, pick a file) calls a named mock
-  command whose outcome shows: a state change, or `System.open(what)`'s toast.
-  Mocks never import `Speecher.Controls`: `System.announced(text, icon)` says
-  what happened, and Main shows it as a toast.
+  schema); every other place derives from it with the same ids.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
@@ -192,8 +183,7 @@ Backend is the C++ types plus `Library.qml`.
 - Wording belongs to the UI. It comes from the schema row, `Words` (shared
   words such as Cancel, Save and Copied, and the shell's: `Words.shell`,
   `Words.results(count)`) or the page, kept short and in one place per page.
-  A C++ Backend type carries data, not wording; when an area is wired, the
-  wording its mock holds moves into QML. The popup words itself
+  A C++ Backend type carries data, not wording. The popup words itself
   (`DictationPopup.t`) and Home words the dictation's state; the
   messages core writes (receipts, errors, a review's summary) come through
   as they are.
@@ -430,9 +420,7 @@ layout. Durations come from `Theme.fast`, `Theme.base`,
 `Theme.slow`, `Theme.page` or `Theme.ms(n)`; curves from `Theme.easeOut`
 (the default), `Theme.easeInOut`, `Theme.springy`, `Theme.easeIn`,
 `Theme.breathe` (loops that pulse) or `Theme.steady` (motion that never
-settles, such as a sweep). Timer intervals use `Theme.ms(n)` too. The video
-tool slows time through `Theme.timeScale`, so an animation that ignores it
-stutters on video.
+settles, such as a sweep). Timer intervals use `Theme.ms(n)` too.
 
 The shared controls already move; use them rather than animating by hand:
 
@@ -449,10 +437,7 @@ The shared controls already move; use them rather than animating by hand:
 
 ## Component catalogue
 
-Every control below is in `Speecher.Controls`, and the gallery shows each in
-its states, with a few exceptions. `Card` and `Surface` show only as the
-Sections' cards and the open menu. `RowList` looks like a Column until its
-values change, so it and the helpers show only on the pages that use them.
+Every control below is in `Speecher.Controls`.
 
 Controls never import `Speecher.Backend`: the page reads the singletons and
 hands the control plain values and options, and its wording too, since
@@ -548,8 +533,6 @@ In Speecher.App, besides SchemaRow:
   `visible` on rows or empty states; use `Reveal` or `SettingRow.shown`.
 - A custom row that stands for a schema row gets a `SearchLanding`, so a
   search for it lands somewhere.
-- Preview states a page opens with (a form, a tab) come from
-  `Launch.arg(...)`; mock singletons read their states the same way.
 - `SchemaRow { rowId }` renders a schema row with the right control.
   `SettingRow { title; help; iconName }` with a custom control inside covers
   anything the schema can't describe.
@@ -563,50 +546,16 @@ In Speecher.App, besides SchemaRow:
 - Don't name an id after a built-in property (`palette`, `data`, `state`,
   `parent`, `children`, `font`).
 
-## Trying it by hand
+## Checking
 
-`preview/try.sh` (or `preview/try.ps1` on Windows) opens the front end in an
-ordinary window on mock data, to click around: `try.sh` for the main window,
-`try.sh setup`, `try.sh popup` (the popup's story on a loop) and
-`try.sh gallery`. It needs only uv; the first run fetches PySide6. Arguments
-such as `--theme=dark` or `--reduce-motion=true` pass through.
-`python preview/bundle.py OUT.zip` packs it to try on another machine.
+`ctest -R speecher_quick_pages` opens Main, the setup assistant and the popup
+as the daemon does, over the real Backend, in light and dark, and visits every
+page, a few searches, every setup step and every popup state. Any warning the
+QML engine reports fails it; fix all of them. `ctest -R speecher_qmllint` runs
+qmllint over the UI's modules, and `.qmllint.ini` makes any lint warning fail
+it. A page is done when you have looked at it in both themes yourself.
 
-## Previewing
-
-```sh
-preview/run.sh --page <page id> --out ~/.cache/speecher-quick/shots/<name>.png
-preview/run.sh --page <page id> --theme light --out …
-preview/run.sh --page <page id> --row <row id> --out …       # jump to a row
-preview/run.sh --page <page id> --search "query" --out …     # search palette
-preview/run.sh --page <page id> --arg transcribe-state=running --out …  # mock state
-preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --arg popup-demo=review --out review.png
-preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --record 19 --time-scale 3 --out popup.mp4
-preview/run.sh --page vocabulary --record 2 --time-scale 4 --poke vocabularyPage.tab=corrections@0.6 --out tab.mp4  # an interaction, on video
-preview/run.sh --page home --poke Speecher.Backend/Dictation.state=listening@0.5 --out live.png  # a singleton
-preview/run.sh --page home --record 2 --poke Speecher.App/Navigation.current=refinement@0.5 --out load.mp4  # a page loading
-preview/run.sh --root Speecher.App/SetupAssistant --size 960x720 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
-preview/run.sh --page pasting --scroll 900 --out lower.png   # scrolled down first
-```
-
-`--poke` reaches an item by objectName (list delegates included), a
-singleton as `Module/Type`, or the window when the name is left out.
-
-`--arg name=value` reaches QML as `--name=value` in `Qt.application.arguments`;
-mock singletons read it to start in a given state.
-
-The gallery of every shared control, in either theme:
-
-```sh
-preview/run.sh --root SpeecherPreview/Gallery --size 1640x1600 --theme dark --out gallery.png
-```
-
-It runs a private headless KWin, so nothing appears on screen, and writes a
-2x PNG. Lines starting `QML:` are warnings; fix all of them. A page is done
-when you have looked at its screenshots in both themes yourself.
-
-The app has one hook of its own for the same job: with
-`SPEECHER_GRAB_MAIN_WINDOW=<file.png>` set, the daemon saves the real main
+With `SPEECHER_GRAB_MAIN_WINDOW=<file.png>` set, the daemon saves the real main
 window a moment after each time it shows it, since a headless compositor lets
 no other client take a screenshot. `packaging/verify-appimage.sh` uses it to
 check that the packaged UI opens.

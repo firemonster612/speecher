@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -63,7 +62,6 @@ Section {
         title: section.t.newRule
         saveText: section.t.addRule
         canSave: ruleApp.text.trim().length > 0
-        open: Launch.arg("pasting-form", "") === "rule"
         onCancelled: open = false
         onSaved: {
             section.save(section.rules.concat([{ app: ruleApp.text.trim(), method: method, enabled: true }]))

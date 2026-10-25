@@ -15,7 +15,6 @@ Card {
 
     SearchLanding { rowIds: ["bindingRules"]; target: view }
 
-    property string startForm
     readonly property var items: Library.replacements
 
     // The replacement as proof segments, its placeholders marked as added
@@ -29,7 +28,6 @@ Card {
     function startAdd() { editing = ""; phrase.text = ""; replacement.text = ""; form.error = ""; form.open = true }
     function startEdit(r) { editing = r.phrase; phrase.text = r.phrase; replacement.text = r.replacement; form.error = ""; form.open = true }
     function startImport() { form.open = false; importChooser.open() }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && items.length) startEdit(items[Math.min(2, items.length - 1)])
 
     VocabImport { id: importChooser; list: "replacements" }
     InlineForm {

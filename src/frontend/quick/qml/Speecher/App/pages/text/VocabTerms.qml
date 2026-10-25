@@ -18,8 +18,6 @@ Card {
         target: view
     }
 
-    property string startForm   // "add" or "edit", for previews
-
     readonly property var terms: Library.terms
     // The terms the search matches.
     readonly property var matching: terms.filter(t => !search.text || t.term.toLowerCase().includes(search.text.toLowerCase()))
@@ -42,7 +40,6 @@ Card {
     function toggleProfile(id) {
         draftProfiles = draftProfiles.includes(id) ? draftProfiles.filter(p => p !== id) : draftProfiles.concat([id])
     }
-    Component.onCompleted: if (startForm === "add") startAdd(); else if (startForm === "edit" && terms.length) startEdit(terms[1])
 
     VocabImport { id: importChooser; list: "terms" }
     InlineForm {

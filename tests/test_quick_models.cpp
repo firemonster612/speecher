@@ -553,7 +553,7 @@ private slots:
     }
 
     // The pages and setup steps that read Models load over the C++ one
-    // without a warning, so its properties and the preview's mock agree.
+    // without a warning, so every property they read exists.
     void thePagesLoadOverIt_data()
     {
         QTest::addColumn<QString>("page");

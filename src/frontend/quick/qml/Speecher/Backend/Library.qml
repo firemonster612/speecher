@@ -1,17 +1,14 @@
 pragma Singleton
 import QtQuick
 import Speecher.Wording
-import Speecher.Launch
 
 // What the Text pages show. Writing Profiles with their tones and cleanup
-// levels, the three word lists and the app matches are LibraryLists, real in
-// the app (host/QuickLibrary); this words them and derives what the pages
-// show from them. Each list has one owner: speech services, refinement
+// levels, the three word lists and the app matches are LibraryLists
+// (host/QuickLibrary); this words them and derives what the pages show from
+// them. Each list has one owner: speech services, refinement
 // providers and runners are Models', paste rules are Settings rows, the
 // fallback profile is the defaultWritingProfile setting, and app types are
 // the pasting schema's.
-//
-// Preview states: --library=empty empties every list.
 LibraryLists {
     id: library
 

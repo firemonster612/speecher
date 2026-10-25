@@ -1,2 +1,0 @@
-module Speecher.Launch
-singleton Launch 1.0 Launch.qml
