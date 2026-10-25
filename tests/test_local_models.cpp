@@ -277,88 +277,9 @@ private slots:
         choice = resolveRunnerChoice({"ollama", "saved-model"}, runners, std::nullopt);
         QVERIFY(choice.showSuggestion);
         QVERIFY(!choice.offerPull);
-        for (const auto &id : {"local", "endpoint", "none"})
-            QCOMPARE(setupProviderChoice(id, {"claude"}, false), QString(id));
-        QCOMPARE(setupProviderChoice("claude", {"codex"}, false), QString("codex"));
-        QCOMPARE(setupProviderChoice("claude", {"codex"}, true), QString("claude"));
         // A pull is saved under the name Ollama lists it by.
         QCOMPARE(ollamaListedName("gemma4:e4b"), QString("gemma4:e4b"));
         QCOMPARE(ollamaListedName("LiquidAI/lfm2.5-1.2b-instruct"), QString("LiquidAI/lfm2.5-1.2b-instruct:latest"));
-        QCOMPARE(ownModelRefinementSummary({.providerId = "local", .localRunner = {"lmstudio", "m"}}),
-                 QString("LM Studio with m"));
-    }
-
-    void theTranscriptionStepOffersCustomEndpointAlways()
-    {
-        // Custom Endpoint is set up on the step, so it is a choice whatever
-        // was saved; Local only where the assistant can set it up.
-        QVERIFY(offersSetupSpeechProvider("endpoint", false));
-        QVERIFY(offersSetupSpeechProvider("endpoint", true));
-        QVERIFY(offersSetupSpeechProvider("claude", false));
-        QVERIFY(offersSetupSpeechProvider("local", true));
-        QVERIFY(!offersSetupSpeechProvider("local", false));
-    }
-
-    void tooSmallAMachineCannotRunAnyModel()
-    {
-        // 16 GB of free RAM runs the smallest model; 2 GB runs nothing.
-        QVERIFY(anyLocalModelFits(laptop4750u()));
-        HardwareProfile tiny = laptop4750u();
-        tiny.systemRamBytes = 2 * gb;
-        tiny.availableRamBytes = 2 * gb;
-        QVERIFY(!anyLocalModelFits(tiny));
-
-        QTemporaryDir directory;
-        SettingsStore settings;
-        settings.raw().clear();
-        ProviderRegistry providers;
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup setup(settings, providers, models);
-        // Optimistic until the probe answers: nothing is too small before
-        // anyone measured it.
-        QVERIFY(setup.canRunAnyModel());
-        HardwareSummary hardware;
-        hardware.profile = tiny;
-        LocalSetupTestAccess::setHardware(setup, hardware);
-        QVERIFY(!setup.canRunAnyModel());
-        hardware.profile = laptop4750u();
-        LocalSetupTestAccess::setHardware(setup, hardware);
-        QVERIFY(setup.canRunAnyModel());
-
-        // A too-small card does not condemn the machine: the CPU placement
-        // still counts.
-        HardwareSummary smallCard;
-        smallCard.profile = laptop4750u();
-        smallCard.profile.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
-        smallCard.profile.gpuMemoryBytes = 1 * gib;
-        LocalSetupTestAccess::setHardware(setup, smallCard);
-        QVERIFY(setup.canRunAnyModel());
-
-        // Free memory at probe time is pressure, not capacity: a loaded but
-        // capable machine is still able, even though nothing fits right now.
-        HardwareSummary loaded;
-        loaded.profile = laptop4750u();
-        loaded.profile.availableRamBytes = 1 * gb;
-        QVERIFY(!anyLocalModelFits(loaded.profile));
-        LocalSetupTestAccess::setHardware(setup, loaded);
-        QVERIFY(setup.canRunAnyModel());
-
-        // A probe that answered nothing stays unknown rather than too small.
-        LocalSetupTestAccess::setHardware(setup, HardwareSummary());
-        QVERIFY(setup.canRunAnyModel());
-    }
-
-    void speechDefaultsToThisComputerOnlyWithoutAnySignIn()
-    {
-        QCOMPARE(setupSpeechChoice("claude", {}, true, false, false), QString("local"));
-        QCOMPARE(setupSpeechChoice("claude", {"codex"}, true, false, false), QString("codex"));
-        QCOMPARE(setupSpeechChoice("claude", {}, true, true, false), QString("claude"));
-        // Not where the build has no Local Model or the hardware can't run one.
-        QCOMPARE(setupSpeechChoice("claude", {}, false, false, false), QString("claude"));
-        QCOMPARE(setupSpeechChoice("claude", {}, true, false, true), QString("claude"));
-        QVERIFY(!isSetupSignInProvider("local"));
-        QVERIFY(!isSetupSignInProvider("endpoint"));
-        QVERIFY(isSetupSignInProvider("codex"));
     }
 
     void interruptedDownloadsResumeButCancelledOnesDoNot()

@@ -19,25 +19,6 @@ class ProviderAvailability;
 class ProviderRegistry;
 class SettingsStore;
 
-// Readiness never overrides a saved own-model choice.
-// Every speech provider is a choice, Local only where the assistant can set it up.
-bool offersSetupSpeechProvider(const QString &id, bool localAvailable);
-bool isSetupSignInProvider(const QString &id);
-QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen);
-// Refinement is optional: an unready default sign-in with no ready one to
-// move to gives way to a runner on this computer, or to "none". A saved
-// provider is kept. Asked once the provider checks and the runner check have
-// answered.
-QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound,
-                              bool explicitlyChosen);
-
-// Speech is required: an unready default sign-in with no ready one to move to
-// gives way to a Local Model, where the build offers one and this computer can
-// run it (LocalSetup::canRunAnyModel), unless a CLI Proxy API account could
-// sign it in. Asked once the provider checks have answered.
-QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
-                          bool proxyAccountFound, bool explicitlyChosen);
-
 struct RunnerChoice {
     LocalRunnerSettings selection;
     std::optional<DetectedRunner> available;
@@ -47,10 +28,6 @@ struct RunnerChoice {
 RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion);
-
-// What the Ready step names for an own-model refinement choice: "Ollama with
-// gemma4:e4b", "qwen3 on your server". Empty for any other provider.
-QString ownModelRefinementSummary(const RefinementSettings &settings);
 
 // A local fallback this computer can run, which setup suggests adding.
 // LocalSetup::setupFallbackOffer() decides whether there is one;
@@ -109,13 +86,7 @@ public:
     // engine's backends is what makes it slow.
     void probeHardware();
     bool hardwareKnown() const;
-    // Whether this computer can run a local speech model at all, on any
-    // placement. True until the hardware probe answers: a machine is not
-    // declared too small before anyone measured it.
-    bool canRunAnyModel() const;
     const HardwareSummary &hardware() const;
-    // "AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB".
-    QString hardwareLine() const;
     const LocalModel &suggestedModel() const;
     // Against the memory of where Runs on puts models. Empty until the
     // hardware probe answers: nothing is too large before anyone knows.
@@ -132,7 +103,6 @@ public:
     bool removeModel(const LocalModel &model);
     // Bytes received and total for a running download.
     std::optional<std::pair<qint64, qint64>> downloadProgress(const QString &modelId) const;
-    QString downloadError(const QString &modelId) const;
 
     // Runs on its own after every download that finishes. A request while
     // another test runs waits for it.
@@ -140,7 +110,6 @@ public:
     // Running or waiting its turn.
     bool speedTestRunning(const QString &modelId) const;
     std::optional<double> measuredSeconds(const QString &modelId) const;
-    QString speedTestError(const QString &modelId) const;
 
     // Saves the hardware default once known, without marking a user choice.
     // The hardware probe settles deferred initialization for every front end.
@@ -224,7 +193,6 @@ signals:
     // Bytes of a running Ollama pull; pull() has them too. changed() only
     // marks its start, end and failure.
     void pullProgress(qint64 completedBytes, qint64 totalBytes);
-    void cleanupModelPulled(const QString &ollamaTag);
 
 private:
     friend class LocalSetupTestAccess;
