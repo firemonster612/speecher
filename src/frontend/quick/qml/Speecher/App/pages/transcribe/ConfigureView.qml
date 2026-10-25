@@ -15,6 +15,16 @@ Column {
 
     readonly property var options: Transcription.options
     readonly property bool refines: options.refiner !== "none"
+    // The models the chosen refiner offers, with the one it runs now if
+    // that is not among them; empty for a refiner that names none.
+    readonly property var refinerModels: {
+        const models = (options.refiner === "openai" ? Models.openAiModels
+                        : options.refiner === "anthropic" ? Models.anthropicModels : [])
+                       .map(m => ({ id: m.id, label: m.label }))
+        const current = Transcription.refinerModel
+        return !models.length || !current || models.some(m => m.id === current)
+            ? models : models.concat([{ id: current, label: current }])
+    }
 
     spacing: Theme.sectionGap
 
@@ -71,6 +81,18 @@ Column {
             currentId: view.options.service
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("service", id)
+        }
+        SettingRow {
+            // Without a downloaded model the service's card says what to do.
+            shown: view.options.service === "local" && ModelText.downloadedModels.length > 0
+            title: TranscribeWords.model
+            help: TranscribeWords.speechModelHelp
+            Select {
+                options: ModelText.downloadedModels
+                currentId: Transcription.speechModel
+                placeholder: TranscribeWords.chooseModel
+                onChosen: id => Transcription.setOption("speechModel", id)
+            }
         }
         SettingRow {
             title: TranscribeWords.language
@@ -132,7 +154,16 @@ Column {
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("refiner", id)
         }
+        // A refiner that names its models picks one here, for these files;
+        // the others' models are Refinement's.
         SettingRow {
+            shown: view.refinerModels.length > 0
+            title: TranscribeWords.model
+            help: TranscribeWords.refinerModelHelp
+            Select { options: view.refinerModels; currentId: Transcription.refinerModel; onChosen: id => Transcription.setOption("refinerModel", id) }
+        }
+        SettingRow {
+            shown: !view.refinerModels.length
             enabled: view.refines
             title: TranscribeWords.model
             help: view.refines ? TranscribeWords.modelHint : TranscribeWords.needsRefiner

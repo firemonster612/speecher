@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/WritingProfileProviders.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDir>
@@ -182,8 +183,19 @@ void TranscribeQueue::chooseProfile(const QString &profile)
     m_options.refinementProviderId = resolved.refinement.providerId;
     m_options.cleanupStrength = profileCleanupLevel(chosen, settings.refinement.customCleanupLevels);
     m_options.tone = chosen.tone;
+    m_options.speechModel.clear();
+    m_options.refinementModel.clear();
     m_optionsChosen = true;
     emit optionsChanged();
+}
+
+QString TranscribeQueue::speechModel() const
+{
+    if (!profilePicksSpeechModel(m_options.speechProviderId)) {
+        return {};
+    }
+    return withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options)
+        .speech.local.modelId;
 }
 
 QString TranscribeQueue::refinementModel() const

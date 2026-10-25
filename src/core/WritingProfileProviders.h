@@ -13,6 +13,10 @@ namespace speecher {
 // page names.
 bool profilePicksSpeechModel(const QString &providerId);
 
+// Makes refinement's chosen provider run model, where it names one (OpenAI,
+// Anthropic); the other providers keep theirs.
+void setRefinementModel(RefinementSettings &refinement, const QString &model);
+
 // The speech settings the profile's own service runs with: its provider and
 // model over the Dictation page's settings. Nullopt when the profile uses the
 // Dictation page's choice.

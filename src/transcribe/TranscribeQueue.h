@@ -48,6 +48,8 @@ public:
     // Picks a Writing Profile and takes its services, cleanup level and tone,
     // as dictation would.
     void chooseProfile(const QString &profile);
+    // The Local Model the batch listens with, or empty for another service.
+    QString speechModel() const;
     // The model the chosen refinement provider runs for the chosen profile,
     // or empty when the provider names none.
     QString refinementModel() const;

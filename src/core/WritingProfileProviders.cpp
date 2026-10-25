@@ -22,6 +22,15 @@ bool profilePicksSpeechModel(const QString &providerId)
     return providerId == QStringLiteral("local");
 }
 
+void setRefinementModel(RefinementSettings &refinement, const QString &model)
+{
+    if (refinement.providerId == QStringLiteral("openai")) {
+        refinement.openAiModel = model;
+    } else if (refinement.providerId == QStringLiteral("anthropic")) {
+        refinement.anthropicModel = model;
+    }
+}
+
 std::optional<SpeechSettings> profileSpeechSettings(const SpeechSettings &speech,
                                                     const WritingProfileSettings &profile)
 {
@@ -51,11 +60,7 @@ AppSettings withWritingProfileProviders(AppSettings settings, const WritingProfi
         refinement.providerId = profile.refinementProvider;
         refinement.fallbackProviderIds = pageChainAfter(refinement.providerId, pageChain);
         if (!profile.refinementModel.isEmpty()) {
-            if (refinement.providerId == QStringLiteral("openai")) {
-                refinement.openAiModel = profile.refinementModel;
-            } else if (refinement.providerId == QStringLiteral("anthropic")) {
-                refinement.anthropicModel = profile.refinementModel;
-            }
+            setRefinementModel(refinement, profile.refinementModel);
         }
     }
     return settings;
