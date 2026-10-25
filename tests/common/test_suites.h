@@ -62,6 +62,7 @@ int runQuickDictationTests(int argc, char **argv);
 int runQuickUpdatesTests(int argc, char **argv);
 int runQuickTranscriptionTests(int argc, char **argv);
 int runQuickSystemTests(int argc, char **argv);
+int runQuickModelsTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);

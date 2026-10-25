@@ -1,5 +1,6 @@
 module Speecher.App
 singleton Navigation 1.0 Navigation.qml
+singleton ModelText 1.0 ModelText.qml
 Main 1.0 Main.qml
 ThemeSetting 1.0 ThemeSetting.qml
 Sidebar 1.0 Sidebar.qml

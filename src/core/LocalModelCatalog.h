@@ -118,16 +118,6 @@ QString modelFitLabel(ModelFit fit);
 QString downloadSizeText(qint64 bytes);
 // "0.3 s", never below 0.1 s.
 QString speechSecondsText(double seconds);
-// The fact names beside a model in the Local models page's detail.
-struct LocalModelFactLabels {
-    QString bestFor = QStringLiteral("Best for");
-    QString download = QStringLiteral("Download");
-    QString speedHere = QStringLiteral("Speed here");
-    QString wordErrorRate = QStringLiteral("Word error rate");
-    QString textShows = QStringLiteral("Text shows");
-    QString language = QStringLiteral("Language");
-    QString license = QStringLiteral("License");
-};
 // "As you speak" for a streaming model, else "After you stop".
 QString textShowsValue(bool streams);
 

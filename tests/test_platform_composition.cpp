@@ -25,6 +25,7 @@
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickStatus.h"
@@ -964,6 +965,8 @@ private slots:
         QuickSettings settings(&controller);
         // The step's check is System's.
         QuickSystem system(&controller);
+        // Setup's choices read Models, as the host always has one.
+        QuickModels models(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);

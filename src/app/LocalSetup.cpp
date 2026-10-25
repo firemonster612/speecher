@@ -174,6 +174,62 @@ HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn
     return profile;
 }
 
+QList<LocalAccelerationChoice> localAccelerationChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
+{
+    QList<LocalAccelerationChoice> choices;
+    for (const LocalBackend &backend : localBackends) {
+        const QString kind = QString::fromLatin1(backend.kind);
+        const bool gpuBackend = kind != QStringLiteral("auto") && kind != QStringLiteral("cpu");
+        const bool present =
+            std::any_of(gpus.cbegin(), gpus.cend(), [&kind](const LocalGpu &gpu) { return gpu.backend == kind; });
+        if (!gpuBackend || present) {
+            choices.append({kind});
+        }
+    }
+    if (std::none_of(choices.cbegin(), choices.cend(),
+                     [&chosen](const LocalAccelerationChoice &choice) { return choice.backend == chosen.backend; })) {
+        choices.append({chosen.backend, false});
+    }
+    return choices;
+}
+
+QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
+{
+    if (chosen.backend == QStringLiteral("cpu")) {
+        return {};
+    }
+    // Automatic names no card of its own, except one saved before
+    // acceleration could be chosen: then the card decides the backend.
+    const bool automatic = chosen.backend == QStringLiteral("auto");
+    if (automatic && chosen.deviceId.isEmpty()) {
+        return {};
+    }
+    QList<LocalGpu> cards;
+    const auto listed = [&cards](const QString &deviceId) {
+        return std::any_of(cards.cbegin(), cards.cend(), [&deviceId](const LocalGpu &card) {
+            return card.deviceId == deviceId;
+        });
+    };
+    for (const LocalGpu &gpu : gpus) {
+        const bool matches = automatic ? gpu.deviceId == chosen.deviceId : gpu.backend == chosen.backend;
+        if (matches && !listed(gpu.deviceId)) {
+            cards.append(gpu);
+        }
+    }
+    if (!chosen.deviceId.isEmpty() && !listed(chosen.deviceId)) {
+        cards.append({chosen.backend, chosen.deviceId, QString()});
+    }
+    return cards;
+}
+
+LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend)
+{
+    LocalRunsOn runsOn{backend, QString()};
+    const QList<LocalGpu> cards = localGraphicsCardChoices(gpus, runsOn);
+    runsOn.deviceId = cards.isEmpty() ? QString() : cards.first().deviceId;
+    return runsOn;
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -600,6 +656,17 @@ void LocalSetup::pullCleanupModel(const QString &ollamaTag)
     emit changed();
 }
 
+void LocalSetup::cancelPull()
+{
+    if (!m_pull.running) {
+        return;
+    }
+    // The pull's reply goes quietly, so nothing else reports the end.
+    m_ollamaPull.cancel();
+    m_pull.running = false;
+    emit changed();
+}
+
 LocalSetup::Pull LocalSetup::pull() const
 {
     return m_pull;
@@ -677,31 +744,49 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
 }
 
-void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
+std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const
 {
     const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role);
     if (!offer) {
-        return;
+        return std::nullopt;
     }
-    // A full chain, or the offer already the primary or a fallback, would drop
-    // it; then nothing changes, not even the model or the runner it names.
+    // A full chain, or the offer already the primary or a fallback, would drop it.
     const AppSettings settings = m_settings.dictationSnapshot();
-    const bool speech = role == ProviderRole::Speech;
-    const QString &primary = speech ? settings.speech.providerId : settings.refinement.providerId;
-    const QStringList &saved = speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
-    const QStringList fallbacks =
-        normalizedFallbackProviders(role, primary, normalizedFallbackProviders(role, primary, saved) << offer->providerId);
-    if (fallbacks.size() <= saved.size()) {
+    const QStringList kept = normalizedFallbackProviders(role, primary,
+                                                         role == ProviderRole::Speech
+                                                             ? settings.speech.fallbackProviderIds
+                                                             : settings.refinement.fallbackProviderIds);
+    const QStringList fallbacks = normalizedFallbackProviders(role, primary, QStringList(kept) << offer->providerId);
+    if (fallbacks.size() <= kept.size()) {
+        return std::nullopt;
+    }
+    return fallbacks;
+}
+
+bool LocalSetup::setupFallbackOfferJoins(ProviderRole role, const QString &primary) const
+{
+    return fallbacksWithSetupOffer(role, primary).has_value();
+}
+
+void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
+{
+    // Where the chain would drop the offer, nothing changes, not even the
+    // model or the runner it names.
+    const std::optional<QStringList> fallbacks = fallbacksWithSetupOffer(role, primary);
+    if (!fallbacks) {
         return;
     }
-    if (speech) {
-        m_settings.setSpeechFallbackProviders(fallbacks);
-        chooseSpeechModel(offer->modelId);
-        download(*findLocalModel(offer->modelId));
+    const SetupFallbackOffer offer = *setupFallbackOffer(role);
+    if (role == ProviderRole::Speech) {
+        m_settings.setSpeechProvider(primary);
+        m_settings.setSpeechFallbackProviders(*fallbacks);
+        chooseSpeechModel(offer.modelId);
+        download(*findLocalModel(offer.modelId));
         return;
     }
     m_settings.setLocalRunnerSettings(runnerChoice().selection);
-    m_settings.setRefinementFallbackProviders(fallbacks);
+    m_settings.setRefinementProvider(primary);
+    m_settings.setRefinementFallbackProviders(*fallbacks);
     emit changed();
 }
 
@@ -722,10 +807,14 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     if (m_checkedSpeech == connection(draft.speech.endpoint)) {
         facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
         facts.speechEndpointModels = m_speechEndpoint.result.models;
+        facts.speechEndpointChecking = m_speechEndpoint.checking;
+        facts.speechEndpointOk = m_speechEndpoint.result.ok;
     }
     if (m_checkedRefinement == connection(resolvedRefinementEndpoint(draft.refinement))) {
         facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
         facts.refinementEndpointModels = m_refinementEndpoint.result.models;
+        facts.refinementEndpointChecking = m_refinementEndpoint.checking;
+        facts.refinementEndpointOk = m_refinementEndpoint.result.ok;
     }
     for (const DetectedRunner &runner : m_runners) {
         facts.runners.append({runner.id,

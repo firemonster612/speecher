@@ -1,6 +1,7 @@
 #include "frontend/quick/host/QuickSettings.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
 #include "core/PasteRules.h"
@@ -98,6 +99,9 @@ struct SettingRow {
     QVariant (*read)(const AppSettings &);
     void (*write)(AppSettings &, const QVariant &);
     QString (*refuse)(const QVariant &) = nullptr;
+    // In place of write, for a row whose saved value depends on this
+    // computer, such as which graphics cards it has.
+    void (*writeHere)(AppSettings &, const QVariant &, const LiveFacts &) = nullptr;
 };
 
 // A row that is one AppSettings field, stored as QML hands it over.
@@ -113,14 +117,12 @@ struct SettingRow {
          setPasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category), v);                             \
      }}
 
-// Every row the UI saves, by the schema's row id. Rows missing here (secrets,
-// the result duration, acceleration and the graphics card) wait for the PRs
-// that wire their pages; launch at login is saved only where the platform
-// can start Speecher at login. So do the rows whose
-// choices come from a placeholder area, since a made-up choice would be
-// saved as real: the microphone (Audio), the local model (Models), the local
-// runner (Library's runners), the CLI Proxy accounts (Accounts) and the
-// default Writing Profile (Library's profiles).
+// Every row the UI saves, by the schema's row id. Rows missing here (secrets
+// and the result duration) wait for the PRs that wire their pages; launch at
+// login is saved only where the platform can start Speecher at login. So do
+// the rows whose choices come from a placeholder area, since a made-up choice
+// would be saved as real: the microphone (Audio), the CLI Proxy accounts
+// (Accounts) and the default Writing Profile (Library's profiles).
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
@@ -147,6 +149,13 @@ const SettingRow settingRows[] = {
      }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
+    // Choosing a model marks it chosen, so the hardware default stops
+    // replacing it.
+    {"speechLocalModel", [](const AppSettings &s) { return QVariant(s.speech.local.modelId); },
+     [](AppSettings &s, const QVariant &v) {
+         s.speech.local.modelId = v.toString();
+         s.speech.local.modelChosen = true;
+     }},
     FIELD_ROW("speechEndpointUrl", speech.endpoint.baseUrl),
     FIELD_ROW("speechEndpointPath", speech.endpoint.path),
     FIELD_ROW("speechEndpointModel", speech.endpoint.model),
@@ -180,6 +189,7 @@ const SettingRow settingRows[] = {
          return QVariant(s.refinement.anthropicFastMode ? QStringLiteral("fast") : QStringLiteral("standard"));
      },
      [](AppSettings &s, const QVariant &v) { s.refinement.anthropicFastMode = v.toString() == QLatin1String("fast"); }},
+    FIELD_ROW("localRunner", refinement.localRunner.runner),
     FIELD_ROW("localRunnerModel", refinement.localRunner.model),
     // Core stores the custom server as no preset.
     {"refinementEndpointServer",
@@ -255,6 +265,12 @@ const SettingRow settingRows[] = {
 
     {"localIdleUnload", [](const AppSettings &s) { return QVariant(QString::number(s.speech.local.idleUnloadMinutes)); },
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
+    {.id = "localAcceleration",
+     .read = [](const AppSettings &s) { return QVariant(s.speech.local.runsOn.backend); },
+     .writeHere = [](AppSettings &s, const QVariant &v, const LiveFacts &facts) {
+         s.speech.local.runsOn = localRunsOnFor(facts.localGpus, v.toString());
+     }},
+    FIELD_ROW("localGraphicsCard", speech.local.runsOn.deviceId),
 
     FIELD_ROW("themeControl", ui.theme),
     // Only macOS and Windows can start Speecher at login. The Quick UI builds
@@ -374,6 +390,8 @@ QuickSettings::QuickSettings(ApplicationController *controller, QObject *parent)
     connect(store, &SettingsStore::audioCaptureSettingsChanged, this, &QuickSettings::refresh);
     connect(store, &SettingsStore::correctionLearningEnabledChanged, this, &QuickSettings::refresh);
     connect(store, &SettingsStore::updateSettingsChanged, this, &QuickSettings::refresh);
+    // Choosing, deleting and pulling models save without a snapshot.
+    connect(controller->localSetup(), &LocalSetup::changed, this, &QuickSettings::refresh);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSettings::refresh);
     // The desktop's chooser answers later, and may refuse.
     connect(controller,
@@ -431,7 +449,11 @@ void QuickSettings::set(const QString &id, const QVariant &value)
     // keeps them, so saving one row never clears a key.
     SettingsStore *store = m_controller->settings();
     AppSettings draft = store->dictationSnapshot();
-    row->write(draft, value);
+    if (row->writeHere) {
+        row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
+    } else {
+        row->write(draft, value);
+    }
     store->applySnapshot(draft);
 }
 

@@ -50,6 +50,24 @@ QString serverUrl(ProviderRole role, const AppSettings &settings)
                                         : resolvedRefinementEndpoint(settings.refinement).apiBase;
 }
 
+// A role's Custom Endpoint connection check, as LiveFacts holds it.
+struct EndpointCheckFacts {
+    QString status;
+    bool checking = false;
+    bool ok = false;
+
+    // A check of the server the settings name has answered.
+    bool answered() const { return !status.isEmpty() && !checking; }
+};
+
+EndpointCheckFacts endpointCheck(ProviderRole role, const LiveFacts &facts)
+{
+    return role == ProviderRole::Speech
+        ? EndpointCheckFacts{facts.speechEndpointStatus, facts.speechEndpointChecking, facts.speechEndpointOk}
+        : EndpointCheckFacts{facts.refinementEndpointStatus, facts.refinementEndpointChecking,
+                             facts.refinementEndpointOk};
+}
+
 // "Ollama isn't running", or that no runner is.
 QString runnerNotRunning(const AppSettings &settings)
 {
@@ -68,7 +86,7 @@ QString noModel(ProviderRole role)
 // The reason a provider's report gives, "Not signed in to ChatGPT.". label is
 // the provider's registry label.
 QString problemText(FallbackProblem problem, ProviderRole role, const AppSettings &settings,
-                    const QString &providerId, const QString &label)
+                    const LiveFacts &facts, const QString &providerId, const QString &label)
 {
     switch (problem) {
     case FallbackProblem::None:
@@ -85,6 +103,8 @@ QString problemText(FallbackProblem problem, ProviderRole role, const AppSetting
         return runnerNotRunning(settings) + QLatin1Char('.');
     case FallbackProblem::NoServer:
         return QStringLiteral("No server URL is set.");
+    case FallbackProblem::CheckFailed:
+        return endpointCheck(role, facts).status;
     }
     return {};
 }
@@ -95,6 +115,7 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
     const FallbackProblem problem = fallbackProblem(role, id, settings, facts);
     const bool localRunner = role == ProviderRole::Refinement && id == kLocal;
     ProviderReport report{id, role, label, providerSignsIn(id)};
+    report.problemKind = problem;
     report.configured = problem != FallbackProblem::NoModel && problem != FallbackProblem::NoServer
         && !(localRunner && settings.refinement.localRunner.runner.isEmpty());
     if (facts.signedIn.contains(id)) {
@@ -105,13 +126,14 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
         speech.providerId = id;
         report.problem = spokenLanguageProblem(speech, label);
     } else {
-        report.problem = problemText(problem, role, settings, id, label);
+        report.problem = problemText(problem, role, settings, facts, id, label);
     }
     const bool signInUnseen = report.signsIn && !report.signedIn;
     const bool runnerUnchecked = localRunner && (!facts.runnersChecked || facts.detectingRunners);
+    const bool serverUnchecked = id == kEndpoint && !endpointCheck(role, facts).answered();
     if (problem != FallbackProblem::None) {
         report.usable = false;
-    } else if (!signInUnseen && !runnerUnchecked) {
+    } else if (!signInUnseen && !runnerUnchecked && !serverUnchecked) {
         report.usable = true;
     }
     return report;
@@ -152,6 +174,12 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     }
     if (providerId == kEndpoint && serverUrl(role, settings).isEmpty()) {
         return FallbackProblem::NoServer;
+    }
+    if (providerId == kEndpoint) {
+        const EndpointCheckFacts check = endpointCheck(role, facts);
+        if (check.answered() && !check.ok) {
+            return FallbackProblem::CheckFailed;
+        }
     }
     if (!facts.signedIn.value(providerId, true)) {
         return FallbackProblem::SignedOut;

@@ -4,6 +4,7 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // One Local Model in the library, on its own card: what it is and how it
 // rates, with the one step that moves it on (download, use) or its download's
@@ -17,7 +18,6 @@ Card {
     required property var entry           // a Models.catalog entry
     property bool expanded: false
 
-    readonly property var words: Models.text
     readonly property bool downloaded: Models.downloaded.indexOf(entry.id) >= 0
     readonly property bool inUse: Models.inUse === entry.id
     readonly property bool suggested: Models.suggestedModel === entry.id
@@ -29,15 +29,15 @@ Card {
     // the next one slides in from the right.
     readonly property int stage: inUse ? 3 : downloaded ? 2 : downloading ? 1 : entry.fit === "tooLarge" ? 4 : 0
 
-    // The facts under the summary, each labelled by its key in Models.text.
+    // The facts under the summary, each labelled by ModelText.factLabels.
     // Best for is under the name already unless the suggestion took its place.
     readonly property var factKeys: (suggested ? ["bestFor"] : []).concat(["wordErrors", "speed", "languages", "licence", "file"])
     function fact(key) {
         switch (key) {
         case "bestFor": return entry.bestFor
-        case "wordErrors": return words.wordErrorsValue.arg(entry.werClear).arg(entry.werEveryday)
-        case "speed": return Models.speedLine(entry)
-        case "languages": return entry.languages
+        case "wordErrors": return ModelText.wordErrors(entry)
+        case "speed": return ModelText.speedLine(entry)
+        case "languages": return ModelText.languages(entry)
         case "licence": return entry.licence
         case "file": return entry.fileName
         }
@@ -56,8 +56,6 @@ Card {
         activeFocusOnTab: true
         Accessible.role: Accessible.Button
         Accessible.name: card.entry.name
-        Accessible.expandable: true
-        Accessible.expanded: card.expanded
         Accessible.onPressAction: card.toggle()
         Keys.onReturnPressed: { focusVisible.keyed(); card.toggle() }
         Keys.onSpacePressed: { focusVisible.keyed(); card.toggle() }
@@ -88,7 +86,7 @@ Card {
                 Txt {
                     width: parent.width - name.width - parent.spacing
                     anchors.baseline: name.baseline
-                    text: card.entry.ratingLabel
+                    text: ModelText.ratingLabel(card.entry)
                     variant: "small"
                     tone: "secondary"
                     elide: Text.ElideRight
@@ -96,7 +94,7 @@ Card {
             }
             Txt {
                 width: parent.width
-                text: card.suggested ? card.words.suggested : card.entry.bestFor
+                text: card.suggested ? ModelText.suggested : card.entry.bestFor
                 variant: "small"
                 tone: card.suggested ? "primary" : "secondary"
                 strong: card.suggested
@@ -104,7 +102,7 @@ Card {
             }
             Txt {
                 width: parent.width
-                text: Models.metaLine(card.entry)
+                text: ModelText.metaLine(card.entry)
                 variant: "small"
                 tone: "tertiary"
                 elide: Text.ElideRight
@@ -119,7 +117,7 @@ Card {
             spacing: Theme.space5
 
             RatingBars {
-                bars: card.entry.bars
+                bars: ModelText.bars(card.entry)
                 pipWidth: 7
                 color: card.inUse ? Theme.accent : Theme.textSecondary
                 anchors.verticalCenter: parent.verticalCenter
@@ -136,7 +134,7 @@ Card {
                         id: download
                         anchors.right: parent.right
                         iconName: "download"
-                        text: card.words.download.arg(card.entry.size)
+                        text: ModelText.download(card.entry.sizeBytes)
                         size: "small"
                         onClicked: Models.download(card.entry.id)
                     }
@@ -150,7 +148,7 @@ Card {
                         // MorphText's roll to settle.
                         Txt {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: card.words.progress.arg(Models.formatBytes(card.entry.sizeBytes * (card.progress || 0))).arg(card.entry.size)
+                            text: ModelText.progress(card.entry, card.progress || 0)
                             variant: "mono"
                             tone: "secondary"
                         }
@@ -172,7 +170,7 @@ Card {
                         anchors.right: parent.right
                         size: "small"
                         variant: "primary"
-                        text: card.words.useModel
+                        text: ModelText.useModel
                         onClicked: Models.use(card.entry.id)
                     }
                 }
@@ -183,12 +181,12 @@ Card {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space1
                         Icon { name: "check"; size: 15; color: Theme.accent; anchors.verticalCenter: parent.verticalCenter }
-                        Txt { text: card.words.inUse; variant: "label"; tone: "accent"; anchors.verticalCenter: parent.verticalCenter }
+                        Txt { text: ModelText.inUse; variant: "label"; tone: "accent"; anchors.verticalCenter: parent.verticalCenter }
                     }
                 }
                 Txt {
                     horizontalAlignment: Text.AlignRight
-                    text: card.words.tooLarge
+                    text: ModelText.tooLarge
                     variant: "small"
                     tone: "tertiary"
                     wrapMode: Text.WordWrap
@@ -233,7 +231,7 @@ Card {
                         required property string modelData
                         width: (facts.width - facts.columnSpacing * (facts.columns - 1)) / facts.columns
                         spacing: 2
-                        Txt { text: card.words[fact.modelData]; variant: "small"; tone: "secondary" }
+                        Txt { text: ModelText.factLabels[fact.modelData]; variant: "small"; tone: "secondary" }
                         Txt { width: parent.width; text: card.fact(fact.modelData); variant: "small"; wrapMode: Text.WrapAnywhere }
                     }
                 }
@@ -267,8 +265,8 @@ Card {
 
             // Why it can't run here.
             Reveal {
-                open: !!card.entry.problem
-                Notice { text: card.entry.problem || ""; ruled: false }
+                open: ModelText.problem(card.entry).length > 0
+                Notice { text: ModelText.problem(card.entry); ruled: false }
             }
 
             // Test and delete, or the question before deleting.
@@ -279,8 +277,8 @@ Card {
                     Button {
                         size: "small"
                         iconName: "gauge"
-                        text: card.words.testSpeed
-                        busy: Models.speedTestRunning === card.entry.id
+                        text: ModelText.testSpeed
+                        busy: Models.speedTests.indexOf(card.entry.id) >= 0
                         enabled: !busy
                         onClicked: Models.testSpeed(card.entry.id)
                     }
@@ -288,7 +286,7 @@ Card {
                         size: "small"
                         variant: "ghost"
                         iconName: "trash-2"
-                        text: card.words.deleteModel
+                        text: ModelText.deleteModel
                         onClicked: card.confirmingDelete = true
                     }
                 }
@@ -297,9 +295,9 @@ Card {
                 open: card.downloaded && card.confirmingDelete
                 inset: 0
                 ruled: false
-                text: card.words.deleteQuestion.arg(card.entry.name)
-                detail: card.words.deleteBody
-                confirmText: card.words.deleteModel
+                text: ModelText.deleteQuestion(card.entry.name)
+                detail: ModelText.deleteBody
+                confirmText: ModelText.deleteModel
                 cancelText: Words.cancel
                 onCancelled: card.confirmingDelete = false
                 onConfirmed: {

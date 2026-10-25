@@ -14,8 +14,10 @@ import Speecher.App
 //
 // The shortcut step has no draft: its rows write Settings as you record, as
 // the existing assistant binds shortcuts live, so the shortcut can be tried
-// before setup ends. The custom endpoint's URL and the microphone are written
-// live the same way, so the microphone test listens to the one picked.
+// before setup ends. The Local Model, the Custom Endpoints' and Local
+// Runner's rows, the fallback offers and the microphone are written live the
+// same way, so a connection check tests the server typed and the microphone
+// test listens to the one picked.
 QtObject {
     id: choices
 
@@ -32,11 +34,18 @@ QtObject {
     function _status(id) {
         switch (id) {
         case "transcription": {
-            const service = Models.serviceChoices.find(s => s.id === speech)
-            // A model still downloading counts: the download carries on while setup does.
+            const known = Models.speechServices.find(s => s.id === speech)
+            const service = known ? ModelText.service(speech) : null
+            // A model still downloading counts: the download carries on while
+            // setup does. A sign-in being checked or a server not yet tested
+            // doesn't, until it answers; one that couldn't reach the service
+            // says why.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
             const done = !!service && (service.state === "ready" || downloading)
-            return { done: done, verdict: !service ? Setup.text.notChosen : service.state === "ready" ? service.label : service.status }
+            return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label
+                                          : service.state !== "unknown" ? ModelText.status(service)
+                                          : speech === "endpoint" ? ModelText.endpointCheck(Models.speechEndpoint).text
+                                          : service.signInCheckFailure || ModelText.checking }
         }
         case "microphone": {
             // Allowed, a microphone that is there, and speech heard from it.
@@ -54,7 +63,7 @@ QtObject {
             return { done: Setup.settled(check), verdict: Health.status(check) }
         }
         case "refinement":
-            return { done: true, verdict: Library.providerChoices.find(p => p.id === cleanup).label }
+            return { done: true, verdict: ModelText.provider(cleanup).label }
         case "shortcut": {
             const keys = Settings.values.globalShortcut || []
             const check = Health.find(System.checks, "globalShortcuts")

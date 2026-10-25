@@ -129,8 +129,9 @@ QtObject {
     readonly property var results: _finished.map(_result)
 
     function start() {
+        const refiner = Models.refinementProviders.find(p => p.id === options.refiner)
         batch = { files: files.slice(), speech: Models.service(options.service).label,
-                  refinement: options.refiner !== "none" ? (Library.modelLabel(options.refiner) || Library.provider(options.refiner).label) : "",
+                  refinement: refiner ? Library.modelLabel(refiner.id) || refiner.label : "",
                   refines: options.refiner !== "none", destination: options.destination, folder: options.folder, cancelled: false }
         current = 0
         partial = ""

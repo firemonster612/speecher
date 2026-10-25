@@ -68,6 +68,24 @@ struct SetupFallbackOffer {
 // A card that has gone away counts as the CPU, where nothing else would run.
 HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn);
 
+// One choice of where Local Models run, as a localBackends kind. A saved
+// backend that no card here reaches is still offered, as unavailable.
+struct LocalAccelerationChoice {
+    QString backend;
+    bool available = true;
+};
+// Automatic and the CPU, then each backend that reaches a card here, in
+// localBackends order.
+QList<LocalAccelerationChoice> localAccelerationChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// The cards a Runs on choice can name, once each: those of its backend, or
+// for Automatic only the card an older choice is pinned to. A saved card that
+// has gone away is listed last with no description. None for the CPU.
+QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// Where choosing an acceleration puts Local Models: a backend on its first
+// card here, so fit measures the card the engine uses; Automatic and the CPU
+// on none.
+LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend);
+
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
@@ -157,8 +175,10 @@ public:
     // Nothing when cleanup here would be slower than a cloud provider or none.
     std::optional<CleanupModel> suggestedCleanupModel() const;
 
-    // Downloads a cleanup model into Ollama.
+    // Downloads a cleanup model into Ollama. Cancelling stops it with no
+    // error; Ollama keeps what it has for the next pull to resume.
     void pullCleanupModel(const QString &ollamaTag);
+    void cancelPull();
     struct Pull {
         QString tag;
         qint64 completedBytes = 0;
@@ -178,10 +198,16 @@ public:
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
     std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role) const;
-    // Adds that fallback after the others, leaving the primary alone: a Local
-    // Model is chosen and downloaded the way the Local card does it, a runner
-    // and its model are selected.
-    void acceptSetupFallbackOffer(ProviderRole role);
+    // Whether accepting that offer behind primary would add it: not when
+    // there is none, the chain behind primary is full, or the offer is
+    // already primary or one of its fallbacks.
+    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary) const;
+    // Adds that fallback after the others, behind primary, setup's choice for
+    // the role, which is saved with it: the saved chain is kept in step with
+    // its primary, so a fallback behind a primary not yet saved would be
+    // dropped. A Local Model is chosen and downloaded the way the Local card
+    // does it, a runner and its model are selected.
+    void acceptSetupFallbackOffer(ProviderRole role, const QString &primary);
 
     // Adds reachability and the sign-ins last seen to liveFacts(), and
     // announces their changes as changed().
@@ -202,6 +228,9 @@ signals:
 
 private:
     friend class LocalSetupTestAccess;
+    // The saved fallbacks behind primary with setup's offer added, or none
+    // where the chain would drop it.
+    std::optional<QStringList> fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;

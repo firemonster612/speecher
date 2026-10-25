@@ -6,6 +6,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -446,6 +447,7 @@ private slots:
         QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickUpdates updates(&controller, controller.updates());
+        QuickModels models(&controller);
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
@@ -570,6 +572,8 @@ private slots:
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
         keyboard.managed = true;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        // Setup's choices read Models, as the host always has one.
+        QuickModels models(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -607,6 +611,8 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        // The page's Library reads Models, as the host always has one.
+        QuickModels models(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
         const std::unique_ptr<QObject> page(component.create());

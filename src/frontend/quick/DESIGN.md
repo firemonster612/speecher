@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription` and `System` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription` and `System` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System` and `Models` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System` and `Models` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -36,9 +36,10 @@ Backend is the C++ types plus the mocks not yet replaced.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
-  (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`) and
-  `System` (`host/QuickSystem`). Placeholders until their wiring PRs:
-  `Insights`, `Audio`, `Models`, `Library` and `Accounts`.
+  (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
+  `System` (`host/QuickSystem`) and `Models` (`host/QuickModels`).
+  Placeholders until their wiring PRs: `Insights`, `Audio`, `Library` and
+  `Accounts`.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
@@ -53,6 +54,20 @@ Backend is the C++ types plus the mocks not yet replaced.
   Main once the settings are deleted. The paste rules are Settings rows: `globalPasteRule`,
   `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
   `applicationPasteRules`, a list of `{app, method, enabled}`.
+- `Models` is what core knows about the providers and running models here,
+  as data: speech services and refinement providers with a `state` and
+  core's `problem` sentence, their ratings as `{ measure, value }` bars, the
+  Local Model catalog with fits, speeds, downloads and Speed Tests, the
+  hardware, the Local Runners and the Ollama pull, both Custom Endpoints'
+  checks and setup's fallback offers. `QuickModels.h` documents each field.
+  `ModelText` (in Speecher.App) words all of it and looks entries up by id,
+  so pages read `ModelText.service(id)` or `ModelText.catalogModel(id)`
+  rather than Models' lists. A page that shows hardware calls
+  `Models.checkComputer()` when it opens, which probes the hardware the
+  first time; the daemon never loads the speech engine's backends for that
+  on its own. The Local Runner rows look for runners when they load, and
+  setup's Transcription step asks `Models.checkSignIns()` for the speech
+  sign-ins.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
@@ -100,7 +115,7 @@ Backend is the C++ types plus the mocks not yet replaced.
   batch, its `options` (seeded from the settings, never saved), the batch as
   it started (`batch`), its progress and its `results`, whose fields
   `QuickTranscription.h` documents. Its choice lists come from their owners
-  (`Models.serviceChoices`, `Library`, the `spokenLanguage` row), and its
+  (`Models`, `Library`, the `spokenLanguage` row), and its
   wording is the page's (`TranscribeWords`). Choosing files and folders and
   exporting open the desktop's file dialogs, titled by the page; a start,
   retry or export that fails says why in `problem`.
@@ -110,7 +125,7 @@ Backend is the C++ types plus the mocks not yet replaced.
 - Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
   and state pages show. Keep their properties plain (strings, numbers, arrays
   of objects) so a C++ `QObject` or model can replace them one for one.
-  Each list has one owner (speech services in `Models`, profiles, tones and
+  Each list has one owner (speech services and refinement providers in `Models`, profiles, tones and
   levels in `Library`, microphones in `Audio`, app types in the pasting
   schema); every other place derives from it with the same ids. A button
   that would leave the app (open settings, pick a file) calls a named mock

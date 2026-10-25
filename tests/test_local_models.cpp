@@ -141,23 +141,32 @@ private slots:
                                                   {QStringLiteral("gemma4:e4b")}}});
         settings.setRefinementProvider(QStringLiteral("anthropic"));
 
+        const QString anthropic = QStringLiteral("anthropic");
         const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
         settings.setRefinementFallbackProviders(full);
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), full);
         QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
 
         settings.setRefinementFallbackProviders({});
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
-        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
+        QCOMPARE(settings.refinementProvider(), anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
         QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
 
         // Already a fallback.
         settings.setLocalRunnerSettings({});
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
         QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
         QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+
+        // Setup's choice, saved with the fallback: with None saved, a chain
+        // behind it could hold no fallback at all.
+        settings.setRefinementProvider(QStringLiteral("none"));
+        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
     }
 
     void endpointChecksDiscardSupersededResults_data()
@@ -390,7 +399,7 @@ private slots:
         ProviderRegistry providers;
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
-        providers.registerSpeechProvider({"local", "Local model", {}},
+        providers.registerSpeechProvider({"local", "Local model"},
             [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
 #endif
         LocalSetup setup(settings, providers, models);
@@ -517,6 +526,67 @@ private slots:
         settings.setLocalSpeechSettings(local);
         QVERIFY(!setup.modelState(qwen).tooLarge);
         QCOMPARE(setup.fitLabel(qwen), QStringLiteral("Fits"));
+    }
+
+    // Acceleration offers Automatic, the CPU and each backend a card here
+    // reaches, and keeps a saved one no card reaches; a backend names its own
+    // cards once each, and a card saved under Automatic, or gone, stays listed.
+    void accelerationAndCardChoicesFollowTheCardsHere()
+    {
+        const QString nvidia = QStringLiteral("0000:01:00.0");
+        const QString amd = QStringLiteral("0000:0e:00.0");
+        const QList<LocalGpu> gpus{{QStringLiteral("vulkan"), nvidia, QStringLiteral("RTX 4070")},
+                                   {QStringLiteral("vulkan"), amd, QStringLiteral("Radeon")},
+                                   {QStringLiteral("cuda"), nvidia, QStringLiteral("RTX 4070")}};
+        const auto backends = [](const QList<LocalAccelerationChoice> &choices) {
+            QStringList ids;
+            for (const LocalAccelerationChoice &choice : choices) {
+                ids.append(choice.backend + (choice.available ? QString() : QStringLiteral(" (unavailable)")));
+            }
+            return ids;
+        };
+        const auto cards = [](const QList<LocalGpu> &choices) {
+            QStringList ids;
+            for (const LocalGpu &card : choices) {
+                ids.append(card.deviceId + QLatin1Char('=') + card.description);
+            }
+            return ids;
+        };
+
+        QCOMPARE(backends(localAccelerationChoices(gpus, {})), QStringList({"auto", "cpu", "vulkan", "cuda"}));
+        QCOMPARE(backends(localAccelerationChoices({}, {QStringLiteral("metal"), {}})),
+                 QStringList({"auto", "cpu", "metal (unavailable)"}));
+
+        QVERIFY(localGraphicsCardChoices(gpus, {}).isEmpty());
+        QVERIFY(localGraphicsCardChoices(gpus, {QStringLiteral("cpu"), {}}).isEmpty());
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("vulkan"), {}})),
+                 QStringList({nvidia + "=RTX 4070", amd + "=Radeon"}));
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("auto"), amd})), QStringList({amd + "=Radeon"}));
+        QCOMPARE(cards(localGraphicsCardChoices(gpus, {QStringLiteral("cuda"), amd})),
+                 QStringList({nvidia + "=RTX 4070", amd + "="}));
+    }
+
+    // Cancelling a pull ends it without an error to show.
+    void cancellingAPullEndsItQuietly()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        QSignalSpy changed(&setup, &LocalSetup::changed);
+
+        setup.pullCleanupModel(QStringLiteral("gemma4:e4b"));
+        QVERIFY(setup.pull().running);
+        setup.cancelPull();
+        QVERIFY(!setup.pull().running);
+        QVERIFY(setup.pull().error.isEmpty());
+        QCOMPARE(changed.count(), 2);
+        QTest::qWait(100);
+        QVERIFY(!setup.pull().running);
+        QVERIFY(setup.pull().error.isEmpty());
+        QCOMPARE(changed.count(), 2);
     }
 
     void catalogEntriesArePinned()

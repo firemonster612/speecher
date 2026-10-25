@@ -26,8 +26,8 @@ Column {
     readonly property var tone: tones.find(t => t.id === profile.tone) || tones[0]
     // None with an output language still translates, at Light.
     readonly property bool skipsRefinement: profile.cleanup === "none" && !profile.language
-    readonly property var refinementModels: profile.refinement === "openai" ? Library.openAiModels
-                                          : profile.refinement === "anthropic" ? Library.anthropicModels : []
+    readonly property var refinementModels: profile.refinement === "openai" ? Models.openAiModels
+                                          : profile.refinement === "anthropic" ? Models.anthropicModels : []
     property bool confirmingDelete: false
 
     spacing: Theme.space6
@@ -226,8 +226,8 @@ Column {
             title: Library.profilesText.speechModel
             shown: editor.profile.speech === "local"
             Select {
-                options: [{ id: "", label: Library.defaultChoice((Models.catalogModel(Models.localModelChoice) || { name: "" }).name) }]
-                         .concat(Models.downloadedModels)
+                options: [{ id: "", label: Library.defaultChoice((ModelText.catalogModel(Models.localModelChoice) || { name: "" }).name) }]
+                         .concat(ModelText.downloadedModels)
                 currentId: editor.profile.speechModel || ""
                 onChosen: id => editor.edited({ speechModel: id })
             }
@@ -235,12 +235,12 @@ Column {
         SettingRow {
             title: Library.profilesText.refinement
             help: editor.skipsRefinement ? Library.profilesText.refinementSkipped
-                : editor.profile.refinement ? Library.ownRefinementHelp(Library.provider(editor.profile.refinement).label)
+                : editor.profile.refinement ? Library.ownRefinementHelp(ModelText.provider(editor.profile.refinement).label)
                 : Library.profilesText.defaultRefinementHelp
             Select {
                 enabled: !editor.skipsRefinement
-                options: [{ id: "", label: Library.defaultChoice(Library.provider(Settings.values.refinementProvider).label) }]
-                         .concat(Library.refinementProviders.map(p => ({ id: p.id, label: p.label })))
+                options: [{ id: "", label: Library.defaultChoice(ModelText.provider(Settings.values.refinementProvider).label) }]
+                         .concat(Models.refinementProviders.map(p => ({ id: p.id, label: p.label })))
                 currentId: editor.profile.refinement || ""
                 onChosen: id => editor.edited({ refinement: id, refinementModel: "" })
             }
