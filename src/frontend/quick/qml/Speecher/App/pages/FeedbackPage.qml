@@ -3,6 +3,7 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Demo
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 import Speecher.Popup
 

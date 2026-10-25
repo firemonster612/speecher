@@ -78,6 +78,11 @@ QStringList argumentsWithoutStartupActions(const QStringList &arguments);
 // Linux and macOS keep handling shortcuts and IPC after their last window closes.
 bool quitOnLastWindowClosed(LaunchMode mode);
 
+// Whether this launch opens the setup assistant by itself: when asked to, or
+// when setup is pending, except for --daemon, which shows no window until a
+// command (start, toggle, the tray) needs setup and opens it then.
+bool opensSetupAtLaunch(const CommandLineDecision &decision, bool setupPending);
+
 // Sends the decision's command to a running instance, or starts one detached
 // when there is none. Needs a running QCoreApplication for the socket.
 int runCliCommand(const CommandLineDecision &decision,

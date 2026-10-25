@@ -1254,6 +1254,11 @@ QStringList argumentsWithoutStartupActions(const QStringList &arguments)
     return kept;
 }
 
+bool opensSetupAtLaunch(const CommandLineDecision &decision, bool setupPending)
+{
+    return decision.showSetup || (setupPending && decision.mode != LaunchMode::RunDaemon);
+}
+
 bool quitOnLastWindowClosed(LaunchMode mode)
 {
 #if defined(Q_OS_LINUX) || defined(Q_OS_MACOS) || defined(Q_OS_WIN)

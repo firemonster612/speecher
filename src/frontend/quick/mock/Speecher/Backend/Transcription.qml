@@ -1,8 +1,10 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 import Speecher.Theme
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of a Transcribe files batch (core's FileTranscriptionSession and
 // TranscribePresentation): the files, the batch's options, progress through
 // them and the results. Starting takes a snapshot of the files and options,

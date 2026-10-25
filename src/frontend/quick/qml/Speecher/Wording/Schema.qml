@@ -14,12 +14,15 @@ import "schema/models.js" as Models
 import "schema/general.js" as General
 import "schema/updates.js" as Updates
 
-// Mock of the settings schema core will provide: pages, and rows with their
-// label, help, control kind and options. Every settings page and the search
-// palette read rows from here by id.
+// The settings layout and its wording, which belong to the UI: pages, and
+// rows with their label, help, control kind and options. Every settings page
+// and the search palette read rows from here by id; Settings holds their
+// values under the same ids, and option ids are the values core stores.
 //
 // Row fields: id, page, section, kind (toggle, choice, slider, text, secret,
-// shortcut, action, custom), label, help, value (the default), options
+// shortcut, action, custom), label, help, value (where the preview's mock
+// Settings starts; the app reads core's. A custom row without one has nothing
+// to save), options
 // [{ id, label, help?, icon? }], control (segmented, select, cards) for
 // choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
@@ -36,6 +39,8 @@ QtObject {
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
                                           Refinement.rows, Profiles.rows, Vocabulary.rows, Pasting.rows,
                                           Accounts.rows, Models.rows, General.rows, Updates.rows)
+    // The app types Speecher sorts apps into, for paste rules and recognition.
+    readonly property var appCategories: Pasting.categories
 
     readonly property var _rowsById: {
         const map = {}
@@ -99,5 +104,11 @@ QtObject {
         }
         const o = (spec.options || []).find(o => o.id === value)
         return o ? o.label : ""
+    }
+    // The help of the option a choice row holds, such as what pressing the
+    // shortcut does for shortcutBehavior.
+    function valueHelp(spec, value) {
+        const o = (spec.options || []).find(o => o.id === value)
+        return o ? o.help || "" : ""
     }
 }

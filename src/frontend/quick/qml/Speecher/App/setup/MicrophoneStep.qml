@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // Allow the microphone, pick one, then talk: a wide meter moves with the

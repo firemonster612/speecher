@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // One Local Model in the library: what it is and how it rates, with the one
 // step that moves it on (download, use) or its download's progress. Click it

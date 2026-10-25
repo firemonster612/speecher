@@ -1,10 +1,14 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 
-// Mock of the settings store: each row's current value by id, starting from
-// the schema's defaults. Read values[id] in bindings so they update.
+// The preview's settings store: each row's current value by id, starting from
+// the schema's values. The app has a C++ Settings with the same members. Read
+// values[id] in bindings so they update.
 QtObject {
     property var values: ({})
+    // Why a row's last save was refused, by id: the preview refuses nothing.
+    readonly property var errors: ({})
 
     function set(id, v) {
         const next = Object.assign({}, values)
@@ -12,22 +16,21 @@ QtObject {
         values = next
     }
 
-    // An action row was pressed; core runs the action the row names.
-    signal acted(string id)
-    function act(id) { acted(id) }
+    // An action row was pressed. The app runs the action the row names; the
+    // preview has nothing to run.
+    function act(id) {}
 
-    // Whether a row's enabledWhen condition holds.
-    function rowEnabled(row) {
-        if (!row || !row.enabledWhen) return true
-        return values[row.enabledWhen.id] === row.enabledWhen.equals
-    }
+    // Whether set saves this row: the preview saves every one.
+    function saves(id) { return true }
 
-    // The help of the option a choice row holds now, such as what pressing
-    // the shortcut does for shortcutBehavior.
-    function chosenHelp(id) {
-        const o = (Schema.row(id).options || []).find(o => o.id === values[id])
-        return o ? o.help || "" : ""
-    }
+    // Whether the desktop picks this shortcut row's keys: the preview records
+    // them all.
+    function desktopPicksKeys(id) { return false }
+
+    // A shortcut row is recording. The app lets go of the bound shortcuts
+    // meanwhile; the preview binds none.
+    function startRecordingShortcut(id) {}
+    function stopRecordingShortcut(id) {}
 
     Component.onCompleted: {
         const start = {}

@@ -1,6 +1,6 @@
 pragma Singleton
 import QtQuick
-import Speecher.Backend
+import Speecher.Wording
 
 // Which page the window shows, and a row to scroll to and flash once that
 // page has loaded (set by the search palette).

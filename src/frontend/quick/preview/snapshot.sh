@@ -7,7 +7,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="${1:?usage: snapshot.sh DIR}"
 mkdir -p "$out"
-pages=$(grep -oE '\{ id: "[a-zA-Z]+", group:' "$here/../mock/Speecher/Backend/schema/pages.js" | cut -d'"' -f2)
+pages=$(grep -oE '\{ id: "[a-zA-Z]+", group:' "$here/../qml/Speecher/Wording/schema/pages.js" | cut -d'"' -f2)
 for theme in light dark; do
     for page in $pages; do
         "$here/run.sh" --page "$page" --theme "$theme" --settle 1.6 --out "$out/$page-$theme.png" >/dev/null

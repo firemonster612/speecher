@@ -25,6 +25,13 @@
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickStatus.h"
+
+#include <QQmlComponent>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
 #endif
 
 #include <QApplication>
@@ -95,6 +102,11 @@ public:
         return m_shortcut;
     }
 
+    QString shortcutDisplay() const override
+    {
+        return assignedKeys.isEmpty() ? GlobalShortcutBinder::shortcutDisplay() : assignedKeys;
+    }
+
     bool setShortcut(const ShortcutBinding &shortcut, QString *error) override
     {
         if (!setShortcutError.isEmpty()) {
@@ -109,7 +121,8 @@ public:
             }
             return false;
         }
-        m_shortcut = shortcut;
+        // Announced, as every real binder announces a new binding.
+        publishShortcut(shortcut);
         return true;
     }
 
@@ -140,6 +153,14 @@ public:
         emit bindingChanged();
     }
 
+    // The keys a desktop that picks them itself (the portal) says it
+    // assigned; shortcut() stays whatever stand-in the binder keeps.
+    void publishAssignedKeys(const QString &keys)
+    {
+        assignedKeys = keys;
+        emit bindingChanged();
+    }
+
     void publishRegistrationResult(bool bound, const QString &detail)
     {
         emit registrationFinished(bound, detail);
@@ -163,6 +184,7 @@ public:
     QString unsupported;
     QString setShortcutError;
     QString resumeError;
+    QString assignedKeys;
 
 private:
     ShortcutBinding m_shortcut;
@@ -471,6 +493,47 @@ QString fakeSpeecher(const QString &dir, const QString &listed)
     fake.close();
     return fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner) ? path : QString();
 }
+
+#ifdef Q_OS_LINUX
+// A shown window holding the SchemaRow for rowId, or null with the reason in
+// the log.
+std::unique_ptr<QQuickWindow> schemaRowWindow(QQmlEngine &engine, const QString &rowId)
+{
+    QQmlComponent component(&engine);
+    component.setData(QStringLiteral(R"(
+        import QtQuick
+        import Speecher.App
+        Window {
+            width: 640; height: 160; visible: true
+            SchemaRow { rowId: "%1"; width: parent.width }
+        }
+    )").arg(rowId).toUtf8(), QUrl());
+    std::unique_ptr<QQuickWindow> window(qobject_cast<QQuickWindow *>(component.create()));
+    if (!window || !QTest::qWaitForWindowExposed(window.get())) {
+        qWarning().noquote() << "no SchemaRow window:" << component.errorString();
+        return nullptr;
+    }
+    return window;
+}
+
+// The item in window whose QML type is typeName, or null.
+QQuickItem *findItem(QQuickWindow *window, const char *typeName)
+{
+    for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
+        if (QByteArray(item->metaObject()->className()).startsWith(typeName)) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
+// Clicks the ShortcutField in window so it listens, as a person starts recording.
+void startListening(QQuickWindow *window, QQuickItem *field)
+{
+    QTest::mouseClick(window, Qt::LeftButton, {}, field->mapToScene(field->boundingRect().center()).toPoint());
+    QTRY_VERIFY(field->property("listening").toBool());
+}
+#endif
 
 } // namespace
 
@@ -890,6 +953,174 @@ private slots:
         QVERIFY(controller.globalShortcut(GlobalShortcutRole::Pause).isEmpty());
     }
 
+#ifdef Q_OS_LINUX
+    // Recording on the Shortcuts page's row hands the keys to the controller,
+    // and setup's shortcut step then counts the shortcut as set.
+    void aShortcutRecordedInTheUiIsBound()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        std::unique_ptr<QObject> choices(choicesComponent.create());
+        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
+
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(field);
+        const auto record = [&] {
+            startListening(window.get(), field);
+            QTest::keyClick(window.get(), Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        };
+        const auto shortcutStep = [&] {
+            for (const QVariant &step : choices->property("steps").toList()) {
+                if (step.toMap().value(QStringLiteral("id")) == QStringLiteral("shortcut")) {
+                    return step.toMap();
+                }
+            }
+            return QVariantMap();
+        };
+        QVERIFY(!shortcutStep().value(QStringLiteral("done")).toBool());
+
+        record();
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D)));
+        QCOMPARE(settings.values().value(QStringLiteral("globalShortcut")).toStringList(),
+                 (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Alt"), QStringLiteral("D")}));
+        QTRY_VERIFY(shortcutStep().value(QStringLiteral("done")).toBool());
+    }
+
+    // Where the desktop picks the keys itself (the portal), clicking the row
+    // opens its chooser. The row never listens, so no shortcut lets go of its
+    // keys and pressing them records nothing.
+    void aDesktopThatPicksTheKeysOpensItsChooserFromTheRow()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->desktopChooser = true;
+        QuickSettings settings(&controller);
+        QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(field);
+
+        QTest::mouseClick(window.get(), Qt::LeftButton, {}, field->mapToScene(field->boundingRect().center()).toPoint());
+        QCOMPARE(platform->binder->registerCount, 1);
+        QVERIFY(!field->property("listening").toBool());
+        QTest::keyClick(window.get(), Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(platform->binder->suspendCount, 0);
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_K)));
+    }
+
+    // While a row records, every Global Shortcut lets go of its keys, so the
+    // bound ones record rather than start dictation. They come back however
+    // recording ends: a recorded shortcut, Escape, focus moving away, the
+    // window hiding (as closing it does), or the page closing.
+    void recordingInTheUiSuspendsTheShortcuts()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(field);
+        FakeGlobalShortcutBinder *binder = platform->binder;
+
+        startListening(window.get(), field);
+        QCOMPARE(binder->suspendCount, 1);
+        QCOMPARE(platform->cancelBinder->suspendCount, 1);
+        QCOMPARE(platform->pauseBinder->suspendCount, 1);
+        QCOMPARE(binder->resumeCount, 0);
+        QTest::keyClick(window.get(), Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(binder->resumeCount, 1);
+        QCOMPARE(platform->cancelBinder->resumeCount, 1);
+
+        startListening(window.get(), field);
+        QTest::keyClick(window.get(), Qt::Key_Escape);
+        QVERIFY(!field->property("listening").toBool());
+        QCOMPARE(binder->resumeCount, 2);
+
+        startListening(window.get(), field);
+        field->setFocus(false);
+        QVERIFY(!field->property("listening").toBool());
+        QCOMPARE(binder->resumeCount, 3);
+
+        startListening(window.get(), field);
+        window->hide();
+        QVERIFY(!field->property("listening").toBool());
+        QCOMPARE(binder->resumeCount, 4);
+        window->show();
+        QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+
+        startListening(window.get(), field);
+        window.reset();
+        QCOMPARE(binder->suspendCount, 5);
+        QCOMPARE(binder->resumeCount, 5);
+    }
+
+    // A shortcut the controller or the desktop's chooser refuses says why in
+    // its row. The next recording starts without the old reason, as do keys
+    // changed elsewhere, such as from the CLI.
+    void aRefusedShortcutSaysWhyInItsRow()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *row = findItem(window.get(), "SchemaRow");
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(row && field);
+        const QString help = row->property("help").toString();
+        const QString owned = QStringLiteral("Another application already owns Ctrl+Alt+D");
+        platform->binder->setShortcutError = owned;
+
+        startListening(window.get(), field);
+        QTest::keyClick(window.get(), Qt::Key_D, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(row->property("help").toString(), owned);
+
+        startListening(window.get(), field);
+        QCOMPARE(row->property("help").toString(), help);
+
+        const QString refused = QStringLiteral("The desktop refused the shortcut");
+        platform->binder->publishRegistrationResult(false, refused);
+        QCOMPARE(row->property("help").toString(), refused);
+        platform->binder->setShortcutError.clear();
+        QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
+        QCOMPARE(row->property("help").toString(), help);
+    }
+
+    // Where the desktop picks the keys itself (the portal), the binding is a
+    // stand-in: the rows and Status show the keys the desktop says it
+    // assigned, and follow when it assigns others.
+    void theUiShowsTheKeysTheDesktopAssigned()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QuickStatus status(&controller);
+        QVERIFY(controller.setGlobalShortcut(GlobalShortcutBinder::defaultShortcut()));
+        const auto shown = [&] {
+            return settings.values().value(QStringLiteral("globalShortcut")).toStringList();
+        };
+
+        platform->binder->publishAssignedKeys(QStringLiteral("Ctrl+Space"));
+        QCOMPARE(shown(), (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Space")}));
+        QCOMPARE(status.shortcutKeys(), shown());
+
+        QSignalSpy changed(&settings, &QuickSettings::valuesChanged);
+        platform->binder->publishAssignedKeys(QStringLiteral("Ctrl+Alt+K"));
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(shown(), (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Alt"), QStringLiteral("K")}));
+    }
+#endif
+
     // The Cancel and Pause Shortcuts hold their keys only while a Dictation
     // Session can use them, so a bare key types normally the rest of the time.
     void sessionShortcutsAreArmedOnlyDuringASession()
@@ -995,6 +1226,19 @@ private slots:
         controller.settings()->setLaunchAtLogin(controller.settings()->launchAtLogin());
         QVERIFY(controller.launchAtLoginAccepted());
         QCOMPARE(accepted.count(), 1);
+    }
+
+    // A fresh profile opens setup on a plain launch, but --daemon shows no
+    // window by itself; the daemon a CLI command starts for setup asks for it.
+    void onlyALaunchWithAWindowOpensPendingSetup()
+    {
+        const auto launch = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
+        };
+        QVERIFY(opensSetupAtLaunch(launch({}), true));
+        QVERIFY(!opensSetupAtLaunch(launch({}), false));
+        QVERIFY(!opensSetupAtLaunch(launch({QStringLiteral("--daemon")}), true));
+        QVERIFY(opensSetupAtLaunch(launch({QStringLiteral("--daemon"), QStringLiteral("--show-setup")}), false));
     }
 
 #if defined(Q_OS_LINUX) || defined(Q_OS_WIN)

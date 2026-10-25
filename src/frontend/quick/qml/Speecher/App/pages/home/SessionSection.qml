@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // The dictation itself, at the top of Home: whether Speecher is ready and

@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Launch
 import Speecher.Theme
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of the updater: where it is in a check or install, and the release
 // notes for the running version. check(), install() and restart() walk
 // through the states with fake delays.

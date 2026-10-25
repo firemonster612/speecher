@@ -1,9 +1,11 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 import Speecher.Theme
 import Speecher.Demo
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of the audio input: the microphones core sees and the microphone test.
 // --mic-state=ok|missing|none|silent picks the devices (silent: present, but
 // the test hears nothing); --mic-test=running starts the test; --vad=on

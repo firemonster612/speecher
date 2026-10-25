@@ -4,6 +4,7 @@ import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // Application recognition: which app type and Writing Profile an app gets.

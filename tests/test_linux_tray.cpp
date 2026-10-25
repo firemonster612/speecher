@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 
+#include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/LinuxTrayIcon.h"
 #include "core/SettingsStore.h"
@@ -11,6 +12,25 @@
 
 using namespace speecher;
 
+namespace {
+
+// Records which windows the controller asks for.
+class WindowRequests final : public AppFrontEnd {
+public:
+    QStringList requests;
+
+    void showMainWindow() override { requests.append(QStringLiteral("main")); }
+    void hideMainWindow() override {}
+    void showSettingsWindow() override { requests.append(QStringLiteral("settings")); }
+    void showSetupAssistant(SetupAssistantPage) override { requests.append(QStringLiteral("setup")); }
+    void showTranscribeFiles(const QStringList &) override {}
+    void showDictationError(const QString &, const PopupErrorAction &) override {}
+    void alert() override {}
+    void notifyIfNoWindowShown(const QString &, const QString &, const QString &) override {}
+};
+
+} // namespace
+
 class LinuxTrayTests : public QObject {
     Q_OBJECT
 
@@ -21,7 +41,7 @@ private slots:
         settings.raw().clear();
     }
 
-    void menuOffersDictationAndQuit()
+    void menuOffersDictationSettingsAndQuit()
     {
         ApplicationController controller(true);
         LinuxTrayIcon tray(&controller);
@@ -33,12 +53,14 @@ private slots:
         QMenu *menu = icon->contextMenu();
         QVERIFY(menu);
         const QList<QAction *> actions = menu->actions();
-        QCOMPARE(actions.size(), 3);
+        QCOMPARE(actions.size(), 4);
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
         QCOMPARE(actions.at(0)->text(), QStringLiteral("Start dictation"));
-        QVERIFY(actions.at(1)->isSeparator());
-        QCOMPARE(actions.at(2)->objectName(), QStringLiteral("trayQuit"));
-        QCOMPARE(actions.at(2)->text(), QStringLiteral("Quit Speecher"));
+        QCOMPARE(actions.at(1)->objectName(), QStringLiteral("traySettings"));
+        QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings"));
+        QVERIFY(actions.at(2)->isSeparator());
+        QCOMPARE(actions.at(3)->objectName(), QStringLiteral("trayQuit"));
+        QCOMPARE(actions.at(3)->text(), QStringLiteral("Quit Speecher"));
     }
 
     void listeningStateFlipsToggleTextAndTooltip()
@@ -82,6 +104,23 @@ private slots:
         QSignalSpy quitRequests(&controller, &ApplicationController::quitRequested);
         icon->contextMenu()->actions().last()->trigger();
         QCOMPARE(quitRequests.count(), 1);
+    }
+
+    void clickOpensSpeecherAndSettingsOpensSettings()
+    {
+        SettingsStore().setSetupCompleted(true);
+        ApplicationController controller(true);
+        WindowRequests windows;
+        controller.setFrontEnd(&windows);
+        LinuxTrayIcon tray(&controller);
+        auto *icon = tray.findChild<QSystemTrayIcon *>();
+
+        emit icon->activated(QSystemTrayIcon::Trigger);
+        QCOMPARE(windows.requests, QStringList{QStringLiteral("main")});
+
+        icon->contextMenu()->findChild<QAction *>(QStringLiteral("traySettings"))->trigger();
+        QCOMPARE(windows.requests, (QStringList{QStringLiteral("main"), QStringLiteral("settings")}));
+        controller.setFrontEnd(nullptr);
     }
 };
 

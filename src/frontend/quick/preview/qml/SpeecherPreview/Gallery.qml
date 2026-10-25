@@ -4,7 +4,7 @@ import QtQuick.Window
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Demo
-import Speecher.Backend
+import Speecher.Wording
 
 // Every shared control in its states, for picking the right one and for
 // checking a change to one of them in both themes:

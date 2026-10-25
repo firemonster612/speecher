@@ -6,6 +6,7 @@ import QtQuick.Effects
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // Search everything: a root over a blurred window that finds pages and
 // individual settings by name, keyword, option or help text. Switches can be
@@ -112,7 +113,7 @@ FocusScope {
                 width: parent.width - 110
                 anchors.verticalCenter: parent.verticalCenter
                 color: Theme.text
-                placeholderText: Status.text.searchPlaceholder
+                placeholderText: Words.shell.searchPlaceholder
                 placeholderTextColor: Theme.textTertiary
                 selectionColor: Theme.accentRing
                 font.family: Theme.fontFamily
@@ -137,7 +138,7 @@ FocusScope {
                 visible: root.query.trim().length === 0
                 x: 22
                 y: 12
-                text: Status.text.suggested
+                text: Words.shell.suggested
                 variant: "small"
                 strong: true
                 tone: "tertiary"
@@ -192,7 +193,7 @@ FocusScope {
                             variant: "label"
                         }
                         Txt {
-                            text: hit.modelData.type === "page" ? Status.text.page : hit.modelData.trail
+                            text: hit.modelData.type === "page" ? Words.shell.page : hit.modelData.trail
                             variant: "small"
                             tone: "tertiary"
                         }
@@ -231,8 +232,8 @@ FocusScope {
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.fast } }
                 iconName: "search-x"
-                title: Status.noMatches(root.query)
-                text: Status.text.searchTip
+                title: Words.noMatches(root.query)
+                text: Words.shell.searchTip
             }
         }
 
@@ -247,7 +248,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 16
                 Repeater {
-                    model: [{ k: ["↑", "↓"], t: Status.text.moveHint }, { k: ["↵"], t: Status.text.openHint }, { k: ["Esc"], t: Status.text.closeHint }]
+                    model: [{ k: ["↑", "↓"], t: Words.shell.moveHint }, { k: ["↵"], t: Words.shell.openHint }, { k: ["Esc"], t: Words.shell.closeHint }]
                     Row {
                         id: hint
                         required property var modelData
@@ -261,7 +262,7 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                text: Status.results(root.results.length)
+                text: Words.results(root.results.length)
                 variant: "small"
                 tone: "tertiary"
             }

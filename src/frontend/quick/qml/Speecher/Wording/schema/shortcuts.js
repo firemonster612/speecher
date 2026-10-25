@@ -7,7 +7,7 @@ var rows = [
     { id: "shortcutBehavior", page: "shortcuts", section: "Dictation", kind: "choice", control: "cards",
       label: "When you press it", value: "hybrid", keywords: "push to talk toggle hold hybrid mode",
       options: [
-          { id: "pushToTalk", label: "Push to talk", icon: "hand", help: "Dictate only while the key is held." },
+          { id: "push_to_talk", label: "Push to talk", icon: "hand", help: "Dictate only while the key is held." },
           { id: "toggle", label: "Toggle", icon: "toggle-right", help: "One press starts, the next press stops." },
           { id: "hybrid", label: "Hybrid", icon: "timer", help: "Tap to toggle, or hold to dictate until release." }
       ] },

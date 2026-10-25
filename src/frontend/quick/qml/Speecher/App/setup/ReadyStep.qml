@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The finish: a check that lands once, how to dictate with the chosen
 // shortcut, and a way back to any step that still needs attention. The rail
@@ -31,7 +32,7 @@ StepPage {
         Row {
             spacing: Theme.space2
             KeyCombo { keys: Settings.values.globalShortcut || []; anchors.verticalCenter: parent.verticalCenter }
-            Txt { text: Settings.chosenHelp("shortcutBehavior"); tone: "secondary"; anchors.verticalCenter: parent.verticalCenter }
+            Txt { text: Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior); tone: "secondary"; anchors.verticalCenter: parent.verticalCenter }
         }
     }
 

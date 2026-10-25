@@ -47,7 +47,8 @@ the UI.
   its own pages.
 - Messages core writes still name UI pages by title ("the Local models
   page"), so renaming a page means updating those messages too.
-- Until the Quick host lands, the binary runs as a daemon with no windows;
-  on Linux it keeps its tray icon.
+- The Quick host (`src/frontend/quick/host`) runs on Linux, beside the tray
+  icon. Until it lands elsewhere, the binary runs there as a daemon with no
+  windows.
 - Windows no longer needs the Windows App Runtime, and macOS no longer needs
   Swift.

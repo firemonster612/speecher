@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // A spoken sentence marked up the way refinement edits it, like a proof:
 // removed words struck through, added ones in blue pencil. Then the

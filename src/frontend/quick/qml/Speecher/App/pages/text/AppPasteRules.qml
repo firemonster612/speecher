@@ -4,6 +4,7 @@ import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // Rules for single apps: the add form, then each app with its paste method

@@ -1,9 +1,10 @@
 pragma Singleton
 import QtQuick
 
-// Mock of core's shared wording: the words many places use, such as the
-// labels and tooltips pages hand to shared controls, which have none of
-// their own, and the helpers that word numbers and lists.
+// The UI's shared wording: the words many places use, such as the labels and
+// tooltips pages hand to shared controls, which have none of their own, the
+// shell's words (the window, the sidebar and the search palette), and the
+// helpers that word numbers and lists.
 QtObject {
     // "1,284"
     function num(n, decimals) { return Number(n).toLocaleString(Qt.locale(), "f", decimals || 0) }
@@ -38,4 +39,24 @@ QtObject {
     readonly property string notSet: "Not set"
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
+
+    readonly property var shell: ({
+        appName: "Speecher",
+        searchSettings: "Search settings",
+        searchPlaceholder: "Search settings and pages",
+        suggested: "Suggested",
+        page: "Page",
+        searchTip: "Try a setting's name, a service such as Claude, or a word like hotkey.",
+        moveHint: "Move",
+        openHint: "Open",
+        closeHint: "Close",
+        minimize: "Minimize",
+        maximize: "Maximize",
+        restore: "Restore",
+        close: "Close"
+    })
+    function version(v) { return "Version " + v }
+    function updateReady(v) { return "Restart to update to " + v }
+    function noMatches(query) { return "Nothing matches “" + query + "”" }
+    function results(n) { return count(n, "result", "results") }
 }

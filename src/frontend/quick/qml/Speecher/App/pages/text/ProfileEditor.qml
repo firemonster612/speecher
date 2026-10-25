@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // One Writing Profile's settings: where it's used, its cleanup level with a

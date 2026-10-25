@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The note at the top of a card whose rows need desktop accessibility, with
 // the button that turns it on. The button spins and can't be pressed again

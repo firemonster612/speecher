@@ -13,6 +13,7 @@
 #include "providers/ProviderRegistry.h"
 #ifdef Q_OS_LINUX
 #include "app/LinuxTrayIcon.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 #endif
 #ifdef Q_OS_WIN
 #include "platform/win/WinSessionEnd.h"
@@ -606,8 +607,14 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
+#ifdef Q_OS_LINUX
+    // After the socket, so a launch that only hands its command to the
+    // running instance never builds a QML engine. Opens no window until the
+    // controller asks for one.
+    QuickFrontEnd frontEnd(&controller);
+#endif
 
-    if (controller.setupPending() || decision.showSetup) {
+    if (opensSetupAtLaunch(decision, controller.setupPending())) {
         QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
             // Held by the controller until setup completes, then opened.

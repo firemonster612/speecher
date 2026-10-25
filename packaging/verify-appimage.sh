@@ -46,6 +46,12 @@ REQUIRED_FILES=(
   usr/plugins/styles/libkvantum.so
   usr/plugins/iconengines/libqsvgicon.so
   usr/plugins/networkinformation/libqnetworkmanager.so
+  usr/qml/QtQml/qmldir
+  usr/qml/QtQuick/qmldir
+  usr/qml/QtQuick/Templates/qmldir
+  usr/qml/QtQuick/Window/qmldir
+  usr/qml/QtQuick/Effects/qmldir
+  usr/qml/QtQuick/Shapes/qmldir
   usr/lib/libQt6Core.so.6
   usr/lib/libKF6GlobalAccel.so.6
   usr/lib/libLayerShellQtInterface.so.6
@@ -67,6 +73,36 @@ if [[ ! -e "$APPDIR/usr/plugins/platforms/libqwayland.so" \
   echo "Required AppImage file is missing: usr/plugins/platforms/libqwayland.so" >&2
   exit 1
 fi
+
+# The Qt Quick UI loads from the bundled QML modules alone: on a profile that
+# has finished setup, a launch opens Main, which SPEECHER_GRAB_MAIN_WINDOW
+# saves once it is shown. A host import path is set, which AppRun has to
+# drop. Its own socket, profile and session bus keep it apart from a
+# Speecher already running.
+UI_HOME="$EXTRACT_DIR/ui-home"
+mkdir -p "$UI_HOME/config/io.github.firemonster612" "$UI_HOME/tmp"
+printf '[app]\nsetupCompleted=true\n' > "$UI_HOME/config/io.github.firemonster612/speecher.conf"
+UI_SHOT="$UI_HOME/main.png"
+UI_LOG="$UI_HOME/cache/io.github.firemonster612/speecher/speecher.log"
+(
+  export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software SPEECHER_GRAB_MAIN_WINDOW="$UI_SHOT"
+  export XDG_CONFIG_HOME="$UI_HOME/config" XDG_DATA_HOME="$UI_HOME/data" XDG_CACHE_HOME="$UI_HOME/cache"
+  export XDG_STATE_HOME="$UI_HOME/state" TMPDIR="$UI_HOME/tmp"
+  export QML_IMPORT_PATH="/usr/lib/qt6/qml:/usr/lib/x86_64-linux-gnu/qt6/qml"
+  session=()
+  command -v dbus-run-session >/dev/null && session=(dbus-run-session --)
+  timeout 30 "${session[@]}" bash -c '
+    "$1" > "$2/ui.out" 2>&1 &
+    for _ in $(seq 100); do [[ -s "$3" ]] && break; sleep 0.2; done
+    kill $! 2>/dev/null
+  ' _ "$APPDIR/AppRun" "$UI_HOME" "$UI_SHOT"
+)
+if [[ ! -s "$UI_SHOT" ]] || grep -q ' QML: ' "$UI_LOG"; then
+  echo "The packaged Qt Quick UI did not open Main:" >&2
+  grep ' QML: ' "$UI_LOG" >&2 || tail -n 20 "$UI_LOG" "$UI_HOME/ui.out" >&2
+  exit 1
+fi
+echo "The packaged Qt Quick UI opened Main."
 
 HELPER="$APPDIR/usr/libexec/speecher/speecher-ydotool-setup"
 if ldd "$HELPER" | grep -Fq 'libQt6'; then

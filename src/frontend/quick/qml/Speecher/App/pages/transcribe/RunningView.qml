@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // Step two: the file being heard, its progress and the queue, beside the
 // transcript so far, which follows the newest words.

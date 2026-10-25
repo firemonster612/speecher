@@ -40,7 +40,10 @@ ClientWindow {
     }
 
     function go(index) { if (choices.reachable(index)) step = Math.max(0, Math.min(steps.length - 1, index)) }
-    function finish() { choices.finish(); close() }
+    // Finish writes the choices, says setup is done, then closes; closing
+    // any other way leaves setup to run again.
+    signal finished()
+    function finish() { choices.finish(); finished(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------

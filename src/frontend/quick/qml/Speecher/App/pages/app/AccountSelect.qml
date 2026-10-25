@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // Picks one of CLI Proxy API's saved accounts of a type (codex or claude)
 // for a row; expired accounts say so in the menu.

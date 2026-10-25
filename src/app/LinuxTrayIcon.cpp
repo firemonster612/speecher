@@ -37,6 +37,8 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 {
     m_toggleAction = m_menu.addAction(QString(), controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
+    QAction *settings = m_menu.addAction(QStringLiteral("Settings"), controller, &ApplicationController::showSettings);
+    settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();
     QAction *quit = m_menu.addAction(trayQuitCaption(),
                                      controller, &ApplicationController::quitApplication);
@@ -49,7 +51,9 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
             [this, controller] { applyState(controller->stateName()); });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
-                if (reason == QSystemTrayIcon::MiddleClick) {
+                if (reason == QSystemTrayIcon::Trigger) {
+                    controller->showMain();
+                } else if (reason == QSystemTrayIcon::MiddleClick) {
                     controller->toggle();
                 }
             });

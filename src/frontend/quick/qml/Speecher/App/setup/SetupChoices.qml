@@ -1,5 +1,6 @@
 import QtQuick
 import Speecher.Backend
+import Speecher.Wording
 
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()

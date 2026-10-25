@@ -9,6 +9,6 @@ StepPage {
     Card {
         SchemaRow { rowId: "globalShortcut" }
         SchemaRow { rowId: "shortcutBehavior" }
-        SchemaRow { rowId: "cancelShortcut"; help: System.setupText.cancelShortcutHelp }
+        SchemaRow { rowId: "cancelShortcut"; note: System.setupText.cancelShortcutHelp }
     }
 }

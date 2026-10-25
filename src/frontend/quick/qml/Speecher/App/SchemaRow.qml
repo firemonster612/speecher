@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // A settings row built from its schema entry: label, help and the control its
 // kind calls for, bound to the row's value in Settings.
@@ -12,10 +13,18 @@ SettingRow {
     readonly property var spec: Schema.row(rowId)
     readonly property var value: Settings.values[rowId]
 
+    // The row's help; a page may give its own. Why the row's last save was
+    // refused shows in its place.
+    property string note: spec.help || ""
+
     title: spec.label
-    help: spec.help || ""
+    help: Settings.errors[rowId] || note
     iconName: spec.icon || ""
-    enabled: Settings.rowEnabled(spec)
+    // Usable once the backend saves the row or runs its action; a custom row
+    // with no value draws content that has nothing to save. enabledWhen reads
+    // Settings.values here, in the binding, so the row follows that value.
+    enabled: (spec.kind === "custom" && spec.value === undefined || Settings.saves(rowId))
+             && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
     // A row whose schema entry says hiddenWhen folds away rather than greying.
     shown: !spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals
     stacked: spec.kind === "choice" && spec.control === "cards"
@@ -39,22 +48,22 @@ SettingRow {
     Component { id: toggle; Switch { checked: !!root.value; onToggled: Settings.set(root.rowId, checked) } }
     Component {
         id: segmented
-        SegmentedControl { options: root.spec.options; currentId: root.value; onActivated: id => Settings.set(root.rowId, id) }
+        SegmentedControl { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: select
-        Select { placeholder: Words.choose; options: root.spec.options; currentId: root.value; onChosen: id => Settings.set(root.rowId, id) }
+        Select { placeholder: Words.choose; options: root.spec.options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: cards
-        OptionCards { options: root.spec.options; currentId: root.value; onActivated: id => Settings.set(root.rowId, id) }
+        OptionCards { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: slider
         Row {
             spacing: 12
             Txt {
-                text: Schema.valueLabel(root.spec, root.value)
+                text: Schema.valueLabel(root.spec, knob.value)
                 variant: "mono"
                 tone: "secondary"
                 width: 64
@@ -62,10 +71,13 @@ SettingRow {
                 anchors.verticalCenter: parent.verticalCenter
             }
             Slider {
+                id: knob
                 from: root.spec.min; to: root.spec.max; stepSize: root.spec.step || 1
                 value: root.value
                 format: v => Schema.valueLabel(root.spec, v)
-                onMoved: Settings.set(root.rowId, value)
+                // A drag saves once, when it lets go; each key press saves.
+                onMoved: if (!pressed) Settings.set(root.rowId, value)
+                onPressedChanged: if (!pressed && value !== root.value) Settings.set(root.rowId, value)
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
@@ -88,6 +100,14 @@ SettingRow {
             // The keys that act while dictating may be Escape itself.
             escapeRecords: root.rowId === "cancelShortcut" || root.rowId === "pauseShortcut"
             keys: root.value || []
+            // Where the desktop picks the keys (the portal), clicking opens its
+            // chooser, and nothing records or lets go here.
+            recordsKeys: !Settings.desktopPicksKeys(root.rowId)
+            onClicked: if (!recordsKeys) Settings.act(root.rowId)
+            // The bound shortcuts let go while it listens, so pressing them
+            // records them; every way listening ends takes them back.
+            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut(root.rowId)
+            Component.onDestruction: if (listening) Settings.stopRecordingShortcut(root.rowId)
             onRecorded: keys => Settings.set(root.rowId, keys)
         }
     }

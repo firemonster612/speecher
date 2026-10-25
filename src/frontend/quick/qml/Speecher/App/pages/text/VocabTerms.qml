@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // The vocabulary terms on one card: the add or edit form, a search with the

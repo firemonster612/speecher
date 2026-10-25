@@ -1,8 +1,10 @@
 pragma Singleton
 import QtQuick
+import Speecher.Wording
 import Speecher.Launch
 import Speecher.Theme
 
+// Placeholder: the app ships this mock until its wiring PR replaces it.
 // Mock of what core knows about speech: the services that transcribe, with
 // their ratings and whether each can run now; the Local Model catalog with
 // downloads, speed tests and this computer's hardware; and the speech Custom
@@ -270,7 +272,9 @@ QtObject {
         downloaded = downloaded.filter(x => x !== id)
         if (Settings.values.speechLocalModel === id) Settings.set("speechLocalModel", "")
     }
+    // Saves nothing in the app, which does not save this catalog's choice yet.
     function use(id) {
+        if (!Settings.saves("speechLocalModel")) return
         Settings.set("speechLocalModel", id)
         Settings.set("speechProvider", "local")
     }
