@@ -158,10 +158,10 @@ System keychain.
      `CFBundleVersion` is higher.
 3. Set up the shipped app as a user would: copy it to `/Applications`, run
    the setup assistant, grant Microphone, Accessibility and Input Monitoring,
-   turn on Start Speecher at login, save a dummy OpenAI key in Accounts, and
-   dictate once into TextEdit with the shortcut. Then give it the rest of what
-   a user may have granted: dictate while Music plays and allow the
-   Automation prompt (media pause); turn on screenshot context for ChatGPT
+   turn on Start Speecher at login, save a dummy OpenAI key in General >
+   Accounts, and dictate once into TextEdit with the shortcut. Then give it
+   the rest of what a user may have granted: dictate while Music plays and
+   allow the Automation prompt (media pause); turn on screenshot context for ChatGPT
    refinement and allow Screen & System Audio Recording at the first capture;
    sign in to Claude Code (`claude`) and Codex (`codex login`), whose Keychain
    items Speecher reads, and choose each once as a provider so Speecher reads

@@ -24,7 +24,7 @@ var words = {
     globalShortcuts: {
         checking: { status: "Checking…", detail: "" },
         unsupported: { status: "Not available", detail: "Your desktop gives Speecher no shortcut, so start dictation with the speecher command." },
-        notSet: { status: "Not set", detail: "Choose a shortcut on the Shortcuts page." },
+        notSet: { status: "Not set", detail: "Choose a shortcut in Dictation › Shortcuts." },
         registered: { status: "Registered", detail: "Your desktop delivers the shortcut in every app." }
     },
     virtualKeyboardHealth: {

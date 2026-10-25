@@ -379,25 +379,33 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- A page can sit under another (`parent` in `schema/pages.js`) when it is
-  a part of that page a person looks for on its own: Local models under
-  Speech to text, Writing profiles and Vocabulary under Refinement, App
-  rules under Pasting, and Appearance, Permissions & health and Updates
-  under General. In the sidebar subpages sit under their parent, past a
-  guide line from its icon, and fold under a chevron on it; a subpage's
-  wash and the pill on it start right of the guide.
-  They open, growing in through a `Reveal`, when the parent or one of them
-  is opened, and stay open after; closed by hand they stay closed until
-  opened again or one of them is asked for, even the one showing
-  (`Navigation.requested`). While a current subpage is folded away the
-  pill sits on its parent, and a subpage that had keyboard focus hands it
-  to the parent. Up and Down step through the entries that show, Right
-  and Left open and close a parent's subpages. A
-  subpage's title leads with the path to it ("Refinement › Vocabulary"),
+- The sidebar is one list with no headings: seven top-level pages (Home,
+  Transcribe files, Dictation, Speech to text, Refinement, Pasting,
+  General), in the order a dictation goes, and their subpages. A page sits
+  under another (`parent` in `schema/pages.js`) when it is a part of that
+  page a person looks for on its own: Shortcuts, Microphone and Popup &
+  sounds under Dictation, Local models under Speech to text, Writing
+  profiles and Vocabulary under Refinement, App rules under Pasting, and
+  Appearance, Accounts, Permissions & health and Updates under General.
+  Top-level entries have icons; subpages have none, set in past a guide
+  line from their parent's icon, with their wash and the pill on them
+  starting right of the guide.
+- One group is open at a time, growing in through a `Reveal`: asking for a
+  page (`Navigation.requested`, the page showing included) opens the group
+  holding it and closes the rest, and so does opening a group with its
+  chevron. A group closed by hand stays closed when its parent is asked
+  for, until it is opened again or one of its subpages is asked for. While
+  a current subpage is folded away the pill sits on its parent, and a
+  subpage that had keyboard focus hands it to the parent when its group
+  closes. Up and Down step through the entries that show, Right and Left
+  open and close a parent's subpages.
+- A subpage's title leads with the path to it ("Dictation › Shortcuts"),
   each step a quiet link to that page, and search gives a subpage and its
-  rows the same path. The parent lists its subpages too, in a
-  `SubpageRows` card: at its end, or first where the page is mostly a way
-  into them (General). A subpage keeps its id, so links to it still land.
+  rows the same path. A parent lists its subpages in a `SubpageRows` card:
+  at its end, or first where the page is mostly a way into them (General,
+  Dictation). Dictation's rows say how each is set now (the shortcut's
+  keys, the microphone, live text and sounds) in place of the subtitle. A
+  subpage keeps its id, so links to it still land.
 
 Things to avoid, because they read as generated:
 
@@ -547,7 +555,7 @@ Helpers:
 
 In Speecher.App, besides SchemaRow:
 
-- `SubpageRows { pageId }`: a card of rows leading to a page's subpages, with their titles and subtitles.
+- `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
