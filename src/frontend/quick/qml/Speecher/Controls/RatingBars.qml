@@ -15,8 +15,15 @@ Column {
     property string unknownText: "?"
     property var scoreFormat: v => appearance === "wide" ? v + "/10" : String(v)
 
+    // The ratings as assistive tech says them: "Accuracy 8.5 out of 10,
+    // Speed 7 out of 10".
+    readonly property string spoken: bars.map(b => b.label + " " + (b.value === null || b.value === undefined
+                                                                    ? "unknown" : b.value + " out of 10")).join(", ")
+
     readonly property bool _wide: appearance === "wide"
     property int pipWidth: _wide ? 14 : 9
+    // The measure names' column.
+    property int labelWidth: _wide ? 52 : 58
 
     spacing: _wide ? 8 : 5
 
@@ -30,7 +37,7 @@ Column {
 
             spacing: root._wide ? 10 : 8
             Txt {
-                width: root._wide ? 52 : 58
+                width: root.labelWidth
                 text: line.modelData.label
                 variant: root._wide ? "small" : "caption"
                 tone: "secondary"

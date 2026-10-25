@@ -9,7 +9,7 @@ import Speecher.Theme
 // dot (a dot for every settled state, for lists read at a glance) or none.
 // Changes of wording roll in place and the indicator fades between kinds.
 // wrap sets the text to the width left beside the indicator, over several
-// lines.
+// lines; maximumLineCount and elide bound it.
 Row {
     id: root
 
@@ -19,6 +19,8 @@ Row {
     property string indicator: "auto"
     property string variant: "small"
     property bool wrap: false
+    property alias maximumLineCount: words.maximumLineCount
+    property alias elide: words.elide
 
     readonly property bool _attention: tone === "warning" || tone === "negative"
     readonly property bool _live: tone === "live"
@@ -51,6 +53,7 @@ Row {
         }
     }
     MorphText {
+        id: words
         width: root.wrap ? root.width - mark.width - root.spacing : implicitWidth
         wrap: root.wrap
         text: root.text

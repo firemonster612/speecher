@@ -38,6 +38,46 @@ std::unique_ptr<QObject> schemaRow(QQmlEngine &engine, const char *rowId)
     return row;
 }
 
+// The items drawn under root of one type, a QML one such as "ChoiceCard" or
+// a C++ class such as "QQuickText", in tree order. Walks the visual tree, since a Repeater's items are not
+// root's QObject children.
+QList<QQuickItem *> itemsOfType(QQuickItem *root, const char *type)
+{
+    const QByteArray prefix = QByteArray(type) + '_';
+    QList<QQuickItem *> found;
+    for (QQuickItem *item : root->childItems()) {
+        if (QByteArray(item->metaObject()->className()).startsWith(prefix) || item->inherits(type)) {
+            found.append(item);
+        }
+        found.append(itemsOfType(item, type));
+    }
+    return found;
+}
+
+// Cards of every kind ServiceCards shows: a long problem, a short status, no
+// rating yet, and no rating at all.
+constexpr const char *serviceCards = R"(
+    import QtQuick
+    import Speecher.Controls
+    Window {
+        width: 560; height: 700; visible: true
+        ServiceCards {
+            width: 520
+            unratedText: "No rating"
+            options: [
+                { id: "local", label: "Local Runner", help: "Ollama, LM Studio or llama-server on this computer.",
+                  status: "Could not connect to 127.0.0.1:11434: Connection refused", tone: "negative",
+                  bars: [{ label: "Quality", value: 9 }, { label: "Speed", value: 7.5 }], note: "Rated as Gemma 4 E4B" },
+                { id: "openai", label: "ChatGPT", help: "Uses your ChatGPT or Codex sign-in.", status: "Ready",
+                  bars: [{ label: "Quality", value: 10 }, { label: "Speed", value: 7 }] },
+                { id: "endpoint", label: "Custom Endpoint", help: "Your own server.", status: "No server URL is set",
+                  tone: "warning", bars: null },
+                { id: "none", label: "None", help: "Pastes your words as spoken." }
+            ]
+        }
+    }
+)";
+
 } // namespace
 
 // The UI's Settings singleton: values by schema row id, saved through the
@@ -350,6 +390,133 @@ private slots:
         QCOMPARE(another.updateCheckIntervalMinutes(), 120);
         QCOMPARE(another.updateCheckIntervalUnit(), QStringLiteral("hours"));
         QCOMPARE(result.toVariant().toStringList(), QStringList{QStringLiteral("codex")});
+    }
+
+    // A drag to either end holds the knob there, under the pointer, until it
+    // is let go; then the switch flips to that end.
+    void aSwitchKnobStaysWhereItIsDragged()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.Controls
+            Window { width: 200; height: 80; visible: true; Switch { x: 40; y: 30 } }
+        )", QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QQuickItem *control = itemsOfType(window->contentItem(), "Switch").value(0);
+        QVERIFY(control);
+        QQuickItem *track = control->property("indicator").value<QQuickItem *>();
+        QQuickItem *knob = track->childItems().value(0);
+        QVERIFY(knob);
+        const qreal inset = knob->property("inset").toReal();
+        const qreal middle = control->height() / 2;
+
+        const auto drag = [&](qreal fromX, qreal toX) {
+            const QPointF from = control->mapToScene(QPointF(fromX, middle));
+            const QPointF to = control->mapToScene(QPointF(toX, middle));
+            QTest::mousePress(window, Qt::LeftButton, {}, from.toPoint());
+            for (int step = 1; step <= 10; ++step) {
+                QTest::mouseMove(window, (from + (to - from) * step / 10).toPoint());
+                QTest::qWait(16);
+            }
+            QTest::qWait(500);
+            return to;
+        };
+
+        // Past the far end, still held.
+        QPointF end = drag(inset + 4, control->width() + 30);
+        QVERIFY2(qAbs(knob->x() + knob->width() - (track->width() - inset)) < 1,
+                 qPrintable(QStringLiteral("knob ends at %1, not %2").arg(knob->x() + knob->width()).arg(track->width() - inset)));
+        QVERIFY(!control->property("checked").toBool());
+        QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
+        QVERIFY(control->property("checked").toBool());
+
+        // And back past the start.
+        end = drag(control->width() - inset - 4, -30);
+        QVERIFY2(qAbs(knob->x() - inset) < 1, qPrintable(QStringLiteral("knob starts at %1, not %2").arg(knob->x()).arg(inset)));
+        QVERIFY(control->property("checked").toBool());
+        QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
+        QVERIFY(!control->property("checked").toBool());
+    }
+
+    void aServiceCardsStatusStaysInItsCard_data()
+    {
+        QTest::addColumn<int>("width");
+        QTest::newRow("two wide columns") << 520;
+        // The four take two columns of cards at their narrowest.
+        QTest::newRow("two narrowest columns") << 400;
+    }
+
+    // However long a status is, it stays inside its card, above the ratings,
+    // even where the cards are narrowest.
+    void aServiceCardsStatusStaysInItsCard()
+    {
+        QFETCH(int, width);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(serviceCards, QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QQuickItem *grid = itemsOfType(window->contentItem(), "ServiceCards").value(0);
+        QVERIFY(grid);
+        grid->setWidth(width);
+        QTest::qWait(500);
+
+        const QList<QQuickItem *> cards = itemsOfType(window->contentItem(), "ChoiceCard");
+        QCOMPARE(cards.size(), 4);
+        for (QQuickItem *card : cards) {
+            QQuickItem *status = itemsOfType(card, "StatusText").value(0);
+            QQuickItem *bars = itemsOfType(card, "RatingBars").value(0);
+            QVERIFY(status && bars);
+            const QRectF statusRect = status->mapRectToItem(card, status->boundingRect());
+            const QRectF barsRect = bars->mapRectToItem(card, bars->boundingRect());
+            QVERIFY2(statusRect.bottom() <= barsRect.top(),
+                     qPrintable(QStringLiteral("status ends at %1, ratings start at %2").arg(statusRect.bottom()).arg(barsRect.top())));
+            QVERIFY(barsRect.bottom() <= card->height());
+            for (QQuickItem *text : itemsOfType(status, "QQuickText")) {
+                if (text->opacity() == 0 || text->property("text").toString().isEmpty()) {
+                    continue;
+                }
+                const qreal right = text->mapToItem(card, QPointF(text->property("contentWidth").toReal(), 0)).x();
+                QVERIFY2(right <= card->width(),
+                         qPrintable(QStringLiteral("\"%1\" ends at %2 in a card %3 wide")
+                                        .arg(text->property("text").toString()).arg(right).arg(card->width())));
+            }
+        }
+    }
+
+    // Assistive tech hears a card's ratings, or that it has none yet, as
+    // well as its help and status.
+    void aServiceCardSaysItsRatings()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(serviceCards, QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QStringList descriptions;
+        for (QQuickItem *card : itemsOfType(window->contentItem(), "ChoiceCard")) {
+            for (QObject *attached : card->findChildren<QObject *>(Qt::FindDirectChildrenOnly)) {
+                if (attached->inherits("QQuickAccessibleAttached")) {
+                    descriptions.append(attached->property("description").toString());
+                }
+            }
+        }
+        QCOMPARE(descriptions.size(), 4);
+        QCOMPARE(descriptions[0], QStringLiteral("Ollama, LM Studio or llama-server on this computer. "
+                                                 "Could not connect to 127.0.0.1:11434: Connection refused. "
+                                                 "Quality 9 out of 10, Speed 7.5 out of 10. Rated as Gemma 4 E4B."));
+        QCOMPARE(descriptions[1], QStringLiteral("Uses your ChatGPT or Codex sign-in. Ready. Quality 10 out of 10, Speed 7 out of 10."));
+        QCOMPARE(descriptions[2], QStringLiteral("Your own server. No server URL is set. No rating."));
+        QCOMPARE(descriptions[3], QStringLiteral("Pastes your words as spoken."));
     }
 
     void shortcutKeysSplitIntoKeycaps()

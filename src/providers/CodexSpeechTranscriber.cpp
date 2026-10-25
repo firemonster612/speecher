@@ -72,7 +72,7 @@ QString CodexSpeechTranscriber::id() const
 
 QString CodexSpeechTranscriber::label() const
 {
-    return QStringLiteral("ChatGPT Codex");
+    return QStringLiteral("ChatGPT");
 }
 
 bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const

@@ -16,11 +16,11 @@ QtObject {
     // how its text arrives. A service this table lacks, such as the test
     // stub, shows its label alone.
     readonly property var _services: ({
-        codex: { icon: "message-circle", help: "Very accurate, around 100 languages.",
+        codex: { icon: "openai", help: "Very accurate, around 100 languages.",
                  access: "Uses your sign-in from the Codex app.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
                           { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
-        claude: { icon: "audio-lines", help: "About 60 languages, automatic punctuation and numerals.",
+        claude: { icon: "claude", help: "About 60 languages, automatic punctuation and numerals.",
                   access: "Uses your Claude Code sign-in.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
         endpoint: { icon: "server", help: "A server you run. Speed, accuracy and languages depend on the server and its model.",
@@ -59,15 +59,32 @@ QtObject {
     }
     // What setup says of a service while its sign-in is checked.
     readonly property string checking: "Checking…"
-    // A provider as ChoiceRows shows it.
-    function _choice(provider, help) {
-        return { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                 state: provider.state, status: status(provider) }
+    // A provider as ServiceCards shows it, rated from ratings (Models'
+    // ratings by id), or with no rating at all when ratings is left out.
+    // note is the line under the ratings, its parts as sentences.
+    function _choice(provider, help, ratings, noteParts) {
+        const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
+                         state: provider.state, status: status(provider) }
+        if (ratings) choice.bars = bars(ratings[provider.id])
+        if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
+        return choice
     }
-    // Speech services as a choice, saying what each is good at; setup's
-    // say what each needs.
-    function speechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).help)) }
-    function setupSpeechChoices(services) { return services.map(s => _choice(service(s.id), service(s.id).access)) }
+    // Speech services as a choice for dictation, saying what each is good
+    // at, how its text arrives and what it was rated on; Transcribe files',
+    // whose text all arrives at the end, leave out how it arrives. Setup's
+    // say what each needs and what it was rated on.
+    function speechChoices(services) {
+        return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
+                                         [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
+    }
+    function fileSpeechChoices(services) {
+        return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
+                                         [ratedAsNote(Models.speechRatings[s.id])]))
+    }
+    function setupSpeechChoices(services) {
+        return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings,
+                                         [ratedAsNote(Models.speechRatings[s.id])]))
+    }
 
     // Where a speech service stands in the chain: 0 for the service itself,
     // then its place among the fallbacks.
@@ -86,7 +103,9 @@ QtObject {
     function bars(rating) { return rating ? rating.bars.map(b => ({ label: _measures[b.measure], value: b.value })) : null }
     // " Rated as Parakeet 0.6B on this computer.", after a role, or nothing.
     function ratedAsText(rating) { return rating && rating.ratedModel ? " Rated as " + rating.ratedModel + " on this computer." : "" }
-    function ratedWithText(rating) { return "Rated with " + rating.ratedModel + ", suggested for this computer." }
+    // "Rated as Parakeet 0.6B", under a card's ratings, or nothing when
+    // they are the service's own.
+    function ratedAsNote(rating) { return rating && rating.ratedModel ? "Rated as " + rating.ratedModel : "" }
     readonly property string unrated: "No rating"
 
     // Local Models ---------------------------------------------------------------
@@ -177,8 +196,8 @@ QtObject {
     ]
 
     readonly property var _refiners: ({
-        openai: { icon: "aperture", help: "Uses your ChatGPT or Codex sign-in." },
-        anthropic: { icon: "asterisk", help: "Uses your Claude Code sign-in." },
+        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in." },
+        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in." },
         local: { icon: "cpu", help: "Ollama, LM Studio or llama-server on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Pastes your words as spoken." }
@@ -189,9 +208,11 @@ QtObject {
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }
         return Object.assign({ icon: "circle", help: "" }, _refiners[id], known, { refines: true })
     }
-    // The providers, then None, as a choice.
+    // The providers, then None, as a choice, with what each was rated on.
     function refinementChoices(providers) {
-        return providers.map(p => _choice(provider(p.id), provider(p.id).help)).concat([_choice(provider("none"), _refiners.none.help)])
+        return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings,
+                                          [ratedAsNote(Models.refinementRatings[p.id])]))
+            .concat([_choice(provider("none"), _refiners.none.help)])
     }
     // The model a provider refines with, as its settings name it.
     function refinementModel(id) {

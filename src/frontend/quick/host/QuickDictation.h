@@ -45,7 +45,8 @@ class QuickDictationState : public QObject {
     // removed, text }; folded keeps the changes and a few words around them,
     // and is empty when the edit is short), summary ("2 changes"), keepKeys,
     // replaceKeys and followUpKeys (the keys that answer it, each a list,
-    // empty for none), following (a follow-up is being dictated) }.
+    // empty for none), following (a follow-up is being dictated) }. While
+    // idle, the keys are those the configured shortcuts would give a review.
     Q_PROPERTY(QVariantMap review MEMBER m_review NOTIFY reviewChanged)
     // error: { title, detail, page, dismissMs }, page the settings page that
     // fixes it, or empty; dismissMs how long it stays up before it dismisses
@@ -128,6 +129,7 @@ private:
     void followSession(const QString &stateName);
     void showReceipt(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix);
     void setReview(const SelectionEditReview &review);
+    void showConfiguredReviewKeys();
     void startErrorDismissal();
     void holdError(bool held);
     void dismissError();

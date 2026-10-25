@@ -24,19 +24,19 @@ QtObject {
 
     // In the registry's order: by label. state as QuickModels.h lists them.
     readonly property var speechServices: [
-        { id: "codex", label: "ChatGPT Codex", signsIn: true, state: "ready", problem: "" },
-        { id: "claude", label: "Claude Voice", signsIn: true, state: "ready", problem: "" },
+        { id: "codex", label: "ChatGPT", signsIn: true, state: "ready", problem: "" },
+        { id: "claude", label: "Claude", signsIn: true, state: "ready", problem: "" },
         Object.assign({ id: "endpoint", label: "Custom Endpoint", signsIn: false },
                       _endpointState(Settings.values.speechEndpointUrl, speechEndpoint)),
         { id: "local", label: "Local Model", signsIn: false, state: downloaded.indexOf(localModelChoice) >= 0 ? "ready" : "noModel",
           problem: downloaded.indexOf(localModelChoice) >= 0 ? "" : "No model downloaded." }
     ]
     readonly property var refinementProviders: [
-        { id: "anthropic", label: "Anthropic", signsIn: true, state: "ready", problem: "", readsScreenshots: true },
+        { id: "openai", label: "ChatGPT", signsIn: true, state: "ready", problem: "", readsScreenshots: true },
+        { id: "anthropic", label: "Claude", signsIn: true, state: "ready", problem: "", readsScreenshots: true },
         Object.assign({ id: "endpoint", label: "Custom Endpoint", signsIn: false, readsScreenshots: false },
                       _endpointState(Settings.values.refinementEndpointUrl, refinementEndpoint)),
-        { id: "local", label: "Local Runner", signsIn: false, state: "ready", problem: "", readsScreenshots: false },
-        { id: "openai", label: "OpenAI", signsIn: true, state: "ready", problem: "", readsScreenshots: true }
+        { id: "local", label: "Local Runner", signsIn: false, state: "ready", problem: "", readsScreenshots: false }
     ]
     // A Custom Endpoint's state, as core judges it from its server and its
     // last connection check.

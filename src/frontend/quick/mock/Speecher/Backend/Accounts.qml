@@ -9,7 +9,7 @@ import Speecher.Theme
 // word from server and directory). The speech providers' own sign-ins are
 // Models'. Secrets are write-only: savedSecrets says which are saved.
 //
-// --accounts=expired starts with Anthropic's sign-in expired;
+// --accounts=expired starts with Claude's sign-in expired;
 // --accounts=none starts with nothing found.
 QtObject {
     id: accounts
@@ -21,13 +21,13 @@ QtObject {
 
     property var services: [
         {
-            id: "openai", name: "OpenAI",
+            id: "openai", name: "ChatGPT",
             state: _start === "none" ? "missing" : "signedIn", found: _start === "none" ? "missing" : "signedIn",
-            detail: _start === "none" ? "No OpenAI credential found" : "Signed in with the Codex app",
+            detail: _start === "none" ? "No ChatGPT credential found" : "Signed in with the Codex app",
             server: "", directory: ""
         },
         {
-            id: "anthropic", name: "Anthropic",
+            id: "anthropic", name: "Claude",
             state: _anthropic, found: _anthropic, detail: _anthropicDetail, server: "", directory: ""
         },
         {

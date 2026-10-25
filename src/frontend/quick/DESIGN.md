@@ -19,7 +19,7 @@ writes the real settings, and every area runs on core's data.
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
 | `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships only `Library.qml`, which words the real `LibraryLists` |
 | `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
-| `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
+| `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`) |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (and the Backend from
@@ -83,7 +83,7 @@ Backend is the C++ types plus `Library.qml`.
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
   through the daemon's `SecretStore`, and QML sees only whether a key is
   saved and why a save or clear failed. The speech providers' sign-ins
-  (Codex, Claude Voice) have one owner, core's `ProviderAvailability`:
+  (ChatGPT, Claude) have one owner, core's `ProviderAvailability`:
   `Models` shows them, setup checks them, and renewing a sign-in on Accounts
   checks them again.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
@@ -288,10 +288,15 @@ shared control or Theme, not in a page.
 
 Choosing:
 
-- A provider or service is chosen with `ChoiceRows`, in settings, setup and
-  Transcribe alike: icon, name over help, status on the right, a check after
-  the chosen one. Ratings go in a row under the choice, for the chosen one.
-  A profile's own override stays a `Select` with an explicit Default option.
+- A provider or service is chosen with `ServiceCards`, in settings, setup
+  and Transcribe alike: a grid of cards, each with its icon, name, a line of
+  help, its status and its ratings, so they compare before choosing, and a
+  check on the chosen one. A narrow place gets fewer, smaller columns, not
+  another layout. A profile's own override stays a `Select` with an explicit
+  Default option.
+- A provider company has one name everywhere, "ChatGPT" or "Claude", with
+  its mark (`Icon { name: "openai" }`, `"claude"`); how it signs in is help
+  or Accounts' business, never part of the name.
 - A check means a committed choice. The editor that is open (a profile in
   the list) is a selected `ListRow`, with no check.
 - Two to four short options are segments; more, or a list that grows, is a
@@ -307,9 +312,10 @@ Press, hover, selection:
   pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
-  and chips to 0.965, icon buttons to 0.92, `OptionCards` cards and theme
-  thumbnails to 0.98, over `Theme.fast` springy. Rows, menus, segments,
-  fields and the header of a card that opens never shrink.
+  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`,
+  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy.
+  Rows, menus, segments, fields and the header of a card that opens never
+  shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
   that turns over `Theme.base`; its body slides open. Opening never selects
   it. `SettingRow { clickable }`, `Disclosure` and ModelCard work this way.
@@ -324,14 +330,16 @@ Press, hover, selection:
   focus halo while it is being edited. A custom control that acts has Tab,
   Return and Space, and the right `Accessible.role`.
 - Exceptions, named by role: a slider's handle grows while held, a dragged
-  fallback row lifts to 1.02, a switch's knob glides, the popup's round
+  fallback row lifts to 1.02, a switch's knob stretches toward where it is
+  going while held and on a flip, and can be dragged, the popup's round
   buttons never take focus. Do not copy them elsewhere.
 
 Shape:
 
 - Radii: `radiusSmall` 4 for small shapes, `radius` 6 for controls,
   `radiusLarge` 8 for cards, panels and menus, `radiusPanel` 12 for the
-  sheet and the popup. A shape set concentrically inside another takes the
+  sheet. The popup is one pill, half its bar's height round, and keeps that
+  radius as it grows. A shape set concentrically inside another takes the
   outer radius less the gap: a row's wash sits `Theme.washInset` inside its
   card with `Theme.washRadius`; a menu's items are 4 inside an 8 panel; a
   segment's thumb is 3 inside a 6 track. Circles take half their size.
@@ -474,7 +482,7 @@ Choosing:
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ChoiceRows { options; currentId }`: a provider or service as rows on a card, each with its icon, help, status and a check when chosen.
+- `ServiceCards { options; currentId; unratedText }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
 - `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.
@@ -506,7 +514,7 @@ Pictures of speech:
 - `RatingBars { bars; appearance: compact|wide }`: ratings out of ten.
 - `StepNode { number; title; detail; stage }`: one stop in a run of steps; wrappers lay them out and draw the lines.
 - `DiffText { segments; mode: marked|spoken|result }`: an edit marked like a proof; also `html(segments, mode)` for the same marks elsewhere.
-- `AppIcon { name; iconName }`, `Icon { name }`, `BrandMark` (Speecher's own mark).
+- `AppIcon { name; iconName }`, `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark).
 
 Helpers:
 

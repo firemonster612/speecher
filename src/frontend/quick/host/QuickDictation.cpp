@@ -85,6 +85,14 @@ QVariantList segments(const QList<EditRun> &runs)
     return segments;
 }
 
+// The keys that answer a review, as the popup's lists of keycaps.
+QVariantMap keyLists(const ReviewKeys &keys)
+{
+    return {{QStringLiteral("keepKeys"), shortcutKeys(keys.keep)},
+            {QStringLiteral("replaceKeys"), shortcutKeys(keys.replace)},
+            {QStringLiteral("followUpKeys"), shortcutKeys(keys.followUp)}};
+}
+
 } // namespace
 
 template <typename T>
@@ -133,6 +141,8 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     connect(session, &DictationSession::popupErrorRequested, this, &QuickDictation::showError);
     connect(session, &DictationSession::popupSelectionEditReviewRequested, this, &QuickDictation::setReview);
     connect(session, &DictationSession::popupHideRequested, this, [this] { setState(QStringLiteral("idle")); });
+    connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickDictation::showConfiguredReviewKeys);
+    showConfiguredReviewKeys();
 
     connect(this, &QuickDictationState::startRequested, controller, &ApplicationController::startListening);
     connect(this, &QuickDictationState::stopRequested, controller, &ApplicationController::stopListening);
@@ -208,16 +218,29 @@ void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, cons
 
 void QuickDictation::setReview(const SelectionEditReview &review)
 {
-    const QVariantMap value{
+    QVariantMap value{
         {QStringLiteral("instruction"), review.instruction},
         {QStringLiteral("whole"), segments(review.runs)},
         {QStringLiteral("folded"), segments(review.folded)},
         {QStringLiteral("summary"), review.summary},
-        {QStringLiteral("keepKeys"), shortcutKeys(review.keys.keep)},
-        {QStringLiteral("replaceKeys"), shortcutKeys(review.keys.replace)},
-        {QStringLiteral("followUpKeys"), shortcutKeys(review.keys.followUp)},
         {QStringLiteral("following"), review.following},
     };
+    value.insert(keyLists(review.keys));
+    update(m_review, value, &QuickDictationState::reviewChanged);
+}
+
+// Between dictations the review carries the keys the configured shortcuts
+// give one whose Escape and Enter are held, as they are once it is up, so
+// the popup's window is already as wide as its buttons when it shows and
+// does not widen, moving the capsule, when a review comes.
+void QuickDictation::showConfiguredReviewKeys()
+{
+    if (m_state != QLatin1String("idle")) {
+        return;
+    }
+    QVariantMap value = m_review;
+    value.insert(keyLists(reviewKeysFor(true, true, m_controller->globalShortcutDisplay(GlobalShortcutRole::Cancel),
+                                        m_controller->globalShortcutDisplay())));
     update(m_review, value, &QuickDictationState::reviewChanged);
 }
 
@@ -315,6 +338,7 @@ void QuickDictation::setState(const QString &state)
         update(m_level, qreal(0), &QuickDictationState::levelChanged);
     }
     update(m_state, state, &QuickDictationState::stateChanged);
+    showConfiguredReviewKeys();
     updateElapsed();
 }
 

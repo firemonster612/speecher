@@ -11,34 +11,34 @@ var rows = [
       emptyText: "No fallbacks", addLabel: "Add a fallback",
       keywords: "backup failover retry order second provider" },
 
-    { id: "openAiModel", page: "refinement", section: "OpenAI", kind: "custom",
+    { id: "openAiModel", page: "refinement", section: "ChatGPT", kind: "custom",
       label: "Model", help: "Defaults to gpt-6-luna. Pick one or type another model ID.", value: "gpt-6-luna",
       keywords: "openai gpt model id luna sol astra" },
-    { id: "openAiEffort", page: "refinement", section: "OpenAI", kind: "choice",
+    { id: "openAiEffort", page: "refinement", section: "ChatGPT", kind: "choice",
       label: "Thinking", help: "More thinking follows instructions more closely but takes longer.", value: "none",
       keywords: "reasoning effort openai",
       options: [
           { id: "none", label: "None" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" },
           { id: "high", label: "High" }, { id: "xhigh", label: "Extra high" }
       ] },
-    { id: "openAiSpeed", page: "refinement", section: "OpenAI", kind: "choice",
+    { id: "openAiSpeed", page: "refinement", section: "ChatGPT", kind: "choice",
       label: "Speed", help: "Fast answers sooner for slightly more usage.", value: "standard",
       keywords: "fast ultrafast priority openai",
       options: [
           { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" }, { id: "ultrafast", label: "Ultrafast" }
       ] },
 
-    { id: "anthropicModel", page: "refinement", section: "Anthropic", kind: "custom",
+    { id: "anthropicModel", page: "refinement", section: "Claude", kind: "custom",
       label: "Model", help: "Defaults to Claude Opus 5.5. Pick one or type another model ID.", value: "claude-opus-5-5",
       keywords: "anthropic claude model opus sonnet haiku" },
-    { id: "anthropicEffort", page: "refinement", section: "Anthropic", kind: "choice",
+    { id: "anthropicEffort", page: "refinement", section: "Claude", kind: "choice",
       label: "Thinking", help: "More thinking follows instructions more closely but takes longer.", value: "low",
       keywords: "reasoning effort anthropic claude",
       options: [
           { id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" },
           { id: "xhigh", label: "Extra high" }, { id: "max", label: "Max" }
       ] },
-    { id: "anthropicFastMode", page: "refinement", section: "Anthropic", kind: "choice",
+    { id: "anthropicFastMode", page: "refinement", section: "Claude", kind: "choice",
       label: "Speed", help: "Fast answers sooner and spends usage credits. Only Opus models support it.", value: "standard",
       keywords: "fast mode anthropic claude",
       options: [ { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" } ] },
@@ -84,8 +84,8 @@ var rows = [
       disabledHelp: "Turn on desktop accessibility to send the app's text.",
       keywords: "context surrounding text accessibility" },
     { id: "includeScreenshotContext", page: "refinement", section: "What refinement can see", kind: "toggle",
-      label: "A screenshot", help: "Kept only for the current dictation. Only OpenAI and Anthropic can read it.",
-      disabledHelp: "Only OpenAI and Anthropic refinement can use screenshots.",
+      label: "A screenshot", help: "Kept only for the current dictation. Only ChatGPT and Claude can read it.",
+      disabledHelp: "Only ChatGPT and Claude refinement can use screenshots.",
       value: false, keywords: "screen capture image context vision" },
 
     { id: "customSystemPromptEnabled", page: "refinement", section: "System prompt", kind: "toggle",

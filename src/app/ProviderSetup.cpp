@@ -32,12 +32,12 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     }
 #endif
     registry.registerSpeechProvider(
-        {QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+        {QStringLiteral("claude"), QStringLiteral("Claude")},
         [](QObject *parent) {
             return new ClaudeSpeechTranscriber(parent);
         });
     registry.registerSpeechProvider(
-        {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+        {QStringLiteral("codex"), QStringLiteral("ChatGPT")},
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
@@ -51,10 +51,10 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     Q_UNUSED(localModels);
 #endif
     registry.registerRefinementProvider(
-        {QStringLiteral("openai"), QStringLiteral("OpenAI"), true},
+        {QStringLiteral("openai"), QStringLiteral("ChatGPT"), true},
         [secrets](QObject *parent) { return new OpenAiTranscriptRefiner(secrets, parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"), true},
+        {QStringLiteral("anthropic"), QStringLiteral("Claude"), true},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
     registry.registerSpeechProvider(
         {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},

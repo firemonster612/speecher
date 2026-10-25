@@ -26,8 +26,8 @@ const struct ServiceRow {
     // The refinement provider whose sign-in this is, if any.
     const char *provider;
 } serviceRows[] = {
-    {"openai", "OpenAI", SignInService::OpenAi, "openai"},
-    {"anthropic", "Anthropic", SignInService::Anthropic, "anthropic"},
+    {"openai", "ChatGPT", SignInService::OpenAi, "openai"},
+    {"anthropic", "Claude", SignInService::Anthropic, "anthropic"},
     {"cliproxy", "CLI Proxy API", SignInService::CliProxy, nullptr},
 };
 

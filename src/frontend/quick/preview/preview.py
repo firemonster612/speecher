@@ -55,7 +55,9 @@ def parse():
                         "Use it to trigger a tab switch or a state, then screenshot or record the transition.")
     p.add_argument("--press", action="append", default=[],
                    help="At a time, move the pointer to x,y (window points) and press there for 0.3 s: "
-                        "x,y@seconds, timed like --poke. Use it to record hover and press feedback.")
+                        "x,y@seconds, timed like --poke. +held holds it longer (x,y@1+1.2), and >x2,y2 "
+                        "drags to there while it is held (x,y>x2,y2@1+0.6). Use it to record hover, "
+                        "press and drag feedback.")
     p.add_argument("--scroll", type=float, help="Scroll the page this far down (at most to its end) before the screenshot")
     p.add_argument("--record", type=float, help="Record this many seconds of video instead")
     p.add_argument("--time-scale", type=float, default=1.0, help="Slow animations down while recording")
@@ -158,14 +160,22 @@ def main():
 
     # The pointer arrives a moment before the press, so hover shows first.
     for spec in args.press:
-        point, _, when = spec.rpartition("@")
-        x, y = (int(v) for v in point.split(","))
+        points, _, timing = spec.rpartition("@")
+        when, _, held = timing.partition("+")
+        held = float(held or 0.3) * scale
+        start, _, end = points.partition(">")
+        at = QPoint(*(int(v) for v in start.split(",")))
+        to = QPoint(*(int(v) for v in end.split(","))) if end else at
         delay = float(when) * (scale if args.record else 1) + (0.4 if args.record else 0)
-        at = QPoint(x, y)
         QTimer.singleShot(int((delay - 0.25 * scale) * 1000), lambda at=at: QTest.mouseMove(window, at))
         QTimer.singleShot(int(delay * 1000), lambda at=at: QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, at))
-        QTimer.singleShot(int((delay + 0.3 * scale) * 1000),
-                          lambda at=at: QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, at))
+        # A drag moves in steps over the hold, so the press carries it.
+        steps = 12 if end else 0
+        for i in range(1, steps + 1):
+            point = at + (to - at) * (i / steps)
+            QTimer.singleShot(int((delay + held * i / (steps + 2)) * 1000), lambda point=point: QTest.mouseMove(window, point))
+        QTimer.singleShot(int((delay + held) * 1000),
+                          lambda to=to: QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, to))
 
     def scroll():
         page = find("pageScroll")

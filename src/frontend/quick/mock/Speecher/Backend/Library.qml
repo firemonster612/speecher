@@ -26,7 +26,7 @@ LibraryLists {
              : providerId === "local" ? v.localRunnerModel || ""
              : providerId === "endpoint" ? v.refinementEndpointModel || "" : ""
     }
-    // "Heard by Claude Voice, cleaned up by Claude Sonnet 5.5": who hears a
+    // "Heard by Claude, cleaned up by Claude Sonnet 5.5": who hears a
     // dictation and who cleans it up, from a speech service and a refinement
     // provider id.
     function pipelineCaption(service, refiner) {
@@ -154,14 +154,14 @@ LibraryLists {
         refinementModel: "Refinement model",
         defaultModel: "Default model"
     })
-    // "Default (Claude Voice)": a profile's choice that follows the app's.
+    // "Default (Claude)": a profile's choice that follows the app's.
     function defaultChoice(label) { return "Default (" + label + ")" }
     // A profile's own refinement provider, whose settings live on Refinement.
     function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s settings under Refinement." }
 
     // Vocabulary ---------------------------------------------------------
 
-    // "3 of 100 key terms go to Claude Voice. Refinement uses all 7 terms."
+    // "3 of 100 key terms go to Claude. Refinement uses all 7 terms."
     readonly property string keyTermsText: {
         const service = Models.service(Settings.values.speechProvider).label
         const speech = speechTakesKeyTerms ? keyTermsSent + " of " + keyTermLimit + " key terms go to " + service + "."

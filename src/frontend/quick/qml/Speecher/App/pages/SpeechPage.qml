@@ -18,7 +18,6 @@ Page {
     readonly property var fallbackSpec: Schema.row("speechFallbackList")
     readonly property var modelsSpec: Schema.row("speechModels")
     readonly property string primaryLabel: ModelText.service(primary).label
-    readonly property var rating: Models.speechRatings[primary]
 
     Component.onCompleted: Models.checkComputer()
 
@@ -45,25 +44,12 @@ Page {
         id: serviceSection
         title: Schema.row("speechProvider").label
         caption: Schema.row("speechProvider").help
-        SearchLanding { rowIds: ["speechProvider"]; target: serviceSection }
-        ChoiceRows {
-            recommendedText: Words.recommended
+        SearchLanding { rowIds: ["speechProvider", "speechRating"]; target: serviceSection }
+        ServiceCards {
             options: States.withTones(ModelText.speechChoices(Models.speechServices))
             currentId: page.primary
+            unratedText: ModelText.unrated
             onActivated: id => page.choose(id)
-        }
-        // How the chosen service's text arrives, and its ratings.
-        SchemaRow {
-            id: ratingRow
-            readonly property var bars: ModelText.bars(page.rating)
-            rowId: "speechRating"
-            help: ModelText.textShows(page.primary) + "." + ModelText.ratedAsText(page.rating)
-            Switcher {
-                width: implicitWidth
-                currentIndex: ratingRow.bars ? 0 : 1
-                RatingBars { appearance: "wide"; bars: ratingRow.bars || [] }
-                Txt { text: ModelText.unrated; variant: "small"; tone: "tertiary" }
-            }
         }
     }
 

@@ -27,7 +27,7 @@ QString OpenAiTranscriptRefiner::id() const
 
 QString OpenAiTranscriptRefiner::label() const
 {
-    return QStringLiteral("OpenAI");
+    return QStringLiteral("ChatGPT");
 }
 
 bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const

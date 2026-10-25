@@ -2,7 +2,6 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
-import Speecher.Wording
 import Speecher.App
 import "../pages/text"
 
@@ -14,7 +13,7 @@ StepPage {
     id: page
 
     Plate {
-        height: sample.implicitHeight + Theme.space5 * 2
+        height: sample.implicitHeight + Theme.space4 * 2
         DiffText {
             id: sample
             x: Theme.space6
@@ -27,11 +26,13 @@ StepPage {
     }
 
     Card {
-        ChoiceRows {
-            recommendedText: Words.recommended
+        ServiceCards {
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
-            ruleBelow: runner.open || endpoint.open || offer.open
+            unratedText: ModelText.unrated
+            // One line of help, so every choice fits the step at its
+            // default size.
+            helpLines: 1
             onActivated: id => page.choices.cleanup = id
         }
         Reveal {

@@ -83,7 +83,7 @@ QString AnthropicTranscriptRefiner::id() const
 
 QString AnthropicTranscriptRefiner::label() const
 {
-    return QStringLiteral("Anthropic");
+    return QStringLiteral("Claude");
 }
 
 bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const

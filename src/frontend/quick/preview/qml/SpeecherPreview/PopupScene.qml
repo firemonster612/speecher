@@ -41,7 +41,7 @@ Window {
     readonly property string polished: "Hey team, quick update on the launch: the new onboarding flow is ready for review, and I'd love feedback before Friday. Let's also sync tomorrow at 10 to go over the last few bugs."
     // What core says once the text is in, and an error with its fix.
     readonly property var delivered: ({ title: "Input sent", detail: "", outcome: "inserted", page: "" })
-    readonly property var failed: ({ title: "Your Claude sign-in has expired.", detail: "Sign in again to keep using Claude Voice.",
+    readonly property var failed: ({ title: "Your Claude sign-in has expired.", detail: "Sign in again to keep using Claude.",
                                      page: "accounts", dismissMs: 8000 })
 
     property var _queue: []

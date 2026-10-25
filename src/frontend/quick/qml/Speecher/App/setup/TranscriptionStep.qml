@@ -19,12 +19,11 @@ StepPage {
     }
 
     Card {
-        ChoiceRows {
-            recommendedText: Words.recommended
+        ServiceCards {
             // What each needs, where the settings pages say what it is good at.
             options: States.withTones(ModelText.setupSpeechChoices(Models.speechServices))
             currentId: page.choices.speech
-            ruleBelow: localModel.open || endpoint.open || signIn.open || offer.open
+            unratedText: ModelText.unrated
             onActivated: id => page.choices.speech = id
         }
         // The model Local Model runs, any in the catalog, and its download

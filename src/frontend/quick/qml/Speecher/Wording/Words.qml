@@ -31,7 +31,6 @@ QtObject {
     readonly property string clear: "Clear"
     readonly property string choose: "Choose…"
     readonly property string suggestions: "Suggestions"
-    readonly property string recommended: "Recommended"
     readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
     readonly property string more: "More"
@@ -71,7 +70,7 @@ QtObject {
     // What each service on Accounts is used for, by its id.
     readonly property var serviceUses: ({
         openai: "Used for dictation and cleanup.",
-        anthropic: "Used for Claude Voice dictation and Anthropic cleanup.",
+        anthropic: "Used for dictation and cleanup.",
         cliproxy: "Only needed when a service above signs in through it, or cleanup goes through its server."
     })
 

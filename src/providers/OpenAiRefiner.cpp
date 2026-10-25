@@ -37,7 +37,7 @@ StreamingRefinement::Event openAiEvent(const QByteArray &name, const QByteArray 
         const QString reason = response.value(QStringLiteral("incomplete_details")).toObject()
                                    .value(QStringLiteral("reason")).toString();
         const QString fallback = reason.isEmpty()
-            ? QStringLiteral("OpenAI refinement error: %1").arg(QString::fromLatin1(name)) : reason;
+            ? QStringLiteral("ChatGPT refinement error: %1").arg(QString::fromLatin1(name)) : reason;
         const QJsonObject source = terminalFailure ? response : object;
         const QJsonValue error = source.value(QStringLiteral("error"));
         // An incomplete response hit a token limit or a filter: the text is cut short.
@@ -61,7 +61,7 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent,
                              int requestTimeoutMs,
                              int absoluteDeadlineMs)
     : QObject(parent)
-    , m_stream(QStringLiteral("OpenAI"), openAiEvent, openAiErrorMessage,
+    , m_stream(QStringLiteral("ChatGPT"), openAiEvent, openAiErrorMessage,
                requestTimeoutMs, absoluteDeadlineMs, this)
 {
     connect(&m_stream, &StreamingRefinement::delta, this, &OpenAiRefiner::delta);
