@@ -5,7 +5,8 @@ import Speecher.Controls
 
 // The popup's status mark. Listening, it is a red record dot with a ring
 // that swells with the voice; then a spinner, a blue pencil, a tick or a
-// warning as the dictation moves on.
+// warning as the dictation moves on. Besides the popup's phases, phase takes
+// the receipts that are not a plain delivery: copied, fallback, cancelled.
 Item {
     id: mark
     property string phase: "listening"
@@ -46,7 +47,7 @@ Item {
         size: mark.size * 0.62
         lineWidth: 2
         color: Theme.text
-        opacity: mark.phase === "transcribing" ? 1 : 0
+        opacity: mark.phase === "starting" || mark.phase === "transcribing" ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { Ease {} }
     }
@@ -58,6 +59,9 @@ Item {
             { phase: "refining", icon: "pencil-line", tint: "accent" },
             { phase: "review", icon: "pencil-line", tint: "accent" },
             { phase: "delivered", icon: "check", tint: "positive" },
+            { phase: "copied", icon: "clipboard-check", tint: "positive" },
+            { phase: "fallback", icon: "info", tint: "secondary" },
+            { phase: "cancelled", icon: "x", tint: "secondary" },
             { phase: "error", icon: "triangle-alert", tint: "negative" }
         ]
         Icon {

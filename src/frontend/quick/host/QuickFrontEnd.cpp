@@ -1,6 +1,9 @@
 #include "frontend/quick/host/QuickFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/PlatformComposition.h"
+#include "dictation/DictationSession.h"
+#include "frontend/quick/host/QuickPopupWindow.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -72,6 +75,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     , m_controller(controller)
     , m_settings(controller)
     , m_status(controller)
+    , m_dictation(controller)
 {
     registerFonts();
     // Into the log with the rest, marked so a load's warnings are easy to find.
@@ -86,6 +90,11 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     if (!m_themeSetting) {
         qWarning().noquote() << "QML: could not follow the Theme setting:" << themeSetting.errorString();
     }
+    m_popup = new QuickPopupWindow(&m_engine, controller->platform()->createPopupPositioner(nullptr), this);
+    DictationSession *session = controller->session();
+    connect(session, &DictationSession::popupShowRequested, m_popup, &QuickPopupWindow::show);
+    connect(m_popup, &QuickPopupWindow::presented, session, &DictationSession::popupPresented);
+    connect(&m_dictation, &QuickDictation::pageRequested, this, &QuickFrontEnd::showPage);
     controller->setFrontEnd(this);
 }
 
@@ -99,6 +108,7 @@ QuickFrontEnd::~QuickFrontEnd()
     // Before the engine their bindings run in.
     delete m_main;
     delete m_setup;
+    delete m_popup;
     delete m_themeSetting;
 }
 
@@ -154,16 +164,14 @@ void QuickFrontEnd::showSetupAssistant(SetupAssistantPage)
 
 void QuickFrontEnd::showTranscribeFiles(const QStringList &paths)
 {
-    showMainWindow();
-    if (QObject *navigation = m_engine.singletonInstance<QObject *>(appModule, QStringLiteral("Navigation"))) {
-        navigation->setProperty("current", QStringLiteral("transcribe"));
-    }
+    showPage(QStringLiteral("transcribe"));
     qInfo().noquote() << "Files to transcribe, not yet handed to the Transcribe page:" << paths.join(QStringLiteral(", "));
 }
 
-void QuickFrontEnd::showDictationError(const QString &message, const PopupErrorAction &)
+void QuickFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
-    qWarning().noquote() << "Dictation error, not shown until the popup is wired:" << message;
+    m_dictation.showError(message, fix);
+    m_popup->show(0);
 }
 
 void QuickFrontEnd::alert()
@@ -205,6 +213,14 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QObject::eventFilter(watched, event);
+}
+
+void QuickFrontEnd::showPage(const QString &pageId)
+{
+    showMainWindow();
+    if (QObject *navigation = m_engine.singletonInstance<QObject *>(appModule, QStringLiteral("Navigation"))) {
+        navigation->setProperty("current", pageId);
+    }
 }
 
 void QuickFrontEnd::setupClosed()

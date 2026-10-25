@@ -18,13 +18,24 @@ Item {
 
     // How long momentum takes to fade to about a third of its speed, in
     // seconds, and the speed below which it stops, in pixels a second.
-    readonly property real friction: 0.35
+    readonly property real friction: 0.45
     readonly property real stopSpeed: 20
-    readonly property real maxSpeed: 6000
+    readonly property real maxSpeed: 12000
     // Pixels one line of a mouse wheel moves, and the system's lines per
     // notch (qmllint's type data lacks the style hint, hence the index).
     readonly property real lineHeight: 24
     readonly property int wheelLines: Qt.styleHints["wheelScrollLines"] || 3
+    // A touchpad's move. On Linux the angle is the one measure that keeps
+    // the desktop's touchpad speed (pixelDelta is rounded to whole pixels
+    // and is a sixth or so of what other apps scroll), so it scrolls as
+    // the desktop's own Qt apps do: 120 to the lines a wheel notch moves.
+    // macOS's pixelDelta is already the system's own scroll.
+    readonly property bool _anglesAreTouchpadSpeed: Qt.platform.os === "linux"
+    function _touchpadMove(event) {
+        if (_anglesAreTouchpadSpeed || event.pixelDelta.y === 0)
+            return -event.angleDelta.y / 120 * wheelLines * lineHeight
+        return -event.pixelDelta.y
+    }
 
     anchors.fill: parent
     z: 1
@@ -62,6 +73,9 @@ Item {
     WheelHandler {
         id: wheel
         target: null
+        // A WheelHandler takes only mice unless told; a touchpad's scrolls
+        // would go to the Flickable's own slow, coastless handling.
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         orientation: Qt.Vertical
         acceptedModifiers: Qt.NoModifier
         enabled: scroll.flickable !== null
@@ -69,9 +83,16 @@ Item {
             // Only a touchpad reports scroll phases; a wheel, even one that
             // also reports pixels, steps by lines.
             const precise = event.phase !== Qt.NoScrollPhase
-            const dy = precise ? -(event.pixelDelta.y || event.angleDelta.y / 8)
+            const dy = precise ? scroll._touchpadMove(event)
                                : -event.angleDelta.y / 120 * scroll.wheelLines * scroll.lineHeight
 
+            // Fingers down: stop any coast, and keep the gesture from the
+            // Flickable, which would otherwise start its own drag.
+            if (event.phase === Qt.ScrollBegin) {
+                scroll._stop()
+                event.accepted = true
+                return
+            }
             if (event.phase === Qt.ScrollEnd) {
                 scroll._coast()
                 event.accepted = true
@@ -107,10 +128,10 @@ Item {
         }
     }
 
-    // Starts the coast from how fast the fingers were moving at the end.
+    // Starts the coast from how fast the fingers were moving as they lifted.
     function _coast() {
         const now = Date.now()
-        const recent = _samples.filter(s => now - s.at < 100)
+        const recent = _samples.filter(s => now - s.at < 60)
         _samples = []
         if (recent.length < 2) return
         const span = Math.max(16, now - recent[0].at) / 1000

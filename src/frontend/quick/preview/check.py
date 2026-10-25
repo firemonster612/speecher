@@ -17,7 +17,7 @@ STEP_MS = 700
 
 PAGES = re.findall(r'\{ id: "(\w+)", group:', (ROOT / "qml/Speecher/Wording/schema/pages.js").read_text())
 SEARCHES = ["shortcut", "api key", "paste", "zzz no match"]
-POPUP_DEMOS = ["listening", "paused", "refining", "delivered", "review", "error"]
+POPUP_DEMOS = ["renewing", "listening", "paused", "refining", "delivered", "review", "following", "error"]
 SETUP_STEPS = 8
 
 # (root, steps, arguments) for every run.

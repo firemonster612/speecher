@@ -113,6 +113,7 @@ int main(int argc, char **argv)
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
     if (selected("quick_settings")) result |= runQuickSettingsTests(argc, argv);
+    if (selected("quick_dictation")) result |= runQuickDictationTests(argc, argv);
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

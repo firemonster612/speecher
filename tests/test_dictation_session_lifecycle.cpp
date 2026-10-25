@@ -863,7 +863,7 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Fake Speech can't listen for Welsh. Choose another Spoken Language."));
-        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("dictation"));
+        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("speech"));
         QCOMPARE(speech->startCalls, 0);
 
         session.stopListening();

@@ -10,12 +10,14 @@ import QtQuick.Window
 // keep the top-left corner fixed would shift the capsule.
 //
 // Only the capsule takes the pointer. The host sets the window's input
-// region (QWindow::setMask, or the layer-shell surface's input region) to
-// inputRegion whenever it changes, about once per phase, so clicks on the
-// transparent room around the capsule reach the app underneath.
+// region (the surface's on Wayland, the input shape on X11) to inputRegion
+// whenever it changes, frame by frame as the capsule morphs, so clicks on
+// the transparent room around the capsule reach the app underneath. Once the
+// popup is empty, faded out, the host hides the window.
 Window {
     id: window
 
+    readonly property bool empty: popup.empty
     readonly property int shadowRoom: 32
     // The capsule's rect in the window's coordinates.
     readonly property rect inputRegion: Qt.rect(popup.capsule.x + shadowRoom, popup.capsule.y + shadowRoom,

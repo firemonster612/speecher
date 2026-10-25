@@ -16,8 +16,11 @@ Section {
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
     readonly property var latest: Insights.recent.length ? Insights.recent[0] : null
     readonly property bool hasShortcut: Status.shortcutKeys.length > 0
+    // What the dictation is doing, as the heading says it.
+    readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
+                                     transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
-    title: Dictation.text.status
+    title: status[Dictation.state] || "Ready to dictate"
     caption: hasShortcut ? t.pressShortcut : t.noShortcut
     actions: Switcher {
         id: controls

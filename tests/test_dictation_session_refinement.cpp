@@ -329,7 +329,6 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
-        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
         QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
         const auto lastReview = [&reviews] { return reviews.last().first().value<SelectionEditReview>(); };
 
@@ -360,11 +359,11 @@ private slots:
         QCOMPARE(review.instruction, QStringLiteral("“make it Thursday” then “actually make it Friday”"));
         // Against the original selection: Wednesday became Friday.
         QCOMPARE(review.summary, QStringLiteral("1 change"));
-        QCOMPARE(ended.count(), 0);
+        QVERIFY(session.reviewUp());
         QCOMPARE(delivery.calls, 0);
 
         session.replaceSelection();
-        QCOMPARE(ended.count(), 1);
+        QVERIFY(!session.reviewUp());
         QCOMPARE(delivery.calls, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Friday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
@@ -469,7 +468,6 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
-        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
         QSignalSpy errors(&session, &DictationSession::popupErrorRequested);
 
         session.startListening();
@@ -507,7 +505,7 @@ private slots:
         QVERIFY(!after.following);
         QCOMPARE(after.instruction, before.instruction);
         QCOMPARE(after.runs, before.runs);
-        QCOMPARE(ended.count(), 0);
+        QVERIFY(session.reviewUp());
         QCOMPARE(errors.count(), 0);
         session.replaceSelection();
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
@@ -651,7 +649,6 @@ private slots:
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
         QSignalSpy messages(&session, &DictationSession::popupMessageRequested);
-        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
 
         session.startListening();
         QTRY_COMPARE(session.state(), DictationState::Listening);
@@ -667,7 +664,7 @@ private slots:
             QCOMPARE(delivery.calls, 0);
             QCOMPARE(hidden.count(), 1);
             QCOMPARE(messages.count(), 0);
-            QCOMPARE(ended.count(), 1);
+            QVERIFY(!session.reviewUp());
             return;
         }
         if (selectionMoved) {
@@ -1256,8 +1253,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("keep this"));
         speech->emitPartialText(QStringLiteral("and these words"));
-        QSignalSpy status(&session, &DictationSession::popupStatusChanged);
-        QSignalSpy frozen(&session, &DictationSession::popupFrozenChanged);
+        QSignalSpy states(&session, &DictationSession::stateChanged);
         speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
 
         QCOMPARE(int(session.state()), int(DictationState::Listening));
@@ -1265,8 +1261,7 @@ private slots:
         QCOMPARE(delivery->calls, 0);
         QCOMPARE(speech->startCalls, 2);
         QCOMPARE(media->resumeCalls, 0);
-        QCOMPARE(status.count(), 0);
-        QCOMPARE(frozen.count(), 0);
+        QCOMPARE(states.count(), 0);
         // The transcriber replaces its own client inside startAttempt; no separate cancel.
         QVERIFY(speech->cancelledAttempts.isEmpty());
 
@@ -1423,7 +1418,6 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("keep this transcript"));
-        QSignalSpy frozen(&session, &DictationSession::popupFrozenChanged);
         QSignalSpy message(&session, &DictationSession::popupMessageRequested);
         speech->emitFailure(QStringLiteral("provider disconnected"));
 
@@ -1431,8 +1425,7 @@ private slots:
         QCOMPARE(refiner->lastRawTranscript, QStringLiteral("keep this transcript"));
         QCOMPARE(speech->cancelledAttempts,
                  QList<quint64>({speech->currentAttemptId}));
-        QCOMPARE(frozen.count(), 1);
-        QCOMPARE(frozen.first().first().toBool(), true);
+        QCOMPARE(session.state(), DictationState::Refining);
 
         QSignalSpy preview(&session, &DictationSession::previewChanged);
         speech->emitFinalText(QStringLiteral("late buffered final"));

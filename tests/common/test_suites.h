@@ -58,6 +58,7 @@ int runLinuxTrayTests(int argc, char **argv);
 int runKeywatchTests(int argc, char **argv);
 int runHelperInstallTests(int argc, char **argv);
 int runQuickSettingsTests(int argc, char **argv);
+int runQuickDictationTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);

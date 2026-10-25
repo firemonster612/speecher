@@ -163,6 +163,8 @@ if(SPEECHER_RELEASE_BUILD)
   # The X11 single-key watcher reads raw key events through XInput2.
   pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
   pkg_check_modules(XI REQUIRED IMPORTED_TARGET xi)
+  # The popup's input shape on X11.
+  pkg_check_modules(XEXT REQUIRED IMPORTED_TARGET xext)
   # System audio capture reads the default output's monitor source.
   pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
   # Echo cancellation takes system audio out of a Recording's microphone.
@@ -178,6 +180,7 @@ if(PkgConfig_FOUND AND NOT SPEECHER_RELEASE_BUILD)
   # still builds, minus the XInput2 single-key backend.
   pkg_check_modules(X11 QUIET IMPORTED_TARGET x11)
   pkg_check_modules(XI QUIET IMPORTED_TARGET xi)
+  pkg_check_modules(XEXT QUIET IMPORTED_TARGET xext)
   pkg_check_modules(PULSE QUIET IMPORTED_TARGET libpulse)
   pkg_check_modules(WEBRTC_APM QUIET IMPORTED_TARGET webrtc-audio-processing-1)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
@@ -839,10 +842,11 @@ if(UNIX AND NOT APPLE)
   # util: forkpty for the pkexec authentication conversation (in libc since
   # glibc 2.34; the stub keeps older links working).
   target_link_libraries(speecher_platform PUBLIC Qt6::DBus Qt6::Network util)
-  # X11/Xi: the XInput2 single-key watcher, only where the dev files exist.
-  if(X11_FOUND AND XI_FOUND)
+  # X11/Xi/Xext: the XInput2 single-key watcher and the popup's input shape,
+  # only where the dev files exist.
+  if(X11_FOUND AND XI_FOUND AND XEXT_FOUND)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_X11=1)
-    target_link_libraries(speecher_platform PUBLIC PkgConfig::X11 PkgConfig::XI)
+    target_link_libraries(speecher_platform PUBLIC PkgConfig::X11 PkgConfig::XI PkgConfig::XEXT)
   endif()
   # libpulse: system audio capture, only where the dev files exist.
   if(PULSE_FOUND)
@@ -1379,8 +1383,11 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
+      tests/test_quick_dictation.cpp
+      src/frontend/quick/host/QuickPopupWindow.cpp
+      src/frontend/quick/host/QuickPopupWindow.h
     )
-    # The Settings suite loads the UI's rows over the C++ Settings; Qt's own
+    # The Quick suites load the UI's QML over the C++ Backend; Qt's own
     # QML modules load from the shared Qt, as in the app.
     target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
     set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
@@ -1411,7 +1418,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

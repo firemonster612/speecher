@@ -8,8 +8,8 @@ import Speecher.Popup
 
 // A desktop with a chat app and the dictation popup over it. With
 // --popup-demo=story (the default) it plays one dictation from start to
-// paste; any other value (listening, paused, refining, delivered, review,
-// error) holds that state for a screenshot.
+// paste; any other value (renewing, listening, paused, refining, delivered,
+// review, following, error) holds that state for a screenshot.
 Window {
     id: scene
     width: 1200
@@ -39,6 +39,10 @@ Window {
     readonly property string first: "Hey team, quick update on the launch. The new onboarding flow is ready for review and I'd love some feedback before Friday."
     readonly property string second: "Also let's sync tomorrow at ten to go over the last few bugs."
     readonly property string polished: "Hey team, quick update on the launch: the new onboarding flow is ready for review, and I'd love feedback before Friday. Let's also sync tomorrow at 10 to go over the last few bugs."
+    // What core says once the text is in, and an error with its fix.
+    readonly property var delivered: ({ title: "Input sent", detail: "", outcome: "inserted", page: "" })
+    readonly property var failed: ({ title: "Your Claude sign-in has expired.", detail: "Sign in again to keep using Claude Voice.",
+                                     page: "accounts", dismissMs: 8000 })
 
     property var _queue: []
     property string _feedTarget: "words"
@@ -89,7 +93,7 @@ Window {
         PauseAnimation { duration: Theme.ms(2300) }
         ScriptAction {
             script: {
-                Dictation.receipt = Dictation.deliveredReceipt
+                Dictation.receipt = scene.delivered
                 Dictation.state = "delivered"
                 chat.composerText = scene.polished
                 chat.flash = true
@@ -119,15 +123,26 @@ Window {
             break
         case "delivered":
             chat.composerText = polished
-            Dictation.receipt = Dictation.deliveredReceipt
+            Dictation.receipt = delivered
             Dictation.state = "delivered"
             break
+        case "renewing":
+            Dictation.renewing = true
+            Dictation.state = "starting"
+            break
         case "review":
+        case "following":
             chat.composerText = "Can you send me the deck when you get a chance? I need it for the meeting."
             chat.selecting = true
             Dictation.review = {
-                instruction: "make it more casual",
-                segments: [
+                instruction: "“make it more casual”",
+                summary: "4 changes",
+                folded: [],
+                keepKeys: ["Esc"],
+                replaceKeys: ["Enter"],
+                followUpKeys: ["Ctrl", "Space"],
+                following: demo === "following",
+                whole: [
                     { kind: "removed", text: "Can you send me the deck when you get a chance?" },
                     { kind: "same", text: " " },
                     { kind: "added", text: "Mind sending the deck over when you can?" },
@@ -137,10 +152,17 @@ Window {
                     { kind: "added", text: "call tomorrow." }
                 ]
             }
-            Dictation.state = "review"
+            if (demo === "following") {
+                Dictation.words = "and make it shorter"
+                Dictation.elapsed = 2
+                Dictation.level = 0.5
+                Dictation.state = "listening"
+            } else {
+                Dictation.state = "review"
+            }
             break
         case "error":
-            Dictation.error = Dictation.sampleError
+            Dictation.error = failed
             Dictation.state = "error"
             break
         }
