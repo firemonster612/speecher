@@ -2,7 +2,9 @@
 
 // The app's pages in sidebar order. Groups follow a dictation from start to
 // finish: what starts it, what hears it, what cleans it up, where it goes.
-// subtitle is the line of explanation under a page's title.
+// subtitle is the line of explanation under a page's title. A page with a
+// parent is one of that page's subpages: it takes its parent's group, sits
+// under it in the sidebar and follows it here.
 var groups = [
     { id: "start", title: "" },
     { id: "dictation", title: "Dictation" },
@@ -33,10 +35,10 @@ var pages = [
     { id: "refinement", group: "text", title: "Refinement", icon: "spell-check", file: "RefinementPage.qml",
       subtitle: "Turns what you said into clean text before it's pasted. Your Writing Profile decides how much it changes.",
       keywords: "cleanup llm model ai punctuation filler prompt context screenshot" },
-    { id: "profiles", group: "text", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
+    { id: "profiles", parent: "refinement", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
       keywords: "tone style app per-app cleanup level instructions translate" },
-    { id: "vocabulary", group: "text", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
+    { id: "vocabulary", parent: "refinement", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
       subtitle: "Words Speecher spells your way, fixes it learned from your edits, and phrases that become exact text.",
       keywords: "words names spelling corrections replacements snippets terms" },
     { id: "pasting", group: "text", title: "Pasting", icon: "clipboard-paste", file: "PastingPage.qml",

@@ -368,6 +368,17 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
+- A page can sit under another (`parent` in `schema/pages.js`): Writing
+  profiles and Vocabulary are Refinement's subpages. In the sidebar they
+  sit under it, set in past a guide line, and fold under a chevron on it.
+  They open, growing in through a `Reveal`, when the parent or one of them
+  is opened, and stay open after; closed by hand they stay closed until
+  opened again or one of them is opened. While a current subpage is folded
+  away the pill sits on its parent. Up and Down step through the entries
+  that show, Right and Left open and close a parent's subpages. A
+  subpage's title leads with the path to it ("Refinement › Vocabulary"),
+  each step a quiet link to that page, and search gives a subpage and its
+  rows the same path.
 
 Things to avoid, because they read as generated:
 
@@ -450,7 +461,7 @@ control fades to `Theme.disabledOpacity`.
 
 Layout and rows:
 
-- `Page { title; subtitle; headerActions }`: a scrolling page. With no title the page brings its own heading.
+- `Page { title; subtitle; headerActions; path; pathPicked(id) }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right.
@@ -484,7 +495,7 @@ Input:
 
 Actions and menus:
 
-- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
+- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant; quiet }` for a link in a line of text; `quiet` is secondary ink rather than pencil, for a page's path in its title. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
 - `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` and `MenuPopup` are their parts, shared with Select.
 
@@ -524,7 +535,7 @@ In Speecher.App, besides SchemaRow:
 ## Building pages
 
 - `Page { title; subtitle; headerActions: [...] }` holds `Section`s. Its
-  title is `Schema.page(id).title`, and a Section holding schema rows takes
+  title is `Schema.page(id).title` (a subpage's path comes from Main), and a Section holding schema rows takes
   `Schema.row(id).section`, so a page never retypes a title.
 - `Section { title; caption; actions: [...] }` puts its title above and its
   children on a raised card; `plain: true` drops the card for content with

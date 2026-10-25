@@ -101,7 +101,7 @@ private slots:
                               QCOMPARE(navigation->property("current").toString(), id);
                           }});
         }
-        for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"),
+        for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"), QStringLiteral("refinement"),
                                     QStringLiteral("zzz no match")}) {
             steps.append({QStringLiteral("search ") + query, [search, query] {
                               QMetaObject::invokeMethod(search, "open");

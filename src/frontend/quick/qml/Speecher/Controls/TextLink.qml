@@ -3,16 +3,20 @@ import Speecher.Theme
 
 // A pencil link in or beside a line of text, with an optional icon before
 // it: underlined under the pointer, darker while pressed, and a link to the
-// keyboard too (Tab reaches it, Return or Space follows it).
+// keyboard too (Tab reaches it, Return or Space follows it). A quiet link
+// is in secondary ink that darkens under the pointer, for a page's path in
+// its title, where a heading would read as one word in pencil.
 Item {
     id: link
 
     property string text
     property string iconName
     property string variant: "small"
+    property bool quiet: false
     signal activated()
 
-    readonly property color _ink: tap.pressed ? Theme.accentHover : Theme.accent
+    readonly property color _ink: quiet ? (hover.hovered || tap.pressed ? Theme.text : Theme.textSecondary)
+                                        : tap.pressed ? Theme.accentHover : Theme.accent
 
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
