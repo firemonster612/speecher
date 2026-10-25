@@ -1,0 +1,4 @@
+module SpeecherPreview
+PopupScene 1.0 PopupScene.qml
+FakeChatApp 1.0 FakeChatApp.qml
+Gallery 1.0 Gallery.qml

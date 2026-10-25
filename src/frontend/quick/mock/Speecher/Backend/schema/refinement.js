@@ -1,0 +1,101 @@
+.pragma library
+
+var rows = [
+    { id: "refinementProvider", page: "refinement", section: "Provider", kind: "custom",
+      label: "Provider", help: "The service that cleans up your text.", value: "openai",
+      keywords: "service llm ai openai anthropic claude chatgpt local runner custom endpoint none off disable" },
+    { id: "refinementRating", page: "refinement", section: "Provider", kind: "custom",
+      label: "Rating", help: "Out of 10.", keywords: "quality speed score benchmark" },
+    { id: "refinementFallbacks", page: "refinement", section: "Fallbacks", kind: "custom",
+      label: "Fallbacks", help: "Tried in order when the provider above fails.", value: ["anthropic"],
+      emptyText: "No fallbacks", addLabel: "Add a fallback",
+      keywords: "backup failover retry order second provider" },
+
+    { id: "openAiModel", page: "refinement", section: "OpenAI", kind: "custom",
+      label: "Model", help: "Defaults to gpt-6-luna. Pick one or type another model ID.", value: "gpt-6-luna",
+      keywords: "openai gpt model id luna sol astra" },
+    { id: "openAiEffort", page: "refinement", section: "OpenAI", kind: "choice",
+      label: "Thinking", help: "More thinking follows instructions more closely but takes longer.", value: "none",
+      keywords: "reasoning effort openai",
+      options: [
+          { id: "none", label: "None" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" },
+          { id: "high", label: "High" }, { id: "xhigh", label: "Extra high" }
+      ] },
+    { id: "openAiSpeed", page: "refinement", section: "OpenAI", kind: "choice",
+      label: "Speed", help: "Fast answers sooner for slightly more usage.", value: "standard",
+      keywords: "fast ultrafast priority openai",
+      options: [
+          { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" }, { id: "ultrafast", label: "Ultrafast" }
+      ] },
+
+    { id: "anthropicModel", page: "refinement", section: "Anthropic", kind: "custom",
+      label: "Model", help: "Defaults to Claude Opus 5.5. Pick one or type another model ID.", value: "claude-opus-5-5",
+      keywords: "anthropic claude model opus sonnet haiku" },
+    { id: "anthropicEffort", page: "refinement", section: "Anthropic", kind: "choice",
+      label: "Thinking", help: "More thinking follows instructions more closely but takes longer.", value: "low",
+      keywords: "reasoning effort anthropic claude",
+      options: [
+          { id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" },
+          { id: "xhigh", label: "Extra high" }, { id: "max", label: "Max" }
+      ] },
+    { id: "anthropicFastMode", page: "refinement", section: "Anthropic", kind: "choice",
+      label: "Speed", help: "Fast answers sooner and spends usage credits. Only Opus models support it.", value: "standard",
+      keywords: "fast mode anthropic claude",
+      options: [ { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" } ] },
+
+    { id: "localRunner", page: "refinement", section: "Local Runner", kind: "custom",
+      label: "Runner", help: "The app on this computer that runs the cleanup model.", value: "ollama",
+      placeholder: "Not selected",
+      keywords: "ollama lm studio llama-server llama.cpp offline local" },
+    { id: "localRunnerModel", page: "refinement", section: "Local Runner", kind: "custom",
+      label: "Model", help: "A cleanup model the runner has downloaded.", value: "qwen3:8b", placeholder: "qwen3:8b",
+      keywords: "local model ollama qwen llama gemma" },
+    { id: "localRunnerDetect", page: "refinement", section: "Local Runner", kind: "custom",
+      label: "Runners on this computer", help: "Checks which runners are running on this computer.",
+      keywords: "look for detect scan find runners again" },
+
+    { id: "refinementEndpointServer", page: "refinement", section: "Custom Endpoint", kind: "choice",
+      label: "Server", help: "Your own server, or the CLI Proxy API server set up under Accounts.", value: "custom",
+      keywords: "endpoint cli proxy api self-hosted",
+      options: [ { id: "custom", label: "Custom" }, { id: "cliproxy", label: "CLI Proxy API" } ] },
+    { id: "refinementEndpointFormat", page: "refinement", section: "Custom Endpoint", kind: "choice", control: "select",
+      label: "Format", help: "The API the server speaks.", value: "openai",
+      keywords: "api compatible chat completions messages",
+      options: [
+          { id: "openai", label: "OpenAI-compatible", help: "Chat Completions" },
+          { id: "anthropic", label: "Anthropic-compatible", help: "Messages" }
+      ] },
+    { id: "refinementEndpointUrl", page: "refinement", section: "Custom Endpoint", kind: "text",
+      label: "Server URL", help: "The API base.", value: "", placeholder: "http://localhost:11434/v1",
+      keywords: "endpoint url base address host" },
+    { id: "refinementEndpointApiKey", page: "refinement", section: "Custom Endpoint", kind: "secret",
+      label: "API key", help: "Optional. Stored in the system keychain when there is one.", value: "",
+      placeholder: "sk-…", keywords: "token secret key endpoint" },
+    { id: "refinementEndpointModel", page: "refinement", section: "Custom Endpoint", kind: "custom",
+      label: "Model", help: "Test the connection to list the server's models, or type one.", value: "",
+      placeholder: "Type a model, or test to list them",
+      keywords: "endpoint model" },
+    { id: "refinementEndpointTest", page: "refinement", section: "Custom Endpoint", kind: "custom",
+      label: "Connection", help: "Checks the server answers, and lists its models.", actionLabel: "Test connection",
+      keywords: "test check verify endpoint" },
+
+    { id: "targetContextControl", page: "refinement", section: "What refinement can see", kind: "toggle",
+      label: "Text around your cursor", help: "Lets cleanup fit what you are writing.", value: true,
+      disabledHelp: "Turn on desktop accessibility to send the app's text.",
+      keywords: "context surrounding text accessibility" },
+    { id: "includeScreenshotContext", page: "refinement", section: "What refinement can see", kind: "toggle",
+      label: "A screenshot", help: "Kept only for the current dictation. Only OpenAI and Anthropic can read it.",
+      disabledHelp: "Only OpenAI and Anthropic refinement can use screenshots.",
+      value: false, keywords: "screen capture image context vision" },
+
+    { id: "customSystemPromptEnabled", page: "refinement", section: "System prompt", kind: "toggle",
+      label: "Use a custom system prompt",
+      help: "Replaces the built-in rules. Each profile's tone and instructions still apply.",
+      value: false, keywords: "prompt rules override instructions advanced" },
+    { id: "customSystemPrompt", page: "refinement", section: "System prompt", kind: "custom",
+      label: "Prompt", help: "Selection editing and local models keep their own prompts.",
+      keywords: "prompt edit text", enabledWhen: { id: "customSystemPromptEnabled", equals: true } },
+    { id: "resetCustomSystemPrompt", page: "refinement", section: "System prompt", kind: "custom",
+      label: "Built-in prompt", help: "The built-in prompt, at Medium cleanup with no tone.", actionLabel: "Reset to built-in",
+      keywords: "reset restore default prompt", enabledWhen: { id: "customSystemPromptEnabled", equals: true } }
+];

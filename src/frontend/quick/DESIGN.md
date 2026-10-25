@@ -1,0 +1,315 @@
+# Speecher Quick front end
+
+A Qt Quick (QML) front end for every platform, replacing the Qt Widgets, SwiftUI
+and WinUI front ends. Right now it runs on mock data so the design can be judged
+before it is wired to core.
+
+## Layout
+
+| Path | What lives there |
+|---|---|
+| `qml/Speecher/Theme/Theme.qml` | Every colour, size, font and motion value |
+| `qml/Speecher/Launch/Launch.qml` | `Launch.arg(name, fallback)`: the `--name=value` options the app started with |
+| `qml/Speecher/Controls/` | The design system: buttons, switches, rows, cards, pages |
+| `qml/Speecher/App/` | The window, sidebar, search palette and pages |
+| `qml/Speecher/App/pages/` | One file per page, local parts in `pages/<area>/` |
+| `qml/Speecher/Popup/` | The dictation popup |
+| `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
+| `mock/Speecher/Backend/` | Mock singletons standing in for core |
+| `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
+| `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
+
+## Wiring plan
+
+Pages import `Speecher.Backend` and read only its singletons. The mock module
+in `mock/` and a future C++ module registered under the same URI expose the
+same API, so wiring means swapping the import path, not editing pages.
+
+- `Schema` is core's `SettingsSchema`: pages and rows with label, help, kind
+  and options. Pages place rows by id with `SchemaRow { rowId: "…" }`.
+- `Settings.values[id]` and `Settings.set(id, value)` are the settings store.
+- Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
+  and state pages show. Keep their properties plain (strings, numbers, arrays
+  of objects) so a C++ `QObject` or model can replace them one for one.
+  Each list has one owner (speech services in `Models`, profiles, tones and
+  levels in `Library`, microphones in `Audio`, app types in the pasting
+  schema); every other place derives from it with the same ids. A button
+  that would leave the app (open settings, pick a file) calls a named mock
+  command whose outcome shows: a state change, or `System.open(what)`'s toast.
+  Mocks never import `Speecher.Controls`: `System.announced(text, icon)` says
+  what happened, and Main shows it as a toast.
+- The popup window is larger than the capsule, so only the capsule may take
+  the pointer: the host sets the window's input region to
+  `PopupWindow.inputRegion` (`QWindow::setMask`, or the layer-shell input
+  region) whenever it changes, about once per phase.
+- Wording that takes a value is a method on the singleton
+  (`Status.results(count)`), never a function inside a `text` object, which a
+  C++ `QObject` can't provide.
+- The theme binding (`Theme.dark` from `Settings.themeControl` and the host
+  scheme) lives in Main for now; the host must apply it to every window it
+  creates, including ones opened without Main (the popup, the setup assistant).
+- Wording comes from the schema row. Text written in a page's QML belongs in
+  core once wired (ADR 0007), so keep it short and in one place per page.
+  The shell's wording is `Status.text`, the popup's is the dictation's
+  `text`, and words many places share (Cancel, Save, Copied, Remove, …) are
+  `Words`.
+
+## Look and motion
+
+The look comes from a stenographer's pad, the notebook dictation was taken
+in: pale green-grey paper, dark ink, and a blue pencil for marks you can act
+on. Settings sit in grouped rows on raised cards, a shade lighter than the
+page, so each group reads as one sheet.
+
+Palette (all in `Theme`; never write a hex value in a page):
+
+| Token | Light | Use |
+|---|---|---|
+| `paper` | `#E4E8DF` | Window and sidebar |
+| `sheet` | `#EEF1EA` | The page |
+| `text` | `#1D2320` | Ink: text; primary buttons are filled with it |
+| `raised` | `#FBFCF9` | Raised cards that hold grouped rows, buttons, menus |
+| `rule` | blue-grey, 16% | Dividers between rows |
+| `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
+| `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
+
+- Type is Atkinson Hyperlegible Next, one family, through `Txt { variant;
+  tone; strong }`. Headings are bold; nothing is set in capitals or
+  letter-spaced. Use a variant (`labelSmall` for buttons and chips, `code`
+  for commands, `transcript` for dictated words, `lead` for a large sample)
+  or `strong` for emphasis rather than setting `font.*` in a page.
+- Red means sound is live (the record dot, the level meter) or something
+  failed. Blue pencil means you can act. Everything else is ink on paper.
+- A page is its title, a line of explanation, then Sections: a heading and
+  caption above a raised card of rows with inset dividers. Keep pages dense:
+  use the width, put short related things side by side, no empty heroes.
+- Radius follows hierarchy: the page sheet is softest, cards and controls
+  are firm, rows inside a card have none.
+- Icons only where they help find something: the sidebar, a file type, an
+  action. No tinted icon squares, no icon on every row.
+- No gradients, glows, coloured shadows or decorative washes.
+
+Things to avoid, because they read as generated:
+
+- A big number with a small label and a coloured trend arrow as the default
+  way to show a statistic. Say it in a sentence or a plain table unless the
+  number really is the point.
+- Labels above content that repeat what the content says, ALL-CAPS eyebrows,
+  "A · B · C" meta strings (use commas or separate elements), "→" on links
+  and buttons, a single accented word in a heading.
+- A badge or pill for every state. Use plain status text; a coloured dot is
+  enough for state that needs attention.
+- Sparkle icons for AI. Refinement is copy editing: use pencil marks.
+- Copy that sells or narrates ("Morning talker", "Your dictation, at a
+  glance"). Say what something is or does.
+
+Motion: everything that changes, moves. Nothing appears or vanishes in one
+frame. The rules, after Emil Kowalski's "Great animations" and Benji
+Taylor's "Family Values":
+
+- Most motion is under 300 ms and eases out (`Theme.easeOut`). Springy
+  overshoot (`Theme.springy`) is for things that land: knobs, thumbs,
+  selections. Animate position, scale and opacity, not layout, except for
+  height on things that open and close.
+- Things fly rather than teleport. Tabs (`Switcher`) slide toward the side
+  that was picked; pages slide in the direction the sidebar moved; menus and
+  popovers grow from what opened them; selections glide to the new item.
+- Things that appear or disappear change height and opacity together:
+  `Reveal { open }` for blocks (`sideways` for a control in a row),
+  `SettingRow { shown }` for rows, `RowList` for lists. Never toggle
+  `visible` on something the person can see.
+- A page that has just loaded is simply there: sizes snap on the first
+  layout and ease after it (`Grow`), and a list's first rows do not fade
+  in.
+- When text or a number changes, keep what stays the same still and animate
+  only what changed.
+- Every animation can be interrupted: drive it from Behaviors and bound
+  targets so a new change retargets it, not from one-shot sequences.
+- Actions done from the keyboard many times a day (search, shortcuts) get
+  the fastest motion or none.
+- Delight goes to rare moments (finishing setup, a milestone, sending
+  settings to the phone), not to things seen every day.
+- Reduced motion keeps the fades and drops the travel: multiply every offset
+  by `Theme.movement`, and pass every scale through `Theme.motionScale(s)`.
+
+Every animation is an `Ease` (numbers) or `EaseColor` (colours), never a
+bare `NumberAnimation` or `ColorAnimation`, which fall back to Qt's linear
+curve: `Behavior on opacity { Ease {} }`, `Ease { duration: Theme.slow;
+curve: Theme.springy }`. A height or width that opens, closes or follows
+its content uses `Grow on implicitHeight {}`, which skips the first
+layout. Durations come from `Theme.fast`, `Theme.base`,
+`Theme.slow`, `Theme.page` or `Theme.ms(n)`; curves from `Theme.easeOut`
+(the default), `Theme.easeInOut`, `Theme.springy`, `Theme.easeIn`,
+`Theme.breathe` (loops that pulse) or `Theme.steady` (motion that never
+settles, such as a sweep). Timer intervals use `Theme.ms(n)` too. The video
+tool slows time through `Theme.timeScale`, so an animation that ignores it
+stutters on video.
+
+The shared controls already move; use them rather than animating by hand:
+
+| Change | Use |
+|---|---|
+| Tabs, or any one-of-several views | `Switcher { currentIndex }` beside a `SegmentedControl` |
+| A block that appears on demand | `Reveal { open }` (and `Disclosure`, `InlineForm`, `InlineConfirm`, which open through it) |
+| A control that folds away in a row | `Reveal { sideways; open }` |
+| A settings row that comes and goes | `SettingRow { shown }` (SchemaRow's `hiddenWhen` does it for you) |
+| Rows added, removed, reordered | `RowList { values; keyOf }`: replacing the array moves rows instead of rebuilding them |
+| A number, word or note that changes in place | `MorphText` (`wrap` for text over several lines); `Section` titles and captions, `StatusText` and `Button` labels already use it |
+| A mode of a proof sample | `DiffText { mode }` cross-fades and eases its height |
+| Something finished out of sight | `Toaster.show(text, { icon, tone, actionText, action })` |
+
+## Component catalogue
+
+Every control below is in `Speecher.Controls`, and the gallery shows each in
+its states, with a few exceptions. `Card` and `Surface` show only as the
+Sections' cards and the open menu. `RowList` looks like a Column until its
+values change, so it and the helpers show only on the pages that use them.
+
+Controls never import `Speecher.Backend`: the page reads the singletons and
+hands the control plain values and options, and its wording too, since
+controls have no words of their own (`Words` has the shared ones). Choice
+controls show `currentId` and ask for a change through their signal; the
+caller sets `currentId`, from the store or from its own state. A disabled
+control fades to `Theme.disabledOpacity`.
+
+
+Layout and rows:
+
+- `Page { title; subtitle; headerActions }`: a scrolling page. With no title the page brings its own heading.
+- `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
+- `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
+- `SettingRow { title; help; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right.
+- `SchemaRow { rowId }` (in Speecher.App): a SettingRow built from the schema.
+- `ListRow { title; detail; iconName; titleVariant; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
+- `RowList { values; keyOf; entry(key); first }`: a non-scrolling list of rows that animates adds, removes and moves. Delegates take `required property string key`, read `list.entry(key)` (still there while a row fades out) and set `first: index === 0 && list.first`.
+- `Disclosure { title; help; trailingText; open; highlight() }`: a row that opens to more rows.
+- `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.
+- `Switcher { currentIndex }`: one of several views, sliding between them. `width: implicitWidth` sizes it to the current view, for buttons that swap in a row.
+- `FormField { label; help }`: a label and help around one input in a form.
+- `InlineForm { open; title; saveText; canSave }`: an add or edit form in place, instead of a dialog.
+- `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone.
+- `EmptyState { iconName; title; text }`: what an empty list says.
+
+Choosing:
+
+- `Switch`, `CheckBox`, `Slider { format }`.
+- `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
+- `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
+- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
+- `ChoiceCard { selected; checked; interactive }` and `CheckMark { shown }`: the card shell and tick, for richer cards (service cards). `interactive: false` hands the pointer to a part of the card, which sets `hovered` and `pressed` (ModelCard's summary).
+- `ChoiceRows { options; currentId; indicator: radio|check }`: a choice as rows on a card, each with help and a status.
+- `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
+- `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
+- `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.
+
+Input:
+
+- `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth` and `Select` to `Theme.selectWidth`; leave them at that in settings rows.
+- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
+
+Actions and menus:
+
+- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
+- `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
+- `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` and `MenuPopup` are their parts, shared with Select.
+
+Status and feedback:
+
+- `StatusText { text; tone; busy; indicator }`: a state in words, with a dot or spinner. `tone: "live"` is sound being heard (a pulsing red dot, the text stays secondary); `tone: "tertiary"` is a state waiting its turn.
+- `Notice { text; tone; indicator: dot|icon|none; inset; actionText }`: why something needs attention, and its fix.
+- `Badge { text; tone; dot }`: a short outlined word, for menu entries and small labels, not for every state.
+- `StatusDot { color; pulse }`, `Spinner`, `ProgressBar { value; indeterminate }`.
+- `Tip { text; detail }` for a control's tooltip, `PointTip { text; detail; shown; pointX; pointY }` for a chart's, both drawing `TipBody`.
+- `Toast` (one in the window) shows what `Toaster.show(...)` posts.
+- `MorphText { text; wrap; maximumLineCount; elide }`: text that animates only its changed characters, or fades when it runs over several lines.
+
+Pictures of speech:
+
+- `Waveform { level; active; fitWidth; compress; threshold; fadeOlder }`: live input level.
+- `RatingBars { bars; appearance: compact|wide }`: ratings out of ten.
+- `StepNode { number; title; detail; stage }`: one stop in a run of steps; wrappers lay them out and draw the lines.
+- `DiffText { segments; mode: marked|spoken|result }`: an edit marked like a proof; also `html(segments, mode)` for the same marks elsewhere.
+- `AppIcon { name; iconName }`, `Icon { name }`, `BrandMark` (Speecher's own mark).
+
+Helpers:
+
+- `Grow on implicitHeight {}`: a size that eases once laid out.
+- `Caret { edit }`: the blinking pencil caret after a TextEdit's last character, declared inside the edit.
+- `RichText.escape(s)`: text made safe to put in rich text, before adding markup.
+
+In Speecher.App, besides SchemaRow:
+
+- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
+- `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
+- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
+- `Sheet { side }`: the inset sheet a window shows its pages on, beside its side column.
+
+## Building pages
+
+- `Page { title; subtitle; headerActions: [...] }` holds `Section`s. Its
+  title is `Schema.page(id).title`, and a Section holding schema rows takes
+  `Schema.row(id).section`, so a page never retypes a title.
+- `Section { title; caption; actions: [...] }` puts its title above and its
+  children on a raised card; `plain: true` drops the card for content with
+  its own surface. Custom rows inside a card keep the `Theme.rowInset`
+  inset SettingRow and ListRow use.
+- Lists that change: give the data to a `RowList` as `values`, with
+  `ListRow` delegates. Don't clear and refill a ListModel, and don't toggle
+  `visible` on rows or empty states; use `Reveal` or `SettingRow.shown`.
+- A custom row that stands for a schema row gets a `SearchLanding`, so a
+  search for it lands somewhere.
+- Preview states a page opens with (a form, a tab) come from
+  `Launch.arg(...)`; mock singletons read their states the same way.
+- `SchemaRow { rowId }` renders a schema row with the right control.
+  `SettingRow { title; help; iconName }` with a custom control inside covers
+  anything the schema can't describe.
+- Add the page's rows to `mock/Speecher/Backend/schema/<area>.js`. Row fields
+  are documented at the top of `Schema.qml`. Give rows good `keywords`; search
+  depends on them.
+- Templates controls (`QtQuick.Templates`) have no implicit size: set
+  `implicitWidth`/`implicitHeight`. Do not import `QtQuick.Controls` (it
+  brings a platform style) or Kirigami.
+- Don't name an id after a built-in property (`palette`, `data`, `state`,
+  `parent`, `children`, `font`).
+
+## Trying it by hand
+
+`preview/try.sh` (or `preview/try.ps1` on Windows) opens the front end in an
+ordinary window on mock data, to click around: `try.sh` for the main window,
+`try.sh setup`, `try.sh popup` (the popup's story on a loop) and
+`try.sh gallery`. It needs only uv; the first run fetches PySide6. Arguments
+such as `--theme=dark` or `--reduce-motion=true` pass through.
+`python preview/bundle.py OUT.zip` packs it to try on another machine.
+
+## Previewing
+
+```sh
+preview/run.sh --page <page id> --out ~/.cache/speecher-quick/shots/<name>.png
+preview/run.sh --page <page id> --theme light --out …
+preview/run.sh --page <page id> --row <row id> --out …       # jump to a row
+preview/run.sh --page <page id> --search "query" --out …     # search palette
+preview/run.sh --page <page id> --arg transcribe-state=running --out …  # mock state
+preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --arg popup-demo=review --out review.png
+preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --record 19 --time-scale 3 --out popup.mp4
+preview/run.sh --page vocabulary --record 2 --time-scale 4 --poke vocabularyPage.tab=corrections@0.6 --out tab.mp4  # an interaction, on video
+preview/run.sh --page home --poke Speecher.Backend/Dictation.state=listening@0.5 --out live.png  # a singleton
+preview/run.sh --page home --record 2 --poke Speecher.App/Navigation.current=refinement@0.5 --out load.mp4  # a page loading
+preview/run.sh --root Speecher.App/SetupAssistant --size 960x680 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
+preview/run.sh --page pasting --scroll 900 --out lower.png   # scrolled down first
+```
+
+`--poke` reaches an item by objectName (list delegates included), a
+singleton as `Module/Type`, or the window when the name is left out.
+
+`--arg name=value` reaches QML as `--name=value` in `Qt.application.arguments`;
+mock singletons read it to start in a given state.
+
+The gallery of every shared control, in either theme:
+
+```sh
+preview/run.sh --root SpeecherPreview/Gallery --size 1640x1600 --theme dark --out gallery.png
+```
+
+It runs a private headless KWin, so nothing appears on screen, and writes a
+2x PNG. Lines starting `QML:` are warnings; fix all of them. A page is done
+when you have looked at its screenshots in both themes yourself.
