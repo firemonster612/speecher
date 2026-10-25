@@ -270,17 +270,5 @@ Page {
         }
     }
 
-    // The pages under this one, reached from here as well as the sidebar.
-    Section {
-        Repeater {
-            model: Schema.subpages("refinement")
-            SettingRow {
-                required property var modelData
-                title: modelData.title
-                help: modelData.subtitle
-                clickable: true
-                onClicked: Navigation.go(modelData.id)
-            }
-        }
-    }
+    SubpageRows { pageId: "refinement" }
 }

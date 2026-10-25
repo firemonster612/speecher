@@ -81,7 +81,7 @@ grant: System Settings keeps showing the toggle as on, while
 Settings, including the "setup completed" flag, live in
 `~/Library/Preferences` and survive reinstalling the app — deleting
 speecher.app never resets them. Rerun the assistant from Settings > General >
-"Run setup assistant…", and wipe everything with
+Permissions & health > "Run setup", and wipe everything with
 `defaults delete com.io-github-firemonster612.speecher`.
 
 ### CLI login Keychain prompts

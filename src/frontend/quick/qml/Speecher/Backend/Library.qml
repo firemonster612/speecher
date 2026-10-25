@@ -241,7 +241,7 @@ LibraryLists {
     readonly property var appCategories: Schema.appCategories
     function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
 
-    // Application recognition's wording, on the Pasting page.
+    // Application recognition's wording, on the App rules page.
     readonly property var pastingText: ({
         automatic: "Automatic",
         addMatch: "Add match",

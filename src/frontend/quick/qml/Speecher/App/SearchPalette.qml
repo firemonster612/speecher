@@ -25,7 +25,7 @@ FocusScope {
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
-                     trail: Schema.trail(r.page) + ", " + r.section }))
+                     trail: Schema.rowTrail(r) }))
 
     // What had focus before opening, to give it back on close.
     property Item _returnFocus: null

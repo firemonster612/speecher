@@ -73,6 +73,8 @@ QtObject {
     }
     // Where a page is, as words: "Refinement › Vocabulary", or its title.
     function trail(id) { return ancestors(id).concat([page(id)]).map(p => p.title).join(" › ") }
+    // Where a row is: its page's trail and its section, if it has one.
+    function rowTrail(spec) { return trail(spec.page) + (spec.section ? ", " + spec.section : "") }
 
     // Whether this computer has the row; has(need) answers for a needs.
     function available(spec, has) {
@@ -119,7 +121,7 @@ QtObject {
             const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
             if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
-                                      trail: trail(r.page) + (r.section ? ", " + r.section : ""), score: s })
+                                      trail: rowTrail(r), score: s })
         }
         results.sort((a, b) => b.score - a.score)
         return results.slice(0, limit || 12)

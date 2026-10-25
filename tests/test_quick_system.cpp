@@ -720,10 +720,10 @@ private slots:
             }
             return shown;
         };
-        const QHash<QString, bool> general = rowsShown("GeneralPage");
-        QCOMPARE(general.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
-        QCOMPARE(general.value(QStringLiteral("removeSpeecher")), onLinux);
-        QVERIFY(general.value(QStringLiteral("microphoneAccess")));
+        const QHash<QString, bool> permissions = rowsShown("PermissionsPage");
+        QCOMPARE(permissions.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
+        QVERIFY(permissions.value(QStringLiteral("microphoneAccess")));
+        QCOMPARE(rowsShown("GeneralPage").value(QStringLiteral("removeSpeecher")), onLinux);
         const QHash<QString, bool> pasting = rowsShown("PastingPage");
         QCOMPARE(pasting.value(QStringLiteral("virtualKeyboard")), onLinux);
         QCOMPARE(pasting.value(QStringLiteral("outputMethod")), onLinux);
@@ -760,8 +760,8 @@ private slots:
         QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
     }
 
-    // The Pasting page's app type rows need accessibility to know the app.
-    void pastingTypeRowsFollowAccessibility()
+    // The App rules page's app type rows need accessibility to know the app.
+    void appTypeRowsFollowAccessibility()
     {
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
@@ -772,7 +772,7 @@ private slots:
         // The page's Library reads Models, as the host always has one.
         QuickModels models(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/AppRulesPage.qml")));
         const std::unique_ptr<QObject> page(component.create());
         QVERIFY2(page, qPrintable(component.errorString()));
 

@@ -21,10 +21,12 @@ Item {
             if (p === nav) { next.forceActiveFocus(Qt.TabFocusReason); return }
     }
     // Scrolls the page list just enough to show item, which has focus.
-    function _keepInView(item) {
+    function _keepInView(item) { navFlick.contentY = _viewY(item) }
+    // Where the page list scrolls to show item, moving as little as it can.
+    function _viewY(item) {
         const top = item.mapToItem(nav, 0, 0).y
         const y = Math.min(navFlick.contentY, top)
-        navFlick.contentY = Math.max(0, Math.max(y, top + item.height - navFlick.height))
+        return Math.max(0, Math.max(y, top + item.height - navFlick.height))
     }
 
     // App mark ------------------------------------------------------------
@@ -70,10 +72,11 @@ Item {
     }
 
     // Pages ---------------------------------------------------------------
-    // One page in the list, set in by indent under its parent when it is a
-    // subpage. A page with subpages has a chevron that opens and closes
-    // them, as Right and Left do from the keyboard; it asks through
-    // openRequested and shows open.
+    // One page in the list. A subpage is set in by indent under its parent,
+    // its wash (and the pill on it) starting right of the parent's guide. A
+    // page with subpages has a chevron that opens and closes them, as Right
+    // and Left do from the keyboard; it asks through openRequested and
+    // shows open.
     component Entry: Item {
         id: entry
         required property var page
@@ -85,8 +88,8 @@ Item {
         property bool open: false
         signal openRequested(bool open)
 
-        x: 12
-        width: nav.width - 24
+        x: 12 + indent
+        width: nav.width - 24 - indent
         height: Theme.controlHeight
         onMarkedChanged: if (marked) selection.moveTo(entry)
         Component.onCompleted: if (marked) selection.moveTo(entry)
@@ -113,7 +116,7 @@ Item {
         }
         FocusRing { target: entryWash; shown: entryFocus.shown }
         Row {
-            x: 10 + entry.indent
+            x: 10
             anchors.verticalCenter: parent.verticalCenter
             spacing: 10
             Icon {
@@ -181,15 +184,20 @@ Item {
             property Item target: null
             // The target's place in the list, summed through its columns so
             // every layout change reaches it and a Reveal's drop-in does not.
-            readonly property real targetY: {
-                let y = 0
-                for (let p = target; p && p !== nav; p = p.parent) y += p.y
-                return y
+            readonly property point targetPos: {
+                let x = 0, y = 0
+                for (let p = target; p && p !== nav; p = p.parent) { x += p.x; y += p.y }
+                return Qt.point(x, y)
             }
+            readonly property real targetY: targetPos.y
             // What is left of the glide from the entry before.
             property real glide: 0
-            x: 12
-            width: nav.width - 24
+            // A subpage's pill is narrower, starting right of the guide; it
+            // eases in from the side with the glide.
+            x: target ? targetPos.x : 12
+            width: target ? target.width : nav.width - 24
+            Behavior on x { enabled: settle.done && Theme.movement > 0; Ease { duration: Theme.slow; curve: Theme.springy } }
+            Behavior on width { enabled: settle.done && Theme.movement > 0; Ease { duration: Theme.slow; curve: Theme.springy } }
             y: targetY + glide
             height: target ? target.height : 0
             radius: Theme.radius
@@ -201,6 +209,7 @@ Item {
             function moveTo(item) {
                 const from = y
                 target = item
+                showTarget.restart()
                 // On the first layout, and under reduced motion, it moves at once.
                 if (!settle.done || Theme.movement === 0) return
                 glide = from - targetY
@@ -208,6 +217,21 @@ Item {
             }
             Ease { id: glideHome; target: selection; property: "glide"; to: 0; duration: Theme.slow; curve: Theme.springy }
             Settle { id: settle }
+            // Scrolls the list to show the new target once subpages opening
+            // for it have opened: they can make the list taller than the
+            // window, and a page opened from search or a link can be out
+            // of view.
+            Timer {
+                id: showTarget
+                interval: Theme.slow
+                onTriggered: {
+                    if (!selection.target) return
+                    if (Theme.movement === 0) { sidebar._keepInView(selection.target); return }
+                    scrollNav.to = sidebar._viewY(selection.target)
+                    scrollNav.restart()
+                }
+            }
+            Ease { id: scrollNav; target: navFlick; property: "contentY"; duration: Theme.base }
         }
 
         Column {

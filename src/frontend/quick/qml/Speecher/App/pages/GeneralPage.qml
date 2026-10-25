@@ -26,9 +26,7 @@ Page {
         confirmRemove: "Remove Speecher",
         removeQuestion: "Remove Speecher from this computer?",
         removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
-        removeSettings: "Also delete my settings, vocabulary and API keys",
-        systemColors: "System",
-        installedSchemes: "On this computer"
+        removeSettings: "Also delete my settings, vocabulary and API keys"
     })
     // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
     function phoneSummary(bundle) {
@@ -59,56 +57,15 @@ Page {
     }
     Component.onDestruction: System.stopPhoneTransfer()
 
-    Section {
-        title: Schema.row("themeControl").section
-        SchemaRow {
-            rowId: "themeControl"
-            ThemePicker {
-                options: Schema.row("themeControl").options
-                currentId: Settings.values.themeControl || "system"
-                // The window applies it, following the desktop on System.
-                onActivated: id => Settings.set("themeControl", id)
-            }
-        }
-        SchemaRow {
-            rowId: "colorScheme"
-            stacked: true
-            ColorSchemePicker {
-                width: parent.width
-                currentId: Settings.values.colorScheme || "steno"
-                systemLabel: page.t.systemColors
-                installedTitle: page.t.installedSchemes
-                onActivated: id => Settings.set("colorScheme", id)
-            }
-        }
-        SchemaRow {
-            rowId: "windowLayout"
-            LookPicker {
-                width: 268
-                options: Schema.row("windowLayout").options
-                currentId: Settings.values.windowLayout || "framed"
-                thumbnail: MiniWindow {
-                    property var option
-                    split: option.id === "split"
-                }
-                onActivated: id => Settings.set("windowLayout", id)
-            }
-        }
-        SchemaRow { rowId: "translucency" }
-        SchemaRow { rowId: "roundedCorners" }
-        // Saved only where Speecher can start at login.
-        SchemaRow { rowId: "launchAtLogin"; shown: Settings.saves(rowId) }
-    }
+    SubpageRows { pageId: "general" }
 
-    Section {
-        title: Schema.row("runSetup").section
-        caption: Health.summary(System.checks)
-        HealthRow { rowId: "microphoneAccess" }
-        HealthRow { rowId: "desktopAccessibility" }
-        HealthRow { rowId: "globalShortcuts" }
-        HealthRow { rowId: "virtualKeyboardHealth" }
-        VirtualKeyboardTest {}
-        SchemaRow { rowId: "runSetup" }
+    // Saved only where Speecher can start at login.
+    Reveal {
+        open: Settings.saves("launchAtLogin")
+        Section {
+            title: Schema.row("launchAtLogin").section
+            SchemaRow { rowId: "launchAtLogin" }
+        }
     }
 
     // Two short groups side by side.
