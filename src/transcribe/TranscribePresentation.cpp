@@ -96,6 +96,23 @@ QString refinementModel(const QString &providerId, const RefinementSettings &set
     if (providerId == QStringLiteral("anthropic")) {
         return settings.anthropicModel;
     }
+    if (providerId == QStringLiteral("local")) {
+        return settings.localRunner.model;
+    }
+    if (providerId == QStringLiteral("endpoint")) {
+        return settings.endpoint.model;
+    }
+    return {};
+}
+
+QString speechModel(const SpeechSettings &speech)
+{
+    if (speech.providerId == QStringLiteral("local")) {
+        return speech.local.modelId;
+    }
+    if (speech.providerId == QStringLiteral("endpoint")) {
+        return speech.endpoint.model;
+    }
     return {};
 }
 

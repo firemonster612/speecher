@@ -28,6 +28,10 @@ void setRefinementModel(RefinementSettings &refinement, const QString &model)
         refinement.openAiModel = model;
     } else if (refinement.providerId == QStringLiteral("anthropic")) {
         refinement.anthropicModel = model;
+    } else if (refinement.providerId == QStringLiteral("local")) {
+        refinement.localRunner.model = model;
+    } else if (refinement.providerId == QStringLiteral("endpoint")) {
+        refinement.endpoint.model = model;
     }
 }
 

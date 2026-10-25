@@ -14,21 +14,19 @@ LibraryLists {
 
     // Refinement ---------------------------------------------------------
 
-    // The model a refinement provider refines with, as its settings name it.
-    function modelLabel(providerId) {
-        const v = Settings.values
-        const listed = (models, id) => (models.find(m => m.id === id) || { label: id || "" }).label
-        return providerId === "openai" ? listed(Models.openAiModels, v.openAiModel)
-             : providerId === "anthropic" ? listed(Models.anthropicModels, v.anthropicModel)
-             : providerId === "local" ? v.localRunnerModel || ""
-             : providerId === "endpoint" ? v.refinementEndpointModel || "" : ""
+    // A refinement provider's model by its name in the provider's list, or
+    // as given.
+    function modelLabel(providerId, model) {
+        const models = providerId === "openai" ? Models.openAiModels
+                     : providerId === "anthropic" ? Models.anthropicModels : []
+        return (models.find(m => m.id === model) || { label: model || "" }).label
     }
     // "Heard by Claude, cleaned up by Claude Sonnet 5.5": who hears a
-    // dictation and who cleans it up, from a speech service and a refinement
-    // provider id.
-    function pipelineCaption(service, refiner) {
+    // dictation and who cleans it up, from a speech service, a refinement
+    // provider id and the model it runs.
+    function pipelineCaption(service, refiner, refinerModel) {
         const provider = Models.refinementProviders.find(p => p.id === refiner)
-        const model = refiner !== "none" ? modelLabel(refiner) || (provider ? provider.label : refiner) : ""
+        const model = refiner !== "none" ? modelLabel(refiner, refinerModel) || (provider ? provider.label : refiner) : ""
         return "Heard by " + Models.service(service).label + (model ? ", cleaned up by " + model : "")
     }
 

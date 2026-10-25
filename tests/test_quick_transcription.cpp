@@ -68,6 +68,33 @@ private slots:
         QCOMPARE(option("tone").toString(), QStringLiteral("casual"));
     }
 
+    // A model chosen for the batch is the one its service runs, until another
+    // service is chosen; choosing the same one again keeps it, and the
+    // settings keep their own.
+    void aBatchModelLastsUntilAnotherServiceIsChosen()
+    {
+        ApplicationController controller(true);
+        QuickTranscription transcription(&controller);
+        const AppSettings saved = controller.settings()->snapshot();
+
+        transcription.setOption(QStringLiteral("refiner"), QStringLiteral("endpoint"));
+        transcription.setOption(QStringLiteral("refinerModel"), QStringLiteral("qwen3:8b"));
+        transcription.setOption(QStringLiteral("refiner"), QStringLiteral("endpoint"));
+        QCOMPARE(transcription.refinerModel(), QStringLiteral("qwen3:8b"));
+        transcription.setOption(QStringLiteral("refiner"), QStringLiteral("anthropic"));
+        QCOMPARE(transcription.refinerModel(), saved.refinement.anthropicModel);
+
+        transcription.setOption(QStringLiteral("service"), QStringLiteral("endpoint"));
+        transcription.setOption(QStringLiteral("speechModel"), QStringLiteral("whisper-large-v3"));
+        transcription.setOption(QStringLiteral("service"), QStringLiteral("endpoint"));
+        QCOMPARE(transcription.speechModel(), QStringLiteral("whisper-large-v3"));
+        transcription.setOption(QStringLiteral("service"), QStringLiteral("claude"));
+        QVERIFY(transcription.speechModel().isEmpty());
+
+        QCOMPARE(controller.settings()->snapshot().refinement.endpoint.model, saved.refinement.endpoint.model);
+        QCOMPARE(controller.settings()->snapshot().speech.endpoint.model, saved.speech.endpoint.model);
+    }
+
     // One folder takes the chooser's folder; dismissed before there is one,
     // the transcripts go beside each file instead.
     void theFolderChooserSetsWhereTranscriptsGo()

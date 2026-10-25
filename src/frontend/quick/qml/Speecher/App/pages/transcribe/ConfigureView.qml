@@ -15,22 +15,23 @@ Column {
 
     readonly property var options: Transcription.options
     readonly property bool refines: options.refiner !== "none"
-    // The models the chosen refiner offers, with the one it runs now if
-    // that is not among them; empty for a refiner that names none.
+    // What the model fields suggest, as Speech to text and Refinement do:
+    // each provider's known models, the Local Runner's and the endpoints'
+    // as they were listed.
     readonly property var refinerModels: {
-        const models = (options.refiner === "openai" ? Models.openAiModels
-                        : options.refiner === "anthropic" ? Models.anthropicModels : [])
-                       .map(m => ({ id: m.id, label: m.label }))
-        const current = Transcription.refinerModel
-        return !models.length || !current || models.some(m => m.id === current)
-            ? models : models.concat([{ id: current, label: current }])
+        const named = names => names.map(m => ({ id: m, label: m }))
+        const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
+        return options.refiner === "openai" ? Models.openAiModels
+             : options.refiner === "anthropic" ? Models.anthropicModels
+             : options.refiner === "local" ? named(runner ? runner.models : [])
+             : options.refiner === "endpoint" ? named(Models.refinementEndpoint.models) : []
     }
 
     spacing: Theme.sectionGap
 
     Section {
         title: TranscribeWords.audioFiles
-        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.options.service, view.options.refiner))
+        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.options.service, view.options.refiner, Transcription.refinerModel))
 
         RowList {
             id: files
@@ -82,8 +83,9 @@ Column {
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("service", id)
         }
+        // The model, for these files, of a service that has one to choose.
+        // Without a downloaded Local Model the service's card says what to do.
         SettingRow {
-            // Without a downloaded model the service's card says what to do.
             shown: view.options.service === "local" && ModelText.downloadedModels.length > 0
             title: TranscribeWords.model
             help: TranscribeWords.speechModelHelp
@@ -92,6 +94,17 @@ Column {
                 currentId: Transcription.speechModel
                 placeholder: TranscribeWords.chooseModel
                 onChosen: id => Transcription.setOption("speechModel", id)
+            }
+        }
+        SettingRow {
+            shown: view.options.service === "endpoint"
+            title: TranscribeWords.model
+            help: TranscribeWords.speechModelHelp
+            SuggestField {
+                suggestionsText: Words.suggestions
+                text: Transcription.speechModel
+                suggestions: Models.speechEndpoint.models.map(m => ({ id: m, label: m }))
+                onCommitted: v => Transcription.setOption("speechModel", v)
             }
         }
         SettingRow {
@@ -154,22 +167,17 @@ Column {
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("refiner", id)
         }
-        // A refiner that names its models picks one here, for these files;
-        // the others' models are Refinement's.
+        // The refiner's model, for these files.
         SettingRow {
-            shown: view.refinerModels.length > 0
-            title: TranscribeWords.model
-            help: TranscribeWords.refinerModelHelp
-            Select { options: view.refinerModels; currentId: Transcription.refinerModel; onChosen: id => Transcription.setOption("refinerModel", id) }
-        }
-        SettingRow {
-            shown: !view.refinerModels.length
             enabled: view.refines
             title: TranscribeWords.model
-            help: view.refines ? TranscribeWords.modelHint : TranscribeWords.needsRefiner
-            clickable: view.refines
-            trailingText: Transcription.refinerModel
-            onClicked: Navigation.go("refinement")
+            help: view.refines ? TranscribeWords.refinerModelHelp : TranscribeWords.needsRefiner
+            SuggestField {
+                suggestionsText: Words.suggestions
+                text: Transcription.refinerModel
+                suggestions: view.refinerModels
+                onCommitted: v => Transcription.setOption("refinerModel", v)
+            }
         }
         SettingRow {
             enabled: view.refines

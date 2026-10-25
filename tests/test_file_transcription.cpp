@@ -3185,7 +3185,7 @@ private slots:
     }
 
     // Models chosen for a batch run it in place of the settings' own, which
-    // keep theirs, and a new service or profile puts them back.
+    // keep theirs, and a new profile puts them back.
     void aBatchsOwnModelsLeaveTheSettingsAlone()
     {
         ApplicationController controller(true);
@@ -3205,9 +3205,6 @@ private slots:
 
         QCOMPARE(queue.speechModel(), QStringLiteral("whisper-small"));
         QCOMPARE(queue.refinementModel(), QStringLiteral("claude-opus-5-5"));
-        const AppSettings batch = withBatchChoices(settings, *controller.providerRegistry(), chosen);
-        QCOMPARE(batch.speech.local.modelId, QStringLiteral("whisper-small"));
-        QCOMPARE(batch.refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
         QCOMPARE(controller.settings()->snapshot().speech.local.modelId, settings.speech.local.modelId);
         QCOMPARE(controller.settings()->snapshot().refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
 

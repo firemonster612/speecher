@@ -13,8 +13,8 @@ namespace speecher {
 // page names.
 bool profilePicksSpeechModel(const QString &providerId);
 
-// Makes refinement's chosen provider run model, where it names one (OpenAI,
-// Anthropic); the other providers keep theirs.
+// Makes refinement's chosen provider run model, where it has one to choose
+// (OpenAI, Anthropic, the Local Runner, a Custom Endpoint).
 void setRefinementModel(RefinementSettings &refinement, const QString &model);
 
 // The speech settings the profile's own service runs with: its provider and

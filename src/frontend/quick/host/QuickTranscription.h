@@ -36,7 +36,7 @@ class QuickTranscription final : public QObject {
     // profile, tone, language (a spoken language id), destination (beside,
     // folder or none), folder (as shown), folderUrl }.
     Q_PROPERTY(QVariantMap options READ options NOTIFY optionsChanged)
-    // The Local Model the batch listens with, or empty for another service.
+    // The model the batch's speech service runs, where it has one to choose.
     Q_PROPERTY(QString speechModel READ speechModel NOTIFY optionsChanged)
     // The model the chosen refiner runs, or empty.
     Q_PROPERTY(QString refinerModel READ refinerModel NOTIFY optionsChanged)
@@ -96,7 +96,7 @@ public:
     Q_INVOKABLE void addUrls(const QList<QUrl> &urls);
     Q_INVOKABLE void removeFile(const QString &path);
     // Sets one of options, or speechModel or refinerModel, the models the
-    // batch's services run, which a new service or profile puts back to
+    // batch's services run, which another service or profile puts back to
     // theirs; profile brings its services, cleanup and tone.
     Q_INVOKABLE void setOption(const QString &id, const QVariant &value);
     // The folder transcripts go in. An empty one, the chooser dismissed,

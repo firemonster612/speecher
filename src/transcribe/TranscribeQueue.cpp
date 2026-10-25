@@ -2,7 +2,6 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
-#include "core/WritingProfileProviders.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDir>
@@ -191,11 +190,8 @@ void TranscribeQueue::chooseProfile(const QString &profile)
 
 QString TranscribeQueue::speechModel() const
 {
-    if (!profilePicksSpeechModel(m_options.speechProviderId)) {
-        return {};
-    }
-    return withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options)
-        .speech.local.modelId;
+    return speecher::speechModel(
+        withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options).speech);
 }
 
 QString TranscribeQueue::refinementModel() const

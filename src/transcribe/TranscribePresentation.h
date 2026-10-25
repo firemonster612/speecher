@@ -45,6 +45,9 @@ QString transcriptSaveError(const QString &path, const QString &reason);
 
 // The model a refinement provider is set to use, or empty for none.
 QString refinementModel(const QString &providerId, const RefinementSettings &settings);
+// The model the chosen speech service is set to use where it has one to
+// choose (a Local Model, or a Custom Endpoint's), otherwise empty.
+QString speechModel(const SpeechSettings &speech);
 // Whether a batch with these options refines its transcripts, which is when
 // the results offer the raw text beside the refined one. The settings say
 // whether the batch's profile translates, which refines even at None.
