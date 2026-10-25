@@ -499,7 +499,7 @@ Actions and menus:
 
 - `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text, `LinkedText { plainText; link; activated() }` for a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
-- `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` and `MenuPopup` are their parts, shared with Select.
+- `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
 
 Status and feedback:
 
