@@ -136,14 +136,14 @@ MenuPopup {
                 acceptedButtons: Qt.NoButton
                 Accessible.role: Accessible.List
                 WheelScroll {}
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: ScrollBar { id: bar; persistent: true }
                 // The pointer moves the highlight as the arrows do, so one row
                 // is lit and Return takes it.
                 delegate: MenuItem {
                     id: row
                     required property var modelData
                     required property int index
-                    width: ListView.view.width
+                    width: ListView.view.width - bar.gutter
                     text: modelData.label
                     help: modelData.help || ""
                     iconName: modelData.icon || ""
