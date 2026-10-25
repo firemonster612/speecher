@@ -10,10 +10,13 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QRegularExpression>
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <memory>
 
 using namespace speecher;
 using namespace speecher::test;
@@ -93,6 +96,44 @@ private slots:
 
         QCOMPARE(controller.settings()->snapshot().refinement.endpoint.model, saved.refinement.endpoint.model);
         QCOMPARE(controller.settings()->snapshot().speech.endpoint.model, saved.speech.endpoint.model);
+    }
+
+    // A picked suggestion fills the model field as typing would, so the field
+    // still shows the batch's model when another service resets it.
+    void aPickedSuggestionKeepsTheFieldFollowingItsModel()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.Controls
+            Item {
+                property string model: "gpt-5.5"
+                property alias field: field
+                SuggestField {
+                    id: field
+                    text: parent.model
+                    suggestions: [{ id: "claude-opus-5-5", label: "Claude Opus 5.5" }]
+                    onCommitted: v => parent.model = v
+                }
+            })",
+                          QUrl());
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto *field = root->property("field").value<QObject *>();
+        QObject *menu = nullptr;
+        for (QObject *child : field->findChildren<QObject *>()) {
+            if (QLatin1String(child->metaObject()->className()).startsWith(QLatin1String("Menu_"))) {
+                menu = child;
+            }
+        }
+        QVERIFY(menu);
+
+        QMetaObject::invokeMethod(menu, "picked", Q_ARG(QString, QStringLiteral("claude-opus-5-5")));
+        QCOMPARE(root->property("model").toString(), QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("claude-opus-5-5"));
+        root->setProperty("model", QStringLiteral("gpt-5.5"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("gpt-5.5"));
     }
 
     // One folder takes the chooser's folder; dismissed before there is one,
