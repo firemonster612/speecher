@@ -61,7 +61,7 @@ bool writeFile(const QString &path, const QByteArray &bytes)
 
 // Replaces the test store with a fixture file's keys and values, as the
 // installed Speecher's own settings file holds them, with changed's keys over
-// the file's.
+// the file's. A changed key with no value is one the user never saved.
 void loadSettingsFile(const QString &name, const QVariantMap &changed = {})
 {
     const QSettings fixture(fixtureDir + name, QSettings::IniFormat);
@@ -71,7 +71,11 @@ void loadSettingsFile(const QString &name, const QVariantMap &changed = {})
         store.raw().setValue(key, fixture.value(key));
     }
     for (auto it = changed.begin(); it != changed.end(); ++it) {
-        store.raw().setValue(it.key(), it.value());
+        if (it.value().isValid()) {
+            store.raw().setValue(it.key(), it.value());
+        } else {
+            store.raw().remove(it.key());
+        }
     }
     store.raw().sync();
 }
@@ -150,7 +154,7 @@ void checkFields(ApplicationController &controller, const QVariantMap &expected)
 
 bool keyringExpected()
 {
-    return qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") == 1;
+    return qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") == 1;
 }
 
 } // namespace
@@ -159,15 +163,6 @@ class MigrationTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void init()
-    {
-        // Without the private keyring suite, a keyring that refuses writes
-        // stands in for none, and leaves the person's own alone.
-        if (!keyringExpected()) {
-            qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-        }
-    }
-
     void cleanup()
     {
         SettingsStore store;
@@ -182,7 +177,6 @@ private slots:
             QFile::remove(model);
             QFile::remove(model + QStringLiteral(".part"));
         }
-        qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
     }
 
     // A 0.2.0 user's file. Its OpenAI key is in the keyring when there is
@@ -231,6 +225,13 @@ private slots:
                            {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
                            {QStringLiteral("kateDelivery"), QStringLiteral("direct_insert")},
                            {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
+        // With no rules saved, the default ones, which paste, insert only.
+        QTest::newRow("direct insertion with the default rules")
+            << QVariantMap{{QStringLiteral("output/method"), QStringLiteral("direct_insert")},
+                           {QStringLiteral("output/pasteRules"), QVariant()}}
+            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("direct_insert")}};
         QTest::newRow("Qt clipboard")
             << method("qt-clipboard")
             << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},

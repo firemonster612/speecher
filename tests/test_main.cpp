@@ -51,8 +51,9 @@ int main(int argc, char **argv)
         return 1;
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    // NativeFormat too: QSettings(organization, application) uses it, and on
-    // Linux it is a file under the person's ~/.config.
+    // NativeFormat too, as a safety net: Speecher opens its settings in the
+    // default format, but QSettings(organization, application) uses
+    // NativeFormat, which on Linux is a file under the person's ~/.config.
     for (const auto format : {QSettings::IniFormat, QSettings::NativeFormat}) {
         QSettings::setPath(format, QSettings::UserScope, preferences.path());
         QSettings::setPath(format, QSettings::SystemScope, preferences.path());

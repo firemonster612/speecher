@@ -42,12 +42,17 @@ def migrated(before):
             after[key] = new
     paste = PASTE_UNDER_METHOD.get(before.get('output/method', ''))
     if paste:
+        after['output/method'] = 'automatic'
         rules = json.loads(before.get('output/pasteRules') or '[]')
         for rule in rules:
             if rule.get('method') in ('standard_paste', 'terminal_paste'):
                 rule['method'] = paste
-        after['output/pasteRules'] = json.dumps(rules)
-        after['output/method'] = 'automatic'
+        # With none saved, the app reads its default rules and saves them
+        # rewritten: a key it adds, so not compared.
+        if rules:
+            after['output/pasteRules'] = json.dumps(rules)
+        else:
+            after.pop('output/pasteRules', None)
     return after
 
 

@@ -169,9 +169,9 @@ System keychain.
 4. Run `SPEECHER_DISPOSABLE_MACHINE=1 packaging/macos/verify-dmg-update.py
    shipped.dmg candidate.dmg sparkle-signature.txt evidence --keep-state`. It
    records the settings as you left them and compares the new app's against
-   them, changed only where the update changes them on purpose. Choose Check
-   for updates in the old app, then Install and restart when it offers the
-   candidate. The script must report every check as passed.
+   them, changed only where the update changes them on purpose. In the old
+   app's settings, press Check now beside Check for updates, then Install and
+   restart when it offers the candidate. The script must report every check as passed.
 5. After the relaunch, without touching System Settings:
    - No permission prompt appears, and `speecher.log` reads
      `macOS accessibility identity ... trusted=1`.

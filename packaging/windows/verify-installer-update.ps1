@@ -86,15 +86,17 @@ function Start-Speecher {
     WaitFor { (Invoke-Speecher status --json) -match '"state"' } 60 "speecher did not answer" | Out-Null
 }
 
-# Whether another process holds Ctrl+Alt+F9: registering it here fails with
-# ERROR_HOTKEY_ALREADY_REGISTERED.
-function Test-ShortcutHeld {
+# Ctrl+Alt+F9 as registering it here finds it: "free" when that works,
+# "held" when another process has it (ERROR_HOTKEY_ALREADY_REGISTERED), or the
+# error that kept it from telling.
+function Get-ShortcutState {
     $controlAlt = 0x0003; $f9 = 0x78; $id = 0x5E2E
     if ([E2E.User32]::RegisterHotKey([IntPtr]::Zero, $id, $controlAlt, $f9)) {
         [E2E.User32]::UnregisterHotKey([IntPtr]::Zero, $id) | Out-Null
-        return $false
+        return "free"
     }
-    return [Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1409
+    $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    return $(if ($code -eq 1409) { "held" } else { "error $code" })
 }
 
 # --- Settings as the old app keeps them: QSettings' registry layout ---------
@@ -158,8 +160,15 @@ function Check-State([string]$Label) {
     Check "$Label.vocabulary" ($vocabulary.Count -ge 262 -and $vocabulary[0].starred) "$($vocabulary.Count) entries"
     Check "$Label.old_window_keys_untouched" ((Setting "ui/appWindow/a/geometry") -ne "")
     # The app registers it shortly after it starts.
-    $held = try { WaitFor { Test-ShortcutHeld } 30 "" } catch { $false }
+    $held = try { WaitFor { (Get-ShortcutState) -eq "held" } 30 "" } catch { $false }
     Check "$Label.shortcut_held" $held "$Shortcut registered by another process"
+}
+
+# Once Speecher quits the combination is free, so the holder Check-State saw
+# was Speecher.
+function Check-ShortcutReleased([string]$Label) {
+    $state = Get-ShortcutState
+    Check "$Label.shortcut_released" ($state -eq "free") "$Shortcut $state after Speecher quit"
 }
 
 # --- The servers: github.com, api.openai.com and the proxy, served here -----
@@ -346,7 +355,7 @@ try {
 }
 $runValue = WaitFor { (Get-ItemProperty $RunKey -ErrorAction SilentlyContinue).Speecher } 60 "no startup entry"
 Check "old.startup_entry" ($runValue -like "*$Exe*") $runValue
-Check "old.shortcut_held" (WaitFor { Test-ShortcutHeld } 30 "the old app did not register $Shortcut") "$Shortcut"
+Check "old.shortcut_held" (WaitFor { (Get-ShortcutState) -eq "held" } 30 "the old app did not register $Shortcut") "$Shortcut"
 $downloaded = Join-Path $env:LOCALAPPDATA "Speecher\updates\Speecher-Setup-$version.exe"
 try {
     # The old app holds the file open while it writes it.
@@ -406,6 +415,7 @@ Check-State "first_launch"
 # The keys, read by the new binary on its own. Transcribing a file needs a
 # speech server, which a stub is.
 Quit-Speecher
+Check-ShortcutReleased "first_launch"
 $audio = Join-Path $env:TEMP "speecher-e2e-tone.wav"
 Write-Tone $audio
 Set-Setting "endpoint/speech/baseUrl" "http://127.0.0.1:8318/v1"
@@ -423,6 +433,7 @@ Check-State "after_edit_and_restart"
 $terms = ((Setting "stt/vocabularyEntries") -replace '^@ByteArray\((.*)\)$', '$1' | ConvertFrom-Json).term
 Check "edit_saved" ($terms -contains "migration e2e term")
 Quit-Speecher
+Check-ShortcutReleased "after_edit_and_restart"
 Prove-Keys "after_edit_and_restart" $audio
 reg export "HKCU\Software\io.github.firemonster612\speecher" (Join-Path $Evidence "settings-after.reg") /y | Out-Null
 (Get-Content (Join-Path $Evidence "settings-after.reg")) -replace '^("apiKey")=.*$', '$1="<redacted>"' |

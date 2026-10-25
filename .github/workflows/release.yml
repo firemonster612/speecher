@@ -16,8 +16,9 @@ on:
 
 concurrency:
   # GitHub retains only one pending run per group. A newer master push may replace
-  # an intermediate nightly, which is acceptable; tag refs have separate groups.
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  # an intermediate nightly, which is acceptable; tag refs have separate groups,
+  # and so do hand-started candidates, which must not replace a pending nightly.
+  group: release-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

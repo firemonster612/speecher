@@ -15,4 +15,5 @@ for _ in $(seq 50); do
         | grep -q 'boolean true' && break
     sleep 0.1
 done
-SPEECHER_TEST_EXPECT_KEYRING=1 "$@"
+# Only with this does SecretStore let a test reach a keyring at all.
+SPEECHER_TEST_PRIVATE_KEYRING=1 "$@"

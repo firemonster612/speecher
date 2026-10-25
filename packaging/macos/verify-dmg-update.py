@@ -34,6 +34,7 @@ fixtures they show what the release gate must compare for real
 """
 
 import argparse
+import atexit
 import http.server
 import json
 import os
@@ -278,6 +279,9 @@ def main():
     feed = 'https://localhost:8443/appcast-stable.xml'
     # LaunchServices relaunches must keep the test feed.
     run('launchctl', 'setenv', 'SPEECHER_APPCAST_URL', feed)
+    # Gone when the script ends, passed, failed or stopped, so no later launch
+    # checks a feed nobody serves.
+    atexit.register(run, 'launchctl', 'unsetenv', 'SPEECHER_APPCAST_URL', check_status=False)
     run('open', '-a', APP, '--env', f'SPEECHER_APPCAST_URL={feed}')
     old_pid = wait_for(speecher_pids, 60, 'the old app did not start')[0]
     check(evidence, 'old.running', True, f'pid {old_pid}')

@@ -1541,8 +1541,9 @@ if(SPEECHER_BUILD_TESTS)
   endif()
   set(SPEECHER_TEST_ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   if(UNIX AND NOT APPLE)
-    # No session bus, so no suite reaches the developer's own keyring; the
-    # keyring suites below bring a private one.
+    # No session bus, so no suite reaches the developer's desktop services.
+    # SecretStore refuses tests the keyring itself unless a run brings a
+    # private one, as the keyring suites below do.
     list(APPEND SPEECHER_TEST_ENVIRONMENT "DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/speecher-tests-bus")
   endif()
   foreach(suite IN LISTS SPEECHER_TEST_SUITES)

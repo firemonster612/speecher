@@ -898,7 +898,7 @@ private slots:
         QCOMPARE(reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey), !inKeyring);
         qInfo() << "endpoint keys stored in" << (inKeyring ? "the keyring" : "the settings file");
         // Set by the ctest that runs this suite against a real keyring.
-        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") == 1) {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") == 1) {
             QVERIFY(inKeyring);
         }
 
@@ -937,7 +937,7 @@ private slots:
 
     void unreadDraftSurvivesPrefetchCompletion()
     {
-        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") != 1)
             QSKIP("Requires the private keyring suite");
         SettingsStore saved;
         saved.raw().clear();
@@ -957,7 +957,7 @@ private slots:
 
     void failedDeletionStaysClearedAfterRestart()
     {
-        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") != 1)
             QSKIP("Requires the private keyring suite");
         SettingsStore settings;
         settings.raw().clear();
@@ -1074,7 +1074,7 @@ private slots:
 
     void dictationUsesTheKeyResolvedDuringStartup()
     {
-        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") != 1)
             QSKIP("Requires the private keyring suite");
         FakeServer server;
         server.route("POST /v1/audio/transcriptions",
@@ -1189,7 +1189,7 @@ private slots:
         const bool migrated = settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
                                   .contains(QStringLiteral("cliproxy-api-key"));
         QCOMPARE(settings.raw().contains(SettingsKeys::CliproxyApiKey), !migrated);
-        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") == 1) {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") == 1) {
             QVERIFY(migrated);
         }
         qInfo() << "cliproxy key migrated to the keyring:" << migrated;

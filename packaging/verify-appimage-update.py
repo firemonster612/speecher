@@ -14,8 +14,9 @@ Speecher state becomes tests/migration/master-0.2.0.conf with the command
 link, menu entry and icon 0.2.0's integration writes, and an OpenAI key and a
 CLI Proxy key made up for the run. With --keep-state the AppImage, settings,
 keyring and integration already there are used as they are, so a person can
-seed them through the old app first; set SPEECHER_E2E_OPENAI_KEY to the key
-they saved to have it compared.
+seed them through the old app first. Then the OpenAI key is proved only when
+SPEECHER_E2E_OPENAI_KEY names the one they saved, and the proxy key only when
+the settings file holds one; their auth modes are left as they are otherwise.
 
 The released app has no feed override, so it fetches the real manifest URL,
 which the local server answers with the new AppImage and its SHA-256. The old
@@ -25,7 +26,7 @@ now" over AT-SPI. The new app's settings are compared with the old ones as the
 update should leave them (packaging/update_expectations.py), and the new
 binary's requests to stub OpenAI and proxy servers show it reads both keys,
 after the update and again after an edit and a restart. --extract-and-run
-runs the app extracted on every launch, as APPIMAGE_EXTRACT_AND_RUN does
+runs every AppImage invocation extracted, as APPIMAGE_EXTRACT_AND_RUN does
 where FUSE is missing. --keywatch-helper installs 0.2.0's key-watch helper
 first and binds F13 through it, then checks the new app takes the key from
 that same helper. Each check is a PASS or FAIL line in EVIDENCE_DIR/summary.txt;
@@ -165,15 +166,14 @@ class Credentials:
     theirs. Only the outcome is kept, never a key."""
 
     def __init__(self, keys):
-        self.keys = keys  # stub name -> key, or None where the script doesn't know it
+        self.keys = keys  # stub name -> key
         self.seen = set()
 
     def note(self, name, headers):
         if name not in self.keys:
             return False
-        key = self.keys[name]
         sent = ' '.join(headers.get(header, '') for header in ('Authorization', 'x-api-key'))
-        ok = key in sent if key else bool(sent.strip())
+        ok = self.keys[name] in sent
         if ok:
             self.seen.add(name)
         return ok
@@ -319,12 +319,10 @@ def cli(*args):
     return run(str(LINK if LINK.exists() else INSTALLED), *args, check_status=False)
 
 
-def launch(image, extract_and_run=False, old=False):
+def launch(image, old=False):
     """Starts the installed app and waits for it; the new app also answers
     status --json, which 0.2.0's CLI lacks."""
     env = dict(os.environ, QT_LINUX_ACCESSIBILITY_ALWAYS_ON='1')
-    if extract_and_run:
-        env['APPIMAGE_EXTRACT_AND_RUN'] = '1'
     subprocess.Popen([str(image)], env=env, stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     pid = wait_for(lambda: daemons(), 60, f'{image} did not start')[0]
@@ -480,9 +478,8 @@ def prove_keys(evidence, label, credentials, audio):
         credentials.seen.discard(name)
         result = run(str(INSTALLED), 'transcribe', '--model', 'endpoint', '--refine', refine,
                      '--output', 'none', '--stdout', str(audio), check_status=False)
-        known = 'the saved key' if credentials.keys[name] else 'a key (SPEECHER_E2E_OPENAI_KEY compares it)'
         check(evidence, f'{label}.{name}_key_read', name in credentials.seen,
-              f'{known}; transcribe exit {result.returncode}: {result.stdout.strip()[-200:]}')
+              f'transcribe exit {result.returncode}: {result.stdout.strip()[-200:]}')
 
 
 def main():
@@ -501,7 +498,9 @@ def main():
     evidence.mkdir(parents=True, exist_ok=True)
     (evidence / 'summary.txt').write_text('')
     work = Path(tempfile.mkdtemp(prefix='speecher-update-e2e-'))
-    extracted = options.extract_and_run
+    if options.extract_and_run:
+        # Inherited by every AppImage this runs, and by the apps' relaunches.
+        os.environ['APPIMAGE_EXTRACT_AND_RUN'] = '1'
 
     # The new image's version, asked in a home of its own so its startup
     # touches nothing of the installed user's.
@@ -516,7 +515,9 @@ def main():
 
     quit_speecher()
     if options.keep_state:
-        keys = {'openai': os.environ.get('SPEECHER_E2E_OPENAI_KEY')}
+        keys = {}
+        if os.environ.get('SPEECHER_E2E_OPENAI_KEY'):
+            keys['openai'] = os.environ['SPEECHER_E2E_OPENAI_KEY']
         if read_settings().get('cliproxy/apiKey'):
             keys['proxy'] = read_settings()['cliproxy/apiKey']
     else:
@@ -559,7 +560,7 @@ def main():
         serve_proxy(int(proxy[2]), credentials)
     else:
         keys.pop('proxy', None)
-    old_pid = launch(INSTALLED, extracted, old=True)
+    old_pid = launch(INSTALLED, old=True)
     check(evidence, 'old.running', True, f'pid {old_pid} {os.readlink(f"/proc/{old_pid}/exe")}')
     if not options.keep_state:
         try:
@@ -570,12 +571,13 @@ def main():
     shortcuts_before = None
     if keyboard:
         wait_for(lambda: helper_watching(old_pid), 30, 'the helper never watched F13 for the old app')
+        untapped = cli('status').stdout.strip()
         keyboard.tap(KEY_F13)
-        # Any state but idle shows the key reached the old app, whose fixture
+        # Any change shows the key reached the old app, whose fixture
         # microphone may not exist here.
         try:
-            wait_for(lambda: cli('status').stdout.strip().lower() not in ('', 'idle'), 20, 'F13 did not reach the old app')
-            check(evidence, 'old.helper_shortcut', True, cli('status').stdout.strip())
+            wait_for(lambda: cli('status').stdout.strip() != untapped, 20, 'F13 did not reach the old app')
+            check(evidence, 'old.helper_shortcut', True, f'{untapped!r} -> {cli("status").stdout.strip()!r}')
         except TimeoutError as error:
             check(evidence, 'old.helper_shortcut', False, f'{error}: {cli("status").stdout.strip()}')
         cli('stop')
@@ -631,8 +633,13 @@ def main():
     audio = work / 'tone.wav'
     write_tone(audio)
     written.update({'endpoint/speech/baseUrl': f'http://127.0.0.1:{serve_stub_transcriber()}/v1',
-                    'endpoint/speech/model': 'stub', 'openai/auth/mode': 'settings',
-                    'anthropic/auth/mode': 'cliproxy'})
+                    'endpoint/speech/model': 'stub'})
+    # Each key through the sign-in that uses it, chosen only for a key this
+    # run proves.
+    if 'openai' in keys:
+        written['openai/auth/mode'] = 'settings'
+    if 'proxy' in keys:
+        written['anthropic/auth/mode'] = 'cliproxy'
     for key, value in written.items():
         write_setting(key, value)
     prove_keys(evidence, 'after_update', credentials, audio)
@@ -640,11 +647,11 @@ def main():
     # One edit through the running app, then a restart from the menu entry.
     # The CLI's vocabulary add saves only the vocabulary; the whole snapshot a
     # Quick UI edit saves is tests/test_migration.cpp's to check.
-    launch(INSTALLED, extracted)
+    launch(INSTALLED)
     cli('vocabulary', 'add', 'migration e2e term')
     quit_speecher()
     save_redacted(SETTINGS, evidence / 'settings-after-edit.conf')
-    launch(INSTALLED, extracted)
+    launch(INSTALLED)
     values = expected_state(evidence, 'after_edit_and_restart', before, written)
     terms = [entry['term'] for entry in update_expectations.vocabulary(values)]
     check(evidence, 'edit_saved', 'migration e2e term' in terms)
@@ -656,7 +663,7 @@ def main():
     for key, value in (('stt/provider', 'endpoint'), ('refinement/provider', 'none'),
                        ('audio/vadEnabled', 'false'), ('audio/captureMode', 'on_demand')):
         write_setting(key, value)
-    pid = launch(INSTALLED, extracted)
+    pid = launch(INSTALLED)
     if keyboard:
         check(evidence, 'helper_untouched', sha256(HELPER) == helper_before, f'{HELPER} sha256 {sha256(HELPER)}')
         try:
