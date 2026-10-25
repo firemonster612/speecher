@@ -22,9 +22,9 @@ Item {
     readonly property real stopSpeed: 20
     readonly property real maxSpeed: 12000
     // Pixels one line of a mouse wheel moves, and the system's lines per
-    // notch (qmllint's type data lacks the style hint, hence the index).
+    // notch.
     readonly property real lineHeight: 24
-    readonly property int wheelLines: Qt.styleHints["wheelScrollLines"] || 3
+    readonly property int wheelLines: Application.styleHints.wheelScrollLines || 3
     // A touchpad's move. On Linux the angle is the one measure that keeps
     // the desktop's touchpad speed (pixelDelta is rounded to whole pixels
     // and is a sixth or so of what other apps scroll), so it scrolls as
