@@ -10,10 +10,10 @@ import Speecher.Backend
 // the top right, or as traffic lights at the top left on macOS, and a
 // resize grip in the shadow margin. Maximized or full screen, the margin
 // and corners go. Content goes inside and should leave the top
-// titleBarHeight free of controls, since the strip lies over it. While Theme is translucent, the
-// frame's paper lets the desktop through, blurred by the compositor; on
-// Windows, whose backdrop fills the whole window, DWM draws the shadow and
-// corners instead.
+// titleBarHeight free of controls, since the strip lies over it. While
+// Theme is translucent, the frame's paper lets the desktop through, blurred
+// by the compositor; on Windows, whose backdrop fills the whole window, DWM
+// draws the shadow and corners instead.
 Window {
     id: client
 

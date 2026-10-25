@@ -747,6 +747,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
+        // Translucent on Windows, DWM draws the corners and the window none.
+        settings.set(QStringLiteral("translucency"), false);
         QQmlEngine engine;
         QQmlComponent component(&engine);
         component.setData(R"(
@@ -767,8 +769,8 @@ private slots:
         QVERIFY(window->property("cornerRadius").toInt() > 0);
     }
 
-    // A version too long for the sidebar ends inside it, keeping its start
-    // and its commit, instead of running under the page.
+    // A version too long for the sidebar is elided and ends inside it,
+    // instead of running under the page.
     void aLongVersionEndsInsideTheSidebar()
     {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
@@ -776,11 +778,12 @@ private slots:
         QQmlComponent component(&engine);
         component.setData(R"(
             import QtQuick
+            import Speecher.Theme
             import Speecher.App
             Window {
                 property alias brand: brand
                 width: 400; height: 100; visible: true
-                Brand { id: brand; width: 232; title: "Speecher"; detail: "Version 0.2.1-nightly.20261025+g034abcdef1" }
+                Brand { id: brand; width: Theme.sidebarWidth; title: "Speecher"; detail: "Version 0.2.1-nightly.20261025+g034abcdef1" }
             })",
                           QUrl());
         std::unique_ptr<QObject> root(component.create());
@@ -848,7 +851,11 @@ private slots:
             auto *list = popup->property("contentItem").value<QQuickItem *>();
             QVERIFY(list);
             QQuickItem *bar = nullptr;
-            QTRY_VERIFY((bar = find(list, "ScrollBar_")) && bar->isVisible() && bar->opacity() == 1);
+            QTRY_VERIFY((bar = find(list, "ScrollBar_")) && bar->isVisible());
+            // The thumb, which fades out at rest unless persistent.
+            const auto *thumb = bar->property("contentItem").value<QQuickItem *>();
+            QVERIFY(!bar->property("active").toBool());
+            QCOMPARE(thumb->opacity(), 1.0);
             QQuickItem *row = find(list, "MenuItem_");
             QVERIFY(row);
             QCOMPARE(row->width(), list->width() - bar->width());
