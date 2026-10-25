@@ -27,7 +27,7 @@ Item {
     height: implicitHeight
     clip: _moving
     Grow on height {}
-    property bool _ready: false
+    Settle { id: settle }
 
     Item {
         id: holder
@@ -44,7 +44,7 @@ Item {
             view.x = 0
         }
     }
-    Component.onCompleted: { _place(); _previous = current; _previousIndex = currentIndex; Qt.callLater(() => _ready = true) }
+    Component.onCompleted: { _place(); _previous = current; _previousIndex = currentIndex }
 
     // Reads the new view from children directly: the handler can run before
     // the current binding has caught up.
@@ -53,7 +53,7 @@ Item {
         const to = holder.children.length > currentIndex ? holder.children[currentIndex] : null
         const forward = currentIndex > _previousIndex
         _previousIndex = currentIndex
-        if (!_ready || !to || to === from) { _place(); _previous = to; return }
+        if (!settle.done || !to || to === from) { _place(); _previous = to; return }
         swap.stop()
         for (const view of holder.children)
             if (view !== from && view !== to) { view.visible = false; view.opacity = 1; view.x = 0 }

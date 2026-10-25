@@ -10,9 +10,8 @@ Behavior {
 
     property int duration: Theme.slow
     readonly property bool running: ease.running
-    property bool _ready: false
+    property Settle _settle: Settle {}
 
-    enabled: _ready
-    Component.onCompleted: Qt.callLater(() => _ready = true)
+    enabled: _settle.done
     Ease { id: ease; duration: grow.duration }
 }
