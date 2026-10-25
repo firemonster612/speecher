@@ -4,6 +4,7 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "words.js" as T
 
 // The dictation itself, at the top of Home: whether Speecher is ready and
 // its shortcut, then the latest thing said, set large. While dictating, the
@@ -12,9 +13,9 @@ import Speecher.App
 Section {
     id: session
 
-    readonly property var t: Insights.text
+    readonly property var t: T.text
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
-    readonly property var latest: Insights.recent.length ? Insights.recent[0] : null
+    readonly property var latest: Insights.latest
     readonly property bool hasShortcut: Status.shortcutKeys.length > 0
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
@@ -83,7 +84,7 @@ Section {
                     height: copy.height
                     Txt {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: session.latest ? Insights.recentDetail(session.latest) : ""
+                        text: session.latest ? T.latestDetail(session.latest, Insights.today) : ""
                         variant: "small"
                         tone: "secondary"
                     }
@@ -95,7 +96,7 @@ Section {
                         copiedText: Words.copied
                         size: "small"
                         variant: "ghost"
-                        onCopied: Insights.copyRecent(0)
+                        onCopied: Insights.copyLatest()
                     }
                 }
             }

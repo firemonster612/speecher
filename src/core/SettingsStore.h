@@ -223,6 +223,8 @@ signals:
     void snapshotApplied(const AppSettings &previous);
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
+    // After recordCorrectionEvidence saved a learned correction.
+    void learnedCorrectionsChanged();
     void updateSettingsChanged();
     // After addVocabularyTerms saved terms no settings surface has drawn yet.
     void vocabularyAdded();

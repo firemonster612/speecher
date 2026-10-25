@@ -6,6 +6,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
@@ -448,6 +449,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);
+        QuickInsights insights(&controller);
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
@@ -503,6 +505,8 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        // General clears Insights' history, as the host always has one.
+        QuickInsights insights(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
             import QtQuick

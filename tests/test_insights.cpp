@@ -127,7 +127,7 @@ private slots:
 
     // A custom profile's record stores its name; a record from before that
     // has none. Once the profile is gone the first reads by that name and the
-    // second as Deleted profile.
+    // second has none.
     void aRecordOfADeletedProfileKeepsItsLabel()
     {
         QTemporaryDir dir;
@@ -145,11 +145,11 @@ private slots:
         const InsightsLog log(path);
         const QList<WritingProfileSettings> kept{{QStringLiteral("custom_standup"), QStringLiteral("balanced"),
                                                   QStringLiteral("none"), QString(), QStringLiteral("Daily")}};
-        QCOMPARE(summarize(log.records(), InsightsRange::AllTime, kToday, kept).apps.at(0).profileLabel,
+        QCOMPARE(summarize(log.records(), InsightsRange::AllTime, kToday, kept).apps.at(0).profileName,
                  QStringLiteral("Daily"));
         const InsightsSummary deleted = summarize(log.records(), InsightsRange::AllTime, kToday);
-        QCOMPARE(deleted.apps.at(0).profileLabel, QStringLiteral("Standup"));
-        QCOMPARE(deleted.apps.at(1).profileLabel, QStringLiteral("Deleted profile"));
+        QCOMPARE(deleted.apps.at(0).profileName, QStringLiteral("Standup"));
+        QVERIFY(deleted.apps.at(1).profileName.isEmpty());
     }
 
     void logSkipsACorruptLine()
@@ -243,64 +243,61 @@ private slots:
     void bookComparisonNamesTheClosestWork_data()
     {
         QTest::addColumn<int>("words");
-        QTest::addColumn<QString>("text");
-        QTest::newRow("150") << 150 << QStringLiteral("About half of the Gettysburg Address");
-        QTest::newRow("1100") << 1100 << QStringLiteral("About as long as The Raven");
-        QTest::newRow("1200") << 1200
-                              << QStringLiteral("About as long as the Declaration of Independence");
-        QTest::newRow("3848") << 3848
-                              << QStringLiteral("About as long as An Occurrence at Owl Creek Bridge");
-        QTest::newRow("9000") << 9000 << QStringLiteral("About half of Macbeth");
-        QTest::newRow("15000") << 15000 << QStringLiteral("About half of Hamlet");
-        QTest::newRow("80000") << 80000
-                               << QStringLiteral("About as long as the first Harry Potter book");
-        QTest::newRow("180000") << 180000
-                                << QStringLiteral("About as long as The Fellowship of the Ring");
-        QTest::newRow("3500000") << 3500000
-                                 << QStringLiteral("About 6 times the length of War and Peace");
+        QTest::addColumn<QString>("book");
+        QTest::addColumn<double>("times");
+        QTest::newRow("40") << 40 << QString() << 0.0;
+        QTest::newRow("150") << 150 << QStringLiteral("the Gettysburg Address") << 0.5;
+        QTest::newRow("1100") << 1100 << QStringLiteral("The Raven") << 1.0;
+        QTest::newRow("1200") << 1200 << QStringLiteral("the Declaration of Independence") << 1.0;
+        QTest::newRow("3848") << 3848 << QStringLiteral("An Occurrence at Owl Creek Bridge") << 1.0;
+        QTest::newRow("9000") << 9000 << QStringLiteral("Macbeth") << 0.5;
+        QTest::newRow("15000") << 15000 << QStringLiteral("Hamlet") << 0.5;
+        QTest::newRow("80000") << 80000 << QStringLiteral("the first Harry Potter book") << 1.0;
+        QTest::newRow("180000") << 180000 << QStringLiteral("The Fellowship of the Ring") << 1.0;
+        QTest::newRow("3500000") << 3500000 << QStringLiteral("War and Peace") << 6.0;
     }
 
     void bookComparisonNamesTheClosestWork()
     {
         QFETCH(int, words);
-        QFETCH(QString, text);
+        QFETCH(QString, book);
+        QFETCH(double, times);
         const InsightsSummary summary =
             summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
-        QCOMPARE(summary.bookComparison, text);
+        QCOMPARE(summary.bookComparison.book, book);
+        QCOMPARE(summary.bookComparison.times, times);
     }
 
-    void bookComparisonTipSaysWhenItChanges_data()
+    void bookComparisonSaysWhenItChanges_data()
     {
         QTest::addColumn<int>("words");
-        QTest::addColumn<QString>("tip");
-        QTest::newRow("few sentences")
-            << 40 << QStringLiteral("Changes to about a quarter of the Gettysburg Address at 68 words");
-        QTest::newRow("3153") << 3153
-                              << QStringLiteral("The Declaration of Independence is about 1,321 words\n"
-                                                "Changes to about as long as An Occurrence at Owl Creek "
-                                                "Bridge at 3,154 words");
-        QTest::newRow("3848") << 3848
-                              << QStringLiteral("An Occurrence at Owl Creek Bridge is about 3,763 words\n"
-                                                "Changes to about twice the length of The Tell-Tale Heart "
-                                                "at 4,019 words");
-        QTest::newRow("3500000") << 3500000
-                                 << QStringLiteral("War and Peace is about 561,304 words\n"
-                                                   "Changes to about 7 times the length of War and Peace "
-                                                   "at 3,648,476 words");
-        QTest::newRow("negative") << -5 << QString();
-        QTest::newRow("INT_MAX") << INT_MAX
-                                 << QStringLiteral("War and Peace is about 561,304 words\n"
-                                                   "Changes to about 3,827 times the length of War and "
-                                                   "Peace at 2,147,829,756 words");
+        QTest::addColumn<int>("bookWords");
+        QTest::addColumn<qint64>("changesAt");
+        QTest::addColumn<QString>("nextBook");
+        QTest::addColumn<double>("nextTimes");
+        QTest::newRow("few sentences") << 40 << 0 << qint64(68) << QStringLiteral("the Gettysburg Address") << 0.25;
+        QTest::newRow("3153") << 3153 << 1321 << qint64(3154) << QStringLiteral("An Occurrence at Owl Creek Bridge")
+                              << 1.0;
+        QTest::newRow("3848") << 3848 << 3763 << qint64(4019) << QStringLiteral("The Tell-Tale Heart") << 2.0;
+        QTest::newRow("3500000") << 3500000 << 561304 << qint64(3648476) << QStringLiteral("War and Peace") << 7.0;
+        QTest::newRow("negative") << -5 << 0 << qint64(0) << QString() << 0.0;
+        QTest::newRow("INT_MAX") << INT_MAX << 561304 << qint64(2147829756) << QStringLiteral("War and Peace")
+                                 << 3827.0;
     }
 
-    void bookComparisonTipSaysWhenItChanges()
+    void bookComparisonSaysWhenItChanges()
     {
         QFETCH(int, words);
-        QFETCH(QString, tip);
+        QFETCH(int, bookWords);
+        QFETCH(qint64, changesAt);
+        QFETCH(QString, nextBook);
+        QFETCH(double, nextTimes);
         const InsightsSummary summary =
             summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
-        QCOMPARE(summary.bookComparisonTip, tip);
+        QCOMPARE(summary.bookComparison.bookWords, bookWords);
+        QCOMPARE(summary.bookComparisonChangesAt, changesAt);
+        QCOMPARE(summary.nextBookComparison.book, nextBook);
+        QCOMPARE(summary.nextBookComparison.times, nextTimes);
     }
 
     void wordsAddUpPastAnInt()
@@ -309,8 +306,6 @@ private slots:
             {recordOn(kToday, 2000000000), recordOn(kToday, 2000000000)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.words, 4000000000);
         QCOMPARE(summary.allTimeWords, 4000000000);
-        QVERIFY(insightsShareText(summary, InsightsRange::AllTime)
-                    .contains(QStringLiteral("4,000,000,000 words dictated")));
     }
 
     void streakSurvivesAnIdleToday()
@@ -370,7 +365,6 @@ private slots:
         QCOMPARE(week.words, 60);
         QCOMPARE(week.wordsDelta, std::optional<qint64>(50));
         QCOMPARE(week.dictationsDelta, std::optional<qint64>(100));
-        QCOMPARE(week.deltaPeriodLabel, QStringLiteral("week"));
 
         const InsightsSummary year = summarize(records, InsightsRange::ThisYear, kToday);
         QVERIFY(!year.wordsDelta);
@@ -387,7 +381,7 @@ private slots:
         QCOMPARE(summary.heatmap.last().audioMs, 2'500'000'000LL);
     }
 
-    void hoursFindThePeakPersonaAndBusiestWeekday()
+    void hoursFindThePeakAndBusiestWeekday()
     {
         // Twelve at 9 pm on Tuesday, eight at 9 am on Wednesday.
         QList<DictationRecord> records(12, recordAt(QDate(2026, 9, 22), 21));
@@ -396,7 +390,6 @@ private slots:
         QCOMPARE(summary.hourCounts[21], 12);
         QCOMPARE(summary.hourCounts[9], 8);
         QCOMPARE(summary.peakHour, 21);
-        QCOMPARE(summary.persona, QStringLiteral("Night owl"));
         QCOMPARE(summary.busiestWeekday, Qt::Tuesday);
         QVERIFY(summary.hasHourData);
 
@@ -417,14 +410,66 @@ private slots:
         QCOMPARE(summary.apps.size(), 6);
         QCOMPARE(summary.apps.at(0).name, QStringLiteral("A"));
         QCOMPARE(summary.apps.at(0).words, 60);
-        QCOMPARE(summary.apps.at(0).profileLabel, QStringLiteral("Work"));
+        QCOMPARE(summary.apps.at(0).profileName, QStringLiteral("Work"));
         const QList<int> percents{29, 24, 19, 14, 10, 5};
         for (int index = 0; index < percents.size(); ++index) {
             QCOMPARE(summary.apps.at(index).percent, percents.at(index));
         }
-        QCOMPARE(summary.apps.last().name, QStringLiteral("2 other apps"));
+        QVERIFY(summary.apps.last().name.isEmpty());
+        QCOMPARE(summary.apps.last().otherApps, 2);
         QCOMPARE(summary.apps.last().words, 10);
-        QVERIFY(summary.apps.last().profileLabel.isEmpty());
+        QVERIFY(summary.apps.last().profileName.isEmpty());
+    }
+
+    void profilesShareThePeriodsWordsMostFirst()
+    {
+        const InsightsSummary summary = summarize(
+            {recordIn(QStringLiteral("A"), 30, WritingProfile::Email),
+             recordIn(QStringLiteral("B"), 50, WritingProfile::Work),
+             recordIn(QStringLiteral("C"), 20, WritingProfile::Email),
+             recordIn(QStringLiteral("D"), 100),
+             {QDateTime(kToday.addDays(-10), QTime(10, 0)), 5000, 400, QStringLiteral("A"), WritingProfile::Work}},
+            InsightsRange::Last7Days, kToday);
+        // 200 words this week; the Work dictation ten days ago is outside it.
+        QCOMPARE(summary.profiles.size(), 3);
+        QCOMPARE(summary.profiles.at(0).name, QStringLiteral("Other"));
+        QCOMPARE(summary.profiles.at(0).words, 100);
+        QCOMPARE(summary.profiles.at(0).percent, 50);
+        QCOMPARE(summary.profiles.at(1).name, QStringLiteral("Email"));
+        QCOMPARE(summary.profiles.at(1).words, 50);
+        QCOMPARE(summary.profiles.at(1).percent, 25);
+        QCOMPARE(summary.profiles.at(2).name, QStringLiteral("Work"));
+        QCOMPARE(summary.profiles.at(2).percent, 25);
+    }
+
+    // Profiles add up by id: two custom profiles with one name stay two rows,
+    // and a deleted profile renamed before it went stays one, under the name
+    // its latest dictation stored.
+    void profilesAddUpByIdNotName()
+    {
+        const auto in = [](const QString &profile, const QString &storedName, int words) {
+            return DictationRecord{QDateTime(kToday, QTime(10, 0)), 6000, words, QStringLiteral("Kate"), profile,
+                                   storedName};
+        };
+        const QList<WritingProfileSettings> profiles{
+            {QStringLiteral("custom_a"), QStringLiteral("balanced"), QStringLiteral("none"), QString(),
+             QStringLiteral("Notes")},
+            {QStringLiteral("custom_b"), QStringLiteral("balanced"), QStringLiteral("none"), QString(),
+             QStringLiteral("Notes")}};
+        const InsightsSummary summary =
+            summarize({in(QStringLiteral("custom_a"), QStringLiteral("Notes"), 30),
+                       in(QStringLiteral("custom_b"), QStringLiteral("Notes"), 20),
+                       in(QStringLiteral("custom_gone"), QStringLiteral("Standup"), 15),
+                       in(QStringLiteral("custom_gone"), QStringLiteral("Daily"), 10)},
+                      InsightsRange::AllTime, kToday, profiles);
+        QCOMPARE(summary.profiles.size(), 3);
+        QCOMPARE(summary.profiles.at(0).profile, QStringLiteral("custom_a"));
+        QCOMPARE(summary.profiles.at(0).words, 30);
+        QCOMPARE(summary.profiles.at(1).profile, QStringLiteral("custom_gone"));
+        QCOMPARE(summary.profiles.at(1).name, QStringLiteral("Daily"));
+        QCOMPARE(summary.profiles.at(1).words, 25);
+        QCOMPARE(summary.profiles.at(2).profile, QStringLiteral("custom_b"));
+        QCOMPARE(summary.profiles.at(2).name, QStringLiteral("Notes"));
     }
 
     void recordsFindTheLongestBusiestAndWordiest()
@@ -437,8 +482,14 @@ private slots:
         };
         const InsightsSummary summary = summarize(records, InsightsRange::Last7Days, kToday);
         QCOMPARE(summary.allTimeWords, 1150);
-        QCOMPARE(summary.passedMilestone, std::optional<int>(1000));
-        QCOMPARE(summary.nextMilestone, 10000);
+        // 1,000 passed, 10,000 next at 150 of the 9,000 between, then 50,000.
+        QCOMPARE(summary.milestones.size(), 3);
+        QCOMPARE(summary.milestones.at(0).words, 1000);
+        QCOMPARE(summary.milestones.at(0).state, Milestone::State::Passed);
+        QCOMPARE(summary.milestones.at(1).words, 10000);
+        QCOMPARE(summary.milestones.at(1).state, Milestone::State::Next);
+        QCOMPARE(summary.milestones.at(1).progress, 150.0 / 9000);
+        QCOMPARE(summary.milestones.at(2).state, Milestone::State::Later);
         QCOMPARE(summary.longest.audioMs, 90000);
         QCOMPARE(summary.longest.words, 200);
         QCOMPARE(summary.longest.appName, QStringLiteral("Slack"));
@@ -454,7 +505,11 @@ private slots:
     {
         const InsightsSummary summary =
             summarize({recordOn(kToday, 1'200'000)}, InsightsRange::AllTime, kToday);
-        QCOMPARE(summary.nextMilestone, 0);
+        // The last three, all passed.
+        QCOMPARE(summary.milestones.size(), 3);
+        QCOMPARE(summary.milestones.at(0).words, 250000);
+        QCOMPARE(summary.milestones.at(2).words, 1000000);
+        QCOMPARE(summary.milestones.at(2).state, Milestone::State::Passed);
     }
 
     void paceComparesWithTyping()
@@ -465,23 +520,6 @@ private slots:
         QCOMPARE(summary.wordsPerMinute, 144);
         QCOMPARE(summary.typingWordsPerMinute, 40);
         QCOMPARE(summary.minutesSavedVersusTyping, 5);
-        QCOMPARE(summary.speedupText,
-                 QStringLiteral("That's 3.6× faster than typing at 40 words per minute."));
-    }
-
-    void audioTotalTextRoundsToHoursOrMinutes()
-    {
-        QCOMPARE(audioTotalText(4 * 3'600'000), QStringLiteral("4.0 hours"));
-        QCOMPARE(audioTotalText(34 * 60'000), QStringLiteral("34 min"));
-        QCOMPARE(audioTotalText(2'500'000'000LL), QStringLiteral("694.4 hours"));
-    }
-
-    void hourLabelUsesTwelveHourTime()
-    {
-        QCOMPARE(hourLabel(0), QStringLiteral("12\u00a0am"));
-        QCOMPARE(hourLabel(10), QStringLiteral("10\u00a0am"));
-        QCOMPARE(hourLabel(12), QStringLiteral("12\u00a0pm"));
-        QCOMPARE(hourLabel(18), QStringLiteral("6\u00a0pm"));
     }
 
     void heatScaleLevelsByQuartile()
@@ -509,21 +547,6 @@ private slots:
         const QMap<int, QString> narrow = monthLabels(heatmap, 20);
         QCOMPARE(narrow, (QMap<int, QString>{{3, QStringLiteral("Jun")}, {8, QStringLiteral("Jul")},
                                              {12, QStringLiteral("Aug")}, {17, QStringLiteral("Sep")}}));
-    }
-
-    void shareTextListsThePeriodsNumbers()
-    {
-        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
-                                             recordOn(kToday, 50, 30000)};
-        const InsightsSummary summary = summarize(records, InsightsRange::Last7Days, kToday);
-        QCOMPARE(insightsShareText(summary, InsightsRange::Last7Days),
-                 QStringLiteral("My Speecher stats, last 7 days\n"
-                                "150 words dictated\n"
-                                "About half of the Gettysburg Address\n"
-                                "2-day streak, my longest yet\n"
-                                "2 dictations, 2 min of audio transcribed\n"
-                                "100 words per minute, 2.5× faster than typing\n"
-                                "Top apps: Kate 100%"));
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()

@@ -3,35 +3,16 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocale>
-#include <QStringList>
 
 namespace speecher {
 namespace {
-
-QString number(qint64 value)
-{
-    return QLocale().toString(value);
-}
-
-QString plural(qint64 count, const QString &noun)
-{
-    return QStringLiteral("%1 %2").arg(number(count), count == 1 ? noun : noun + u's');
-}
-
-QString speedup(const InsightsSummary &summary)
-{
-    return QLocale().toString(double(summary.wordsPerMinute) / summary.typingWordsPerMinute, 'f', 1);
-}
 
 QString isoDate(const QDate &date)
 {
     return date.toString(Qt::ISODate);
 }
 
-} // namespace
-
-QString insightsPeriodName(InsightsRange range)
+QString periodName(InsightsRange range)
 {
     switch (range) {
     case InsightsRange::Last7Days: return QStringLiteral("last 7 days");
@@ -42,43 +23,20 @@ QString insightsPeriodName(InsightsRange range)
     return QStringLiteral("all time");
 }
 
-QString insightsShareText(const InsightsSummary &summary, InsightsRange range)
-{
-    // The tiles' order: words, streak, then dictations and audio.
-    QStringList lines{QStringLiteral("My Speecher stats, %1").arg(insightsPeriodName(range))};
-    lines << QStringLiteral("%1 dictated").arg(plural(summary.words, QStringLiteral("word")));
-    if (summary.words > 0) {
-        lines << summary.bookComparison;
-    }
-    if (summary.currentStreak > 0 && summary.currentStreak >= summary.bestStreak) {
-        lines << QStringLiteral("%1-day streak, my longest yet").arg(number(summary.currentStreak));
-    } else if (summary.currentStreak > 0) {
-        lines << QStringLiteral("%1-day streak (best: %2)")
-                     .arg(number(summary.currentStreak), plural(summary.bestStreak, QStringLiteral("day")));
-    }
-    lines << QStringLiteral("%1, %2 of audio transcribed")
-                 .arg(plural(summary.dictations, QStringLiteral("dictation")), audioTotalText(summary.audioMs));
-    if (summary.wordsPerMinute > 0) {
-        lines << QStringLiteral("%1 words per minute, %2× faster than typing")
-                     .arg(number(summary.wordsPerMinute), speedup(summary));
-    }
-    QStringList apps;
-    for (const AppShare &app : summary.apps) {
-        apps << QStringLiteral("%1 %2%").arg(app.name).arg(app.percent);
-    }
-    if (!apps.isEmpty()) {
-        lines << QStringLiteral("Top apps: %1").arg(apps.join(QStringLiteral(", ")));
-    }
-    return lines.join(u'\n');
-}
+} // namespace
 
 QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, const QDate &today)
 {
     QJsonArray apps;
     for (const AppShare &app : summary.apps) {
-        apps.append(QJsonObject{{QStringLiteral("name"), app.name},
-                                {QStringLiteral("words"), app.words},
-                                {QStringLiteral("percent"), app.percent}});
+        QJsonObject entry{{QStringLiteral("words"), app.words}, {QStringLiteral("percent"), app.percent}};
+        // The fold of the apps past the top five says how many it holds.
+        if (app.otherApps) {
+            entry.insert(QStringLiteral("otherApps"), app.otherApps);
+        } else {
+            entry.insert(QStringLiteral("name"), app.name);
+        }
+        apps.append(entry);
     }
     QJsonArray days;
     for (const HeatmapDay &day : summary.heatmap) {
@@ -89,7 +47,7 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
                                 {QStringLiteral("audioMs"), day.audioMs}});
     }
     const QJsonObject period{
-        {QStringLiteral("name"), insightsPeriodName(range)},
+        {QStringLiteral("name"), periodName(range)},
         {QStringLiteral("words"), summary.words},
         {QStringLiteral("dictations"), summary.dictations},
         {QStringLiteral("audioMs"), summary.audioMs},
@@ -98,7 +56,12 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
         {QStringLiteral("wordsPerMinute"), summary.wordsPerMinute},
         {QStringLiteral("typingWordsPerMinute"), summary.typingWordsPerMinute},
         {QStringLiteral("minutesSavedVersusTyping"), summary.minutesSavedVersusTyping},
-        {QStringLiteral("bookComparison"), summary.bookComparison},
+        // { book, times }: the words are `times` the book's length.
+        {QStringLiteral("bookComparison"),
+         summary.bookComparison.book.isEmpty()
+             ? QJsonValue()
+             : QJsonObject{{QStringLiteral("book"), summary.bookComparison.book},
+                           {QStringLiteral("times"), summary.bookComparison.times}}},
         {QStringLiteral("peakHour"), summary.hasHourData ? QJsonValue(summary.peakHour) : QJsonValue()},
         {QStringLiteral("apps"), apps},
     };

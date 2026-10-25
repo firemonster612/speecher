@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System` and `Models` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System` and `Models` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models` and `Insights` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models` and `Insights` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -37,9 +37,9 @@ Backend is the C++ types plus the mocks not yet replaced.
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
-  `System` (`host/QuickSystem`) and `Models` (`host/QuickModels`).
-  Placeholders until their wiring PRs: `Insights`, `Audio`, `Library` and
-  `Accounts`.
+  `System` (`host/QuickSystem`), `Models` (`host/QuickModels`) and
+  `Insights` (`host/QuickInsights`). Placeholders until their wiring PRs:
+  `Audio`, `Library` and `Accounts`.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
@@ -68,6 +68,8 @@ Backend is the C++ types plus the mocks not yet replaced.
   on its own. The Local Runner rows look for runners when they load, and
   setup's Transcription step asks `Models.checkSignIns()` for the speech
   sign-ins.
+- `Insights` carries core's summary for Home's period and the history
+  General clears; `pages/home/words.js` words it.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's

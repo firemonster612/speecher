@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Theme
 import Speecher.Controls
-import Speecher.Backend
+import "words.js" as T
 
 // Dictations by hour of day: 24 small bars in faint ink, the peak hour and
 // the hovered one in pencil. Bars grow and shrink to a new period's counts.
@@ -11,6 +11,8 @@ Item {
 
     property var counts: []
     property int peak: 0
+    // What the chart says in place of its bars.
+    property string description
 
     readonly property real gap: 3
     readonly property real pitch: (width + gap) / 24
@@ -22,6 +24,8 @@ Item {
 
     implicitHeight: plotHeight + 22
     Accessible.role: Accessible.Chart
+    Accessible.name: T.text.timeOfDay
+    Accessible.description: description
 
     Rectangle { y: chart.plotHeight; width: parent.width; height: 1; color: Theme.rule }
 
@@ -48,7 +52,7 @@ Item {
             required property int modelData
             x: modelData * chart.pitch
             y: chart.plotHeight + 6
-            text: Insights.hourLabel(modelData)
+            text: T.hourLabel(modelData)
             variant: "caption"
             tone: "tertiary"
         }
@@ -61,7 +65,7 @@ Item {
     }
     PointTip {
         readonly property int count: chart.counts[hover.index] || 0
-        readonly property var hour: hover.index >= 0 ? Insights.hourTip(hover.index, count) : null
+        readonly property var hour: hover.index >= 0 ? T.hourTip(hover.index, count) : null
         shown: hour !== null
         text: hour ? hour.title : ""
         detail: hour ? hour.detail : ""

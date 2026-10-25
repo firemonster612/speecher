@@ -27,12 +27,45 @@ struct HeatmapDay {
 };
 
 struct AppShare {
+    // Empty on the fold of the apps past the top five.
     QString name;
-    // Writing Profile label of the app's latest dictation; empty on the
-    // "N other apps" fold.
-    QString profileLabel;
+    // The fold: how many apps it holds; 0 for one app.
+    int otherApps = 0;
+    // The Writing Profile name of the app's latest dictation (see
+    // dictationProfileName); empty on the fold.
+    QString profileName;
     qint64 words = 0;
     int percent = 0;
+};
+
+// One Writing Profile's words in the period, by its id, so two profiles with
+// one name stay apart and a renamed one stays one.
+struct ProfileShare {
+    QString profile;
+    // dictationProfileName of the profile's latest dictation in the period.
+    QString name;
+    qint64 words = 0;
+    int percent = 0;
+};
+
+// The book a word count is closest to: `times` its length, where times is
+// one of a quarter, a third, a half, three-quarters, 1, 2, 3 or 4, or a whole
+// number from 5 up past the longest book. No book when the count is under a
+// quarter of the shortest. bookWords is the book's own length.
+struct BookComparison {
+    QString book;
+    double times = 0;
+    int bookWords = 0;
+    bool operator==(const BookComparison &) const = default;
+};
+
+// A milestone near the all-time words: passed, the next one, or one after it.
+struct Milestone {
+    enum class State { Passed, Next, Later };
+    int words = 0;
+    State state = State::Later;
+    // How far from the milestone before to this one, 0 to 1.
+    double progress = 0;
 };
 
 struct LongestDictation {
@@ -67,18 +100,18 @@ struct InsightsSummary {
     // the 7 and 30 day periods, and only when that period has data.
     std::optional<qint64> wordsDelta;
     std::optional<qint64> dictationsDelta;
-    QString deltaPeriodLabel; // "week" or "30 days"; empty for the other periods
-    // "About half of Hamlet", plain text; "Nothing yet" with no words.
-    QString bookComparison;
-    // "Hamlet is about 30,557 words", then on a new line "Changes to about
-    // twice the length of Macbeth at 32,348 words"; empty with no words.
-    QString bookComparisonTip;
+    // The period's words against a book, and the smallest count above them
+    // that compares differently, with what it compares to; 0 and no book
+    // when no count does.
+    BookComparison bookComparison;
+    qint64 bookComparisonChangesAt = 0;
+    BookComparison nextBookComparison;
 
     // Streak. A streak survives until the end of today.
     int currentStreak = 0;
     int bestStreak = 0;
     QDate bestStreakEnd;
-    bool bestStreakEndsToday = false; // "That's the one you're on"
+    bool bestStreakEndsToday = false;
     // When currentStreak is 0: the last run and the first day it was missed.
     int brokenStreakLength = 0;
     QDate brokenStreakEnded;
@@ -93,31 +126,35 @@ struct InsightsSummary {
     std::array<int, 24> hourCounts{};
     int peakHour = 0;
     Qt::DayOfWeek busiestWeekday = Qt::Monday;
-    QString persona; // "Morning talker", "Night owl", ...
     bool hasHourData = false;
 
     qint64 wordsPerMinute = 0;
     // The typing pace the saving and the speed-up are measured against.
     int typingWordsPerMinute = 0;
     qint64 minutesSavedVersusTyping = 0;
-    // "That's 3.6× faster than typing at 40 words per minute."; empty with no audio.
-    QString speedupText;
 
-    // Top five apps by words, then an "N other apps" fold when the rest has words.
+    // Top five apps by words, then a fold of the others when they have words.
     QList<AppShare> apps;
+    // Every Writing Profile with words in the period, most first.
+    QList<ProfileShare> profiles;
 
     // Records, all time.
-    qint64 allTimeWords = 0; // the milestone progress
-    int nextMilestone = 0; // 0 once every milestone is passed
-    std::optional<int> passedMilestone;
+    qint64 allTimeWords = 0;
+    // Up to three passed, the next and one after it, smallest first; once
+    // every milestone is passed, the last three.
+    QList<Milestone> milestones;
     LongestDictation longest;
     BusiestDay busiestDay;
     WordiestDay wordiestDay;
     QDate firstDictation;
 };
 
-// `profiles` names the custom profiles the records' labels come from. A record
-// whose profile is gone reads as the name it stored, or "Deleted profile".
+// The Writing Profile a dictation was in, by its current name; the name the
+// record stored when the profile is gone; empty when it stored none.
+QString dictationProfileName(const DictationRecord &record, const QList<WritingProfileSettings> &profiles);
+
+// `profiles` names the custom profiles the records' profile names come from
+// (see dictationProfileName).
 InsightsSummary summarize(const QList<DictationRecord> &records,
                           InsightsRange range,
                           const QDate &today,
@@ -151,10 +188,5 @@ inline constexpr std::array<double, 5> kHeatStrengths{0, 0.30, 0.52, 0.76, 1};
 // only drops columns from the left, so the labels for any width are the tail
 // of those for every week.
 QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown);
-
-// "4.0 hours" from an hour up, else "34 min", for the share text.
-QString audioTotalText(qint64 audioMs);
-// "12 am", "10 am", "6 pm", with a no-break space.
-QString hourLabel(int hour);
 
 } // namespace speecher

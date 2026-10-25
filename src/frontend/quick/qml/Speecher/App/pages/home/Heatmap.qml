@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import "words.js" as T
 
 // The year of activity: one cell per day, Monday at the top, in pencil as
 // strong as the chosen measure. Cells change colour in place when the
@@ -10,8 +11,9 @@ import Speecher.Backend
 Item {
     id: map
 
-    property string measure: "dictations"
-    readonly property var levels: Insights.heatLevels(measure)
+    // Insights colours the days by it.
+    readonly property string measure: Insights.heatMeasure
+    readonly property var levels: Insights.heatLevels
     // The pencil strength of each level, from no dictation to the busiest
     // quarter; the legend under the map shows the same steps.
     readonly property var strengths: [0, 0.24, 0.45, 0.7, 1]
@@ -19,7 +21,8 @@ Item {
     readonly property int labelWidth: 30
     readonly property int headHeight: 20
     readonly property real gap: 3
-    readonly property int weeks: Insights.weeks
+    readonly property int weeks: Math.ceil(Insights.heatmap.length / 7)
+    readonly property int activeDays: Insights.summary ? Insights.summary.activeDaysLastYear : 0
     readonly property real cell: Math.max(6, (width - labelWidth - gap * (weeks - 1)) / weeks)
     readonly property real pitch: cell + gap
 
@@ -27,7 +30,8 @@ Item {
 
     implicitHeight: headHeight + 7 * cell + 6 * gap
     Accessible.role: Accessible.Chart
-    Accessible.name: Insights.heatmapCaption
+    Accessible.name: T.heatmapCaption(activeDays)
+    Accessible.description: T.heatmapDescription(Insights.heatmap, measure, activeDays)
 
     Repeater {
         model: Insights.monthLabels
@@ -40,7 +44,7 @@ Item {
         }
     }
     Repeater {
-        model: Insights.heatRowLabels
+        model: T.heatRowLabels()
         Txt {
             required property string modelData
             required property int index
@@ -94,7 +98,7 @@ Item {
     }
 
     PointTip {
-        readonly property var day: hover.index >= 0 ? Insights.dayTip(hover.index, map.measure) : null
+        readonly property var day: hover.index >= 0 ? T.dayTip(Insights.heatmap[hover.index], map.measure) : null
         shown: day !== null
         text: day ? day.title : ""
         detail: day ? day.detail : ""
