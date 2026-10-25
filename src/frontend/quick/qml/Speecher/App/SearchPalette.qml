@@ -65,9 +65,11 @@ FocusScope {
     function activate(index) {
         const r = results[index]
         if (!r) return
+        // Closed first, so the focus it gives back is where a group that
+        // closes on the way can take it from.
+        close()
         if (r.type === "page") Navigation.go(r.id)
         else Navigation.goToRow(r.id)
-        close()
     }
 
     visible: opacity > 0

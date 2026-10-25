@@ -12,6 +12,8 @@ Behavior {
     readonly property bool running: ease.running
     property Settle _settle: Settle {}
 
-    enabled: _settle.done
+    // The engine can let go of the Settle as it fires, by which time the
+    // first layout is behind it.
+    enabled: !_settle || _settle.done
     Ease { id: ease; duration: grow.duration }
 }

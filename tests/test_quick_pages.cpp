@@ -183,6 +183,10 @@ private slots:
                           QVERIFY(std::any_of(child.cbegin(), child.cend(), [](const auto &result) {
                               return result.second == QStringLiteral("Refinement › Vocabulary, Terms");
                           }));
+                          QVERIFY(searchResults(search, QStringLiteral("shortcuts"))
+                                      .contains(std::pair{QStringLiteral("shortcuts"), QStringLiteral("Dictation › Shortcuts")}));
+                          QVERIFY(searchResults(search, QStringLiteral("accounts"))
+                                      .contains(std::pair{QStringLiteral("accounts"), QStringLiteral("General › Accounts")}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
         runSteps(steps);
@@ -383,9 +387,9 @@ private slots:
         QCOMPARE(named, knownSpokenLanguages());
     }
 
-    // Closing a group hands a subpage's keyboard focus to its parent, and
+    // Closing a group hands a subpage's keyboard focus to its parent;
     // asking for a page whose group was closed by hand opens it again, even
-    // when that page is already showing.
+    // when that page is already showing; and one group is open at a time.
     void sidebarGroupsFollowRequestsAndFocus()
     {
         ApplicationController controller(true);
@@ -417,6 +421,76 @@ private slots:
         QMetaObject::invokeMethod(navigation, "goToRow", Q_ARG(QVariant, QStringLiteral("defaultWritingProfile")));
         QVERIFY(refinement->property("open").toBool());
         QCOMPARE(navigation->property("current").toString(), QStringLiteral("profiles"));
+
+        // One group open at a time: going to a page opens its group and
+        // closes the others, and so does opening a group by hand, which
+        // hands a closing subpage's focus to its parent too.
+        QQuickItem *general = sidebarEntry(main, QStringLiteral("general"));
+        QQuickItem *dictation = sidebarEntry(main, QStringLiteral("dictation"));
+        QVERIFY(general && dictation);
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("accounts")));
+        QVERIFY(general->property("open").toBool());
+        QVERIFY(!refinement->property("open").toBool());
+        QTest::qWait(kSettleMs);
+        sidebarEntry(main, QStringLiteral("accounts"))->forceActiveFocus(Qt::TabFocusReason);
+        QMetaObject::invokeMethod(dictation, "openRequested", Q_ARG(bool, true));
+        QVERIFY(dictation->property("open").toBool());
+        QVERIFY(!general->property("open").toBool());
+        QVERIFY(general->hasActiveFocus());
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("home")));
+        QVERIFY(!dictation->property("open").toBool());
+
+        // A search that goes to another group from a subpage leaves focus on
+        // the subpage's parent, not on the subpage it folded away.
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        QTRY_VERIFY(refinement->property("open").toBool());
+        QTest::qWait(kSettleMs);
+        profiles->forceActiveFocus(Qt::TabFocusReason);
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(search);
+        QMetaObject::invokeMethod(search, "open");
+        const auto results = searchResults(search, QStringLiteral("accounts"));
+        const auto accounts = std::find_if(results.cbegin(), results.cend(),
+                                           [](const auto &result) { return result.first == QStringLiteral("accounts"); });
+        QVERIFY(accounts != results.cend());
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, int(accounts - results.cbegin())));
+        QCOMPARE(navigation->property("current").toString(), QStringLiteral("accounts"));
+        QVERIFY(!refinement->property("open").toBool());
+        QVERIFY(!profiles->hasActiveFocus());
+        QVERIFY(refinement->hasActiveFocus());
+    }
+
+    // Dictation's page says how each of its subpages is set now. The test
+    // sets Popup & sounds' toggles, so that line is the same on every
+    // platform; macOS and Windows bind a default shortcut where Linux has
+    // none.
+    void dictationSaysHowItsSubpagesAreSet()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("showLiveText"), false);
+        settings.set(QStringLiteral("playSounds"), true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("dictation")));
+        const auto helpShown = [main](const QString &help) {
+            QList<QQuickItem *> items{main->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->isVisible() && item->property("help").toString() == help) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QTRY_VERIFY(helpShown(QStringLiteral("Live text off, sounds on")));
     }
 
     void everySetupStepLoads_data() { themes(); }

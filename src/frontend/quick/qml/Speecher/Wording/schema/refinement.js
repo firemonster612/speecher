@@ -55,7 +55,7 @@ var rows = [
       keywords: "look for detect scan find runners again" },
 
     { id: "refinementEndpointServer", page: "refinement", section: "Custom Endpoint", kind: "choice",
-      label: "Server", help: "Your own server, or the CLI Proxy API server set up under Accounts.", value: "custom",
+      label: "Server", help: "Your own server, or the CLI Proxy API server set up under General › Accounts.", value: "custom",
       keywords: "endpoint cli proxy api self-hosted",
       options: [ { id: "custom", label: "Custom" }, { id: "cliproxy", label: "CLI Proxy API" } ] },
     { id: "refinementEndpointFormat", page: "refinement", section: "Custom Endpoint", kind: "choice", control: "select",

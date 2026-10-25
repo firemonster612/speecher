@@ -37,7 +37,6 @@ import "schema/updates.js" as Updates
 // addLabel for lists, disabledHelp for help shown while the row is greyed
 // out, and offHelp for help shown while its switch is off.
 QtObject {
-    readonly property var groups: Pages.groups
     readonly property var pages: Pages.pages
     // Rows the search palette offers before anything is typed.
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]

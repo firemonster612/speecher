@@ -5,14 +5,35 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 
-// The window's sidebar: the app mark, search, the pages in groups with a
-// selection that glides between them, and dictation status at the bottom.
+// The window's sidebar: the app mark, search, the top-level pages with their
+// subpages under them and a selection that glides between them, and
+// dictation status at the bottom.
 // Tab reaches search, the pages and the update note; up and down arrows move
 // between the pages that show, Right and Left open and close a page's
 // subpages, and Return or Space opens one.
 Item {
     id: sidebar
     signal searchRequested()
+
+    // The page whose subpages show. One at a time: asking for a page opens
+    // the page holding it and closes the rest. A page closed by hand stays
+    // closed when it is asked for itself, until it is opened again or one
+    // of its subpages is asked for, even the one showing.
+    property string _openParent: ""
+    property var _closedByHand: []
+    function _follow(pageId) {
+        const page = Schema.page(pageId)
+        const parentId = page.parent || pageId
+        if (page.parent) _closedByHand = _closedByHand.filter(id => id !== parentId)
+        _openParent = Schema.subpages(parentId).length > 0 && !_closedByHand.includes(parentId) ? parentId : ""
+    }
+    function _setOpen(parentId, wanted) {
+        _closedByHand = _closedByHand.filter(id => id !== parentId).concat(wanted ? [] : [parentId])
+        if (wanted) _openParent = parentId
+        else if (_openParent === parentId) _openParent = ""
+    }
+    Component.onCompleted: _follow(Navigation.current)
+    Connections { target: Navigation; function onRequested(pageId) { sidebar._follow(pageId) } }
 
     // Moves focus to the page before or after item, staying on the list.
     function _step(item, forward) {
@@ -73,10 +94,10 @@ Item {
 
     // Pages ---------------------------------------------------------------
     // One page in the list. A subpage is set in by indent under its parent,
-    // its wash (and the pill on it) starting right of the parent's guide. A
-    // page with subpages has a chevron that opens and closes them, as Right
-    // and Left do from the keyboard; it asks through openRequested and
-    // shows open.
+    // with no icon, its wash (and the pill on it) starting right of the
+    // parent's guide. A page with subpages has a chevron that opens and
+    // closes them, as Right and Left do from the keyboard; it asks through
+    // openRequested and shows open.
     component Entry: Item {
         id: entry
         required property var page
@@ -120,6 +141,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 10
             Icon {
+                visible: !entry.page.parent
                 name: entry.page.icon
                 size: 16
                 color: entry.marked || entryHover.hovered ? Theme.text : Theme.textSecondary
@@ -237,88 +259,53 @@ Item {
         Column {
             id: nav
             width: parent.width
-            spacing: 2
+            spacing: 1
+
+            // A top-level page and its subpages. A subpage that had keyboard
+            // focus hands it to the page when they close.
             Repeater {
-                model: Schema.groups
+                model: Schema.pages.filter(p => !p.parent)
                 delegate: Column {
-                    id: group
+                    id: family
                     required property var modelData
-                    width: nav.width
-                    spacing: 1
-                    topPadding: group.modelData.title.length ? 16 : 0
-
-                    Txt {
-                        visible: group.modelData.title.length > 0
-                        x: Theme.sideInset
-                        text: group.modelData.title
-                        variant: "small"
-                        strong: true
-                        tone: "tertiary"
-                        bottomPadding: 6
+                    readonly property var subpages: Schema.subpages(modelData.id)
+                    readonly property bool subpageCurrent: subpages.some(p => p.id === Navigation.current)
+                    readonly property bool open: sidebar._openParent === modelData.id
+                    onOpenChanged: if (!open && holdsFocus()) parentEntry.forceActiveFocus(Qt.TabFocusReason)
+                    function holdsFocus() {
+                        for (let p = sidebar.Window.activeFocusItem; p; p = p.parent)
+                            if (p === subpageList) return true
+                        return false
                     }
-                    // A page and its subpages, which open under it when it
-                    // or one of them is asked for and stay open after.
-                    // Closed by hand, they stay closed until opened again or
-                    // one of them is asked for, even the one showing; a
-                    // subpage that had keyboard focus hands it to the page.
-                    Repeater {
-                        model: Schema.pages.filter(p => p.group === group.modelData.id)
-                        delegate: Column {
-                            id: family
-                            required property var modelData
-                            readonly property var subpages: Schema.subpages(modelData.id)
-                            readonly property bool subpageCurrent: subpages.some(p => p.id === Navigation.current)
-                            property bool open: false
-                            property bool closedByHand: false
-                            // Opens for a request for pageId. It reads the id it
-                            // is given, not subpageCurrent, which may not have
-                            // caught up with the request yet.
-                            function follow(pageId) {
-                                if (subpages.some(p => p.id === pageId) || pageId === modelData.id && !closedByHand) open = true
-                            }
-                            function setOpen(wanted) {
-                                if (!wanted && family.holdsFocus()) parentEntry.forceActiveFocus(Qt.TabFocusReason)
-                                open = wanted
-                                closedByHand = !wanted
-                            }
-                            function holdsFocus() {
-                                for (let p = sidebar.Window.activeFocusItem; p; p = p.parent)
-                                    if (p === subpageList) return true
-                                return false
-                            }
-                            Component.onCompleted: follow(Navigation.current)
-                            Connections { target: Navigation; function onRequested(pageId) { family.follow(pageId) } }
-                            width: nav.width
+                    width: nav.width
 
-                            Entry {
-                                id: parentEntry
-                                page: family.modelData
-                                marked: Navigation.current === family.modelData.id || family.subpageCurrent && !family.open
-                                hasSubpages: family.subpages.length > 0
-                                open: family.open
-                                onOpenRequested: wanted => family.setOpen(wanted)
-                            }
-                            Reveal {
-                                open: family.open
-                                Item {
-                                    width: parent.width
-                                    height: subpageList.height
-                                    // The guide from the parent's icon down its subpages.
-                                    Rectangle { x: 30; y: 5; width: 1; height: parent.height - 9; color: Theme.rule }
-                                    Column {
-                                        id: subpageList
-                                        width: parent.width
-                                        topPadding: 1
-                                        spacing: 1
-                                        Repeater {
-                                            model: family.subpages
-                                            delegate: Entry {
-                                                required property var modelData
-                                                page: modelData
-                                                marked: Navigation.current === modelData.id && family.open
-                                                indent: 26
-                                            }
-                                        }
+                    Entry {
+                        id: parentEntry
+                        page: family.modelData
+                        marked: Navigation.current === family.modelData.id || family.subpageCurrent && !family.open
+                        hasSubpages: family.subpages.length > 0
+                        open: family.open
+                        onOpenRequested: wanted => sidebar._setOpen(family.modelData.id, wanted)
+                    }
+                    Reveal {
+                        open: family.open
+                        Item {
+                            width: parent.width
+                            height: subpageList.height
+                            // The guide from the parent's icon down its subpages.
+                            Rectangle { x: 30; y: 5; width: 1; height: parent.height - 9; color: Theme.rule }
+                            Column {
+                                id: subpageList
+                                width: parent.width
+                                topPadding: 1
+                                spacing: 1
+                                Repeater {
+                                    model: family.subpages
+                                    delegate: Entry {
+                                        required property var modelData
+                                        page: modelData
+                                        marked: Navigation.current === modelData.id && family.open
+                                        indent: 26
                                     }
                                 }
                             }
