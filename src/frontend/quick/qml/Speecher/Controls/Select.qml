@@ -80,7 +80,7 @@ T.ComboBox {
     delegate: MenuItem {
         required property var modelData
         required property int index
-        width: ListView.view ? ListView.view.width : implicitWidth
+        width: ListView.view ? ListView.view.width - bar.gutter : implicitWidth
         text: modelData.label
         iconName: modelData.icon || ""
         help: modelData.help || ""
@@ -105,6 +105,7 @@ T.ComboBox {
             // A mouse drags nothing on a desktop; touch still does.
             acceptedButtons: Qt.NoButton
             WheelScroll {}
+            T.ScrollBar.vertical: ScrollBar { id: bar; persistent: true }
         }
     }
 }
