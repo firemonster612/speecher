@@ -543,6 +543,16 @@ void startListening(QQuickWindow *window, QQuickItem *field)
 }
 #endif
 
+#ifdef Q_OS_LINUX
+// Writes contents to path, making its folder first.
+bool writeFixtureFile(const QString &path, const QByteArray &contents)
+{
+    QFile file(path);
+    return QDir().mkpath(QFileInfo(path).path()) && file.open(QIODevice::WriteOnly)
+        && file.write(contents) == contents.size();
+}
+#endif
+
 } // namespace
 
 class PlatformCompositionTests : public QObject {
@@ -2115,49 +2125,7 @@ private slots:
 
 #ifdef Q_OS_LINUX
 
-    void globalShortcutInstructionCommandMatchesTheInstallation()
-    {
-        QTemporaryDir home;
-        QVERIFY(home.isValid());
-
-        QCOMPARE(globalShortcutInstructionCommand(
-                     home.path(),
-                     QString(),
-                     QStringLiteral("/opt/Speecher Current/bin/speecher")),
-                 QStringLiteral("\"/opt/Speecher Current/bin/speecher\" toggle"));
-        QCOMPARE(globalShortcutInstructionCommand(
-                     home.path(),
-                     QStringLiteral("/opt/Speecher Current.AppImage"),
-                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
-                 QStringLiteral("\"/opt/Speecher Current.AppImage\" toggle"));
-
-        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral(".local/bin"))));
-        const QString appImage = home.filePath(QStringLiteral("Speecher.AppImage"));
-        QFile source(appImage);
-        QVERIFY(source.open(QIODevice::WriteOnly));
-        source.close();
-        const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
-        const QString staleImage = home.filePath(QStringLiteral("Old Speecher.AppImage"));
-        QFile stale(staleImage);
-        QVERIFY(stale.open(QIODevice::WriteOnly));
-        stale.close();
-        QVERIFY(QFile::link(staleImage, link));
-        QCOMPARE(globalShortcutInstructionCommand(
-                     home.path(),
-                     appImage,
-                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
-                 QStringLiteral("\"%1\" toggle").arg(appImage));
-
-        QVERIFY(QFile::remove(link));
-        QVERIFY(QFile::link(appImage, link));
-        QCOMPARE(globalShortcutInstructionCommand(
-                     home.path(),
-                     appImage,
-                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
-                 QStringLiteral("\"%1\" toggle").arg(link));
-    }
-
-    void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
+    void appImageIntegrationRemovalDeletesWhatAnInstallLeftAndReportsIt()
     {
         const QByteArray oldAppImage = qgetenv("APPIMAGE");
         const auto restoreEnvironment = qScopeGuard([oldAppImage] {
@@ -2172,28 +2140,9 @@ private slots:
         QTemporaryDir root;
         QVERIFY(root.isValid());
         const QDir home(root.filePath(QStringLiteral("home")));
-        QVERIFY(QDir().mkpath(home.path()));
-        // The AppImage mount: usr/bin/speecher with the desktop file and icon
-        // two levels up, as installAppImageIntegration expects.
-        const QString appDir = root.filePath(QStringLiteral("mount"));
-        const QString binDir = appDir + QStringLiteral("/usr/bin");
-        QVERIFY(QDir().mkpath(binDir));
-        const auto writeFile = [](const QString &path, const QByteArray &contents) {
-            QFile file(path);
-            if (!file.open(QIODevice::WriteOnly)) {
-                return false;
-            }
-            return file.write(contents) == contents.size();
-        };
-        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.desktop"),
-                          "[Desktop Entry]\nExec=speecher\n"));
-        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.svg"),
-                          "<svg/>"));
         const QString appImage = root.filePath(QStringLiteral("Speecher.AppImage"));
-        QVERIFY(writeFile(appImage, "image"));
-
-        QString error;
-        QVERIFY2(installAppImageIntegration(home.path(), appImage, binDir, &error), qPrintable(error));
+        QVERIFY(writeFixtureFile(appImage, "image"));
+        // What an earlier release's install left in the home folder.
         const QString desktopFile = home.filePath(
             QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"));
         const QString icon = home.filePath(
@@ -2201,12 +2150,11 @@ private slots:
         const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
         const QString helper = home.filePath(
             QStringLiteral(".local/share/speecher/libexec/speecher-ydotool-setup"));
-        QVERIFY(QDir().mkpath(QFileInfo(helper).dir().path()));
-        QVERIFY(writeFile(helper, "helper"));
-        QVERIFY(QFile::exists(desktopFile));
-        QVERIFY(QFile::exists(icon));
-        QVERIFY(QFile::exists(helper));
-        QVERIFY(QFileInfo(link).isSymLink());
+        QVERIFY(writeFixtureFile(desktopFile, "[Desktop Entry]\nExec=speecher\n"));
+        QVERIFY(writeFixtureFile(icon, "<svg/>"));
+        QVERIFY(writeFixtureFile(helper, "helper"));
+        QVERIFY(QDir().mkpath(QFileInfo(link).path()));
+        QVERIFY(QFile::link(appImage, link));
 
         DesktopIntegrationRemoval removal = removeAppImageIntegration(home.path());
         QCOMPARE(removal.removed,
@@ -2230,7 +2178,7 @@ private slots:
         QVERIFY(removal.failed.isEmpty());
 
         // A real file where the link belongs is not Speecher's to delete.
-        QVERIFY(writeFile(link, "#!/bin/sh\n"));
+        QVERIFY(writeFixtureFile(link, "#!/bin/sh\n"));
         removal = removeAppImageIntegration(home.path());
         QCOMPARE(removal.failed.size(), 1);
         QVERIFY(removal.failed.first().startsWith(QStringLiteral("speecher command")));
@@ -2238,7 +2186,7 @@ private slots:
 
         QVERIFY(QFile::remove(link));
         const QString renamed = root.filePath(QStringLiteral("dictation"));
-        QVERIFY(writeFile(renamed, "image"));
+        QVERIFY(writeFixtureFile(renamed, "image"));
         QVERIFY(QFile::link(renamed, link));
         qputenv("APPIMAGE", QFile::encodeName(renamed));
         removal = removeAppImageIntegration(home.path());
@@ -2247,7 +2195,7 @@ private slots:
 
         qunsetenv("APPIMAGE");
         const QString unrelated = home.filePath(QStringLiteral("SomeoneElse.AppImage"));
-        QVERIFY(writeFile(unrelated, "image"));
+        QVERIFY(writeFixtureFile(unrelated, "image"));
         QVERIFY(QFile::link(unrelated, link));
         removal = removeAppImageIntegration(home.path());
         QVERIFY(removal.failed.contains(QStringLiteral(
@@ -2255,10 +2203,9 @@ private slots:
         QVERIFY(QFileInfo(link).isSymLink());
     }
 
-    // A custom XDG_DATA_HOME is where this desktop looks for user-installed
-    // launchers, and the launcher runs the command link so that moving the
-    // AppImage does not break the menu entry.
-    void appImageIntegrationFollowsXdgDataHomeAndLaunchesTheCommandLink()
+    // A custom XDG_DATA_HOME is where this desktop looked for user-installed
+    // launchers, so the install put the menu entry and icon there.
+    void appImageIntegrationRemovalFollowsXdgDataHome()
     {
         const QByteArray oldDataHome = qgetenv("XDG_DATA_HOME");
         const bool hadDataHome = qEnvironmentVariableIsSet("XDG_DATA_HOME");
@@ -2273,196 +2220,19 @@ private slots:
         QVERIFY(QDir().mkpath(home));
         qputenv("XDG_DATA_HOME", QFile::encodeName(dataHome));
 
-        const QString appDir = root.filePath(QStringLiteral("mount"));
-        const QString binDir = appDir + QStringLiteral("/usr/bin");
-        QVERIFY(QDir().mkpath(binDir));
-        const auto writeFile = [](const QString &path, const QByteArray &contents) {
-            QFile file(path);
-            return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
-        };
-        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.desktop"),
-                          "[Desktop Entry]\nExec=speecher\n"
-                          "[Desktop Action ToggleDictation]\nExec=speecher toggle\n"));
-        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.svg"), "<svg/>"));
-        const QString appImage = root.filePath(QStringLiteral("Speecher.AppImage"));
-        QVERIFY(writeFile(appImage, "image"));
-
-        QString error;
-        QVERIFY2(installAppImageIntegration(home, appImage, binDir, &error), qPrintable(error));
-
         const QString desktopFile = QDir(dataHome).filePath(
             QStringLiteral("applications/io.github.firemonster612.speecher.desktop"));
-        QVERIFY(QFile::exists(desktopFile));
-        QVERIFY(QFile::exists(QDir(dataHome).filePath(QStringLiteral(
-            "icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
-        QVERIFY(!QFile::exists(QDir(home).filePath(QStringLiteral(".local/share/applications"))));
+        const QString icon = QDir(dataHome).filePath(
+            QStringLiteral("icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"));
+        QVERIFY(writeFixtureFile(desktopFile, "[Desktop Entry]\nExec=speecher\n"));
+        QVERIFY(writeFixtureFile(icon, "<svg/>"));
 
-        const QString link = QDir(home).filePath(QStringLiteral(".local/bin/speecher"));
-        QFile installed(desktopFile);
-        QVERIFY(installed.open(QIODevice::ReadOnly));
-        QCOMPARE(installed.readAll(),
-                 QByteArray("[Desktop Entry]\nExec=\"") + QFile::encodeName(link)
-                     + "\"\n[Desktop Action ToggleDictation]\nExec=\"" + QFile::encodeName(link)
-                     + "\" toggle\n");
-
-        // Removal looks in the same place it installed to.
         const DesktopIntegrationRemoval removal = removeAppImageIntegration(home);
         QVERIFY(removal.removed.contains(QStringLiteral("app menu entry")));
         QVERIFY(removal.removed.contains(QStringLiteral("app icon")));
         QVERIFY(removal.failed.isEmpty());
         QVERIFY(!QFile::exists(desktopFile));
-    }
-
-    void appImageDesktopFileExecLinesUseTheRealImagePath()
-    {
-        QTemporaryDir directory;
-        QVERIFY(directory.isValid());
-        const QString sourcePath = directory.filePath(QStringLiteral("source.desktop"));
-        const QString targetPath = directory.filePath(QStringLiteral("installed.desktop"));
-        QFile source(sourcePath);
-        QVERIFY(source.open(QIODevice::WriteOnly));
-        source.write("[Desktop Entry]\nExec=speecher\n"
-                     "[Desktop Action ToggleDictation]\nExec=speecher toggle\n"
-                     "[Desktop Action Quoted]\nExec=\"/old Speecher.AppImage\" toggle\n");
-        source.close();
-
-        QString error;
-        QVERIFY2(writeAppImageDesktopFile(sourcePath,
-                                          targetPath,
-                                          QStringLiteral("/opt/Speecher Current.AppImage"),
-                                          &error),
-                 qPrintable(error));
-        QFile installed(targetPath);
-        QVERIFY(installed.open(QIODevice::ReadOnly));
-        QCOMPARE(installed.readAll(),
-                 QByteArray("[Desktop Entry]\n"
-                            "Exec=\"/opt/Speecher Current.AppImage\"\n"
-                            "[Desktop Action ToggleDictation]\n"
-                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"
-                            "[Desktop Action Quoted]\n"
-                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
-    }
-
-    void appImageIntegrationReplacesAStaleCommandLink()
-    {
-        QTemporaryDir directory;
-        QVERIFY(directory.isValid());
-        const QString home = directory.filePath(QStringLiteral("home"));
-        const QString appDir = directory.filePath(QStringLiteral("AppDir"));
-        const QString binaryDir = QDir(appDir).filePath(QStringLiteral("usr/bin"));
-        QVERIFY(QDir().mkpath(binaryDir));
-
-        const QString desktop = QDir(appDir).filePath(
-            QStringLiteral("io.github.firemonster612.speecher.desktop"));
-        QFile desktopFile(desktop);
-        QVERIFY(desktopFile.open(QIODevice::WriteOnly));
-        desktopFile.write("[Desktop Entry]\nExec=speecher\n");
-        desktopFile.close();
-
-        const QString icon = QDir(appDir).filePath(
-            QStringLiteral("io.github.firemonster612.speecher.svg"));
-        QFile iconFile(icon);
-        QVERIFY(iconFile.open(QIODevice::WriteOnly));
-        iconFile.write("<svg/>\n");
-        iconFile.close();
-
-        const QString oldImage = directory.filePath(QStringLiteral("old.AppImage"));
-        const QString newImage = directory.filePath(QStringLiteral("new.AppImage"));
-        for (const QString &path : {oldImage, newImage}) {
-            QFile image(path);
-            QVERIFY(image.open(QIODevice::WriteOnly));
-        }
-
-        const QString commandDir = QDir(home).filePath(QStringLiteral(".local/bin"));
-        QVERIFY(QDir().mkpath(commandDir));
-        const QString command = QDir(commandDir).filePath(QStringLiteral("speecher"));
-        QVERIFY(QFile::link(oldImage, command));
-
-        QString error;
-        QVERIFY2(installAppImageIntegration(home, newImage, binaryDir, &error),
-                 qPrintable(error));
-        QCOMPARE(resolvedPath(QFileInfo(command).symLinkTarget()), resolvedPath(newImage));
-        QVERIFY(QFileInfo::exists(QDir(home).filePath(
-            QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"))));
-        QVERIFY(QFileInfo::exists(QDir(home).filePath(
-            QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
-    }
-
-    void relocateAppImageMovesTheImageIntoTheApplicationsFolder()
-    {
-        QTemporaryDir root;
-        QVERIFY(root.isValid());
-        const QDir home(root.filePath(QStringLiteral("home")));
-        QVERIFY(QDir().mkpath(home.path()));
-        const QString image = root.filePath(QStringLiteral("Downloads/Speecher.AppImage"));
-        QVERIFY(QDir().mkpath(QFileInfo(image).path()));
-        QFile file(image);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        QVERIFY(file.write("image") == 5);
-        file.close();
-        QVERIFY(file.setPermissions(file.permissions() | QFileDevice::ExeOwner));
-
-        QString installed;
-        QString error;
-        QVERIFY2(relocateAppImage(home.path(), image, &installed, &error), qPrintable(error));
-        QCOMPARE(installed, resolvedPath(home.filePath(QStringLiteral("Applications/Speecher.AppImage"))));
-        QVERIFY(QFileInfo(installed).isFile());
-        QVERIFY(QFileInfo(installed).isExecutable());
-        QVERIFY(!QFile::exists(image));
-
-        // A second run from the new location is a no-op.
-        QString unchanged;
-        QVERIFY2(relocateAppImage(home.path(), installed, &unchanged, &error), qPrintable(error));
-        QCOMPARE(unchanged, installed);
-        QVERIFY(QFileInfo(installed).isFile());
-    }
-
-    void relocateAppImagePrefersAnExistingAppImagesFolder()
-    {
-        QTemporaryDir root;
-        QVERIFY(root.isValid());
-        const QDir home(root.filePath(QStringLiteral("home")));
-        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral("AppImages"))));
-
-        // A stray file named ~/Applications must not win over a real folder.
-        QFile stray(home.filePath(QStringLiteral("Applications")));
-        QVERIFY(stray.open(QIODevice::WriteOnly));
-        stray.close();
-        QCOMPARE(appImageInstallDirectory(home.path()),
-                 home.filePath(QStringLiteral("AppImages")));
-        QVERIFY(QFile::remove(home.filePath(QStringLiteral("Applications"))));
-
-        const auto makeImage = [](const QString &path) {
-            QFile file(path);
-            if (!file.open(QIODevice::WriteOnly)) {
-                return false;
-            }
-            return file.write("image") == 5;
-        };
-
-        // No ~/Applications: the existing ~/AppImages folder is the home.
-        const QString image = root.filePath(QStringLiteral("Speecher.AppImage"));
-        QVERIFY(makeImage(image));
-        QString installed;
-        QString error;
-        QVERIFY2(relocateAppImage(home.path(), image, &installed, &error), qPrintable(error));
-        const QString kept = resolvedPath(home.filePath(QStringLiteral("AppImages/Speecher.AppImage")));
-        QCOMPARE(installed, kept);
-
-        // An image the user already keeps in ~/AppImages stays there even
-        // once ~/Applications exists.
-        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral("Applications"))));
-        QVERIFY2(relocateAppImage(home.path(), installed, &installed, &error), qPrintable(error));
-        QCOMPARE(installed, kept);
-
-        // With both folders present ~/Applications wins, and a leftover copy
-        // of the same name there is replaced.
-        const QString elsewhere = root.filePath(QStringLiteral("Other.AppImage"));
-        QVERIFY(makeImage(elsewhere));
-        QVERIFY(makeImage(home.filePath(QStringLiteral("Applications/Other.AppImage"))));
-        QVERIFY2(relocateAppImage(home.path(), elsewhere, &installed, &error), qPrintable(error));
-        QCOMPARE(installed, resolvedPath(home.filePath(QStringLiteral("Applications/Other.AppImage"))));
-        QVERIFY(!QFile::exists(elsewhere));
+        QVERIFY(!QFile::exists(icon));
     }
 #endif
 
