@@ -188,7 +188,7 @@ Card {
             }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.term.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: Library.remove("terms", row.term.index) }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.term.term; const undo = Library.remove("terms", row.term.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
             ]
         }
     }
@@ -196,7 +196,7 @@ Card {
     Reveal {
         open: view.terms.length > 0 && view.matching.length === 0
         EmptyState {
-            iconName: "search-x"
+            compact: true
             title: Library.vocabularyText.noTermsMatch
             text: Library.vocabularyText.noTermsMatchHelp
         }
@@ -204,7 +204,7 @@ Card {
     Reveal {
         open: view.terms.length === 0 && !form.open
         EmptyState {
-            iconName: "book-a"
+            compact: true
             title: Library.vocabularyText.noTerms
             text: Library.vocabularyText.noTermsHelp
         }

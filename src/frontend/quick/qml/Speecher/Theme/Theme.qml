@@ -61,6 +61,9 @@ QtObject {
     // The hairline around a switch knob or slider handle, so it holds its
     // shape on a pale track.
     readonly property color knobEdge: Qt.rgba(0, 0, 0, 0.16)
+    // A slider's handle. It sits on a raised card, so in dark it takes ink
+    // rather than the card's own colour, which would hide it.
+    readonly property color sliderHandle: dark ? text : raised
 
     // Ink: text, and the fill of primary buttons and lit keys.
     readonly property color text: scheme.text
@@ -135,17 +138,29 @@ QtObject {
 
     // Size ---------------------------------------------------------------
     // Radius follows hierarchy: the window's page is softest, controls are
-    // firm, rows and sections have none.
+    // firm, rows and sections have none. A shape set concentrically inside
+    // another takes the outer radius less the gap between them.
     readonly property int radiusSmall: 4
     readonly property int radius: 6
     readonly property int radiusLarge: 8
     readonly property int radiusPanel: 12
+    // The fill under a row on a card (hover, press, selection, a form) sits
+    // this far inside the card, so its corners follow the card's.
+    readonly property int washInset: 3
+    readonly property int washRadius: radiusLarge - washInset
+    // A menu's entries sit this far inside its panel and take the panel's
+    // radius less it.
+    readonly property int menuInset: space1
     // A window's own corners and the shadow margin round it, which also
     // serves as its resize grip.
     readonly property int radiusWindow: 14
     readonly property int windowShadow: 14
     // The strip along a window's top that moves it and holds its buttons.
-    readonly property int titleBarHeight: 46
+    // The brand mark and the window buttons are square and centred in it, so
+    // the mark sits as far from the window's top edge as from its left.
+    readonly property int titleBarHeight: 52
+    readonly property int titleBarButton: 28
+    readonly property int titleBarInset: (titleBarHeight - titleBarButton) / 2
 
     readonly property int space1: 4
     readonly property int space2: 8
@@ -165,6 +180,8 @@ QtObject {
     // Between the sections of a page.
     readonly property int sectionGap: 22
     readonly property int sidebarWidth: 232
+    // Where text starts in from a window's side column and setup's footer.
+    readonly property int sideInset: 22
     readonly property int contentMaxWidth: 860
     // Width of a side column, for pages that set a label beside content.
     readonly property int marginWidth: 190

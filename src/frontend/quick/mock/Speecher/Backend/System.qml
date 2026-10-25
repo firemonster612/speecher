@@ -98,6 +98,8 @@ QtObject {
         hideCode: "Hide code",
         remove: "Remove…",
         confirmRemove: "Remove Speecher",
+        removeQuestion: "Remove Speecher from this computer?",
+        removeDetail: "Dictation stops working. Your settings stay unless you delete them too.",
         removeSettings: "Also delete my settings, vocabulary and insights"
     })
     // Shortcuts' wording for what the desktop does with them.

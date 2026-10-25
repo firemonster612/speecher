@@ -33,8 +33,9 @@ SettingRow {
         sourceComponent: {
             switch (root.spec.kind) {
             case "toggle": return toggle
+            // Segments for two to four options, as CompactChoice picks.
             case "choice": return root.spec.control === "cards" ? cards
-                                : root.spec.control === "select" || root.spec.options.length > 3 ? select : segmented
+                                : root.spec.control === "select" || root.spec.options.length > 4 ? select : segmented
             case "slider": return slider
             case "text": case "secret": return textField
             case "shortcut": return shortcut

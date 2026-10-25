@@ -32,11 +32,9 @@ QtObject {
         chooseFiles: "Choose audio files…",
         addMore: "Add more files…",
         remove: "Remove",
-        service: "Service",
         serviceHelp: "The speech-to-text service that hears the files.",
         vocabulary: "Apply vocabulary",
         vocabularyHelp: "Spell your names and terms the way Vocabulary has them.",
-        refiner: "Provider",
         refinerHelp: "Cleans up the raw transcripts with a language model.",
         model: "Model",
         modelHint: "Change it in Refinement settings.",
@@ -135,8 +133,8 @@ QtObject {
     readonly property bool refines: options.refiner !== "none"
 
     // The choices come from the lists dictation uses.
-    readonly property var services: Models.speechServices.map(s => ({ id: s.id, label: s.label, icon: s.icon }))
-    readonly property var refiners: Library.providerChoices.map(p => ({ id: p.id, label: p.label, icon: p.icon, help: p.help }))
+    readonly property var services: Models.serviceChoices
+    readonly property var refiners: Library.providerChoices
     readonly property string refinerModel: Library.modelLabel(options.refiner)
     readonly property var cleanupLevels: Library.levelOptions
     readonly property var profiles: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon }))

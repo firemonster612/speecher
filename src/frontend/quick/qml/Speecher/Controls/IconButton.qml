@@ -17,6 +17,7 @@ T.Button {
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     Accessible.name: tooltip
 
     scale: down ? Theme.motionScale(0.92) : 1
@@ -33,6 +34,7 @@ T.Button {
         name: control.iconName
         size: Math.round(control.size * 0.53)
         color: control.iconColor
+        Behavior on color { EaseColor {} }
     }
 
     Tip { text: control.tooltip; shown: control.hovered && control.tooltip.length > 0 }

@@ -10,6 +10,8 @@ T.CheckBox {
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     spacing: 8
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     indicator: Rectangle {
         id: box
@@ -17,7 +19,9 @@ T.CheckBox {
         height: 18
         y: (control.height - height) / 2
         radius: Theme.radiusSmall
-        color: control.checked ? Theme.accent : control.hovered ? Theme.fillStrong : Theme.fill
+        readonly property color shade: control.checked ? Theme.accent : control.hovered ? Theme.fillStrong : Theme.fill
+        // Pressing tints the box toward fillStrong, checked or not.
+        color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
         border.width: control.checked ? 0 : 1
         border.color: Theme.borderStrong
         Behavior on color { EaseColor {} }

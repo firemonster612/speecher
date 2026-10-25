@@ -14,21 +14,21 @@ Row {
     spacing: 2
 
     IconButton {
-        size: 28
+        size: Theme.titleBarButton
         iconName: "minus"
         tooltip: Words.shell.minimize
         focusPolicy: Qt.NoFocus
         onClicked: controls.window.showMinimized()
     }
     IconButton {
-        size: 28
+        size: Theme.titleBarButton
         iconName: controls.maximized ? "copy" : "square"
         tooltip: controls.maximized ? Words.shell.restore : Words.shell.maximize
         focusPolicy: Qt.NoFocus
         onClicked: controls.maximized ? controls.window.showNormal() : controls.window.showMaximized()
     }
     IconButton {
-        size: 28
+        size: Theme.titleBarButton
         iconName: "x"
         tooltip: Words.shell.close
         focusPolicy: Qt.NoFocus

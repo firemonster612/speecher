@@ -119,6 +119,90 @@ Palette (all in `Theme`; never write a hex value in a page):
   action. No tinted icon squares, no icon on every row.
 - No gradients, glows, coloured shadows or decorative washes.
 
+## Consistency rules
+
+One thing looks and behaves one way everywhere. Fix a difference in the
+shared control or Theme, not in a page.
+
+Choosing:
+
+- A provider or service is chosen with `ChoiceRows`, in settings, setup and
+  Transcribe alike: icon, name over help, status on the right, a check after
+  the chosen one. Ratings go in a row under the choice, for the chosen one.
+  A profile's own override stays a `Select` with an explicit Default option.
+- A check means a committed choice. The editor that is open (a profile in
+  the list) is a selected `ListRow`, with no check.
+- Two to four short options are segments; more, or a list that grows, is a
+  `Select` (`CompactChoice` picks for you; SchemaRow does the same). `Chip`s
+  are for choosing several at once or inserting a snippet.
+- `SettingRow` for settings, `ListRow` for data. Rows start their content
+  `Theme.rowInset` in from the card and end it the same distance from the
+  right.
+
+Press, hover, selection:
+
+- Hover and press are colour changes over `Theme.fast`: `fill` under the
+  pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
+  raised buttons and fields). Nothing grows under the pointer.
+- Only a button or a whole-card choice shrinks when pressed: text buttons
+  and chips to 0.965, icon buttons to 0.92, `OptionCards` cards and theme
+  thumbnails to 0.98, over `Theme.fast` springy. Rows, menus, segments,
+  fields and the header of a card that opens never shrink.
+- A card that opens is a `Card` whose header has the row wash and a chevron
+  that turns over `Theme.base`; its body slides open. Opening never selects
+  it. `SettingRow { clickable }`, `Disclosure` and ModelCard work this way.
+- A selection glides to the new item over `Theme.slow` springy. A selected
+  card keeps its 1 px border and changes its colour and check.
+- A control that is disabled fades to `Theme.disabledOpacity`, easing. The
+  control owns the fade; a row fades its own text and the control in it
+  fades itself, so nothing fades twice. Something inactive but still
+  editable stays legible and says why in its help; it is not dimmed.
+- The focus ring shows for keyboard focus only: `visualFocus` on Templates
+  controls, `FocusVisible` on custom ones. A text field shows its soft
+  focus halo while it is being edited. A custom control that acts has Tab,
+  Return and Space, and the right `Accessible.role`.
+- Exceptions, named by role: a slider's handle grows while held, a dragged
+  fallback row lifts to 1.02, a switch's knob glides, the popup's round
+  buttons never take focus. Do not copy them elsewhere.
+
+Shape:
+
+- Radii: `radiusSmall` 4 for small shapes, `radius` 6 for controls,
+  `radiusLarge` 8 for cards, panels and menus, `radiusPanel` 12 for the
+  sheet and the popup. A shape set concentrically inside another takes the
+  outer radius less the gap: a row's wash sits `Theme.washInset` inside its
+  card with `Theme.washRadius`; a menu's items are 4 inside an 8 panel; a
+  segment's thumb is 3 inside a 6 track. Circles take half their size.
+- Borders are 1 px: `sheetBorder` on the shell, `border` on cards and
+  controls, `borderStrong` under the pointer and on floating panels, `rule`
+  between rows, `accent` for a selection. Focus rings are 2 px.
+- Surfaces: `Card` holds a group, `Surface` floats (menus, palettes,
+  toasts), `Plate` is recessed under a picture, `Sheet` is the shell's page.
+  Do not put a raised card inside a raised card; a form inside a card is a
+  `fill` wash.
+
+Layout:
+
+- A form: `FormField` label to control 6, fields and columns 16 apart,
+  actions 8 apart. Settings save as they change; an `InlineForm` that adds
+  or edits an entry has Save and Cancel.
+- Page commands go in `Page.headerActions` at the default 32 px size; list
+  and group commands go in `Section.actions` at `size: "small"`. Adding to a
+  list goes beside the list's heading and is not primary; primary is for the
+  one task that commits work, such as Transcribe.
+- An empty list is `EmptyState { compact: true }` on a card (a line on the
+  row inset) or a centred `EmptyState` for a page's list and search results.
+  List controls never draw their own.
+- Deleting something a person made either asks first with `InlineConfirm`
+  (a question, what it costs, Cancel and the action) or happens at once
+  with an Undo in its toast. Removing one of a few chosen fallbacks is
+  immediate.
+- The title strip is `Theme.titleBarHeight` 52. `Brand` puts the mark 12 in
+  from the window's top and left and the window buttons sit 12 in from the
+  top and right, in the main window and setup alike. The sheet starts under
+  the strip; the 14 px shadow room around a framed window goes when it is
+  maximized and is not padding.
+
 Things to avoid, because they read as generated:
 
 - A big number with a small label and a coloured trend arrow as the default
@@ -217,17 +301,17 @@ Layout and rows:
 - `Switcher { currentIndex }`: one of several views, sliding between them. `width: implicitWidth` sizes it to the current view, for buttons that swap in a row.
 - `FormField { label; help }`: a label and help around one input in a form.
 - `InlineForm { open; title; saveText; canSave }`: an add or edit form in place, instead of a dialog.
-- `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone.
-- `EmptyState { iconName; title; text }`: what an empty list says.
+- `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone: always a question and what it costs; leading (a check box) goes under them.
+- `EmptyState { iconName; title; text; compact }`: what an empty list says. compact on a card, centred elsewhere.
 
 Choosing:
 
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
+- `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ChoiceCard { selected; checked; interactive }` and `CheckMark { shown }`: the card shell and tick, for richer cards (service cards). `interactive: false` hands the pointer to a part of the card, which sets `hovered` and `pressed` (ModelCard's summary).
-- `ChoiceRows { options; currentId; indicator: radio|check }`: a choice as rows on a card, each with help and a status.
+- `ChoiceRows { options; currentId }`: a provider or service as rows on a card, each with its icon, help, status and a check when chosen.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
 - `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.
@@ -239,7 +323,7 @@ Input:
 
 Actions and menus:
 
-- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
+- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
 - `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` and `MenuPopup` are their parts, shared with Select.
 
@@ -273,6 +357,7 @@ In Speecher.App, besides SchemaRow:
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
 - `Sheet { side }`: the inset sheet a window shows its pages on, beside its side column.
+- `Brand { title; detail }`: the mark and the window's name in the title strip, for the main window and setup.
 
 ## Building pages
 
@@ -325,7 +410,7 @@ preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --record 19 --t
 preview/run.sh --page vocabulary --record 2 --time-scale 4 --poke vocabularyPage.tab=corrections@0.6 --out tab.mp4  # an interaction, on video
 preview/run.sh --page home --poke Speecher.Backend/Dictation.state=listening@0.5 --out live.png  # a singleton
 preview/run.sh --page home --record 2 --poke Speecher.App/Navigation.current=refinement@0.5 --out load.mp4  # a page loading
-preview/run.sh --root Speecher.App/SetupAssistant --size 960x680 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
+preview/run.sh --root Speecher.App/SetupAssistant --size 960x720 --record 2 --poke step=3@0.5 --out step.mp4  # the window itself
 preview/run.sh --page pasting --scroll 900 --out lower.png   # scrolled down first
 ```
 

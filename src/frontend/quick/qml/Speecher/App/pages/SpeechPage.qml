@@ -5,7 +5,6 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
-import "speech"
 
 Page {
     id: page
@@ -41,13 +40,26 @@ Page {
     Section {
         id: serviceSection
         title: Schema.row("speechProvider").label
-        plain: true
+        caption: Schema.row("speechProvider").help
         SearchLanding { rowIds: ["speechProvider"]; target: serviceSection }
-        ServicePicker {
-            width: parent.width
+        ChoiceRows {
+            recommendedText: Words.recommended
+            options: States.withTones(Models.serviceChoices)
             currentId: page.primary
-            fallbacks: page.fallbacks
-            onChosen: id => page.choose(id)
+            onActivated: id => page.choose(id)
+        }
+        // How the chosen service's text arrives, and its ratings.
+        SchemaRow {
+            id: ratingRow
+            readonly property var bars: Models.serviceBars(page.primary)
+            rowId: "speechRating"
+            help: Models.serviceTextShows(page.primary) + "." + Models.ratedAsText(Models.ratingSubject(page.primary))
+            Switcher {
+                width: implicitWidth
+                currentIndex: ratingRow.bars ? 0 : 1
+                RatingBars { appearance: "wide"; bars: ratingRow.bars || [] }
+                Txt { text: Models.text.unrated; variant: "small"; tone: "tertiary" }
+            }
         }
     }
 
@@ -59,7 +71,7 @@ Page {
         FallbackList {
             ids: page.fallbacks
             options: Models.speechServices.filter(s => s.id !== page.primary).map(s => ({ id: s.id, label: s.label }))
-            statusOf: (id, index) => Models.fallbackStatus(id, index)
+            statusOf: (id, index) => { const s = Models.fallbackStatus(id, index); return { text: s.text, tone: States.tone(s.state) } }
             maxCount: page.fallbackSpec.maxCount
             emptyText: page.fallbackSpec.emptyText.arg(page.primaryLabel)
             addLabel: page.fallbackSpec.addLabel

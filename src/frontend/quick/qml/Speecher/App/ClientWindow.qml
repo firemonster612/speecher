@@ -69,7 +69,7 @@ Window {
         WindowControls {
             window: client
             anchors.right: parent.right
-            anchors.rightMargin: Theme.space2
+            anchors.rightMargin: Theme.titleBarInset
             y: (client.titleBarHeight - height) / 2
         }
     }

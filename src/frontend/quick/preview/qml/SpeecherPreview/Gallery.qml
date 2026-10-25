@@ -51,7 +51,7 @@ Window {
             spacing: Theme.space5
 
             Specimen {
-                title: "Button, CopyButton, MenuButton"
+                title: "Button, CopyButton, MenuButton, TextLink"
                 Specimens {
                     Button { text: "Primary"; variant: "primary" }
                     Button { text: "Secondary" }
@@ -63,6 +63,7 @@ Window {
                     CopyButton { copiedText: Words.copied; tooltip: "Copy" }
                     CopyButton { copiedText: Words.copied; text: "Copy text"; size: "small" }
                     MenuButton { label: "Export"; leadingIcon: "download"; items: [{ id: "txt", label: "Text", icon: "file-text" }] }
+                    TextLink { text: "Insights settings" }
                 }
             }
             Specimen {
@@ -206,11 +207,12 @@ Window {
             }
             Section {
                 title: "ChoiceRows"
-                caption: "radio, then check with icons. Status takes the option's tone."
+                caption: "Every provider choice. Status takes the option's tone."
                 ChoiceRows { recommendedText: Words.recommended; options: gallery.choices; currentId: "local" }
             }
             Section {
-                ChoiceRows { recommendedText: Words.recommended; options: gallery.choices; currentId: "claude"; indicator: "check"; rowHeight: 56 }
+                caption: "Disabled"
+                ChoiceRows { recommendedText: Words.recommended; options: gallery.choices; currentId: "claude"; enabled: false }
             }
         }
 
@@ -244,7 +246,7 @@ Window {
                 }
             }
             Specimen {
-                title: "OptionCards, ChoiceCard, CheckMark"
+                title: "OptionCards"
                 OptionCards {
                     width: parent.width
                     options: [{ id: "paste", label: "Paste", icon: "clipboard", help: "Into the app you were in." }, { id: "type", label: "Type", icon: "keyboard", help: "Key by key." }]
@@ -318,10 +320,6 @@ Window {
                     }
                 }
             }
-            Specimen {
-                title: "EmptyState"
-                EmptyState { iconName: "route"; title: "No fallbacks"; text: "Add one to try when the first can't run." }
-            }
         }
 
         // Layout, pictures and tips ---------------------------------------------
@@ -376,6 +374,14 @@ Window {
                     subtitle: "A line of explanation under it."
                     Section { title: "Section"; SettingRow { title: "A row" } }
                 }
+            }
+            Specimen {
+                title: "EmptyState"
+                caption: "Centred, then compact on a card."
+                EmptyState { iconName: "route"; title: "No fallbacks"; text: "Add one to try when the first can't run." }
+            }
+            Specimen {
+                EmptyState { compact: true; text: "No tones yet. Add one to give a profile its voice." }
             }
         }
     }

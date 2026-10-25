@@ -18,7 +18,6 @@ Page {
         Button {
             text: Accounts.text.checkAll
             iconName: "refresh-cw"
-            size: "small"
             onClicked: Accounts.services.forEach(s => Accounts.recheck(s.id))
         }
     ]

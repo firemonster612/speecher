@@ -10,6 +10,7 @@ desktop. Examples:
   preview/run.sh --page home --poke Speecher.Backend/Dictation.state=listening@0.5 --out live.png
   preview/run.sh --root Speecher.App/SetupAssistant --record 2 --poke step=3@0.5 --out step.mp4
   preview/run.sh --page pasting --scroll 900 --out lower.png
+  preview/run.sh --page models --record 3 --press 900,470@0.5 --out press.mp4
   preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --arg popup-demo=review --out shots/review.png
   preview/run.sh --root SpeecherPreview/PopupScene --size 1200x760 --record 19 --time-scale 3 --out shots/popup.mp4
 """
@@ -23,10 +24,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QFontDatabase, QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
+from PySide6.QtTest import QTest
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -49,6 +51,9 @@ def parse():
                         "--record, in the recording's own time). target is an objectName (list delegates "
                         "included), a singleton as Module/Type, or nothing for the window itself (step=3@1). "
                         "Use it to trigger a tab switch or a state, then screenshot or record the transition.")
+    p.add_argument("--press", action="append", default=[],
+                   help="At a time, move the pointer to x,y (window points) and press there for 0.3 s: "
+                        "x,y@seconds, timed like --poke. Use it to record hover and press feedback.")
     p.add_argument("--scroll", type=float, help="Scroll the page this far down (at most to its end) before the screenshot")
     p.add_argument("--record", type=float, help="Record this many seconds of video instead")
     p.add_argument("--time-scale", type=float, default=1.0, help="Slow animations down while recording")
@@ -139,6 +144,17 @@ def main():
             obj.setProperty(prop, parse_value(value))
 
         QTimer.singleShot(int(delay * 1000), apply)
+
+    # The pointer arrives a moment before the press, so hover shows first.
+    for spec in args.press:
+        point, _, when = spec.rpartition("@")
+        x, y = (int(v) for v in point.split(","))
+        delay = float(when) * (scale if args.record else 1) + (0.4 if args.record else 0)
+        at = QPoint(x, y)
+        QTimer.singleShot(int((delay - 0.25 * scale) * 1000), lambda at=at: QTest.mouseMove(window, at))
+        QTimer.singleShot(int(delay * 1000), lambda at=at: QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, at))
+        QTimer.singleShot(int((delay + 0.3 * scale) * 1000),
+                          lambda at=at: QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, at))
 
     def scroll():
         page = find("pageScroll")

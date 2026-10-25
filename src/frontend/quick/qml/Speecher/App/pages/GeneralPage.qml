@@ -116,7 +116,9 @@ Page {
             InlineConfirm {
                 cancelText: Words.cancel
                 open: page._confirmClear
-                confirmText: Insights.clearText
+                text: Insights.clearQuestion
+                detail: Words.cantUndo
+                confirmText: Words.delete_
                 onCancelled: page._confirmClear = false
                 onConfirmed: { Insights.clear(); page._confirmClear = false }
             }
@@ -138,6 +140,8 @@ Page {
         InlineConfirm {
             cancelText: Words.cancel
             open: page._confirmRemove
+            text: System.generalText.removeQuestion
+            detail: System.generalText.removeDetail
             confirmText: System.generalText.confirmRemove
             onCancelled: page._confirmRemove = false
             onConfirmed: {

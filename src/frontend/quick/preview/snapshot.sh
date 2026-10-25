@@ -13,7 +13,7 @@ for theme in light dark; do
         "$here/run.sh" --page "$page" --theme "$theme" --settle 1.6 --out "$out/$page-$theme.png" >/dev/null
     done
     for step in 0 1 2 3 4 5 6 7; do
-        "$here/run.sh" --root Speecher.App/SetupAssistant --size 960x680 --theme "$theme" --set step=$step --settle 1.6 \
+        "$here/run.sh" --root Speecher.App/SetupAssistant --size 960x720 --theme "$theme" --set step=$step --settle 1.6 \
             --out "$out/setup-$step-$theme.png" >/dev/null
     done
 done

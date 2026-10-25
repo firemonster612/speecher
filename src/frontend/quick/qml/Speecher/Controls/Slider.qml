@@ -13,6 +13,8 @@ T.Slider {
     implicitHeight: 24
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
 
     background: Item {
         x: control.leftPadding
@@ -35,9 +37,9 @@ T.Slider {
         y: control.topPadding + control.availableHeight / 2 - height / 2
         width: 16
         height: 16
-        radius: 8
+        radius: width / 2
         scale: Theme.motionScale(grow)
-        color: Theme.raised
+        color: Theme.sliderHandle
         border.width: 1
         border.color: Theme.knobEdge
         Behavior on scale { Ease { duration: Theme.base; curve: Theme.springy } }

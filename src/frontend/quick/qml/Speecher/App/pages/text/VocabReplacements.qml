@@ -99,7 +99,7 @@ Card {
             }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: view.startEdit(row.index) },
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: Library.remove("replacements", row.index) }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Words.delete_; onClicked: { const name = row.item.phrase; const undo = Library.remove("replacements", row.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
             ]
         }
     }
@@ -107,7 +107,7 @@ Card {
     Reveal {
         open: view.items.length === 0 && !form.open
         EmptyState {
-            iconName: "replace"
+            compact: true
             title: Library.vocabularyText.noReplacements
             text: Library.vocabularyText.noReplacementsHelp
         }

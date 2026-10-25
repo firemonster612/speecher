@@ -21,7 +21,7 @@ QtObject {
     readonly property int kept: _sum(heatmap, "dictations")
     readonly property string keptText: kept > 0 ? Words.count(kept, "dictation", "dictations") + " kept since " + Qt.formatDate(firstDictation, "MMMM yyyy") + "."
                                                 : "Nothing is kept right now."
-    readonly property string clearText: "Delete " + Words.count(kept, "dictation", "dictations")
+    readonly property string clearQuestion: "Delete " + Words.count(kept, "dictation", "dictations") + "?"
     readonly property string clearActionText: "Clear history…"
     function clear() { _cleared = true }
 

@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Theme
 
 // Things a person made, such as their own tones, as rows on a card: the add
 // or edit form (the default slot, usually an InlineForm), the rows with
@@ -45,14 +44,6 @@ Column {
 
     Reveal {
         open: root.items.length === 0 && !root.formOpen
-        Txt {
-            x: Theme.rowInset
-            width: parent.width - Theme.rowInset * 2
-            topPadding: 18
-            bottomPadding: 18
-            text: root.emptyText
-            tone: "secondary"
-            wrapMode: Text.WordWrap
-        }
+        EmptyState { compact: true; text: root.emptyText }
     }
 }

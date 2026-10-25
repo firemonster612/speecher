@@ -20,6 +20,8 @@ QtObject {
     readonly property string edit: "Edit"
     readonly property string delete_: "Delete"
     readonly property string remove: "Remove"
+    readonly property string undo: "Undo"
+    readonly property string cantUndo: "This can't be undone."
     readonly property string moveUp: "Move up"
     readonly property string moveDown: "Move down"
     readonly property string copy: "Copy"
@@ -55,6 +57,8 @@ QtObject {
         restore: "Restore",
         close: "Close"
     })
+    // The toast after deleting something a person made, which offers Undo.
+    function deleted(name) { return "Deleted “" + name + "”" }
     function version(v) { return "Version " + v }
     function updateReady(v) { return "Restart to update to " + v }
     function noMatches(query) { return "Nothing matches “" + query + "”" }

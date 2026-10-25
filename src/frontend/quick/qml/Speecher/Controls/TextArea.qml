@@ -25,6 +25,7 @@ T.TextArea {
     font.pixelSize: mono ? Theme.fontSmall : Theme.fontBody
     hoverEnabled: true
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     Grow on implicitHeight { duration: Theme.base }
 
     // Templates draws no placeholder of its own.

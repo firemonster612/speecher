@@ -11,7 +11,7 @@ StepPage {
     id: page
 
     Plate {
-        height: sample.implicitHeight + Theme.space6 * 2
+        height: sample.implicitHeight + Theme.space5 * 2
         DiffText {
             id: sample
             x: Theme.space6

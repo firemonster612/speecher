@@ -5,11 +5,13 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 
-// One Local Model in the library: what it is and how it rates, with the one
-// step that moves it on (download, use) or its download's progress. Click it
-// to open the facts, pros and cons, a speed test and deletion, which asks in
-// place before it removes anything. The model in use is the chosen card.
-ChoiceCard {
+// One Local Model in the library, on its own card: what it is and how it
+// rates, with the one step that moves it on (download, use) or its download's
+// progress. The summary is a disclosure header: click it, or Return or Space
+// on it, to open the facts, pros and cons, a speed test and deletion, which
+// asks in place before it removes anything. The model in use says so with a
+// check; opening a card doesn't choose it.
+Card {
     id: card
 
     required property var entry           // a Models.catalog entry
@@ -42,26 +44,36 @@ ChoiceCard {
         return ""
     }
 
-    width: parent ? parent.width : implicitWidth
-    implicitHeight: summary.height + details.height
-    selected: inUse
-    checked: false
-    padding: 0
-    // Only the summary opens and closes the card, so the details take clicks
-    // and selections of their own.
-    interactive: false
-    hovered: summaryHover.hovered
-    pressed: summaryTap.pressed
-    onActivated: expanded = !expanded
+    function toggle() { expanded = !expanded }
 
     // Summary --------------------------------------------------------------
+    // Only the summary opens and closes the card, so the details take clicks
+    // and selections of their own.
     Item {
         id: summary
         width: parent.width
         height: 84
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Button
+        Accessible.name: card.entry.name
+        Accessible.expandable: true
+        Accessible.expanded: card.expanded
+        Accessible.onPressAction: card.toggle()
+        Keys.onReturnPressed: { focusVisible.keyed(); card.toggle() }
+        Keys.onSpacePressed: { focusVisible.keyed(); card.toggle() }
+        FocusVisible { id: focusVisible }
 
+        Rectangle {
+            id: wash
+            anchors.fill: parent
+            anchors.margins: Theme.washInset
+            radius: Theme.washRadius
+            color: summaryTap.pressed ? Theme.fillStrong : summaryHover.hovered ? Theme.fill : "transparent"
+            Behavior on color { EaseColor {} }
+            FocusRing { target: wash; shown: focusVisible.shown }
+        }
         HoverHandler { id: summaryHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { id: summaryTap; onTapped: card.activated() }
+        TapHandler { id: summaryTap; onTapped: { focusVisible.pointed(); card.toggle() } }
 
         Column {
             x: Theme.space5
@@ -189,7 +201,7 @@ ChoiceCard {
                 color: Theme.textTertiary
                 rotation: card.expanded ? 180 : 0
                 anchors.verticalCenter: parent.verticalCenter
-                Behavior on rotation { Ease { duration: Theme.slow; curve: Theme.easeInOut } }
+                Behavior on rotation { Ease {} }
             }
         }
     }
@@ -197,7 +209,6 @@ ChoiceCard {
     // Details ------------------------------------------------------------------
     Reveal {
         id: details
-        y: summary.height
         open: card.expanded
 
         Column {

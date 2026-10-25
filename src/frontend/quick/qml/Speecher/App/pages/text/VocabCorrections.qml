@@ -65,7 +65,7 @@ Card {
     Reveal {
         open: Library.corrections.length === 0
         EmptyState {
-            iconName: "spell-check"
+            compact: true
             title: Library.vocabularyText.noCorrections
             text: Library.vocabularyText.noCorrectionsHelp
         }

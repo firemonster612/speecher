@@ -18,11 +18,12 @@ T.ItemDelegate {
     rightPadding: 10
     hoverEnabled: true
     opacity: enabled ? 1 : Theme.disabledOpacity
+    Behavior on opacity { Ease {} }
     Accessible.role: Accessible.MenuItem
     Accessible.checked: current
 
     background: Rectangle {
-        radius: Theme.radiusSmall
+        radius: Theme.radiusLarge - Theme.menuInset
         color: item.down ? Theme.fillStrong : item.highlighted || item.hovered ? Theme.fill : "transparent"
         Behavior on color { EaseColor {} }
     }

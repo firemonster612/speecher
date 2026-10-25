@@ -114,27 +114,12 @@ Column {
         Column {
             width: parent.width
             spacing: Theme.space3
-            // A row of segments holds four levels; with custom ones it is a menu.
-            Loader {
+            CompactChoice {
                 width: parent.width
-                sourceComponent: editor.levels.length > 4 ? levelMenu : levelSegments
-            }
-            Component {
-                id: levelSegments
-                SegmentedControl {
-                    stretch: true
-                    options: editor.levels
-                    currentId: editor.level.id
-                    onActivated: id => editor.edited({ cleanup: id })
-                }
-            }
-            Component {
-                id: levelMenu
-                Select {
-                    options: editor.levels
-                    currentId: editor.level.id
-                    onChosen: id => editor.edited({ cleanup: id })
-                }
+                stretch: true
+                options: editor.levels
+                currentId: editor.level.id
+                onChosen: id => editor.edited({ cleanup: id })
             }
             // The level's sample sentence, quoted beside a rule.
             Item {
@@ -159,25 +144,20 @@ Column {
         label: Schema.row("profileTone").label
         SearchLanding { rowIds: ["profileTone"]; target: toneField }
         help: editor.skipsRefinement ? Library.profilesText.toneSkipped : editor.tone.help
-        Flow {
+        // One tone, from a list that grows with your own, so a menu. Skipped
+        // refinement leaves it editable for later; the help says so.
+        Row {
+            id: toneRow
             width: parent.width
             spacing: Theme.space2
-            opacity: editor.skipsRefinement ? 0.5 : 1
-            Behavior on opacity { Ease {} }
-            // A tone added or removed makes room and the rest move along.
-            add: Transition { Ease { property: "opacity"; from: 0; to: 1 } }
-            move: Transition { enabled: Theme.movement > 0; Ease { properties: "x,y"; duration: Theme.slow } }
-            Repeater {
-                model: editor.tones
-                Chip {
-                    required property var modelData
-                    text: modelData.label
-                    checkable: true
-                    checked: modelData.id === editor.tone.id
-                    onClicked: editor.edited({ tone: modelData.id })
-                }
+            Select {
+                // Narrows rather than push New tone out of a narrow editor.
+                width: Math.min(implicitWidth, toneRow.width - newTone.width - toneRow.spacing)
+                options: editor.tones
+                currentId: editor.tone.id
+                onChosen: id => editor.edited({ tone: id })
             }
-            Button { text: Library.profilesText.newTone; iconName: "plus"; variant: "ghost"; size: "small"; onClicked: editor.newToneRequested() }
+            Button { id: newTone; text: Library.profilesText.newTone; iconName: "plus"; variant: "ghost"; onClicked: editor.newToneRequested() }
         }
     }
 

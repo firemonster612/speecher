@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import Speecher.App
 
 // Step one: the files to transcribe with the drop zone under them, then
@@ -53,54 +54,47 @@ Column {
         }
     }
 
-    // Two short groups side by side, then the refinement rows.
-    Row {
-        width: parent.width
-        spacing: Theme.space4
-        Section {
-            id: hearing
-            width: (parent.width - parent.spacing) / 2
-            minimumHeaderHeight: output.naturalHeaderHeight
-            minimumCardHeight: output.naturalCardHeight
-            title: view.t.transcription
-            SettingRow {
-                title: view.t.service
-                help: view.t.serviceHelp
-                Select { options: Transcription.services; currentId: view.options.service; implicitWidth: 170; onChosen: id => Transcription.setOption("service", id) }
-            }
-            SettingRow {
-                title: view.t.vocabulary
-                help: view.t.vocabularyHelp
-                Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
-            }
+    // The service and the provider are chosen as on Speech to text and
+    // Refinement, with the same rows.
+    Section {
+        title: view.t.transcription
+        caption: view.t.serviceHelp
+        ChoiceRows {
+            recommendedText: Words.recommended
+            options: States.withTones(Transcription.services)
+            currentId: view.options.service
+            onActivated: id => Transcription.setOption("service", id)
         }
-        Section {
-            id: output
-            width: (parent.width - parent.spacing) / 2
-            minimumHeaderHeight: hearing.naturalHeaderHeight
-            minimumCardHeight: hearing.naturalCardHeight
-            title: view.t.output
-            SettingRow {
-                title: view.t.saveTranscripts
-                help: Transcription.destinationHint
-                stacked: true
-                Select { options: Transcription.destinations; currentId: view.options.destination; width: parent.width; onChosen: id => Transcription.setOption("destination", id) }
-            }
-            SettingRow {
-                shown: view.options.destination === "folder"
-                title: view.t.folder
-                help: view.options.folder
-                Button { text: view.t.changeFolder; size: "small"; onClicked: Transcription.chooseFolder() }
-            }
+        SettingRow {
+            title: view.t.vocabulary
+            help: view.t.vocabularyHelp
+            Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
+        }
+    }
+
+    Section {
+        title: view.t.output
+        SettingRow {
+            title: view.t.saveTranscripts
+            help: Transcription.destinationHint
+            Select { options: Transcription.destinations; currentId: view.options.destination; onChosen: id => Transcription.setOption("destination", id) }
+        }
+        SettingRow {
+            shown: view.options.destination === "folder"
+            title: view.t.folder
+            help: view.options.folder
+            Button { text: view.t.changeFolder; size: "small"; onClicked: Transcription.chooseFolder() }
         }
     }
 
     Section {
         title: view.t.refinement
-        SettingRow {
-            title: view.t.refiner
-            help: view.t.refinerHelp
-            Select { options: Transcription.refiners; currentId: view.options.refiner; onChosen: id => Transcription.setOption("refiner", id) }
+        caption: view.t.refinerHelp
+        ChoiceRows {
+            recommendedText: Words.recommended
+            options: Transcription.refiners
+            currentId: view.options.refiner
+            onActivated: id => Transcription.setOption("refiner", id)
         }
         SettingRow {
             enabled: Transcription.refines
@@ -114,7 +108,7 @@ Column {
             enabled: Transcription.refines
             title: view.t.cleanup
             help: Transcription.refines ? view.t.cleanupHelp : view.t.needsRefiner
-            Select { options: Transcription.cleanupLevels; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
+            CompactChoice { options: Transcription.cleanupLevels; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
         }
         SettingRow {
             enabled: Transcription.refines

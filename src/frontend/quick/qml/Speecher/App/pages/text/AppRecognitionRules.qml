@@ -108,18 +108,16 @@ Section {
                 onChosen: id => Library.update("recognitionRules", matchRow.index, { profile: id })
             }
             actions: [
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch; onClicked: Library.remove("recognitionRules", matchRow.index) }
+                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch; onClicked: { const name = matchRow.rule.match; const undo = Library.remove("recognitionRules", matchRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
             ]
         }
     }
     Reveal {
         open: Library.recognitionRules.length === 0
         EmptyState {
-            iconName: "scan-search"
+            compact: true
             title: Library.pastingText.noMatches
             text: Library.pastingText.noMatchesHelp
-            topPadding: Theme.space5
-            bottomPadding: Theme.space5
         }
     }
 
