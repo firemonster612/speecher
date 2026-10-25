@@ -59,7 +59,6 @@ public:
     bool deleteAll(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
-    void setCliproxyApiKey(const QString &value);
     bool launchAtLogin() const;
     void setLaunchAtLogin(bool enabled);
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
@@ -216,13 +215,6 @@ public:
     using SettingsCodecs::updatesLastCheckTime;
 
     QString audioInputDeviceId() const;
-    void setAudioInputDeviceId(const QString &value);
-    QString audioCaptureMode() const;
-    bool audioVadEnabled() const;
-    int audioPreRollMs() const;
-    int audioPostRollMs() const;
-    int audioReadinessTimeoutMs() const;
-    int audioVadThresholdPercent() const;
     void setAudioCaptureSettings(const AudioCaptureSettings &value);
     void setUpdateChannel(UpdateChannel value);
     void setAutoCheckUpdates(bool value);
@@ -242,10 +234,6 @@ signals:
     // After addVocabularyTerms saved terms no settings surface has drawn yet.
     void vocabularyAdded();
     void vocabularyUsageRecorded();
-    // The preference is saved whatever the operating system does with it, so
-    // a refused or pending registration has to leave this way: the setting
-    // reads as on while Speecher will not actually start at login.
-    void launchAtLoginReconciliationFailed(const QString &error);
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);

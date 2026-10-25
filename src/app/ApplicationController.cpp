@@ -131,22 +131,10 @@ ApplicationController::ApplicationController(bool popupOnly,
         m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
     }
     m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
-    // The refusal has no window of its own: it becomes the caution the settings
-    // surface draws beside the toggle, whenever that surface is next built.
-    connect(m_settings,
-            &SettingsStore::launchAtLoginReconciliationFailed,
-            this,
-            [this](const QString &) { setLaunchAtLoginAccepted(false); });
     // The login item is the person's, which an isolated instance leaves alone.
     if (!SettingsKeys::isolatedInstance()) {
         m_settings->setLaunchAtLoginReconciler(
-            [this](bool enabled, QString *error) {
-                const bool accepted = m_platform->setLaunchAtLogin(enabled, error);
-                if (accepted) {
-                    setLaunchAtLoginAccepted(true);
-                }
-                return accepted;
-            });
+            [this](bool enabled, QString *error) { return m_platform->setLaunchAtLogin(enabled, error); });
         m_settings->reconcileLaunchAtLogin();
     }
     connect(m_shortcutBinder,
@@ -705,12 +693,6 @@ bool ApplicationController::globalShortcutUsesDesktopChooser(GlobalShortcutRole 
     return shortcutBinder(role)->usesDesktopShortcutChooser();
 }
 
-QString ApplicationController::globalShortcutUnsupportedBindingReason(
-    const ShortcutBinding &binding, GlobalShortcutRole role) const
-{
-    return shortcutBinder(role)->unsupportedBindingReason(binding);
-}
-
 ShortcutBinding ApplicationController::globalShortcut(GlobalShortcutRole role) const
 {
     return shortcutBinder(role)->shortcut();
@@ -988,20 +970,6 @@ void ApplicationController::forgetShortcutGesture()
 bool ApplicationController::globalShortcutReportsRelease() const
 {
     return m_shortcutReleaseSeen || !m_shortcutPressedWhileDown;
-}
-
-bool ApplicationController::launchAtLoginAccepted() const
-{
-    return m_launchAtLoginAccepted;
-}
-
-void ApplicationController::setLaunchAtLoginAccepted(bool accepted)
-{
-    if (m_launchAtLoginAccepted == accepted) {
-        return;
-    }
-    m_launchAtLoginAccepted = accepted;
-    emit launchAtLoginAcceptedChanged();
 }
 
 void ApplicationController::handleShortcutReleased(qint64 heldMs)

@@ -20,9 +20,8 @@ import "schema/updates.js" as Updates
 // values under the same ids, and option ids are the values core stores.
 //
 // Row fields: id, page, section, kind (toggle, choice, slider, text, secret,
-// shortcut, action, custom), label, help, value (where the preview's mock
-// Settings starts; the app reads core's. A custom row without one has nothing
-// to save), options
+// shortcut, action, custom), label, help, value (the row's default; the app
+// shows core's. A custom row without one has nothing to save), options
 // [{ id, label, help?, icon? }], control (segmented, select, cards) for
 // choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen

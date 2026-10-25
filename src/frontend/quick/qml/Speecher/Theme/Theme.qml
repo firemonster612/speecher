@@ -1,6 +1,5 @@
 pragma Singleton
 import QtQuick
-import Speecher.Launch
 
 // Every colour, size, font and motion value the UI uses. Components read
 // these and never hard-code their own, so a palette or timing change is one
@@ -8,20 +7,17 @@ import Speecher.Launch
 QtObject {
     id: theme
 
-    // The desktop's scheme is Qt's, unless --theme=light|dark says otherwise
-    // on the command line, as the preview tool does with --time-scale=<n>.
-    // ThemeSetting (in Speecher.App) binds dark to the Theme setting, which
-    // follows systemDark on System, and the colours, translucency and layout
-    // to theirs.
-    // The time scale stretches every animation, which the preview tool uses
-    // to capture smooth video; the real app leaves it at 1.
-    readonly property bool systemDark: Launch.arg("theme", "") ? Launch.arg("theme", "") === "dark"
-                                                              : Application.styleHints.colorScheme === Qt.ColorScheme.Dark
+    // The desktop's scheme is Qt's. ThemeSetting (in Speecher.App) binds dark
+    // to the Theme setting, which follows systemDark on System, and the
+    // colours, translucency and layout to theirs.
+    readonly property bool systemDark: Application.styleHints.colorScheme === Qt.ColorScheme.Dark
     property bool dark: systemDark
-    readonly property real timeScale: Number(Launch.arg("time-scale", "1"))
+    // Stretches every animation; every duration below goes through it.
+    readonly property real timeScale: 1
     // Reduced motion keeps fades and drops movement: multiply every offset an
-    // animation travels by movement. Core sets it from the system setting.
-    property bool reduceMotion: Launch.arg("reduce-motion", "false") === "true"
+    // animation travels by movement. Nothing sets it yet: Qt reports no
+    // system setting for it.
+    property bool reduceMotion: false
     readonly property real movement: reduceMotion ? 0 : 1
 
     // Palette ------------------------------------------------------------

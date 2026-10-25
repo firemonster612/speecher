@@ -1470,6 +1470,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_quick_accounts.cpp
     tests/test_quick_audio.cpp
     tests/test_quick_library.cpp
+    tests/test_quick_pages.cpp
     tests/test_migration.cpp
     src/frontend/quick/host/QuickFrontEnd.cpp
     src/frontend/quick/host/QuickFrontEnd.h
@@ -1510,6 +1511,7 @@ if(SPEECHER_BUILD_TESTS)
     quick_accounts
     quick_audio
     quick_library
+    quick_pages
     migration
     platform_live
     single_instance_ipc
@@ -1556,6 +1558,12 @@ if(SPEECHER_BUILD_TESTS)
   endforeach()
   # Its drift calls play over half an hour of audio through AEC3.
   set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)
+  # qmllint over the UI's QML modules. .qmllint.ini makes any warning fail it.
+  # Before 6.11 qmllint mistypes list<T> properties (UpdateStatus's lines).
+  if(TARGET Qt6::qmllint AND Qt6_VERSION VERSION_GREATER_EQUAL 6.11)
+    add_test(NAME speecher_qmllint
+      COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all_qmllint --config $<CONFIG>)
+  endif()
 
   if(ATSPI_FOUND AND UNIX AND NOT APPLE)
     qt_add_executable(speecher_atspi_peer_test tests/atspi_peer_test.cpp)

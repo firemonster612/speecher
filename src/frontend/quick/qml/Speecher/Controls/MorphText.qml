@@ -32,8 +32,8 @@ Item {
     property string _tail
     property real _travel: 0
     // Text set while the item is still loading is shown as it is.
-    property bool _ready: false
-    Component.onCompleted: { whole.text = text; Qt.callLater(() => _ready = true) }
+    Settle { id: settle }
+    Component.onCompleted: whole.text = text
 
     implicitWidth: _rolling ? head.implicitWidth + middle.width + tail.implicitWidth : whole.implicitWidth
     implicitHeight: whole.implicitHeight
@@ -44,7 +44,7 @@ Item {
     onTextChanged: _change()
     function _fits(s) { measure.text = s; return measure.advanceWidth <= width + 0.5 }
     function _change() {
-        if (!_ready) { whole.text = text; return }
+        if (!settle.done) { whole.text = text; return }
         const before = _rolling ? _head + _to + _tail : whole.text
         roll.stop()
         fade.stop()

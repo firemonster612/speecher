@@ -82,17 +82,6 @@ QStringList transcribableExtensions()
             QStringLiteral("mkv"), QStringLiteral("avi")};
 }
 
-QStringList transcribableMimeTypes()
-{
-    return {QStringLiteral("audio/vnd.wave"), QStringLiteral("audio/wav"), QStringLiteral("audio/x-wav"),
-            QStringLiteral("audio/mpeg"), QStringLiteral("audio/mp4"), QStringLiteral("audio/x-m4a"),
-            QStringLiteral("audio/aac"), QStringLiteral("audio/flac"), QStringLiteral("audio/ogg"),
-            QStringLiteral("audio/x-vorbis+ogg"), QStringLiteral("audio/x-opus+ogg"), QStringLiteral("audio/webm"),
-            QStringLiteral("video/webm"), QStringLiteral("video/mp4"), QStringLiteral("video/x-m4v"),
-            QStringLiteral("video/quicktime"), QStringLiteral("video/x-matroska"), QStringLiteral("video/vnd.avi"),
-            QStringLiteral("video/x-msvideo")};
-}
-
 bool isAudioFile(const QString &path)
 {
     const QFileInfo info(path);
@@ -335,7 +324,6 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_results.clear();
     m_running = true;
     m_index = -1;
-    emit batchStarted(paths.size());
     finishFile();
 }
 

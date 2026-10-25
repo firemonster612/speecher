@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -39,7 +38,6 @@ Section {
         title: editing ? Library.pastingText.editMatch : Library.pastingText.newMatch
         saveText: editing ? Words.save : Library.pastingText.addMatch
         canSave: matchText.text.trim().length > 0 && (category.length > 0 || profile.length > 0)
-        open: Launch.arg("pasting-form", "") === "match"
         onCancelled: open = false
         onSaved: {
             const rule = { match: matchText.text.trim(), category: category, profile: profile }
@@ -151,7 +149,6 @@ Section {
         title: Library.pastingText.builtInMatches
         help: Library.pastingText.builtInMatchesHelp
         trailingText: Library.builtInMatchesCount
-        open: Launch.arg("built-ins", "") === "open"
 
         Item {
             width: parent.width

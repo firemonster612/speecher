@@ -20,12 +20,6 @@
 namespace speecher {
 namespace {
 
-// Decimal gigabytes, as memory is sold and download sizes are quoted.
-QString gigabytesText(quint64 bytes)
-{
-    return QStringLiteral("%1 GB").arg(qRound(double(bytes) / 1e9));
-}
-
 // What a connection check depends on. The model is picked from its answer,
 // so choosing one keeps the verdict and the list.
 template <typename Endpoint>
@@ -62,46 +56,6 @@ constexpr int kEndpointCheckDelayMs = 800;
 
 } // namespace
 
-bool offersSetupSpeechProvider(const QString &id, bool localAvailable)
-{
-    return id != QStringLiteral("local") || localAvailable;
-}
-
-bool isSetupSignInProvider(const QString &id)
-{
-    return id == QStringLiteral("claude") || id == QStringLiteral("codex")
-        || id == QStringLiteral("openai") || id == QStringLiteral("anthropic");
-}
-
-QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen)
-{
-    if (explicitlyChosen || !isSetupSignInProvider(saved) || ready.contains(saved)) return saved;
-    for (const auto &id : ready) {
-        if (isSetupSignInProvider(id)) return id;
-    }
-    return saved;
-}
-
-QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound,
-                              bool explicitlyChosen)
-{
-    if (explicitlyChosen) return saved;
-    const QString chosen = setupProviderChoice(saved, ready, false);
-    if (!isSetupSignInProvider(chosen) || ready.contains(chosen)) return chosen;
-    return runnerFound ? QStringLiteral("local") : QStringLiteral("none");
-}
-
-QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
-                          bool proxyAccountFound, bool explicitlyChosen)
-{
-    const QString chosen = setupProviderChoice(saved, ready, explicitlyChosen);
-    if (explicitlyChosen || !localOffered || proxyAccountFound || !isSetupSignInProvider(chosen)
-        || ready.contains(chosen)) {
-        return chosen;
-    }
-    return QStringLiteral("local");
-}
-
 RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion)
@@ -128,20 +82,6 @@ RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
     choice.showSuggestion = choice.available && choice.available->id == QStringLiteral("ollama")
         && (!suggestion || choice.offerPull);
     return choice;
-}
-
-QString ownModelRefinementSummary(const RefinementSettings &settings)
-{
-    if (settings.providerId == QStringLiteral("local")) {
-        const QString runner = localRunnerName(settings.localRunner.runner);
-        return settings.localRunner.model.isEmpty()
-            ? runner : QStringLiteral("%1 with %2").arg(runner, settings.localRunner.model);
-    }
-    if (settings.providerId == QStringLiteral("endpoint")) {
-        return settings.endpoint.model.isEmpty()
-            ? QStringLiteral("your server") : QStringLiteral("%1 on your server").arg(settings.endpoint.model);
-    }
-    return {};
 }
 
 HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn)
@@ -268,7 +208,6 @@ LocalSetup::LocalSetup(SettingsStore &settings,
         runner.runner = QStringLiteral("ollama");
         runner.model = ollamaListedName(m_pull.tag);
         m_settings.setLocalRunnerSettings(runner);
-        emit cleanupModelPulled(m_pull.tag);
         detectRunners();
     });
     connect(&m_ollamaPull, &OllamaPull::failed, this, [this](const QString &message) {
@@ -372,49 +311,9 @@ bool LocalSetup::hardwareKnown() const
     return m_hardwareKnown;
 }
 
-bool LocalSetup::canRunAnyModel() const
-{
-    // Unknown is able: before the probe answers, and when a probe answered
-    // with nothing (no memory reading), the machine is not declared too small.
-    if (!m_hardwareKnown || m_hardware.profile.systemRamBytes == 0) {
-        return true;
-    }
-    // Capability, not the moment's memory pressure: free RAM at probe time
-    // says what fits right now, while this answer decides whether running
-    // locally is offered at all, and the probe never runs again. Judge by
-    // installed capacity, on the probe's placement or failing that the CPU.
-    const auto capacity = [](HardwareProfile profile) {
-        profile.availableRamBytes = profile.systemRamBytes;
-        return profile;
-    };
-    return anyLocalModelFits(capacity(m_hardware.profile))
-        || anyLocalModelFits(capacity(runsOnProfile(m_hardware, {QStringLiteral("cpu"), QString()})));
-}
-
 const HardwareSummary &LocalSetup::hardware() const
 {
     return m_hardware;
-}
-
-QString LocalSetup::hardwareLine() const
-{
-    if (!m_hardwareKnown) {
-        return QStringLiteral("Checking this computer…");
-    }
-    const HardwareProfile &profile = m_hardware.profile;
-    QStringList parts;
-    parts << QStringLiteral("%1, %2 threads").arg(profile.chipName).arg(m_hardware.cpuThreads);
-    if (m_hardware.gpus.isEmpty()) {
-        parts << QStringLiteral("no graphics acceleration");
-    } else {
-        const LocalSpeechEngine::Device &gpu = m_hardware.gpus.first();
-        parts << QStringLiteral("%1, %2").arg(gpu.description, localBackendName(gpu.kind));
-    }
-    parts << (profile.accelerator == HardwareProfile::Accelerator::DedicatedGpu
-                  ? QStringLiteral("%1 memory, %2 on the graphics card")
-                        .arg(gigabytesText(profile.systemRamBytes), gigabytesText(profile.gpuMemoryBytes))
-                  : QStringLiteral("%1 memory").arg(gigabytesText(profile.systemRamBytes)));
-    return parts.join(QStringLiteral(" · "));
 }
 
 const LocalModel &LocalSetup::suggestedModel() const
@@ -496,11 +395,6 @@ std::optional<std::pair<qint64, qint64>> LocalSetup::downloadProgress(const QStr
     return m_progress.value(modelId);
 }
 
-QString LocalSetup::downloadError(const QString &modelId) const
-{
-    return m_downloadErrors.value(modelId);
-}
-
 void LocalSetup::runSpeedTest(const QString &modelId)
 {
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
@@ -533,11 +427,6 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
 std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const
 {
     return measuredSpeedTestSeconds(m_settings.localSpeechSettings(), modelId);
-}
-
-QString LocalSetup::speedTestError(const QString &modelId) const
-{
-    return m_speedTestErrors.value(modelId);
 }
 
 const LocalModel &LocalSetup::speechModelChoice() const

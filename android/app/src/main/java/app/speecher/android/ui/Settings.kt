@@ -1220,7 +1220,7 @@ internal fun keyTerms(settings: SpeecherSettings): Set<String> {
 
 /**
  * What the list amounts to: how many terms, how many the speech service gets, and how many
- * refinement gets. The desktop's VocabularyLimit::summary.
+ * refinement gets. The desktop's Library.keyTermsText.
  */
 internal fun vocabularyLimit(settings: SpeecherSettings): String {
     val terms = settings.vocabulary.size

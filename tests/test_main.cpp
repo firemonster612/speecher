@@ -136,6 +136,7 @@ int main(int argc, char **argv)
     if (selected("quick_accounts")) result |= runQuickAccountsTests(argc, argv);
     if (selected("quick_audio")) result |= runQuickAudioTests(argc, argv);
     if (selected("quick_library")) result |= runQuickLibraryTests(argc, argv);
+    if (selected("quick_pages")) result |= runQuickPagesTests(argc, argv);
     if (selected("migration")) result |= runMigrationTests(argc, argv);
 #ifdef Q_OS_LINUX
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);

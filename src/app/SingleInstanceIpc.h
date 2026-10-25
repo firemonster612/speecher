@@ -56,10 +56,6 @@ public:
     bool listen(QString *error = nullptr);
     QString socketName() const;
     static QString socketName(std::shared_ptr<const SingleInstancePlatform> platform);
-    static bool sendCommand(const QString &command,
-                            IpcResponse *response,
-                            int timeoutMs = 2500,
-                            std::shared_ptr<const SingleInstancePlatform> platform = {});
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,

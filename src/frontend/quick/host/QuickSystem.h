@@ -133,10 +133,6 @@ signals:
     void changed();
     void phoneChanged();
     void removalChanged();
-    // Something done out of sight that the window should mention. The app's
-    // System says what went wrong in place (a check's failures, the removal
-    // report), so only the preview's mock sends it.
-    void announced(const QString &text, const QString &icon);
 
 private:
     // The check with this id, as in checks, or an empty map.

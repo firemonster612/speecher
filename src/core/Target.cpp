@@ -75,29 +75,6 @@ QString writingProfileFromName(const QString &name)
     return WritingProfile::Other;
 }
 
-QString appCategoryLabel(AppCategory category)
-{
-    switch (category) {
-    case AppCategory::General:
-        return QStringLiteral("Other app");
-    case AppCategory::Terminal:
-        return QStringLiteral("Terminal");
-    case AppCategory::Browser:
-        return QStringLiteral("Browser");
-    case AppCategory::Email:
-        return QStringLiteral("Email");
-    case AppCategory::Office:
-        return QStringLiteral("Office");
-    case AppCategory::CodeEditor:
-        return QStringLiteral("Code editor");
-    case AppCategory::AiCoding:
-        return QStringLiteral("AI coding");
-    case AppCategory::Unknown:
-        break;
-    }
-    return QStringLiteral("Automatic");
-}
-
 QString writingProfileLabel(const QString &id, const QList<WritingProfileSettings> &profiles)
 {
     if (id == WritingProfile::Work) return QStringLiteral("Work");

@@ -1,9 +1,9 @@
 import QtQuick
 import Speecher.Theme
 
-// A made-up voice level, 0 to 1, for illustrations, previews and the mock
-// backend: syllables come in bursts, with short pauses between words and a
-// longer breath now and then. It drops to silence when running stops.
+// A made-up voice level, 0 to 1, for illustrations: syllables come in
+// bursts, with short pauses between words and a longer breath now and then.
+// It drops to silence when running stops.
 QtObject {
     id: voice
 

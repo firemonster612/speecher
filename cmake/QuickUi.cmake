@@ -1,28 +1,23 @@
 # The Qt Quick UI (src/frontend/quick), compiled into the speecher executable:
 # one static QML module per directory, its QML and JavaScript ahead-of-time
 # compiled and kept at their paths under qrc:/qt/qml, and the fonts as
-# resources. Each directory's qmldir, which the preview tool reads as well,
-# names the singletons and the JavaScript modules, so the two never list them
-# apart.
+# resources. Each directory's qmldir names the singletons and the JavaScript
+# modules.
 
 qt_policy(SET QTP0001 NEW)
 # A subdirectory's qmldir sends its imports to the module, so every QML file,
-# a page's parts in pages/home/ included, is one of the module's types. The
-# preview, which lists directories instead, stays the stricter of the two.
+# a page's parts in pages/home/ included, is one of the module's types.
 qt_policy(SET QTP0004 NEW)
 
 set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 set(SPEECHER_QUICK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/quick")
 
 # Adds the static QML module `uri` as `target` (and `target`plugin) from the
-# .qml and .js files under dir. EXCLUDE leaves files out, by their path under
-# dir; SOURCES are the module's C++, and LIBRARIES what it and its users link.
+# .qml and .js files under dir. SOURCES are the module's C++, and LIBRARIES
+# what it and its users link.
 function(speecher_add_qml_module target uri dir)
-  cmake_parse_arguments(PARSE_ARGV 3 arg "" "" "EXCLUDE;SOURCES;LIBRARIES")
+  cmake_parse_arguments(PARSE_ARGV 3 arg "" "" "SOURCES;LIBRARIES")
   file(GLOB_RECURSE files CONFIGURE_DEPENDS RELATIVE "${dir}" "${dir}/*.qml" "${dir}/*.js")
-  if(arg_EXCLUDE)
-    list(REMOVE_ITEM files ${arg_EXCLUDE})
-  endif()
   set(paths "")
   foreach(file IN LISTS files)
     set_source_files_properties("${dir}/${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
@@ -53,19 +48,13 @@ function(speecher_add_qml_module target uri dir)
 endfunction()
 
 speecher_add_qml_module(speecher_quick_theme Speecher.Theme "${SPEECHER_QUICK_DIR}/qml/Speecher/Theme")
-speecher_add_qml_module(speecher_quick_launch Speecher.Launch "${SPEECHER_QUICK_DIR}/qml/Speecher/Launch")
 speecher_add_qml_module(speecher_quick_demo Speecher.Demo "${SPEECHER_QUICK_DIR}/qml/Speecher/Demo")
 speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUICK_DIR}/qml/Speecher/Wording")
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup")
-# Every area is C++ over core. The app takes only Library.qml from the
-# preview's mocks, which words the real LibraryLists; the other mocks stay
-# with the preview.
-speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
-  EXCLUDE Appearance.qml Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
-    Transcription.qml System.qml Models.qml Insights.qml Accounts.qml Audio.qml
-    LibraryLists.qml
+# Every area is C++ over core, and Library.qml words LibraryLists.
+speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/qml/Speecher/Backend"
   SOURCES
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
@@ -109,7 +98,6 @@ set_target_properties(speecher PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
 # The UI's QML module plugins, linked statically into whatever loads the UI.
 set(SPEECHER_QUICK_PLUGINS
   speecher_quick_themeplugin
-  speecher_quick_launchplugin
   speecher_quick_demoplugin
   speecher_quick_wordingplugin
   speecher_quick_controlsplugin

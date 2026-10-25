@@ -44,7 +44,7 @@ ListView {
     // old one.
     property var _entries: ({})
     readonly property ListModel _rows: ListModel {}
-    property bool _ready: false
+    Settle { id: settle }
 
     function _sync() {
         const next = values.map(keyOf)
@@ -74,7 +74,7 @@ ListView {
         }
     }
     onValuesChanged: _sync()
-    Component.onCompleted: { _sync(); Qt.callLater(() => _ready = true) }
+    Component.onCompleted: _sync()
 
     model: _rows
     width: parent ? parent.width : implicitWidth
@@ -85,7 +85,7 @@ ListView {
 
     // The rows there on load are simply there.
     add: Transition {
-        enabled: list._ready
+        enabled: settle.done
         Ease { property: "opacity"; from: 0; to: 1; duration: Theme.slow }
         Ease { property: "scale"; from: Theme.motionScale(0.96); to: 1; duration: Theme.slow }
     }

@@ -15,7 +15,7 @@ struct CleanupModel {
     QString name;
     qint64 sizeBytes = 0;
     // Checks passed, of kRefinementBenchmarkChecks, on the refinement benchmark
-    // in docs/provider-ratings-mockup/bench (15 transcripts x 3 runs through
+    // in tools/refinement-benchmark (15 transcripts x 3 runs through
     // the app's real prompts and default settings, 2026-10-05).
     int benchmarkChecksPassed = 0;
 };

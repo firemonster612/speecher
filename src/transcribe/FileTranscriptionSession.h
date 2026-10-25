@@ -84,9 +84,6 @@ struct TranscribeFileResult {
 // backend reports it can write that clip. Dropped and opened files are not
 // limited to the list; see isAudioFile.
 QStringList transcribableExtensions();
-// The MIME types of those files, with the aliases older shared-mime-info
-// releases and file managers still use.
-QStringList transcribableMimeTypes();
 
 // True for any audio or video file, by its content or name, so a dropped or
 // opened file the pickers do not list still gets its try with the decoder.
@@ -150,7 +147,6 @@ public:
     int utteranceAnswerTimeoutMs() const;
 
 signals:
-    void batchStarted(int count);
     void fileStarted(int index, const QString &path);
     // The decoded file: peak levels (0..1) across its length, for drawing.
     void fileDecoded(int index, const QVector<float> &peaks, qint64 durationMs);
@@ -183,8 +179,6 @@ private:
     void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
     void startMicrophone();
-    void handleDecodedBuffer();
-    void handleDecodeFinished();
     void prepareProviders();
     void prepareSpeechProvider();
     void connectTranscriber();

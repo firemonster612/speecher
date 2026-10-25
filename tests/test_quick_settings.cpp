@@ -343,11 +343,11 @@ private slots:
         QCOMPARE(saved.count(), 0);
         QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
         QCOMPARE(saved.count(), 1);
-        QCOMPARE(SettingsStore().audioPreRollMs(), slider->property("value").toInt());
+        QCOMPARE(SettingsStore().audioCaptureSettings().preRollMs, slider->property("value").toInt());
 
         QTest::keyClick(window, Qt::Key_Left);
         QCOMPARE(saved.count(), 2);
-        QCOMPARE(SettingsStore().audioPreRollMs(), slider->property("value").toInt());
+        QCOMPARE(SettingsStore().audioCaptureSettings().preRollMs, slider->property("value").toInt());
     }
 
     void changesSavedElsewhereShowUp()
@@ -385,7 +385,7 @@ private slots:
 
         SettingsStore another;
         QCOMPARE(another.speechFallbackProviders(), QStringList{QStringLiteral("codex")});
-        QCOMPARE(another.audioPreRollMs(), 300);
+        QCOMPARE(another.audioCaptureSettings().preRollMs, 300);
         QCOMPARE(another.updateCheckIntervalMinutes(), 120);
         QCOMPARE(another.updateCheckIntervalUnit(), QStringLiteral("hours"));
         QCOMPARE(result.toVariant().toStringList(), QStringList{QStringLiteral("codex")});

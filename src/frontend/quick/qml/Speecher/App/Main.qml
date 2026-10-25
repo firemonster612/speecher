@@ -105,10 +105,6 @@ ClientWindow {
 
     // Notes posted to Toaster rise in at the bottom, over everything.
     Toast {}
-    Connections {
-        target: System
-        function onAnnounced(text, icon) { Toaster.show(text, { icon: icon }) }
-    }
 
     Shortcut { sequence: "Ctrl+K"; enabled: !window.settingsDeleted; onActivated: searchPalette.shown ? searchPalette.close() : searchPalette.open() }
     Shortcut { sequence: "Ctrl+F"; enabled: !window.settingsDeleted; onActivated: searchPalette.open() }

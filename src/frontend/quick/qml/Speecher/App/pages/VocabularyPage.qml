@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Launch
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -14,11 +13,8 @@ Page {
     title: Schema.page("vocabulary").title
     subtitle: Schema.page("vocabulary").subtitle
 
-    // Preview state: --vocab=terms|corrections|replacements picks the list,
-    // --vocab-form=add|edit opens its form.
-
     // The list on show.
-    property string tab: Launch.arg("vocab", "terms")
+    property string tab: "terms"
 
     // Each list with the schema rows it shows, so a search jump to one of
     // them opens the list.
@@ -101,7 +97,7 @@ Page {
             Column {
                 spacing: Theme.space3
                 Caption { text: page.kinds[0].caption }
-                VocabTerms { id: terms; startForm: Launch.arg("vocab-form", "") }
+                VocabTerms { id: terms }
             }
             Column {
                 spacing: Theme.space3
@@ -111,7 +107,7 @@ Page {
             Column {
                 spacing: Theme.space3
                 Caption { text: page.kinds[2].caption }
-                VocabReplacements { id: replacements; startForm: Launch.arg("vocab-form", "") }
+                VocabReplacements { id: replacements }
             }
         }
     }

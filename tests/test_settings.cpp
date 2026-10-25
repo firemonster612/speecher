@@ -6,7 +6,6 @@
 #include "core/settings/SettingsKeys.h"
 #include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
-#include "core/KeyringResult.h"
 #include "core/ShortcutBinding.h"
 
 #include <QSet>
@@ -151,16 +150,6 @@ private slots:
                  peer.readAll().constData());
         QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-secret"));
     }
-
-#ifdef SPEECHER_WITH_QKEYCHAIN
-    void missingKeyringEntryOrBackendCountsAsSuccessfulDeletion()
-    {
-        QVERIFY(keyringDeletionSucceeded(QKeychain::NoError));
-        QVERIFY(keyringDeletionSucceeded(QKeychain::EntryNotFound));
-        QVERIFY(keyringDeletionSucceeded(QKeychain::NoBackendAvailable));
-        QVERIFY(!keyringDeletionSucceeded(QKeychain::AccessDeniedByUser));
-    }
-#endif
 
     void identityMigrationMergesOnlyMissingSettingsOnce()
     {
@@ -438,13 +427,14 @@ private slots:
         QCOMPARE(settings.ydotoolEnabled(), false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
         QCOMPARE(settings.snapshot().output.completionStatusDurationMs, 500);
-        QCOMPARE(settings.audioInputDeviceId(), QString());
-        QCOMPARE(settings.audioCaptureMode(), QStringLiteral("on_demand"));
-        QCOMPARE(settings.audioVadEnabled(), false);
-        QCOMPARE(settings.audioPreRollMs(), 250);
-        QCOMPARE(settings.audioPostRollMs(), 200);
-        QCOMPARE(settings.audioReadinessTimeoutMs(), 900);
-        QCOMPARE(settings.audioVadThresholdPercent(), 2);
+        const AudioCaptureSettings audio = settings.audioCaptureSettings();
+        QCOMPARE(audio.deviceId, QString());
+        QCOMPARE(audio.mode, QStringLiteral("on_demand"));
+        QCOMPARE(audio.vadEnabled, false);
+        QCOMPARE(audio.preRollMs, 250);
+        QCOMPARE(audio.postRollMs, 200);
+        QCOMPARE(audio.readinessTimeoutMs, 900);
+        QCOMPARE(audio.vadThresholdPercent, 2);
         QCOMPARE(settings.shortcutActivationMode(), ShortcutActivationMode::Hybrid);
 
         settings.setSetupCompleted(true);
@@ -637,13 +627,14 @@ private slots:
             50,
             99,
         });
-        QCOMPARE(settings.audioInputDeviceId(), QStringLiteral("mic-id"));
-        QCOMPARE(settings.audioCaptureMode(), QStringLiteral("warm"));
-        QCOMPARE(settings.audioVadEnabled(), true);
-        QCOMPARE(settings.audioPreRollMs(), 1500);
-        QCOMPARE(settings.audioPostRollMs(), 0);
-        QCOMPARE(settings.audioReadinessTimeoutMs(), 500);
-        QCOMPARE(settings.audioVadThresholdPercent(), 20);
+        const AudioCaptureSettings clamped = settings.audioCaptureSettings();
+        QCOMPARE(clamped.deviceId, QStringLiteral("mic-id"));
+        QCOMPARE(clamped.mode, QStringLiteral("warm"));
+        QCOMPARE(clamped.vadEnabled, true);
+        QCOMPARE(clamped.preRollMs, 1500);
+        QCOMPARE(clamped.postRollMs, 0);
+        QCOMPARE(clamped.readinessTimeoutMs, 500);
+        QCOMPARE(clamped.vadThresholdPercent, 20);
 
         settings.raw().setValue(SettingsKeys::ShortcutActivationMode, QStringLiteral("hold"));
         QCOMPARE(settings.shortcutActivationMode(), ShortcutActivationMode::Hybrid);
@@ -872,7 +863,7 @@ private slots:
     }
 
     // A profile's Local Model that can't hear the Spoken Language is passed
-    // over, and the dialog says which service runs instead.
+    // over for the Dictation page's service.
     void profileSpeechThatCantHearTheLanguageIsPassedOver()
     {
         AppSettings settings;
@@ -885,10 +876,6 @@ private slots:
         AppSettings resolved = withWritingProfileProviders(settings, profile);
         QCOMPARE(resolved.speech.providerId, QStringLiteral("claude"));
         QCOMPARE(resolved.speech.local.modelId, settings.speech.local.modelId);
-        QCOMPARE(profileSpokenLanguageProblem(*profileSpeechSettings(settings.speech, profile),
-                                              QStringLiteral("Local Model"), QStringLiteral("Claude Voice")),
-                 QStringLiteral("Parakeet 0.6B doesn't listen for Japanese, your Spoken Language, so this profile "
-                                "uses Claude Voice."));
 
         profile.speechModel = QStringLiteral("qwen3-asr");
         resolved = withWritingProfileProviders(settings, profile);

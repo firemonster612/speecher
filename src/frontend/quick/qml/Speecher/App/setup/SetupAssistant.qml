@@ -18,7 +18,7 @@ ClientWindow {
     visible: true
     title: Setup.text.title
 
-    // The step on show, from 0. The preview tool sets it with --set step=n.
+    // The step on show, from 0.
     property int step: 0
 
     readonly property var steps: choices.steps

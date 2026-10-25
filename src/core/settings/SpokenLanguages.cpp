@@ -44,24 +44,6 @@ QString englishName(const QString &language)
     return known == QLocale::AnyLanguage ? language : QLocale::languageToString(known);
 }
 
-QString nativeLanguageName(QLocale::Language language)
-{
-    switch (language) {
-    case QLocale::English:
-        return {};
-    // Qt names these by their default territory or script: "español de
-    // España", "简体中文".
-    case QLocale::Spanish:
-        return QStringLiteral("español");
-    case QLocale::Chinese:
-        return QStringLiteral("中文");
-    default:
-        break;
-    }
-    const QLocale locale(language);
-    return locale.language() == language ? locale.nativeLanguageName() : QString();
-}
-
 } // namespace
 
 QStringList spokenLanguages(const SpeechSettings &speech)
@@ -84,19 +66,6 @@ QStringList spokenLanguages(const SpeechSettings &speech)
                                                                                     : model->languages;
     }
     return {};
-}
-
-QString spokenLanguageLabel(const QString &language)
-{
-    if (language == QLatin1String(kAutomaticSpokenLanguage)) {
-        return QStringLiteral("Automatic");
-    }
-    const QString english = englishName(language);
-    const QString native = nativeLanguageName(localeLanguage(language));
-    if (native.isEmpty() || native.compare(english, Qt::CaseInsensitive) == 0) {
-        return english;
-    }
-    return QStringLiteral("%1 (%2)").arg(english, native);
 }
 
 QString requestedSpokenLanguage(const QString &language)
@@ -128,24 +97,6 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
     }
     return QStringLiteral("%1 can't listen for %2. Choose another Spoken Language.")
         .arg(service, englishName(speech.language));
-}
-
-QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
-                                     const QString &serviceLabel,
-                                     const QString &instead)
-{
-    if (listensForSpokenLanguage(profileSpeech)) {
-        return {};
-    }
-    const LocalModel *model = profileSpeech.providerId == QStringLiteral("local")
-        ? findLocalModel(profileSpeech.local.modelId)
-        : nullptr;
-    const QString service = model ? model->name : serviceLabel;
-    if (profileSpeech.language == QLatin1String(kAutomaticSpokenLanguage)) {
-        return QStringLiteral("%1 can't detect the language, so this profile uses %2.").arg(service, instead);
-    }
-    return QStringLiteral("%1 doesn't listen for %2, your Spoken Language, so this profile uses %3.")
-        .arg(service, englishName(profileSpeech.language), instead);
 }
 
 QStringList knownSpokenLanguages()

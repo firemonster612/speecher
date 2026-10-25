@@ -14,10 +14,6 @@ namespace speecher {
 // Empty for a service with no list, such as the test stub, which takes any.
 QStringList spokenLanguages(const SpeechSettings &speech);
 
-// "German (Deutsch)": the English name, then the native one when it differs.
-// "Automatic" for kAutomaticSpokenLanguage.
-QString spokenLanguageLabel(const QString &language);
-
 // The language code a speech request names, or empty for Automatic, which
 // names none.
 QString requestedSpokenLanguage(const QString &language);
@@ -32,14 +28,6 @@ bool listensForSpokenLanguage(const SpeechSettings &speech);
 // English and the service by serviceLabel, or a Local Model by its own name.
 // Speecher never switches the language itself.
 QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel);
-
-// Empty while a Writing Profile's own speech service listens for the stored
-// Spoken Language; otherwise the sentence that says the profile uses
-// `instead`, the Dictation page's service, naming the profile's service by
-// serviceLabel, or a Local Model by its own name.
-QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
-                                     const QString &serviceLabel,
-                                     const QString &instead);
 
 // Every code some service or Local Model offers, and kAutomaticSpokenLanguage,
 // sorted: what `--language` accepts.

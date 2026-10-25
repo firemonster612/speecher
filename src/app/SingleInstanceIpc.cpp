@@ -425,19 +425,6 @@ bool SingleInstanceIpc::listen(QString *error)
     return true;
 }
 
-bool SingleInstanceIpc::sendCommand(const QString &command,
-                                    IpcResponse *response,
-                                    int timeoutMs,
-                                    std::shared_ptr<const SingleInstancePlatform> platform)
-{
-    return sendCommandDetailed(command,
-                               SessionOverrides(),
-                               response,
-                               timeoutMs,
-                               std::move(platform),
-                               nullptr) == IpcCommandResult::Sent;
-}
-
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         IpcResponse *response,
                                                         int timeoutMs,

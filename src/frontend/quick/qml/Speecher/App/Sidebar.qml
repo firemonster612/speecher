@@ -97,9 +97,8 @@ Item {
             border.color: Theme.border
             visible: target !== null
             // Under reduced motion it moves at once.
-            Behavior on y { enabled: selection.ready && Theme.movement > 0; Ease { duration: Theme.slow; curve: Theme.springy } }
-            property bool ready: false
-            Component.onCompleted: Qt.callLater(() => ready = true)
+            Behavior on y { enabled: settle.done && Theme.movement > 0; Ease { duration: Theme.slow; curve: Theme.springy } }
+            Settle { id: settle }
         }
 
         Column {

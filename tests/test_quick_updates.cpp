@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
 #include "common/test_manifest_updater_access.h"
+#include "common/test_quick_windows.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupPresentation.h"
@@ -18,6 +19,7 @@
 #include <QUrl>
 
 using namespace speecher;
+using speecher::test::openWindow;
 
 namespace {
 
@@ -57,17 +59,6 @@ public:
 public slots:
     void open(const QUrl &url) { opened.append(url); }
 };
-
-// The open window whose QML type's name starts with typeName.
-QQuickWindow *openWindow(const QByteArray &typeName)
-{
-    for (QWindow *window : QGuiApplication::topLevelWindows()) {
-        if (window->isVisible() && QByteArray(window->metaObject()->className()).startsWith(typeName)) {
-            return qobject_cast<QQuickWindow *>(window);
-        }
-    }
-    return nullptr;
-}
 
 // The page the main window shows.
 QString mainPage()

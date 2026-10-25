@@ -50,6 +50,7 @@ Section 1.0 Section.qml
 SegmentedControl 1.0 SegmentedControl.qml
 ServiceCards 1.0 ServiceCards.qml
 Select 1.0 Select.qml
+Settle 1.0 Settle.qml
 SettingRow 1.0 SettingRow.qml
 ShortcutField 1.0 ShortcutField.qml
 Slider 1.0 Slider.qml
