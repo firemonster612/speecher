@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QObject>
 #include <QQmlEngine>
@@ -60,9 +59,7 @@ private:
     const bool m_onPlasma;
     QFileSystemWatcher m_watcher;
     QStringList m_configFolders;
-    // The kdeglobals in effect, and when it was last changed, as last read.
-    QString m_kdeglobals;
-    QDateTime m_kdeglobalsModified;
+    // The colours of the kdeglobals in effect, as last read.
     QVariantMap m_systemColors;
     QVariantList m_installedSchemes;
 };

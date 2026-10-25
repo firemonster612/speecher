@@ -375,7 +375,8 @@ private slots:
 
     void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
     {
-        QuickDictation::setErrorDismissMs(300);
+        // No runner outlasts this countdown while the popup first shows.
+        QuickDictation::setErrorDismissMs(60000);
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
@@ -392,6 +393,9 @@ private slots:
         QQuickItem *capsule = capsuleOf(window);
         QVERIFY(capsule);
         QTRY_COMPARE(capsule->opacity(), 1.0);
+        // Shown again once the capsule is up: the countdown restarts, short.
+        QuickDictation::setErrorDismissMs(300);
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
 
         QTest::mouseMove(window, centreOf(capsule));
         QTest::qWait(600);
