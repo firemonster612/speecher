@@ -17,10 +17,12 @@
 #include <QGuiApplication>
 #include <QJSValue>
 #include <QQmlEngine>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSGRendererInterface>
 
+#include <algorithm>
 #include <functional>
 #include <utility>
 
@@ -48,6 +50,36 @@ void runSteps(const QList<std::pair<QString, std::function<void()>>> &steps)
         step();
         QTest::qWait(kSettleMs);
     }
+}
+
+// The search palette's results for query: { id, trail } of each.
+QList<std::pair<QString, QString>> searchResults(QObject *search, const QString &query)
+{
+    search->setProperty("query", query);
+    QList<std::pair<QString, QString>> results;
+    for (const QVariant &result : search->property("results").value<QJSValue>().toVariant().toList()) {
+        const QVariantMap map = result.toMap();
+        results.append({map.value(QStringLiteral("id")).toString(), map.value(QStringLiteral("trail")).toString()});
+    }
+    return results;
+}
+
+// The sidebar entry for pageId in window, or null.
+QQuickItem *sidebarEntry(QQuickWindow *window, const QString &pageId)
+{
+    QList<QQuickItem *> items{window->contentItem()};
+    while (!items.isEmpty()) {
+        QQuickItem *item = items.takeLast();
+        items += item->childItems();
+        QVariant page = item->property("page");
+        if (page.canConvert<QJSValue>()) {
+            page = page.value<QJSValue>().toVariant();
+        }
+        if (item->property("hasSubpages").isValid() && page.toMap().value(QStringLiteral("id")).toString() == pageId) {
+            return item;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -117,8 +149,56 @@ private slots:
                               search->setProperty("query", query);
                           }});
         }
+        // A parent's title finds its subpages, and they and their rows show
+        // the path to them.
+        steps.append({QStringLiteral("search paths"), [search] {
+                          QMetaObject::invokeMethod(search, "open");
+                          const auto parent = searchResults(search, QStringLiteral("refinement"));
+                          QVERIFY(parent.contains(std::pair{QStringLiteral("profiles"), QStringLiteral("Refinement › Writing profiles")}));
+                          QVERIFY(parent.contains(std::pair{QStringLiteral("vocabulary"), QStringLiteral("Refinement › Vocabulary")}));
+                          const auto child = searchResults(search, QStringLiteral("spelling"));
+                          QVERIFY(std::any_of(child.cbegin(), child.cend(), [](const auto &result) {
+                              return result.second == QStringLiteral("Refinement › Vocabulary, Terms");
+                          }));
+                      }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
         runSteps(steps);
+    }
+
+    // Closing a group hands a subpage's keyboard focus to its parent, and
+    // asking for a page whose group was closed by hand opens it again, even
+    // when that page is already showing.
+    void sidebarGroupsFollowRequestsAndFocus()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        QQuickItem *refinement = sidebarEntry(main, QStringLiteral("refinement"));
+        QQuickItem *profiles = sidebarEntry(main, QStringLiteral("profiles"));
+        QVERIFY(refinement && profiles);
+        QTRY_VERIFY(refinement->property("open").toBool());
+        QTest::qWait(kSettleMs);
+
+        profiles->forceActiveFocus(Qt::TabFocusReason);
+        QVERIFY(profiles->hasActiveFocus());
+        QMetaObject::invokeMethod(refinement, "openRequested", Q_ARG(bool, false));
+        QVERIFY(!refinement->property("open").toBool());
+        QVERIFY(refinement->hasActiveFocus());
+
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        QVERIFY(refinement->property("open").toBool());
+
+        QMetaObject::invokeMethod(refinement, "openRequested", Q_ARG(bool, false));
+        QMetaObject::invokeMethod(navigation, "goToRow", Q_ARG(QVariant, QStringLiteral("defaultWritingProfile")));
+        QVERIFY(refinement->property("open").toBool());
+        QCOMPARE(navigation->property("current").toString(), QStringLiteral("profiles"));
     }
 
     void everySetupStepLoads_data() { themes(); }

@@ -4,7 +4,8 @@
 // finish: what starts it, what hears it, what cleans it up, where it goes.
 // subtitle is the line of explanation under a page's title. A page with a
 // parent is one of that page's subpages: it takes its parent's group, sits
-// under it in the sidebar and follows it here.
+// under it in the sidebar and follows it here. A parent must be a top-level
+// page, as the sidebar draws one level of subpages.
 var groups = [
     { id: "start", title: "" },
     { id: "dictation", title: "Dictation" },

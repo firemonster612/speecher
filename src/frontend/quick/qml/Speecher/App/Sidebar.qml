@@ -257,9 +257,10 @@ Item {
                         bottomPadding: 6
                     }
                     // A page and its subpages, which open under it when it
-                    // or one of them is opened and stay open after. Closed
-                    // by hand, they stay closed until opened again or one of
-                    // them is opened.
+                    // or one of them is asked for and stay open after.
+                    // Closed by hand, they stay closed until opened again or
+                    // one of them is asked for, even the one showing; a
+                    // subpage that had keyboard focus hands it to the page.
                     Repeater {
                         model: Schema.pages.filter(p => p.group === group.modelData.id)
                         delegate: Column {
@@ -269,19 +270,33 @@ Item {
                             readonly property bool subpageCurrent: subpages.some(p => p.id === Navigation.current)
                             property bool open: false
                             property bool closedByHand: false
-                            function follow() {
-                                if (subpageCurrent || Navigation.current === modelData.id && !closedByHand) open = true
+                            // Opens for a request for pageId. It reads the id it
+                            // is given, not subpageCurrent, which may not have
+                            // caught up with the request yet.
+                            function follow(pageId) {
+                                if (subpages.some(p => p.id === pageId) || pageId === modelData.id && !closedByHand) open = true
                             }
-                            Component.onCompleted: follow()
-                            Connections { target: Navigation; function onCurrentChanged() { family.follow() } }
+                            function setOpen(wanted) {
+                                if (!wanted && family.holdsFocus()) parentEntry.forceActiveFocus(Qt.TabFocusReason)
+                                open = wanted
+                                closedByHand = !wanted
+                            }
+                            function holdsFocus() {
+                                for (let p = sidebar.Window.activeFocusItem; p; p = p.parent)
+                                    if (p === subpageList) return true
+                                return false
+                            }
+                            Component.onCompleted: follow(Navigation.current)
+                            Connections { target: Navigation; function onRequested(pageId) { family.follow(pageId) } }
                             width: nav.width
 
                             Entry {
+                                id: parentEntry
                                 page: family.modelData
                                 marked: Navigation.current === family.modelData.id || family.subpageCurrent && !family.open
                                 hasSubpages: family.subpages.length > 0
                                 open: family.open
-                                onOpenRequested: wanted => { family.open = wanted; family.closedByHand = !wanted }
+                                onOpenRequested: wanted => family.setOpen(wanted)
                             }
                             Reveal {
                                 open: family.open

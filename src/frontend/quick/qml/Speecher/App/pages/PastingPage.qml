@@ -39,7 +39,7 @@ Page {
     Section {
         title: Schema.row("outputMethod").section
         SchemaRow { rowId: "outputMethod" }
-        // The same check as General's, with the setup's own menu after it.
+        // The same check as Permissions & health's, with the setup's own menu after it.
         HealthRow {
             rowId: "virtualKeyboard"
             checkId: "virtualKeyboardHealth"

@@ -543,10 +543,8 @@ private slots:
         QuickSettings settings(&controller);
         StandInSystem standIn(&controller);
         QuickSystem &system = standIn.system;
-        // General clears Insights' history and reads Appearance, as the host
-        // always has them.
+        // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
-        QuickAppearance appearance(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
             import QtQuick
@@ -690,10 +688,9 @@ private slots:
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         StandInSystem standIn(&controller);
-        // General reads Insights and Appearance, Pasting and setup Models,
-        // setup Audio, as the host always has them.
+        // General reads Insights, Pasting and setup Models, setup Audio, as
+        // the host always has them.
         QuickInsights insights(&controller);
-        QuickAppearance appearance(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;

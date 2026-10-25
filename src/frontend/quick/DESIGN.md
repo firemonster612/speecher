@@ -377,9 +377,11 @@ Layout:
   wash and the pill on it start right of the guide.
   They open, growing in through a `Reveal`, when the parent or one of them
   is opened, and stay open after; closed by hand they stay closed until
-  opened again or one of them is opened. While a current subpage is folded
-  away the pill sits on its parent. Up and Down step through the entries
-  that show, Right and Left open and close a parent's subpages. A
+  opened again or one of them is asked for, even the one showing
+  (`Navigation.requested`). While a current subpage is folded away the
+  pill sits on its parent, and a subpage that had keyboard focus hands it
+  to the parent. Up and Down step through the entries that show, Right
+  and Left open and close a parent's subpages. A
   subpage's title leads with the path to it ("Refinement › Vocabulary"),
   each step a quiet link to that page, and search gives a subpage and its
   rows the same path. The parent lists its subpages too, in a
