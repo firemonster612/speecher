@@ -162,6 +162,31 @@ private:
     ClipboardDelivery *m_clipboardDelivery = nullptr;
 };
 
+// Whether delivery tries inserting straight into the app first, and whether
+// that is all it tries before leaving the words on the clipboard.
+struct DirectInsertion {
+    bool requested = false;
+    bool only = false;
+};
+
+DirectInsertion directInsertion(const QString &outputMethod, PasteMethod pasteMethod)
+{
+    if (pasteMethod == PasteMethod::ClipboardOnly) {
+        return {};
+    }
+    const bool asked = pasteMethod == PasteMethod::DirectInsert
+        || outputMethod == QString::fromLatin1(OutputMethod::DirectInsert);
+    return {asked || outputMethod == QString::fromLatin1(OutputMethod::Automatic), asked};
+}
+
+// The methods that press the paste keys in the target, rather than copy.
+bool pressesPasteKeys(const QString &method)
+{
+    return method == QString::fromLatin1(OutputMethod::Ydotool)
+        || method == QString::fromLatin1(OutputMethod::MacPaste)
+        || method == QString::fromLatin1(OutputMethod::WinPaste);
+}
+
 } // namespace
 
 TextDelivery::TextDelivery(QObject *parent)
@@ -237,16 +262,9 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     if (!target.secure && (trackableTarget || currentFocusFallback)) {
         pasteMethod = pasteRule.method;
     }
-    const QString outputMethod = OutputMethod::normalized(settings.method);
-    const bool ruleDirectInsert = pasteMethod == PasteMethod::DirectInsert;
-    const bool outputDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
-        && outputMethod == QString::fromLatin1(OutputMethod::DirectInsert);
-    const bool automaticDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
-        && outputMethod == QString::fromLatin1(OutputMethod::Automatic);
-    const bool directInsertRequested = ruleDirectInsert
-        || outputDirectInsert
-        || automaticDirectInsert;
-    const bool directInsertOnly = ruleDirectInsert || outputDirectInsert;
+    const DirectInsertion insertion = directInsertion(OutputMethod::normalized(settings.method), pasteMethod);
+    const bool directInsertRequested = insertion.requested;
+    const bool directInsertOnly = insertion.only;
     const TargetProvider::FocusMatch focus = m_targetProvider
         ? m_targetProvider->focusMatch(target)
         : TargetProvider::FocusMatch::Different;
@@ -374,9 +392,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
 
         QString error;
         bool htmlAvailable = false;
-        const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
-            || method == QString::fromLatin1(OutputMethod::MacPaste)
-            || method == QString::fromLatin1(OutputMethod::WinPaste);
+        const bool virtualKeyboardInput = pressesPasteKeys(method);
         // The focus gate belongs here, immediately before the keystrokes go
         // out: preparePaste marks the edit for verification, it does not
         // decide whether to paste.
@@ -470,6 +486,29 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 ? (downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
                 : QStringLiteral("Copied; insertion failed: %1").arg(firstError)),
     };
+}
+
+QStringList TextDelivery::pasteRoute(const OutputSettings &settings, PasteMethod pasteMethod)
+{
+    const QString copy = QStringLiteral("copy");
+    if (pasteMethod == PasteMethod::ClipboardOnly) {
+        return {copy};
+    }
+    const DirectInsertion insertion = directInsertion(OutputMethod::normalized(settings.method), pasteMethod);
+    QStringList route;
+    if (insertion.requested) {
+        route << QStringLiteral("insert");
+    }
+    if (insertion.only) {
+        return route << copy;
+    }
+    for (const QString &method : orderedMethods(settings, pasteMethod)) {
+        const QString step = pressesPasteKeys(method) ? QStringLiteral("press") : copy;
+        if (!route.contains(step)) {
+            route << step;
+        }
+    }
+    return route;
 }
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)

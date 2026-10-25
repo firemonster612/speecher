@@ -1,8 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
-
-#include <QSettings>
+#include "core/settings/SettingsFile.h"
 
 #include <optional>
 
@@ -104,7 +103,7 @@ private:
     QVariant value(const QString &key, const QVariant &fallback) const;
 
 protected:
-    QSettings m_settings;
+    SettingsFile m_settings;
 };
 
 } // namespace speecher

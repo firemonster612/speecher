@@ -250,6 +250,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
+  src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
@@ -288,6 +289,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
   src/core/settings/SettingsCodecs.h
+  src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h
@@ -597,10 +599,14 @@ set(SPEECHER_APP_HEADERS
 
 set(SPEECHER_APP_LINUX_SOURCES
   src/app/LinuxComposition.cpp
+  src/app/SpeecherRemoval.cpp
+  src/app/VirtualKeyboardSetup.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
   src/app/LinuxComposition.h
+  src/app/SpeecherRemoval.h
+  src/app/VirtualKeyboardSetup.h
 )
 
 set(SPEECHER_APP_WIN_SOURCES
@@ -1388,6 +1394,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_dictation.cpp
       tests/test_quick_updates.cpp
       tests/test_quick_transcription.cpp
+      tests/test_quick_system.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1425,7 +1432,7 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
-    quick_transcription)
+    quick_transcription quick_system)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

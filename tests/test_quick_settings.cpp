@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/PasteRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickSettings.h"
 
@@ -12,6 +13,7 @@
 #include <QSignalSpy>
 
 #include <memory>
+#include <optional>
 
 // The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
 // imports their plugins for the whole binary, as in the app.
@@ -117,9 +119,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
 
-        QTest::ignoreMessage(QtWarningMsg, "Settings.set: globalPasteRule is not saved from the UI yet");
-        settings.set(QStringLiteral("globalPasteRule"), QStringLiteral("clipboard"));
-        QVERIFY(!settings.values().contains(QStringLiteral("globalPasteRule")));
+        QTest::ignoreMessage(QtWarningMsg, "Settings.set: speechEndpointApiKey is not saved from the UI yet");
+        settings.set(QStringLiteral("speechEndpointApiKey"), QStringLiteral("sk-made-up"));
+        QVERIFY(!settings.values().contains(QStringLiteral("speechEndpointApiKey")));
 
         // A placeholder area's made-up choice never reaches the config.
         const QString profile = SettingsStore().dictationSnapshot().refinement.defaultWritingProfile;
@@ -127,12 +129,13 @@ private slots:
         settings.set(QStringLiteral("defaultWritingProfile"), QStringLiteral("made-up"));
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
 
-        for (const char *id : {"globalPasteRule", "speechEndpointApiKey", "audioDevice", "speechLocalModel",
+        for (const char *id : {"speechEndpointApiKey", "audioDevice", "speechLocalModel",
                                "localRunner", "openAiCliproxyAccount", "anthropicCliproxyAccount",
                                "defaultWritingProfile"}) {
             QVERIFY2(!settings.saves(QLatin1String(id)), id);
         }
-        for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup"}) {
+        for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
+                               "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules"}) {
             QVERIFY2(settings.saves(QLatin1String(id)), id);
         }
     }
@@ -154,10 +157,10 @@ private slots:
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
         // A greyed choice the backend does not save shows no choice at all.
-        const std::unique_ptr<QObject> pasteRule = schemaRow(engine, "globalPasteRule");
-        QVERIFY(!pasteRule->property("enabled").toBool());
+        const std::unique_ptr<QObject> duration = schemaRow(engine, "resultDuration");
+        QVERIFY(!duration->property("enabled").toBool());
         const QObject *select = nullptr;
-        for (const QObject *child : pasteRule->findChildren<QObject *>()) {
+        for (const QObject *child : duration->findChildren<QObject *>()) {
             if (QByteArray(child->metaObject()->className()).startsWith("Select_")) {
                 select = child;
             }
@@ -170,30 +173,50 @@ private slots:
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
     }
 
-    // A page that greys rows for its own reason keeps SchemaRow's: the Pasting
-    // page's app type rows need accessibility, which the preview's System has,
-    // and stay greyed while the backend saves none of their rules.
-    void pastingTypeRowsGreyOutWhatIsNotSaved()
+    // Paste rules are one list in core: each row edits its own rule and
+    // keeps the others, and a row with no rule of its own inherits.
+    void pasteRulesSaveByScope()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
-        const std::unique_ptr<QObject> page(component.create());
-        QVERIFY2(page, qPrintable(component.errorString()));
+        // A copy, since the list it was found in goes with the lambda.
+        const auto rule = [](PasteRuleScope scope, const char *match) -> std::optional<PasteRule> {
+            const QList<PasteRule> rules = SettingsStore().pasteRules();
+            const PasteRule *found = findPasteRule(rules, scope, QLatin1String(match));
+            return found ? std::optional(*found) : std::nullopt;
+        };
+        const auto value = [&settings](const char *id) { return settings.values().value(QLatin1String(id)); };
 
-        int typeRows = 0;
-        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(page.get())};
-        while (!items.isEmpty()) {
-            QQuickItem *item = items.takeLast();
-            items += item->childItems();
-            const QString rowId = item->property("rowId").toString();
-            if (rowId.startsWith(QLatin1String("categoryPasteRule_"))) {
-                ++typeRows;
-                QVERIFY2(!item->property("enabled").toBool(), qPrintable(rowId));
-            }
-        }
-        QCOMPARE(typeRows, 7);
+        QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("terminal_paste"));
+        QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("inherit"));
+        settings.set(QStringLiteral("globalPasteRule"), QStringLiteral("clipboard_only"));
+        settings.set(QStringLiteral("categoryPasteRule_browser"), QStringLiteral("direct_insert"));
+        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
+        QCOMPARE(rule(PasteRuleScope::Global, "")->method, PasteMethod::ClipboardOnly);
+        QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
+        QVERIFY(!rule(PasteRuleScope::Category, "terminal"));
+        QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("inherit"));
+        QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("direct_insert"));
+
+        const QVariantList apps{
+            QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
+                        {QStringLiteral("method"), QStringLiteral("standard_paste")},
+                        {QStringLiteral("enabled"), false}},
+        };
+        settings.set(QStringLiteral("applicationPasteRules"), apps);
+        QCOMPARE(*rule(PasteRuleScope::Application, "org.kde.konsole"),
+                 (PasteRule{PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::StandardPaste, false}));
+        QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
+        QCOMPARE(value("applicationPasteRules").toList(), apps);
+        QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
+
+        // Two rules for one app are refused with core's reason, and nothing is saved.
+        settings.set(QStringLiteral("applicationPasteRules"), apps + apps);
+        QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
+        QCOMPARE(SettingsStore().pasteRules().size(), 3);
+        settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
+        QVERIFY(!rule(PasteRuleScope::Application, "org.kde.konsole"));
+        QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
     }
 
     // Each save is a whole snapshot through the store, so a drag saves once,

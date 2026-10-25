@@ -4,6 +4,8 @@
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
+#include <QDebug>
+
 #include <utility>
 
 namespace speecher {
@@ -102,6 +104,17 @@ SettingsStore::SettingsStore(QObject *parent)
     , SettingsCodecs()
 {
     m_secrets = new SecretStore(this, this);
+}
+
+bool SettingsStore::deleteAll(QString *path)
+{
+    if (m_settings.deleteFile()) {
+        return true;
+    }
+    if (path) {
+        *path = m_settings.fileName();
+    }
+    return false;
 }
 
 SecretStore *SettingsStore::secrets() const
@@ -217,6 +230,10 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    if (m_settings.deleted()) {
+        qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
+        return;
+    }
     const AppSettings previous = dictationSnapshot();
     const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
         if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
@@ -334,6 +351,11 @@ void SettingsStore::setCorrectionLearningEnabled(bool enabled)
 
 std::optional<QStringList> SettingsStore::addVocabularyTerms(const QStringList &terms)
 {
+    // It saves through a QSettings of its own, which would save this one's
+    // changes too.
+    if (m_settings.deleted()) {
+        return std::nullopt;
+    }
     const std::optional<QStringList> held = SettingsCodecs::addVocabularyTerms(terms);
     if (held && held->size() < terms.size()) {
         emit vocabularyAdded();
@@ -435,7 +457,7 @@ void SettingsStore::setUpdateCheckIntervalMinutes(int value)
     emit updateSettingsChanged();
 }
 
-QSettings &SettingsStore::raw()
+SettingsFile &SettingsStore::raw()
 {
     return m_settings;
 }

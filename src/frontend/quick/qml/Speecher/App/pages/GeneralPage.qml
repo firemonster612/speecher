@@ -17,6 +17,45 @@ Page {
     property bool _confirmClear: false
     property bool _confirmRemove: false
     property bool _removeSettings: false
+    readonly property bool _removed: System.removal.steps !== undefined
+
+    readonly property var t: ({
+        showCode: "Show code",
+        hideCode: "Hide code",
+        remove: "Remove…",
+        confirmRemove: "Remove Speecher",
+        removeQuestion: "Remove Speecher from this computer?",
+        removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
+        removeSettings: "Also delete my settings, vocabulary and API keys"
+    })
+    // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
+    function phoneSummary(bundle) {
+        return "Brings over " + Words.list([
+            Words.count(bundle.terms, "vocabulary term", "vocabulary terms"),
+            Words.count(bundle.replacements, "snippet", "snippets"),
+            Words.count(bundle.profiles, "Writing Profile", "Writing Profiles")]) + ". Never your accounts or API keys."
+    }
+    function phoneNote(state) {
+        switch (state) {
+        case "sent": return "Sent. Finish the import on your phone."
+        case "interrupted": return "Your phone lost the connection. Hide the code and show it again for a new one."
+        case "noNetwork": return "This computer isn't on a network. Connect it to the same Wi-Fi as your phone, then show the code again."
+        case "failed": return "Speecher couldn't open a network port for your phone."
+        default: return "In Speecher for Android, go to Settings, then Import from computer. The code works once, while it shows, on the same network as " + System.computerName + "."
+        }
+    }
+    // The code works only while it shows: hiding the window takes it away,
+    // and showing it again makes a new one.
+    function showPhoneCode(open) {
+        _phoneOpen = open
+        if (open) System.startPhoneTransfer()
+        else System.stopPhoneTransfer()
+    }
+    Connections {
+        target: page.Window.window
+        function onVisibleChanged() { if (!page.Window.window.visible) page.showPhoneCode(false) }
+    }
+    Component.onDestruction: System.stopPhoneTransfer()
 
     Section {
         title: Schema.row("themeControl").section
@@ -30,16 +69,18 @@ Page {
                 onActivated: id => Settings.set("themeControl", id)
             }
         }
-        SchemaRow { rowId: "launchAtLogin" }
+        // Saved only where Speecher can start at login.
+        SchemaRow { rowId: "launchAtLogin"; shown: Settings.saves(rowId) }
     }
 
     Section {
         title: Schema.row("runSetup").section
-        caption: System.checksText
+        caption: Health.summary(System.checks)
         HealthRow { rowId: "microphoneAccess" }
         HealthRow { rowId: "desktopAccessibility" }
         HealthRow { rowId: "globalShortcuts" }
         HealthRow { rowId: "virtualKeyboardHealth" }
+        VirtualKeyboardTest {}
         SchemaRow { rowId: "runSetup" }
     }
 
@@ -57,10 +98,10 @@ Page {
                 rowId: "copyToPhone"
                 stacked: true
                 Button {
-                    text: page._phoneOpen ? System.generalText.hideCode : System.generalText.showCode
+                    text: page._phoneOpen ? page.t.hideCode : page.t.showCode
                     iconName: page._phoneOpen ? "chevron-up" : "qr-code"
                     size: "small"
-                    onClicked: page._phoneOpen = !page._phoneOpen
+                    onClicked: page.showPhoneCode(!page._phoneOpen)
                 }
             }
             Reveal {
@@ -73,6 +114,7 @@ Page {
                         x: Theme.rowInset
                         width: 148
                         height: 148
+                        // Empty once sent, as the code works once.
                         text: System.phoneLink
                     }
                     Column {
@@ -82,10 +124,16 @@ Page {
                         anchors.rightMargin: Theme.rowInset
                         anchors.verticalCenter: qr.verticalCenter
                         spacing: Theme.space2
-                        Txt { width: parent.width; text: System.phoneSummary; variant: "small"; wrapMode: Text.WordWrap }
+                        // Empty until the first code is shown.
                         Txt {
                             width: parent.width
-                            text: System.phoneNote
+                            text: System.phoneBundle.terms === undefined ? "" : page.phoneSummary(System.phoneBundle)
+                            variant: "small"
+                            wrapMode: Text.WordWrap
+                        }
+                        Txt {
+                            width: parent.width
+                            text: page.phoneNote(System.phoneTransfer)
                             variant: "small"
                             tone: "secondary"
                             wrapMode: Text.WordWrap
@@ -130,29 +178,34 @@ Page {
         SchemaRow {
             rowId: "removeSpeecher"
             Button {
-                text: System.generalText.remove
+                text: page.t.remove
                 variant: "danger"
                 size: "small"
-                enabled: System.installed && !page._confirmRemove
+                busy: System.removing
+                enabled: !System.removing && !page._removed && !page._confirmRemove
                 onClicked: page._confirmRemove = true
             }
         }
         InlineConfirm {
             cancelText: Words.cancel
             open: page._confirmRemove
-            text: System.generalText.removeQuestion
-            detail: System.generalText.removeDetail
-            confirmText: System.generalText.confirmRemove
+            text: page.t.removeQuestion
+            detail: page.t.removeDetail
+            confirmText: page.t.confirmRemove
             onCancelled: page._confirmRemove = false
             onConfirmed: {
-                Toaster.show(System.uninstall(!page._removeSettings))
+                System.uninstall(!page._removeSettings)
                 page._confirmRemove = false
             }
             leading: CheckBox {
-                text: System.generalText.removeSettings
+                text: page.t.removeSettings
                 checked: page._removeSettings
                 onToggled: page._removeSettings = checked
             }
+        }
+        Reveal {
+            open: page._removed
+            RemovalReport { inset: Theme.rowInset }
         }
     }
 }

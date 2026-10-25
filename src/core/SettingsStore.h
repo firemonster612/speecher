@@ -45,7 +45,14 @@ public:
     // unreadable key never stops another. Run on the startup worker. Returns
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
+    // Saves the draft, unless deleteAll ran.
     void applySnapshot(const AppSettings &draft);
+    // Clears every setting and deletes the settings file, as removing
+    // Speecher with its settings does. Afterwards nothing the store holds is
+    // saved: not a snapshot, a setter, a codec's write or a sync of raw()
+    // (SettingsFile), so an edit made before Speecher quits can't bring the
+    // file back. A file that won't go puts its path in path.
+    bool deleteAll(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
     void setCliproxyApiKey(const QString &value);
@@ -57,6 +64,7 @@ public:
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
     // SettingsCodecs::addVocabularyTerms, announcing the terms it saved.
+    // Saves nothing, returning nullopt, once deleteAll ran.
     std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
 
     using SettingsCodecs::anthropicAuthMode;
@@ -208,7 +216,7 @@ public:
     void setAutoInstallUpdates(bool value);
     void setUpdateCheckIntervalMinutes(int value);
 
-    QSettings &raw();
+    SettingsFile &raw();
 
 signals:
     // After applySnapshot, with what dictationSnapshot read just before it.

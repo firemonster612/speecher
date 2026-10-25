@@ -1,21 +1,21 @@
 import QtQuick
 import Speecher.Controls
-import Speecher.Backend
 import Speecher.App
 
 // Set up the virtual keyboard that types for Speecher, or settle for the
-// clipboard.
+// clipboard. Setting it up here pastes Automatically.
 StepPage {
     id: page
 
     Card {
-        HealthRow { rowId: "virtualKeyboardHealth" }
-        // Clipboard only is a Default paste rule, which the app does not save
-        // yet, so setup offers it only where it would be kept.
+        HealthRow { id: keyboard; rowId: "virtualKeyboardHealth"; fromSetup: true }
+        VirtualKeyboardTest {}
+        // Clipboard only is the Default paste rule, which finishing setup
+        // saves. A working keyboard leaves nothing to settle for.
         SettingRow {
-            enabled: Settings.saves("globalPasteRule")
-            title: System.setupText.clipboardInstead
-            help: System.setupText.clipboardInsteadHelp
+            shown: keyboard.check.state !== "ok"
+            title: Setup.text.clipboardInstead
+            help: Setup.text.clipboardInsteadHelp
             Switch { checked: page.choices.clipboardOnly; onToggled: page.choices.clipboardOnly = checked }
         }
     }

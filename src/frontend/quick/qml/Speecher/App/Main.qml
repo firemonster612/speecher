@@ -9,6 +9,9 @@ import Speecher.Wording
 // The main window: sidebar on the window background, the current page on an
 // inset panel, the search palette above both, and toasts above that. The host
 // opens it, hides it on close and opens the setup assistant itself.
+// Once removing Speecher has deleted the settings, only quitting is left: the
+// window shows only the removal's report, and closing it quits, as the
+// report's button does, whether removal finishes before the close or after.
 ClientWindow {
     id: window
     width: 1240
@@ -17,6 +20,11 @@ ClientWindow {
     minimumHeight: 600
     visible: true
     title: Words.shell.appName
+    readonly property bool settingsDeleted: System.removal.settingsDeleted === true
+    readonly property bool leftToQuit: settingsDeleted && !visible
+    // Search opened while removal ran goes with the rest of the window.
+    onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()
+    onLeftToQuitChanged: if (leftToQuit) System.quit()
 
     // Opaque, so the search palette's blurred copy of it hides what is under.
     Rectangle {
@@ -27,12 +35,15 @@ ClientWindow {
 
         Sidebar {
             id: sidebar
+            objectName: "sidebar"
+            visible: !window.settingsDeleted
             width: Theme.sidebarWidth
             height: parent.height
             onSearchRequested: searchPalette.open()
         }
 
         Sheet {
+            visible: !window.settingsDeleted
             side: sidebar
             anchors.topMargin: window.titleBarHeight
 
@@ -76,6 +87,13 @@ ClientWindow {
         }
     }
 
+    RemovalReport {
+        objectName: "removalReport"
+        visible: window.settingsDeleted
+        anchors.centerIn: content
+        width: Math.min(640, content.width - 96)
+    }
+
     SearchPalette {
         id: searchPalette
         objectName: "searchPalette"
@@ -90,6 +108,6 @@ ClientWindow {
         function onAnnounced(text, icon) { Toaster.show(text, { icon: icon }) }
     }
 
-    Shortcut { sequence: "Ctrl+K"; onActivated: searchPalette.shown ? searchPalette.close() : searchPalette.open() }
-    Shortcut { sequence: "Ctrl+F"; onActivated: searchPalette.open() }
+    Shortcut { sequence: "Ctrl+K"; enabled: !window.settingsDeleted; onActivated: searchPalette.shown ? searchPalette.close() : searchPalette.open() }
+    Shortcut { sequence: "Ctrl+F"; enabled: !window.settingsDeleted; onActivated: searchPalette.open() }
 }

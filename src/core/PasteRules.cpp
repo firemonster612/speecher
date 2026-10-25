@@ -2,6 +2,8 @@
 
 #include <QSet>
 
+#include <optional>
+
 namespace speecher {
 
 QString pasteRuleScopeName(PasteRuleScope scope)
@@ -65,41 +67,84 @@ QList<PasteRule> defaultPasteRules()
     };
 }
 
+namespace {
+
+// A rule's match as rules compare it: application IDs trimmed and case-folded,
+// app types trimmed and lower-cased; the global rule has none.
+QString comparableMatch(PasteRuleScope scope, const QString &match)
+{
+    switch (scope) {
+    case PasteRuleScope::Application:
+        return match.trimmed().toCaseFolded();
+    case PasteRuleScope::Category:
+        return match.trimmed().toLower();
+    case PasteRuleScope::Global:
+        break;
+    }
+    return {};
+}
+
+bool pasteRuleMatches(const PasteRule &rule, PasteRuleScope scope, const QString &match)
+{
+    return rule.scope == scope && comparableMatch(scope, rule.match) == comparableMatch(scope, match);
+}
+
+} // namespace
+
 PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
 {
-    const QString applicationId = target.applicationId.trimmed().toCaseFolded();
-    const QString category = appCategoryName(target.category);
-
-    for (const PasteRule &rule : rules) {
-        if (rule.enabled
-            && rule.scope == PasteRuleScope::Application
-            && !applicationId.isEmpty()
-            && rule.match.trimmed().toCaseFolded() == applicationId) {
-            return rule;
-        }
-    }
-    if (isTerminalTarget(target)) {
+    const auto enabledRule = [&rules](PasteRuleScope scope, const QString &match) -> std::optional<PasteRule> {
         for (const PasteRule &rule : rules) {
-            if (rule.enabled
-                && rule.scope == PasteRuleScope::Category
-                && rule.match.trimmed().toLower() == appCategoryName(AppCategory::Terminal)) {
+            if (rule.enabled && pasteRuleMatches(rule, scope, match)) {
                 return rule;
             }
         }
-    }
-    for (const PasteRule &rule : rules) {
-        if (rule.enabled
-            && rule.scope == PasteRuleScope::Category
-            && rule.match.trimmed().toLower() == category) {
-            return rule;
+        return std::nullopt;
+    };
+    if (!target.applicationId.trimmed().isEmpty()) {
+        if (const auto rule = enabledRule(PasteRuleScope::Application, target.applicationId)) {
+            return *rule;
         }
     }
-    for (const PasteRule &rule : rules) {
-        if (rule.enabled && rule.scope == PasteRuleScope::Global) {
-            return rule;
+    if (isTerminalTarget(target)) {
+        if (const auto rule = enabledRule(PasteRuleScope::Category, appCategoryName(AppCategory::Terminal))) {
+            return *rule;
         }
+    }
+    if (const auto rule = enabledRule(PasteRuleScope::Category, appCategoryName(target.category))) {
+        return *rule;
+    }
+    if (const auto rule = enabledRule(PasteRuleScope::Global, QString())) {
+        return *rule;
     }
     return {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true};
+}
+
+const PasteRule *findPasteRule(const QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)
+{
+    for (const PasteRule &rule : rules) {
+        if (pasteRuleMatches(rule, scope, match)) {
+            return &rule;
+        }
+    }
+    return nullptr;
+}
+
+void setPasteRule(QList<PasteRule> &rules, PasteRuleScope scope, const QString &match, PasteMethod method)
+{
+    for (PasteRule &rule : rules) {
+        if (pasteRuleMatches(rule, scope, match)) {
+            rule.method = method;
+            rule.enabled = true;
+            return;
+        }
+    }
+    rules.append({scope, match, method, true});
+}
+
+void removePasteRule(QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)
+{
+    rules.removeIf([scope, &match](const PasteRule &rule) { return pasteRuleMatches(rule, scope, match); });
 }
 
 QStringList validatePasteRules(const QList<PasteRule> &rules)
@@ -109,7 +154,7 @@ QStringList validatePasteRules(const QList<PasteRule> &rules)
         if (rule.scope != PasteRuleScope::Application) {
             continue;
         }
-        const QString id = rule.match.toCaseFolded();
+        const QString id = comparableMatch(rule.scope, rule.match);
         if (applicationIds.contains(id)) {
             return {QStringLiteral("Each application ID can have only one paste rule.")};
         }

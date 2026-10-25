@@ -9,10 +9,14 @@ SetupAssistant 1.0 setup/SetupAssistant.qml
 SearchLanding 1.0 SearchLanding.qml
 AccessibilityNotice 1.0 AccessibilityNotice.qml
 HealthRow 1.0 HealthRow.qml
+RemovalReport 1.0 RemovalReport.qml
+VirtualKeyboardTest 1.0 VirtualKeyboardTest.qml
 StateText 1.0 StateText.qml
 Sheet 1.0 Sheet.qml
 Brand 1.0 Brand.qml
 States 1.0 states.js
 singleton TranscribeWords 1.0 pages/transcribe/TranscribeWords.qml
+Health 1.0 health.js
+Setup 1.0 setup/setup.js
 ClientWindow 1.0 ClientWindow.qml
 WindowControls 1.0 WindowControls.qml

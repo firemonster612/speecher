@@ -152,6 +152,21 @@ QString quotedExecutablePath(const QString &path)
     return QStringLiteral("\"%1\"").arg(escaped);
 }
 
+QStringList desktopShortcutSettingsCommand()
+{
+    const QStringList desktops = qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(QLatin1Char(':'));
+    QStringList command;
+    if (desktops.contains(QStringLiteral("KDE"), Qt::CaseInsensitive)) {
+        command = {QStringLiteral("systemsettings"), QStringLiteral("kcm_keys")};
+    } else if (desktops.contains(QStringLiteral("GNOME"), Qt::CaseInsensitive)) {
+        command = {QStringLiteral("gnome-control-center"), QStringLiteral("keyboard")};
+    }
+    if (command.isEmpty() || QStandardPaths::findExecutable(command.first()).isEmpty()) {
+        return {};
+    }
+    return command;
+}
+
 QString globalShortcutInstructionCommand(const QString &homePath,
                                          const QString &appImagePath,
                                          const QString &binaryPath)

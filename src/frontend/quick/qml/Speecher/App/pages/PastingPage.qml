@@ -11,16 +11,26 @@ Page {
     title: Schema.page("pasting").title
     subtitle: Schema.page("pasting").subtitle
 
+    // The steps a paste takes with the default paste and Paste with, in the
+    // order core's delivery tries them, in words: [{ icon, label }].
+    readonly property var _route: System.pasteRoute.map(step => ({
+        insert: { icon: "text-cursor-input", label: "Insert directly" },
+        press: { icon: "keyboard", label: Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
+        copy: { icon: "clipboard", label: "Copy to clipboard" }
+    })[step])
+    readonly property string _routeCaption: (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
+        + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
+
     Section {
         plain: true
         PasteRoute {
-            steps: Library.pasteRoute
-            caption: Library.pasteCaption
-            appName: Library.pastingText.routeApp
-            sample: Library.pastingText.routeSample
-            startLabel: Library.pastingText.routeStart
-            firstLabel: Library.pastingText.routeFirst
-            fallbackLabel: Library.pastingText.routeFallback
+            steps: page._route
+            caption: page._routeCaption
+            appName: "Slack"
+            sample: "Can you send me last quarter's numbers by Friday?"
+            startLabel: "Your words"
+            firstLabel: "First"
+            fallbackLabel: "If that fails"
         }
     }
 
@@ -35,7 +45,7 @@ Page {
                 iconName: "ellipsis"
                 size: 28
                 tooltip: Words.more
-                enabled: System.virtualKeyboard !== "notSetUp"
+                enabled: System.virtualKeyboardActions.length > 0
                 opacity: enabled ? 1 : 0
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on opacity { Ease {} }
@@ -43,11 +53,15 @@ Page {
                 Menu {
                     id: keyboardMenu
                     width: 240
-                    items: System.virtualKeyboardActions
+                    items: [
+                        { id: "disable", label: "Disable in Speecher", icon: "power-off", help: "Keeps the setup for later." },
+                        { id: "remove", label: "Remove setup", icon: "trash-2", help: "Asks for administrator permission." }
+                    ].filter(a => System.virtualKeyboardActions.includes(a.id))
                     onPicked: id => id === "remove" ? System.removeVirtualKeyboard() : System.disableVirtualKeyboard()
                 }
             }
         }
+        VirtualKeyboardTest {}
         SchemaRow { rowId: "globalPasteRule" }
         SchemaRow { rowId: "outputFormat" }
         SchemaRow { rowId: "restoreClipboardAfterTyping" }
@@ -55,15 +69,15 @@ Page {
 
     Section {
         title: Schema.row("categoryPasteRule_terminal").section
-        caption: Library.pastingText.categoriesCaption
-        AccessibilityNotice { text: Library.pastingText.categoriesNeedAccessibility }
+        caption: "Paste differently into every app of one type. Apps are sorted into types under Application recognition below."
+        AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can tell which app you're in." }
         // Two columns of rows, so seven types don't make a tall stack.
         Row {
             id: typeColumns
-            readonly property int half: Math.ceil(Library.appCategories.length / 2)
+            readonly property int half: Math.ceil(Schema.appCategories.length / 2)
             width: parent.width
             Repeater {
-                model: [Library.appCategories.slice(0, typeColumns.half), Library.appCategories.slice(typeColumns.half)]
+                model: [Schema.appCategories.slice(0, typeColumns.half), Schema.appCategories.slice(typeColumns.half)]
                 Column {
                     id: typeColumn
                     required property var modelData
@@ -74,7 +88,7 @@ Page {
                             required property var modelData
                             rowId: "categoryPasteRule_" + modelData.id
                             help: modelData.examples
-                            enabled: System.accessibility && Settings.saves(rowId)
+                            enabled: System.accessibility
                         }
                     }
                 }

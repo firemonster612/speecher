@@ -12,6 +12,11 @@ QString quotedExecutablePath(const QString &path);
 // whether the key-watch helper is offered.
 bool isWaylandSession();
 
+// The program and arguments that open this desktop's keyboard shortcut
+// settings, Plasma's or GNOME's, as XDG_CURRENT_DESKTOP names the desktop;
+// empty where Speecher knows of none or the program is not installed.
+QStringList desktopShortcutSettingsCommand();
+
 QString globalShortcutInstructionCommand(const QString &homePath,
                                          const QString &appImagePath,
                                          const QString &binaryPath);

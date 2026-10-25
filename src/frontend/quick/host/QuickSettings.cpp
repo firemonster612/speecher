@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
+#include "core/PasteRules.h"
 #include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 
@@ -49,13 +50,54 @@ QString checkIntervalUnit(const UpdateSettings &updates)
     return QStringLiteral("minutes");
 }
 
+// What a paste rule row holds where no rule of its own is stored, so the
+// wider rule decides.
+const QString inheritPasteRule = QStringLiteral("inherit");
+
+// The method of the rule for scope and match, as the schema's option id. A
+// rule turned off counts as none.
+QVariant pasteRuleValue(const AppSettings &s, PasteRuleScope scope, const QString &match)
+{
+    const PasteRule *rule = findPasteRule(s.output.pasteRules, scope, match);
+    return rule && rule->enabled ? pasteMethodName(rule->method) : inheritPasteRule;
+}
+
+void setPasteRuleValue(AppSettings &s, PasteRuleScope scope, const QString &match, const QVariant &v)
+{
+    const QString method = v.toString();
+    if (method == inheritPasteRule) {
+        removePasteRule(s.output.pasteRules, scope, match);
+        return;
+    }
+    setPasteRule(s.output.pasteRules, scope, match, pasteMethodFromName(method));
+}
+
+// The rules for single apps as the UI lists them, {app, method, enabled}; an
+// entry naming no app is dropped.
+QList<PasteRule> applicationPasteRules(const QVariant &v)
+{
+    QList<PasteRule> rules;
+    for (const QVariant &entry : v.toList()) {
+        const QVariantMap rule = entry.toMap();
+        const QString app = rule.value(QStringLiteral("app")).toString().trimmed();
+        if (app.isEmpty()) {
+            continue;
+        }
+        rules.append({PasteRuleScope::Application, app, pasteMethodFromName(rule.value(QStringLiteral("method")).toString()),
+                      rule.value(QStringLiteral("enabled"), true).toBool()});
+    }
+    return rules;
+}
+
 // One schema row the UI saves, as reads and writes of the settings. Values
 // are what QML holds: strings, numbers, booleans, lists and plain objects,
-// with choice values being the option ids the schema lists.
+// with choice values being the option ids the schema lists. refuse, where a
+// row has one, says why a value can't be saved (core's words), or nothing.
 struct SettingRow {
     const char *id;
     QVariant (*read)(const AppSettings &);
     void (*write)(AppSettings &, const QVariant &);
+    QString (*refuse)(const QVariant &) = nullptr;
 };
 
 // A row that is one AppSettings field, stored as QML hands it over.
@@ -63,9 +105,18 @@ struct SettingRow {
     {rowId, [](const AppSettings &s) { return QVariant::fromValue(s.field); },      \
      [](AppSettings &s, const QVariant &v) { s.field = v.value<std::remove_cvref_t<decltype(s.field)>>(); }}
 
+// The paste rule for one app type, by its stored category name.
+#define CATEGORY_PASTE_ROW(category)                                                                              \
+    {"categoryPasteRule_" category,                                                                               \
+     [](const AppSettings &s) { return pasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category)); }, \
+     [](AppSettings &s, const QVariant &v) {                                                                      \
+         setPasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category), v);                             \
+     }}
+
 // Every row the UI saves, by the schema's row id. Rows missing here (secrets,
-// paste rules, the result duration, launch at login, acceleration and the
-// graphics card) wait for the PRs that wire their pages. So do the rows whose
+// the result duration, acceleration and the graphics card) wait for the PRs
+// that wire their pages; launch at login is saved only where the platform
+// can start Speecher at login. So do the rows whose
 // choices come from a placeholder area, since a made-up choice would be
 // saved as real: the microphone (Audio), the local model (Models), the local
 // runner (Library's runners), the CLI Proxy accounts (Accounts) and the
@@ -160,6 +211,39 @@ const SettingRow settingRows[] = {
     {"outputFormat", [](const AppSettings &s) { return QVariant(outputFormatName(s.output.format)); },
      [](AppSettings &s, const QVariant &v) { s.output.format = outputFormatFromString(v.toString()); }},
     FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
+    // Every app gets a rule, so the default paste never inherits; without one
+    // core only copies.
+    {"globalPasteRule",
+     [](const AppSettings &s) {
+         const QVariant method = pasteRuleValue(s, PasteRuleScope::Global, QString());
+         return method == inheritPasteRule ? QVariant(pasteMethodName(PasteMethod::ClipboardOnly)) : method;
+     },
+     [](AppSettings &s, const QVariant &v) { setPasteRuleValue(s, PasteRuleScope::Global, QString(), v); }},
+    CATEGORY_PASTE_ROW("terminal"),
+    CATEGORY_PASTE_ROW("browser"),
+    CATEGORY_PASTE_ROW("email"),
+    CATEGORY_PASTE_ROW("office"),
+    CATEGORY_PASTE_ROW("code_editor"),
+    CATEGORY_PASTE_ROW("ai_coding"),
+    CATEGORY_PASTE_ROW("general"),
+    // Saving the list replaces the rules for single apps and keeps the rest.
+    {"applicationPasteRules",
+     [](const AppSettings &s) {
+         QVariantList rules;
+         for (const PasteRule &rule : s.output.pasteRules) {
+             if (rule.scope == PasteRuleScope::Application) {
+                 rules.append(QVariantMap{{QStringLiteral("app"), rule.match},
+                                          {QStringLiteral("method"), pasteMethodName(rule.method)},
+                                          {QStringLiteral("enabled"), rule.enabled}});
+             }
+         }
+         return QVariant(rules);
+     },
+     [](AppSettings &s, const QVariant &v) {
+         s.output.pasteRules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Application; });
+         s.output.pasteRules = applicationPasteRules(v) + s.output.pasteRules;
+     },
+     [](const QVariant &v) { return validatePasteRules(applicationPasteRules(v)).join(QLatin1Char(' ')); }},
 
     FIELD_ROW("openAiAuthMode", refinement.openAiAuthMode),
     FIELD_ROW("anthropicAuthMode", refinement.anthropicAuthMode),
@@ -173,6 +257,12 @@ const SettingRow settingRows[] = {
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
 
     FIELD_ROW("themeControl", ui.theme),
+    // Only macOS and Windows can start Speecher at login. The Quick UI builds
+    // only on Linux for now; the macOS and Windows PR in this stack builds it
+    // there, where General shows this row.
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+    FIELD_ROW("launchAtLogin", launchAtLogin),
+#endif
     FIELD_ROW("insightsEnabled", insightsEnabled),
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
@@ -217,6 +307,7 @@ const SettingRow settingRows[] = {
      }},
 };
 
+#undef CATEGORY_PASTE_ROW
 #undef FIELD_ROW
 
 // The Global Shortcuts, which the controller binds and keeps.
@@ -328,6 +419,13 @@ void QuickSettings::set(const QString &id, const QVariant &value)
     if (!row) {
         qWarning().noquote() << "Settings.set:" << id << "is not saved from the UI yet";
         return;
+    }
+    if (row->refuse) {
+        const QString refusal = row->refuse(value);
+        setError(id, refusal);
+        if (!refusal.isEmpty()) {
+            return;
+        }
     }
     // The snapshot leaves unread keyring secrets unread, and applySnapshot
     // keeps them, so saving one row never clears a key.

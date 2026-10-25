@@ -3,18 +3,20 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // The note at the top of a card whose rows need desktop accessibility, with
-// the button that turns it on. The button spins and can't be pressed again
-// while the fix runs, and the note folds away once accessibility is on.
+// the button that turns it on, while it is off and can be turned on. The
+// note folds away once accessibility is on. If turning it on fails, the note
+// says why instead.
 Reveal {
     id: root
-    property alias text: notice.text
-    readonly property bool _working: System.check("desktopAccessibility").state === "working"
+    property string text
+    readonly property var _check: Health.find(System.checks, "desktopAccessibility")
 
-    open: !System.accessibility
+    open: _check.reason === "off"
     Notice {
-        id: notice
+        text: Health.failure(root._check) || root.text
         indicator: "icon"
         variant: "small"
         inset: Theme.rowInset
@@ -22,8 +24,6 @@ Reveal {
         Button {
             size: "small"
             text: Words.turnOn
-            busy: root._working
-            enabled: !root._working
             onClicked: System.fix("desktopAccessibility")
         }
     }

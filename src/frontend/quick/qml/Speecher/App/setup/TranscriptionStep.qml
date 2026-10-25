@@ -25,8 +25,8 @@ StepPage {
             readonly property var model: Models.catalogModel(Models.localModelChoice)
             open: page.choices.speech === "local" && Models.downloaded.length === 0
             SettingRow {
-                title: System.setupText.downloadModel
-                help: System.setupText.downloadModelHelp
+                title: Setup.text.downloadModel
+                help: Setup.text.downloadModelHelp
                 Button {
                     text: Models.text.download.arg(download.model.size)
                     variant: "primary"
