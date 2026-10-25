@@ -26,7 +26,9 @@ Page {
         confirmRemove: "Remove Speecher",
         removeQuestion: "Remove Speecher from this computer?",
         removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
-        removeSettings: "Also delete my settings, vocabulary and API keys"
+        removeSettings: "Also delete my settings, vocabulary and API keys",
+        systemColors: "System",
+        installedSchemes: "On this computer"
     })
     // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
     function phoneSummary(bundle) {
@@ -62,13 +64,37 @@ Page {
         SchemaRow {
             rowId: "themeControl"
             ThemePicker {
-                width: 408
                 options: Schema.row("themeControl").options
                 currentId: Settings.values.themeControl || "system"
                 // The window applies it, following the desktop on System.
                 onActivated: id => Settings.set("themeControl", id)
             }
         }
+        SchemaRow {
+            rowId: "colorScheme"
+            stacked: true
+            ColorSchemePicker {
+                width: parent.width
+                currentId: Settings.values.colorScheme || "steno"
+                systemLabel: page.t.systemColors
+                installedTitle: page.t.installedSchemes
+                onActivated: id => Settings.set("colorScheme", id)
+            }
+        }
+        SchemaRow {
+            rowId: "windowLayout"
+            LookPicker {
+                width: 268
+                options: Schema.row("windowLayout").options
+                currentId: Settings.values.windowLayout || "framed"
+                thumbnail: MiniWindow {
+                    property var option
+                    split: option.id === "split"
+                }
+                onActivated: id => Settings.set("windowLayout", id)
+            }
+        }
+        SchemaRow { rowId: "translucency" }
         // Saved only where Speecher can start at login.
         SchemaRow { rowId: "launchAtLogin"; shown: Settings.saves(rowId) }
     }

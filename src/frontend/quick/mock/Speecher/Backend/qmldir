@@ -1,5 +1,6 @@
 module Speecher.Backend
 singleton Accounts 1.0 Accounts.qml
+singleton Appearance 1.0 Appearance.qml
 singleton Audio 1.0 Audio.qml
 singleton Dictation 1.0 Dictation.qml
 DictationState 1.0 DictationState.qml

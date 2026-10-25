@@ -233,6 +233,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CleanupModelCatalog.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/ColorSchemes.cpp
   src/core/DictationRecord.cpp
   src/core/InsightsExport.cpp
   src/core/InsightsLog.cpp
@@ -276,6 +277,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CleanupModelCatalog.h
   src/core/CliToolDiscovery.h
+  src/core/ColorSchemes.h
   src/core/DictationRecord.h
   src/core/EchoCanceller.h
   src/core/InsightsExport.h
@@ -424,6 +426,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/PopupPositioner.h
+  src/platform/WindowBackdrop.h
   src/platform/PopupSurface.h
   src/platform/RoutingShortcutBinder.h
   src/platform/SessionShortcutBinder.h
@@ -454,6 +457,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/MediaPauseController.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
+  src/platform/KWinBlurBackdrop.cpp
   src/platform/WaylandLayerShell.cpp
   src/platform/X11KeyGrabShortcutBinder.cpp
   src/platform/XInput2ShortcutBinder.cpp
@@ -480,6 +484,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/MediaPauseController.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
+  src/platform/KWinBlurBackdrop.h
   src/platform/WaylandLayerShell.h
   src/platform/X11KeyGrabShortcutBinder.h
   src/platform/XInput2ShortcutBinder.h
@@ -498,6 +503,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacMediaController.cpp
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
+  src/platform/mac/MacWindowBackdrop.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
   src/platform/mac/MacSystemAudioInput.mm
@@ -512,6 +518,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h
+  src/platform/mac/MacWindowBackdrop.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
   src/platform/mac/MacSystemAudioCapture.h
@@ -533,6 +540,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
+  src/platform/win/WinWindowBackdrop.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
   src/output/win/WinPasteDelivery.h
@@ -549,6 +557,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
   src/platform/win/WinSingleKeyShortcutBinder.h
   src/platform/win/WinSystemAudioInput.h
   src/platform/win/WinTargetProvider.h
+  src/platform/win/WinWindowBackdrop.h
 )
 
 set(SPEECHER_APP_SOURCES
@@ -874,6 +883,34 @@ if(UNIX AND NOT APPLE)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_PULSE=1)
     target_link_libraries(speecher_platform PUBLIC PkgConfig::PULSE)
   endif()
+  # KWin's blur behind the translucent sidebar: the org_kde_kwin_blur
+  # protocol, made from the vendored description, on the window's wl_surface,
+  # which only Qt's private platform interface hands out.
+  find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)
+  if(SPEECHER_RELEASE_BUILD)
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+  else()
+    find_package(Qt6 QUIET COMPONENTS GuiPrivate)
+  endif()
+  if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE AND TARGET Qt6::GuiPrivate)
+    set(kde_blur_xml "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/protocols/kde-blur.xml")
+    set(kde_blur_header "${CMAKE_CURRENT_BINARY_DIR}/kde-blur-client-protocol.h")
+    set(kde_blur_code "${CMAKE_CURRENT_BINARY_DIR}/kde-blur-protocol.c")
+    add_custom_command(
+      OUTPUT "${kde_blur_header}" "${kde_blur_code}"
+      COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" client-header "${kde_blur_xml}" "${kde_blur_header}"
+      COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" private-code "${kde_blur_xml}" "${kde_blur_code}"
+      DEPENDS "${kde_blur_xml}"
+      VERBATIM
+    )
+    target_sources(speecher_platform PRIVATE "${kde_blur_header}" "${kde_blur_code}")
+    target_include_directories(speecher_platform PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KWIN_BLUR=1)
+    target_link_libraries(speecher_platform PRIVATE Qt6::GuiPrivate PkgConfig::WAYLAND_CLIENT)
+    set(SPEECHER_KWIN_BLUR_FOUND TRUE)
+  elseif(SPEECHER_RELEASE_BUILD)
+    message(FATAL_ERROR "SPEECHER_RELEASE_BUILD requires wayland-client and wayland-scanner for KWin's blur.")
+  endif()
 endif()
 # webrtc-audio-processing 1.x: echo cancellation on Linux and macOS, only
 # where the dev files exist.
@@ -895,7 +932,7 @@ if(APPLE)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_MAC=1)
   # ARC: the system audio input holds ScreenCaptureKit objects in C++ members
   # and hands blocks to its capture queue.
-  set_source_files_properties(src/platform/mac/MacSystemAudioInput.mm PROPERTIES
+  set_source_files_properties(src/platform/mac/MacSystemAudioInput.mm src/platform/mac/MacWindowBackdrop.mm PROPERTIES
     COMPILE_OPTIONS -fobjc-arc
   )
   target_link_libraries(speecher_platform PUBLIC
@@ -914,7 +951,7 @@ if(WIN32)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WIN=1)
   target_compile_definitions(speecher_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
   target_link_libraries(speecher_platform PUBLIC
-    uiautomationcore user32 ole32 shell32 gdi32 windowsapp
+    uiautomationcore user32 ole32 shell32 gdi32 windowsapp dwmapi
   )
 endif()
 if(ATSPI_FOUND)
@@ -1268,6 +1305,7 @@ message(STATUS "  AT-SPI: ${ATSPI_FOUND}")
 message(STATUS "  libpulse (system audio): ${PULSE_FOUND}")
 message(STATUS "  webrtc-audio-processing-1 (echo cancellation): ${WEBRTC_APM_FOUND}")
 message(STATUS "  Wayland helper: ${WAYLAND_CLIENT_FOUND}/${WAYLAND_SCANNER_EXECUTABLE}")
+message(STATUS "  KWin blur: ${SPEECHER_KWIN_BLUR_FOUND}")
 
 include(GNUInstallDirs)
 if(NOT DEFINED SPEECHER_DESKTOP_EXEC)
@@ -1400,6 +1438,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
+      tests/test_quick_appearance.cpp
       tests/test_quick_dictation.cpp
       tests/test_quick_updates.cpp
       tests/test_quick_transcription.cpp
@@ -1418,6 +1457,12 @@ if(SPEECHER_BUILD_TESTS)
     # QML modules load from the shared Qt, as in the app.
     target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
     set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+    # The KWin blur test runs a compositor of its own.
+    pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
+    if(SPEECHER_KWIN_BLUR_FOUND AND WAYLAND_SERVER_FOUND)
+      target_compile_definitions(speecher_tests PRIVATE SPEECHER_TEST_KWIN_BLUR=1)
+      target_link_libraries(speecher_tests PRIVATE PkgConfig::WAYLAND_SERVER PkgConfig::WAYLAND_CLIENT)
+    endif()
   endif()
   set(SPEECHER_TEST_SUITES
     transcript_state
@@ -1445,7 +1490,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_appearance quick_dictation quick_updates
     quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio quick_library)
   endif()
   if(UNIX)

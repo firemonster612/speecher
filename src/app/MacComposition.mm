@@ -16,6 +16,7 @@
 #include "platform/mac/MacPopupPositioner.h"
 #include "platform/mac/MacScreenshotContextProvider.h"
 #include "platform/mac/MacTargetProvider.h"
+#include "platform/mac/MacWindowBackdrop.h"
 #include "recording/RecordingPresentation.h"
 
 #include <QCoreApplication>
@@ -206,6 +207,11 @@ TextDeliveryAdapter *MacComposition::createTextDelivery(TargetProvider *targetPr
 PopupPositioner *MacComposition::createPopupPositioner(QObject *parent) const
 {
     return new MacPopupPositioner(parent);
+}
+
+WindowBackdrop *MacComposition::createWindowBackdrop(QObject *parent) const
+{
+    return new MacWindowBackdrop(parent);
 }
 
 GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutRole role,

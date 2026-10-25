@@ -63,12 +63,14 @@ speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DI
 # preview's mocks, which words the real LibraryLists; the other mocks stay
 # with the preview.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
-  EXCLUDE Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
+  EXCLUDE Appearance.qml Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
     Transcription.qml System.qml Models.qml Insights.qml Accounts.qml Audio.qml
     LibraryLists.qml
   SOURCES
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
+    "${SPEECHER_QUICK_DIR}/host/QuickAppearance.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickAppearance.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAudio.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAudio.h"
     "${SPEECHER_QUICK_DIR}/host/QuickDictation.cpp"

@@ -22,6 +22,9 @@ public:
     bool refinementPreviewEnabled() const; void setRefinementPreviewEnabled(bool value);
     bool selectionEditReviewEnabled() const; void setSelectionEditReviewEnabled(bool value);
     QString theme() const; void setTheme(const QString &value);
+    QString colorScheme() const; void setColorScheme(const QString &value);
+    bool translucency() const; void setTranslucency(bool value);
+    QString windowLayout() const; void setWindowLayout(const QString &value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);

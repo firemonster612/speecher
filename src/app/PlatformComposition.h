@@ -13,6 +13,7 @@ class SessionKeyGrab;
 class GlobalShortcutBinder;
 enum class GlobalShortcutRole;
 class PopupPositioner;
+class WindowBackdrop;
 class SettingsStore;
 
 class SingleInstancePlatform {
@@ -69,6 +70,13 @@ public:
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;
     virtual TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const = 0;
     virtual PopupPositioner *createPopupPositioner(QObject *parent) const = 0;
+    // The compositor's blur behind a window's translucent part; none where
+    // the platform has no such effect.
+    virtual WindowBackdrop *createWindowBackdrop(QObject *parent) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
     virtual GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
                                                              QObject *parent) const = 0;
     // Takes Escape and Enter while a Dictation Session needs them, on

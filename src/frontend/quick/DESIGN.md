@@ -12,13 +12,13 @@ writes the real settings, and every area runs on core's data.
 | `qml/Speecher/Theme/Theme.qml` | Every colour, size, font and motion value |
 | `qml/Speecher/Launch/Launch.qml` | `Launch.arg(name, fallback)`: the `--name=value` options the app started with |
 | `qml/Speecher/Controls/` | The design system: buttons, switches, rows, cards, pages |
-| `qml/Speecher/App/` | The window, sidebar, search palette and pages, and `ThemeSetting`, which makes Theme follow the Theme setting |
+| `qml/Speecher/App/` | The window, sidebar, search palette and pages; `ThemeSetting`, which makes Theme follow the Appearance settings, and `ColorSchemes`, the colour schemes the Colors setting offers |
 | `qml/Speecher/App/pages/` | One file per page, local parts in `pages/<area>/` |
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
 | `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships only `Library.qml`, which words the real `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -39,8 +39,16 @@ Backend is the C++ types plus `Library.qml`.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Models` (`host/QuickModels`), `Insights`
   (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Audio`
-  (`host/QuickAudio`) and `Library` (`Library.qml` over
-  `host/QuickLibrary`). No placeholders are left.
+  (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
+  (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
+- `Appearance` is what the desktop offers the look: `systemColors`, the
+  desktop's colour scheme as roles `{ window, text, accent, negative }` (on
+  Plasma read from kdeglobals and followed as it changes, elsewhere only the
+  platform's accent), `installedSchemes` (`{ id, name, colors }`, KDE's
+  `.colors` files in the XDG data dirs, read by core's `ColorSchemes`),
+  `canBlur`, and `setBlurBehind(window, area, radius, dark)`, which asks the
+  platform's `WindowBackdrop` (KWin's `org_kde_kwin_blur`, macOS's
+  `NSVisualEffectView`, Windows 11's Mica) to blur behind a window.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
@@ -163,7 +171,7 @@ Backend is the C++ types plus `Library.qml`.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
-  Theme setting.
+  Theme, Colors, Layout and Translucent sidebar settings.
 - The popup has its own window (`host/QuickPopupWindow`), made with the
   engine and placed by the platform's `PopupPositioner`: an overlay
   layer-shell surface anchored to the bottom of the active screen on
@@ -206,6 +214,56 @@ Palette (all in `Theme`; never write a hex value in a page):
 | `rule` | blue-grey, 16% | Dividers between rows |
 | `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
 | `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
+
+The pad is Steno, the first of the colour schemes (Colors, on General). A
+scheme is six roles, in light and dark: `paper`, `sheet`, `raised`, `text`,
+`accent` and `negative`, and a `rule` if it wants its own. Every other
+colour (hover, borders, fills, the quieter inks, ink on the accent, key
+caps) derives from those in `Theme`, so a scheme picks six colours and
+nothing else.
+
+- Speecher's own schemes are `Theme.presets`: Steno, Blueprint, Lagoon,
+  Lilac, Rose and Sand. Each tints its paper with its accent's hue, so the
+  whole window takes the colour, not only the switches. A new preset gives
+  both variants, the cards a step lighter than the page.
+- A desktop scheme (System, or one installed) comes in as roles, and
+  `Theme.schemeOf` maps them, in one place: as light or dark as the theme,
+  its window colour is the paper and its text the ink; the other way round,
+  its hue tints our own paper and ink. The page and cards are steps lighter
+  than the paper. Its text must reach 7:1 on the page, the cards and the
+  translucent sidebar over any desktop; where the text can go no further,
+  the paper gives way.
+- Every scheme's inks are pushed until they read wherever they are laid:
+  text at 7:1, secondary text at 4.5:1 and tertiary at 3:1 on the page,
+  cards and sidebar, the accent at 4.5:1 on the page and cards, failures at
+  4.5:1 everywhere. Ink on
+  the accent takes white or the accent's deep shade, whichever reads better.
+  `test_quick_appearance` checks every preset and a few garish schemes,
+  opaque and translucent.
+- Light, Dark and System work with every scheme; `ColorSchemes.source(id)`
+  is what `Theme.colorSource` takes, and a scheme that has gone is Steno.
+- Thumbnails of a scheme, a theme or a layout are `MiniWindow`s in a
+  `LookPicker` (General's `pages/app`), with the pencil outline gliding to
+  the chosen one.
+
+Translucency: with Translucent sidebar on and `Appearance.canBlur`,
+`Theme.translucent` makes the window's paper (`Theme.sidePaper`) let 15%
+(light) or 16% (dark) of the desktop through, and `ClientWindow` asks the
+compositor to blur behind its frame. The sidebar's inks are checked against
+that paper over a black and a white desktop. The page and cards stay
+opaque; search lays its blurred copy of the window on opaque paper. On
+Windows, whose Mica fills the whole window, the window drops its drawn
+shadow margin and corners for DWM's. Where
+the platform cannot blur (no KWin blur, X11, Reduce transparency,
+Transparency effects off, high contrast) it stays opaque, and the row says
+why. Never make paper translucent without the blur: text over a sharp
+wallpaper does not read.
+
+Layout (General): Framed puts the page on a `Sheet` inset under the title
+strip; Split runs it edge to edge beside the sidebar, divided by a rule,
+with the page's content starting under the strip. `Sheet` eases between
+the two over `Theme.page` (at once under reduced motion), and setup
+follows the same setting.
 
 - Type is Atkinson Hyperlegible Next, one family, through `Txt { variant;
   tone; strong }`. Headings are bold; nothing is set in capitals or
@@ -303,8 +361,9 @@ Layout:
   immediate.
 - The title strip is `Theme.titleBarHeight` 52. `Brand` puts the mark 12 in
   from the window's top and left and the window buttons sit 12 in from the
-  top and right, in the main window and setup alike. The sheet starts under
-  the strip; the 14 px shadow room around a framed window goes when it is
+  top and right, in the main window and setup alike. Framed, the sheet
+  starts under the strip; split, the page's surface reaches the top and the
+  strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
 
 Things to avoid, because they read as generated:
@@ -460,7 +519,7 @@ In Speecher.App, besides SchemaRow:
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
-- `Sheet { side }`: the inset sheet a window shows its pages on, beside its side column.
+- `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
 - `Brand { title; detail }`: the mark and the window's name in the title strip, for the main window and setup.
 
 ## Building pages

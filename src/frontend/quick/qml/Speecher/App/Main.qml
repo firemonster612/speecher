@@ -26,12 +26,13 @@ ClientWindow {
     onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()
     onLeftToQuitChanged: if (leftToQuit) System.quit()
 
-    // Opaque, so the search palette's blurred copy of it hides what is under.
+    // What the search palette blurs. Clear while translucent, so the
+    // window's own paper shows the desktop.
     Rectangle {
         id: content
         anchors.fill: parent
         radius: window.cornerRadius
-        color: Theme.paper
+        color: Theme.translucent ? "transparent" : Theme.paper
 
         Sidebar {
             id: sidebar
@@ -45,7 +46,6 @@ ClientWindow {
         Sheet {
             visible: !window.settingsDeleted
             side: sidebar
-            anchors.topMargin: window.titleBarHeight
 
             T.StackView {
                 id: stack
@@ -99,6 +99,7 @@ ClientWindow {
         objectName: "searchPalette"
         anchors.fill: parent
         backdrop: content
+        cornerRadius: window.cornerRadius
     }
 
     // Notes posted to Toaster rise in at the bottom, over everything.

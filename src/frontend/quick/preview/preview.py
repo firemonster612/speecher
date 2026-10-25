@@ -24,7 +24,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, Qt, QTimer
+from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QFontDatabase, QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
@@ -44,6 +44,8 @@ def parse():
     p.add_argument("--size", default="1240x820")
     p.add_argument("--settle", type=float, default=1.6, help="Seconds to wait before the screenshot")
     p.add_argument("--set", action="append", default=[], help="Set a property on the root: name=value")
+    p.add_argument("--setting", action="append", default=[],
+                   help="Start with a settings row's value, as the mock Settings would save it: id=value")
     p.add_argument("--arg", action="append", default=[],
                    help="Pass name=value to QML as --name=value in Qt.application.arguments, for mock states")
     p.add_argument("--poke", action="append", default=[],
@@ -60,6 +62,16 @@ def parse():
     p.add_argument("--fps", type=int, default=60)
     p.add_argument("--out", required=True)
     return p.parse_known_args()[0]
+
+
+def parse_value(value):
+    for kind in (int, float):
+        try:
+            return kind(value)
+        except ValueError:
+            pass
+    return {"true": True, "false": False}.get(value, value)
+
 
 
 def main():
@@ -82,11 +94,18 @@ def main():
     if nav is not None:
         nav.setProperty("current", args.page)
 
+    settings = engine.singletonInstance("Speecher.Backend", "Settings")
+    for assignment in args.setting:
+        row, _, value = assignment.partition("=")
+        QMetaObject.invokeMethod(settings, "set", Q_ARG("QVariant", row), Q_ARG("QVariant", parse_value(value)))
     module, type_name = args.root.split("/")
     engine.loadFromModule(module, type_name)
     if not engine.rootObjects():
         sys.exit("failed to load " + args.root)
     window: QQuickWindow = engine.rootObjects()[0]
+    # As the app does, so the windows follow the Appearance settings; the
+    # Theme setting starts at System, which follows --theme.
+    engine.loadFromModule("Speecher.App", "ThemeSetting")
     w, h = (int(v) for v in args.size.split("x"))
     window.setWidth(w)
     window.setHeight(h)
@@ -121,14 +140,6 @@ def main():
             found = item if item.objectName() == name else None
             items += item.childItems()
         return found
-
-    def parse_value(value):
-        for kind in (int, float):
-            try:
-                return kind(value)
-            except ValueError:
-                pass
-        return {"true": True, "false": False}.get(value, value)
 
     pokes = [(p.rpartition("@")[0], float(p.rpartition("@")[2])) for p in args.poke]
     for target, when in pokes:

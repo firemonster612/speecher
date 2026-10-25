@@ -17,6 +17,8 @@ FocusScope {
     id: root
 
     property Item backdrop
+    // The window's corners, which the paper under the blurred copy follows.
+    property real cornerRadius
     property bool shown: false
     property alias query: input.text
     readonly property var results: query.trim().length ? Schema.search(query, 9) : _suggestions
@@ -72,7 +74,10 @@ FocusScope {
     opacity: shown ? 1 : 0
     Behavior on opacity { Ease { duration: root.shown ? Theme.base : Theme.fast } }
 
-    // Blurred, dimmed copy of the window behind the root.
+    // Blurred, dimmed copy of the window behind the root, on paper: with the
+    // window translucent the copy is too, and the sharp window would show
+    // through it.
+    Rectangle { anchors.fill: parent; radius: root.cornerRadius; color: Theme.paper }
     MultiEffect {
         anchors.fill: parent
         source: root.backdrop
@@ -205,9 +210,13 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         width: childrenRect.width
                         height: childrenRect.height
+                        // Off and greyed where the row needs blur and nothing
+                        // blurs, as on its page.
                         Switch {
+                            readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
                             visible: !!hit.spec && hit.spec.kind === "toggle"
-                            checked: !!Settings.values[hit.modelData.id]
+                            checked: blurs && !!Settings.values[hit.modelData.id]
+                            enabled: blurs && Settings.saves(hit.modelData.id)
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {

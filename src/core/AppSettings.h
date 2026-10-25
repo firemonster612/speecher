@@ -97,6 +97,14 @@ struct UiSettings {
     // A selection edit waits for Replace before it replaces the selection.
     bool selectionEditReviewEnabled = true;
     QString theme = QStringLiteral("system");
+    // The UI's colours: one of its own schemes by id, "system" for the
+    // desktop's, or "installed:<id>" for a desktop scheme by its file name.
+    QString colorScheme = QStringLiteral("steno");
+    // The window's side shows the desktop through a blur, where it can.
+    bool translucency = true;
+    // "framed": the page on a sheet inset in the window; "split": the page
+    // beside the sidebar, edge to edge.
+    QString windowLayout = QStringLiteral("framed");
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;
 };

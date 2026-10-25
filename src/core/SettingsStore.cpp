@@ -241,6 +241,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSetupCompleted(draft.setupCompleted);
     setLaunchAtLogin(draft.launchAtLogin);
     setTheme(draft.ui.theme);
+    setColorScheme(draft.ui.colorScheme);
+    setTranslucency(draft.ui.translucency);
+    setWindowLayout(draft.ui.windowLayout);
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);
     setTranscriptionPreviewEnabled(draft.ui.transcriptionPreviewEnabled);

@@ -15,6 +15,7 @@
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 #include "platform/win/WinSystemAudioInput.h"
 #include "platform/win/WinTargetProvider.h"
+#include "platform/win/WinWindowBackdrop.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -135,6 +136,11 @@ TextDeliveryAdapter *WindowsComposition::createTextDelivery(TargetProvider *targ
 PopupPositioner *WindowsComposition::createPopupPositioner(QObject *parent) const
 {
     return new FallbackPopupPositioner(parent);
+}
+
+WindowBackdrop *WindowsComposition::createWindowBackdrop(QObject *parent) const
+{
+    return new WinWindowBackdrop(parent);
 }
 
 GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShortcutRole role,

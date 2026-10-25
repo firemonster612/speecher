@@ -11,7 +11,8 @@ QtObject {
     // The desktop's scheme is Qt's, unless --theme=light|dark says otherwise
     // on the command line, as the preview tool does with --time-scale=<n>.
     // ThemeSetting (in Speecher.App) binds dark to the Theme setting, which
-    // follows systemDark on System.
+    // follows systemDark on System, and the colours, translucency and layout
+    // to theirs.
     // The time scale stretches every animation, which the preview tool uses
     // to capture smooth video; the real app leaves it at 1.
     readonly property bool systemDark: Launch.arg("theme", "") ? Launch.arg("theme", "") === "dark"
@@ -28,32 +29,149 @@ QtObject {
     // margin rule, ink. Blue pencil marks what you can act on; the red of the
     // margin means live sound or a failure. Settings sit in cards a
     // shade lighter than the page, so groups read as raised sheets on the
-    // pad. Both schemes are here so the theme picker can draw the one not in
-    // use; everything else reads the current one through the colours below.
-    readonly property var lightScheme: ({
-        paper: "#E4E8DF", sheet: "#EEF1EA", raised: "#FBFCF9", text: "#1D2320",
-        rule: Qt.rgba(0.25, 0.38, 0.5, 0.16), accent: "#2B54C9", negative: "#D23F34"
-    })
-    readonly property var darkScheme: ({
-        paper: "#1A1F1D", sheet: "#202624", raised: "#29302D", text: "#E3E8E2",
-        rule: Qt.rgba(0.78, 0.85, 0.9, 0.10), accent: "#93AEF5", negative: "#F0695C"
-    })
-    readonly property var scheme: dark ? darkScheme : lightScheme
+    // pad.
+    //
+    // That pad is the first of the app's colour schemes. A scheme is six
+    // roles in light and dark: paper (window and sidebar), sheet (the page),
+    // raised (cards), text, accent and negative, and a rule if it wants its
+    // own. Every other colour below derives from the current scheme, so a
+    // scheme only picks those. Pickers draw a scheme they are not using
+    // through schemeOf.
+    readonly property var presets: [
+        { id: "steno", label: "Steno",
+          light: { paper: "#E4E8DF", sheet: "#EEF1EA", raised: "#FBFCF9", text: "#1D2320",
+                   rule: Qt.rgba(0.25, 0.38, 0.5, 0.16), accent: "#2B54C9", negative: "#D23F34" },
+          dark: { paper: "#1A1F1D", sheet: "#202624", raised: "#29302D", text: "#E3E8E2",
+                  rule: Qt.rgba(0.78, 0.85, 0.9, 0.10), accent: "#93AEF5", negative: "#F0695C" } },
+        { id: "blueprint", label: "Blueprint",
+          light: { paper: "#DCE5F0", sheet: "#E8EEF6", raised: "#F8FAFD", text: "#13233A", accent: "#1F5FD6", negative: "#C93A2F" },
+          dark: { paper: "#0F1826", sheet: "#141F30", raised: "#1C2A3E", text: "#DCE6F4", accent: "#79AEFF", negative: "#F2766A" } },
+        { id: "lagoon", label: "Lagoon",
+          light: { paper: "#D8E8E5", sheet: "#E5F0EE", raised: "#F7FBFA", text: "#0F2F2B", accent: "#0A746F", negative: "#C93A2F" },
+          dark: { paper: "#0E1D1C", sheet: "#132524", raised: "#1A302E", text: "#D6EBE8", accent: "#4FD1C5", negative: "#F2766A" } },
+        { id: "lilac", label: "Lilac",
+          light: { paper: "#E5E0F0", sheet: "#EEEAF6", raised: "#FBFAFD", text: "#241B38", accent: "#6A3FD1", negative: "#C93A2F" },
+          dark: { paper: "#19152A", sheet: "#1F1A33", raised: "#282240", text: "#E6E0F5", accent: "#B79CFF", negative: "#F2766A" } },
+        { id: "rose", label: "Rose",
+          light: { paper: "#F0DFE3", sheet: "#F6E9EC", raised: "#FDF8F9", text: "#36151F", accent: "#C0185A", negative: "#C4362B" },
+          dark: { paper: "#24151A", sheet: "#2C1A20", raised: "#36222A", text: "#F4E1E6", accent: "#FF8AB8", negative: "#FF7A6B" } },
+        { id: "sand", label: "Sand",
+          light: { paper: "#ECE2D1", sheet: "#F4ECDE", raised: "#FDF9F2", text: "#2F2416", accent: "#A84C14", negative: "#C4283A" },
+          dark: { paper: "#1E1912", sheet: "#251F17", raised: "#2F281E", text: "#F1E6D6", accent: "#F2A65E", negative: "#FF7A85" } }
+    ]
+    // What the colours come from: a preset, or a desktop scheme's roles
+    // (window, text, accent, negative; any may be missing).
+    // ThemeSetting sets it from the Colors setting.
+    property var colorSource: presets[0]
+    readonly property var scheme: schemeOf(colorSource, dark)
+
+    // The six roles of source in light or dark.
+    function schemeOf(source, inDark) {
+        if (source.light) return inDark ? source.dark : source.light
+        return _fromDesktop(source, inDark)
+    }
+
+    // A desktop scheme as one of ours. One as light or dark as the theme keeps
+    // its window colour and text; the other way round, its hue tints our own
+    // paper and ink. Cards are always a step lighter than the page. The text
+    // must read at AAA on the page, the cards and the sidebar over any
+    // desktop: it is pushed first, and where it can go no further, the paper
+    // gives way. Theme's inks push the rest until they read.
+    function _fromDesktop(roles, inDark) {
+        const fallback = presets[0][inDark ? "dark" : "light"]
+        const window = roles.window ? Qt.color(roles.window) : null
+        const own = window !== null && _isDark(window) === inDark
+        const hue = Qt.color(own ? window : (roles.accent || window || fallback.accent))
+        const wanted = own ? window : _paperOf(hue, inDark)
+        const ink = own && roles.text ? Qt.color(roles.text) : Qt.hsla(_hue(hue), inDark ? 0.10 : 0.16, inDark ? 0.90 : 0.13, 1)
+        const text = readableOn(ink, _groundsOf(wanted, inDark), 7, inDark)
+        const paper = _shift(wanted, inDark ? -0.025 : 0.025, p => _groundsOf(p, inDark).every(g => contrast(text, g) >= 7))
+        return {
+            paper: paper, sheet: _sheetOf(paper, inDark), raised: _raisedOf(paper, inDark), text: text,
+            accent: Qt.color(roles.accent || fallback.accent),
+            negative: Qt.color(roles.negative || fallback.negative)
+        }
+    }
+    function _sheetOf(paper, inDark) { return mix(paper, "white", inDark ? 0.03 : 0.37) }
+    function _raisedOf(paper, inDark) { return mix(paper, "white", inDark ? 0.07 : 0.85) }
+    // Everything a desktop scheme's text is laid on: the page, the cards and
+    // the sidebar, translucent over a black or a white desktop.
+    function _groundsOf(paper, inDark) {
+        return [_sheetOf(paper, inDark), _raisedOf(paper, inDark)].concat(_overDesktop(paper, inDark))
+    }
+    function _hue(c) { return Math.max(0, c.hslHue) }
+    // A paper with c's hue, kept quiet, as light or dark as our own.
+    function _paperOf(c, inDark) {
+        return Qt.hsla(_hue(c), Math.min(c.hslSaturation, inDark ? 0.22 : 0.28), inDark ? 0.11 : 0.89, 1)
+    }
+    function _isDark(c) { return luminance(c) < 0.18 }
+
+    // a blended toward b by t, 0 to 1.
+    function mix(a, b, t) {
+        const to = Qt.color(b)
+        return Qt.tint(a, Qt.rgba(to.r, to.g, to.b, t))
+    }
+    // WCAG's relative luminance and contrast ratio.
+    function luminance(c) {
+        const k = v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+        const q = Qt.color(c)
+        return 0.2126 * k(q.r) + 0.7152 * k(q.g) + 0.0722 * k(q.b)
+    }
+    function contrast(a, b) {
+        const la = luminance(a), lb = luminance(b)
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+    }
+    // fg, lightened in dark or darkened in light until it reads at ratio on
+    // every one of grounds, or as far as it goes: to white or black.
+    function readableOn(fg, grounds, ratio, inDark) {
+        return _shift(fg, inDark ? 0.025 : -0.025, c => grounds.every(g => contrast(c, g) >= ratio))
+    }
+    // c with its lightness moved by step until done(c), or until it is white
+    // or black.
+    function _shift(c, step, done) {
+        c = Qt.color(c)
+        while (!done(c) && (step > 0 ? c.hslLightness < 1 : c.hslLightness > 0))
+            c = Qt.hsla(_hue(c), c.hslSaturation, Math.max(0, Math.min(1, c.hslLightness + step)), 1)
+        return c
+    }
+
+    // The side of the window behind the page shows the desktop through a
+    // blur; ThemeSetting turns it on where the platform blurs and the
+    // Translucent sidebar setting is on. Paper drawn there lets a little of
+    // the blur through.
+    property bool translucent: false
+    readonly property color sidePaper: translucent ? Qt.rgba(paper.r, paper.g, paper.b, _sideOpacity(dark)) : paper
+    function _sideOpacity(inDark) { return inDark ? 0.84 : 0.85 }
+    // paper laid at the sidebar's opacity over a black and a white desktop:
+    // the darkest and lightest the blur behind it can make it.
+    function _overDesktop(paper, inDark) {
+        return [mix("black", paper, _sideOpacity(inDark)), mix("white", paper, _sideOpacity(inDark))]
+    }
+    // What ink is laid on: the page and cards, and the sidebar, its paper
+    // or, translucent, that paper over any desktop.
+    readonly property var pageGrounds: [sheet, raised]
+    readonly property var sideGrounds: translucent ? _overDesktop(paper, dark) : [paper]
+    readonly property var _everyGround: pageGrounds.concat(sideGrounds)
+    // The page beside the sidebar, edge to edge, instead of on a sheet framed
+    // by the window; ThemeSetting follows the Layout setting.
+    property bool split: false
 
     readonly property color paper: scheme.paper      // window and sidebar
     readonly property color sheet: scheme.sheet      // the page
     // Cards, buttons, menus: anything that sits a shade above the page.
     readonly property color raised: scheme.raised
-    readonly property color rule: scheme.rule
+    readonly property color rule: scheme.rule || soft(text, dark ? 0.10 : 0.14)
 
-    readonly property color sheetBorder: dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0.1, 0.16, 0.12, 0.12)
-    readonly property color surface: dark ? "#272E2B" : "#EBEFE7"
-    readonly property color surfaceHover: dark ? "#2C3431" : "#E4E9E0"
-    readonly property color surfacePressed: dark ? "#323A37" : "#DCE2D7"
-    readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0.1, 0.16, 0.12, 0.16)
-    readonly property color borderStrong: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0.1, 0.16, 0.12, 0.28)
-    readonly property color fill: dark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0.1, 0.18, 0.14, 0.05)
-    readonly property color fillStrong: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0.1, 0.18, 0.14, 0.09)
+    // The ink and paper the shades below mix from: hover, borders and fills
+    // are text laid thinly over the surface.
+    readonly property color sheetBorder: soft(text, dark ? 0.07 : 0.12)
+    readonly property color surface: dark ? mix(raised, sheet, 0.2) : mix(sheet, paper, 0.3)
+    readonly property color surfaceHover: dark ? mix(raised, text, 0.02) : paper
+    readonly property color surfacePressed: dark ? mix(raised, text, 0.05) : mix(paper, text, 0.04)
+    readonly property color border: soft(text, dark ? 0.10 : 0.16)
+    readonly property color borderStrong: soft(text, dark ? 0.18 : 0.28)
+    readonly property color fill: soft(text, 0.05)
+    readonly property color fillStrong: soft(text, 0.09)
     readonly property color scrim: dark ? Qt.rgba(0.05, 0.07, 0.06, 0.55) : Qt.rgba(0.12, 0.16, 0.14, 0.22)
     readonly property color shadow: dark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0.1, 0.15, 0.12, 0.16)
     // The low shadow under a card resting on the page.
@@ -65,30 +183,39 @@ QtObject {
     // rather than the card's own colour, which would hide it.
     readonly property color sliderHandle: dark ? text : raised
 
-    // Ink: text, and the fill of primary buttons and lit keys.
-    readonly property color text: scheme.text
-    readonly property color textSecondary: dark ? "#A2ACA5" : "#56605A"
-    readonly property color textTertiary: dark ? "#717B75" : "#868F89"
-    readonly property color textDisabled: dark ? "#4E5753" : "#B4BBB5"
-    readonly property color textHover: dark ? "#D1D5D0" : "#272F2B"
-    readonly property color textPressed: dark ? "#C5CAC4" : "#242C28"
+    // Ink: text, and the fill of primary buttons and lit keys. The quieter
+    // inks are text faded toward the page.
+    // Text reads at AAA, help and captions at AA, and tertiary labels and
+    // placeholders at 3:1, wherever they are laid, whatever the scheme.
+    readonly property color text: readableOn(scheme.text, _everyGround, 7, dark)
+    readonly property color textSecondary: readableOn(mix(text, sheet, dark ? 0.32 : 0.28), _everyGround, 4.5, dark)
+    readonly property color textTertiary: readableOn(mix(text, sheet, dark ? 0.58 : 0.5), _everyGround, 3, dark)
+    readonly property color textDisabled: mix(text, sheet, dark ? 0.76 : 0.72)
+    readonly property color textHover: mix(text, sheet, dark ? 0.09 : 0.05)
+    readonly property color textPressed: mix(text, sheet, dark ? 0.15 : 0.035)
 
-    // Blue pencil: what you can act on.
-    readonly property color accent: scheme.accent
-    readonly property color accentHover: dark ? "#A9BFF8" : "#2347AE"
-    readonly property color accentText: dark ? "#14192A" : "#FFFFFF"
+    // Blue pencil: what you can act on, at AA on the page and cards.
+    readonly property color accent: readableOn(scheme.accent, pageGrounds, 4.5, dark)
+    readonly property color accentHover: mix(accent, dark ? "white" : "black", dark ? 0.2 : 0.15)
+    // Ink on the accent: white, or the accent's own deep shade, whichever
+    // reads better on it.
+    readonly property color accentText: {
+        const deep = mix(accent, "black", 0.85)
+        return contrast(deep, accent) > contrast("#FFFFFF", accent) ? deep : "#FFFFFF"
+    }
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.16 : 0.10)
     readonly property color accentRing: Qt.rgba(accent.r, accent.g, accent.b, 0.4)
 
     readonly property color positive: dark ? "#6CCB8F" : "#2E7D4F"
     readonly property color warning: dark ? "#E3B65C" : "#9A6A12"
     // The margin's red: live sound (the record dot, the level meter, the
-    // popup's margin rule) and failures.
-    readonly property color negative: scheme.negative
+    // popup's margin rule) and failures, which are text, at AA wherever they
+    // are laid.
+    readonly property color negative: readableOn(scheme.negative, _everyGround, 4.5, dark)
 
     // A key cap's base, the darker edge under its face; lit for an inked cap.
-    readonly property color keyBase: dark ? "#151918" : "#CCCFC7"
-    readonly property color keyBaseLit: dark ? "#8E918D" : "#303A35"
+    readonly property color keyBase: dark ? mix(paper, "black", 0.2) : mix(paper, text, 0.1)
+    readonly property color keyBaseLit: dark ? mix(text, paper, 0.4) : mix(text, paper, 0.08)
 
     // How far a disabled control fades.
     readonly property real disabledOpacity: 0.45
