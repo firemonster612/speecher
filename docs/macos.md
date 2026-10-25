@@ -132,16 +132,19 @@ Quick build as an ordinary Sparkle update, and their permissions, Keychain
 items and login item carry over only if the new bundle is signed so macOS
 takes it for the same app. Ad-hoc test builds can't show that: each has its
 own signature. `packaging/macos/verify-dmg-update.py` drives the update
-itself; the `migration` job in `.github/workflows/mac-update-e2e.yml` runs it
-on CI with the released DMG and a candidate signed with the release identity
-and Sparkle key. Run the checklist below by hand before the first Quick
-release, on an Apple Silicon Mac (the released DMGs are arm64 only), with the
-real release secrets.
+itself. It can't run unattended: 0.2.0 turns Sparkle's own scheduler off, so
+Sparkle never downloads in the background, and the update waits for someone
+to press Install and restart in the old app. Run the checklist below by hand
+before the first Quick release, on an Apple Silicon Mac (the released DMGs are
+arm64 only) kept for the purpose: the script trusts a throwaway CA in the
+System keychain.
 
-1. Get the shipped DMG from the latest GitHub release, not a rebuild, and the
-   candidate DMG that `release.yml` built with `MACOS_SIGNING_IDENTITY` and
-   `SPARKLE_ED_PUBLIC_KEY`, plus its `sign_update` output from the release
-   `SPARKLE_ED_PRIVATE_KEY`.
+1. Get the shipped DMG from the latest GitHub release, not a rebuild. For the
+   candidate, start `release.yml` by hand on the commit to release (Actions >
+   Release > Run workflow): that run builds and signs the DMG as a release
+   does, with `MACOS_SIGNING_IDENTITY` and the Sparkle key, and publishes
+   nothing. Its `macos-release` artifact holds `speecher.dmg` and
+   `sparkle-signature.txt`.
 2. Compare the two bundles before installing anything, from each mounted DMG:
    - `codesign -dv --verbose=4 speecher.app`: the same `Identifier`
      (`io.github.firemonster612.speecher`) and `TeamIdentifier`, and neither
@@ -156,19 +159,36 @@ real release secrets.
 3. Set up the shipped app as a user would: copy it to `/Applications`, run
    the setup assistant, grant Microphone, Accessibility and Input Monitoring,
    turn on Start Speecher at login, save a dummy OpenAI key in Accounts, and
-   dictate once into TextEdit with the shortcut.
+   dictate once into TextEdit with the shortcut. Then give it the rest of what
+   a user may have granted: dictate while Music plays and allow the
+   Automation prompt (media pause); turn on screenshot context for ChatGPT
+   refinement and allow Screen & System Audio Recording at the first capture;
+   sign in to Claude Code (`claude`) and Codex (`codex login`), whose Keychain
+   items Speecher reads, and choose each once as a provider so Speecher reads
+   them.
 4. Run `SPEECHER_DISPOSABLE_MACHINE=1 packaging/macos/verify-dmg-update.py
-   shipped.dmg candidate.dmg signature.txt evidence --keep-state --accept
-   restart-button`. Choose Check now in the old app, then Restart now when it
-   offers it. The script must report every check as passed.
+   shipped.dmg candidate.dmg sparkle-signature.txt evidence --keep-state`. It
+   records the settings as you left them and compares the new app's against
+   them, changed only where the update changes them on purpose. Choose Check
+   for updates in the old app, then Install and restart when it offers the
+   candidate. The script must report every check as passed.
 5. After the relaunch, without touching System Settings:
    - No permission prompt appears, and `speecher.log` reads
      `macOS accessibility identity ... trusted=1`.
    - The shortcut starts dictation (Input Monitoring), the microphone records,
      and the text pastes into TextEdit (Accessibility).
-   - Accounts shows the OpenAI key as saved, and Keychain Access shows no
-     prompt for it.
+   - Music pauses while you dictate and resumes after, with no Automation
+     prompt.
+   - A dictation with screenshot context on refines with no Screen & System
+     Audio Recording prompt, and System Settings still lists Speecher there,
+     on.
+   - Accounts shows the OpenAI key as saved, and Claude and ChatGPT as signed
+     in, with no Keychain prompt and no request to sign in again.
    - System Settings > General > Login Items lists Speecher once.
+   - Quit it and start it from Finder or Launchpad, which is how LaunchServices
+     starts it at login too: its window takes clicks and typed keys. On a
+     test VM a copy LaunchServices started took no input; no real Mac has
+     checked this yet.
 6. Log out and back in: Speecher starts by itself.
 7. Repeat steps 3 to 5 with Accessibility turned off before the update: the
    new app must say the grant is missing rather than treat setup as done.

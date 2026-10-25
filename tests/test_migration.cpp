@@ -4,10 +4,13 @@
 // saves the whole settings snapshot.
 //
 // tests/migration/master-0.2.0.conf is the file the released 0.2.0 AppImage
-// wrote itself, after one edit in its own Accounts page. native.conf is that
-// file as a later native build (dc62c283^) left it: its migrations, custom
-// Writing Profiles, tones and cleanup levels, a local model, and choices it
-// left unset. native-insights.jsonl is that build's history format.
+// wrote itself, after one edit in its own Accounts page. The variant rows
+// change a few of its keys to other values 0.2.0 could save. native.conf was
+// written by hand, to the keys and types the native build before dc62c283
+// saves: its migrations, custom Writing Profiles, tones and cleanup levels, a
+// local model, and choices it left unset. No native build wrote it, and no
+// native-to-Quick update ran through an updater. native-insights.jsonl is
+// that build's history format, also by hand.
 
 #include "common/test_suites.h"
 
@@ -26,6 +29,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <functional>
+#include <map>
 #include <memory>
 
 using namespace speecher;
@@ -55,14 +60,18 @@ bool writeFile(const QString &path, const QByteArray &bytes)
 }
 
 // Replaces the test store with a fixture file's keys and values, as the
-// installed Speecher's own settings file holds them.
-void loadSettingsFile(const QString &name)
+// installed Speecher's own settings file holds them, with changed's keys over
+// the file's.
+void loadSettingsFile(const QString &name, const QVariantMap &changed = {})
 {
     const QSettings fixture(fixtureDir + name, QSettings::IniFormat);
     SettingsStore store;
     store.raw().clear();
     for (const QString &key : fixture.allKeys()) {
         store.raw().setValue(key, fixture.value(key));
+    }
+    for (auto it = changed.begin(); it != changed.end(); ++it) {
+        store.raw().setValue(it.key(), it.value());
     }
     store.raw().sync();
 }
@@ -76,11 +85,12 @@ std::unique_ptr<ApplicationController> launch()
 }
 
 // One edit unrelated to anything checked, through the Quick UI, which saves
-// the whole snapshot.
-void editTheme(ApplicationController &controller)
+// the whole snapshot. The color scheme is new in the Quick UI, so no older
+// file holds it.
+void editColorScheme(ApplicationController &controller)
 {
     QuickSettings settings(&controller);
-    settings.set(QStringLiteral("themeControl"), QStringLiteral("dark"));
+    settings.set(QStringLiteral("colorScheme"), QStringLiteral("fixture-scheme"));
 }
 
 const WritingProfileSettings &profile(const AppSettings &settings, const QString &id)
@@ -92,6 +102,50 @@ const WritingProfileSettings &profile(const AppSettings &settings, const QString
     }
     static const WritingProfileSettings missing{QStringLiteral("missing")};
     return missing;
+}
+
+// What a variant row expects, by name, as the running app reads it.
+QVariant readField(ApplicationController &controller, const QString &name)
+{
+    SettingsStore &store = *controller.settings();
+    const AppSettings settings = store.snapshot();
+    const auto delivery = [&](const Target &target) {
+        return pasteMethodName(resolvePasteRule(settings.output.pasteRules, target).method);
+    };
+    Target terminal;
+    terminal.category = AppCategory::Terminal;
+    Target kate;
+    kate.applicationId = QStringLiteral("org.kde.kate");
+    Target unruled;
+    unruled.applicationId = QStringLiteral("org.fixture.unruled");
+    const std::map<QString, std::function<QVariant()>> fields{
+        {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.openAiSpeed; }},
+        {QStringLiteral("refinementProvider"), [&] { return settings.refinement.providerId; }},
+        {QStringLiteral("savedRefinementProvider"), [&] { return store.raw().value(SettingsKeys::RefinementProvider); }},
+        {QStringLiteral("outputMethod"), [&] { return settings.output.method; }},
+        {QStringLiteral("terminalDelivery"), [&] { return delivery(terminal); }},
+        {QStringLiteral("kateDelivery"), [&] { return delivery(kate); }},
+        {QStringLiteral("unruledDelivery"), [&] { return delivery(unruled); }},
+        {QStringLiteral("cliproxyBaseUrl"), [&] { return settings.refinement.cliproxyBaseUrl; }},
+        {QStringLiteral("openAiModel"), [&] { return settings.refinement.openAiModel; }},
+        {QStringLiteral("anthropicModel"), [&] { return settings.refinement.anthropicModel; }},
+        {QStringLiteral("savedShortcut"), [&] { return store.raw().value(SettingsKeys::GlobalShortcut); }},
+        {QStringLiteral("shortcut"), [&] { return controller.globalShortcut().toString(); }},
+        {QStringLiteral("theme"), [&] { return settings.ui.theme; }},
+        {QStringLiteral("workCleanup"), [&] { return profile(settings, QStringLiteral("work")).cleanupStrength; }},
+        {QStringLiteral("workTone"), [&] { return profile(settings, QStringLiteral("work")).tone; }},
+        {QStringLiteral("aiCodingCleanup"), [&] { return profile(settings, QStringLiteral("ai_coding")).cleanupStrength; }},
+        {QStringLiteral("aiCodingTone"), [&] { return profile(settings, QStringLiteral("ai_coding")).tone; }},
+    };
+    const auto field = fields.find(name);
+    return field == fields.end() ? QVariant(QStringLiteral("no field ") + name) : field->second();
+}
+
+void checkFields(ApplicationController &controller, const QVariantMap &expected)
+{
+    for (auto it = expected.begin(); it != expected.end(); ++it) {
+        QCOMPARE(readField(controller, it.key()).toString(), it.value().toString());
+    }
 }
 
 bool keyringExpected()
@@ -148,11 +202,83 @@ private slots:
         auto controller = launch();
         checkMasterState(*controller);
         if (QTest::currentTestFailed()) return;
-        editTheme(*controller);
+        editColorScheme(*controller);
         controller.reset();
         controller = launch();
         checkMasterState(*controller);
-        QCOMPARE(controller->settings()->snapshot().ui.theme, QStringLiteral("dark"));
+        QCOMPARE(controller->settings()->snapshot().ui.colorScheme, QStringLiteral("fixture-scheme"));
+    }
+
+    // Other values a 0.2.0 user can have saved, each over the same file.
+    void masterVariantsSurviveTheUpdate_data()
+    {
+        QTest::addColumn<QVariantMap>("saved");
+        QTest::addColumn<QVariantMap>("expected");
+        const auto method = [](const char *name) { return QVariantMap{{QStringLiteral("output/method"), name}}; };
+        QTest::newRow("fast mode without a speed")
+            << QVariantMap{{QStringLiteral("openai/fastMode"), true}}
+            << QVariantMap{{QStringLiteral("openAiSpeed"), QStringLiteral("fast")}};
+        for (const char *provider : {"none", "openai"}) {
+            QTest::addRow("refinement provider %s", provider)
+                << QVariantMap{{QStringLiteral("refinement/provider"), provider}}
+                << QVariantMap{{QStringLiteral("refinementProvider"), provider},
+                               {QStringLiteral("savedRefinementProvider"), provider}};
+        }
+        // Pasting rules insert or copy only, as they did under the old method.
+        QTest::newRow("direct insertion")
+            << method("direct_insert")
+            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("direct_insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
+        QTest::newRow("Qt clipboard")
+            << method("qt-clipboard")
+            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("clipboard_only")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("clipboard_only")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
+        QTest::newRow("proxy URL ending in /v1/")
+            << QVariantMap{{QStringLiteral("cliproxy/baseUrl"), QStringLiteral("http://127.0.0.1:8317/v1/")}}
+            << QVariantMap{{QStringLiteral("cliproxyBaseUrl"), QStringLiteral("http://127.0.0.1:8317")}};
+        QTest::newRow("models chosen over the defaults")
+            << QVariantMap{{QStringLiteral("openai/model"), QStringLiteral("gpt-6-sol")},
+                           {QStringLiteral("anthropic/model"), QStringLiteral("claude-fable-5")}}
+            << QVariantMap{{QStringLiteral("openAiModel"), QStringLiteral("gpt-6-sol")},
+                           {QStringLiteral("anthropicModel"), QStringLiteral("claude-fable-5")}};
+        // On Linux the desktop keeps the combination, not this file; the
+        // AppImage update script checks KGlobalAccel's.
+        QVariantMap shortcut{{QStringLiteral("savedShortcut"), QStringLiteral("Meta+Alt+K")}};
+#ifndef Q_OS_LINUX
+        shortcut.insert(QStringLiteral("shortcut"), QStringLiteral("Meta+Alt+K"));
+#endif
+        QTest::newRow("saved global shortcut")
+            << QVariantMap{{SettingsKeys::GlobalShortcut, QStringLiteral("Meta+Alt+K")}} << shortcut;
+        QTest::newRow("light theme")
+            << QVariantMap{{QStringLiteral("ui/theme"), QStringLiteral("light")}}
+            << QVariantMap{{QStringLiteral("theme"), QStringLiteral("light")}};
+        QTest::newRow("AI coding tuned apart from work")
+            << QVariantMap{{QStringLiteral("refinement/writingProfiles"),
+                            QByteArray(R"([{"cleanupStrength":"light_cleanup","profile":"work","tone":"formal"},)"
+                                       R"({"cleanupStrength":"balanced","profile":"ai_coding","tone":"casual"}])")}}
+            << QVariantMap{{QStringLiteral("workCleanup"), QStringLiteral("light_cleanup")},
+                           {QStringLiteral("workTone"), QStringLiteral("formal")},
+                           {QStringLiteral("aiCodingCleanup"), QStringLiteral("balanced")},
+                           {QStringLiteral("aiCodingTone"), QStringLiteral("casual")}};
+    }
+
+    void masterVariantsSurviveTheUpdate()
+    {
+        QFETCH(QVariantMap, saved);
+        QFETCH(QVariantMap, expected);
+        loadSettingsFile(QStringLiteral("master-0.2.0.conf"), saved);
+
+        auto controller = launch();
+        checkFields(*controller, expected);
+        if (QTest::currentTestFailed()) return;
+        editColorScheme(*controller);
+        controller.reset();
+        controller = launch();
+        checkFields(*controller, expected);
     }
 
     void nativeSettingsHistoryAndModelsSurviveTheUpdate()
@@ -191,7 +317,7 @@ private slots:
         checkNativeState(*controller);
         checkFiles(*controller);
         if (QTest::currentTestFailed()) return;
-        editTheme(*controller);
+        editColorScheme(*controller);
         controller.reset();
         controller = launch();
         checkNativeState(*controller);
@@ -211,6 +337,7 @@ private:
         QCOMPARE(settings.ui.previewWords, 12);
         QVERIFY(settings.ui.pauseMediaDuringTranscription);
         QVERIFY(!settings.ui.soundsEnabled);
+        QCOMPARE(settings.ui.theme, QStringLiteral("system"));
         // The old window's layout is left alone, unread.
         QVERIFY(store.raw().contains(QStringLiteral("ui/appWindow/a/geometry")));
 

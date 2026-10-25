@@ -6,19 +6,22 @@
 #   pwsh packaging\windows\verify-installer-update.ps1 -OldInstaller OLD.exe `
 #       -NewInstaller NEW.exe -Evidence DIR
 #
-# Run it as an administrator in the user's desktop session: the old window and
-# the tray need one. It changes the machine: the hosts file sends github.com
-# to a local HTTPS server, a throwaway certificate joins the trusted roots,
-# and the user's Speecher is reinstalled per-user with
-# tests\migration\master-0.2.0.conf as its settings, Launch at login on and a
-# sentinel file beside speecher.exe.
+# Run it as an administrator in the user's desktop session: the old window, the
+# tray and the global shortcut need one. It changes the machine: the hosts file
+# sends github.com and api.openai.com to a local HTTPS server, a throwaway
+# certificate joins the trusted roots, and the user's Speecher is reinstalled
+# per-user with tests\migration\master-0.2.0.conf as its settings, Launch at
+# login on, Ctrl+Alt+F9 as its global shortcut, an OpenAI key and a CLI Proxy
+# key made up for the run, and a sentinel file beside speecher.exe.
 #
 # The released app has no feed override, so it fetches the real manifest URL,
 # which the local server answers with the new installer and its SHA-256. The
-# old app downloads and verifies it on its own; the script presses the old
-# window's own "Restart now" through UI Automation, and the old app runs
-# Setup. Each check is a PASS or FAIL line in DIR\summary.txt; the exit status
-# is 1 if any failed.
+# old app saves the OpenAI key in Credential Manager itself, then downloads and
+# verifies the installer on its own; the script presses the old window's own
+# "Restart now" through UI Automation, and the old app runs Setup. The new
+# binary's requests to stub OpenAI and proxy servers show it reads both keys,
+# after the update and again after an edit and a restart. Each check is a PASS
+# or FAIL line in DIR\summary.txt; the exit status is 1 if any failed.
 param(
     [Parameter(Mandatory)][string]$OldInstaller,
     [Parameter(Mandatory)][string]$NewInstaller,
@@ -29,6 +32,10 @@ if ($env:SPEECHER_DISPOSABLE_MACHINE -ne "1") {
     throw "This edits the hosts file, the trusted roots and Speecher's state; set SPEECHER_DISPOSABLE_MACHINE=1 on a throwaway machine."
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type -Namespace E2E -Name User32 -MemberDefinition @'
+[DllImport("user32.dll", SetLastError = true)] public static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
+[DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr window, int id);
+'@
 
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $App = Join-Path $env:LOCALAPPDATA "Programs\Speecher"
@@ -38,9 +45,13 @@ $SettingsKey = "HKCU:\Software\io.github.firemonster612\speecher"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $ManifestPath = "/firemonster612/speecher/releases/latest/download/update-manifest.json"
 $InstallerPath = "/firemonster612/speecher/releases/download/e2e/Speecher-Setup-x64.exe"
+$Shortcut = "Ctrl+Alt+F9"
+$StubTranscript = "speecher migration stub transcript"
 New-Item -ItemType Directory -Force $Evidence | Out-Null
 $Summary = Join-Path $Evidence "summary.txt"
+$KeyLog = Join-Path $Evidence "keys-seen.log"
 Set-Content $Summary ""
+Set-Content $KeyLog ""
 $script:Failed = @()
 
 function Check($Name, $Ok, $Detail = "") {
@@ -63,6 +74,28 @@ function WaitFor([scriptblock]$Condition, [int]$Seconds, [string]$What) {
 function Speecher { Get-Process speecher -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } }
 
 function Invoke-Speecher { & $Com @args 2>&1 | Out-String }
+
+function Quit-Speecher {
+    Invoke-Speecher quit | Out-Null
+    WaitFor { -not (Speecher) } 60 "speecher did not quit" | Out-Null
+}
+
+function Start-Speecher {
+    Start-Process $Exe
+    WaitFor { Speecher } 60 "speecher did not start" | Out-Null
+    WaitFor { (Invoke-Speecher status --json) -match '"state"' } 60 "speecher did not answer" | Out-Null
+}
+
+# Whether another process holds Ctrl+Alt+F9: registering it here fails with
+# ERROR_HOTKEY_ALREADY_REGISTERED.
+function Test-ShortcutHeld {
+    $controlAlt = 0x0003; $f9 = 0x78; $id = 0x5E2E
+    if ([E2E.User32]::RegisterHotKey([IntPtr]::Zero, $id, $controlAlt, $f9)) {
+        [E2E.User32]::UnregisterHotKey([IntPtr]::Zero, $id) | Out-Null
+        return $false
+    }
+    return [Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1409
+}
 
 # --- Settings as the old app keeps them: QSettings' registry layout ---------
 
@@ -105,82 +138,162 @@ function Setting([string]$Name) {
     return [string]$value
 }
 
+function Set-Setting([string]$Name, [string]$Value) {
+    $key = Join-Path $SettingsKey (Split-Path ($Name -replace '/', '\') -Parent)
+    if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+    Set-ItemProperty -Path $key -Name (Split-Path ($Name -replace '/', '\') -Leaf) -Value $Value
+}
+
 function Check-State([string]$Label) {
     $expected = [ordered]@{
         "app/setupCompleted" = "true"; "app/launchAtLogin" = "true"; "shortcuts/activationMode" = "toggle"
         "audio/preRollMs" = "400"; "refinement/provider" = "anthropic"; "refinement/defaultWritingProfile" = "work"
         "openai/model" = "gpt-6-luna"; "anthropic/model" = "claude-opus-5-5"; "anthropic/auth/mode" = "cliproxy"
         "output/method" = "automatic"; "output/format" = "html"; "updates/channel" = "stable"
-        "cliproxy/baseUrl" = "http://127.0.0.1:8317"
+        "cliproxy/baseUrl" = "http://127.0.0.1:8317"; "shortcuts/toggleDictation" = $Shortcut
     }
     $wrong = @($expected.Keys | Where-Object { (Setting $_) -ne $expected[$_] } | ForEach-Object { "$_=$(Setting $_)" })
     Check "$Label.settings" ($wrong.Count -eq 0) $(if ($wrong) { $wrong -join "; " } else { "$($expected.Count) keys as expected" })
     $vocabulary = (Setting "stt/vocabularyEntries") -replace '^@ByteArray\((.*)\)$', '$1' | ConvertFrom-Json
     Check "$Label.vocabulary" ($vocabulary.Count -ge 262 -and $vocabulary[0].starred) "$($vocabulary.Count) entries"
     Check "$Label.old_window_keys_untouched" ((Setting "ui/appWindow/a/geometry") -ne "")
-    $proxyInKeyring = (Setting "secrets/inKeyring") -match "cliproxy-api-key"
-    Check "$Label.proxy_key_kept" ($proxyInKeyring -or (Setting "cliproxy/apiKey") -eq "fixture-proxy-key") `
-        $(if ($proxyInKeyring) { "in Credential Manager" } else { "in the registry" })
+    # The app registers it shortly after it starts.
+    $held = try { WaitFor { Test-ShortcutHeld } 30 "" } catch { $false }
+    Check "$Label.shortcut_held" $held "$Shortcut registered by another process"
 }
 
-# --- The feed: github.com, served here --------------------------------------
+# --- The servers: github.com, api.openai.com and the proxy, served here -----
 
-function Serve-Feed($Version, $Build) {
+function Serve-Stubs($Version, $Build, $Keys) {
     # A CA and a server certificate it signs, as github.com presents: 0.2.0
     # closes the connection to a self-signed server certificate even when it
     # is a trusted root.
     $ca = New-SelfSignedCertificate -Subject "CN=Speecher update E2E CA" -CertStoreLocation Cert:\LocalMachine\My `
         -KeyUsage CertSign, CRLSign, DigitalSignature -TextExtension @("2.5.29.19={critical}{text}ca=1") `
         -NotAfter (Get-Date).AddDays(2)
-    $certificate = New-SelfSignedCertificate -DnsName "github.com" -Signer $ca -CertStoreLocation Cert:\LocalMachine\My `
-        -NotAfter (Get-Date).AddDays(2)
+    $certificate = New-SelfSignedCertificate -DnsName "github.com", "api.openai.com" -Signer $ca `
+        -CertStoreLocation Cert:\LocalMachine\My -NotAfter (Get-Date).AddDays(2)
     $public = Join-Path $env:TEMP "speecher-e2e-ca.cer"
     Export-Certificate -Cert $ca -FilePath $public | Out-Null
     Import-Certificate -FilePath $public -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
     $hosts = "$env:windir\System32\drivers\etc\hosts"
-    if (-not (Select-String -Path $hosts -Pattern "speecher-e2e" -Quiet)) {
-        Add-Content $hosts "`n127.0.0.1 github.com # speecher-e2e"
+    foreach ($hostName in "github.com", "api.openai.com") {
+        if (-not (Select-String -Path $hosts -Pattern "$hostName # speecher-e2e" -SimpleMatch -Quiet)) {
+            Add-Content $hosts "`n127.0.0.1 $hostName # speecher-e2e"
+        }
     }
     $manifest = @{
         version = $Version; buildNumber = $Build
         "windows-x86_64" = @{ installer = "https://github.com$InstallerPath"; sha256 = (Get-FileHash $NewInstaller -Algorithm SHA256).Hash.ToLower() }
     } | ConvertTo-Json
     Set-Content (Join-Path $Evidence "update-manifest.json") $manifest
-    # A plain HTTP/1.1 server over SslStream, with no http.sys binding to
-    # leave behind.
+    # Plain HTTP/1.1 over TcpListener, TLS through SslStream on 443, with no
+    # http.sys binding to leave behind. A request to api.openai.com or the
+    # proxy only notes, by name, whether it carried its key.
     $job = Start-ThreadJob -ArgumentList $certificate.Thumbprint, $manifest, (Resolve-Path $NewInstaller).Path,
-            (Join-Path $Evidence "https-requests.log"), $ManifestPath, $InstallerPath -ScriptBlock {
-        param($thumbprint, $manifest, $installer, $log, $manifestPath, $installerPath)
+            (Join-Path $Evidence "https-requests.log"), $KeyLog, $ManifestPath, $InstallerPath, $Keys, $StubTranscript -ScriptBlock {
+        param($thumbprint, $manifest, $installer, $log, $keyLog, $manifestPath, $installerPath, $keys, $stubTranscript)
         $certificate = Get-Item "Cert:\LocalMachine\My\$thumbprint"
-        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 443)
-        $listener.Start()
+        $refined = "event: response.output_text.delta`ndata: {`"type`":`"response.output_text.delta`",`"delta`":`"speecher migration refined`"}`n`n" +
+            "event: response.completed`ndata: {`"type`":`"response.completed`",`"response`":{}}`n`n"
+        function Read-Request($stream) {
+            $head = [IO.MemoryStream]::new()
+            while (-not ($head.Length -ge 4 -and [Text.Encoding]::ASCII.GetString($head.ToArray(), $head.Length - 4, 4) -eq "`r`n`r`n")) {
+                $byte = $stream.ReadByte()
+                if ($byte -lt 0) { break }
+                $head.WriteByte($byte)
+            }
+            $lines = [Text.Encoding]::ASCII.GetString($head.ToArray()) -split "`r`n"
+            $headers = @{}
+            foreach ($line in $lines[1..($lines.Count - 1)]) { if ($line -match '^([^:]+):\s*(.*)$') { $headers[$Matches[1].ToLower()] = $Matches[2] } }
+            $length = [int]($headers["content-length"] ?? 0)
+            $body = [byte[]]::new($length); $read = 0
+            while ($read -lt $length) { $n = $stream.Read($body, $read, $length - $read); if ($n -le 0) { break }; $read += $n }
+            return @{ Method = ($lines[0] -split ' ')[0]; Path = ($lines[0] -split ' ')[1]; Headers = $headers; Body = $body }
+        }
+        function Note-Key($name, $request) {
+            $sent = "$($request.Headers['authorization']) $($request.Headers['x-api-key'])"
+            $ok = $keys[$name] -and $sent.Contains($keys[$name])
+            if ($ok) { Add-Content $keyLog "$(Get-Date -Format HH:mm:ss) $name" }
+            return $ok
+        }
+        function Reply($stream, $status, [byte[]]$body, $type = "application/octet-stream") {
+            $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n")
+            $stream.Write($head, 0, $head.Length)
+            $stream.Write($body, 0, $body.Length)
+            $stream.Flush()
+        }
+        $listeners = @{
+            tls = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 443)
+            proxy = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 8317)
+            speech = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 8318)
+        }
+        $listeners.Values | ForEach-Object { $_.Start() }
         while ($true) {
-            $client = $listener.AcceptTcpClient()
-            try {
-                $tls = [Net.Security.SslStream]::new($client.GetStream(), $false)
-                $tls.AuthenticateAsServer($certificate, $false, [Security.Authentication.SslProtocols]::Tls12, $false)
-                $reader = [IO.StreamReader]::new($tls)
-                $path = ($reader.ReadLine() -split ' ')[1]
-                while ($reader.ReadLine()) { }
-                Add-Content $log "$(Get-Date -Format HH:mm:ss) GET $path"
-                [byte[]]$body = [byte[]]::new(0)
-                if ($path -eq $manifestPath) { $body = [Text.Encoding]::UTF8.GetBytes($manifest) }
-                elseif ($path -eq $installerPath) { $body = [IO.File]::ReadAllBytes($installer) }
-                $status = if ($body.Length) { "200 OK" } else { "404 Not Found" }
-                $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n")
-                $tls.Write($head, 0, $head.Length)
-                $tls.Write($body, 0, $body.Length)
-                $tls.Flush()
-                $tls.ShutdownAsync().Wait()
-            } catch {
-                Add-Content $log "$(Get-Date -Format HH:mm:ss) error $_"
-            } finally {
-                $client.Close()
+            $ready = @($listeners.Keys | Where-Object { $listeners[$_].Pending() })
+            if (-not $ready) { Start-Sleep -Milliseconds 50; continue }
+            foreach ($name in $ready) {
+                $client = $listeners[$name].AcceptTcpClient()
+                try {
+                    $stream = $client.GetStream()
+                    if ($name -eq "tls") {
+                        $stream = [Net.Security.SslStream]::new($stream, $false)
+                        $stream.AuthenticateAsServer($certificate, $false, [Security.Authentication.SslProtocols]::Tls12, $false)
+                    }
+                    $request = Read-Request $stream
+                    Add-Content $log "$(Get-Date -Format HH:mm:ss) $name $($request.Method) $($request.Path)"
+                    $empty = [byte[]]::new(0)
+                    if ($name -eq "speech") {
+                        Reply $stream "200 OK" ([Text.Encoding]::UTF8.GetBytes("{`"text`":`"$stubTranscript`"}")) "application/json"
+                    } elseif ($name -eq "proxy") {
+                        Reply $stream $(if (Note-Key "proxy" $request) { "502 Bad Gateway" } else { "401 Unauthorized" }) $empty
+                    } elseif ($request.Method -eq "POST") {
+                        if ($request.Path -eq "/v1/responses" -and (Note-Key "openai" $request)) {
+                            Reply $stream "200 OK" ([Text.Encoding]::UTF8.GetBytes($refined)) "text/event-stream"
+                        } else {
+                            Reply $stream "401 Unauthorized" $empty
+                        }
+                    } elseif ($request.Path -eq $manifestPath) {
+                        Reply $stream "200 OK" ([Text.Encoding]::UTF8.GetBytes($manifest))
+                    } elseif ($request.Path -eq $installerPath) {
+                        Reply $stream "200 OK" ([IO.File]::ReadAllBytes($installer))
+                    } else {
+                        Reply $stream "404 Not Found" $empty
+                    }
+                    if ($stream -is [Net.Security.SslStream]) { $stream.ShutdownAsync().Wait() }
+                } catch {
+                    Add-Content $log "$(Get-Date -Format HH:mm:ss) error $_"
+                } finally {
+                    $client.Close()
+                }
             }
         }
     }
     WaitFor { try { (Invoke-WebRequest "https://github.com$ManifestPath" -UseBasicParsing).StatusCode -eq 200 } catch { $false } } 30 "local feed"
     return $job
+}
+
+# A second of warbling tone, for a speech server to be asked about.
+function Write-Tone([string]$Path) {
+    $samples = 16000
+    $writer = [IO.BinaryWriter]::new([IO.File]::Create($Path))
+    $writer.Write([Text.Encoding]::ASCII.GetBytes("RIFF")); $writer.Write([int](36 + 2 * $samples))
+    $writer.Write([Text.Encoding]::ASCII.GetBytes("WAVEfmt ")); $writer.Write([int]16); $writer.Write([int16]1); $writer.Write([int16]1)
+    $writer.Write([int]16000); $writer.Write([int]32000); $writer.Write([int16]2); $writer.Write([int16]16)
+    $writer.Write([Text.Encoding]::ASCII.GetBytes("data")); $writer.Write([int](2 * $samples))
+    for ($i = 0; $i -lt $samples; $i++) { $writer.Write([int16](8000 * [math]::Sin($i * (0.12 + 0.04 * [math]::Sin($i / 800))))) }
+    $writer.Close()
+}
+
+# The new binary, with no window, refines a transcript through each stub,
+# which takes the request only with the key the old app saved.
+function Prove-Keys([string]$Label, [string]$Audio) {
+    foreach ($pair in @(@("openai", "openai"), @("anthropic", "proxy"))) {
+        $before = @(Get-Content $KeyLog | Where-Object { $_ -match " $($pair[1])$" }).Count
+        $output = Invoke-Speecher transcribe --model endpoint --refine $pair[0] --output none --stdout $Audio
+        $after = @(Get-Content $KeyLog | Where-Object { $_ -match " $($pair[1])$" }).Count
+        Check "$Label.$($pair[1])_key_read" ($after -gt $before) "exit $LASTEXITCODE`: $(($output.Trim() -split "`r?`n")[-1])"
+    }
 }
 
 # Presses a button by its accessible name in one of the process's windows, as
@@ -208,19 +321,32 @@ Set-Content (Join-Path $Evidence "old-files.txt") $oldFiles
 Import-Settings (Join-Path $Repo "tests\migration\master-0.2.0.conf")
 Set-ItemProperty (Join-Path $SettingsKey "updates") -Name lastCheckTime -Value 0 -Type QWord
 Set-ItemProperty (Join-Path $SettingsKey "updates") -Name autoInstall -Value "true"
+Set-Setting "shortcuts/toggleDictation" $Shortcut
+# 0.2.0 moves the OpenAI key into Credential Manager as it starts; the proxy
+# key it keeps in the registry, for the new app to move.
+$keys = @{ openai = "sk-e2e-" + [guid]::NewGuid().ToString("N"); proxy = "e2e-proxy-" + [guid]::NewGuid().ToString("N") }
+Set-Setting "openai/apiKey" $keys.openai
+Set-Setting "cliproxy/apiKey" $keys.proxy
 Set-Content (Join-Path $App "sentinel.txt") "kept"
 
 # The new build's version, from the speecher-version.txt build-installer.ps1
 # writes beside the installer, so Speecher itself never runs before the update.
 $build = [int]((Get-Content (Join-Path (Split-Path $NewInstaller) "speecher-version.txt")) -replace '.*\(build (\d+)\).*', '$1')
 $version = (Get-Content (Join-Path (Split-Path $NewInstaller) "speecher-version.txt")) -replace '^speecher (\S+) .*', '$1'
-$feed = Serve-Feed $version $build
+$stubs = Serve-Stubs $version $build $keys
 
 Start-Process $Exe
 $old = WaitFor { Speecher } 60 "the old app did not start"
 Check "old.running" $true "pid $($old.Id) version $((Get-Item $Exe).VersionInfo.ProductVersion)"
+try {
+    WaitFor { -not (Setting "openai/apiKey") } 30 "the OpenAI key stayed in the registry" | Out-Null
+    Check "old.saved_key_in_keyring" $true "the old app moved the OpenAI key out of the registry"
+} catch {
+    Check "old.saved_key_in_keyring" $false "$_"
+}
 $runValue = WaitFor { (Get-ItemProperty $RunKey -ErrorAction SilentlyContinue).Speecher } 60 "no startup entry"
 Check "old.startup_entry" ($runValue -like "*$Exe*") $runValue
+Check "old.shortcut_held" (WaitFor { Test-ShortcutHeld } 30 "the old app did not register $Shortcut") "$Shortcut"
 $downloaded = Join-Path $env:LOCALAPPDATA "Speecher\updates\Speecher-Setup-$version.exe"
 try {
     # The old app holds the file open while it writes it.
@@ -241,13 +367,14 @@ try {
 try {
     $new = WaitFor { Speecher | Where-Object { $_.Id -ne $old.Id } } 300 "no relaunch after Setup"
     WaitFor { -not (Get-Process -Id $old.Id -ErrorAction SilentlyContinue) } 60 "the old process stayed" | Out-Null
-    Start-Sleep 10
+    WaitFor { (Invoke-Speecher status --json) -match '"state"' } 60 "the new app did not answer" | Out-Null
     Check "relaunched" $true "pid $($old.Id) -> $($new.Id)"
 } catch {
     Check "relaunched" $false "$_"
 }
 $installedVersion = Invoke-Speecher --version
 Check "version" ($installedVersion -match [regex]::Escape($version)) $installedVersion.Trim()
+# Processes, not tray icons: the notification area can't be read reliably.
 Check "one_process" (@(Speecher).Count -eq 1) "$(@(Speecher).Id)"
 $status = Invoke-Speecher status --json
 Check "cli" ($status -match '"state"') $status.Trim()
@@ -268,24 +395,40 @@ Check "no_old_files_left" ($written.Count -gt 0 -and $stale.Count -eq 0) "$($wri
 Check "sentinel_kept" ((Get-Content (Join-Path $App "sentinel.txt")) -eq "kept")
 $runValue = (Get-ItemProperty $RunKey -ErrorAction SilentlyContinue).Speecher
 Check "startup_entry" ($runValue -like "*$Exe*") $runValue
+$pathEntries = @(((Get-ItemProperty "HKCU:\Environment").Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $App })
+Check "one_path_entry" ($pathEntries.Count -eq 1) "$($pathEntries.Count) user Path entries for $App"
 Check "open_with" ((Test-Path "HKCU:\Software\Classes\Applications\speecher.exe") -and
     (Get-ItemProperty "HKCU:\Software\Classes\.wav\OpenWithProgids" -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains "Speecher.AudioFile")
 $wavChoice = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.wav\UserChoice" -ErrorAction SilentlyContinue).ProgId
 Check "default_handler_untouched" ($wavChoice -ne "Speecher.AudioFile") "wav UserChoice=$wavChoice"
 Check-State "first_launch"
 
-# One edit through the running app, then a restart as at the next login.
+# The keys, read by the new binary on its own. Transcribing a file needs a
+# speech server, which a stub is.
+Quit-Speecher
+$audio = Join-Path $env:TEMP "speecher-e2e-tone.wav"
+Write-Tone $audio
+Set-Setting "endpoint/speech/baseUrl" "http://127.0.0.1:8318/v1"
+Set-Setting "endpoint/speech/model" "stub"
+Prove-Keys "after_update" $audio
+
+# One edit through the running app, then a restart as at the next login. The
+# CLI's vocabulary add saves only the vocabulary; the whole snapshot a Quick
+# UI edit saves is tests/test_migration.cpp's to check.
+Start-Speecher
 Invoke-Speecher vocabulary add "migration e2e term" | Out-Null
-Invoke-Speecher quit | Out-Null
-WaitFor { -not (Speecher) } 30 "speecher did not quit" | Out-Null
-Start-Process $Exe
-WaitFor { Speecher } 60 "speecher did not restart" | Out-Null
-Start-Sleep 5
+Quit-Speecher
+Start-Speecher
 Check-State "after_edit_and_restart"
 $terms = ((Setting "stt/vocabularyEntries") -replace '^@ByteArray\((.*)\)$', '$1' | ConvertFrom-Json).term
 Check "edit_saved" ($terms -contains "migration e2e term")
+Quit-Speecher
+Prove-Keys "after_edit_and_restart" $audio
 reg export "HKCU\Software\io.github.firemonster612\speecher" (Join-Path $Evidence "settings-after.reg") /y | Out-Null
+(Get-Content (Join-Path $Evidence "settings-after.reg")) -replace '^("apiKey")=.*$', '$1="<redacted>"' |
+    Set-Content (Join-Path $Evidence "settings-after.reg")
+Start-Process $Exe
 
-Stop-Job $feed -ErrorAction SilentlyContinue
+Stop-Job $stubs -ErrorAction SilentlyContinue
 if ($script:Failed.Count) { Write-Host "$($script:Failed.Count) failed: $($script:Failed -join ', ')"; exit 1 }
 Write-Host "all passed"

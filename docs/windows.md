@@ -44,9 +44,10 @@ on Path. CI runs it after packaging.
 
 Before a release, `packaging/windows/verify-installer-update.ps1` checks that
 an installed copy of the last release updates to the new installer through its
-own updater: the WinUI files gone, settings, the startup entry and Open With
-kept. Run it on a throwaway Windows machine, since it edits the hosts file and
-trusted roots; the script's header says how.
+own updater: the WinUI files gone; settings, both saved keys, the global
+shortcut, the startup entry and Open With kept; and one Path entry. Run it on
+a throwaway Windows machine, since it edits the hosts file and trusted roots;
+the script's header says how.
 
 ## Installing
 

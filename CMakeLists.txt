@@ -1539,10 +1539,16 @@ if(SPEECHER_BUILD_TESTS)
   if(WIN32)
     list(APPEND SPEECHER_TEST_SUITES win_platform)
   endif()
+  set(SPEECHER_TEST_ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  if(UNIX AND NOT APPLE)
+    # No session bus, so no suite reaches the developer's own keyring; the
+    # keyring suites below bring a private one.
+    list(APPEND SPEECHER_TEST_ENVIRONMENT "DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/speecher-tests-bus")
+  endif()
   foreach(suite IN LISTS SPEECHER_TEST_SUITES)
     add_test(NAME speecher_${suite} COMMAND speecher_tests --suite ${suite})
     set_tests_properties(speecher_${suite} PROPERTIES
-      ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+      ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" RUN_SERIAL TRUE TIMEOUT 120)
   endforeach()
   # Its drift calls play over half an hour of audio through AEC3.
   set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)

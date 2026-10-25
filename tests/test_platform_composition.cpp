@@ -11,7 +11,6 @@
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
-#include "core/settings/SettingsFile.h"
 #include "core/SettingsStore.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "dictation/DictationSession.h"
@@ -1216,7 +1215,9 @@ private slots:
     // dictation shortcut's, and a new binder reads it back.
     void cancelShortcutPersistsUnderItsOwnKey()
     {
-        SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
+        QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                           QString::fromLatin1(SettingsKeys::Organization),
+                           SettingsKeys::application());
         settings.remove(QStringLiteral("shortcuts/toggleDictation"));
         const GlobalShortcutAction cancel = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));

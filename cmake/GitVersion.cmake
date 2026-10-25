@@ -50,18 +50,39 @@ if("${git_repository_result}" STREQUAL "0"
   endif()
 
   # Stable tags are vX.Y.Z reachable from master. RC and side-branch tags deliberately fall back;
-  # the regex is strict on purpose.
-  execute_process(
-    COMMAND git rev-parse --verify --quiet refs/heads/master
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    RESULT_VARIABLE git_local_master_result
-    ERROR_QUIET
-  )
-  if(git_local_master_result STREQUAL "0")
-    set(git_master_ref master)
-  else()
-    set(git_master_ref origin/master)
-  endif()
+  # the regex is strict on purpose. Either master counts, since a local one can be behind the
+  # tag being rebuilt, and a clone of the tag alone, with neither, takes the tag as it is.
+  set(git_master_refs "")
+  foreach(ref refs/remotes/origin/master refs/heads/master)
+    execute_process(
+      COMMAND git rev-parse --verify --quiet "${ref}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      RESULT_VARIABLE git_ref_result
+      OUTPUT_QUIET
+      ERROR_QUIET
+    )
+    if(git_ref_result STREQUAL "0")
+      list(APPEND git_master_refs "${ref}")
+    endif()
+  endforeach()
+  function(speecher_tag_on_master tag result)
+    set(on_master FALSE)
+    if(NOT git_master_refs)
+      set(on_master TRUE)
+    endif()
+    foreach(ref IN LISTS git_master_refs)
+      execute_process(
+        COMMAND git merge-base --is-ancestor "${tag}" "${ref}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        RESULT_VARIABLE ancestor_result
+        ERROR_QUIET
+      )
+      if(ancestor_result STREQUAL "0")
+        set(on_master TRUE)
+      endif()
+    endforeach()
+    set(${result} ${on_master} PARENT_SCOPE)
+  endfunction()
 
   execute_process(
     COMMAND git describe --exact-match --tags --match "v*"
@@ -74,15 +95,7 @@ if("${git_repository_result}" STREQUAL "0"
   set(git_exact_tag_is_stable FALSE)
   if(git_exact_tag_result STREQUAL "0"
      AND git_exact_tag MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
-    execute_process(
-      COMMAND git merge-base --is-ancestor "${git_exact_tag}" "${git_master_ref}"
-      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-      RESULT_VARIABLE git_exact_tag_on_master_result
-      ERROR_QUIET
-    )
-    if(git_exact_tag_on_master_result STREQUAL "0")
-      set(git_exact_tag_is_stable TRUE)
-    endif()
+    speecher_tag_on_master("${git_exact_tag}" git_exact_tag_is_stable)
   endif()
 
   if(git_exact_tag_is_stable)
@@ -99,13 +112,8 @@ if("${git_repository_result}" STREQUAL "0"
     set(git_version_base "${PROJECT_VERSION}")
     if(git_last_tag_result STREQUAL "0"
        AND git_last_tag MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
-      execute_process(
-        COMMAND git merge-base --is-ancestor "${git_last_tag}" "${git_master_ref}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        RESULT_VARIABLE git_last_tag_on_master_result
-        ERROR_QUIET
-      )
-      if(git_last_tag_on_master_result STREQUAL "0")
+      speecher_tag_on_master("${git_last_tag}" git_last_tag_on_master)
+      if(git_last_tag_on_master)
         # Patch+1 makes nightlies sort below the next Stable Release.
         math(EXPR git_next_patch "${CMAKE_MATCH_3} + 1")
         set(git_version_base "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${git_next_patch}")
