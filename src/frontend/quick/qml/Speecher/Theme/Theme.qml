@@ -15,7 +15,8 @@ QtObject {
     // Stretches every animation; every duration below goes through it.
     readonly property real timeScale: 1
     // Reduced motion keeps fades and drops movement: multiply every offset an
-    // animation travels by movement. Core sets it from the system setting.
+    // animation travels by movement. Nothing sets it yet: Qt reports no
+    // system setting for it.
     property bool reduceMotion: false
     readonly property real movement: reduceMotion ? 0 : 1
 

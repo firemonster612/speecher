@@ -1,6 +1,7 @@
 // The whole Quick UI as the daemon shows it, over the real Backend, in light
 // and dark: every page of Main and a few searches, every setup step and every
 // popup state load and draw without a QML warning.
+#include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 
 #include "app/AppFrontEnd.h"
@@ -24,21 +25,12 @@
 #include <utility>
 
 using namespace speecher;
+using speecher::test::openWindow;
 
 namespace {
 
 // Long enough for a page to load and its entrance animations to finish.
 constexpr int kSettleMs = 400;
-
-QQuickWindow *openWindow(const QByteArray &typeName)
-{
-    for (QWindow *window : QGuiApplication::topLevelWindows()) {
-        if (window->isVisible() && QByteArray(window->metaObject()->className()).startsWith(typeName)) {
-            return qobject_cast<QQuickWindow *>(window);
-        }
-    }
-    return nullptr;
-}
 
 // Whether the Theme that window draws with is dark.
 bool themeIsDark(QQuickWindow *window)

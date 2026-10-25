@@ -1559,7 +1559,8 @@ if(SPEECHER_BUILD_TESTS)
   # Its drift calls play over half an hour of audio through AEC3.
   set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)
   # qmllint over the UI's QML modules. .qmllint.ini makes any warning fail it.
-  if(TARGET Qt6::qmllint)
+  # Before 6.11 qmllint mistypes list<T> properties (UpdateStatus's lines).
+  if(TARGET Qt6::qmllint AND Qt6_VERSION VERSION_GREATER_EQUAL 6.11)
     add_test(NAME speecher_qmllint
       COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all_qmllint --config $<CONFIG>)
   endif()

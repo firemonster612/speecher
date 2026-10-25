@@ -849,10 +849,13 @@ private slots:
         }
 
         QSignalSpy speed(&transcriber, &LocalSpeechTranscriber::speedTestFinished);
-        // SPEECHER_TEST_LOCAL_RUNS_ON picks the backend the Speed Test runs
-        // on: "auto", "cpu", "vulkan", "cuda".
-        transcriber.runSpeedTest(
-            modelId, {qEnvironmentVariable("SPEECHER_TEST_LOCAL_RUNS_ON", QStringLiteral("auto")), QString()});
+        // SPEECHER_TEST_LOCAL_RUNS_ON picks what the Speed Test runs on: a
+        // backend ("auto", "cpu", "vulkan", "cuda"), or one with a device after
+        // the first colon ("cuda:0000:01:00.0"; PCI ids have colons of their own).
+        const QString runsOnId = qEnvironmentVariable("SPEECHER_TEST_LOCAL_RUNS_ON", QStringLiteral("auto"));
+        const qsizetype colon = runsOnId.indexOf(QLatin1Char(':'));
+        transcriber.runSpeedTest(modelId, colon < 0 ? LocalRunsOn{runsOnId, QString()}
+                                                    : LocalRunsOn{runsOnId.left(colon), runsOnId.mid(colon + 1)});
         QVERIFY(speed.wait(120000));
         QVERIFY2(speed.first().at(2).toString().isEmpty(), qPrintable(speed.first().at(2).toString()));
         if (!runsOn.isEmpty()) {

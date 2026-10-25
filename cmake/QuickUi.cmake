@@ -13,14 +13,11 @@ set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 set(SPEECHER_QUICK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/quick")
 
 # Adds the static QML module `uri` as `target` (and `target`plugin) from the
-# .qml and .js files under dir. EXCLUDE leaves files out, by their path under
-# dir; SOURCES are the module's C++, and LIBRARIES what it and its users link.
+# .qml and .js files under dir. SOURCES are the module's C++, and LIBRARIES
+# what it and its users link.
 function(speecher_add_qml_module target uri dir)
-  cmake_parse_arguments(PARSE_ARGV 3 arg "" "" "EXCLUDE;SOURCES;LIBRARIES")
+  cmake_parse_arguments(PARSE_ARGV 3 arg "" "" "SOURCES;LIBRARIES")
   file(GLOB_RECURSE files CONFIGURE_DEPENDS RELATIVE "${dir}" "${dir}/*.qml" "${dir}/*.js")
-  if(arg_EXCLUDE)
-    list(REMOVE_ITEM files ${arg_EXCLUDE})
-  endif()
   set(paths "")
   foreach(file IN LISTS files)
     set_source_files_properties("${dir}/${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
