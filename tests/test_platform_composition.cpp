@@ -1244,22 +1244,6 @@ private slots:
         QVERIFY(!settings.contains(QStringLiteral("shortcuts/cancelDictation")));
     }
 
-    // A refused login item has no window of its own to complain in: the
-    // controller remembers it so the settings surface can draw the caution.
-    void aRefusedLaunchAtLoginIsRememberedUntilOneIsAccepted()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        platform->launchAtLoginError = QStringLiteral("This computer said no.");
-        ApplicationController controller(true, platform);
-        QVERIFY(!controller.launchAtLoginAccepted());
-
-        QSignalSpy accepted(&controller, &ApplicationController::launchAtLoginAcceptedChanged);
-        platform->launchAtLoginError.clear();
-        controller.settings()->setLaunchAtLogin(controller.settings()->launchAtLogin());
-        QVERIFY(controller.launchAtLoginAccepted());
-        QCOMPARE(accepted.count(), 1);
-    }
-
     // An isolated instance has settings and a socket of its own, and leaves
     // the person's login item alone.
     void anIsolatedInstanceKeepsApartFromThePersonsOwn()

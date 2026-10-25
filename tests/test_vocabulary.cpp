@@ -79,22 +79,6 @@ private slots:
         QCOMPARE(sent.size(), VocabularyLimit::maxKeyterms);
         QCOMPARE(sent.first(), QStringLiteral("zzz starred"));
 
-        QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries()), QStringLiteral("claude")),
-                 QStringLiteral("183 terms. 100 are key terms, and all are used for refinement."));
-        // Only key terms go to the speech service, and one is said in the singular.
-        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")},
-                                          {QStringLiteral("KWin")}, QStringLiteral("claude")),
-                 QStringLiteral("2 terms. 1 is a key term, and all are used for refinement."));
-        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("claude")),
-                 QStringLiteral("2 of 100 key terms"));
-        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("codex")),
-                 QStringLiteral("2 terms, all are used for refinement"));
-        QStringList tooMany;
-        for (int index = 0; index < 1001; ++index) {
-            tooMany << QStringLiteral("term%1").arg(index);
-        }
-        QCOMPARE(VocabularyLimit::summary(tooMany, QStringLiteral("claude")),
-                 QStringLiteral("1001 terms. 100 are key terms, and the first 1000 are used for refinement."));
     }
 
     void claudeKeyTermsAreWhatItsHeaderCarries()
@@ -111,8 +95,6 @@ private slots:
         QCOMPARE(claude.first(), QString::fromUtf8("東京"));
         QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("endpoint")).size(), 91);
         QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("codex")), QStringList());
-        QCOMPARE(VocabularyLimit::summary(terms, QStringLiteral("claude")),
-                 QStringLiteral("91 terms. 79 are key terms, and all are used for refinement."));
     }
 
     void learnedCorrectionsRespectTheSendCap()

@@ -2950,11 +2950,21 @@ private slots:
     // "Open with" offers Speecher for exactly the files its pickers take.
     void packagingRegistersTheTranscribableTypes()
     {
+        // The MIME types of those files, with the aliases older
+        // shared-mime-info releases and file managers still use.
+        const QStringList mimeTypes{
+            QStringLiteral("audio/vnd.wave"), QStringLiteral("audio/wav"), QStringLiteral("audio/x-wav"),
+            QStringLiteral("audio/mpeg"), QStringLiteral("audio/mp4"), QStringLiteral("audio/x-m4a"),
+            QStringLiteral("audio/aac"), QStringLiteral("audio/flac"), QStringLiteral("audio/ogg"),
+            QStringLiteral("audio/x-vorbis+ogg"), QStringLiteral("audio/x-opus+ogg"), QStringLiteral("audio/webm"),
+            QStringLiteral("video/webm"), QStringLiteral("video/mp4"), QStringLiteral("video/x-m4v"),
+            QStringLiteral("video/quicktime"), QStringLiteral("video/x-matroska"), QStringLiteral("video/vnd.avi"),
+            QStringLiteral("video/x-msvideo")};
         const QStringList extensions = sorted(transcribableExtensions());
         const QStringList desktop = packagingEntries(QStringLiteral("io.github.firemonster612.speecher.desktop"),
                                                      QStringLiteral("^MimeType=(.*)$"));
         QCOMPARE(desktop.size(), 1);
-        QCOMPARE(sorted(desktop.first().split(u';', Qt::SkipEmptyParts)), sorted(transcribableMimeTypes()));
+        QCOMPARE(sorted(desktop.first().split(u';', Qt::SkipEmptyParts)), sorted(mimeTypes));
         QCOMPARE(packagingEntries(QStringLiteral("macos/Info.plist.in"),
                                   QStringLiteral("^\\t\\t\\t\\t<string>(\\w+)</string>$")),
                  extensions);
@@ -2971,8 +2981,7 @@ private slots:
         const QMimeDatabase mimes;
         for (const QString &extension : extensions) {
             const QMimeType type = mimes.mimeTypeForFile(QStringLiteral("x.") + extension, QMimeDatabase::MatchExtension);
-            const QStringList listed = transcribableMimeTypes();
-            const bool registered = std::any_of(listed.cbegin(), listed.cend(), [&](const QString &name) {
+            const bool registered = std::any_of(mimeTypes.cbegin(), mimeTypes.cend(), [&](const QString &name) {
                 const QMimeType known = mimes.mimeTypeForName(name);
                 return known.isValid() && (type == known || type.inherits(known.name()));
             });

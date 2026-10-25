@@ -8,11 +8,10 @@
 
 namespace speecher {
 
-// Whether a Writing Profile that picks this provider may pick its model too:
-// a Local Model for speech, an OpenAI or Anthropic model for refinement. The
-// other providers use the model their settings page names.
+// Whether a Writing Profile that picks this speech provider may pick its
+// model too: a Local Model. The other providers use the model their settings
+// page names.
 bool profilePicksSpeechModel(const QString &providerId);
-bool profilePicksRefinementModel(const QString &providerId);
 
 // The speech settings the profile's own service runs with: its provider and
 // model over the Dictation page's settings. Nullopt when the profile uses the

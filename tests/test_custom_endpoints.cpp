@@ -941,7 +941,7 @@ private slots:
             QSKIP("Requires the private keyring suite");
         SettingsStore saved;
         saved.raw().clear();
-        saved.setCliproxyApiKey(QStringLiteral("keep-me"));
+        saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("keep-me"));
         SettingsStore settings;
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         const AppSettings draft = settings.snapshot();
@@ -952,7 +952,7 @@ private slots:
                      QStringLiteral("keep-me"));
         settings.applySnapshot(draft);
         QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("keep-me"));
-        saved.setCliproxyApiKey({});
+        saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {});
     }
 
     void failedDeletionStaysClearedAfterRestart()
@@ -961,7 +961,7 @@ private slots:
             QSKIP("Requires the private keyring suite");
         SettingsStore settings;
         settings.raw().clear();
-        settings.setCliproxyApiKey(QStringLiteral("remove-me"));
+        settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("remove-me"));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
         QVERIFY(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {}));
@@ -1194,7 +1194,7 @@ private slots:
         }
         qInfo() << "cliproxy key migrated to the keyring:" << migrated;
 
-        settings.setCliproxyApiKey(QString());
+        settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {});
         QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
     }
 };

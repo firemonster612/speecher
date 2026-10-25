@@ -60,7 +60,7 @@ private val profileLabels =
         WritingProfile.Other to "Other",
     )
 
-// The desktop's appCategoryLabel, in the order its rules offer them.
+// The app types, in the order the desktop's rules offer them.
 private val appTypeLabels =
     mapOf(
         AppCategory.General to "Other app",

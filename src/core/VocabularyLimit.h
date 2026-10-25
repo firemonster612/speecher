@@ -26,11 +26,4 @@ bool takesKeyterms(const QString &speechProviderId);
 // that takes no hints, the capped prefix for a custom endpoint, and that
 // prefix as the Claude Voice header can carry it for Claude.
 QStringList speechKeyterms(const QStringList &terms, const QString &speechProviderId);
-// What the stored list amounts to, for a reader: the whole count, how much of
-// it goes to the speech service, and how much to refinement. `keyTerms` are
-// the ones marked to go to the speech service, in priority order.
-QString summary(const QStringList &terms, const QStringList &keyTerms, const QString &speechProviderId);
-// The same where every term is a key term.
-QString summary(const QStringList &terms, const QString &speechProviderId);
-
 } // namespace speecher::VocabularyLimit

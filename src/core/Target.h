@@ -41,8 +41,6 @@ bool isBuiltInWritingProfile(const QString &id);
 // The profile a stored id names: a built-in, the legacy "technical" as Work,
 // or a custom profile's id. Anything else reads as Other.
 QString writingProfileFromName(const QString &name);
-// How each is written where a person reads it, as opposed to how it is stored.
-QString appCategoryLabel(AppCategory category);
 
 struct WritingProfileOverride {
     QString applicationId;

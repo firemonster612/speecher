@@ -849,10 +849,10 @@ private slots:
         }
 
         QSignalSpy speed(&transcriber, &LocalSpeechTranscriber::speedTestFinished);
-        // SPEECHER_TEST_LOCAL_RUNS_ON picks where the Speed Test runs, as the
-        // Runs on row stores it: "cpu", "vulkan", "cuda:0000:01:00.0".
-        transcriber.runSpeedTest(modelId, localRunsOnFromId(
-            qEnvironmentVariable("SPEECHER_TEST_LOCAL_RUNS_ON", QStringLiteral("auto"))));
+        // SPEECHER_TEST_LOCAL_RUNS_ON picks the backend the Speed Test runs
+        // on: "auto", "cpu", "vulkan", "cuda".
+        transcriber.runSpeedTest(
+            modelId, {qEnvironmentVariable("SPEECHER_TEST_LOCAL_RUNS_ON", QStringLiteral("auto")), QString()});
         QVERIFY(speed.wait(120000));
         QVERIFY2(speed.first().at(2).toString().isEmpty(), qPrintable(speed.first().at(2).toString()));
         if (!runsOn.isEmpty()) {

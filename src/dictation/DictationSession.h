@@ -48,9 +48,6 @@ public:
     // A start that arrived while the microphone was stopping and waits for it.
     bool startPending() const;
     QString lastMessage() const;
-    // Why the last session failed, kept after it goes back to idle so Home
-    // can still say it; empty once the next session starts.
-    QString lastFailure() const;
     QString lastTranscript() const;
     // How long this session has listened so far, pauses left out.
     int listeningMs() const;
@@ -242,7 +239,6 @@ private:
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
-    QString m_lastFailure;
     QString m_speechWarning;
     QString m_lastTranscript;
     // The selection edit under review: its revision, what was said for it,

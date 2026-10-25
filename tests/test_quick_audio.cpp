@@ -94,7 +94,7 @@ private slots:
     void theTestListensToTheSavedDevice()
     {
         ApplicationController controller(true);
-        controller.settings()->setAudioInputDeviceId(yeti);
+        QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
         Rig rig(controller);
 
         rig.audio.holdTest(&rig.page);
@@ -213,7 +213,7 @@ private slots:
     void aFailureCountsAgainstTheDeviceThatFailed()
     {
         ApplicationController controller(true);
-        controller.settings()->setAudioInputDeviceId(yeti);
+        QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
         Rig rig(controller);
         bool once = true;
         rig.onStart = [&] {
@@ -243,7 +243,7 @@ private slots:
     void choosingAFailedDeviceAgainTriesIt()
     {
         ApplicationController controller(true);
-        controller.settings()->setAudioInputDeviceId(yeti);
+        QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
         Rig rig(controller);
         QuickSettings settings(&controller);
         rig.startResult = false;

@@ -153,16 +153,6 @@ inline QString localRunsOnId(const LocalRunsOn &runsOn)
                                      : runsOn.backend + QLatin1Char(':') + runsOn.deviceId;
 }
 
-inline LocalRunsOn localRunsOnFromId(const QString &id)
-{
-    // PCI bus ids have colons of their own; the backend is what precedes the first.
-    const qsizetype colon = id.indexOf(QLatin1Char(':'));
-    if (colon < 0) {
-        return {id, QString()};
-    }
-    return {id.left(colon), id.mid(colon + 1)};
-}
-
 // A Speed Test result's key: the model, and where it ran.
 inline QString localSpeedTestKey(const QString &modelId, const LocalRunsOn &runsOn)
 {

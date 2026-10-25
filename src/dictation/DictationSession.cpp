@@ -221,11 +221,6 @@ QString DictationSession::lastMessage() const
     return m_lastMessage;
 }
 
-QString DictationSession::lastFailure() const
-{
-    return m_lastFailure;
-}
-
 SessionResponse DictationSession::response(bool ok, const QString &message) const
 {
     return {ok, stateName(), message.isEmpty() ? m_lastMessage : message};
@@ -1108,11 +1103,6 @@ void DictationSession::setState(DictationState state, const QString &message, co
     }
     m_state = state;
     m_lastMessage = message;
-    if (state == DictationState::Starting) {
-        m_lastFailure.clear();
-    } else if (state == DictationState::Error && !message.isEmpty()) {
-        m_lastFailure = message.simplified();
-    }
     const QString label = dictationStateLabel(state, message);
     if (state == DictationState::Error && !message.isEmpty()) {
         emit popupErrorRequested(message, fix);

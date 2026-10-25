@@ -22,11 +22,6 @@ bool profilePicksSpeechModel(const QString &providerId)
     return providerId == QStringLiteral("local");
 }
 
-bool profilePicksRefinementModel(const QString &providerId)
-{
-    return providerId == QStringLiteral("openai") || providerId == QStringLiteral("anthropic");
-}
-
 std::optional<SpeechSettings> profileSpeechSettings(const SpeechSettings &speech,
                                                     const WritingProfileSettings &profile)
 {

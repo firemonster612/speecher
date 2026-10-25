@@ -145,11 +145,6 @@ QString SettingsStore::cliproxyApiKey() const
     return m_secrets->secret(SecretStore::Secret::CliproxyApiKey);
 }
 
-void SettingsStore::setCliproxyApiKey(const QString &value)
-{
-    m_secrets->saveSecret(SecretStore::Secret::CliproxyApiKey, value);
-}
-
 AppSettings SettingsStore::snapshot() const
 {
     return snapshotReading(true);
@@ -355,8 +350,6 @@ void SettingsStore::reconcileLaunchAtLogin()
     QString error;
     if (!m_reconcileLaunchAtLogin(launchAtLogin(), &error)) {
         qWarning().noquote() << "launch at login reconciliation failed message=" + error;
-        emit launchAtLoginReconciliationFailed(
-            error.isEmpty() ? QStringLiteral("This computer did not accept the change.") : error);
     }
 }
 
@@ -408,43 +401,6 @@ bool SettingsStore::recordVocabularyUsage(const QString &text)
 QString SettingsStore::audioInputDeviceId() const
 {
     return audioCaptureSettings().deviceId;
-}
-
-void SettingsStore::setAudioInputDeviceId(const QString &value)
-{
-    AudioCaptureSettings settings = audioCaptureSettings();
-    settings.deviceId = value;
-    setAudioCaptureSettings(settings);
-}
-
-QString SettingsStore::audioCaptureMode() const
-{
-    return audioCaptureSettings().mode;
-}
-
-bool SettingsStore::audioVadEnabled() const
-{
-    return audioCaptureSettings().vadEnabled;
-}
-
-int SettingsStore::audioPreRollMs() const
-{
-    return audioCaptureSettings().preRollMs;
-}
-
-int SettingsStore::audioPostRollMs() const
-{
-    return audioCaptureSettings().postRollMs;
-}
-
-int SettingsStore::audioReadinessTimeoutMs() const
-{
-    return audioCaptureSettings().readinessTimeoutMs;
-}
-
-int SettingsStore::audioVadThresholdPercent() const
-{
-    return audioCaptureSettings().vadThresholdPercent;
 }
 
 void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)

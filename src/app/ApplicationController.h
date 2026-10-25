@@ -128,11 +128,6 @@ public:
     bool globalShortcutsSupported(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     bool globalShortcutSupportKnown(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     bool globalShortcutUsesDesktopChooser(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
-    // Empty when the bound backend can honour this binding, otherwise what to
-    // tell the user. Recorders ask before saving so a refusal is explained
-    // rather than silently never firing.
-    QString globalShortcutUnsupportedBindingReason(const ShortcutBinding &binding,
-                                                   GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     ShortcutBinding globalShortcut(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     QString globalShortcutDisplay(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     // Refuses another Global Shortcut's binding; an empty one clears it.
@@ -143,10 +138,6 @@ public:
     // release, which is what makes push-to-talk behave as toggle. Answered from
     // what the shortcut has already done, never probed; it starts out true.
     bool globalShortcutReportsRelease() const;
-    // False once this computer has refused a launch-at-login change, which is
-    // what puts the caution beside the toggle. A later change it accepts clears
-    // it again.
-    bool launchAtLoginAccepted() const;
     // Lets a shortcut recorder see the bound combinations, and Escape, as key
     // events.
     void suspendGlobalShortcut();
@@ -214,7 +205,6 @@ signals:
     void globalShortcutChanged();
     void globalShortcutSupportChanged();
     void globalShortcutReleaseSupportChanged();
-    void launchAtLoginAcceptedChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail, GlobalShortcutRole role);
     void whatsNewChanged();
     void quitRequested();
@@ -235,7 +225,6 @@ private:
     // neither of them is Escape.
     void updateSessionShortcuts();
     void dropPendingStart();
-    void setLaunchAtLoginAccepted(bool accepted);
     void startRecording(const QString &path,
                         const QStringList &vocabulary,
                         bool microphoneOnly,
@@ -279,7 +268,6 @@ private:
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
-    bool m_launchAtLoginAccepted = true;
     QString m_pendingWhatsNewVersion;
 #ifdef Q_OS_MACOS
     QTimer *m_accessibilityPoll = nullptr;
