@@ -132,7 +132,8 @@ int qtKeyForVirtualKey(quint32 key)
 
 QKeySequence savedShortcut(const GlobalShortcutAction &action)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QString::fromLatin1(SettingsKeys::Organization),
                        SettingsKeys::application());
     // The stored value can be a single key ("key:…"), which belongs to the
     // single-key binder and must not parse as a sequence here.
@@ -143,7 +144,8 @@ QKeySequence savedShortcut(const GlobalShortcutAction &action)
 
 void storeShortcut(const QString &key, const QKeySequence &shortcut)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QString::fromLatin1(SettingsKeys::Organization),
                        SettingsKeys::application());
     settings.setValue(key, shortcut.toString());
 }

@@ -490,6 +490,13 @@ private slots:
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
         QuickAccounts accounts(&controller);
+        // The data folder outlives this process, and a model left in it
+        // would count as downloaded on the next run.
+        const auto removeModels = qScopeGuard([&] {
+            for (const QString &id : {QStringLiteral("moonshine-small"), QStringLiteral("parakeet")}) {
+                QFile::remove(controller.localModelStore()->modelPath(*findLocalModel(id)));
+            }
+        });
         placeDownloaded(controller, QStringLiteral("moonshine-small"));
         settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
         QQmlEngine engine;

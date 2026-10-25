@@ -10,11 +10,15 @@ on:
       - "docs/**"
       - "README.md"
   pull_request:
+  # A release candidate: the macOS job builds and signs the DMG as for a
+  # release, for the update gate in docs/macos.md, and nothing is published.
+  workflow_dispatch:
 
 concurrency:
   # GitHub retains only one pending run per group. A newer master push may replace
-  # an intermediate nightly, which is acceptable; tag refs have separate groups.
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  # an intermediate nightly, which is acceptable; tag refs have separate groups,
+  # and so do hand-started candidates, which must not replace a pending nightly.
+  group: release-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -49,7 +53,7 @@ jobs:
 
   linux:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -59,6 +63,9 @@ jobs:
 
       - name: Test release publishing
         run: bash tests/release/test-publish-release.sh
+
+      - name: Test the version a tag builds as
+        run: bash tests/release/test-git-version.sh
 
       - name: Validate stable tag identity
         if: startsWith(github.ref, 'refs/tags/v')
@@ -399,7 +406,7 @@ jobs:
 
   windows:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
     runs-on: windows-2025
     env:
       CMAKE_C_COMPILER_LAUNCHER: sccache

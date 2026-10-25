@@ -42,6 +42,13 @@ dist\Speecher-Setup-x64.exe` installs it into a temporary folder and checks the
 result, including that the installed app opens Main with only system folders
 on Path. CI runs it after packaging.
 
+Before a release, `packaging/windows/verify-installer-update.ps1` checks that
+an installed copy of the last release updates to the new installer through its
+own updater: the WinUI files gone; settings, both saved keys, the global
+shortcut, the startup entry and Open With kept; and one Path entry. Run it on
+a throwaway Windows machine, since it edits the hosts file and trusted roots;
+the script's header says how.
+
 ## Installing
 
 Run `Speecher-Setup-x64.exe`. The installer is per-user, needs no administrator

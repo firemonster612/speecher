@@ -99,6 +99,24 @@ void migrateOutputMethod(QSettings &settings)
     settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));
 }
 
+void migrateSavedSettings()
+{
+    constexpr auto oldOrganization = "local.speecher";
+    // The format SettingsFile opens, which tests point at a folder of their
+    // own; QSettings(organization, application) would always open the
+    // person's file.
+    QSettings newSettings(QSettings::defaultFormat(), QSettings::UserScope,
+                          QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
+    QSettings oldSettings(QSettings::defaultFormat(), QSettings::UserScope,
+                          QString::fromLatin1(oldOrganization), SettingsKeys::application());
+    QString error;
+    if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
+        qWarning().noquote() << error;
+    }
+    migrateRefinementModels(newSettings);
+    migrateOutputMethod(newSettings);
+}
+
 SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
     , SettingsCodecs()

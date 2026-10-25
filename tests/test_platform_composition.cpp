@@ -1215,7 +1215,8 @@ private slots:
     // dictation shortcut's, and a new binder reads it back.
     void cancelShortcutPersistsUnderItsOwnKey()
     {
-        QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+        QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                           QString::fromLatin1(SettingsKeys::Organization),
                            SettingsKeys::application());
         settings.remove(QStringLiteral("shortcuts/toggleDictation"));
         const GlobalShortcutAction cancel = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);

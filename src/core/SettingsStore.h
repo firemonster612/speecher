@@ -23,6 +23,10 @@ void migrateRefinementModels(QSettings &settings);
 // and every rule that pasted becomes Direct insertion or Clipboard only, so
 // dictation delivers the way it did.
 void migrateOutputMethod(QSettings &settings);
+// Brings the settings an older Speecher saved up to date, before anything
+// reads them: the migrations above, in order, on the running instance's
+// store. Startup runs it once.
+void migrateSavedSettings();
 
 class SettingsStore : public QObject, private SettingsCodecs {
     Q_OBJECT

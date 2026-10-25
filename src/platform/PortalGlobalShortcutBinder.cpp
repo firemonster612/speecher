@@ -63,7 +63,8 @@ QString clearedKey(const GlobalShortcutAction &action)
 
 void rememberCleared(const GlobalShortcutAction &action, bool cleared)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QString::fromLatin1(SettingsKeys::Organization),
                        SettingsKeys::application());
     if (cleared) {
         settings.setValue(clearedKey(action), true);
@@ -74,7 +75,8 @@ void rememberCleared(const GlobalShortcutAction &action, bool cleared)
 
 bool wasCleared(const GlobalShortcutAction &action)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QString::fromLatin1(SettingsKeys::Organization),
                        SettingsKeys::application());
     return settings.value(clearedKey(action)).toBool();
 }

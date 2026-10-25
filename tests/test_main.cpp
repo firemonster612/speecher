@@ -51,8 +51,13 @@ int main(int argc, char **argv)
         return 1;
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, preferences.path());
-    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, preferences.path());
+    // NativeFormat too, as a safety net: Speecher opens its settings in the
+    // default format, but QSettings(organization, application) uses
+    // NativeFormat, which on Linux is a file under the person's ~/.config.
+    for (const auto format : {QSettings::IniFormat, QSettings::NativeFormat}) {
+        QSettings::setPath(format, QSettings::UserScope, preferences.path());
+        QSettings::setPath(format, QSettings::SystemScope, preferences.path());
+    }
 #endif
 #ifdef Q_OS_WIN
     // Redirect registry access, including native Startup Apps writes, for this
@@ -131,6 +136,7 @@ int main(int argc, char **argv)
     if (selected("quick_accounts")) result |= runQuickAccountsTests(argc, argv);
     if (selected("quick_audio")) result |= runQuickAudioTests(argc, argv);
     if (selected("quick_library")) result |= runQuickLibraryTests(argc, argv);
+    if (selected("migration")) result |= runMigrationTests(argc, argv);
 #ifdef Q_OS_LINUX
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);

@@ -68,11 +68,22 @@ QString keyringService()
                                                : SettingsKeys::application();
 }
 
-// Tests stand in for a keyring that does not answer.
-bool keyringReadsTimeOut()
+// Whether a test's keyring request fails here rather than reaching a
+// keyring: always, unless the run provisioned a private keyring
+// (tests/keyring/with_session_keyring.sh), so no test reads, writes or
+// deletes an entry in the person's own credential store. With a private
+// keyring, a test can still fail one kind of request by setting failureVariable.
+bool testKeyringRefuses(const char *failureVariable)
 {
     return QStandardPaths::isTestModeEnabled()
-        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_TIMEOUT") == 1;
+        && (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") != 1
+            || qEnvironmentVariableIntValue(failureVariable) == 1);
+}
+
+// A refused read stands in for a keyring that does not answer.
+bool keyringReadsTimeOut()
+{
+    return testKeyringRefuses("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
 }
 
 } // namespace
@@ -409,8 +420,7 @@ QString SecretStore::keyringSecret(Secret secret) const
 
 bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 {
-    if (QStandardPaths::isTestModeEnabled()
-        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_WRITE_FAILURE") == 1) {
+    if (testKeyringRefuses("SPEECHER_TEST_KEYRING_WRITE_FAILURE")) {
         // A real keyring answers through the event loop, which runs other
         // work while it waits.
         QCoreApplication::processEvents();
@@ -436,8 +446,7 @@ bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 
 bool SecretStore::deleteKeyringSecret(Secret secret) const
 {
-    if (QStandardPaths::isTestModeEnabled()
-        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_DELETE_FAILURE") == 1) {
+    if (testKeyringRefuses("SPEECHER_TEST_KEYRING_DELETE_FAILURE")) {
         m_lastError = QStringLiteral("Keyring deletion denied");
         return false;
     }
