@@ -105,6 +105,8 @@ struct UiSettings {
     // "framed": the page on a sheet inset in the window; "split": the page
     // beside the sidebar, edge to edge.
     QString windowLayout = QStringLiteral("framed");
+    // The window draws its own corners rounded rather than square.
+    bool roundedCorners = true;
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;
 };

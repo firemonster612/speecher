@@ -196,6 +196,7 @@ public:
     using SettingsCodecs::colorScheme;
     using SettingsCodecs::translucency;
     using SettingsCodecs::windowLayout;
+    using SettingsCodecs::roundedCorners;
     using SettingsCodecs::useTargetContext;
     using SettingsCodecs::vocabularyEntries;
     using SettingsCodecs::writingProfileOverrides;

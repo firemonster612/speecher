@@ -280,6 +280,7 @@ const SettingRow settingRows[] = {
     FIELD_ROW("colorScheme", ui.colorScheme),
     FIELD_ROW("translucency", ui.translucency),
     FIELD_ROW("windowLayout", ui.windowLayout),
+    FIELD_ROW("roundedCorners", ui.roundedCorners),
     // Only macOS and Windows can start Speecher at login. The Quick UI builds
     // only on Linux for now; the macOS and Windows PR in this stack builds it
     // there, where General shows this row.

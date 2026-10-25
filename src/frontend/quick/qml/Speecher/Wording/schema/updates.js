@@ -53,5 +53,6 @@ var since = {
     updateCheckInterval: "0.2.1",
     insightsEnabled: "0.2.1",
     reviewSelectionEdits: "0.2.1",
-    spokenLanguage: "0.2.1"
+    spokenLanguage: "0.2.1",
+    roundedCorners: "0.2.1"
 };

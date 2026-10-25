@@ -372,15 +372,18 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("colorScheme")).toString(), QStringLiteral("steno"));
         QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
         QCOMPARE(settings.values().value(QStringLiteral("windowLayout")).toString(), QStringLiteral("framed"));
+        QCOMPARE(settings.values().value(QStringLiteral("roundedCorners")).toBool(), true);
 
         settings.set(QStringLiteral("colorScheme"), QStringLiteral("installed:BreezeDark"));
         settings.set(QStringLiteral("translucency"), false);
         settings.set(QStringLiteral("windowLayout"), QStringLiteral("split"));
+        settings.set(QStringLiteral("roundedCorners"), false);
 
         SettingsStore another;
         QCOMPARE(another.colorScheme(), QStringLiteral("installed:BreezeDark"));
         QCOMPARE(another.translucency(), false);
         QCOMPARE(another.windowLayout(), QStringLiteral("split"));
+        QCOMPARE(another.roundedCorners(), false);
         another.setWindowLayout(QStringLiteral("sideways"));
         QCOMPARE(another.windowLayout(), QStringLiteral("framed"));
     }

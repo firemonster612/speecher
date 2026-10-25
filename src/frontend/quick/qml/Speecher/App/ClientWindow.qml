@@ -5,7 +5,7 @@ import Speecher.Theme
 import Speecher.Backend
 
 // A window that draws its own frame, the same on every desktop: rounded
-// corners and a soft shadow, a strip along the top that moves it (a double
+// corners (square with Rounded corners off) and a soft shadow, a strip along the top that moves it (a double
 // click maximizes), its buttons at the top right, or as traffic lights at
 // the top left on macOS, and a resize grip in the
 // shadow margin. Maximized or full screen, the margin and corners go.
@@ -21,7 +21,9 @@ Window {
     readonly property bool framed: visibility !== Window.Maximized && visibility !== Window.FullScreen
     readonly property bool _drawsShadow: framed && !(Theme.translucent && Qt.platform.os === "windows")
     readonly property int margin: _drawsShadow ? Theme.windowShadow : 0
-    readonly property int cornerRadius: _drawsShadow ? Theme.radiusWindow : 0
+    // The corners the window has: drawn here, or by DWM on Windows.
+    readonly property int _corners: framed && Theme.roundedCorners ? Theme.radiusWindow : 0
+    readonly property int cornerRadius: _drawsShadow ? _corners : 0
     readonly property int titleBarHeight: Theme.titleBarHeight
 
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -32,7 +34,7 @@ Window {
     // What the compositor blurs: the frame, without the shadow margin.
     readonly property var _blur: ({
         area: Theme.translucent ? Qt.rect(margin, margin, width - margin * 2, height - margin * 2) : Qt.rect(0, 0, 0, 0),
-        radius: cornerRadius,
+        radius: _corners,
         dark: Theme.dark
     })
     on_BlurChanged: Appearance.setBlurBehind(client, _blur.area, _blur.radius, _blur.dark)
