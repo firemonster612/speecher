@@ -41,6 +41,7 @@ import os
 import plistlib
 import re
 import shutil
+import signal
 import ssl
 import subprocess
 import sys
@@ -280,8 +281,11 @@ def main():
     # LaunchServices relaunches must keep the test feed.
     run('launchctl', 'setenv', 'SPEECHER_APPCAST_URL', feed)
     # Gone when the script ends, passed, failed or stopped, so no later launch
-    # checks a feed nobody serves.
+    # checks a feed nobody serves. A terminal closing or CI cancelling the step
+    # sends SIGHUP or SIGTERM, which skip atexit unless they exit.
     atexit.register(run, 'launchctl', 'unsetenv', 'SPEECHER_APPCAST_URL', check_status=False)
+    for stop in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(stop, lambda *_: sys.exit(1))
     run('open', '-a', APP, '--env', f'SPEECHER_APPCAST_URL={feed}')
     old_pid = wait_for(speecher_pids, 60, 'the old app did not start')[0]
     check(evidence, 'old.running', True, f'pid {old_pid}')

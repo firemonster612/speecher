@@ -51,8 +51,9 @@ if("${git_repository_result}" STREQUAL "0"
 
   # Stable tags are vX.Y.Z reachable from master. RC and side-branch tags deliberately fall back;
   # the regex is strict on purpose. Either master counts, since a local one can be behind the
-  # tag being rebuilt. A clone of the tag alone (git clone --branch vX.Y.Z) has neither master to
-  # check against, so it takes any vX.Y.Z tag as stable, a side-branch one included.
+  # tag being rebuilt. A shallow or single-branch clone of the tag (git clone --depth 1 --branch
+  # vX.Y.Z) has neither master to check against, so it takes any vX.Y.Z tag as stable, a
+  # side-branch one included.
   set(git_master_refs "")
   foreach(ref refs/remotes/origin/master refs/heads/master)
     execute_process(

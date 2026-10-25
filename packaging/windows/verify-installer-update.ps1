@@ -344,6 +344,8 @@ $build = [int]((Get-Content (Join-Path (Split-Path $NewInstaller) "speecher-vers
 $version = (Get-Content (Join-Path (Split-Path $NewInstaller) "speecher-version.txt")) -replace '^speecher (\S+) .*', '$1'
 $stubs = Serve-Stubs $version $build $keys
 
+# Free before the old app starts, so holding it below proves it is the old app's.
+Check "old.shortcut_free_before" ((Get-ShortcutState) -eq "free") "$Shortcut"
 Start-Process $Exe
 $old = WaitFor { Speecher } 60 "the old app did not start"
 Check "old.running" $true "pid $($old.Id) version $((Get-Item $Exe).VersionInfo.ProductVersion)"
