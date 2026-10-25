@@ -888,9 +888,10 @@ if(UNIX AND NOT APPLE)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_PULSE=1)
     target_link_libraries(speecher_platform PUBLIC PkgConfig::PULSE)
   endif()
-  # KWin's blur behind the translucent sidebar: the org_kde_kwin_blur
-  # protocol, made from the vendored description, on the window's wl_surface,
-  # which only Qt's private platform interface hands out.
+  # The compositor's blur behind the translucent sidebar: the
+  # ext_background_effect and older org_kde_kwin_blur protocols, made from the
+  # vendored descriptions, on the window's wl_surface, which only Qt's
+  # private platform interface hands out.
   find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)
   if(SPEECHER_RELEASE_BUILD)
     find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
@@ -898,23 +899,25 @@ if(UNIX AND NOT APPLE)
     find_package(Qt6 QUIET COMPONENTS GuiPrivate)
   endif()
   if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE AND TARGET Qt6::GuiPrivate)
-    set(kde_blur_xml "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/protocols/kde-blur.xml")
-    set(kde_blur_header "${CMAKE_CURRENT_BINARY_DIR}/kde-blur-client-protocol.h")
-    set(kde_blur_code "${CMAKE_CURRENT_BINARY_DIR}/kde-blur-protocol.c")
-    add_custom_command(
-      OUTPUT "${kde_blur_header}" "${kde_blur_code}"
-      COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" client-header "${kde_blur_xml}" "${kde_blur_header}"
-      COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" private-code "${kde_blur_xml}" "${kde_blur_code}"
-      DEPENDS "${kde_blur_xml}"
-      VERBATIM
-    )
-    target_sources(speecher_platform PRIVATE "${kde_blur_header}" "${kde_blur_code}")
+    foreach(protocol IN ITEMS ext-background-effect-v1 kde-blur)
+      set(protocol_xml "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/protocols/${protocol}.xml")
+      set(protocol_header "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-client-protocol.h")
+      set(protocol_code "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-protocol.c")
+      add_custom_command(
+        OUTPUT "${protocol_header}" "${protocol_code}"
+        COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" client-header "${protocol_xml}" "${protocol_header}"
+        COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" private-code "${protocol_xml}" "${protocol_code}"
+        DEPENDS "${protocol_xml}"
+        VERBATIM
+      )
+      target_sources(speecher_platform PRIVATE "${protocol_header}" "${protocol_code}")
+    endforeach()
     target_include_directories(speecher_platform PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
     target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KWIN_BLUR=1)
     target_link_libraries(speecher_platform PRIVATE Qt6::GuiPrivate PkgConfig::WAYLAND_CLIENT)
     set(SPEECHER_KWIN_BLUR_FOUND TRUE)
   elseif(SPEECHER_RELEASE_BUILD)
-    message(FATAL_ERROR "SPEECHER_RELEASE_BUILD requires wayland-client and wayland-scanner for KWin's blur.")
+    message(FATAL_ERROR "SPEECHER_RELEASE_BUILD requires wayland-client and wayland-scanner for the compositor's blur.")
   endif()
 endif()
 # webrtc-audio-processing 1.x: echo cancellation on Linux and macOS, only

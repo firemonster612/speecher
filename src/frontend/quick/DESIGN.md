@@ -48,8 +48,9 @@ Backend is the C++ types plus `Library.qml`.
   platform's accent), `installedSchemes` (`{ id, name, colors }`, KDE's
   `.colors` files in the XDG data dirs, read by core's `ColorSchemes`),
   `canBlur`, and `setBlurBehind(window, area, radius, dark)`, which asks the
-  platform's `WindowBackdrop` (KWin's `org_kde_kwin_blur`, macOS's
-  `NSVisualEffectView`, Windows 11's Mica) to blur behind a window.
+  platform's `WindowBackdrop` (Wayland's `ext_background_effect`, or KWin's
+  older `org_kde_kwin_blur`; macOS's `NSVisualEffectView`; Windows 11's Mica)
+  to blur behind a window.
 - `System.checks` are `{id, state, reason, fix, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
   Bindings look a check up with `Health.find(System.checks, id)`, so they

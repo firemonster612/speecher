@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 
+struct ext_background_effect_surface_v1;
 struct org_kde_kwin_blur;
 struct wl_compositor;
 struct wl_display;
@@ -15,10 +16,12 @@ struct wl_surface;
 
 namespace speecher {
 
-// KWin's blur behind a window on Wayland, through the org_kde_kwin_blur
-// protocol. Unavailable where the compositor does not offer the protocol
-// (other compositors, X11, KWin with its Blur effect off), or where the
-// build lacks it; it follows KWin adding and removing it.
+// The compositor's blur behind a window on Wayland: through the standard
+// ext_background_effect protocol where the compositor offers it with blur
+// (KWin 6.7 offers only that), otherwise KWin's older org_kde_kwin_blur.
+// Unavailable where the compositor offers neither (X11, KWin with its Blur
+// effect off), or where the build lacks them; it follows the compositor
+// adding and removing them.
 class KWinBlurBackdrop final : public WindowBackdrop {
     Q_OBJECT
 
@@ -45,18 +48,20 @@ protected:
 private:
     struct Blur {
         QRegion region;
-        // The surface the blur was made for, and the blur; null until the
-        // window has a surface.
+        // The surface the blur was made for, and the blur through one of the
+        // protocols; null until the window has a surface.
         wl_surface *surface = nullptr;
+        ext_background_effect_surface_v1 *effect = nullptr;
         org_kde_kwin_blur *blur = nullptr;
     };
     struct Wayland;
 
     void apply(QWindow *window);
     void release(Blur &blur);
-    // KWin took its blur manager away: every blur and region goes with it,
-    // until set() asks again.
-    void managerRemoved();
+    // Which protocol blurs, or whether any does, changed: every blur is made
+    // again with the one that blurs now, or, with none, every blur and
+    // region goes until set() asks again.
+    void blurChanged();
 
     std::unique_ptr<Wayland> m_wayland;
     SurfaceOf m_surfaceOf;
