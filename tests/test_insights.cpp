@@ -13,7 +13,7 @@ using namespace speecher;
 
 namespace {
 
-// Saturday 26 September 2026, the mockup's today.
+// Saturday 26 September 2026, the last day of data/insights/seed-active.jsonl.
 const QDate kToday(2026, 9, 26);
 
 DictationRecord recordOn(const QDate &date, int words = 10, int audioMs = 5000)
@@ -233,9 +233,9 @@ private slots:
         QCOMPARE(readAll(path), seed);
     }
 
-    void mockupSeedLoads()
+    void activeSeedLoads()
     {
-        const QString seed = QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl");
+        const QString seed = QFINDTESTDATA("data/insights/seed-active.jsonl");
         QVERIFY(!seed.isEmpty());
         QCOMPARE(InsightsLog(seed, InsightsLog::Access::ReadOnly).records().size(), 2015);
     }

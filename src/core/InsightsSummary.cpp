@@ -58,7 +58,7 @@ constexpr Share kShares[] = {
     {1, 0},         {2, 0},         {3, 0.2},     {4, 0.2},
 };
 
-// JavaScript's Math.round, which the mockup's numbers come from: halves go up.
+// JavaScript's Math.round, which the Insights design's numbers came from: halves go up.
 qint64 roundHalfUp(double value)
 {
     return qint64(std::floor(value + 0.5));
@@ -205,7 +205,7 @@ void summarizeHours(const QList<DictationRecord> &period, InsightsSummary &summa
     }
     summary.peakHour = int(std::max_element(summary.hourCounts.begin(), summary.hourCounts.end())
                            - summary.hourCounts.begin());
-    // Sunday first, as the mockup counts, so a tie resolves the same way.
+    // Sunday first, as the Insights design counted, so a tie resolves the same way.
     int busiest = Qt::Sunday;
     for (int day : {Qt::Monday, Qt::Tuesday, Qt::Wednesday, Qt::Thursday, Qt::Friday, Qt::Saturday}) {
         if (weekdays.value(day) > weekdays.value(busiest)) {

@@ -20,7 +20,7 @@ constexpr double codexWaitSeconds = 0.81 + 0.77;
 constexpr double claudeWordErrorRate = 6.59;
 constexpr double claudeWaitSeconds = 0.07;
 
-// Refinement services, from the benchmark in docs/provider-ratings-mockup/bench,
+// Refinement services, from the benchmark in tools/refinement-benchmark,
 // run 2026-10-10 on each suggested model that a ChatGPT or Claude sign-in
 // reaches, at its provider's default settings: OpenAI at effort none (low for
 // GPT-6.1 Sol, which refuses none) on the Fast tier; Anthropic with adaptive
