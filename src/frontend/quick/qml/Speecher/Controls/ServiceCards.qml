@@ -10,11 +10,14 @@ import Speecher.Theme
 // columns as fit, the fewest rows with the fewest gaps; a narrow place gets
 // fewer, smaller columns rather than another layout. Arrow keys move the
 // choice through the grid.
-//   options: [{ id, label, help?, icon?, status?, tone?, bars?, note? }]
+//   options: [{ id, label, help?, helpLink?, icon?, status?, tone?, bars?, note? }]
 //            tone colours the status (warning, negative, positive). bars
 //            are RatingBars' bars; null shows unratedText, and an option
 //            without bars (such as None) shows no rating at all. note is a
 //            line under the ratings, such as what they were rated on.
+//            helpLink is the part of help that links, such as how many
+//            languages; following it calls helpLinkActivated with the text
+//            to open something from, and does not choose the card.
 FocusScope {
     id: root
 
@@ -25,6 +28,7 @@ FocusScope {
     // height (assistive tech still hears all of it).
     property int helpLines: 2
     signal activated(string id)
+    signal helpLinkActivated(string id, Item at)
 
     readonly property int currentIndex: options.findIndex(o => o.id === currentId)
     readonly property int minimumCardWidth: 184
@@ -130,12 +134,14 @@ FocusScope {
                 }
                 // helpLines kept for help, so a card with fewer lines up with
                 // its neighbours.
-                Txt {
+                LinkedText {
                     id: help
                     readonly property real room: Math.ceil(helpMetrics.lineSpacing * lineHeight * maximumLineCount)
                     y: glyph.height + Theme.space2
                     width: parent.width
-                    text: card.modelData.help || ""
+                    plainText: card.modelData.help || ""
+                    link: card.modelData.helpLink || ""
+                    onActivated: root.helpLinkActivated(card.modelData.id, help)
                     variant: "small"
                     tone: "secondary"
                     wrapMode: Text.WordWrap

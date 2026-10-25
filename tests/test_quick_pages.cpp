@@ -8,6 +8,7 @@
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
@@ -109,7 +110,44 @@ private slots:
                           }});
         }
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
+        // The Spoken language's picker opens, filters and closes.
+        steps.append({QStringLiteral("language picker"), [navigation, main] {
+                          navigation->setProperty("current", QStringLiteral("speech"));
+                          QTest::qWait(kSettleMs);
+                          QObject *picker = main->findChild<QObject *>(QStringLiteral("languageSelect_spokenLanguage"));
+                          QVERIFY(picker);
+                          QMetaObject::invokeMethod(picker, "click");
+                      }});
+        steps.append({QStringLiteral("search languages"), [main] {
+                          for (const char key : {'d', 'e', 'u'}) {
+                              QTest::keyClick(main, key);
+                          }
+                      }});
+        steps.append({QStringLiteral("close language picker"), [main] { QTest::keyClick(main, Qt::Key_Escape); }});
         runSteps(steps);
+    }
+
+    // The Spoken language row names every language core knows, which the
+    // picker and the lists of a service's languages show.
+    void everyKnownLanguageHasAName()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *schema = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        QVariant row;
+        QVERIFY(QMetaObject::invokeMethod(schema, "row", Q_RETURN_ARG(QVariant, row),
+                                          Q_ARG(QVariant, QStringLiteral("spokenLanguage"))));
+        QStringList named;
+        for (const QVariant &option : row.value<QJSValue>().toVariant().toMap().value(QStringLiteral("options")).toList()) {
+            named.append(option.toMap().value(QStringLiteral("id")).toString());
+        }
+        named.sort();
+        QCOMPARE(named, knownSpokenLanguages());
     }
 
     void everySetupStepLoads_data() { themes(); }

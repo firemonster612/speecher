@@ -19,7 +19,7 @@ data.
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
 | `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
-| `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`) |
+| `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
 `host/`'s C++) into a QML module compiled into the binary; each directory's
@@ -65,7 +65,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
   hardware, the Local Runners and the Ollama pull, both Custom Endpoints'
-  checks and setup's fallback offers. `QuickModels.h` documents each field.
+  checks and setup's fallback offers. Each speech service and Local Model
+  carries the language codes it listens for, from core's lists
+  (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
   so pages read `ModelText.service(id)` or `ModelText.catalogModel(id)`
   rather than Models' lists. A page that shows hardware calls
@@ -293,8 +295,17 @@ Choosing:
 - A check means a committed choice. The editor that is open (a profile in
   the list) is a selected `ListRow`, with no check.
 - Two to four short options are segments; more, or a list that grows, is a
-  `Select` (`CompactChoice` picks for you; SchemaRow does the same). `Chip`s
-  are for choosing several at once or inserting a snippet.
+  `Select` (`CompactChoice` picks for you; SchemaRow does the same), except
+  a language: the Spoken language is a `LanguageSelect`, with flags and a
+  search, wherever it is chosen. `Chip`s are for choosing several at once or
+  inserting a snippet.
+- A count of languages a service or Local Model listens for is a link
+  (`LinkedText`, or `helpLink` on ServiceCards and SettingRow) that opens
+  `LanguageList`, the same popover showing only those languages. Following
+  it never chooses or opens the card it sits on.
+- Languages are named once, in the `spokenLanguage` row's options (English,
+  then the language's own name), which cover every code core knows; lists
+  of codes take those names (`ModelText.languageOptions`).
 - `SettingRow` for settings, `ListRow` for data. Rows start their content
   `Theme.rowInset` in from the card and end it the same distance from the
   right.
@@ -453,7 +464,7 @@ Layout and rows:
 - `Page { title; subtitle; headerActions }`: a scrolling page. With no title the page brings its own heading.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
-- `SettingRow { title; help; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right.
+- `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
 - `SchemaRow { rowId }` (in Speecher.App): a SettingRow built from the schema.
 - `ListRow { title; detail; iconName; titleVariant; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
 - `RowList { values; keyOf; entry(key); first }`: a non-scrolling list of rows that animates adds, removes and moves. Delegates take `required property string key`, read `list.entry(key)` (still there while a row fades out) and set `first: index === 0 && list.first`.
@@ -470,9 +481,11 @@ Choosing:
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
+- `LanguageSelect { options; currentId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from.
+- `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ServiceCards { options; currentId; unratedText }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen. `ChoiceCard` is the card both it and OptionCards use.
+- `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
 - `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.
@@ -484,7 +497,7 @@ Input:
 
 Actions and menus:
 
-- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text. `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
+- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text, `LinkedText { plainText; link; activated() }` for a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
 - `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` and `MenuPopup` are their parts, shared with Select.
 
@@ -504,7 +517,7 @@ Pictures of speech:
 - `RatingBars { bars; appearance: compact|wide }`: ratings out of ten.
 - `StepNode { number; title; detail; stage }`: one stop in a run of steps; wrappers lay them out and draw the lines.
 - `DiffText { segments; mode: marked|spoken|result }`: an edit marked like a proof; also `html(segments, mode)` for the same marks elsewhere.
-- `AppIcon { name; iconName }`, `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark).
+- `AppIcon { name; iconName }`, `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark), `Flag { code; size }` (a language's round flag, one per code, from the bundled circle-flags SVGs, the same on every platform).
 
 Helpers:
 
@@ -520,6 +533,7 @@ In Speecher.App, besides SchemaRow:
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
 - `Brand { title; detail }`: the mark and the window's name in the title strip, for the main window and setup.
+- `LanguageList { show(at, codes) }`: a LanguagePopover that only shows the languages a service or model listens for, named and worded.
 
 ## Building pages
 

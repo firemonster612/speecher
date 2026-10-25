@@ -13,14 +13,15 @@ QtObject {
     // Speech services ----------------------------------------------------------
 
     // What each service is good at (settings), what it needs (setup), and
-    // how its text arrives. A service this table lacks, such as the test
-    // stub, shows its label alone.
+    // how its text arrives; %1 in help is how many languages it listens
+    // for. A service this table lacks, such as the test stub, shows its
+    // label alone.
     readonly property var _services: ({
-        codex: { icon: "openai", help: "Very accurate, around 100 languages.",
+        codex: { icon: "openai", help: "Very accurate, %1.",
                  access: "Uses your sign-in from the Codex app.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
                           { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
-        claude: { icon: "claude", help: "About 60 languages, automatic punctuation and numerals.",
+        claude: { icon: "claude", help: "%1, automatic punctuation and numerals.",
                   access: "Uses your Claude Code sign-in.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
         endpoint: { icon: "server", help: "A server you run. Speed, accuracy and languages depend on the server and its model.",
@@ -31,10 +32,16 @@ QtObject {
     function _service(id) { return _services[id] || { icon: "circle", help: "", access: "", textShows: "", models: [] } }
 
     // A speech service with its wording: { id, label, icon, help, access,
-    // textShows, models, state, problem }.
+    // textShows, models, state, problem, languages }, and languageLink, the
+    // part of help that says how many languages, where it does.
     function service(id) {
-        const known = Models.speechServices.find(s => s.id === id) || { id: id, label: Models.service(id).label, state: "unknown", problem: "" }
-        return Object.assign({}, _service(id), known, { textShows: textShows(id) })
+        const known = Models.speechServices.find(s => s.id === id)
+                      || { id: id, label: Models.service(id).label, state: "unknown", problem: "", languages: [] }
+        const wording = _service(id)
+        const saysCount = wording.help.indexOf("%1") >= 0
+        return Object.assign({}, wording, known, { textShows: textShows(id),
+                                                   help: wording.help.replace("%1", languageCount(known.languages)),
+                                                   languageLink: saysCount ? languageLink(known.languages) : "" })
     }
     // How a service's text arrives; a Local Model's depends on its model.
     function textShows(id) {
@@ -61,10 +68,12 @@ QtObject {
     readonly property string checking: "Checking…"
     // A provider as ServiceCards shows it, rated from ratings (Models'
     // ratings by id), or with no rating at all when ratings is left out.
-    // note is the line under the ratings, its parts as sentences.
+    // note is the line under the ratings, its parts as sentences. Where help
+    // says how many languages a service listens for, that count links to
+    // them.
     function _choice(provider, help, ratings, noteParts) {
         const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                         state: provider.state, status: status(provider) }
+                         helpLink: provider.languageLink || "", state: provider.state, status: status(provider) }
         if (ratings) choice.bars = bars(ratings[provider.id])
         if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
         return choice
@@ -129,11 +138,17 @@ QtObject {
         return Models.hardwareKnown ? "Not measured on a computer like this one yet" : "Checking this computer…"
     }
     function wordErrors(m) { return m.werClear + "% clear, " + m.werEveryday + "% everyday" }
-    // "English", or how many it listens for.
-    function languages(m) { return m.languages.length === 1 && m.languages[0] === "en" ? "English" : m.languages.length + " languages" }
+    // "English", or how many languages: what a service or model listens
+    // for, by their codes.
+    function languageCount(codes) { return codes.length === 1 && codes[0] === "en" ? "English" : codes.length + " languages" }
+    // The count as a link to the list, or nothing where there is one.
+    function languageLink(codes) { return codes.length > 1 ? languageCount(codes) : "" }
+    // The languages by code, as the Spoken language row names them and in
+    // its order, for a LanguagePopover.
+    function languageOptions(codes) { return Schema.row("spokenLanguage").options.filter(o => codes.indexOf(o.id) >= 0) }
     // The line under a model's name: languages and how its text arrives.
     function metaLine(m) {
-        return languages(m) + ", text " + (m.streams ? "as you speak" : "after you stop")
+        return languageCount(m.languages) + ", text " + (m.streams ? "as you speak" : "after you stop")
              + (m.fit === "tight" ? ", " + _fits.tight.toLowerCase() : "")
     }
     // Why a model can't run here, or the last download's or test's failure.

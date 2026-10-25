@@ -46,6 +46,7 @@ SettingRow {
             case "toggle": return toggle
             // Segments for two to four options, as CompactChoice picks.
             case "choice": return root.spec.control === "cards" ? cards
+                                : root.spec.control === "language" ? language
                                 : root.spec.control === "select" || root._options.length > 4 ? select : segmented
             case "slider": return slider
             case "text": return textField
@@ -66,6 +67,14 @@ SettingRow {
     Component {
         id: select
         Select { placeholder: Words.choose; options: root._options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id) }
+    }
+    Component {
+        id: language
+        LanguageSelect {
+            objectName: "languageSelect_" + root.rowId
+            placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+            options: root._options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id)
+        }
     }
     Component {
         id: cards

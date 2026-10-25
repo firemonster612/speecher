@@ -280,6 +280,11 @@ void QuickModels::refresh()
          providerReports(settings, facts, speechIds, refinementIds, registry.labels())) {
         QVariantMap entry = providerEntry(report);
         if (report.role == ProviderRole::Speech) {
+            SpeechSettings speech = settings.speech;
+            speech.providerId = report.id;
+            QStringList languages = spokenLanguages(speech);
+            languages.removeAll(QLatin1String(kAutomaticSpokenLanguage));
+            entry.insert(QStringLiteral("languages"), languages);
             entry.insert(QStringLiteral("signInChecking"), availability.checkingSignIn(report.id));
             entry.insert(QStringLiteral("signInCheckFailure"), availability.signInCheckFailure(report.id));
             speechServices.append(entry);

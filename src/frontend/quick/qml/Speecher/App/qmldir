@@ -8,6 +8,7 @@ ThemeSetting 1.0 ThemeSetting.qml
 Sidebar 1.0 Sidebar.qml
 SearchPalette 1.0 SearchPalette.qml
 SchemaRow 1.0 SchemaRow.qml
+LanguageList 1.0 LanguageList.qml
 SetupAssistant 1.0 setup/SetupAssistant.qml
 SearchLanding 1.0 SearchLanding.qml
 AccessibilityNotice 1.0 AccessibilityNotice.qml

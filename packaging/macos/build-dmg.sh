@@ -172,6 +172,11 @@ if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqsc
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
   exit 1
 fi
+# The UI draws its language flags through it.
+if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/imageformats/libqsvg.dylib" ]]; then
+  echo "macdeployqt did not bundle Qt's SVG image plugin." >&2
+  exit 1
+fi
 while IFS= read -r module; do
   if [[ ! -f "$module/qmldir" ]]; then
     echo "macdeployqt did not bundle the QML module the UI loads at ${module#"$STAGING_DIR/"}." >&2

@@ -112,3 +112,16 @@ qt_add_resources(speecher speecher_quick_fonts
   BASE "${SPEECHER_QUICK_DIR}"
   FILES ${SPEECHER_QUICK_FONTS}
 )
+# The language flags Controls' Flag draws, which Qt's SVG image plugin
+# reads; with the Controls module, so whatever loads the UI has them.
+file(GLOB_RECURSE SPEECHER_QUICK_FLAGS "${SPEECHER_QUICK_DIR}/assets/flags/*.svg")
+qt_add_resources(speecher_quick_controls speecher_quick_flags
+  PREFIX /speecher
+  BASE "${SPEECHER_QUICK_DIR}"
+  FILES ${SPEECHER_QUICK_FLAGS}
+)
+# macdeployqt bundles that plugin only with an app that links Qt SVG.
+if(APPLE)
+  find_package(Qt6 REQUIRED COMPONENTS Svg)
+  target_link_libraries(speecher PRIVATE Qt6::Svg)
+endif()

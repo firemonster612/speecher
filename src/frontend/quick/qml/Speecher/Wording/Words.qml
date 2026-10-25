@@ -33,6 +33,9 @@ QtObject {
     readonly property string suggestions: "Suggestions"
     readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
+    // The language picker's search, and what it says when nothing matches.
+    readonly property string searchLanguages: "Search languages"
+    readonly property string noLanguage: "No language matches."
     readonly property string more: "More"
     readonly property string pause: "Pause"
     readonly property string resume: "Resume"

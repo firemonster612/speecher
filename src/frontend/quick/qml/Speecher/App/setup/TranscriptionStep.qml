@@ -36,6 +36,8 @@ StepPage {
             SettingRow {
                 title: Schema.row("speechLocalModel").label
                 help: localModel.model ? ModelText.metaLine(localModel.model) : ""
+                helpLink: localModel.model ? ModelText.languageLink(localModel.model.languages) : ""
+                onHelpLinkActivated: at => modelLanguages.show(at, localModel.model.languages)
                 Select {
                     placeholder: Words.choose
                     options: Models.catalog.map(m => ({ id: m.id, label: m.name,
@@ -44,6 +46,7 @@ StepPage {
                     onChosen: id => Settings.set("speechLocalModel", id)
                 }
             }
+            LanguageList { id: modelLanguages }
             SettingRow {
                 objectName: "localModelDownload"
                 shown: !!localModel.model && Models.downloaded.indexOf(localModel.model.id) < 0

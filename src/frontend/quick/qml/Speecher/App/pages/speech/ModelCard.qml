@@ -37,7 +37,7 @@ Card {
         case "bestFor": return entry.bestFor
         case "wordErrors": return ModelText.wordErrors(entry)
         case "speed": return ModelText.speedLine(entry)
-        case "languages": return ModelText.languages(entry)
+        case "languages": return ModelText.languageCount(entry.languages)
         case "licence": return entry.licence
         case "file": return entry.fileName
         }
@@ -45,6 +45,9 @@ Card {
     }
 
     function toggle() { expanded = !expanded }
+
+    // The languages it listens for, opened from either count of them.
+    LanguageList { id: languageList }
 
     // Summary --------------------------------------------------------------
     // Only the summary opens and closes the card, so the details take clicks
@@ -100,9 +103,12 @@ Card {
                 strong: card.suggested
                 elide: Text.ElideRight
             }
-            Txt {
+            LinkedText {
+                id: metaLine
                 width: parent.width
-                text: ModelText.metaLine(card.entry)
+                plainText: ModelText.metaLine(card.entry)
+                link: ModelText.languageLink(card.entry.languages)
+                onActivated: languageList.show(metaLine, card.entry.languages)
                 variant: "small"
                 tone: "tertiary"
                 elide: Text.ElideRight
@@ -232,7 +238,15 @@ Card {
                         width: (facts.width - facts.columnSpacing * (facts.columns - 1)) / facts.columns
                         spacing: 2
                         Txt { text: ModelText.factLabels[fact.modelData]; variant: "small"; tone: "secondary" }
-                        Txt { width: parent.width; text: card.fact(fact.modelData); variant: "small"; wrapMode: Text.WrapAnywhere }
+                        LinkedText {
+                            id: value
+                            width: parent.width
+                            plainText: card.fact(fact.modelData)
+                            link: fact.modelData === "languages" ? ModelText.languageLink(card.entry.languages) : ""
+                            onActivated: languageList.show(value, card.entry.languages)
+                            variant: "small"
+                            wrapMode: Text.WrapAnywhere
+                        }
                     }
                 }
             }

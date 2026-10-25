@@ -260,6 +260,11 @@ copy_plugin_dir multimedia
 copy_plugin_dir networkinformation
 copy_plugin_dir platforminputcontexts
 copy_plugin_dir imageformats
+# The UI draws its language flags through Qt's SVG image plugin.
+if [[ ! -f "$APPDIR_PATH/usr/plugins/imageformats/libqsvg.so" ]]; then
+  echo "Missing Qt's SVG image plugin (qt6-svg-plugins)" >&2
+  exit 1
+fi
 copy_plugin_dir xcbglintegrations
 copy_plugin_dir wayland-decoration-client
 copy_plugin_dir wayland-graphics-integration-client

@@ -22,8 +22,8 @@ import "schema/updates.js" as Updates
 // Row fields: id, page, section, kind (toggle, choice, slider, text, secret,
 // shortcut, action, custom), label, help, value (the row's default; the app
 // shows core's. A custom row without one has nothing to save), options
-// [{ id, label, help?, icon? }], control (segmented, select, cards) for
-// choices, min/max/step/unit for sliders, placeholder for text, actionLabel
+// [{ id, label, help?, icon? }], control (segmented, select, cards, or
+// language for the Spoken language's LanguageSelect) for choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
 // { id, equals } to grey a row out until another row has a value, and
 // hiddenWhen { id, equals } to fold it away while another row has a value.
