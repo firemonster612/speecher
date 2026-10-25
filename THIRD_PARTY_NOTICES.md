@@ -93,6 +93,40 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## Wayland protocols: background effect
+
+The translucent sidebar asks the compositor for its blur through the
+`ext_background_effect_v1` protocol, whose description
+`src/platform/protocols/ext-background-effect-v1.xml` is copied from
+https://gitlab.freedesktop.org/wayland/wayland-protocols (1.49). The build
+generates the client code from it.
+
+```
+Copyright (C) 2015 Martin Gräßlin
+Copyright (C) 2015 Marco Martin
+Copyright (C) 2020 Vlad Zahorodnii
+Copyright (C) 2024 Xaver Hugl
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
 ## Plasma Wayland protocols: blur
 
 The translucent sidebar asks KWin for its blur through the `org_kde_kwin_blur`
