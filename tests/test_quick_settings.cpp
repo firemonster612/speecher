@@ -7,22 +7,14 @@
 #include <QJSEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
-#include <QQmlExtensionPlugin>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
 
 #include <memory>
 
-// The UI's QML modules, linked in statically as the app links them.
-Q_IMPORT_QML_PLUGIN(Speecher_ThemePlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_LaunchPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_DemoPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_WordingPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_ControlsPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_BackendPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_AppPlugin)
-Q_IMPORT_QML_PLUGIN(Speecher_PopupPlugin)
+// The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
+// imports their plugins for the whole binary, as in the app.
 
 using namespace speecher;
 

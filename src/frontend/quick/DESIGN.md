@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation` and `DictationState` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation` and `DictationState` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState` and `Updates` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState` and `Updates` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -35,9 +35,9 @@ editing pages. Each Backend type comes from exactly one module: the app's
 Backend is the C++ types plus the mocks not yet replaced.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
-  and `Dictation` and `DictationState` (`host/QuickDictation`). Placeholders
-  until their wiring PRs: `Insights`, `Transcription`, `Audio`, `Models`,
-  `Library`, `Accounts`, `System` and `Updates`.
+  `Dictation` and `DictationState` (`host/QuickDictation`), and `Updates`
+  (`host/QuickUpdates`). Placeholders until their wiring PRs: `Insights`,
+  `Transcription`, `Audio`, `Models`, `Library`, `Accounts` and `System`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
@@ -55,7 +55,19 @@ Backend is the C++ types plus the mocks not yet replaced.
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Settings.act(id)` runs an action row (`runSetup`).
-- `Status` has the version, a waiting update and the shortcut's keys.
+- `Status` has the version and the shortcut's keys.
+- `Updates` is the updater as `QuickUpdates.h` documents it: its state
+  (checking through restarting, with check and install failures apart), the
+  offered version, progress, why a step failed, and what a restart waits
+  for. `attention` says the update needs the person, which the popup's
+  update chip and the sidebar's link follow; `later()` puts a waiting
+  restart off until another version. What's New is `whatsNew` (a nightly's
+  commits with their links and GitHub's comparison, and the releases
+  crossed, from core's `whatsNew`), fixed for the
+  run, and `whatsNewPending` until the Updates page is opened, which the
+  popup's What's New chip offers and Main opens on after an update. New
+  settings are the rows whose `Schema.since` comes after the version run
+  before (`Updates.newSince`).
 - `Dictation` is the session as the popup shows it: `state` (the popup's
   phase: idle, starting, listening, paused, transcribing, refining,
   delivering, delivered, review, error), `level`, `elapsed`, `words`,
@@ -94,8 +106,8 @@ Backend is the C++ types plus the mocks not yet replaced.
   after the first frame of that dictation (a later show or a hide drops the
   answer), and hides itself once `PopupWindow.empty`, faded out, so the
   popup works whether or not Main was ever opened.
-- The popup window is larger than the capsule, so only the capsule may take
-  the pointer: the host sets the window's input region to
+- The popup window is larger than the capsule, so only the capsule (and the
+  offers over it while they show) may take the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
   input region on Wayland; on X11 the input shape alone, since a mask
   would clip the shadow) whenever it changes, frame by frame as the

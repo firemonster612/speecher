@@ -3,8 +3,9 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 
-// Short notes as a bulleted list, each wrapping under its own text: release
-// notes and the highlights of an available update.
+// Short notes as a bulleted list, each wrapping under its own text, such as
+// release notes. Each item is a line of Markdown (RichText.inlineMarkdown), so
+// `code` and links show as such; a link opens in the browser.
 Column {
     id: list
 
@@ -33,9 +34,12 @@ Column {
                 id: note
                 x: Theme.space3
                 width: parent.width - x
-                text: entry.modelData
+                text: RichText.inlineMarkdown(entry.modelData, Theme.monoFamily, Theme.accent)
                 variant: list.variant
+                textFormat: Text.RichText
                 wrapMode: Text.WordWrap
+                onLinkActivated: link => Qt.openUrlExternally(link)
+                HoverHandler { cursorShape: note.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
         }
     }

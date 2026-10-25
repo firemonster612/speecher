@@ -4,6 +4,7 @@
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
+#include "frontend/quick/host/QuickUpdates.h"
 
 #include <QObject>
 #include <QPointer>
@@ -55,14 +56,17 @@ private:
     // Makes a window from Speecher.App, or logs why it could not.
     QQuickWindow *createWindow(const QString &typeName);
     void setupClosed();
-    // Main, on one of its pages.
+    // Main, on pageId, or on the page it is on when pageId is empty.
     void showPage(const QString &pageId);
+    // The page Main shows, or opens on.
+    void setPage(const QString &pageId);
 
     ApplicationController *m_controller;
     // Before the engine, which reads them until it goes.
     QuickSettings m_settings;
     QuickStatus m_status;
     QuickDictation m_dictation;
+    QuickUpdates m_updates;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

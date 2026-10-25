@@ -9,19 +9,19 @@ import QtQuick.Window
 // the capsule animates would redo the surface every frame, and hosts that
 // keep the top-left corner fixed would shift the capsule.
 //
-// Only the capsule takes the pointer. The host sets the window's input
-// region (the surface's on Wayland, the input shape on X11) to inputRegion
-// whenever it changes, frame by frame as the capsule morphs, so clicks on
-// the transparent room around the capsule reach the app underneath. Once the
-// popup is empty, faded out, the host hides the window.
+// Only the capsule, and the offers over it, take the pointer. The host sets
+// the window's input region (the surface's on Wayland, the input shape on
+// X11) to inputRegion whenever it changes, frame by frame as the capsule
+// morphs, so clicks on the transparent room around them reach the app
+// underneath. Once the popup is empty, faded out, the host hides the window.
 Window {
     id: window
 
     readonly property bool empty: popup.empty
     readonly property int shadowRoom: 32
-    // The capsule's rect in the window's coordinates.
-    readonly property rect inputRegion: Qt.rect(popup.capsule.x + shadowRoom, popup.capsule.y + shadowRoom,
-                                               popup.capsule.width, popup.capsule.height)
+    // What takes the pointer, in the window's coordinates.
+    readonly property rect inputRegion: Qt.rect(popup.touchable.x + shadowRoom, popup.touchable.y + shadowRoom,
+                                               popup.touchable.width, popup.touchable.height)
 
     width: Math.ceil(popup.largest.width) + shadowRoom * 2
     height: Math.ceil(popup.largest.height) + shadowRoom * 2

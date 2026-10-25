@@ -189,11 +189,11 @@ Item {
         anchors.bottomMargin: 18
         x: Theme.sideInset
         width: parent.width - Theme.sideInset * 2
-        open: Status.updateReady
+        open: Updates.state === "ready" && Updates.attention
 
         TextLink {
             iconName: "arrow-down-to-line"
-            text: Words.updateReady(Status.updateVersion)
+            text: Words.updateReady(Updates.availableVersion)
             variant: "labelSmall"
             onActivated: Navigation.go("updates")
         }

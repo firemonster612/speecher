@@ -13,7 +13,22 @@ Item {
 
     property string channelLabel
 
-    readonly property list<StateLine> _lines: [idle, checking, upToDate, available, downloading, ready, failed]
+    readonly property var t: ({
+        // when is a Date, invalid before the first check.
+        checked: when => isNaN(when.getTime()) ? "Not checked yet"
+            : new Date().toDateString() === when.toDateString() ? "Last checked at " + when.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
+            : "Last checked on " + when.toLocaleDateString(Qt.locale(), Locale.ShortFormat),
+        checking: channel => channel ? "Checking the " + channel + " channel…" : "Checking for updates…",
+        checkNow: "Check now",
+        upToDate: "Speecher is up to date",
+        stableReplacementDetail: "Replaces the Nightly Build you have now.",
+        updateNow: "Update now",
+        downloadingDetail: "Keep dictating; it takes effect when Speecher restarts.",
+        readyDetail: v => "Speecher " + v + " is downloaded and ready.",
+        failed: "Update failed"
+    })
+
+    readonly property list<StateLine> _lines: [idle, checking, upToDate, available, downloading, ready, restarting, failed]
     readonly property StateLine _current: _lines.find(line => line.shown) ?? idle
 
     width: parent ? parent.width : implicitWidth
@@ -23,44 +38,42 @@ Item {
     StateLine {
         id: idle
         stateId: "idle"
-        title: Updates.lastChecked
-        actions: [ Button { text: Updates.text.checkNow; size: "small"; onClicked: Updates.check() } ]
+        title: root.t.checked(Updates.lastChecked)
+        actions: [ Button { text: root.t.checkNow; size: "small"; onClicked: Updates.check() } ]
     }
     StateLine {
         id: checking
         stateId: "checking"
         busy: true
-        title: Updates.checkingText(root.channelLabel)
+        title: root.t.checking(root.channelLabel)
     }
     StateLine {
         id: upToDate
         stateId: "upToDate"
-        title: Updates.text.upToDate
-        detail: Updates.lastChecked
-        actions: [ Button { text: Updates.text.checkNow; size: "small"; onClicked: Updates.check() } ]
+        title: root.t.upToDate
+        detail: root.t.checked(Updates.lastChecked)
+        actions: [ Button { text: root.t.checkNow; size: "small"; onClicked: Updates.check() } ]
     }
     StateLine {
         id: available
         stateId: "available"
         dot: Theme.accent
-        title: Updates.availableTitle
-        detail: Updates.availableSize
-        BulletList { items: Updates.availableHighlights; variant: "small" }
+        title: Updates.stableReplacement ? Words.updates.stableReplacement(Updates.availableVersion) : Words.updates.available(Updates.availableVersion)
+        detail: Updates.stableReplacement ? root.t.stableReplacementDetail : ""
         actions: [
-            Button { text: Updates.text.releaseNotes; variant: "ghost"; size: "small"; trailingIcon: "external-link"; onClicked: Updates.openReleaseNotes() },
             Button {
-                text: Updates.automaticDownloads ? Updates.text.updateNow : Updates.text.openReleasePage
+                text: Updates.automaticDownloads ? root.t.updateNow : Words.updates.openReleasePage
                 variant: "primary"
                 size: "small"
-                onClicked: Updates.install()
+                onClicked: Updates.updateNow()
             }
         ]
     }
     StateLine {
         id: downloading
         stateId: "downloading"
-        title: Updates.downloadingTitle
-        detail: Updates.text.downloadingDetail
+        title: Words.updates.downloading(Updates.availableVersion)
+        detail: root.t.downloadingDetail
         Item {
             width: parent.width
             height: percent.implicitHeight
@@ -90,25 +103,39 @@ Item {
         id: ready
         stateId: "ready"
         dot: Theme.accent
-        title: Updates.text.readyTitle
-        detail: Updates.readyDetail
+        title: Words.updates.ready
+        // A restart that could not start says why.
+        detail: Updates.error || root.t.readyDetail(Updates.availableVersion)
+        // Later puts the restart off, which also takes the update from the
+        // popup and the sidebar until another version comes.
         actions: [
-            Button { text: Updates.text.later; variant: "ghost"; size: "small"; onClicked: Updates.later() },
-            Button { text: Updates.text.restartNow; variant: "primary"; size: "small"; onClicked: Updates.restart() }
+            Button { text: Words.updates.later; variant: "ghost"; size: "small"; onClicked: Updates.later() },
+            Button { text: Words.updates.restart[Updates.restartBlocker]; variant: "primary"; size: "small"; onClicked: Updates.updateNow() }
         ]
+    }
+    // A restart asked for waits for the dictation or recording in the way.
+    StateLine {
+        id: restarting
+        stateId: "restarting"
+        shown: Updates.state === "restarting" || Updates.state === "restartPending"
+        busy: true
+        title: Words.updates.restarting[Updates.state === "restartPending" ? Updates.restartBlocker : ""]
     }
     StateLine {
         id: failed
         stateId: "error"
+        shown: Updates.state === "error" || Updates.state === "checkFailed"
         dot: Theme.negative
-        title: Updates.text.checkFailed
+        title: Updates.state === "checkFailed" ? Words.updates.checkFailed : root.t.failed
         detail: Updates.error
-        actions: [ Button { text: Updates.text.tryAgain; size: "small"; onClicked: Updates.check() } ]
+        // Where only installing by hand can work, the release page is the retry.
+        actions: [ Button { text: Updates.manualInstall ? Words.updates.openReleasePage : Words.updates.tryAgain; size: "small"; onClicked: Updates.updateNow() } ]
     }
 
     // One updater state: a title and detail, extra content under them and
     // actions on the right. dot marks a state that needs you; busy shows a
-    // spinner. It shows while Updates.state is its stateId.
+    // spinner. It shows while Updates.state is its stateId, unless shown
+    // says otherwise.
     component StateLine: Item {
         id: line
         required property string stateId
@@ -118,7 +145,7 @@ Item {
         property string detail
         default property alias extra: extraColumn.data
         property alias actions: actionRow.data
-        readonly property bool shown: Updates.state === stateId
+        property bool shown: Updates.state === stateId
 
         x: Theme.rowInset
         y: Theme.space4

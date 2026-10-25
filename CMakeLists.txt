@@ -1384,6 +1384,9 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_helper_install.cpp
       tests/test_quick_settings.cpp
       tests/test_quick_dictation.cpp
+      tests/test_quick_updates.cpp
+      src/frontend/quick/host/QuickFrontEnd.cpp
+      src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
       src/frontend/quick/host/QuickPopupWindow.h
     )
@@ -1418,7 +1421,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation)
+    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

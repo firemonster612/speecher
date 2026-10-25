@@ -20,6 +20,8 @@ namespace speecher {
 
 namespace {
 
+const QString repository = QStringLiteral("https://github.com/firemonster612/speecher");
+
 void ensureResourcesInitialized()
 {
     static const bool initialized = [] {
@@ -40,7 +42,35 @@ QString thisPlatform()
 #endif
 }
 
+// The commit a nightly's version names after "+g": "0.2.1-nightly.20260921+gabc1234".
+QString versionCommit(const QString &version)
+{
+    static const QRegularExpression sha(QStringLiteral("[+]g([0-9a-fA-F]+)$"));
+    return sha.match(version).captured(1);
+}
+
+// The history's commits after lastSha, or none when it is not in it.
+QList<HistoryCommit> commitsSince(const QList<HistoryCommit> &history, const QString &lastSha)
+{
+    QList<HistoryCommit> commits;
+    for (const HistoryCommit &commit : history) {
+        // Short SHAs grow with the repository, so either recording may be the
+        // longer one.
+        if (commit.sha.startsWith(lastSha, Qt::CaseInsensitive)
+            || lastSha.startsWith(commit.sha, Qt::CaseInsensitive)) {
+            return commits;
+        }
+        commits.append(commit);
+    }
+    return {};
+}
+
 } // namespace
+
+QUrl releasesPage()
+{
+    return QUrl(repository + QStringLiteral("/releases"));
+}
 
 QList<ReleaseNote> bundledReleaseNotes()
 {
@@ -129,6 +159,84 @@ QString releaseNotesForPlatform(const QString &markdown, const QString &platform
         kept.append(line);
     }
     return kept.join(u'\n').trimmed();
+}
+
+QList<ReleaseNoteSection> releaseNoteSections(const QString &markdown)
+{
+    static const QRegularExpression heading(QStringLiteral("^#+\\s*"));
+    static const QRegularExpression bullet(QStringLiteral("^\\s*- "));
+    QList<ReleaseNoteSection> sections;
+    for (const QString &line : markdown.split(u'\n')) {
+        if (line.trimmed().isEmpty()) {
+            continue;
+        }
+        if (heading.match(line).hasMatch()) {
+            sections.append({QString(line).remove(heading).trimmed(), {}});
+            continue;
+        }
+        if (sections.isEmpty()) {
+            sections.append(ReleaseNoteSection{});
+        }
+        sections.last().items.append(QString(line).remove(bullet).trimmed());
+    }
+    return sections;
+}
+
+WhatsNew whatsNew(const QList<ReleaseNote> &notes,
+                  const QList<HistoryCommit> &history,
+                  const QString &lastSeenVersion,
+                  const QString &currentVersion)
+{
+    WhatsNew news;
+    const QString lastSha = versionCommit(lastSeenVersion);
+    const QString currentSha = versionCommit(currentVersion);
+    if (currentVersion.contains(QStringLiteral("-nightly")) && !lastSha.isEmpty() && !currentSha.isEmpty()) {
+        news.commits = commitsSince(history, lastSha);
+        news.comparison = QUrl(repository + QStringLiteral("/compare/%1...%2").arg(lastSha, currentSha));
+    }
+    if (!lastSeenVersion.isEmpty()) {
+        // A nightly's base is the last stable tag patch+1, so it predates the
+        // Stable Release of its own base version. An update that moves past
+        // that base crossed the release; its notes are news even though the
+        // base versions compare equal.
+        const bool crossedOwnBase = lastSeenVersion.contains(QStringLiteral("-nightly"))
+            && compareBaseVersions(currentVersion, lastSeenVersion) > 0;
+        for (const ReleaseNote &note : notes) {
+            const int afterLastSeen = compareBaseVersions(note.version, lastSeenVersion);
+            if ((afterLastSeen > 0 || (afterLastSeen == 0 && crossedOwnBase))
+                && compareBaseVersions(note.version, currentVersion) <= 0) {
+                news.releases.append(note);
+            }
+        }
+    }
+    // A nightly-to-nightly update that crosses no Stable Release reports its
+    // own changes; only without those does the newest stable note stand in.
+    if (news.releases.isEmpty() && news.comparison.isEmpty()) {
+        const auto newest = std::find_if(notes.cbegin(), notes.cend(), [&currentVersion](const ReleaseNote &note) {
+            return compareBaseVersions(note.version, currentVersion) <= 0;
+        });
+        if (newest != notes.cend()) {
+            news.releases.append(*newest);
+        }
+    }
+    return news;
+}
+
+CommitSummary commitSummary(const HistoryCommit &commit)
+{
+    static const QRegularExpression mergedPullRequest(QStringLiteral("^Merge pull request #(\\d+) from \\S+$"));
+    static const QRegularExpression squashedPullRequest(QStringLiteral("^(.+) \\(#(\\d+)\\)$"));
+    const auto pullRequest = [](const QString &title, const QString &number) {
+        return CommitSummary{title, number.toInt(), QUrl(repository + QStringLiteral("/pull/") + number)};
+    };
+    if (const QRegularExpressionMatch merged = mergedPullRequest.match(commit.subject); merged.hasMatch()) {
+        const QString bodyTitle = commit.body.section(u'\n', 0, 0).trimmed();
+        return pullRequest(bodyTitle.isEmpty() ? commit.subject : bodyTitle, merged.captured(1));
+    }
+    if (const QRegularExpressionMatch squashed = squashedPullRequest.match(commit.subject); squashed.hasMatch()) {
+        return pullRequest(squashed.captured(1), squashed.captured(2));
+    }
+    return {commit.subject, 0, QUrl(repository + QStringLiteral("/commit/") + commit.sha)};
 }
 
 int compareBaseVersions(const QString &left, const QString &right)

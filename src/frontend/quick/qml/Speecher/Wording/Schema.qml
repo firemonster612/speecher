@@ -41,6 +41,8 @@ QtObject {
                                           Accounts.rows, Models.rows, General.rows, Updates.rows)
     // The app types Speecher sorts apps into, for paste rules and recognition.
     readonly property var appCategories: Pasting.categories
+    // Each row's Since Version, by row id: { rowId: "0.2.1" }.
+    readonly property var since: Updates.since
 
     readonly property var _rowsById: {
         const map = {}
