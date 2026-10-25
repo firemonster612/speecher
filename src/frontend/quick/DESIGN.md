@@ -209,7 +209,7 @@ Palette (all in `Theme`; never write a hex value in a page):
 | `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
 | `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
 
-The pad is Steno, the first of the colour schemes (Colors, on General). A
+The pad is Steno, the first of the colour schemes (Colors, on Appearance). A
 scheme is six roles, in light and dark: `paper`, `sheet`, `raised`, `text`,
 `accent` and `negative`, and a `rule` if it wants its own. Every other
 colour (hover, borders, fills, the quieter inks, ink on the accent, key
@@ -237,7 +237,7 @@ nothing else.
 - Light, Dark and System work with every scheme; `ColorSchemes.source(id)`
   is what `Theme.colorSource` takes, and a scheme that has gone is Steno.
 - Thumbnails of a scheme, a theme or a layout are `MiniWindow`s in a
-  `LookPicker` (General's `pages/app`), with the pencil outline gliding to
+  `LookPicker` (Appearance's, in `pages/app`), with the pencil outline gliding to
   the chosen one.
 
 Translucency: with Translucent sidebar on and `Appearance.canBlur`,
@@ -247,14 +247,14 @@ compositor to blur behind its frame. The sidebar's inks are checked against
 that paper over a black and a white desktop. The page and cards stay
 opaque; search lays its blurred copy of the window on opaque paper. On
 Windows, whose Mica fills the whole window, the window drops its drawn
-shadow margin and corners for DWM's. With Rounded corners off (General),
+shadow margin and corners for DWM's. With Rounded corners off (Appearance),
 the window's corners are square, its own or DWM's. Where
 the platform cannot blur (no KWin blur, X11, Reduce transparency,
 Transparency effects off, high contrast) it stays opaque, and the row says
 why. Never make paper translucent without the blur: text over a sharp
 wallpaper does not read.
 
-Layout (General): Framed puts the page on a `Sheet` inset under the title
+Layout (Appearance): Framed puts the page on a `Sheet` inset under the title
 strip; Split runs it edge to edge beside the sidebar, divided by a rule,
 with the page's content starting under the strip. `Sheet` eases between
 the two over `Theme.page` (at once under reduced motion), and setup
@@ -379,6 +379,25 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
+- A page can sit under another (`parent` in `schema/pages.js`) when it is
+  a part of that page a person looks for on its own: Local models under
+  Speech to text, Writing profiles and Vocabulary under Refinement, App
+  rules under Pasting, and Appearance, Permissions & health and Updates
+  under General. In the sidebar subpages sit under their parent, past a
+  guide line from its icon, and fold under a chevron on it; a subpage's
+  wash and the pill on it start right of the guide.
+  They open, growing in through a `Reveal`, when the parent or one of them
+  is opened, and stay open after; closed by hand they stay closed until
+  opened again or one of them is asked for, even the one showing
+  (`Navigation.requested`). While a current subpage is folded away the
+  pill sits on its parent, and a subpage that had keyboard focus hands it
+  to the parent. Up and Down step through the entries that show, Right
+  and Left open and close a parent's subpages. A
+  subpage's title leads with the path to it ("Refinement › Vocabulary"),
+  each step a quiet link to that page, and search gives a subpage and its
+  rows the same path. The parent lists its subpages too, in a
+  `SubpageRows` card: at its end, or first where the page is mostly a way
+  into them (General). A subpage keeps its id, so links to it still land.
 
 Things to avoid, because they read as generated:
 
@@ -461,7 +480,7 @@ control fades to `Theme.disabledOpacity`.
 
 Layout and rows:
 
-- `Page { title; subtitle; headerActions }`: a scrolling page. With no title the page brings its own heading.
+- `Page { title; subtitle; headerActions; path; pathPicked(id) }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
@@ -497,7 +516,7 @@ Input:
 
 Actions and menus:
 
-- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant }` for a link in a line of text, `LinkedText { plainText; link; activated() }` for a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
+- `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant; quiet }` for a link in a line of text; `quiet` is secondary ink rather than pencil, for a page's path in its title. `LinkedText { plainText; link; activated() }` is a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
 - `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
 
@@ -528,6 +547,7 @@ Helpers:
 
 In Speecher.App, besides SchemaRow:
 
+- `SubpageRows { pageId }`: a card of rows leading to a page's subpages, with their titles and subtitles.
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
@@ -538,7 +558,7 @@ In Speecher.App, besides SchemaRow:
 ## Building pages
 
 - `Page { title; subtitle; headerActions: [...] }` holds `Section`s. Its
-  title is `Schema.page(id).title`, and a Section holding schema rows takes
+  title is `Schema.page(id).title` (a subpage's path comes from Main), and a Section holding schema rows takes
   `Schema.row(id).section`, so a page never retypes a title.
 - `Section { title; caption; actions: [...] }` puts its title above and its
   children on a raised card; `plain: true` drops the card for content with

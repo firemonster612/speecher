@@ -169,4 +169,6 @@ Page {
             }
         }
     }
+
+    SubpageRows { pageId: "speech" }
 }

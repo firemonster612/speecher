@@ -2,7 +2,10 @@
 
 // The app's pages in sidebar order. Groups follow a dictation from start to
 // finish: what starts it, what hears it, what cleans it up, where it goes.
-// subtitle is the line of explanation under a page's title.
+// subtitle is the line of explanation under a page's title. A page with a
+// parent is one of that page's subpages: it takes its parent's group, sits
+// under it in the sidebar and follows it here. A parent must be a top-level
+// page, as the sidebar draws one level of subpages.
 var groups = [
     { id: "start", title: "" },
     { id: "dictation", title: "Dictation" },
@@ -26,6 +29,8 @@ var pages = [
     { id: "speech", group: "dictation", title: "Speech to text", icon: "audio-lines", file: "SpeechPage.qml",
       subtitle: "The service that turns your voice into text, and what Speecher uses when it is unavailable.",
       keywords: "transcription service provider language fallback endpoint whisper" },
+    { id: "models", parent: "speech", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
+      keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
     { id: "feedback", group: "dictation", title: "Popup & sounds", icon: "message-square-text", file: "FeedbackPage.qml",
       subtitle: "What you see and hear while you dictate. The preview follows your choices.",
       keywords: "overlay preview live text sounds media pause review" },
@@ -33,25 +38,32 @@ var pages = [
     { id: "refinement", group: "text", title: "Refinement", icon: "spell-check", file: "RefinementPage.qml",
       subtitle: "Turns what you said into clean text before it's pasted. Your Writing Profile decides how much it changes.",
       keywords: "cleanup llm model ai punctuation filler prompt context screenshot" },
-    { id: "profiles", group: "text", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
+    { id: "profiles", parent: "refinement", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
       keywords: "tone style app per-app cleanup level instructions translate" },
-    { id: "vocabulary", group: "text", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
+    { id: "vocabulary", parent: "refinement", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
       subtitle: "Words Speecher spells your way, fixes it learned from your edits, and phrases that become exact text.",
       keywords: "words names spelling corrections replacements snippets terms" },
     { id: "pasting", group: "text", title: "Pasting", icon: "clipboard-paste", file: "PastingPage.qml",
-      subtitle: "How your words get into the app you're using, and the apps that need it done differently.",
-      keywords: "output delivery paste clipboard terminal rules apps insertion" },
+      subtitle: "How your words get into the app you're using.",
+      keywords: "output delivery paste clipboard insertion virtual keyboard formatting" },
+    { id: "appRules", parent: "pasting", title: "App rules", icon: "app-window", file: "AppRulesPage.qml",
+      subtitle: "Apps that need their words pasted differently, and how Speecher tells which app you're in.",
+      keywords: "per-app rules app type terminal browser recognition match exceptions" },
 
     { id: "accounts", group: "app", title: "Accounts", icon: "key-round", file: "AccountsPage.qml",
       subtitle: "The sign-ins Speecher uses for dictation and cleanup. Keys are kept in your system keychain.",
       keywords: "sign in login openai anthropic chatgpt claude api key cli proxy" },
-    { id: "models", group: "app", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
-      keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
     { id: "general", group: "app", title: "General", icon: "settings-2", file: "GeneralPage.qml",
-      subtitle: "How Speecher looks and starts, what it may do on this computer, and what it keeps.",
-      keywords: "theme appearance login startup permissions phone insights uninstall" },
-    { id: "updates", group: "app", title: "Updates", icon: "refresh-cw", file: "UpdatesPage.qml",
+      subtitle: "How Speecher starts, what it keeps, and moving it to your phone or off this computer.",
+      keywords: "login startup phone insights history uninstall remove" },
+    { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
+      subtitle: "How Speecher's windows look.",
+      keywords: "theme dark light colors color scheme layout split framed translucent blur" },
+    { id: "permissions", parent: "general", title: "Permissions & health", icon: "shield-check", file: "PermissionsPage.qml",
+      subtitle: "What Speecher may do on this computer, and how to fix what is missing.",
+      keywords: "microphone access accessibility global shortcuts virtual keyboard setup assistant checks" },
+    { id: "updates", parent: "general", title: "Updates", icon: "refresh-cw", file: "UpdatesPage.qml",
       subtitle: "Which builds you get and when, and what changed in this one.",
       keywords: "version nightly stable channel release notes what's new" }
 ];

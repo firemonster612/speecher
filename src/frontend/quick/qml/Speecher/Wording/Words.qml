@@ -83,6 +83,8 @@ QtObject {
         searchPlaceholder: "Search settings and pages",
         suggested: "Suggested",
         page: "Page",
+        showSubpages: "Show subpages",
+        hideSubpages: "Hide subpages",
         searchTip: "Try a setting's name, a service such as Claude, or a word like hotkey.",
         moveHint: "Move",
         openHint: "Open",

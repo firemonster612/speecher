@@ -23,7 +23,7 @@ var steps = [
 
 var text = {
     title: "Set up Speecher",
-    runAgain: "You can run setup again any time from General.",
+    runAgain: "You can run setup again any time from General › Permissions & health.",
     skip: "Skip setup",
     back: "Back",
     getStarted: "Get started",

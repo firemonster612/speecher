@@ -11,6 +11,7 @@ SchemaRow 1.0 SchemaRow.qml
 LanguageList 1.0 LanguageList.qml
 SetupAssistant 1.0 setup/SetupAssistant.qml
 SearchLanding 1.0 SearchLanding.qml
+SubpageRows 1.0 SubpageRows.qml
 AccessibilityNotice 1.0 AccessibilityNotice.qml
 HealthRow 1.0 HealthRow.qml
 RemovalReport 1.0 RemovalReport.qml

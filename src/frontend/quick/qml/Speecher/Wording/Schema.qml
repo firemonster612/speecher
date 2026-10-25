@@ -64,6 +64,17 @@ QtObject {
         return _rowsById[id] || { id: id, page: "", label: id, help: "This row is not in the schema yet.", kind: "missing" }
     }
     function page(id) { return _pagesById[id] || { id: id, title: id, icon: "circle" } }
+    // The pages under a page, in sidebar order.
+    function subpages(id) { return pages.filter(p => p.parent === id) }
+    // The pages a page sits under, outermost first: [Refinement] for Vocabulary.
+    function ancestors(id) {
+        const p = page(id)
+        return p.parent ? ancestors(p.parent).concat([page(p.parent)]) : []
+    }
+    // Where a page is, as words: "Refinement › Vocabulary", or its title.
+    function trail(id) { return ancestors(id).concat([page(id)]).map(p => p.title).join(" › ") }
+    // Where a row is: its page's trail and its section, if it has one.
+    function rowTrail(spec) { return trail(spec.page) + (spec.section ? ", " + spec.section : "") }
 
     // Whether this computer has the row; has(need) answers for a needs.
     function available(spec, has) {
@@ -77,7 +88,9 @@ QtObject {
 
     // Ranks pages and the rows this computer has (available) against query.
     // Every word has to match somewhere; matches in the label count most,
-    // then keywords, section and help.
+    // then keywords, section and help. A subpage also matches its parent's
+    // title, so searching for a page finds the pages under it; a subpage
+    // and its rows carry the path to it as their trail.
     function search(query, limit, has) {
         const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0)
         if (!words.length) return []
@@ -99,15 +112,16 @@ QtObject {
         }
         const results = []
         for (const p of pages) {
-            const s = score([[p.title, 12], [p.keywords, 5]])
-            if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon, score: s + 4 })
+            const parentTitle = p.parent ? page(p.parent).title : ""
+            const s = score([[p.title, 12], [parentTitle, 6], [p.keywords, 5]])
+            if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon,
+                                      trail: p.parent ? trail(p.id) : "", score: s + 4 })
         }
         for (const r of rows) {
-            const p = page(r.page)
             const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
-            if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: p.icon,
-                                      trail: p.title + (r.section ? ", " + r.section : ""), score: s })
+            if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
+                                      trail: rowTrail(r), score: s })
         }
         results.sort((a, b) => b.score - a.score)
         return results.slice(0, limit || 12)
