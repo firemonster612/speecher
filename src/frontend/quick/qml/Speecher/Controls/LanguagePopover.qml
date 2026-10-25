@@ -30,14 +30,12 @@ MenuPopup {
     // stays open when item goes, as a ServiceCards card does when Models
     // changes and the cards are made again.
     function openFrom(item) {
-        _from = item
+        width = Math.max(item.width, 280)
         const under = item.mapToItem(parent, 0, item.height + 6)
         x = align === "right" ? under.x + item.width - width : under.x
         y = under.y
         open()
     }
-    // What it opens from: where it was declared, or openFrom's item.
-    property Item _from: parent
 
     // Lower case without accents, so "francais" finds "français".
     function _fold(s) { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase() }
@@ -66,19 +64,22 @@ MenuPopup {
         close()
     }
 
-    readonly property int _rowHeight: 34
-    width: Math.max(_from ? _from.width : 0, 280)
+    width: Math.max(parent ? parent.width : 0, 280)
     implicitHeight: implicitContentHeight + topPadding + bottomPadding
     // Kept inside the window, over what opened it where there is no room
     // below.
     margins: Theme.space2
-    // A press on what opened it is that item's to answer, so a button
-    // toggles it rather than closing and opening it again.
-    closePolicy: T.Popup.CloseOnEscape | T.Popup.CloseOnPressOutsideParent
+    // Choosing, it is declared in its button, and a press on the button is
+    // the button's to answer, so it toggles rather than closing and opening
+    // again. Showing only languages, it is declared in a page or card, so
+    // any press outside it closes it.
+    closePolicy: choosing ? T.Popup.CloseOnEscape | T.Popup.CloseOnPressOutsideParent
+                          : T.Popup.CloseOnEscape | T.Popup.CloseOnPressOutside
     focus: true
     onAboutToShow: {
         search.clear()
         _keyed = false
+        pointerMoves._at = null
         _highlight(choosing ? _shown.findIndex(l => l.id === currentId) : 0)
     }
     onOpened: search.forceActiveFocus()
@@ -98,11 +99,31 @@ MenuPopup {
             Keys.onEnterPressed: popover._take(popover._highlighted)
             Keys.onEscapePressed: popover.close()
         }
-        // As tall as the whole list, up to ten rows, however few match, so
-        // the panel holds still while the search narrows it.
+        // As tall as the whole list's first ten rows, however few match, so
+        // the panel holds still while the search narrows it; a row with
+        // help, such as Automatic, is taller.
         Item {
             width: parent.width
-            height: Math.min(popover.languages.length, 10) * (popover._rowHeight + list.spacing)
+            height: popover.languages.slice(0, 10)
+                    .reduce((sum, l) => sum + (l.help ? helpRow.implicitHeight : plainRow.implicitHeight) + list.spacing, 0)
+            MenuItem { id: plainRow; visible: false; text: "x" }
+            MenuItem { id: helpRow; visible: false; text: "x"; help: "x" }
+            // Only the pointer's own moves light a row: a list scrolled by
+            // the arrows under a resting pointer, or opened under it, must
+            // not pull the highlight to the row beneath.
+            HoverHandler {
+                id: pointerMoves
+                enabled: popover.choosing
+                property var _at: null
+                onPointChanged: {
+                    const at = point.position
+                    const moved = _at !== null && (at.x !== _at.x || at.y !== _at.y)
+                    _at = at
+                    if (!moved) return
+                    const index = list.indexAt(at.x, at.y + list.contentY)
+                    if (index >= 0) popover._highlighted = index
+                }
+            }
             ListView {
                 id: list
                 objectName: "languageRows"
@@ -129,13 +150,13 @@ MenuPopup {
                     flagCode: modelData.icon ? "" : modelData.id
                     current: popover.choosing && modelData.id === popover.currentId
                     highlighted: index === popover._highlighted && (popover.choosing || popover._keyed)
-                    // Showing only languages, a row neither lights nor
-                    // gives under the pointer.
-                    hoverEnabled: popover.choosing
+                    // The highlight is the one wash under the pointer (the
+                    // HoverHandler above), and showing only languages a row
+                    // doesn't give when pressed.
+                    hoverEnabled: false
                     down: popover.choosing && pressed
                     // The search field keeps the keys.
                     focusPolicy: Qt.NoFocus
-                    onHoveredChanged: if (hovered) popover._highlighted = index
                     onClicked: if (popover.choosing) popover._take(index)
                     Accessible.role: popover.choosing ? Accessible.MenuItem : Accessible.ListItem
                 }

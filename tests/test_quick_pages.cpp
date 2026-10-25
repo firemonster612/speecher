@@ -179,6 +179,7 @@ private slots:
             }
         };
         QPointer<QQuickItem> codexHelp;
+        int hovered = -1;
         QObject *serviceLanguages = nullptr;
 
         runSteps({
@@ -252,13 +253,47 @@ private slots:
                  // changes and Models' change makes the cards again.
                  QuickSettings(&controller).set(QStringLiteral("spokenLanguage"), QStringLiteral("en"));
              }},
-            {QStringLiteral("still open"), [&] {
+            {QStringLiteral("press another card"), [&] {
                  QVERIFY(!codexHelp);
                  QVERIFY(serviceLanguages->property("opened").toBool());
-                 QTest::keyClick(main, Qt::Key_Escape);
+                 QQuickItem *claudeHelp = findItem(main->contentItem(), QStringLiteral("help_claude"));
+                 QVERIFY(claudeHelp);
+                 QQuickItem *claudeCard = claudeHelp->parentItem()->parentItem();
+                 QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier,
+                                   claudeCard->mapToScene(QPointF(claudeCard->width() - 12, claudeCard->height() - 12)).toPoint());
+             }},
+            {QStringLiteral("rest the pointer on a row of the picker"), [&] {
+                 QVERIFY(!serviceLanguages->property("opened").toBool());
+                 QVERIFY(QMetaObject::invokeMethod(picker, "click"));
+             }},
+            {QStringLiteral("arrow down under the still pointer"), [&] {
+                 QVERIFY(popover->property("opened").toBool());
+                 int top = -1;
+                 QMetaObject::invokeMethod(rows, "indexAt", Q_RETURN_ARG(int, top), Q_ARG(qreal, 10),
+                                           Q_ARG(qreal, rows->property("contentY").toReal() + 10));
+                 hovered = top + 2;
+                 QQuickItem *row = nullptr;
+                 QMetaObject::invokeMethod(rows, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, hovered));
+                 QVERIFY(top >= 0 && row);
+                 // The pointer comes onto the row, then rests there.
+                 const QPointF centre = row->mapToScene(QPointF(row->width() / 2, row->height() / 2));
+                 QTest::mouseMove(main, (centre - QPointF(0, 3)).toPoint());
+                 QTest::mouseMove(main, centre.toPoint());
+                 // A frame after each, as on screen, so the list scrolls under
+                 // the pointer between presses.
+                 for (int i = 0; i < 12; ++i) {
+                     QTest::keyClick(main, Qt::Key_Down);
+                     QTest::qWait(50);
+                 }
+                 QTest::keyClick(main, Qt::Key_Return);
+             }},
+            {QStringLiteral("Return takes the row twelve below the pointer's"), [&] {
+                 QVERIFY(!popover->property("opened").toBool());
+                 const QString expected =
+                     picker->property("options").value<QJSValue>().property(hovered + 12).property("id").toString();
+                 QCOMPARE(picker->property("currentId").toString(), expected);
              }},
         });
-        QVERIFY(!serviceLanguages->property("opened").toBool());
     }
 
     // The Spoken language row names every language core knows, which the
