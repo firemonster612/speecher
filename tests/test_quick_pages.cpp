@@ -268,13 +268,23 @@ private slots:
              }},
             {QStringLiteral("arrow down under the still pointer"), [&] {
                  QVERIFY(popover->property("opened").toBool());
+                 // The list lays its rows out as it opens, a frame or more
+                 // after the popover does on some platforms.
                  int top = -1;
-                 QMetaObject::invokeMethod(rows, "indexAt", Q_RETURN_ARG(int, top), Q_ARG(qreal, 10),
-                                           Q_ARG(qreal, rows->property("contentY").toReal() + 10));
-                 hovered = top + 2;
                  QQuickItem *row = nullptr;
-                 QMetaObject::invokeMethod(rows, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, hovered));
-                 QVERIFY(top >= 0 && row);
+                 const auto findRow = [&] {
+                     QMetaObject::invokeMethod(rows, "indexAt", Q_RETURN_ARG(int, top), Q_ARG(qreal, 10),
+                                               Q_ARG(qreal, rows->property("contentY").toReal() + 10));
+                     hovered = top + 2;
+                     row = nullptr;
+                     QMetaObject::invokeMethod(rows, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, hovered));
+                     return top >= 0 && row;
+                 };
+                 QTRY_VERIFY2(findRow(), qPrintable(QStringLiteral("top %1, contentY %2, count %3, height %4")
+                                                        .arg(top)
+                                                        .arg(rows->property("contentY").toReal())
+                                                        .arg(rows->property("count").toInt())
+                                                        .arg(rows->property("height").toReal())));
                  // The pointer comes onto the row, then rests there.
                  const QPointF centre = row->mapToScene(QPointF(row->width() / 2, row->height() / 2));
                  QTest::mouseMove(main, (centre - QPointF(0, 3)).toPoint());
