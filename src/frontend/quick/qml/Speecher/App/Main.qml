@@ -14,8 +14,9 @@ import Speecher.Wording
 // report's button does, whether removal finishes before the close or after.
 ClientWindow {
     id: window
-    width: 1240
-    height: 820
+    // Smaller on a screen without the room, such as an 800 pixel high one.
+    width: Math.min(1240, Screen.desktopAvailableWidth)
+    height: Math.min(820, Screen.desktopAvailableHeight)
     minimumWidth: 900
     minimumHeight: 600
     visible: true

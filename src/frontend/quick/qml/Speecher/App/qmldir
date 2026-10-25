@@ -23,3 +23,4 @@ Health 1.0 health.js
 Setup 1.0 setup/setup.js
 ClientWindow 1.0 ClientWindow.qml
 WindowControls 1.0 WindowControls.qml
+TrafficLights 1.0 TrafficLights.qml

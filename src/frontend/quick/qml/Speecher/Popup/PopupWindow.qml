@@ -11,9 +11,11 @@ import QtQuick.Window
 //
 // Only the capsule, and the offers over it, take the pointer. The host sets
 // the window's input region (the surface's on Wayland, the input shape on
-// X11) to inputRegion whenever it changes, frame by frame as the capsule
-// morphs, so clicks on the transparent room around them reach the app
-// underneath. Once the popup is empty, faded out, the host hides the window.
+// X11, the pointer's pass-through on macOS) to inputRegion whenever it
+// changes, frame by frame as the capsule morphs, so clicks on the
+// transparent room around them reach the app underneath. On Windows, where
+// the mask also clips drawing, it follows shadowRegion instead. Once the
+// popup is empty, faded out, the host hides the window.
 Window {
     id: window
 
@@ -22,6 +24,17 @@ Window {
     // What takes the pointer, in the window's coordinates.
     readonly property rect inputRegion: Qt.rect(popup.touchable.x + shadowRoom, popup.touchable.y + shadowRoom,
                                                popup.touchable.width, popup.touchable.height)
+    // The input region and as far as the capsule's shadow reaches, which is
+    // shifted down.
+    readonly property rect shadowRegion: {
+        const reach = popup.shadow.blur + popup.shadow.spread
+        const left = Math.min(inputRegion.x, popup.capsule.x + shadowRoom - reach)
+        const top = Math.min(inputRegion.y, popup.capsule.y + shadowRoom - reach + popup.shadow.offset.y)
+        const right = Math.max(inputRegion.x + inputRegion.width, popup.capsule.x + shadowRoom + popup.capsule.width + reach)
+        const bottom = Math.max(inputRegion.y + inputRegion.height,
+                                popup.capsule.y + shadowRoom + popup.capsule.height + reach + popup.shadow.offset.y)
+        return Qt.rect(left, top, right - left, bottom - top)
+    }
 
     width: Math.ceil(popup.largest.width) + shadowRoom * 2
     height: Math.ceil(popup.largest.height) + shadowRoom * 2

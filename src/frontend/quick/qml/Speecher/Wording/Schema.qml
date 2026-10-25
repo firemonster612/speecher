@@ -30,6 +30,10 @@ import "schema/updates.js" as Updates
 // hiddenWhen { id, equals } to fold it away while another row has a value.
 // needsBlur marks a row that is off and greyed, showing its disabledHelp,
 // where Appearance.canBlur is false; its saved value stays.
+// needs names what a row or an option needs of the computer, a System
+// property such as hasVirtualKeyboard; without it, its page and search leave
+// it out, and a choice left with one option leaves its row out (available,
+// options).
 // Custom rows may also carry wording for their own controls: emptyText and
 // addLabel for lists, disabledHelp for help shown while the row is greyed
 // out, and offHelp for help shown while its switch is off.
@@ -62,9 +66,20 @@ QtObject {
     }
     function page(id) { return _pagesById[id] || { id: id, title: id, icon: "circle" } }
 
-    // Ranks pages and rows against query. Every word has to match somewhere;
-    // matches in the label count most, then keywords, section and help.
-    function search(query, limit) {
+    // Whether this computer has the row; has(need) answers for a needs.
+    function available(spec, has) {
+        if (spec.needs && !has(spec.needs)) return false
+        return spec.kind !== "choice" || options(spec, has).length > 1
+    }
+    // The row's options this computer has.
+    function options(spec, has) {
+        return (spec.options || []).filter(o => !o.needs || has(o.needs))
+    }
+
+    // Ranks pages and the rows this computer has (available) against query.
+    // Every word has to match somewhere; matches in the label count most,
+    // then keywords, section and help.
+    function search(query, limit, has) {
         const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0)
         if (!words.length) return []
         const score = (fields) => {
@@ -90,9 +105,9 @@ QtObject {
         }
         for (const r of rows) {
             const p = page(r.page)
-            const optionText = (r.options || []).map(o => o.label).join(" ")
+            const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
-            if (s > 0) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: p.icon,
+            if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: p.icon,
                                       trail: p.title + (r.section ? ", " + r.section : ""), score: s })
         }
         results.sort((a, b) => b.score - a.score)

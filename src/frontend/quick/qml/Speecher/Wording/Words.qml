@@ -87,6 +87,7 @@ QtObject {
         minimize: "Minimize",
         maximize: "Maximize",
         restore: "Restore",
+        zoom: "Zoom",
         close: "Close"
     })
     // The updater's states and actions, as the Updates page and the popup's

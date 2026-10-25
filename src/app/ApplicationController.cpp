@@ -19,6 +19,7 @@
 #include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
@@ -130,21 +131,24 @@ ApplicationController::ApplicationController(bool popupOnly,
         m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
     }
     m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
-    m_settings->setLaunchAtLoginReconciler(
-        [this](bool enabled, QString *error) {
-            const bool accepted = m_platform->setLaunchAtLogin(enabled, error);
-            if (accepted) {
-                setLaunchAtLoginAccepted(true);
-            }
-            return accepted;
-        });
     // The refusal has no window of its own: it becomes the caution the settings
     // surface draws beside the toggle, whenever that surface is next built.
     connect(m_settings,
             &SettingsStore::launchAtLoginReconciliationFailed,
             this,
             [this](const QString &) { setLaunchAtLoginAccepted(false); });
-    m_settings->reconcileLaunchAtLogin();
+    // The login item is the person's, which an isolated instance leaves alone.
+    if (!SettingsKeys::isolatedInstance()) {
+        m_settings->setLaunchAtLoginReconciler(
+            [this](bool enabled, QString *error) {
+                const bool accepted = m_platform->setLaunchAtLogin(enabled, error);
+                if (accepted) {
+                    setLaunchAtLoginAccepted(true);
+                }
+                return accepted;
+            });
+        m_settings->reconcileLaunchAtLogin();
+    }
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::activated,
             this,

@@ -90,9 +90,8 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        // A row that loads with a warning, such as an absent value assigned to
-        // a string, is a broken row.
-        QTest::failOnWarning();
+        // A row that loads with a warning is a broken row.
+        failOnUnexpectedWarnings();
     }
 
     void setSavesThroughTheStore()

@@ -11,19 +11,16 @@
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
-#ifdef Q_OS_LINUX
-#include "app/LinuxTrayIcon.h"
+#include "app/TrayIcon.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacOpenRequests.h"
 #endif
 #ifdef Q_OS_WIN
-#include "platform/win/WinSessionEnd.h"
+#include "platform/win/WinBroadcasts.h"
 #endif
 
-#ifdef Q_OS_LINUX
 #include <QApplication>
-#else
-#include <QGuiApplication>
-#endif
 #include <QDateTime>
 #ifdef Q_OS_WIN
 #include <QDeadlineTimer>
@@ -106,9 +103,9 @@ static void migrateSettings()
 {
     constexpr auto oldOrganization = "local.speecher";
     QSettings newSettings(QString::fromLatin1(SettingsKeys::Organization),
-                          QString::fromLatin1(SettingsKeys::Application));
+                          SettingsKeys::application());
     QSettings oldSettings(QString::fromLatin1(oldOrganization),
-                          QString::fromLatin1(SettingsKeys::Application));
+                          SettingsKeys::application());
     QString error;
     if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
         qWarning().noquote() << error;
@@ -452,7 +449,7 @@ static bool microphoneAccessGranted(const PlatformComposition &platform, QObject
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setApplicationName(QStringLiteral("speecher"));
+    QCoreApplication::setApplicationName(SettingsKeys::application());
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.firemonster612.speecher"));
     QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
     const QStringList arguments = commandLineArguments(argc, argv);
@@ -525,15 +522,13 @@ int main(int argc, char **argv)
         return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
-#ifdef Q_OS_LINUX
     // Qt Widgets, for the tray icon's QSystemTrayIcon.
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
     AppImageUpdater::waitForRestartParent();
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }
-#else
-    QGuiApplication app(argc, argv);
 #endif
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
@@ -545,11 +540,9 @@ int main(int argc, char **argv)
                      &app,
                      &QCoreApplication::quit,
                      Qt::QueuedConnection);
-#ifdef Q_OS_LINUX
     // From launch: in daemon mode it is the only sign the process is running
     // and the global shortcut has something to reach.
-    LinuxTrayIcon tray(&controller);
-#endif
+    TrayIcon tray(&controller);
 #ifdef Q_OS_WIN
     win::quitWhenWindowsEndsSession(&controller, [&controller] {
         // Queued: Windows waits on the message until this returns.
@@ -607,11 +600,17 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-#ifdef Q_OS_LINUX
     // After the socket, so a launch that only hands its command to the
     // running instance never builds a QML engine. Opens no window until the
     // controller asks for one.
-    QuickFrontEnd frontEnd(&controller);
+    QuickFrontEnd frontEnd(&controller, &tray);
+#ifdef Q_OS_MACOS
+    // A click on the Dock icon, or opening Speecher again, brings up Main, as
+    // a second launch does elsewhere.
+    mac::onReopen(&controller, [&controller] { controller.showMain(); });
+    // Files take the command line's route, so a file opened before setup is
+    // finished waits for setup the same way.
+    mac::onOpenFile(&controller, [&controller](const QString &path) { controller.showTranscribeFiles({path}); });
 #endif
 
     if (opensSetupAtLaunch(decision, controller.setupPending())) {

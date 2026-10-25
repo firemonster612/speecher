@@ -113,7 +113,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        QTest::failOnWarning();
+        failOnUnexpectedWarnings();
     }
 
     // Each provider says where it stands as core judges it: a sign-in nobody

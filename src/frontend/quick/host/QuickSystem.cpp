@@ -2,9 +2,13 @@
 
 #include "app/ApplicationController.h"
 #include "app/PhoneTransfer.h"
+#include "app/PlatformComposition.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
+#ifdef Q_OS_LINUX
 #include "platform/LinuxDesktopIntegration.h"
+#endif
 
 #include <QClipboard>
 #include <QDebug>
@@ -23,12 +27,7 @@ namespace {
 
 QuickSystem *g_instance = nullptr;
 
-using Operation = VirtualKeyboardSetup::Operation;
-using Test = VirtualKeyboardSetup::Test;
-using Failure = VirtualKeyboardSetup::Failure;
-
 const QString accessibilityId = QStringLiteral("desktopAccessibility");
-const QString keyboardId = QStringLiteral("virtualKeyboardHealth");
 
 QVariantMap checkEntry(const char *id, const char *state, const char *reason, const char *fix = "")
 {
@@ -38,10 +37,32 @@ QVariantMap checkEntry(const char *id, const char *state, const char *reason, co
             {QStringLiteral("fix"), QLatin1String(fix)}};
 }
 
-// The microphone needs no grant: the Linux desktop lets every app record.
-QVariantMap microphoneCheck()
+const QString microphoneId = QStringLiteral("microphoneAccess");
+
+// What the privacy settings say; where Speecher can't change them itself,
+// the fix opens them.
+QVariantMap microphoneCheck(const PlatformComposition *platform)
 {
-    return checkEntry("microphoneAccess", "ok", "notAsked");
+    const char *id = "microphoneAccess";
+    switch (platform->microphoneAccess()) {
+    case MicrophoneAccess::NotAsked:
+        return checkEntry(id, "ok", "notAsked");
+    case MicrophoneAccess::NotDetermined:
+        return checkEntry(id, "ok", "notDetermined");
+    case MicrophoneAccess::Denied:
+        return checkEntry(id, "off", "denied", "openSettings");
+    case MicrophoneAccess::Restricted:
+        return checkEntry(id, "off", "restricted");
+    case MicrophoneAccess::DeviceOff:
+        return checkEntry(id, "off", "deviceOff", "openSettings");
+    case MicrophoneAccess::AppsOff:
+        return checkEntry(id, "off", "appsOff", "openSettings");
+    case MicrophoneAccess::DesktopAppsOff:
+        return checkEntry(id, "off", "desktopAppsOff", "openSettings");
+    case MicrophoneAccess::Allowed:
+        break;
+    }
+    return checkEntry(id, "ok", "allowed");
 }
 
 QVariantMap accessibilityCheck(const ApplicationController *controller)
@@ -71,6 +92,18 @@ QVariantMap shortcutCheck(const ApplicationController *controller)
     }
     return checkEntry("globalShortcuts", "ok", "registered");
 }
+
+QVariantMap failureEntry(const QString &step, const QString &error)
+{
+    return {{QStringLiteral("step"), step}, {QStringLiteral("error"), error}};
+}
+
+#ifdef Q_OS_LINUX
+using Operation = VirtualKeyboardSetup::Operation;
+using Test = VirtualKeyboardSetup::Test;
+using Failure = VirtualKeyboardSetup::Failure;
+
+const QString keyboardId = QStringLiteral("virtualKeyboardHealth");
 
 QVariantMap virtualKeyboardCheck(const VirtualKeyboardSetup &keyboard)
 {
@@ -143,11 +176,6 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
-QVariantMap failureEntry(const QString &step, const QString &error)
-{
-    return {{QStringLiteral("step"), step}, {QStringLiteral("error"), error}};
-}
-
 QString partName(RemovalStep::Part part)
 {
     switch (part) {
@@ -195,6 +223,7 @@ QVariantMap reportMap(const RemovalReport &report)
             {QStringLiteral("settingsDeleted"), report.settingsDeleted()},
             {QStringLiteral("programFile"), report.programFile}};
 }
+#endif
 
 QString phoneStateName(PhoneTransferState state)
 {
@@ -215,6 +244,7 @@ QString phoneStateName(PhoneTransferState state)
 
 } // namespace
 
+#ifdef Q_OS_LINUX
 QuickSystem::QuickSystem(ApplicationController *controller, QObject *parent)
     : QuickSystem(controller, VirtualKeyboardSetup::System{}, SpeecherRemoval::linuxSteps(controller), parent)
 {
@@ -226,12 +256,18 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
     , m_controller(controller)
     , m_virtualKeyboard(controller->settings(), std::move(virtualKeyboard))
     , m_removal(std::move(removal))
+#else
+QuickSystem::QuickSystem(ApplicationController *controller, QObject *parent)
+    : QObject(parent)
+    , m_controller(controller)
+#endif
 {
     g_instance = this;
     connect(controller, &ApplicationController::accessibilityStateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
+#ifdef Q_OS_LINUX
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::changed);
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::startAskedRemoval);
     connect(&m_virtualKeyboard, &VirtualKeyboardSetup::failed, this, [this](Failure failure, const QString &error) {
@@ -242,12 +278,17 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
         m_removalReport = reportMap(report);
         emit removalChanged();
     });
+#endif
     // What changed while Speecher was in the background, such as a service
-    // started by hand or a new sign-in, shows when it comes back.
+    // started by hand, a new sign-in or the microphone allowed in the
+    // system's settings, shows when it comes back.
     connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
         if (state == Qt::ApplicationActive) {
+#ifdef Q_OS_LINUX
             m_virtualKeyboard.refresh();
+#endif
             m_controller->refreshAccessibilityState();
+            emit changed();
         }
     });
 }
@@ -273,9 +314,13 @@ bool QuickSystem::accessibility() const
 
 QVariantList QuickSystem::checks() const
 {
+    QList<QVariantMap> entries{microphoneCheck(m_controller->platform()), accessibilityCheck(m_controller),
+                               shortcutCheck(m_controller)};
+#ifdef Q_OS_LINUX
+    entries.append(virtualKeyboardCheck(m_virtualKeyboard));
+#endif
     QVariantList checks;
-    for (QVariantMap check : {microphoneCheck(), accessibilityCheck(m_controller), shortcutCheck(m_controller),
-                              virtualKeyboardCheck(m_virtualKeyboard)}) {
+    for (QVariantMap check : entries) {
         check.insert(QStringLiteral("failures"), m_failures.value(check.value(QStringLiteral("id")).toString()));
         checks.append(check);
     }
@@ -285,6 +330,7 @@ QVariantList QuickSystem::checks() const
 QStringList QuickSystem::virtualKeyboardActions() const
 {
     QStringList actions;
+#ifdef Q_OS_LINUX
     if (m_virtualKeyboard.operation() != Operation::None) {
         return actions;
     }
@@ -294,12 +340,17 @@ QStringList QuickSystem::virtualKeyboardActions() const
     if (m_virtualKeyboard.status().speecherManagedSetupInstalled) {
         actions.append(QStringLiteral("remove"));
     }
+#endif
     return actions;
 }
 
 QString QuickSystem::virtualKeyboardTest() const
 {
+#ifdef Q_OS_LINUX
     return testName(m_virtualKeyboard.test());
+#else
+    return QStringLiteral("off");
+#endif
 }
 
 QStringList QuickSystem::pasteRoute() const
@@ -311,9 +362,29 @@ QStringList QuickSystem::pasteRoute() const
                                     rule && rule->enabled ? rule->method : PasteMethod::ClipboardOnly);
 }
 
+bool QuickSystem::hasVirtualKeyboard() const
+{
+    return OutputMethod::hasVirtualKeyboard;
+}
+
 bool QuickSystem::canOpenShortcutSettings() const
 {
+#ifdef Q_OS_LINUX
     return !desktopShortcutSettingsCommand().isEmpty();
+#else
+    return false;
+#endif
+}
+
+bool QuickSystem::canRemove() const
+{
+    // Elsewhere Speecher sets up nothing outside its own app, which goes the
+    // platform's way: the Trash, or Windows' uninstaller.
+#ifdef Q_OS_LINUX
+    return true;
+#else
+    return false;
+#endif
 }
 
 QString QuickSystem::computerName() const
@@ -338,7 +409,11 @@ QVariantMap QuickSystem::phoneBundle() const
 
 bool QuickSystem::removing() const
 {
+#ifdef Q_OS_LINUX
     return m_removalAsked || m_removal.running();
+#else
+    return false;
+#endif
 }
 
 QVariantMap QuickSystem::removal() const
@@ -377,6 +452,10 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         return;
     }
     clearFailures(id);
+    if (id == microphoneId) {
+        m_controller->platform()->openMicrophoneSettings();
+        return;
+    }
     if (id == accessibilityId) {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
@@ -385,6 +464,7 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         }
         return;
     }
+#ifdef Q_OS_LINUX
     if (action == QLatin1String("setUp")) {
         m_virtualKeyboard.setUp(afterSetUp);
     } else if (action == QLatin1String("start")) {
@@ -392,6 +472,9 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
     } else if (action == QLatin1String("enable")) {
         m_virtualKeyboard.beginTest();
     }
+#else
+    Q_UNUSED(afterSetUp);
+#endif
 }
 
 void QuickSystem::clearFailures(const QString &id)
@@ -403,36 +486,48 @@ void QuickSystem::clearFailures(const QString &id)
 
 void QuickSystem::disableVirtualKeyboard()
 {
+#ifdef Q_OS_LINUX
     clearFailures(keyboardId);
     m_virtualKeyboard.disable();
+#endif
 }
 
 void QuickSystem::removeVirtualKeyboard()
 {
+#ifdef Q_OS_LINUX
     if (removing()) {
         return;
     }
     clearFailures(keyboardId);
     m_virtualKeyboard.remove();
+#endif
 }
 
 void QuickSystem::runVirtualKeyboardTest()
 {
+#ifdef Q_OS_LINUX
     if (removing()) {
         return;
     }
     clearFailures(keyboardId);
     m_virtualKeyboard.runTest();
+#endif
 }
 
 void QuickSystem::virtualKeyboardTestReceived(const QString &text)
 {
+#ifdef Q_OS_LINUX
     m_virtualKeyboard.receivedTestText(text);
+#else
+    Q_UNUSED(text);
+#endif
 }
 
 void QuickSystem::cancelVirtualKeyboardTest()
 {
+#ifdef Q_OS_LINUX
     m_virtualKeyboard.cancelTest();
+#endif
 }
 
 void QuickSystem::copy(const QString &text)
@@ -454,6 +549,7 @@ void QuickSystem::open(const QString &target)
 
 void QuickSystem::openShortcutSettings()
 {
+#ifdef Q_OS_LINUX
     QStringList command = desktopShortcutSettingsCommand();
     if (command.isEmpty()) {
         return;
@@ -462,6 +558,7 @@ void QuickSystem::openShortcutSettings()
     if (!QProcess::startDetached(program, command)) {
         qWarning().noquote() << "System.openShortcutSettings: could not start" << program;
     }
+#endif
 }
 
 void QuickSystem::startPhoneTransfer()
@@ -487,14 +584,20 @@ void QuickSystem::stopPhoneTransfer()
 
 void QuickSystem::uninstall(bool keepSettings)
 {
+#ifdef Q_OS_LINUX
     if (removing()) {
         return;
     }
     m_removalAsked = keepSettings ? RemovalAsked::KeepSettings : RemovalAsked::DeleteSettings;
     startAskedRemoval();
     emit removalChanged();
+#else
+    Q_UNUSED(keepSettings);
+    qWarning().noquote() << "System.uninstall: Speecher removes itself only on Linux";
+#endif
 }
 
+#ifdef Q_OS_LINUX
 void QuickSystem::startAskedRemoval()
 {
     // The keyboard's setup saves settings and runs the helper removal runs
@@ -506,6 +609,7 @@ void QuickSystem::startAskedRemoval()
     m_virtualKeyboard.cancelTest();
     m_removal.start(deleteSettings);
 }
+#endif
 
 void QuickSystem::quit()
 {

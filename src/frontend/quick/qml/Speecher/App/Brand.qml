@@ -5,7 +5,8 @@ import Speecher.Controls
 // The mark and the window's name in the top left of the title strip, for the
 // main window and setup alike. Put it at the window frame's top left: the
 // mark sits titleBarInset from both edges, so its top and side margins are
-// equal, and the words beside it are centred in the strip.
+// equal, and the words beside it are centred in the strip. On macOS it
+// starts after the traffic lights.
 Item {
     id: brand
 
@@ -18,7 +19,7 @@ Item {
 
     BrandMark {
         id: mark
-        x: Theme.titleBarInset
+        x: Theme.titleBarLead + Theme.titleBarInset
         y: Theme.titleBarInset
         width: Theme.titleBarButton
         height: Theme.titleBarButton

@@ -117,7 +117,7 @@ void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString 
 
 SettingsCodecs::SettingsCodecs()
     : m_settings(QString::fromLatin1(SettingsKeys::Organization),
-                 QString::fromLatin1(SettingsKeys::Application))
+                 SettingsKeys::application())
 {
 }
 
@@ -484,7 +484,7 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
     // settings in the registry, so its lock goes in the per-user temp folder.
     // Not <file>.lock, which QSettings takes for itself while it syncs.
 #ifdef Q_OS_WIN
-    QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
+    QLockFile lock(QDir::temp().filePath(SettingsKeys::application() + QStringLiteral("-vocabulary.lock")));
 #else
     QLockFile lock(settings.m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
 #endif
@@ -1186,7 +1186,11 @@ void SettingsCodecs::setAnthropicFastMode(bool value)
 
 QString SettingsCodecs::outputMethod() const
 {
-    return OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
+    const QString method = OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
+    if (!OutputMethod::hasVirtualKeyboard && method == QString::fromLatin1(OutputMethod::Ydotool)) {
+        return QString::fromLatin1(OutputMethod::Automatic);
+    }
+    return method;
 }
 
 void SettingsCodecs::setOutputMethod(const QString &value)

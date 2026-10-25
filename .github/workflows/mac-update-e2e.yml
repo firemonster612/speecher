@@ -27,7 +27,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: 6.8.3
+          version: 6.11.3
           arch: clang_64
           modules: qtmultimedia qtwebsockets
 
@@ -91,7 +91,8 @@ jobs:
             mkdir -p "evidence/fixtures/$fixture"
             cp build/speecher.app/Contents/Info.plist "evidence/fixtures/$fixture/Info.plist"
             test "$(plutil -extract SUPublicEDKey raw build/speecher.app/Contents/Info.plist)" = "$public_key"
-            if ! bash "$RUNNER_TEMP/macos-packaging/build-dmg.sh" build; then
+            # The copy outside the checkout finds the UI's QML through it.
+            if ! SPEECHER_SOURCE_DIR="$PWD" bash "$RUNNER_TEMP/macos-packaging/build-dmg.sh" build; then
               cp build/speecher-dmg.log "evidence/fixtures/$fixture/packaging.log"
               exit 1
             fi

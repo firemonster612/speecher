@@ -25,7 +25,7 @@ SchemaRow {
         id: controls
         spacing: Theme.space3
         StateText {
-            stateId: row.check.state
+            stateId: row.check.state ?? ""
             text: Health.status(row.check)
             anchors.verticalCenter: parent.verticalCenter
         }

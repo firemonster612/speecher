@@ -17,6 +17,7 @@
 #include "frontend/quick/host/QuickUpdates.h"
 
 #include <QFile>
+#include <QHash>
 #include <QJSValue>
 #include <QMutex>
 #include <QMutexLocker>
@@ -36,6 +37,7 @@ using namespace speecher;
 
 namespace {
 
+#ifdef Q_OS_LINUX
 YdotoolSetupStatus status(YdotoolSetupState state, bool managed = true)
 {
     YdotoolSetupStatus status;
@@ -132,6 +134,25 @@ QVariantMap failure(const char *step, const QString &error)
 {
     return {{QStringLiteral("step"), QLatin1String(step)}, {QStringLiteral("error"), error}};
 }
+#endif
+
+// System with stand-ins for what it would touch on the computer: on Linux
+// the virtual keyboard and removal, which it has only there.
+struct StandInSystem {
+    explicit StandInSystem(ApplicationController *controller)
+#ifdef Q_OS_LINUX
+        : system(controller, keyboard.system(), quietRemoval())
+#else
+        : system(controller)
+#endif
+    {
+    }
+
+#ifdef Q_OS_LINUX
+    FakeKeyboard keyboard;
+#endif
+    QuickSystem system;
+};
 
 // A QML var property as plain values.
 QVariant plain(const QVariant &value)
@@ -164,6 +185,7 @@ private slots:
         settings.raw().clear();
     }
 
+#ifdef Q_OS_LINUX
     // The keyboard is set up through the helper, then waits for the typing
     // test, and turns on only when the field gets exactly the test text.
     void theVirtualKeyboardTurnsOnOnlyAfterTheTypingTestPasses()
@@ -485,12 +507,14 @@ private slots:
         QVERIFY(!window->findChild<QQuickItem *>(QStringLiteral("sidebar"))->isVisible());
     }
 
+#endif
+
     // The code exists only between start and stop, and a new one replaces it.
     void thePhoneCodeLivesWhileItShows()
     {
         ApplicationController controller(true);
-        FakeKeyboard keyboard;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller);
+        QuickSystem &system = standIn.system;
         QCOMPARE(system.phoneTransfer(), QString());
 
         system.startPhoneTransfer();
@@ -517,8 +541,8 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        FakeKeyboard keyboard;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller);
+        QuickSystem &system = standIn.system;
         // General clears Insights' history and reads Appearance, as the host
         // always has them.
         QuickInsights insights(&controller);
@@ -550,6 +574,7 @@ private slots:
         }
     }
 
+#ifdef Q_OS_LINUX
     // A row follows its check as it changes, and a fix that fails says why
     // in the row, as the setup assistant's row does.
     void aHealthRowFollowsItsCheck()
@@ -629,6 +654,112 @@ private slots:
         QCOMPARE(plain(settled->property("results")).toList(), (QVariantList{true, true, false, false, false}));
     }
 
+#endif
+
+#ifndef Q_OS_LINUX
+    // Off Linux there is no virtual keyboard to check or set up, and no
+    // removal: General and setup leave them out.
+    void theVirtualKeyboardAndRemovalAreLinuxOnly()
+    {
+        ApplicationController controller(true);
+        QuickSystem system(&controller);
+        QStringList checkIds;
+        for (const QVariant &check : system.checks()) {
+            checkIds.append(check.toMap().value(QStringLiteral("id")).toString());
+        }
+        QCOMPARE(checkIds, (QStringList{QStringLiteral("microphoneAccess"), QStringLiteral("desktopAccessibility"),
+                                        QStringLiteral("globalShortcuts")}));
+        QVERIFY(!system.hasVirtualKeyboard());
+        QVERIFY(!system.canRemove());
+    }
+#endif
+
+    // What this computer lacks, the virtual keyboard and removal off Linux,
+    // is gone alike from its pages, search and setup: General's keyboard
+    // row and Remove Speecher, Pasting's keyboard row and its Virtual
+    // keyboard only choice, which leaves Paste with nothing to choose.
+    void whatTheComputerLacksIsGoneFromPagesSearchAndSetup()
+    {
+#ifdef Q_OS_LINUX
+        const bool onLinux = true;
+#else
+        const bool onLinux = false;
+#endif
+        ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickSettings settings(&controller);
+        StandInSystem standIn(&controller);
+        // General reads Insights and Appearance, Pasting and setup Models,
+        // setup Audio, as the host always has them.
+        QuickInsights insights(&controller);
+        QuickAppearance appearance(&controller);
+        QuickModels models(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QQmlEngine engine;
+
+        // Each row's id and whether it shows, on the page in a window.
+        const auto rowsShown = [&engine](const QByteArray &page) {
+            const std::unique_ptr<QObject> created = createQml(engine, R"(
+                import QtQuick
+                Window { width: 1000; height: 900; visible: true; )" + page + R"( { anchors.fill: parent } }
+            )", "qrc:/qt/qml/Speecher/App/pages/Test.qml");
+            auto *window = qobject_cast<QQuickWindow *>(created.get());
+            QHash<QString, bool> shown;
+            if (!window || !QTest::qWaitForWindowExposed(window)) {
+                return shown;
+            }
+            QList<QQuickItem *> items{window->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                const QString rowId = item->property("rowId").toString();
+                if (!rowId.isEmpty()) {
+                    shown[rowId] = item->isVisible();
+                }
+            }
+            return shown;
+        };
+        const QHash<QString, bool> general = rowsShown("GeneralPage");
+        QCOMPARE(general.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
+        QCOMPARE(general.value(QStringLiteral("removeSpeecher")), onLinux);
+        QVERIFY(general.value(QStringLiteral("microphoneAccess")));
+        const QHash<QString, bool> pasting = rowsShown("PastingPage");
+        QCOMPARE(pasting.value(QStringLiteral("virtualKeyboard")), onLinux);
+        QCOMPARE(pasting.value(QStringLiteral("outputMethod")), onLinux);
+        QVERIFY(pasting.value(QStringLiteral("globalPasteRule")));
+
+        const std::unique_ptr<QObject> probe = createQml(engine, R"(
+            import QtQuick
+            import Speecher.Backend
+            import Speecher.Wording
+            QtObject {
+                readonly property var keyboard: Schema.search("keyboard", 50, need => System[need]).map(r => r.id)
+                readonly property var remove: Schema.search("remove", 50, need => System[need]).map(r => r.id)
+                readonly property var pasteWith: Schema.options(Schema.row("outputMethod"), need => System[need]).map(o => o.id)
+            }
+        )");
+        QVERIFY(probe);
+        const QStringList keyboard = plain(probe->property("keyboard")).toStringList();
+        QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboardHealth")), onLinux);
+        QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboard")), onLinux);
+        QCOMPARE(keyboard.contains(QStringLiteral("outputMethod")), onLinux);
+        QCOMPARE(plain(probe->property("remove")).toStringList().contains(QStringLiteral("removeSpeecher")), onLinux);
+        const QStringList pasteWith = onLinux ? QStringList{QStringLiteral("automatic"), QStringLiteral("ydotool")}
+                                              : QStringList{QStringLiteral("automatic")};
+        QCOMPARE(plain(probe->property("pasteWith")).toStringList(), pasteWith);
+
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+        const std::unique_ptr<QObject> choices(component.create());
+        QVERIFY2(choices, qPrintable(component.errorString()));
+        QStringList stepIds;
+        for (const QVariant &step : plain(choices->property("steps")).toList()) {
+            stepIds.append(step.toMap().value(QStringLiteral("id")).toString());
+        }
+        QCOMPARE(stepIds.contains(QStringLiteral("delivery")), onLinux);
+        QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
+    }
+
     // The Pasting page's app type rows need accessibility to know the app.
     void pastingTypeRowsFollowAccessibility()
     {
@@ -636,8 +767,8 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        FakeKeyboard keyboard;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller);
+        QuickSystem &system = standIn.system;
         // The page's Library reads Models, as the host always has one.
         QuickModels models(&controller);
         QQmlEngine engine;

@@ -86,9 +86,12 @@ SecretRowWindow showSecretRow(QQmlEngine &engine, const QString &rowId = QString
         import QtQuick
         import Speecher.App
         Window {
-            property alias rowId: row.rowId
+            id: window
+            // Bound rather than an alias: Qt 6.10 doesn't count an initial
+            // property set through an alias as setting the required rowId.
+            property string rowId
             width: 640; height: 120; visible: true
-            SchemaRow { id: row; width: parent.width }
+            SchemaRow { rowId: window.rowId; width: parent.width }
         }
     )", QUrl());
     SecretRowWindow shown{std::unique_ptr<QObject>(component.createWithInitialProperties({{QStringLiteral("rowId"), rowId}}))};

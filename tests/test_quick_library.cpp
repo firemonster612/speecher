@@ -71,7 +71,7 @@ private slots:
     void init()
     {
         SettingsStore().raw().clear();
-        QTest::failOnWarning();
+        failOnUnexpectedWarnings();
     }
 
     void addedProfilesFollowTheBuiltInsAndNeedAFreeName()

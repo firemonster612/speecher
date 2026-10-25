@@ -30,6 +30,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <AppKit/AppKit.h>
 #import <AudioToolbox/AudioHardwareService.h>
+#import <AVFoundation/AVFoundation.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
 #import <Security/SecCode.h>
@@ -42,6 +43,8 @@ namespace {
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+constexpr auto microphonePaneUrl =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 
 // value as one sh word, inside single quotes.
 QString shellQuote(QString value)
@@ -182,6 +185,26 @@ void MacComposition::requestMicrophoneAccess(QObject *context, std::function<voi
                             [completed = std::move(completed)](const QPermission &permission) {
                                 completed(permission.status() == Qt::PermissionStatus::Granted);
                             });
+}
+
+MicrophoneAccess MacComposition::microphoneAccess() const
+{
+    switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]) {
+    case AVAuthorizationStatusAuthorized:
+        return MicrophoneAccess::Allowed;
+    case AVAuthorizationStatusNotDetermined:
+        return MicrophoneAccess::NotDetermined;
+    case AVAuthorizationStatusRestricted:
+        return MicrophoneAccess::Restricted;
+    case AVAuthorizationStatusDenied:
+        break;
+    }
+    return MicrophoneAccess::Denied;
+}
+
+void MacComposition::openMicrophoneSettings() const
+{
+    QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
 }
 
 MediaController *MacComposition::createMediaController(QObject *parent) const

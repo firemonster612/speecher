@@ -1895,13 +1895,18 @@ private slots:
     void refinersUseRemoteCliproxyServerWhenBaseUrlSet()
     {
         QFETCH(QString, path);
-        QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
+        // A server each, so a connection one refiner left open can't be taken
+        // for the other's.
+        QTcpServer claudeServer;
+        QTcpServer codexServer;
+        QVERIFY(claudeServer.listen(QHostAddress::LocalHost));
+        QVERIFY(codexServer.listen(QHostAddress::LocalHost));
+        const auto baseUrl = [&path](const QTcpServer &server) {
+            return QStringLiteral("http://127.0.0.1:%1%2").arg(server.serverPort()).arg(path);
+        };
 
         RefinementSettings settings;
-        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:%1%2")
-                                        .arg(server.serverPort())
-                                        .arg(path);
+        settings.cliproxyBaseUrl = baseUrl(claudeServer);
         settings.cliproxyApiKey = QStringLiteral("proxy-key");
         RefinementContext context;
 
@@ -1911,8 +1916,8 @@ private slots:
         settings.anthropicAuthMode = QStringLiteral("cliproxy");
         AnthropicTranscriptRefiner anthropic;
         anthropic.refine(QStringLiteral("hello there"), {}, context, settings);
-        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
-        QTcpSocket *claudeSocket = server.nextPendingConnection();
+        QTRY_VERIFY_WITH_TIMEOUT(claudeServer.hasPendingConnections(), 1000);
+        QTcpSocket *claudeSocket = claudeServer.nextPendingConnection();
         QVERIFY(claudeSocket);
         const QByteArray claudeRequest = readHttpRequest(claudeSocket, 1000);
         QVERIFY(claudeRequest.startsWith(QByteArrayLiteral("POST /v1/messages")));
@@ -1920,11 +1925,12 @@ private slots:
         anthropic.cancel();
         claudeSocket->close();
 
+        settings.cliproxyBaseUrl = baseUrl(codexServer);
         settings.openAiAuthMode = QStringLiteral("cliproxy");
         OpenAiTranscriptRefiner openAi(nullptr);
         openAi.refine(QStringLiteral("hello there"), {}, context, settings);
-        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
-        QTcpSocket *codexSocket = server.nextPendingConnection();
+        QTRY_VERIFY_WITH_TIMEOUT(codexServer.hasPendingConnections(), 1000);
+        QTcpSocket *codexSocket = codexServer.nextPendingConnection();
         QVERIFY(codexSocket);
         const QByteArray codexRequest = readHttpRequest(codexSocket, 1000);
         QVERIFY(codexRequest.startsWith(QByteArrayLiteral("POST /v1/responses")));

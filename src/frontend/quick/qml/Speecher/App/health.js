@@ -6,7 +6,14 @@
 
 var words = {
     microphoneAccess: {
-        notAsked: { status: "Allowed", detail: "Your desktop lets apps record without asking." }
+        notAsked: { status: "Allowed", detail: "Your desktop lets apps record without asking." },
+        allowed: { status: "Allowed", detail: "Speecher can use your microphone." },
+        notDetermined: { status: "Not asked yet", detail: "macOS asks the first time Speecher listens." },
+        denied: { status: "Off", detail: "Turned off for Speecher in Privacy & Security, so dictation hears nothing.", fix: "Open settings" },
+        restricted: { status: "Blocked", detail: "A profile or Screen Time on this Mac keeps apps from the microphone." },
+        deviceOff: { status: "Off", detail: "Microphone access is off for this device in Windows' privacy settings.", fix: "Open settings" },
+        appsOff: { status: "Off", detail: "Windows' privacy settings keep every app from the microphone.", fix: "Open settings" },
+        desktopAppsOff: { status: "Off", detail: "Windows' privacy settings keep desktop apps, Speecher among them, from the microphone.", fix: "Open settings" }
     },
     desktopAccessibility: {
         unsupported: { status: "Not available", detail: "This Speecher build does not include desktop accessibility." },

@@ -38,7 +38,8 @@ var rows = [
     { id: "globalShortcuts", page: "general", section: "Permissions & health", kind: "custom",
       label: "Global shortcuts", keywords: "hotkey portal kde registered permission" },
     { id: "virtualKeyboardHealth", page: "general", section: "Permissions & health", kind: "custom",
-      label: "Virtual keyboard", keywords: "typing uinput ydotool delivery paste password" },
+      label: "Virtual keyboard", keywords: "typing uinput ydotool delivery paste password",
+      needs: "hasVirtualKeyboard" },
     { id: "runSetup", page: "general", section: "Permissions & health", kind: "action",
       label: "Setup assistant", help: "Go through the first-run steps again.",
       actionLabel: "Run setup", keywords: "wizard onboarding first run" },
@@ -60,5 +61,5 @@ var rows = [
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",
       help: "Removes the app menu entry, the speecher command, the icon and the Global Shortcut.",
-      keywords: "uninstall delete appimage" }
+      keywords: "uninstall delete appimage", needs: "canRemove" }
 ];

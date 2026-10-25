@@ -13,6 +13,14 @@ inline constexpr auto MacPaste = "mac-paste";
 inline constexpr auto WinPaste = "win-paste";
 inline constexpr auto QtClipboard = "qt-clipboard";
 
+// Whether this platform has the virtual keyboard Ydotool pastes with. Only
+// Linux does; elsewhere a saved Ydotool reads as Automatic.
+#ifdef Q_OS_LINUX
+inline constexpr bool hasVirtualKeyboard = true;
+#else
+inline constexpr bool hasVirtualKeyboard = false;
+#endif
+
 QStringList all();
 bool isValid(const QString &method);
 QString normalized(const QString &method);

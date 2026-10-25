@@ -18,6 +18,8 @@ public:
     AudioInput *createRecordingAudioInput(SettingsStore *settings, QObject *parent) const override;
     bool recordsSystemAudio() const override;
     AudioInput *createSystemAudioInput(QObject *parent) const override;
+    MicrophoneAccess microphoneAccess() const override;
+    void openMicrophoneSettings() const override;
     MediaController *createMediaController(QObject *parent) const override;
     TargetProvider *createTargetProvider(QObject *parent) const override;
     ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override;

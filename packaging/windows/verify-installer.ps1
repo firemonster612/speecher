@@ -9,6 +9,12 @@ $InstallerPath = Resolve-Path $InstallerPath
 $InstallDir = Join-Path $env:TEMP "speecher-installer-test-$PID"
 $OriginalPath = $env:Path
 $OriginalPlatform = $env:QT_QPA_PLATFORM
+# Every Speecher started here, by this script, Setup or the uninstaller, is an
+# isolated instance with settings, data and a socket of its own. The person's
+# own Speecher, running or not, is left alone.
+$env:SPEECHER_INSTANCE = "verify-installer-$PID"
+$ProfileKey = "HKCU\Software\io.github.firemonster612\speecher-$env:SPEECHER_INSTANCE"
+$AppData = Join-Path $env:LOCALAPPDATA "io.github.firemonster612\speecher-$env:SPEECHER_INSTANCE"
 $App = $null
 
 # Starts the installed app and fails unless it is still running after startup.
@@ -51,7 +57,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
+    foreach ($Required in "LICENSE-AtkinsonHyperlegibleNext.txt", "LICENSE-Lucide.txt", "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
@@ -129,21 +135,36 @@ try {
 
     # Launch with only system directories on PATH to prove the install is
     # self-contained, on the runner's interactive desktop rather than the
-    # offscreen QPA platform.
+    # offscreen QPA platform. The Qt Quick UI loads from the deployed QML
+    # modules alone: Main opens, which SPEECHER_GRAB_MAIN_WINDOW saves once it
+    # is shown.
     $env:Path = "$env:SystemRoot;$env:SystemRoot\System32;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
     $env:QT_QPA_PLATFORM = $null
-    $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
-    Start-Sleep -Seconds 8
-    $App.Refresh()
+    $MainShot = Join-Path $env:TEMP "speecher-main-$PID.png"
+    $Log = Join-Path $AppData "cache\speecher.log"
+    # Main opens at launch on a profile that has finished setup.
+    $SetupKey = "Registry::$ProfileKey\app"
+    New-Item $SetupKey -Force | Out-Null
+    Set-ItemProperty $SetupKey setupCompleted "true"
+    $env:SPEECHER_GRAB_MAIN_WINDOW = $MainShot
+    $App = Start-Process $Exe -PassThru
+    $env:SPEECHER_GRAB_MAIN_WINDOW = $null
+    for ($Tries = 0; $Tries -lt 150 -and -not (Test-Path $MainShot) -and -not $App.HasExited; $Tries++) {
+        Start-Sleep -Milliseconds 200
+    }
     # A missing runtime dependency (Qt, a plugin) makes the process fault
-    # during startup, so surviving several seconds is the self-containment
-    # signal.
+    # during startup.
     if ($App.HasExited) {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
-    Write-Output "Installed application launched and stayed alive without Qt on PATH"
+    $QmlErrors = @(Select-String -Path $Log -SimpleMatch " QML: ")
+    if (-not (Test-Path $MainShot) -or $QmlErrors) {
+        throw "The installed Qt Quick UI did not open Main: $($QmlErrors -join "`n")"
+    }
+    Write-Output "Installed application opened Main without Qt on PATH"
     $App | Stop-Process -Force
     $App.WaitForExit()
+    Remove-Item $MainShot
 
     # A run that goes on in the background releases the launcher, so the
     # prompt comes back while Speecher keeps running.
@@ -294,6 +315,9 @@ public static class RestartManager {
     if (Test-Path $Uninstaller) {
         Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
     }
+    # Only once the uninstaller, which asks Speecher to quit, has run.
+    $env:SPEECHER_INSTANCE = $null
+    Remove-Item "Registry::$ProfileKey", $AppData -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path "HKCU:\Software\Classes\Speecher.AudioFile") {
         throw "Uninstall left the Speecher.AudioFile ProgId behind"
     }

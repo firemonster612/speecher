@@ -198,11 +198,11 @@ if(SPEECHER_RELEASE_BUILD)
 else()
   find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
 endif()
+# The Qt Quick UI (cmake/QuickUi.cmake). Its QML needs 6.9, for
+# QtQuick.Effects' RectangularShadow.
+find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
-  # The Qt Quick UI, Linux first (cmake/QuickUi.cmake). Its QML needs 6.9,
-  # for QtQuick.Effects' RectangularShadow.
-  find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
   if(SPEECHER_WITH_KDE)
     find_package(KF6GlobalAccel REQUIRED)
     find_package(LayerShellQt REQUIRED)
@@ -421,6 +421,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
+  src/platform/MicrophoneAccess.h
   src/platform/SessionKeyGrab.h
   src/platform/CorrectionDiff.h
   src/platform/FallbackPopupPositioner.h
@@ -501,8 +502,10 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacGlobalShortcutBinder.mm
   src/platform/mac/MacKeyCode.mm
   src/platform/mac/MacMediaController.cpp
+  src/platform/mac/MacClickThrough.mm
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
+  src/platform/mac/MacOpenRequests.mm
   src/platform/mac/MacWindowBackdrop.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
@@ -515,9 +518,11 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacSessionKeyGrab.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
+  src/platform/mac/MacClickThrough.h
   src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h
+  src/platform/mac/MacOpenRequests.h
   src/platform/mac/MacWindowBackdrop.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
@@ -536,7 +541,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinMediaController.cpp
   src/platform/win/WinRawKeyboard.cpp
   src/platform/win/WinScreenshotContextProvider.cpp
-  src/platform/win/WinSessionEnd.cpp
+  src/platform/win/WinBroadcasts.cpp
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
@@ -553,7 +558,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
   src/platform/win/WinMediaController.h
   src/platform/win/WinRawKeyboard.h
   src/platform/win/WinScreenshotContextProvider.h
-  src/platform/win/WinSessionEnd.h
+  src/platform/win/WinBroadcasts.h
   src/platform/win/WinSingleKeyShortcutBinder.h
   src/platform/win/WinSystemAudioInput.h
   src/platform/win/WinTargetProvider.h
@@ -1021,6 +1026,7 @@ if(APPLE)
   )
   target_link_libraries(speecher_app PRIVATE
     Sparkle::Sparkle
+    "-framework AVFoundation"
     "-framework CoreAudio"
     "-framework Security"
     "-framework ServiceManagement"
@@ -1049,14 +1055,27 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
 target_link_libraries(speecher PRIVATE speecher_app)
-if(UNIX AND NOT APPLE)
-  # The tray icon is a Qt Widgets QSystemTrayIcon. A library of its own so the
-  # tests link the same build of it.
-  add_library(speecher_linux_tray STATIC src/app/LinuxTrayIcon.cpp src/app/LinuxTrayIcon.h)
-  target_link_libraries(speecher_linux_tray PUBLIC speecher_app Qt6::Widgets)
-  target_link_libraries(speecher PRIVATE speecher_linux_tray)
-  include(cmake/QuickUi.cmake)
+# The tray icon (the menu bar item on macOS) is a Qt Widgets QSystemTrayIcon.
+# A library of its own so the tests link the same build of it.
+add_library(speecher_tray STATIC src/app/TrayIcon.cpp src/app/TrayIcon.h)
+target_link_libraries(speecher_tray PUBLIC speecher_app Qt6::Widgets)
+# Speecher's own tray icons where the desktop has no icon theme: a template
+# image for the menu bar, and one for each taskbar theme.
+if(APPLE)
+  qt_add_resources(speecher_tray speecher_tray_icons
+    PREFIX /speecher/tray
+    BASE packaging/macos
+    FILES packaging/macos/speecher-menubar.png packaging/macos/speecher-menubar@2x.png
+  )
+elseif(WIN32)
+  qt_add_resources(speecher_tray speecher_tray_icons
+    PREFIX /speecher/tray
+    BASE packaging/windows
+    FILES packaging/windows/tray-dark.ico packaging/windows/tray-light.ico
+  )
 endif()
+target_link_libraries(speecher PRIVATE speecher_tray)
+include(cmake/QuickUi.cmake)
 
 if(WIN32)
   target_sources(speecher PRIVATE packaging/windows/speecher.manifest packaging/windows/speecher.rc)
@@ -1072,10 +1091,18 @@ if(WIN32)
   )
 endif()
 
+# The licenses of the fonts the UI carries in the binary. The Windows
+# installer copies the same two files.
+set(SPEECHER_QUICK_FONT_LICENSES
+  src/frontend/quick/assets/fonts/LICENSE-AtkinsonHyperlegibleNext.txt
+  src/frontend/quick/assets/icons/LICENSE-Lucide.txt
+)
+
 if(APPLE)
   find_program(SPEECHER_DITTO_EXECUTABLE ditto REQUIRED)
   set(SPEECHER_MACOS_RESOURCES
     packaging/macos/speecher.icns
+    ${SPEECHER_QUICK_FONT_LICENSES}
   )
   if(SPEECHER_WITH_LOCAL_SPEECH)
     list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
@@ -1367,11 +1394,7 @@ if(UNIX AND NOT APPLE)
   if(WEBRTC_APM_FOUND)
     install(FILES packaging/webrtc-audio-processing-licenses.txt DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   endif()
-  # The fonts the UI carries in the binary.
-  install(FILES
-    src/frontend/quick/assets/fonts/LICENSE-AtkinsonHyperlegibleNext.txt
-    src/frontend/quick/assets/icons/LICENSE-Lucide.txt
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
+  install(FILES ${SPEECHER_QUICK_FONT_LICENSES} DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
@@ -1429,34 +1452,35 @@ if(SPEECHER_BUILD_TESTS)
     SPEECHER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(speecher_tests PRIVATE
-    speecher_app Qt6::Widgets Qt6::Test speecher_monocypher
+    speecher_app speecher_tray Qt6::Widgets Qt6::Test speecher_monocypher
   )
+  target_sources(speecher_tests PRIVATE
+    tests/test_tray.cpp
+    tests/test_quick_settings.cpp
+    tests/test_quick_appearance.cpp
+    tests/test_quick_dictation.cpp
+    tests/test_quick_updates.cpp
+    tests/test_quick_transcription.cpp
+    tests/test_quick_system.cpp
+    tests/test_quick_models.cpp
+    tests/test_quick_insights.cpp
+    tests/test_quick_accounts.cpp
+    tests/test_quick_audio.cpp
+    tests/test_quick_library.cpp
+    src/frontend/quick/host/QuickFrontEnd.cpp
+    src/frontend/quick/host/QuickFrontEnd.h
+    src/frontend/quick/host/QuickPopupWindow.cpp
+    src/frontend/quick/host/QuickPopupWindow.h
+  )
+  # The Quick suites load the UI's QML over the C++ Backend; Qt's own
+  # QML modules load from the shared Qt, as in the app.
+  target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
+  set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
   if(UNIX AND NOT APPLE)
-    target_link_libraries(speecher_tests PRIVATE speecher_linux_tray)
     target_sources(speecher_tests PRIVATE
-      tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
-      tests/test_quick_settings.cpp
-      tests/test_quick_appearance.cpp
-      tests/test_quick_dictation.cpp
-      tests/test_quick_updates.cpp
-      tests/test_quick_transcription.cpp
-      tests/test_quick_system.cpp
-      tests/test_quick_models.cpp
-      tests/test_quick_insights.cpp
-      tests/test_quick_accounts.cpp
-      tests/test_quick_audio.cpp
-      tests/test_quick_library.cpp
-      src/frontend/quick/host/QuickFrontEnd.cpp
-      src/frontend/quick/host/QuickFrontEnd.h
-      src/frontend/quick/host/QuickPopupWindow.cpp
-      src/frontend/quick/host/QuickPopupWindow.h
     )
-    # The Quick suites load the UI's QML over the C++ Backend; Qt's own
-    # QML modules load from the shared Qt, as in the app.
-    target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
-    set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
     # The KWin blur test runs a compositor of its own.
     pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
     if(SPEECHER_KWIN_BLUR_FOUND AND WAYLAND_SERVER_FOUND)
@@ -1470,6 +1494,18 @@ if(SPEECHER_BUILD_TESTS)
     settings
     provider_registry
     platform_composition
+    tray
+    quick_settings
+    quick_appearance
+    quick_dictation
+    quick_updates
+    quick_transcription
+    quick_system
+    quick_models
+    quick_insights
+    quick_accounts
+    quick_audio
+    quick_library
     platform_live
     single_instance_ipc
     delivery
@@ -1490,8 +1526,7 @@ if(SPEECHER_BUILD_TESTS)
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_appearance quick_dictation quick_updates
-    quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio quick_library)
+    list(APPEND SPEECHER_TEST_SUITES keywatch helper_install)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

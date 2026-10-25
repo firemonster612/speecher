@@ -1,9 +1,11 @@
 .pragma library
 
 // Ids are core's paste methods; inherit is no rule of the row's own.
+// macOS pastes with ⌘V everywhere, terminals included.
+var mac = Qt.platform.os === "osx";
 var pasteMethods = [
-    { id: "standard_paste", label: "Standard paste", help: "Presses Ctrl+V.", icon: "clipboard-paste" },
-    { id: "terminal_paste", label: "Terminal paste", help: "Presses Ctrl+Shift+V.", icon: "square-terminal" },
+    { id: "standard_paste", label: "Standard paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+V.", icon: "clipboard-paste" },
+    { id: "terminal_paste", label: "Terminal paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+Shift+V.", icon: "square-terminal" },
     { id: "direct_insert", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
     { id: "clipboard_only", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
 ];
@@ -29,11 +31,12 @@ var rows = [
       value: "automatic", keywords: "delivery output method ydotool automatic insert type",
       options: [
           { id: "automatic", label: "Automatic", icon: "route", help: "Inserts directly where it can, then presses the paste keys." },
-          { id: "ydotool", label: "Virtual keyboard only", icon: "keyboard", help: "Always presses the paste keys with the virtual keyboard." }
+          { id: "ydotool", label: "Virtual keyboard only", icon: "keyboard", help: "Always presses the paste keys with the virtual keyboard.",
+            needs: "hasVirtualKeyboard" }
       ] },
     { id: "virtualKeyboard", page: "pasting", section: "Delivery", kind: "custom",
       label: "Virtual keyboard", help: "Lets Speecher press the paste keys in other apps.",
-      keywords: "ydotool uinput service setup permission" },
+      keywords: "ydotool uinput service setup permission", needs: "hasVirtualKeyboard" },
     { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
       label: "Default paste", help: "How Speecher pastes unless a rule below says otherwise.",
       value: "standard_paste", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",

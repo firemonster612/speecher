@@ -5,6 +5,7 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
+#include "app/CompositionSockets.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -316,6 +317,7 @@ public:
     // anything else is what that computer refused with.
     bool setLaunchAtLogin(bool, QString *error) const override
     {
+        ++launchAtLoginRequests;
         if (launchAtLoginError.isEmpty()) {
             return true;
         }
@@ -326,6 +328,7 @@ public:
     }
 
     mutable QString launchAtLoginError;
+    mutable int launchAtLoginRequests = 0;
     // Set, the app listens here instead of where the running Speecher does.
     QString ipcName;
     // A fake Target, set before the controller is built, for tests that edit
@@ -1213,7 +1216,7 @@ private slots:
     void cancelShortcutPersistsUnderItsOwnKey()
     {
         QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                           QString::fromLatin1(SettingsKeys::Application));
+                           SettingsKeys::application());
         settings.remove(QStringLiteral("shortcuts/toggleDictation"));
         const GlobalShortcutAction cancel = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
@@ -1244,6 +1247,22 @@ private slots:
         controller.settings()->setLaunchAtLogin(controller.settings()->launchAtLogin());
         QVERIFY(controller.launchAtLoginAccepted());
         QCOMPARE(accepted.count(), 1);
+    }
+
+    // An isolated instance has settings and a socket of its own, and leaves
+    // the person's login item alone.
+    void anIsolatedInstanceKeepsApartFromThePersonsOwn()
+    {
+        const QString personsSocket = appSocketName();
+        qputenv("SPEECHER_INSTANCE", "verify");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSTANCE"); });
+        QCOMPARE(SettingsKeys::application(), QStringLiteral("speecher-verify"));
+        QCOMPARE(appSocketName(), QStringLiteral("speecher-verify") + personsSocket.mid(QStringLiteral("speecher").size()));
+
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.settings()->setLaunchAtLogin(true);
+        QCOMPARE(platform->launchAtLoginRequests, 0);
     }
 
     // A fresh profile opens setup on a plain launch, but --daemon shows no

@@ -14,9 +14,9 @@ class PopupPositioner;
 // The dictation popup's window in the daemon: Speecher.Popup's PopupWindow,
 // placed by the platform's positioner (an overlay layer-shell surface at the
 // bottom of the active screen on Wayland, plain geometry elsewhere) and never
-// focused or activated, so the Target keeps the keyboard. Only the capsule
-// takes the pointer. It shows when asked and hides once the popup has faded
-// out.
+// focused or activated, so the Target keeps the keyboard. Clicks beside the
+// capsule reach the app underneath. It shows when asked and hides once the
+// popup has faded out.
 class QuickPopupWindow final : public QObject, private PopupSurface {
     Q_OBJECT
 

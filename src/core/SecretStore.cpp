@@ -61,11 +61,11 @@ QString keyringEntry(SecretStore::Secret secret)
 }
 
 // Test runs keep their entries apart from a real install's, the way test mode
-// already keeps their settings file apart.
+// already keeps their settings file apart, and so does an isolated instance.
 QString keyringService()
 {
     return QStandardPaths::isTestModeEnabled() ? QStringLiteral("speecher-tests")
-                                               : QStringLiteral("speecher");
+                                               : SettingsKeys::application();
 }
 
 // Tests stand in for a keyring that does not answer.

@@ -53,7 +53,8 @@ Item {
             Icon { name: "search"; size: 14; color: Theme.textTertiary; anchors.verticalCenter: parent.verticalCenter }
             Txt { text: Words.shell.searchSettings; tone: "tertiary"; anchors.verticalCenter: parent.verticalCenter }
         }
-        KeyCombo { keys: ["Ctrl", "K"]; size: "small"; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter }
+        // Qt reads Ctrl in a shortcut as ⌘ on macOS.
+        KeyCombo { keys: [Qt.platform.os === "osx" ? "⌘" : "Ctrl", "K"]; size: "small"; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter }
         HoverHandler { id: searchHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: searchTap; onTapped: { searchFocus.pointed(); sidebar.searchRequested() } }
         activeFocusOnTab: true

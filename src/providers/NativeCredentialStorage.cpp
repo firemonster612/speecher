@@ -48,8 +48,13 @@ static bool finishKeychainTool(QProcess &process, const QString &failure, QStrin
         return false;
     }
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        // Neither stdout nor stderr is safe to include in errors.
-        qWarning().noquote() << "macOS Keychain operation failed exit=" + QString::number(process.exitCode());
+        // Neither stdout nor stderr is safe to include in errors. A login
+        // that isn't there, security's errSecItemNotFound, is no failure of
+        // the Keychain: someone who never signed in has none.
+        constexpr int itemNotFound = 44;
+        if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != itemNotFound) {
+            qWarning().noquote() << "macOS Keychain operation failed exit=" + QString::number(process.exitCode());
+        }
         *error = failure;
         return false;
     }

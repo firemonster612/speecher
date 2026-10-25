@@ -5,7 +5,23 @@
 namespace speecher::SettingsKeys {
 
 inline constexpr auto Organization = "io.github.firemonster612";
-inline constexpr auto Application = "speecher";
+
+// SPEECHER_INSTANCE=<name> runs an isolated instance, as the packaging checks
+// do: its settings, app data, keyring entries and single-instance socket are
+// its own, apart from the person's, and it leaves launch at login alone.
+inline constexpr auto InstanceVariable = "SPEECHER_INSTANCE";
+
+inline bool isolatedInstance()
+{
+    return !qEnvironmentVariableIsEmpty(InstanceVariable);
+}
+
+// "speecher", or "speecher-<name>" in an isolated instance.
+inline QString application()
+{
+    return isolatedInstance() ? QStringLiteral("speecher-") + qEnvironmentVariable(InstanceVariable)
+                              : QStringLiteral("speecher");
+}
 
 inline const QString SetupCompleted = QStringLiteral("app/setupCompleted");
 inline const QString LaunchAtLogin = QStringLiteral("app/launchAtLogin");

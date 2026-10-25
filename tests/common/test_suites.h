@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QMetaMethod>
+#include <QRegularExpression>
 #include <QTest>
 #include <QVector>
 
@@ -48,15 +49,24 @@ inline int runTestSuite(QObject *suite, int argc, char **argv)
     return QTest::qExec(suite, copiedArguments.size(), copiedArguments.data());
 }
 
+// Fails the running test on a warning, such as a QML row assigning an absent
+// value to a string, except those about what a bare test binary and its
+// computer lack: an app bundle, without which macOS cannot launch it at
+// login, the UI's fonts, which the app registers, and a font directory
+// under Windows' offscreen platform.
+inline void failOnUnexpectedWarnings()
+{
+    QTest::failOnWarning(QRegularExpression(QStringLiteral(
+        "^(?!launch at login reconciliation failed|Populating font family aliases"
+        "|QFontDatabase: Cannot find font directory)")));
+}
+
 int runTranscriptStateTests(int argc, char **argv);
 int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
 int runPlatformCompositionTests(int argc, char **argv);
-#ifdef Q_OS_LINUX
-int runLinuxTrayTests(int argc, char **argv);
-int runKeywatchTests(int argc, char **argv);
-int runHelperInstallTests(int argc, char **argv);
+int runTrayTests(int argc, char **argv);
 int runQuickSettingsTests(int argc, char **argv);
 int runQuickAppearanceTests(int argc, char **argv);
 int runQuickDictationTests(int argc, char **argv);
@@ -68,6 +78,9 @@ int runQuickInsightsTests(int argc, char **argv);
 int runQuickAccountsTests(int argc, char **argv);
 int runQuickAudioTests(int argc, char **argv);
 int runQuickLibraryTests(int argc, char **argv);
+#ifdef Q_OS_LINUX
+int runKeywatchTests(int argc, char **argv);
+int runHelperInstallTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);

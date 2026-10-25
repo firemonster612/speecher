@@ -33,8 +33,11 @@ SettingRow {
     // Settings.values here, in the binding, so the row follows that value.
     enabled: _blurs && (spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId))
              && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
-    // A row whose schema entry says hiddenWhen folds away rather than greying.
-    shown: !spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals
+    // The options this computer has; a row it doesn't have, or one whose
+    // schema entry says hiddenWhen, folds away rather than greying.
+    readonly property var _options: Schema.options(spec, need => System[need])
+    shown: Schema.available(spec, need => System[need])
+           && (!spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals)
     stacked: spec.kind === "choice" && spec.control === "cards"
 
     Loader {
@@ -43,7 +46,7 @@ SettingRow {
             case "toggle": return toggle
             // Segments for two to four options, as CompactChoice picks.
             case "choice": return root.spec.control === "cards" ? cards
-                                : root.spec.control === "select" || root.spec.options.length > 4 ? select : segmented
+                                : root.spec.control === "select" || root._options.length > 4 ? select : segmented
             case "slider": return slider
             case "text": return textField
             case "secret": return secretField
@@ -58,15 +61,15 @@ SettingRow {
     Component { id: toggle; Switch { checked: !!root.value; onToggled: Settings.set(root.rowId, checked) } }
     Component {
         id: segmented
-        SegmentedControl { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
+        SegmentedControl { options: root._options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: select
-        Select { placeholder: Words.choose; options: root.spec.options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id) }
+        Select { placeholder: Words.choose; options: root._options; currentId: root.value ?? ""; onChosen: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: cards
-        OptionCards { options: root.spec.options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
+        OptionCards { options: root._options; currentId: root.value ?? ""; onActivated: id => Settings.set(root.rowId, id) }
     }
     Component {
         id: slider

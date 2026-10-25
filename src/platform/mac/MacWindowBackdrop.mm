@@ -1,5 +1,6 @@
 #include "platform/mac/MacWindowBackdrop.h"
 
+#include <QGuiApplication>
 #include <QRect>
 #include <QWindow>
 
@@ -89,7 +90,9 @@ bool MacWindowBackdrop::available() const
 // frame view is left alone.
 void MacWindowBackdrop::set(QWindow *window, const QRect &area, int radius, bool dark)
 {
-    if (!window) {
+    // winId() only yields an NSView on the cocoa platform, not under the
+    // offscreen one the tests use.
+    if (!window || QGuiApplication::platformName() != QLatin1String("cocoa")) {
         return;
     }
     NSView *view = (__bridge NSView *)reinterpret_cast<void *>(window->winId());

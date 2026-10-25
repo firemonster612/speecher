@@ -207,6 +207,7 @@ Page {
     }
 
     Section {
+        visible: System.canRemove
         title: Schema.row("removeSpeecher").section
         SchemaRow {
             rowId: "removeSpeecher"

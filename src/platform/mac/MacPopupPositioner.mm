@@ -46,6 +46,9 @@ void MacPopupPositioner::configurePopup(PopupSurface &surface)
                "non-activating style mask: showing it will pull focus away from "
                "the app being dictated into.";
     }
+    // Qt hides tool windows while their app is inactive, and Speecher is
+    // never the active app while someone dictates into another.
+    window.hidesOnDeactivate = NO;
     window.level = NSStatusWindowLevel;
     // Qt tool windows arrive with MoveToActiveSpace, which AppKit rejects in
     // combination with CanJoinAllSpaces — clear it before joining all spaces.

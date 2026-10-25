@@ -41,6 +41,35 @@ Source: "{#SourceDir}\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubd
 [InstallDelete]
 Type: files; Name: "{app}\vc_redist.x64.exe"
 Type: filesandordirs; Name: "{app}\multimedia\multimedia"
+; The WinUI front end's, which releases up to 0.2.x installed beside
+; speecher.exe: the Windows App Runtime bootstrap and the WinRT metadata it
+; read. The Windows App Runtime itself is shared with other apps and stays.
+Type: files; Name: "{app}\Microsoft.WindowsAppRuntime.Bootstrap.dll"
+Type: files; Name: "{app}\Microsoft.Foundation.winmd"
+Type: files; Name: "{app}\Microsoft.Graphics.winmd"
+Type: files; Name: "{app}\Microsoft.Security.Authentication.OAuth.winmd"
+Type: files; Name: "{app}\Microsoft.UI.Text.winmd"
+Type: files; Name: "{app}\Microsoft.UI.winmd"
+Type: files; Name: "{app}\Microsoft.UI.Xaml.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.ApplicationModel.Background.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.ApplicationModel.DynamicDependency.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.ApplicationModel.Resources.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.ApplicationModel.WindowsAppRuntime.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.AppLifecycle.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.AppNotifications.Builder.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.AppNotifications.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.BadgeNotifications.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Foundation.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Globalization.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Management.Deployment.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Media.Capture.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.PushNotifications.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Security.AccessControl.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Storage.Pickers.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.Storage.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.System.Power.winmd"
+Type: files; Name: "{app}\Microsoft.Windows.System.winmd"
 
 [Icons]
 Name: "{group}\Speecher"; Filename: "{app}\speecher.exe"

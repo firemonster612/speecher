@@ -22,7 +22,7 @@ QSettings speecherSettings()
 {
     return QSettings(QSettings::defaultFormat(), QSettings::UserScope,
                      QString::fromLatin1(SettingsKeys::Organization),
-                     QString::fromLatin1(SettingsKeys::Application));
+                     SettingsKeys::application());
 }
 
 } // namespace
