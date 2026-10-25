@@ -18,8 +18,10 @@
 #include "platform/win/WinWindowBackdrop.h"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QSettings>
+#include <QUrl>
 
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
@@ -32,6 +34,17 @@ namespace {
 
 constexpr auto runKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr auto runValue = "Speecher";
+// Settings > Privacy & security > Microphone keeps its switches here, under
+// HKEY_LOCAL_MACHINE for the device and HKEY_CURRENT_USER for this person:
+// Value is Allow or Deny, and NonPackaged's is desktop apps'.
+constexpr auto microphoneConsent =
+    "\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone";
+
+bool consentDenied(const char *root, const char *key)
+{
+    const QSettings consent(QString::fromLatin1(root) + QString::fromLatin1(microphoneConsent), QSettings::NativeFormat);
+    return consent.value(QString::fromLatin1(key)).toString() == QLatin1String("Deny");
+}
 
 // The stub end-to-end tests stand in for the microphone, or none.
 AudioInput *stubAudioInput(QObject *parent)
@@ -111,6 +124,25 @@ bool WindowsComposition::recordsSystemAudio() const
 AudioInput *WindowsComposition::createSystemAudioInput(QObject *parent) const
 {
     return new WinSystemAudioInput(parent);
+}
+
+MicrophoneAccess WindowsComposition::microphoneAccess() const
+{
+    if (consentDenied("HKEY_LOCAL_MACHINE", "Value")) {
+        return MicrophoneAccess::DeviceOff;
+    }
+    if (consentDenied("HKEY_CURRENT_USER", "Value")) {
+        return MicrophoneAccess::AppsOff;
+    }
+    if (consentDenied("HKEY_CURRENT_USER", "NonPackaged/Value")) {
+        return MicrophoneAccess::DesktopAppsOff;
+    }
+    return MicrophoneAccess::Allowed;
+}
+
+void WindowsComposition::openMicrophoneSettings() const
+{
+    QDesktopServices::openUrl(QUrl(QStringLiteral("ms-settings:privacy-microphone")));
 }
 
 MediaController *WindowsComposition::createMediaController(QObject *parent) const

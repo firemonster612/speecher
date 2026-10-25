@@ -6,7 +6,8 @@ import Speecher.Backend
 
 // A window that draws its own frame, the same on every desktop: rounded
 // corners and a soft shadow, a strip along the top that moves it (a double
-// click maximizes), its buttons at the top right, and a resize grip in the
+// click maximizes), its buttons at the top right, or as traffic lights at
+// the top left on macOS, and a resize grip in the
 // shadow margin. Maximized or full screen, the margin and corners go.
 // Content goes inside and should leave the top titleBarHeight free of
 // controls, since the strip lies over it. While Theme is translucent, the
@@ -80,7 +81,14 @@ Window {
             }
         }
 
+        TrafficLights {
+            visible: Theme.trafficLights
+            window: client
+            x: Theme.trafficLightsInset
+            y: (client.titleBarHeight - height) / 2
+        }
         WindowControls {
+            visible: !Theme.trafficLights
             window: client
             anchors.right: parent.right
             anchors.rightMargin: Theme.titleBarInset

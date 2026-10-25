@@ -2,11 +2,12 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QFile>
 #include <QScopeGuard>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #ifndef Q_OS_WIN
 #include <QSettings>
-#include <QTemporaryDir>
 #include "core/SettingsStore.h"
 #endif
 
@@ -31,6 +32,16 @@ int main(int argc, char **argv)
         return runDeliveryTests(argc - 1, argv + 1);
     }
 #endif
+    // Claude's and Codex's sign-ins sit in their homes, and on macOS and
+    // Windows in the Keychain or Credential Manager under names made from
+    // those homes. Empty ones keep every suite off the developer's own.
+    QTemporaryDir signIns;
+    if (!signIns.isValid()) {
+        qCritical() << "Could not create isolated Claude and Codex homes";
+        return 1;
+    }
+    qputenv("CLAUDE_CONFIG_DIR", QFile::encodeName(signIns.filePath(QStringLiteral("claude"))));
+    qputenv("CODEX_HOME", QFile::encodeName(signIns.filePath(QStringLiteral("codex"))));
 #ifndef Q_OS_WIN
     // Test mode shares one settings directory across Linux test processes and
     // does not redirect macOS CFPreferences. Give each process its own store.

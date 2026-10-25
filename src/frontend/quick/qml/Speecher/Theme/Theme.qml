@@ -288,6 +288,13 @@ QtObject {
     readonly property int titleBarHeight: 52
     readonly property int titleBarButton: 28
     readonly property int titleBarInset: (titleBarHeight - titleBarButton) / 2
+    // macOS draws the window buttons as traffic lights at the strip's left,
+    // trafficLightsInset in, and the brand starts after the room they take,
+    // titleBarLead; elsewhere the buttons sit at the right.
+    readonly property bool trafficLights: Qt.platform.os === "osx"
+    readonly property int trafficLight: 12
+    readonly property int trafficLightsInset: 20
+    readonly property int titleBarLead: trafficLights ? trafficLightsInset + trafficLight * 3 + space2 * 2 : 0
 
     readonly property int space1: 4
     readonly property int space2: 8

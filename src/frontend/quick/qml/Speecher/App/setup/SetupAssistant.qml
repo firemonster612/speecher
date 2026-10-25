@@ -55,7 +55,8 @@ ClientWindow {
         // In the title strip, which moves the window.
         Brand { id: brand; title: Setup.text.title }
 
-        // The steps' nodes line up under the mark.
+        // The steps' nodes line up under the mark, or on macOS under the
+        // close light.
         StepRail {
             x: Theme.titleBarInset
             y: brand.height + Theme.space5

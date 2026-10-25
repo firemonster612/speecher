@@ -1186,7 +1186,11 @@ void SettingsCodecs::setAnthropicFastMode(bool value)
 
 QString SettingsCodecs::outputMethod() const
 {
-    return OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
+    const QString method = OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
+    if (!OutputMethod::hasVirtualKeyboard && method == QString::fromLatin1(OutputMethod::Ydotool)) {
+        return QString::fromLatin1(OutputMethod::Automatic);
+    }
+    return method;
 }
 
 void SettingsCodecs::setOutputMethod(const QString &value)

@@ -22,8 +22,8 @@ class PhoneTransfer;
 // keyboard's setup and typing test, the route a paste takes, the clipboard
 // and opening links, sending settings to the phone, and removing Speecher.
 // It carries states and step ids; the UI words them (health.js, the pages).
-// The virtual keyboard and removing Speecher are Linux's: elsewhere checks
-// has no keyboard row and canRemove is false.
+// The virtual keyboard and removing Speecher are Linux's: elsewhere
+// hasVirtualKeyboard and canRemove are false and checks has no keyboard row.
 class QuickSystem final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(System)
@@ -33,6 +33,7 @@ class QuickSystem final : public QObject {
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
+    Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
     Q_PROPERTY(bool canRemove READ canRemove CONSTANT)
     Q_PROPERTY(QString computerName READ computerName CONSTANT)
@@ -60,8 +61,9 @@ public:
     // row's (microphoneAccess, desktopAccessibility, globalShortcuts,
     // virtualKeyboardHealth); state is ok, attention, off or working; reason
     // says which of the check's cases it is; fix is the action fix(id) runs,
-    // or empty where there is nothing to run. failures are what went wrong
-    // in the last thing tried on the check, [{step, error}]: step is enable
+    // or empty where there is nothing to run; the microphone's, openSettings,
+    // opens the system's privacy settings. failures are what went wrong in
+    // the last thing tried on the check, [{step, error}]: step is enable
     // for accessibility, and setUp, start, type, stop, remove or filesLeft
     // for the keyboard; error is why, in the words of the part that failed,
     // or empty. They stay until the next try.
@@ -74,6 +76,9 @@ public:
     // The steps the default paste takes with Paste with, in the order core's
     // delivery tries them: insert, press, copy (TextDelivery::pasteRoute).
     QStringList pasteRoute() const;
+    // Whether this computer has the virtual keyboard: its check, its setup
+    // and pasting with it alone (OutputMethod::hasVirtualKeyboard).
+    bool hasVirtualKeyboard() const;
     // Whether openShortcutSettings knows this desktop's shortcut settings.
     bool canOpenShortcutSettings() const;
     // Whether uninstall can remove Speecher from this computer.

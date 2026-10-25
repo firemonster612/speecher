@@ -3,6 +3,7 @@
 #include "core/EchoCanceller.h"
 #include "dictation/DictationPorts.h"
 #include "platform/AccessibilityState.h"
+#include "platform/MicrophoneAccess.h"
 
 #include <functional>
 #include <memory>
@@ -65,6 +66,11 @@ public:
         Q_UNUSED(context);
         completed(true);
     }
+    // What the privacy settings say now; asked each time, as the person can
+    // change them while Speecher runs.
+    virtual MicrophoneAccess microphoneAccess() const { return MicrophoneAccess::NotAsked; }
+    // Opens the system's microphone privacy settings, where there are any.
+    virtual void openMicrophoneSettings() const {}
     virtual MediaController *createMediaController(QObject *parent) const = 0;
     virtual TargetProvider *createTargetProvider(QObject *parent) const = 0;
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;

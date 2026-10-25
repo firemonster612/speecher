@@ -21,7 +21,7 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    readonly property var results: query.trim().length ? Schema.search(query, 9) : _suggestions
+    readonly property var results: query.trim().length ? Schema.search(query, 9, need => System[need]) : _suggestions
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,

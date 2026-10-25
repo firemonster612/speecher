@@ -593,7 +593,14 @@ private slots:
         settings.setOutputMethod(QString::fromLatin1(OutputMethod::DirectInsert));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::DirectInsert));
         settings.setOutputMethod(QStringLiteral("ydotool"));
+#ifdef Q_OS_LINUX
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Ydotool));
+#else
+        // Only Linux has the virtual keyboard; elsewhere Speecher pastes
+        // Automatically, rather than only copying every dictation.
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
+#endif
         settings.setOutputMethod(QStringLiteral("wtype"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         settings.setOutputMethod(QStringLiteral("unknown"));

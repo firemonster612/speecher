@@ -31,11 +31,12 @@ var rows = [
       value: "automatic", keywords: "delivery output method ydotool automatic insert type",
       options: [
           { id: "automatic", label: "Automatic", icon: "route", help: "Inserts directly where it can, then presses the paste keys." },
-          { id: "ydotool", label: "Virtual keyboard only", icon: "keyboard", help: "Always presses the paste keys with the virtual keyboard." }
+          { id: "ydotool", label: "Virtual keyboard only", icon: "keyboard", help: "Always presses the paste keys with the virtual keyboard.",
+            needs: "hasVirtualKeyboard" }
       ] },
     { id: "virtualKeyboard", page: "pasting", section: "Delivery", kind: "custom",
       label: "Virtual keyboard", help: "Lets Speecher press the paste keys in other apps.",
-      keywords: "ydotool uinput service setup permission" },
+      keywords: "ydotool uinput service setup permission", needs: "hasVirtualKeyboard" },
     { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
       label: "Default paste", help: "How Speecher pastes unless a rule below says otherwise.",
       value: "standard_paste", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",

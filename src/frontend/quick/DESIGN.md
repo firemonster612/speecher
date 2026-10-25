@@ -370,7 +370,9 @@ Layout:
   immediate.
 - The title strip is `Theme.titleBarHeight` 52. `Brand` puts the mark 12 in
   from the window's top and left and the window buttons sit 12 in from the
-  top and right, in the main window and setup alike. Framed, the sheet
+  top and right, in the main window and setup alike. On macOS the buttons
+  are traffic lights 20 in from the left (`TrafficLights`), and the brand
+  starts after them. Framed, the sheet
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.

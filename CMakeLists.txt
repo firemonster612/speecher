@@ -421,6 +421,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
+  src/platform/MicrophoneAccess.h
   src/platform/SessionKeyGrab.h
   src/platform/CorrectionDiff.h
   src/platform/FallbackPopupPositioner.h
@@ -1025,6 +1026,7 @@ if(APPLE)
   )
   target_link_libraries(speecher_app PRIVATE
     Sparkle::Sparkle
+    "-framework AVFoundation"
     "-framework CoreAudio"
     "-framework Security"
     "-framework ServiceManagement"

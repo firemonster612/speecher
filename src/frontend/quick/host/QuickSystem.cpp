@@ -2,6 +2,8 @@
 
 #include "app/ApplicationController.h"
 #include "app/PhoneTransfer.h"
+#include "app/PlatformComposition.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #ifdef Q_OS_LINUX
@@ -35,10 +37,32 @@ QVariantMap checkEntry(const char *id, const char *state, const char *reason, co
             {QStringLiteral("fix"), QLatin1String(fix)}};
 }
 
-// The microphone needs no grant: the Linux desktop lets every app record.
-QVariantMap microphoneCheck()
+const QString microphoneId = QStringLiteral("microphoneAccess");
+
+// What the privacy settings say; where Speecher can't change them itself,
+// the fix opens them.
+QVariantMap microphoneCheck(const PlatformComposition *platform)
 {
-    return checkEntry("microphoneAccess", "ok", "notAsked");
+    const char *id = "microphoneAccess";
+    switch (platform->microphoneAccess()) {
+    case MicrophoneAccess::NotAsked:
+        return checkEntry(id, "ok", "notAsked");
+    case MicrophoneAccess::NotDetermined:
+        return checkEntry(id, "ok", "notDetermined");
+    case MicrophoneAccess::Denied:
+        return checkEntry(id, "off", "denied", "openSettings");
+    case MicrophoneAccess::Restricted:
+        return checkEntry(id, "off", "restricted");
+    case MicrophoneAccess::DeviceOff:
+        return checkEntry(id, "off", "deviceOff", "openSettings");
+    case MicrophoneAccess::AppsOff:
+        return checkEntry(id, "off", "appsOff", "openSettings");
+    case MicrophoneAccess::DesktopAppsOff:
+        return checkEntry(id, "off", "desktopAppsOff", "openSettings");
+    case MicrophoneAccess::Allowed:
+        break;
+    }
+    return checkEntry(id, "ok", "allowed");
 }
 
 QVariantMap accessibilityCheck(const ApplicationController *controller)
@@ -256,13 +280,15 @@ QuickSystem::QuickSystem(ApplicationController *controller, QObject *parent)
     });
 #endif
     // What changed while Speecher was in the background, such as a service
-    // started by hand or a new sign-in, shows when it comes back.
+    // started by hand, a new sign-in or the microphone allowed in the
+    // system's settings, shows when it comes back.
     connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
         if (state == Qt::ApplicationActive) {
 #ifdef Q_OS_LINUX
             m_virtualKeyboard.refresh();
 #endif
             m_controller->refreshAccessibilityState();
+            emit changed();
         }
     });
 }
@@ -288,7 +314,8 @@ bool QuickSystem::accessibility() const
 
 QVariantList QuickSystem::checks() const
 {
-    QList<QVariantMap> entries{microphoneCheck(), accessibilityCheck(m_controller), shortcutCheck(m_controller)};
+    QList<QVariantMap> entries{microphoneCheck(m_controller->platform()), accessibilityCheck(m_controller),
+                               shortcutCheck(m_controller)};
 #ifdef Q_OS_LINUX
     entries.append(virtualKeyboardCheck(m_virtualKeyboard));
 #endif
@@ -333,6 +360,11 @@ QStringList QuickSystem::pasteRoute() const
     const PasteRule *rule = findPasteRule(settings.output.pasteRules, PasteRuleScope::Global, QString());
     return TextDelivery::pasteRoute(settings.output,
                                     rule && rule->enabled ? rule->method : PasteMethod::ClipboardOnly);
+}
+
+bool QuickSystem::hasVirtualKeyboard() const
+{
+    return OutputMethod::hasVirtualKeyboard;
 }
 
 bool QuickSystem::canOpenShortcutSettings() const
@@ -420,6 +452,10 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         return;
     }
     clearFailures(id);
+    if (id == microphoneId) {
+        m_controller->platform()->openMicrophoneSettings();
+        return;
+    }
     if (id == accessibilityId) {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {

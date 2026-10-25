@@ -18,6 +18,7 @@ QtObject {
 
     // Permissions and health --------------------------------------------
     property bool accessibility: _health !== "issues" && Launch.arg("accessibility", "on") !== "off"
+    readonly property bool hasVirtualKeyboard: true
     // The virtual keyboard's reason, as the app's check gives it.
     property string _keyboard: _health === "issues" ? "notInstalled" : Launch.arg("virtual-keyboard", "ready")
     readonly property var _keyboardFixes: ({ disabled: "enable", notInstalled: "setUp", daemonNotRunning: "start" })

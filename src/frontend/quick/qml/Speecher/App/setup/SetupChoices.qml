@@ -29,9 +29,9 @@ QtObject {
 
     // Setup.steps, each with done and verdict: what was chosen once it
     // passes, or what is missing. Delivery sets up the virtual keyboard, so
-    // it goes where System has none.
+    // it goes where there is none.
     readonly property var steps: Setup.steps
-        .filter(s => s.id !== "delivery" || Health.find(System.checks, "virtualKeyboardHealth").id !== undefined)
+        .filter(s => s.id !== "delivery" || System.hasVirtualKeyboard)
         .map(s => Object.assign({}, s, _status(s.id)))
 
     function _status(id) {

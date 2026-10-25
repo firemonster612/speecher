@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 
 #include <QAccessible>
 #include <QDir>
@@ -582,6 +583,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
+        // Search asks System what the computer has, as the host always can.
+        QuickSystem system(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and
         // Windows with transparency on, blur any window.
         if (appearance.canBlur()) {
