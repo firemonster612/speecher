@@ -51,8 +51,12 @@ int main(int argc, char **argv)
         return 1;
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, preferences.path());
-    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, preferences.path());
+    // NativeFormat too: QSettings(organization, application) uses it, and on
+    // Linux it is a file under the person's ~/.config.
+    for (const auto format : {QSettings::IniFormat, QSettings::NativeFormat}) {
+        QSettings::setPath(format, QSettings::UserScope, preferences.path());
+        QSettings::setPath(format, QSettings::SystemScope, preferences.path());
+    }
 #endif
 #ifdef Q_OS_WIN
     // Redirect registry access, including native Startup Apps writes, for this

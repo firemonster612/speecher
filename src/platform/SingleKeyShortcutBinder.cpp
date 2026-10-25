@@ -1,5 +1,6 @@
 #include "platform/SingleKeyShortcutBinder.h"
 
+#include "core/settings/SettingsFile.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QSettings>
@@ -19,8 +20,7 @@ QString watchedKeyStillTypesText(const ShortcutBinding &binding)
 
 void storeBinding(const QString &key, const ShortcutBinding &binding)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     if (binding.isEmpty()) {
         // Only clear what this binder owns: on macOS the combination binder
         // stores its sequence under the same key, and a router clearing the
@@ -38,8 +38,7 @@ void storeBinding(const QString &key, const ShortcutBinding &binding)
 
 ShortcutBinding SingleKeyShortcutBinder::storedBinding() const
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     return ShortcutBinding::fromString(settings.value(action().settingsKey).toString());
 }
 

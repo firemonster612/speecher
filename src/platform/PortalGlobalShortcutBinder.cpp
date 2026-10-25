@@ -1,5 +1,7 @@
 #include "platform/PortalGlobalShortcutBinder.h"
 
+#include "core/settings/SettingsFile.h"
+
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusError>
@@ -63,8 +65,7 @@ QString clearedKey(const GlobalShortcutAction &action)
 
 void rememberCleared(const GlobalShortcutAction &action, bool cleared)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     if (cleared) {
         settings.setValue(clearedKey(action), true);
     } else {
@@ -74,8 +75,7 @@ void rememberCleared(const GlobalShortcutAction &action, bool cleared)
 
 bool wasCleared(const GlobalShortcutAction &action)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     return settings.value(clearedKey(action)).toBool();
 }
 

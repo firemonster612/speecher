@@ -1,5 +1,6 @@
 #include "platform/win/WinGlobalShortcutBinder.h"
 
+#include "core/settings/SettingsFile.h"
 #include "core/settings/SettingsKeys.h"
 #include "platform/win/WinRawKeyboard.h"
 
@@ -132,8 +133,7 @@ int qtKeyForVirtualKey(quint32 key)
 
 QKeySequence savedShortcut(const GlobalShortcutAction &action)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     // The stored value can be a single key ("key:…"), which belongs to the
     // single-key binder and must not parse as a sequence here.
     const ShortcutBinding stored =
@@ -143,8 +143,7 @@ QKeySequence savedShortcut(const GlobalShortcutAction &action)
 
 void storeShortcut(const QString &key, const QKeySequence &shortcut)
 {
-    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
+    SettingsFile settings(QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     settings.setValue(key, shortcut.toString());
 }
 
