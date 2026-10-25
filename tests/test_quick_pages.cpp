@@ -268,13 +268,20 @@ private slots:
              }},
             {QStringLiteral("arrow down under the still pointer"), [&] {
                  QVERIFY(popover->property("opened").toBool());
-                 // The list lays its rows out as it opens, a frame or more
-                 // after the popover does on some platforms.
+                 // The first row wholly in view, found from the rows rather
+                 // than a point, which can fall between two rows.
                  int top = -1;
                  QQuickItem *row = nullptr;
                  const auto findRow = [&] {
-                     QMetaObject::invokeMethod(rows, "indexAt", Q_RETURN_ARG(int, top), Q_ARG(qreal, 10),
-                                               Q_ARG(qreal, rows->property("contentY").toReal() + 10));
+                     const qreal contentY = rows->property("contentY").toReal();
+                     top = -1;
+                     for (int i = 0; top < 0 && i < rows->property("count").toInt(); ++i) {
+                         QQuickItem *item = nullptr;
+                         QMetaObject::invokeMethod(rows, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+                         if (item && item->y() >= contentY) {
+                             top = i;
+                         }
+                     }
                      hovered = top + 2;
                      row = nullptr;
                      QMetaObject::invokeMethod(rows, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, hovered));
