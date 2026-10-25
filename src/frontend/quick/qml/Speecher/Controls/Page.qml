@@ -1,14 +1,20 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 import Speecher.Theme
 
 // A scrolling page: the title and a line of explanation, then sections of
-// grouped rows. A page with no title brings its own heading.
+// grouped rows. A page with no title brings its own heading. A page under
+// others leads its title with the path to it, each step a link that asks
+// for its page through pathPicked.
 Item {
     id: page
 
     property string title
     property string subtitle
+    // The pages above this one, outermost first: [{ id, title }].
+    property var path: []
+    signal pathPicked(string pageId)
     default property alias content: body.data
     property alias headerActions: actions.data
     property alias flickable: flick
@@ -53,7 +59,26 @@ Item {
                     id: headText
                     width: parent.width - actions.childrenRect.width - 16
                     spacing: 4
-                    Txt { text: page.title; variant: "display" }
+                    Flow {
+                        width: parent.width
+                        spacing: Theme.space2
+                        Repeater {
+                            model: page.path
+                            delegate: Row {
+                                id: step
+                                required property var modelData
+                                spacing: Theme.space2
+                                TextLink {
+                                    text: step.modelData.title
+                                    variant: "display"
+                                    quiet: true
+                                    onActivated: page.pathPicked(step.modelData.id)
+                                }
+                                Icon { name: "chevron-right"; size: 20; color: Theme.textTertiary; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                        }
+                        Txt { text: page.title; variant: "display" }
+                    }
                     Txt {
                         visible: page.subtitle.length > 0
                         text: page.subtitle

@@ -294,7 +294,9 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 void QuickFrontEnd::setPage(const QString &pageId)
 {
     if (QObject *navigation = m_engine.singletonInstance<QObject *>(appModule, QStringLiteral("Navigation"))) {
-        navigation->setProperty("current", pageId);
+        // Through go(), so asking for the page already showing still opens
+        // the sidebar group that holds it.
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, pageId));
     }
 }
 

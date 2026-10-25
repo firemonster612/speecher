@@ -25,7 +25,7 @@ FocusScope {
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
-                     trail: Schema.page(r.page).title + ", " + r.section }))
+                     trail: Schema.rowTrail(r) }))
 
     // What had focus before opening, to give it back on close.
     property Item _returnFocus: null
@@ -198,7 +198,8 @@ FocusScope {
                             variant: "label"
                         }
                         Txt {
-                            text: hit.modelData.type === "page" ? Words.shell.page : hit.modelData.trail
+                            // A page says so, or where it is when it sits under another.
+                            text: hit.modelData.trail || Words.shell.page
                             variant: "small"
                             tone: "tertiary"
                         }

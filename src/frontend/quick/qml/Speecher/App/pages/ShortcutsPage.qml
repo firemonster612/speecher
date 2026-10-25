@@ -73,7 +73,7 @@ Page {
 
     Section {
         title: Schema.row("startCommand").section
-        // The same check as General's, and where the desktop lists the shortcuts.
+        // The same check as Permissions & health's, and where the desktop lists the shortcuts.
         HealthRow {
             rowId: "globalShortcuts"
             // Where Speecher knows the desktop's own shortcut settings.

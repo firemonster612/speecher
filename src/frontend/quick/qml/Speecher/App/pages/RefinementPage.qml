@@ -269,4 +269,6 @@ Page {
             }
         }
     }
+
+    SubpageRows { pageId: "refinement" }
 }

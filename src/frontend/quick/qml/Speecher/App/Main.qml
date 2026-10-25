@@ -71,18 +71,25 @@ ClientWindow {
                 }
 
                 property int _index: 0
+                // A subpage's title leads with the path to it, and a step
+                // in the path opens that page.
                 function show(pageId) {
                     const index = Schema.pages.findIndex(p => p.id === pageId)
                     travel = (index >= _index ? 24 : -24) * Theme.movement
                     _index = index
                     const url = Qt.resolvedUrl("pages/" + Schema.page(pageId).file)
-                    if (depth === 0) push(url)
-                    else replace(null, url)
+                    const properties = { path: Schema.ancestors(pageId) }
+                    if (depth === 0) push(url, properties)
+                    else replace(null, url, properties)
                 }
                 Component.onCompleted: show(Navigation.current)
                 Connections {
                     target: Navigation
                     function onCurrentChanged() { stack.show(Navigation.current) }
+                }
+                Connections {
+                    target: stack.currentItem as Page
+                    function onPathPicked(pageId) { Navigation.go(pageId) }
                 }
             }
         }

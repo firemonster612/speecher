@@ -9,11 +9,11 @@ var pasteMethods = [
     { id: "direct_insert", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
     { id: "clipboard_only", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
 ];
-var inherit = { id: "inherit", label: "Default paste", help: "Whatever Default paste above says." };
+var inherit = { id: "inherit", label: "Default paste", help: "Whatever Default paste on Pasting says." };
 
 // The app types Speecher sorts apps into, each with its paste rule's
 // default; ids are core's category names, and host/QuickSettings saves a
-// rule for each. Library and the Pasting page read them from here.
+// rule for each. Library and the App rules page read them from here.
 var categories = [
     { id: "terminal", label: "Terminals", icon: "square-terminal", examples: "Konsole, Ghostty, Kitty", method: "terminal_paste" },
     { id: "browser", label: "Browsers", icon: "globe", examples: "Firefox, Chrome, Helium" },
@@ -27,7 +27,7 @@ var categories = [
 var rows = [
     { id: "outputMethod", page: "pasting", section: "Delivery", kind: "choice", control: "cards",
       label: "Paste with",
-      help: "Default paste and the rules below can still limit it to inserting or copying.",
+      help: "Default paste and App rules can still limit it to inserting or copying.",
       value: "automatic", keywords: "delivery output method ydotool automatic insert type",
       options: [
           { id: "automatic", label: "Automatic", icon: "route", help: "Inserts directly where it can, then presses the paste keys." },
@@ -38,7 +38,7 @@ var rows = [
       label: "Virtual keyboard", help: "Lets Speecher press the paste keys in other apps.",
       keywords: "ydotool uinput service setup permission", needs: "hasVirtualKeyboard" },
     { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
-      label: "Default paste", help: "How Speecher pastes unless a rule below says otherwise.",
+      label: "Default paste", help: "How Speecher pastes unless an App rule says otherwise.",
       value: "standard_paste", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",
       options: pasteMethods },
     { id: "outputFormat", page: "pasting", section: "Delivery", kind: "choice",
@@ -50,16 +50,16 @@ var rows = [
       help: "If Speecher can't confirm the paste, your dictation stays on the clipboard.",
       value: false, keywords: "clipboard restore keep previous copy" },
 
-    { id: "applicationPasteRules", page: "pasting", section: "Rules for single apps", kind: "custom",
+    { id: "applicationPasteRules", page: "appRules", section: "Rules for single apps", kind: "custom",
       label: "Rules for single apps",
       help: "Paste differently into one app, named by its exact desktop ID, such as org.kde.konsole.",
       value: [], keywords: "app specific per-app paste rule application id override" },
-    { id: "appRecognitionRules", page: "pasting", section: "Application recognition", kind: "custom",
+    { id: "appRecognitionRules", page: "appRules", section: "Application recognition", kind: "custom",
       label: "Application recognition",
       help: "Your matches come first. Each sets the app type for paste rules, the Writing Profile, or both.",
       keywords: "recognize identify match app type category writing profile built-in" }
 ].concat(categories.map(function (c) {
-    return { id: "categoryPasteRule_" + c.id, page: "pasting", section: "Rules by app type", kind: "choice",
+    return { id: "categoryPasteRule_" + c.id, page: "appRules", section: "Rules by app type", kind: "choice",
              control: "select", label: c.label, value: c.method || "inherit",
              keywords: "paste rule app type category " + c.label.toLowerCase(),
              options: [inherit].concat(pasteMethods) };

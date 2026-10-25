@@ -24,7 +24,7 @@ var rows = [
       help: "Pick a speech service or refinement provider for this profile only. Each falls back to the ones set for every profile.",
       keywords: "speech service refinement provider model override per profile" },
     { id: "profileApps", page: "profiles", section: "Profiles", kind: "custom",
-      label: "Used in", help: "Apps are matched to profiles under Pasting, in Application recognition.",
+      label: "Used in", help: "Apps are matched to profiles in Application recognition, under Pasting › App rules.",
       keywords: "apps applications match recognition" },
     { id: "defaultWritingProfile", page: "profiles", section: "Every profile", kind: "custom",
       label: "When the app isn't recognized", help: "The profile for every app no match names.",

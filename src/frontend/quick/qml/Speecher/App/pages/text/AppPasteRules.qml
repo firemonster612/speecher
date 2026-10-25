@@ -7,7 +7,7 @@ import Speecher.Wording
 import Speecher.App
 
 // Rules for single apps: the add form, then each app with its paste method
-// and a switch, on the Pasting page. The list is the applicationPasteRules
+// and a switch, on the App rules page. The list is the applicationPasteRules
 // setting, [{ app, method, enabled }], saved whole on every change.
 // --pasting-form=rule opens the form.
 Section {
