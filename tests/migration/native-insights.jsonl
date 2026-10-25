@@ -1,0 +1,3 @@
+{"finishedAt":"2026-10-01T09:15:00Z","audioMs":4200,"words":12,"app":"Kate","profile":"work"}
+{"finishedAt":"2026-10-02T17:40:30Z","audioMs":15800,"words":41,"app":"Obsidian","profile":"custom_profile_fixture1","profileName":"Lab notes","speechProviders":["local"],"refinementProviders":["anthropic"]}
+{"finishedAt":"2026-10-03T08:05:12Z","audioMs":2100,"words":5,"app":"Konsole","profile":"ai_coding","speechProviders":["codex"]}

@@ -78,6 +78,7 @@ int runQuickInsightsTests(int argc, char **argv);
 int runQuickAccountsTests(int argc, char **argv);
 int runQuickAudioTests(int argc, char **argv);
 int runQuickLibraryTests(int argc, char **argv);
+int runMigrationTests(int argc, char **argv);
 #ifdef Q_OS_LINUX
 int runKeywatchTests(int argc, char **argv);
 int runHelperInstallTests(int argc, char **argv);

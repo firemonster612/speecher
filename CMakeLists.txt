@@ -1467,6 +1467,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_quick_accounts.cpp
     tests/test_quick_audio.cpp
     tests/test_quick_library.cpp
+    tests/test_migration.cpp
     src/frontend/quick/host/QuickFrontEnd.cpp
     src/frontend/quick/host/QuickFrontEnd.h
     src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1506,6 +1507,7 @@ if(SPEECHER_BUILD_TESTS)
     quick_accounts
     quick_audio
     quick_library
+    migration
     platform_live
     single_instance_ipc
     delivery
@@ -1553,9 +1555,9 @@ if(SPEECHER_BUILD_TESTS)
     set_tests_properties(speecher_atspi_unavailable_peer PROPERTIES TIMEOUT 10)
   endif()
 
-  # The endpoint key tests against a working keyring, which the developer's
-  # own session may not offer (a locked collection falls back to the
-  # settings file). Skipped where gnome-keyring is not installed.
+  # The endpoint key and migration suites also run against a working keyring,
+  # which the developer's own session may not offer (a locked collection falls
+  # back to the settings file). Skipped where gnome-keyring is not installed.
   if(UNIX AND NOT APPLE)
     find_program(SPEECHER_DBUS_RUN_SESSION dbus-run-session)
     find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
@@ -1564,6 +1566,11 @@ if(SPEECHER_BUILD_TESTS)
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
                 $<TARGET_FILE:speecher_tests> --suite custom_endpoints)
       set_tests_properties(speecher_custom_endpoints_keyring PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+      add_test(NAME speecher_migration_keyring
+        COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
+                $<TARGET_FILE:speecher_tests> --suite migration)
+      set_tests_properties(speecher_migration_keyring PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
     endif()
   endif()

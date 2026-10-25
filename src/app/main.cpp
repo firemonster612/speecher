@@ -30,7 +30,6 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QIcon>
-#include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -97,21 +96,6 @@ static QString installLogHandler()
     qInstallMessageHandler(messageHandler);
     qInfo().noquote() << "speecher log started path=" + path;
     return path;
-}
-
-static void migrateSettings()
-{
-    constexpr auto oldOrganization = "local.speecher";
-    QSettings newSettings(QString::fromLatin1(SettingsKeys::Organization),
-                          SettingsKeys::application());
-    QSettings oldSettings(QString::fromLatin1(oldOrganization),
-                          SettingsKeys::application());
-    QString error;
-    if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
-        qWarning().noquote() << error;
-    }
-    migrateRefinementModels(newSettings);
-    migrateOutputMethod(newSettings);
 }
 
 static QStringList commandLineArguments(int argc, char **argv)
@@ -460,7 +444,7 @@ int main(int argc, char **argv)
         return parseCommandLine(arguments, {}).exitCode;
     }
     const QString logPath = installLogHandler();
-    migrateSettings();
+    migrateSavedSettings();
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
     // Before parsing, which prints --help, --version and usage errors itself.

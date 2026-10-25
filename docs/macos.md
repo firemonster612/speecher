@@ -125,6 +125,60 @@ distinguishes Apple tools, Apple-issued developer identities, and other
 signed code; a stable self-signed certificate alone does not stabilize the
 last category's partition.
 
+## Release gate: updating SwiftUI users to the Qt Quick build
+
+Releases up to 0.2.x shipped the SwiftUI front end. Those users get the Qt
+Quick build as an ordinary Sparkle update, and their permissions, Keychain
+items and login item carry over only if the new bundle is signed so macOS
+takes it for the same app. Ad-hoc test builds can't show that: each has its
+own signature. `packaging/macos/verify-dmg-update.py` drives the update
+itself; the `migration` job in `.github/workflows/mac-update-e2e.yml` runs it
+on CI with the released DMG and a candidate signed with the release identity
+and Sparkle key. Run the checklist below by hand before the first Quick
+release, on an Apple Silicon Mac (the released DMGs are arm64 only), with the
+real release secrets.
+
+1. Get the shipped DMG from the latest GitHub release, not a rebuild, and the
+   candidate DMG that `release.yml` built with `MACOS_SIGNING_IDENTITY` and
+   `SPARKLE_ED_PUBLIC_KEY`, plus its `sign_update` output from the release
+   `SPARKLE_ED_PRIVATE_KEY`.
+2. Compare the two bundles before installing anything, from each mounted DMG:
+   - `codesign -dv --verbose=4 speecher.app`: the same `Identifier`
+     (`io.github.firemonster612.speecher`) and `TeamIdentifier`, and neither
+     says `Signature=adhoc`.
+   - `codesign -d -r- speecher.app`: record both designated requirements.
+     Then `codesign --verify -R="<the shipped app's requirement>"
+     candidate/speecher.app` must pass. macOS checks grants and Keychain
+     access against the shipped app's requirement.
+   - `plutil -extract SUPublicEDKey raw` and `CFBundleIdentifier`,
+     `CFBundleExecutable` match in both `Info.plist`s, and the candidate's
+     `CFBundleVersion` is higher.
+3. Set up the shipped app as a user would: copy it to `/Applications`, run
+   the setup assistant, grant Microphone, Accessibility and Input Monitoring,
+   turn on Start Speecher at login, save a dummy OpenAI key in Accounts, and
+   dictate once into TextEdit with the shortcut.
+4. Run `SPEECHER_DISPOSABLE_MACHINE=1 packaging/macos/verify-dmg-update.py
+   shipped.dmg candidate.dmg signature.txt evidence --keep-state --accept
+   restart-button`. Choose Check now in the old app, then Restart now when it
+   offers it. The script must report every check as passed.
+5. After the relaunch, without touching System Settings:
+   - No permission prompt appears, and `speecher.log` reads
+     `macOS accessibility identity ... trusted=1`.
+   - The shortcut starts dictation (Input Monitoring), the microphone records,
+     and the text pastes into TextEdit (Accessibility).
+   - Accounts shows the OpenAI key as saved, and Keychain Access shows no
+     prompt for it.
+   - System Settings > General > Login Items lists Speecher once.
+6. Log out and back in: Speecher starts by itself.
+7. Repeat steps 3 to 5 with Accessibility turned off before the update: the
+   new app must say the grant is missing rather than treat setup as done.
+8. Keep both `codesign` outputs, both requirements and the script's evidence
+   folder with the release.
+
+If step 2 fails, the shipped build's signature can't carry grants over. Say
+so in the release notes, telling users to grant the permissions again. No
+migration can move TCC records.
+
 ## The speecher command
 
 The CLI binary lives inside the bundle, at

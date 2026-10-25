@@ -5,9 +5,22 @@ on:
     branches:
       - 'e2e/**'
   workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: >-
+          A release.yml run whose macos-release artifact (DMG signed with the
+          release identity and Sparkle key) the shipped app updates to; runs
+          the migration job
+        required: false
+        default: ''
+      shipped_tag:
+        description: The shipped release to update from; empty for the latest
+        required: false
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   update:
@@ -485,3 +498,49 @@ jobs:
           name: mac-update-e2e-evidence
           path: evidence
           if-no-files-found: error
+
+  # The shipped SwiftUI app, from its GitHub release, updating to a candidate
+  # release.yml built and signed, through the shipped app's own Sparkle: the
+  # automated part of the release gate in docs/macos.md. Only the real
+  # signatures show that grants, Keychain items and the login item carry
+  # over, so this job takes both apps as built and never rebuilds either.
+  migration:
+    if: github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != ''
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      # QtCore for the settings seeder.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.11.3
+          arch: clang_64
+
+      - name: Fetch the shipped and candidate DMGs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHIPPED_TAG: ${{ inputs.shipped_tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          gh release download ${SHIPPED_TAG:+"$SHIPPED_TAG"} --repo "$GITHUB_REPOSITORY" \
+            --pattern speecher.dmg --dir "$RUNNER_TEMP/shipped"
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name macos-release --dir "$RUNNER_TEMP/candidate"
+
+      - name: Update the shipped app to the candidate
+        env:
+          SPEECHER_DISPOSABLE_MACHINE: '1'
+        run: |
+          python3 packaging/macos/verify-dmg-update.py \
+            "$RUNNER_TEMP/shipped/speecher.dmg" "$RUNNER_TEMP/candidate/speecher.dmg" \
+            "$RUNNER_TEMP/candidate/sparkle-signature.txt" migration-evidence
+
+      - name: Upload migration evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-migration-evidence
+          path: migration-evidence
+          if-no-files-found: ignore
