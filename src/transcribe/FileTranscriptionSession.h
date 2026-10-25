@@ -47,6 +47,12 @@ struct TranscribeOptions {
     QString writingProfile = WritingProfile::Other;
     // Replaces the Spoken Language setting for this batch.
     std::optional<QString> spokenLanguage;
+    // Replace the models the settings or the profile give the chosen
+    // services, for this batch; empty keeps them. They apply to the services
+    // that have a model to choose: a Local Model's id or a Custom Endpoint's
+    // model for speech, and see setRefinementModel for refinement.
+    QString speechModel;
+    QString refinementModel;
     // A recording's: each final the provider streams is the transcript as it
     // arrives, so only speech providers that stream final text take the
     // audio, and Codex does not transcribe it again at the end. Once the
@@ -105,7 +111,7 @@ QString saveTranscript(const QString &audioPath,
 
 // settings as a batch with these options runs them: its spoken language,
 // and its speech and refinement providers, each with the profile's model and
-// chain where the batch kept the profile's provider.
+// chain where the batch kept the profile's provider, or the batch's own model.
 AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &providers, const TranscribeOptions &options);
 
 // Writes text to path, replacing what is there. Returns why it could not, or

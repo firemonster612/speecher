@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
+#include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/StartupPreparationRunner.h"
@@ -171,6 +172,16 @@ AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &provi
     }
     settings.speech.providerId = options.speechProviderId;
     settings.refinement.providerId = options.refinementProviderId;
+    if (!options.speechModel.isEmpty()) {
+        if (settings.speech.providerId == QStringLiteral("local")) {
+            settings.speech.local.modelId = options.speechModel;
+        } else if (settings.speech.providerId == QStringLiteral("endpoint")) {
+            settings.speech.endpoint.model = options.speechModel;
+        }
+    }
+    if (!options.refinementModel.isEmpty()) {
+        setRefinementModel(settings.refinement, options.refinementModel);
+    }
     return settings;
 }
 

@@ -2,7 +2,8 @@ import QtQuick
 
 // A text field with suggestions under a chevron, for values such as model
 // IDs where the list is a guide rather than every choice. Picking one fills
-// the field; picking or finishing an edit emits committed.
+// the field as typing would, so a text bound to a value keeps following
+// it; picking or finishing an edit emits committed.
 TextField {
     id: field
 
@@ -30,6 +31,10 @@ TextField {
         width: Math.max(field.width, 240)
         items: field.suggestions
         currentId: field.text
-        onPicked: id => { field.text = id; field.committed(id) }
+        onPicked: id => {
+            field.remove(0, field.length)
+            field.insert(0, id)
+            field.committed(id)
+        }
     }
 }

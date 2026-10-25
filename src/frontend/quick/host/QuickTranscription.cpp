@@ -211,6 +211,11 @@ QVariantMap QuickTranscription::options() const
     };
 }
 
+QString QuickTranscription::speechModel() const
+{
+    return m_queue.speechModel();
+}
+
 QString QuickTranscription::refinerModel() const
 {
     return m_queue.refinementModel();
@@ -339,11 +344,21 @@ void QuickTranscription::setOption(const QString &id, const QVariant &value)
     }
     TranscribeOptions options = m_queue.options();
     if (id == QStringLiteral("service")) {
+        if (options.speechProviderId != value.toString()) {
+            options.speechModel.clear();
+        }
         options.speechProviderId = value.toString();
+    } else if (id == QStringLiteral("speechModel")) {
+        options.speechModel = value.toString();
     } else if (id == QStringLiteral("vocabulary")) {
         options.applyVocabulary = value.toBool();
     } else if (id == QStringLiteral("refiner")) {
+        if (options.refinementProviderId != value.toString()) {
+            options.refinementModel.clear();
+        }
         options.refinementProviderId = value.toString();
+    } else if (id == QStringLiteral("refinerModel")) {
+        options.refinementModel = value.toString();
     } else if (id == QStringLiteral("cleanup")) {
         options.cleanupStrength = value.toString();
     } else if (id == QStringLiteral("tone")) {

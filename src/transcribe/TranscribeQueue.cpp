@@ -182,8 +182,16 @@ void TranscribeQueue::chooseProfile(const QString &profile)
     m_options.refinementProviderId = resolved.refinement.providerId;
     m_options.cleanupStrength = profileCleanupLevel(chosen, settings.refinement.customCleanupLevels);
     m_options.tone = chosen.tone;
+    m_options.speechModel.clear();
+    m_options.refinementModel.clear();
     m_optionsChosen = true;
     emit optionsChanged();
+}
+
+QString TranscribeQueue::speechModel() const
+{
+    return speecher::speechModel(
+        withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options).speech);
 }
 
 QString TranscribeQueue::refinementModel() const

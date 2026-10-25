@@ -3184,6 +3184,35 @@ private slots:
         QCOMPARE(queue.options().cleanupStrength, QStringLiteral("light_cleanup"));
     }
 
+    // Models chosen for a batch run it in place of the settings' own, which
+    // keep theirs, and a new profile puts them back.
+    void aBatchsOwnModelsLeaveTheSettingsAlone()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.refinement.providerId = QStringLiteral("anthropic");
+        settings.refinement.anthropicModel = QStringLiteral("claude-sonnet-5-5");
+        controller.settings()->applySnapshot(settings);
+        settings = controller.settings()->snapshot();
+        TranscribeQueue queue(&controller);
+
+        TranscribeOptions chosen = queue.options();
+        chosen.speechProviderId = QStringLiteral("local");
+        chosen.speechModel = QStringLiteral("whisper-small");
+        chosen.refinementProviderId = QStringLiteral("anthropic");
+        chosen.refinementModel = QStringLiteral("claude-opus-5-5");
+        queue.setOptions(chosen);
+
+        QCOMPARE(queue.speechModel(), QStringLiteral("whisper-small"));
+        QCOMPARE(queue.refinementModel(), QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(controller.settings()->snapshot().speech.local.modelId, settings.speech.local.modelId);
+        QCOMPARE(controller.settings()->snapshot().refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
+
+        queue.chooseProfile(WritingProfile::Work);
+        QVERIFY(queue.options().speechModel.isEmpty());
+        QCOMPARE(queue.refinementModel(), QStringLiteral("claude-sonnet-5-5"));
+    }
+
     // Choices nobody has made yet follow the settings; once one is made
     // here, the settings no longer move them.
     void untouchedChoicesFollowTheSettings()
