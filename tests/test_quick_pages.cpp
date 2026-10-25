@@ -460,10 +460,15 @@ private slots:
         QVERIFY(refinement->hasActiveFocus());
     }
 
-    // Dictation's page says how each of its subpages is set now.
+    // Dictation's page says how each of its subpages is set now. Popup &
+    // sounds' line is the one every platform sets alike; macOS and Windows
+    // bind a default shortcut where Linux has none.
     void dictationSaysHowItsSubpagesAreSet()
     {
         ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("showLiveText"), false);
+        settings.set(QStringLiteral("playSounds"), true);
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -484,7 +489,7 @@ private slots:
             }
             return false;
         };
-        QTRY_VERIFY(helpShown(QStringLiteral("No dictation shortcut yet")));
+        QTRY_VERIFY(helpShown(QStringLiteral("Live text off, sounds on")));
     }
 
     void everySetupStepLoads_data() { themes(); }
