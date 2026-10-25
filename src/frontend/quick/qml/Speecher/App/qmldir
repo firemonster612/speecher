@@ -13,5 +13,6 @@ StateText 1.0 StateText.qml
 Sheet 1.0 Sheet.qml
 Brand 1.0 Brand.qml
 States 1.0 states.js
+singleton TranscribeWords 1.0 pages/transcribe/TranscribeWords.qml
 ClientWindow 1.0 ClientWindow.qml
 WindowControls 1.0 WindowControls.qml

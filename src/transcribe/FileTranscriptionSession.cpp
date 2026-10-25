@@ -16,6 +16,7 @@
 #include <QFileInfo>
 #include <QMediaPlayer>
 #include <QMimeDatabase>
+#include <QSaveFile>
 #include <QUrl>
 
 #include <algorithm>
@@ -152,6 +153,38 @@ QString saveTranscript(const QString &audioPath,
     }
 }
 
+QString writeTranscript(const QString &path, const QString &text)
+{
+    QSaveFile file(path);
+    const QByteArray bytes = text.toUtf8() + '\n';
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
+        return transcriptSaveError(path, file.errorString());
+    }
+    return {};
+}
+
+AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &providers, const TranscribeOptions &options)
+{
+    if (options.spokenLanguage) {
+        settings.speech.language = *options.spokenLanguage;
+    }
+    // The page's providers start at the profile's. Kept, they run as the
+    // profile has them, with its model and ahead of the saved chain; one the
+    // page or command line changed runs as the settings have it.
+    const AppSettings profiled = providers.withProfileProviders(
+        settings, writingProfileSettingsFor(settings.refinement.writingProfiles,
+                                            writingProfileFromName(options.writingProfile)));
+    if (profiled.speech.providerId == options.speechProviderId) {
+        settings.speech = profiled.speech;
+    }
+    if (profiled.refinement.providerId == options.refinementProviderId) {
+        settings.refinement = profiled.refinement;
+    }
+    settings.speech.providerId = options.speechProviderId;
+    settings.refinement.providerId = options.refinementProviderId;
+    return settings;
+}
+
 FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                                                    ProviderRegistry *providers,
                                                    QObject *parent)
@@ -281,26 +314,9 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
 {
     m_paths = paths;
     m_options = options;
-    m_batchSettings = m_settings->snapshot();
-    if (options.spokenLanguage) {
-        m_batchSettings.speech.language = *options.spokenLanguage;
-    }
-    // The page's providers start at the profile's. Kept, they run as the
-    // profile has them, with its model and ahead of the saved chain; one the
-    // page or command line changed runs as the settings have it.
-    const AppSettings profiled = m_providers->withProfileProviders(
-        m_batchSettings, writingProfileSettingsFor(m_batchSettings.refinement.writingProfiles,
-                                                   writingProfileFromName(options.writingProfile)));
-    if (profiled.speech.providerId == options.speechProviderId) {
-        m_batchSettings.speech = profiled.speech;
-    }
-    if (profiled.refinement.providerId == options.refinementProviderId) {
-        m_batchSettings.refinement = profiled.refinement;
-    }
-    m_batchSettings.speech.providerId = options.speechProviderId;
+    m_batchSettings = withBatchChoices(m_settings->snapshot(), *m_providers, options);
     m_speechChain = providerChain(ProviderRole::Speech, options.speechProviderId,
                                   m_batchSettings.speech.fallbackProviderIds);
-    m_batchSettings.refinement.providerId = options.refinementProviderId;
     m_batchSettings.speech.timedSegments = true;
     if (options.streamedFinalsOnly) {
         m_batchSettings.speech.codexFinalRetranscribe = false;

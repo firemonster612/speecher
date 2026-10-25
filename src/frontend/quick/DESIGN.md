@@ -17,8 +17,8 @@ writes the real settings, and the areas not wired yet still run on mock data.
 | `qml/Speecher/Popup/` | The dictation popup |
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations, previews and the mock backend |
-| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState` and `Updates` as placeholders |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState` and `Updates` |
+| `mock/Speecher/Backend/` | The preview's `Speecher.Backend`: mock singletons standing in for core. The app ships all but `Settings`, `Status`, `Dictation`, `DictationState`, `Updates` and `Transcription` as placeholders |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates` and `Transcription` |
 | `assets/` | Atkinson Hyperlegible Next, and the Lucide icon font |
 | `preview/` | Screenshot and video tool, and the component gallery (`preview/qml/SpeecherPreview/Gallery.qml`) |
 
@@ -35,9 +35,10 @@ editing pages. Each Backend type comes from exactly one module: the app's
 Backend is the C++ types plus the mocks not yet replaced.
 
 - Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
-  `Dictation` and `DictationState` (`host/QuickDictation`), and `Updates`
-  (`host/QuickUpdates`). Placeholders until their wiring PRs: `Insights`,
-  `Transcription`, `Audio`, `Models`, `Library`, `Accounts` and `System`.
+  `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
+  (`host/QuickUpdates`) and `Transcription` (`host/QuickTranscription`).
+  Placeholders until their wiring PRs: `Insights`, `Audio`, `Models`,
+  `Library`, `Accounts` and `System`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
@@ -81,6 +82,14 @@ Backend is the C++ types plus the mocks not yet replaced.
   countdown that waits while the pointer rests on the popup
   (`errorHoldRequested`). `renewing` says a sign-in is renewing. `DictationState` is the same type with
   nothing behind it, for a page's demo popup.
+- `Transcription` is core's `TranscribeQueue`: the files listed for the next
+  batch, its `options` (seeded from the settings, never saved), the batch as
+  it started (`batch`), its progress and its `results`, whose fields
+  `QuickTranscription.h` documents. Its choice lists come from their owners
+  (`Models.serviceChoices`, `Library`, the `spokenLanguage` row), and its
+  wording is the page's (`TranscribeWords`). Choosing files and folders and
+  exporting open the desktop's file dialogs, titled by the page; a start,
+  retry or export that fails says why in `problem`.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
   options. Option ids are the values core stores. Pages place rows by id with
   `SchemaRow { rowId: "…" }`.

@@ -106,6 +106,15 @@ QString saveTranscript(const QString &audioPath,
                        TranscriptFormat format,
                        QString *error);
 
+// settings as a batch with these options runs them: its spoken language,
+// and its speech and refinement providers, each with the profile's model and
+// chain where the batch kept the profile's provider.
+AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &providers, const TranscribeOptions &options);
+
+// Writes text to path, replacing what is there. Returns why it could not, or
+// empty.
+QString writeTranscript(const QString &path, const QString &text);
+
 // Transcribes audio files one after another, or what a microphone hears,
 // with fresh provider instances, so a batch never shares a transcriber or
 // refiner with live dictation.
