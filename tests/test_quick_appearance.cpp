@@ -404,9 +404,14 @@ private slots:
         }
         QCOMPARE(breezes, QStringList{QStringLiteral("Test Breeze")});
 
-        // As Plasma saves a new scheme: by replacing the file.
+        // As Plasma saves a new scheme: by replacing the file, here within
+        // the same tick of the file system's clock as the first save.
         QSignalSpy changed(&appearance, &QuickAppearance::systemColorsChanged);
+        const QDateTime saved = QFileInfo(kdeglobals()).lastModified();
         QVERIFY(writeFile(kdeglobals(), QByteArray(breezeColors).replace("239,240,241", "32,35,38")));
+        QFile replaced(kdeglobals());
+        QVERIFY(replaced.open(QIODevice::ReadWrite) && replaced.setFileTime(saved, QFileDevice::FileModificationTime));
+        replaced.close();
         QVERIFY(changed.wait(5000));
         QCOMPARE(appearance.systemColors().value(QStringLiteral("window")).value<QColor>(), QColor(32, 35, 38));
     }

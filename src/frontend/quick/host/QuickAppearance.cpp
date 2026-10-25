@@ -128,14 +128,9 @@ void QuickAppearance::readSystemColors()
     if (!m_onPlasma) {
         return;
     }
+    // Read on every change in the config folder: two saves within one tick
+    // of the file system's clock leave kdeglobals' time as it was.
     const QString kdeglobals = QStandardPaths::locate(QStandardPaths::GenericConfigLocation, QStringLiteral("kdeglobals"));
-    const QDateTime modified = QFileInfo(kdeglobals).lastModified();
-    // The config folder changes with every KDE app's save; kdeglobals rarely.
-    if (kdeglobals == m_kdeglobals && modified == m_kdeglobalsModified) {
-        return;
-    }
-    m_kdeglobals = kdeglobals;
-    m_kdeglobalsModified = modified;
     // Replacing the file drops it from the watcher.
     if (!kdeglobals.isEmpty() && !m_watcher.files().contains(kdeglobals)) {
         m_watcher.addPath(kdeglobals);
