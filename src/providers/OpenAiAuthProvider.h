@@ -7,6 +7,7 @@
 namespace speecher {
 
 class SecretStore;
+struct RefinementSettings;
 
 struct OpenAiAuth {
     bool ok = false;
@@ -40,6 +41,10 @@ public:
                                 const QString &settingsStatus = {},
                                 const QString &cliproxyBaseUrl = {},
                                 const QString &cliproxyApiKey = {});
+
+    // The sign-in OpenAI refinement uses with these settings; secretStore
+    // reads the saved API key.
+    static OpenAiAuthProvider forRefinement(SecretStore *secretStore, const RefinementSettings &settings);
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     OpenAiAuthStatus status() const;

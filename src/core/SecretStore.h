@@ -39,12 +39,19 @@ public:
     // not in the keyring, else an empty string.
     QString cachedSecret(Secret secret) const;
     bool isSecretKnown(Secret secret) const;
+    // Whether a deletion the keyring refused waits to be retried; the secret
+    // reads as empty meanwhile.
+    bool deletionPending(Secret secret) const;
     // Saves to the keychain, or to the settings file when no keychain works,
     // so a custom endpoint keeps working without one. An empty value for a
     // secret that was never read leaves the stored one alone: it came from a
     // skipped or failed read, not from the person. Failed deletions leave a
     // persisted marker that suppresses reads until deletion succeeds.
     bool saveSecret(Secret secret, const QString &value);
+    // Removes a secret whether or not it was read, the way saveSecret clears
+    // one it has read. False when the keyring refused: the marker then hides
+    // the key until a later deletion succeeds, and lastError() says why.
+    bool clearSecret(Secret secret);
     // Removes every Speecher entry from the keychain.
     bool deleteKeyringSecrets() const;
 
@@ -53,6 +60,9 @@ public:
     bool saveApiKey(const QString &apiKey);
     QString status() const;
     QString lastError() const;
+    // Why the last read of the secret failed, naming the secret, or nothing
+    // when it was read. Ask right after the read: it carries lastError().
+    QString readFailure(Secret secret) const;
     bool usesInsecureSettingsFallback() const;
 
 private:
@@ -68,13 +78,13 @@ private:
     CachedSecret &cached(Secret secret) const;
     void cacheValue(Secret secret, const QString &value) const;
     QString settingsFallback(Secret secret) const;
-    bool deletionPending(Secret secret) const;
     bool mayBeInKeyring(Secret secret) const;
     void recordKeyringEntry(Secret secret, bool present) const;
     QString keyringSecret(Secret secret) const;
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
     bool saveToKeyring(Secret secret, const QString &value);
+    bool storeSecret(Secret secret, const QString &cleaned);
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;

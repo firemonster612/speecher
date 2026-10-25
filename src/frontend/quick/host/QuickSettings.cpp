@@ -117,12 +117,12 @@ struct SettingRow {
          setPasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category), v);                             \
      }}
 
-// Every row the UI saves, by the schema's row id. Rows missing here (secrets
-// and the result duration) wait for the PRs that wire their pages; launch at
-// login is saved only where the platform can start Speecher at login. So do
-// the rows whose choices come from a placeholder area, since a made-up choice
-// would be saved as real: the microphone (Audio), the CLI Proxy accounts
-// (Accounts) and the default Writing Profile (Library's profiles).
+// Every row the UI saves, by the schema's row id. Secrets are Accounts' to
+// save. Rows missing here (the result duration) wait for the PR that wires
+// their page; launch at login is saved only where the platform can start
+// Speecher at login. So do the rows whose choices come from a placeholder
+// area, since a made-up choice would be saved as real: the microphone (Audio)
+// and the default Writing Profile (Library's profiles).
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
@@ -257,6 +257,9 @@ const SettingRow settingRows[] = {
 
     FIELD_ROW("openAiAuthMode", refinement.openAiAuthMode),
     FIELD_ROW("anthropicAuthMode", refinement.anthropicAuthMode),
+    // A file name from Accounts.cliproxyAccounts.
+    FIELD_ROW("openAiCliproxyAccount", refinement.openAiCliproxyAccount),
+    FIELD_ROW("anthropicCliproxyAccount", refinement.anthropicCliproxyAccount),
     // What was typed, not the directory detected from it.
     {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyOauthDirConfigured); },
      [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyOauthDirConfigured = v.toString().trimmed(); }},

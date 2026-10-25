@@ -26,6 +26,7 @@
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickStatus.h"
@@ -967,6 +968,12 @@ private slots:
         QuickSystem system(&controller);
         // Setup's choices read Models, as the host always has one.
         QuickModels models(&controller);
+        // Setup reads Accounts, which the host always makes. Its keyring
+        // reads fail at once, so none is left waiting on this thread when it
+        // goes.
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QuickAccounts accounts(&controller);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);

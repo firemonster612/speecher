@@ -119,6 +119,7 @@ int main(int argc, char **argv)
     if (selected("quick_system")) result |= runQuickSystemTests(argc, argv);
     if (selected("quick_models")) result |= runQuickModelsTests(argc, argv);
     if (selected("quick_insights")) result |= runQuickInsightsTests(argc, argv);
+    if (selected("quick_accounts")) result |= runQuickAccountsTests(argc, argv);
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

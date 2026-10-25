@@ -8,6 +8,7 @@
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -19,6 +20,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlProperty>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -379,6 +381,12 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System, as the host always has one.
         QuickSystem system(&controller);
+        // Their key rows read Accounts, which the host always makes. Its
+        // keyring reads fail at once, so none is left waiting on this thread
+        // when it goes.
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QuickAccounts accounts(&controller);
         LocalSetupTestAccess::setRunners(*controller.localSetup(),
                                          {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
                                            QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
@@ -414,6 +422,12 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System, as the host always has one.
         QuickSystem system(&controller);
+        // Their key rows read Accounts, which the host always makes. Its
+        // keyring reads fail at once, so none is left waiting on this thread
+        // when it goes.
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QuickAccounts accounts(&controller);
         placeDownloaded(controller, QStringLiteral("moonshine-small"));
         settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
         QQmlEngine engine;
@@ -488,6 +502,12 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System, as the host always has one.
         QuickSystem system(&controller);
+        // Their key rows read Accounts, which the host always makes. Its
+        // keyring reads fail at once, so none is left waiting on this thread
+        // when it goes.
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QuickAccounts accounts(&controller);
         // Every section the page has, open.
         settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("endpoint")});
         settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});

@@ -16,7 +16,7 @@ Page {
     subtitle: Schema.page("accounts").subtitle
     headerActions: [
         Button {
-            text: Accounts.text.checkAll
+            text: Words.checkAll
             iconName: "refresh-cw"
             onClicked: Accounts.services.forEach(s => Accounts.recheck(s.id))
         }
@@ -33,7 +33,7 @@ Page {
 
         ServiceCard {
             id: openAi
-            service: Accounts.service("openai")
+            serviceId: "openai"
             width: pair._cardWidth
             height: pair._cardHeight
             SchemaRow { rowId: "openAiAuthMode"; stacked: true }
@@ -47,7 +47,7 @@ Page {
         }
         ServiceCard {
             id: anthropic
-            service: Accounts.service("anthropic")
+            serviceId: "anthropic"
             width: pair._cardWidth
             height: pair._cardHeight
             SchemaRow { rowId: "anthropicAuthMode"; stacked: true }
@@ -61,7 +61,7 @@ Page {
     }
 
     ServiceCard {
-        service: Accounts.service("cliproxy")
+        serviceId: "cliproxy"
 
         // The account files it found, each with its own state.
         RowList {
@@ -75,10 +75,10 @@ Page {
                 first: index === 0 && accountFiles.first
                 iconName: "file-key"
                 title: account.label
-                detail: account.plan + ", " + account.id
+                detail: account.id
                 trailing: StateText {
                     stateId: accountRow.account.state
-                    text: Accounts.stateLabels[accountRow.account.state]
+                    text: Words.signInStates[accountRow.account.state]
                     indicator: "dot"
                 }
             }

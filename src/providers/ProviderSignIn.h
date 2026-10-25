@@ -43,6 +43,11 @@ public:
     void setAccountDirectory(const QString &directory);
     QString resolvedAccountDirectory() const;
 
+    // CLI Proxy API's saved accounts of a type ("codex", "claude") in the
+    // resolved directory, by file name, then the chosen one if its file is
+    // gone, marked missing, so a picker keeps showing what was chosen.
+    QList<CliProxyAccount> accounts(const QString &type) const;
+
     // Whether any enabled CLI Proxy API account exists for one of the given
     // speech providers. A disabled account or one for a service the build
     // lacks cannot dictate, so it must not open the Welcome gate.

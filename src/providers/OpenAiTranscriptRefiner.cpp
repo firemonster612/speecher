@@ -32,9 +32,7 @@ QString OpenAiTranscriptRefiner::label() const
 
 bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
-    return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
-                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
-        .requiresCodexOauthRefresh();
+    return OpenAiAuthProvider::forRefinement(m_secretStore, settings).requiresCodexOauthRefresh();
 }
 
 bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
@@ -49,27 +47,14 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     }
 
     auto resolved = std::make_shared<OpenAiAuth>();
-    const QString authMode = settings.openAiAuthMode;
-    const QString cliproxyAccount = settings.openAiCliproxyAccount;
-    const QString cliproxyDir = settings.cliproxyOauthDir;
-    const QString cliproxyBaseUrl = settings.cliproxyBaseUrl;
-    const QString cliproxyApiKey = settings.cliproxyApiKey;
     RefinementRefreshJob job;
     job.showRefreshIndicator = true;
     // Every source the mode allows, as prepare() resolves them, so a sign-in
     // that can't renew still leaves an API key to use. The worker reads the
     // keyring through a SecretStore of its own, never the GUI thread's.
-    job.run = [authMode, cliproxyAccount, cliproxyDir, cliproxyBaseUrl, cliproxyApiKey, resolved] {
+    job.run = [settings, resolved] {
         SettingsStore source;
-        *resolved = OpenAiAuthProvider(source.secrets(),
-                                       authMode,
-                                       cliproxyAccount,
-                                       cliproxyDir,
-                                       {},
-                                       {},
-                                       cliproxyBaseUrl,
-                                       cliproxyApiKey)
-                        .resolve();
+        *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), settings).resolve();
         return RefinementRefreshResult{resolved->ok, resolved->status, resolved->kind, resolved->httpStatus};
     };
     job.apply = [this, resolved](const RefinementRefreshResult &result) {
@@ -83,10 +68,7 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
 
 void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
-    const OpenAiAuth refreshed =
-        OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
-                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
-            .refreshCodexOauth();
+    const OpenAiAuth refreshed = OpenAiAuthProvider::forRefinement(m_secretStore, settings).refreshCodexOauth();
     if (!refreshed.ok) {
         qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
     }
@@ -101,9 +83,7 @@ RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSetting
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. resolve()
     // takes the same one-second credential lock the speech path uses.
-    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
-                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
-                 .resolve();
+    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, settings).resolve();
     return {m_auth.ok, m_auth.status, m_auth.kind, m_auth.httpStatus};
 }
 

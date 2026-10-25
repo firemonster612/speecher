@@ -131,13 +131,14 @@ private slots:
         settings.set(QStringLiteral("defaultWritingProfile"), QStringLiteral("made-up"));
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
 
-        for (const char *id : {"speechEndpointApiKey", "audioDevice", "openAiCliproxyAccount",
-                               "anthropicCliproxyAccount", "defaultWritingProfile"}) {
+        // Accounts saves the secrets.
+        for (const char *id : {"speechEndpointApiKey", "audioDevice", "defaultWritingProfile"}) {
             QVERIFY2(!settings.saves(QLatin1String(id)), id);
         }
         for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
                                "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules",
-                               "speechLocalModel", "localRunner", "localAcceleration", "localGraphicsCard"}) {
+                               "speechLocalModel", "localRunner", "localAcceleration", "localGraphicsCard",
+                               "openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
             QVERIFY2(settings.saves(QLatin1String(id)), id);
         }
     }

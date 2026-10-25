@@ -5,7 +5,8 @@ import Speecher.Backend
 import Speecher.Wording
 
 // A settings row built from its schema entry: label, help and the control its
-// kind calls for, bound to the row's value in Settings.
+// kind calls for, bound to the row's value in Settings. A secret is
+// write-only: Accounts saves and clears it and says only whether one is saved.
 SettingRow {
     id: root
 
@@ -16,14 +17,16 @@ SettingRow {
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place.
     property string note: spec.help || ""
+    readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
+                                           ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
     title: spec.label
-    help: Settings.errors[rowId] || note
+    help: Settings.errors[rowId] || _secretError || note
     iconName: spec.icon || ""
     // Usable once the backend saves the row or runs its action; a custom row
     // with no value draws content that has nothing to save. enabledWhen reads
     // Settings.values here, in the binding, so the row follows that value.
-    enabled: (spec.kind === "custom" && spec.value === undefined || Settings.saves(rowId))
+    enabled: (spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId))
              && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
     // A row whose schema entry says hiddenWhen folds away rather than greying.
     shown: !spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals
@@ -37,7 +40,8 @@ SettingRow {
             case "choice": return root.spec.control === "cards" ? cards
                                 : root.spec.control === "select" || root.spec.options.length > 4 ? select : segmented
             case "slider": return slider
-            case "text": case "secret": return textField
+            case "text": return textField
+            case "secret": return secretField
             case "shortcut": return shortcut
             case "action": return action
             default: return null
@@ -86,12 +90,51 @@ SettingRow {
     Component {
         id: textField
         TextField {
-            showText: Words.show
-            hideText: Words.hide
-            secret: root.spec.kind === "secret"
             text: root.value || ""
             placeholderText: root.spec.placeholder || ""
             onEditingFinished: Settings.set(root.rowId, text)
+        }
+    }
+    Component {
+        id: secretField
+        TextField {
+            id: field
+            readonly property bool saved: Accounts.savedSecrets[root.rowId] === true
+            // The key a refused clear left behind is still there to clear.
+            readonly property bool clearable: saved || Accounts.pendingClears[root.rowId] === true
+            // Whether the field changed since its draft went to Accounts:
+            // a flag, so no copy of the key outlives the field's own text.
+            property bool _editedSinceSubmit: false
+            showText: Words.show
+            hideText: Words.hide
+            secret: true
+            placeholderText: saved ? Words.savedSecret : root.spec.placeholder || ""
+            // Once saved, the key leaves the field; a refused one stays to
+            // retry. Typing goes on while the keyring answers, and a save
+            // asked for meanwhile waits its turn, so the field lets go only
+            // when Accounts says the draft submitted last was kept, and only
+            // if nothing was typed since.
+            onTextChanged: _editedSinceSubmit = true
+            onEditingFinished: {
+                if (!text.trim())
+                    return
+                _editedSinceSubmit = false
+                Accounts.saveSecret(root.rowId, text)
+            }
+            Connections {
+                target: Accounts
+                function onSecretSaved(rowId) {
+                    if (rowId === root.rowId && !field._editedSinceSubmit)
+                        field.clear()
+                }
+            }
+            trailing: IconButton {
+                visible: field.clearable && !field.length
+                iconName: "x"
+                size: 24
+                tooltip: Words.clear
+                onClicked: Accounts.clearSecret(root.rowId)
+            }
         }
     }
     Component {

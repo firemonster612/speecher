@@ -201,9 +201,8 @@ QString SettingsStore::resolveProviderSecrets(AppSettings &settings, ProviderRol
     for (const auto &[secret, field] : unread) {
         QString &value = field(settings);
         value = source.secrets()->secret(secret);
-        if (value.isEmpty() && !source.secrets()->isSecretKnown(secret)) {
-            return QStringLiteral("Desktop keyring unavailable for %1: %2")
-                .arg(SecretStore::settingsKey(secret), source.secrets()->lastError());
+        if (const QString failure = source.secrets()->readFailure(secret); value.isEmpty() && !failure.isEmpty()) {
+            return failure;
         }
         settings.unreadSecretKeys.removeAll(SecretStore::settingsKey(secret));
     }
