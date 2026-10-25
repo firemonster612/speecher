@@ -60,15 +60,17 @@ speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QU
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup")
 # Settings, Status, the dictation, Updates, Transcription, System, Models,
-# Insights and Accounts are C++ over core; Audio and Library ship the
-# preview's mocks as placeholders until each is wired. The mocks of the wired
-# ones stay with the preview.
+# Insights, Accounts and Audio are C++ over core; Library ships the preview's
+# mock as a placeholder until it is wired. The mocks of the wired ones stay
+# with the preview.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/mock/Speecher/Backend"
   EXCLUDE Settings.qml Status.qml Dictation.qml DictationState.qml Updates.qml
-    Transcription.qml System.qml Models.qml Insights.qml Accounts.qml
+    Transcription.qml System.qml Models.qml Insights.qml Accounts.qml Audio.qml
   SOURCES
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
+    "${SPEECHER_QUICK_DIR}/host/QuickAudio.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickAudio.h"
     "${SPEECHER_QUICK_DIR}/host/QuickDictation.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickDictation.h"
     "${SPEECHER_QUICK_DIR}/host/QuickModels.cpp"

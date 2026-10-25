@@ -16,6 +16,7 @@
 #include <QQmlError>
 #include <QQmlExtensionPlugin>
 #include <QQuickImageProvider>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QTimer>
 
@@ -93,12 +94,25 @@ public:
     }
 };
 
+// Lets go of the microphone test for the pages in the window, which has
+// hidden or closed; a hidden window keeps its pages, so they can't.
+void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
+{
+    for (QObject *holder : audio.testHolders()) {
+        const auto *item = qobject_cast<const QQuickItem *>(holder);
+        if (item && item->window() == window) {
+            audio.releaseTest(holder);
+        }
+    }
+}
+
 } // namespace
 
 QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_settings(controller)
+    , m_audio(controller)
     , m_status(controller)
     , m_dictation(controller)
     , m_updates(controller, controller->updates())
@@ -173,6 +187,11 @@ void QuickFrontEnd::showPage(const QString &pageId)
         // Startup work that would compete with the first paint waits for it.
         connect(m_main, &QQuickWindow::frameSwapped, m_controller, &ApplicationController::frontEndReady,
                 Qt::SingleShotConnection);
+        connect(m_main, &QWindow::visibleChanged, &m_audio, [this](bool visible) {
+            if (!visible) {
+                releaseTestIn(m_audio, m_main);
+            }
+        });
     }
     m_main->show();
     m_main->raise();
@@ -275,6 +294,7 @@ void QuickFrontEnd::setPage(const QString &pageId)
 
 void QuickFrontEnd::setupClosed()
 {
+    releaseTestIn(m_audio, m_setup);
     std::exchange(m_setup, nullptr)->deleteLater();
     m_controller->setupAssistantClosed();
 }

@@ -12,8 +12,10 @@ StepPage {
     id: page
 
     // The microphone test runs while the step is on show.
-    Component.onCompleted: if (Audio.testState === "stopped") Audio.toggleTest()
-    Component.onDestruction: if (Audio.testState !== "stopped") Audio.toggleTest()
+    Component.onCompleted: Audio.holdTest(page)
+    Component.onDestruction: Audio.releaseTest(page)
+
+    readonly property var test: Schema.row("microphoneTest")
 
     Card {
         HealthRow { rowId: "microphoneAccess" }
@@ -21,7 +23,7 @@ StepPage {
             rowId: "audioDevice"
             Select {
                 placeholder: Words.choose
-                options: Audio.deviceOptions
+                options: Microphones.deviceOptions
                 currentId: Settings.values.audioDevice || ""
                 onChosen: id => Settings.set("audioDevice", id)
             }
@@ -43,14 +45,16 @@ StepPage {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: Theme.space5
-            text: Audio.heard ? Audio.heardText : Audio.testStatus
-            tone: Audio.heard ? "live" : "tertiary"
+            text: Audio.heard ? page.test.heardText
+                : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
+                : page.test.notHeardText
+            tone: Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
         }
     }
 
     Txt {
         width: parent.width
-        text: Audio.setupHint
+        text: page.test.setupHint
         variant: "small"
         tone: "secondary"
         wrapMode: Text.WordWrap

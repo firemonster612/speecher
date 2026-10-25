@@ -51,10 +51,10 @@ QtObject {
             // Allowed, a microphone that is there, and speech heard from it.
             const access = Health.find(System.checks, "microphoneAccess")
             const microphone = Settings.values.audioDevice || ""
-            const device = Audio.deviceOptions.find(o => o.id === microphone)
+            const device = Microphones.deviceOptions.find(o => o.id === microphone)
             const present = microphone === "" ? Audio.hasMicrophones : Audio.devices.some(d => d.id === microphone)
             return { done: access.state === "ok" && present && Audio.heard,
-                     verdict: access.state !== "ok" ? Health.status(access) : present && !Audio.heard ? Audio.notHeardText : device ? device.label : "" }
+                     verdict: access.state !== "ok" ? Health.status(access) : present && !Audio.heard ? Schema.row("microphoneTest").notHeardText : device ? device.label : "" }
         }
         case "accessibility":
         case "delivery": {

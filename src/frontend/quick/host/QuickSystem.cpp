@@ -353,7 +353,7 @@ QVariantMap QuickSystem::check(const QString &id) const
             return check.toMap();
         }
     }
-    qWarning().noquote() << "System.check: no check" << id;
+    qWarning().noquote() << "System: no check" << id;
     return {};
 }
 

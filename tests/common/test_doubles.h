@@ -64,6 +64,11 @@ public:
         return active;
     }
 
+    void useDevice(const QString &deviceId) override
+    {
+        device = deviceId;
+    }
+
     QString echoCancellationWarning() const override
     {
         return echoWarning;
@@ -87,6 +92,7 @@ public:
     bool startResult = true;
     QString startError = QStringLiteral("audio failed");
     QString echoWarning;
+    QString device;
     bool started = false;
     bool active = false;
     bool keepsSilence = false;

@@ -1,23 +1,26 @@
 .pragma library
 
-// Rows for the microphone page. The input device, the test and the system
-// settings button are custom: their options, level and action come from the
-// Audio singleton.
+// Rows for the microphone page. The input device and the test are custom:
+// their microphones, level and state come from the Audio singleton.
 var rows = [
     { id: "audioDevice", page: "microphone", section: "Input", kind: "custom",
       label: "Input device", help: "The microphone Speecher records from.", value: "",
       disabledHelp: "Speecher can't see a microphone. Plug one in or check that your sound server allows access.",
       disabledActionLabel: "Check again",
+      defaultLabel: "System default", defaultHelp: "%1 right now",
+      noneLabel: "No microphones found", noneHelp: "Connect or enable an input device, then try again.",
+      missingLabel: "Missing microphone",
       missingHelp: "This saved microphone is not currently available.",
       missingActionLabel: "Use system default",
       keywords: "microphone input device source headset usb default missing" },
     { id: "microphoneTest", page: "microphone", section: "Input", kind: "custom",
       label: "Test microphone", help: "Speak and watch the level to check that the microphone hears you.",
+      startLabel: "Start test", startingLabel: "Starting…", stopLabel: "Stop test",
+      listeningText: "Listening to %1", noMicrophoneText: "No microphone was found.",
+      accessOffText: "Microphone access is off.",
+      heardText: "Speecher hears your microphone.", notHeardText: "Not heard yet",
+      setupHint: "Say a few words. If the bars stay flat, check that the microphone isn't muted, or pick another one.",
       keywords: "level meter check volume hear input test" },
-    { id: "openMicrophoneSettings", page: "microphone", section: "Input", kind: "custom",
-      label: "Microphone settings", help: "Your system's input volume and microphone permissions.",
-      actionLabel: "Open microphone settings", actionIcon: "external-link",
-      keywords: "system sound settings permission privacy volume" },
 
     { id: "captureMode", page: "microphone", section: "Opening the microphone", kind: "choice",
       label: "Keep microphone open",

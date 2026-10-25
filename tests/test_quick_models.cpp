@@ -9,6 +9,7 @@
 #include "app/ProviderAvailability.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -287,8 +288,10 @@ private slots:
             });
         QuickSettings settings(&controller);
         QuickModels models(&controller);
-        // Setup and the pages read System, as the host always has one.
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
         QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -345,8 +348,10 @@ private slots:
             });
         QuickSettings settings(&controller);
         QuickModels models(&controller);
-        // Setup and the pages read System, as the host always has one.
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
         QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -379,8 +384,10 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
-        // Setup and the pages read System, as the host always has one.
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
         QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
         // when it goes.
@@ -420,8 +427,10 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
-        // Setup and the pages read System, as the host always has one.
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
         QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
         // when it goes.
@@ -500,8 +509,10 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
-        // Setup and the pages read System, as the host always has one.
+        // Setup and the pages read System and Audio, as the host always has
+        // them.
         QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
         // when it goes.

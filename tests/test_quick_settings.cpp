@@ -132,10 +132,10 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, profile);
 
         // Accounts saves the secrets.
-        for (const char *id : {"speechEndpointApiKey", "audioDevice", "defaultWritingProfile"}) {
+        for (const char *id : {"speechEndpointApiKey", "defaultWritingProfile"}) {
             QVERIFY2(!settings.saves(QLatin1String(id)), id);
         }
-        for (const char *id : {"pauseMedia", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
+        for (const char *id : {"pauseMedia", "audioDevice", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
                                "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules",
                                "speechLocalModel", "localRunner", "localAcceleration", "localGraphicsCard",
                                "openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
@@ -216,7 +216,7 @@ private slots:
         QVERIFY(select);
         QCOMPARE(select->property("currentIndex").toInt(), -1);
         // A custom row with a value is a setting; one without draws the page's own content.
-        QVERIFY(!schemaRow(engine, "audioDevice")->property("enabled").toBool());
+        QVERIFY(!schemaRow(engine, "defaultWritingProfile")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
     }

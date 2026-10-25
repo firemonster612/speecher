@@ -5,6 +5,7 @@
 #include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickModels.h"
@@ -112,7 +113,12 @@ SpeecherRemoval::Steps quietRemoval()
 
 QVariantMap keyboardCheck(const QuickSystem &system)
 {
-    return system.check(QStringLiteral("virtualKeyboardHealth"));
+    for (const QVariant &check : system.checks()) {
+        if (check.toMap().value(QStringLiteral("id")) == QStringLiteral("virtualKeyboardHealth")) {
+            return check.toMap();
+        }
+    }
+    return {};
 }
 
 QVariantList keyboardFailures(const QuickSystem &system)
@@ -576,8 +582,9 @@ private slots:
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
         keyboard.managed = true;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
-        // Setup's choices read Models, as the host always has one.
+        // Setup's choices read Models and Audio, as the host always has them.
         QuickModels models(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());

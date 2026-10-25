@@ -12,6 +12,13 @@
 
 namespace speecher {
 
+namespace {
+
+// A level above this is input, not a dead or muted microphone.
+constexpr float kHeardLevel = 0.01f;
+
+} // namespace
+
 MicrophoneTest::MicrophoneTest(ApplicationController &controller,
                                QObject *parent,
                                InputFactory createInput)
@@ -31,13 +38,31 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller,
         }
         emit changed();
     });
-    // A backstop for front ends whose device choice is saved as it is made;
-    // the Linux page also stops the test when its unsaved choice moves.
+    // The UI saves the device as it is chosen, and a running test moves to
+    // it so it hears the microphone that will record. What it heard was the
+    // old device, so that goes even while Stopped.
     connect(controller.settings(), &SettingsStore::audioCaptureSettingsChanged, this,
             [this](const AudioCaptureSettings &settings) {
-        if (settings.deviceId != m_deviceId) {
-            stop();
+        if (settings.deviceId == m_deviceId) {
+            return;
         }
+        m_deviceId = settings.deviceId;
+        if (std::exchange(m_heard, false)) {
+            emit changed();
+        }
+        if (m_state == MicrophoneTestState::Starting) {
+            stop();
+            return;
+        }
+        // Queued: start() can wait in a nested event loop, which must not run
+        // inside the settings store's signal (a CLI's config set over IPC).
+        QMetaObject::invokeMethod(this, [this, deviceId = settings.deviceId] {
+            if (deviceId != m_deviceId || m_state != MicrophoneTestState::Running) {
+                return;
+            }
+            stop();
+            start(deviceId);
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -68,18 +93,28 @@ void MicrophoneTest::start(const QString &deviceId)
         return;
     }
     m_deviceId = deviceId;
+    if (std::exchange(m_heard, false)) {
+        emit changed();
+    }
     AudioInput *input = m_createInput(this);
     input->useDevice(deviceId);
-    connect(input, &AudioInput::levelChanged, this, &MicrophoneTest::levelChanged);
-    connect(input, &AudioInput::failed, this, [this](const QString &message) {
+    connect(input, &AudioInput::levelChanged, this, [this](float level) {
+        if (level > kHeardLevel && !std::exchange(m_heard, true)) {
+            emit changed();
+        }
+        emit levelChanged(level);
+    });
+    connect(input, &AudioInput::failed, this, [this, deviceId](const QString &message) {
         // While Starting, start() reports it once the input's start() returns.
         if (m_state == MicrophoneTestState::Starting) {
             m_startFailure = message;
             m_stopRequested = true;
             return;
         }
+        // What it heard came from a device that has gone.
+        m_heard = false;
         stop();
-        emit failed(message);
+        emit failed(deviceId, message);
     });
     m_input = input;
     setState(MicrophoneTestState::Starting);
@@ -99,7 +134,7 @@ void MicrophoneTest::start(const QString &deviceId)
     if (!started || stopRequested) {
         closeDevice();
         if (!failure.isEmpty() || !started) {
-            emit failed(failure.isEmpty() ? error : failure);
+            emit failed(deviceId, failure.isEmpty() ? error : failure);
         }
         return;
     }
@@ -113,15 +148,6 @@ void MicrophoneTest::stop()
         return;
     }
     closeDevice();
-}
-
-void MicrophoneTest::toggle(const QString &deviceId)
-{
-    if (m_state == MicrophoneTestState::Stopped) {
-        start(deviceId);
-    } else {
-        stop();
-    }
 }
 
 void MicrophoneTest::setState(MicrophoneTestState state)

@@ -61,9 +61,6 @@ public:
     // for the keyboard; error is why, in the words of the part that failed,
     // or empty. They stay until the next try.
     QVariantList checks() const;
-    // The check with this id, as in checks. A binding that calls it does not
-    // follow the checks; bindings read checks (Health.find in QML).
-    Q_INVOKABLE QVariantMap check(const QString &id) const;
     // What can be done to a virtual keyboard that is set up: disable, remove.
     QStringList virtualKeyboardActions() const;
     // The typing test that turns the keyboard on: off, ready (waiting for its
@@ -130,6 +127,8 @@ signals:
     void announced(const QString &text, const QString &icon);
 
 private:
+    // The check with this id, as in checks, or an empty map.
+    QVariantMap check(const QString &id) const;
     enum class RemovalAsked {
         KeepSettings,
         DeleteSettings,

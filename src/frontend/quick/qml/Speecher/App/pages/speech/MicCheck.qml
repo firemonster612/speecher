@@ -3,6 +3,7 @@ import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
+import Speecher.App
 
 // The microphone test, leading the microphone page: the live level across
 // the stage, and under it what is being heard and the button that runs it.
@@ -14,7 +15,12 @@ Plate {
     readonly property var device: Schema.row("audioDevice")
     readonly property var test: Schema.row("microphoneTest")
     readonly property bool running: Audio.testState === "running"
+    // Whether the button's test is this page's: setup may hold it too.
+    readonly property bool holding: Audio.testHolders.indexOf(root) >= 0
     readonly property int levelHeight: 112
+
+    // The page going away lets go of the microphone.
+    Component.onDestruction: Audio.releaseTest(root)
 
     implicitHeight: views.height + Theme.space6 * 2
 
@@ -40,28 +46,38 @@ Plate {
                 active: root.running
                 level: Audio.level
                 threshold: Settings.values.vadEnabled ? (Settings.values.vadThresholdPercent || 0) / 100 : -1
-                thresholdText: Audio.thresholdText
+                // The Skip silence mark on the level: "Quiet below 2%".
+                thresholdText: Schema.row("vadThresholdPercent").label + " "
+                    + Schema.valueLabel(Schema.row("vadThresholdPercent"), Settings.values.vadThresholdPercent)
             }
 
             Item {
                 width: parent.width
-                height: testButton.implicitHeight
+                height: Math.max(testButton.implicitHeight, status.height)
 
                 StatusText {
+                    id: status
+                    // Core's reason for a failed test can run long.
+                    width: parent.width - testButton.width - Theme.space5
+                    wrap: true
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.running ? Audio.testStatus : root.test.help
-                    tone: root.running ? "live" : "neutral"
+                    text: root.running || Audio.testError !== "" ? Microphones.testStatus : root.test.help
+                    tone: root.running ? "live" : Audio.testError !== "" ? "negative" : "neutral"
                     busy: Audio.testState === "starting"
                     variant: "body"
                 }
                 Button {
                     id: testButton
                     anchors.right: parent.right
-                    variant: root.running ? "secondary" : "primary"
-                    iconName: root.running ? "square" : "mic"
+                    anchors.verticalCenter: parent.verticalCenter
+                    readonly property bool stops: root.holding && root.running
+                    variant: stops ? "secondary" : "primary"
+                    iconName: stops ? "square" : "mic"
                     busy: Audio.testState === "starting"
-                    text: Audio.testCaption
-                    onClicked: Audio.toggleTest()
+                    enabled: Audio.canToggleTest
+                    text: stops ? root.test.stopLabel
+                        : Audio.testState === "starting" ? root.test.startingLabel : root.test.startLabel
+                    onClicked: stops ? Audio.releaseTest(root) : Audio.holdTest(root)
                 }
             }
         }
