@@ -15,7 +15,9 @@ Page {
     // order core's delivery tries them, in words: [{ icon, label }].
     readonly property var _route: System.pasteRoute.map(step => ({
         insert: { icon: "text-cursor-input", label: "Insert directly" },
-        press: { icon: "keyboard", label: Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
+        // macOS pastes with ⌘V, terminals included.
+        press: { icon: "keyboard", label: Qt.platform.os === "osx" ? "Press ⌘V"
+                                        : Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
         copy: { icon: "clipboard", label: "Copy to clipboard" }
     })[step])
     readonly property string _routeCaption: (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")

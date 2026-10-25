@@ -13,7 +13,6 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
-#include <QRegularExpression>
 #include <QSignalSpy>
 
 #include <memory>
@@ -91,14 +90,8 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        // A row that loads with a warning, such as an absent value assigned to
-        // a string, is a broken row. Warnings about what the test binary
-        // lacks are not: an app bundle, without which macOS cannot launch it
-        // at login, the UI's fonts, which the app registers, and a font
-        // directory under Windows' offscreen platform.
-        QTest::failOnWarning(QRegularExpression(QStringLiteral(
-            "^(?!launch at login reconciliation failed|Populating font family aliases"
-            "|QFontDatabase: Cannot find font directory)")));
+        // A row that loads with a warning is a broken row.
+        failOnUnexpectedWarnings();
     }
 
     void setSavesThroughTheStore()

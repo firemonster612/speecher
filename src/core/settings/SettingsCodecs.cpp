@@ -484,7 +484,7 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
     // settings in the registry, so its lock goes in the per-user temp folder.
     // Not <file>.lock, which QSettings takes for itself while it syncs.
 #ifdef Q_OS_WIN
-    QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
+    QLockFile lock(QDir::temp().filePath(SettingsKeys::application() + QStringLiteral("-vocabulary.lock")));
 #else
     QLockFile lock(settings.m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
 #endif

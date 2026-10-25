@@ -46,12 +46,14 @@ REQUIRED_FILES=(
   usr/plugins/styles/libkvantum.so
   usr/plugins/iconengines/libqsvgicon.so
   usr/plugins/networkinformation/libqnetworkmanager.so
+  usr/qml/QtCore/qmldir
   usr/qml/QtQml/qmldir
   usr/qml/QtQuick/qmldir
   usr/qml/QtQuick/Templates/qmldir
   usr/qml/QtQuick/Window/qmldir
   usr/qml/QtQuick/Effects/qmldir
   usr/qml/QtQuick/Shapes/qmldir
+  usr/qml/QtQuick/Dialogs/qmldir
   usr/lib/libQt6Core.so.6
   usr/lib/libKF6GlobalAccel.so.6
   usr/lib/libLayerShellQtInterface.so.6

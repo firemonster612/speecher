@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/TrayIcon.h"
 #include "common/test_manifest_updater_access.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -284,13 +285,15 @@ private slots:
         SettingsStore().setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.9"));
         {
             ApplicationController controller(true);
-            QuickFrontEnd ui(&controller);
+            TrayIcon tray(&controller);
+            QuickFrontEnd ui(&controller, &tray);
             ui.showTranscribeFiles({});
             QCOMPARE(mainPage(), QStringLiteral("transcribe"));
             QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
         }
         ApplicationController controller(true);
-        QuickFrontEnd ui(&controller);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
         QCOMPARE(mainPage(), QStringLiteral("updates"));
         QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
@@ -302,7 +305,8 @@ private slots:
     {
         SettingsStore().setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.9"));
         ApplicationController controller(true);
-        QuickFrontEnd ui(&controller);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
         DictationSession *session = controller.session();
         emit session->stateChanged(QStringLiteral("starting"));
         emit session->popupShowRequested(1);

@@ -347,6 +347,9 @@ private slots:
     // system's, are each followed.
     void systemColorsFollowTheKdeglobalsInEffect()
     {
+#ifndef Q_OS_LINUX
+        QSKIP("Plasma, and the XDG config folders it keeps kdeglobals in, are Linux's");
+#endif
         qputenv("XDG_CURRENT_DESKTOP", "KDE");
         QTemporaryDir system;
         qputenv("XDG_CONFIG_DIRS", system.path().toUtf8());
@@ -579,7 +582,11 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
-        QVERIFY(!appearance.canBlur());
+        // On Linux no test runs under a compositor that blurs; macOS, and
+        // Windows with transparency on, blur any window.
+        if (appearance.canBlur()) {
+            QSKIP("This computer blurs behind windows");
+        }
         QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
         QQmlEngine engine;
         QQmlComponent component(&engine);

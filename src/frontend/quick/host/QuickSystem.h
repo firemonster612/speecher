@@ -22,6 +22,8 @@ class PhoneTransfer;
 // keyboard's setup and typing test, the route a paste takes, the clipboard
 // and opening links, sending settings to the phone, and removing Speecher.
 // It carries states and step ids; the UI words them (health.js, the pages).
+// The virtual keyboard and removing Speecher are Linux's: elsewhere checks
+// has no keyboard row and canRemove is false.
 class QuickSystem final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(System)
@@ -32,6 +34,7 @@ class QuickSystem final : public QObject {
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
+    Q_PROPERTY(bool canRemove READ canRemove CONSTANT)
     Q_PROPERTY(QString computerName READ computerName CONSTANT)
     Q_PROPERTY(QString phoneTransfer READ phoneTransfer NOTIFY phoneChanged)
     Q_PROPERTY(QString phoneLink READ phoneLink NOTIFY phoneChanged)
@@ -42,8 +45,10 @@ class QuickSystem final : public QObject {
 public:
     // The defaults touch the real computer; tests pass stand-ins.
     explicit QuickSystem(ApplicationController *controller, QObject *parent = nullptr);
+#ifdef Q_OS_LINUX
     QuickSystem(ApplicationController *controller, VirtualKeyboardSetup::System virtualKeyboard,
                 SpeecherRemoval::Steps removal, QObject *parent = nullptr);
+#endif
     ~QuickSystem() override;
 
     // The engine's instance: the one the host made before loading any QML.
@@ -71,6 +76,8 @@ public:
     QStringList pasteRoute() const;
     // Whether openShortcutSettings knows this desktop's shortcut settings.
     bool canOpenShortcutSettings() const;
+    // Whether uninstall can remove Speecher from this computer.
+    bool canRemove() const;
     QString computerName() const;
     // Empty while no code is shown; otherwise waiting, sent, interrupted,
     // noNetwork or failed (PhoneTransferState).
@@ -135,16 +142,19 @@ private:
     };
 
     void runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp);
-    // Starts the removal uninstall asked for, once the keyboard is idle.
-    void startAskedRemoval();
     // Forgets the check's failures as something new is tried on it.
     void clearFailures(const QString &id);
 
     ApplicationController *m_controller;
+#ifdef Q_OS_LINUX
+    // Starts the removal uninstall asked for, once the keyboard is idle.
+    void startAskedRemoval();
+
     VirtualKeyboardSetup m_virtualKeyboard;
     SpeecherRemoval m_removal;
     // A removal uninstall asked for that waits for the keyboard.
     std::optional<RemovalAsked> m_removalAsked;
+#endif
     QVariantMap m_removalReport;
     std::unique_ptr<PhoneTransfer> m_phone;
     QVariantMap m_phoneBundle;

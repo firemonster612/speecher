@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QMetaMethod>
+#include <QRegularExpression>
 #include <QTest>
 #include <QVector>
 
@@ -46,6 +47,19 @@ inline int runTestSuite(QObject *suite, int argc, char **argv)
         copiedArguments.append(argument.data());
     }
     return QTest::qExec(suite, copiedArguments.size(), copiedArguments.data());
+}
+
+// Fails the running test on a warning, such as a QML row assigning an absent
+// value to a string, except those about what a bare test binary and its
+// computer lack: an app bundle, without which macOS cannot launch it at
+// login, the UI's fonts, which the app registers, a font directory under
+// Windows' offscreen platform, and a Claude or Codex sign-in in the macOS
+// Keychain.
+inline void failOnUnexpectedWarnings()
+{
+    QTest::failOnWarning(QRegularExpression(QStringLiteral(
+        "^(?!launch at login reconciliation failed|Populating font family aliases"
+        "|QFontDatabase: Cannot find font directory|macOS Keychain operation failed)")));
 }
 
 int runTranscriptStateTests(int argc, char **argv);

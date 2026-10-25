@@ -303,7 +303,9 @@ private slots:
         DictationSession *session = controller.session();
         QSignalSpy hidden(session, &DictationSession::popupHideRequested);
 
-        controller.startListening();
+        // Straight to the session: the controller on macOS first asks for
+        // the microphone, which a bare test binary can't be given.
+        session->startListening();
         QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("error"));
         QCOMPARE(session->state(), DictationState::Error);
         QTRY_COMPARE(hidden.count(), 1);

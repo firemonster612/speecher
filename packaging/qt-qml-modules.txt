@@ -1,8 +1,11 @@
 # The Qt QML modules the Qt Quick UI (src/frontend/quick) loads at run time:
 # the ones it imports and those they import in turn, one per line, as paths
 # under Qt's qml directory. The UI's own modules are compiled into speecher.
-# Each package carries these and no other Qt QML module.
+# Each package carries these and no other Qt QML module. QtQuick/Dialogs
+# shows the platform's own file dialogs; its QML fallback, quickimpl, would
+# bring Qt Quick Controls and every style, so it stays out.
 QML
+QtCore
 QtQml
 QtQml/Models
 QtQml/WorkerScript
@@ -11,3 +14,4 @@ QtQuick/Templates
 QtQuick/Window
 QtQuick/Effects
 QtQuick/Shapes
+QtQuick/Dialogs

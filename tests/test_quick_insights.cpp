@@ -328,7 +328,7 @@ private slots:
 
     void homeLoadsOverTheRealInsightsAndCopiesItsPicture()
     {
-        QTest::failOnWarning();
+        failOnUnexpectedWarnings();
         ApplicationController controller(true);
         controller.insightsLog()->append(recordOn(kToday.addDays(-2), 3033, QStringLiteral("Slack"), WritingProfile::Work));
         controller.insightsLog()->append(recordOn(kToday, 120));
@@ -387,7 +387,7 @@ private slots:
 
     void learnedCorrectionsOpenTheirRows()
     {
-        QTest::failOnWarning();
+        failOnUnexpectedWarnings();
         ApplicationController controller(true);
         controller.insightsLog()->append(recordOn(kToday, 120));
         QVERIFY(controller.settings()->recordCorrectionEvidence({QStringLiteral("cute"), QStringLiteral("Qt"), 0.95},

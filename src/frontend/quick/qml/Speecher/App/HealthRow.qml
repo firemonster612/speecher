@@ -10,12 +10,15 @@ import Speecher.App
 // working; a fix that fails says why in place of the help. A page whose own
 // row shows a check names it with checkId; items declared inside follow the
 // fix button. In the setup assistant, fromSetup runs the fix as setup does.
+// A check this computer doesn't have, such as the virtual keyboard off
+// Linux, hides its row.
 SchemaRow {
     id: row
     property string checkId: rowId
     property bool fromSetup: false
     default property alias extra: controls.data
     readonly property var check: Health.find(System.checks, checkId)
+    shown: check.id !== undefined
     readonly property string _fix: Health.fix(check)
     readonly property bool _canFix: _fix.length > 0 && check.state !== "working"
 

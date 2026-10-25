@@ -100,6 +100,7 @@ QtObject {
     // Something done out of sight that the window should mention.
     signal announced(string text, string icon)
     readonly property bool canOpenShortcutSettings: true
+    readonly property bool canRemove: true
     function openShortcutSettings() { open("your system's shortcut settings") }
 
     // Removing Speecher from this computer -------------------------------

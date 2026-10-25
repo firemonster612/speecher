@@ -28,8 +28,11 @@ QtObject {
     signal goTo(string stepId)
 
     // Setup.steps, each with done and verdict: what was chosen once it
-    // passes, or what is missing.
-    readonly property var steps: Setup.steps.map(s => Object.assign({}, s, _status(s.id)))
+    // passes, or what is missing. Delivery sets up the virtual keyboard, so
+    // it goes where System has none.
+    readonly property var steps: Setup.steps
+        .filter(s => s.id !== "delivery" || Health.find(System.checks, "virtualKeyboardHealth").id !== undefined)
+        .map(s => Object.assign({}, s, _status(s.id)))
 
     function _status(id) {
         switch (id) {
