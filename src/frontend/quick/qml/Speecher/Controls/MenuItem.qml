@@ -2,17 +2,20 @@ import QtQuick
 import QtQuick.Templates as T
 import Speecher.Theme
 
-// One entry in a menu or a Select: an optional icon, the label with an
-// optional badge, a line of help, and a check when it is the current one.
+// One entry in a menu, a Select or a LanguagePopover: an optional icon, or a
+// language's flag (flagCode), the label with an optional badge, a line of
+// help, and a check when it is the current one.
 T.ItemDelegate {
     id: item
 
     property string iconName
+    property string flagCode
     property string help
     property string badge
     property bool current: false
 
-    implicitWidth: leftPadding + rightPadding + (iconName.length ? 24 : 0) + labelRow.implicitWidth + 24
+    readonly property bool _leads: iconName.length > 0 || flagCode.length > 0
+    implicitWidth: leftPadding + rightPadding + (_leads ? 24 : 0) + labelRow.implicitWidth + 24
     implicitHeight: Math.max(34, textColumn.implicitHeight + 14)
     leftPadding: 10
     rightPadding: 10
@@ -35,9 +38,15 @@ T.ItemDelegate {
             name: item.iconName
             size: 15
         }
+        Flag {
+            visible: !glyph.visible && item.flagCode.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            code: item.flagCode
+            size: 16
+        }
         Column {
             id: textColumn
-            x: glyph.visible ? 24 : 0
+            x: item._leads ? 24 : 0
             width: parent.width - x - 24
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2

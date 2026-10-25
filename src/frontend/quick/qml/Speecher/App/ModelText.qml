@@ -68,12 +68,10 @@ QtObject {
     readonly property string checking: "Checking…"
     // A provider as ServiceCards shows it, rated from ratings (Models'
     // ratings by id), or with no rating at all when ratings is left out.
-    // note is the line under the ratings, its parts as sentences. Where help
-    // says how many languages a service listens for, that count links to
-    // them.
+    // note is the line under the ratings, its parts as sentences.
     function _choice(provider, help, ratings, noteParts) {
         const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                         helpLink: provider.languageLink || "", state: provider.state, status: status(provider) }
+                         state: provider.state, status: status(provider) }
         if (ratings) choice.bars = bars(ratings[provider.id])
         if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
         return choice
@@ -83,12 +81,16 @@ QtObject {
     // whose text all arrives at the end, leave out how it arrives. Setup's
     // say what each needs and what it was rated on.
     function speechChoices(services) {
-        return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
-                                         [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
+        return services.map(s => _helpChoice(s.id, [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
     }
     function fileSpeechChoices(services) {
-        return services.map(s => _choice(service(s.id), service(s.id).help, Models.speechRatings,
-                                         [ratedAsNote(Models.speechRatings[s.id])]))
+        return services.map(s => _helpChoice(s.id, [ratedAsNote(Models.speechRatings[s.id])]))
+    }
+    // A service by what it is good at, the count of languages in that help
+    // linking to them.
+    function _helpChoice(id, noteParts) {
+        const s = service(id)
+        return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
     }
     function setupSpeechChoices(services) {
         return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings,

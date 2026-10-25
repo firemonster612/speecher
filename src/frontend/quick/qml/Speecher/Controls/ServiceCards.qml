@@ -136,6 +136,7 @@ FocusScope {
                 // its neighbours.
                 LinkedText {
                     id: help
+                    objectName: "help_" + card.modelData.id
                     readonly property real room: Math.ceil(helpMetrics.lineSpacing * lineHeight * maximumLineCount)
                     y: glyph.height + Theme.space2
                     width: parent.width

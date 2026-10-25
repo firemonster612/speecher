@@ -15,6 +15,7 @@ import Speecher.Theme
 //              Automatic, which is no language.
 MenuPopup {
     id: popover
+    objectName: "languagePopover"
 
     property var languages: []
     property string currentId
@@ -24,11 +25,19 @@ MenuPopup {
     property string emptyText
     signal chosen(string id)
 
-    // Opens under item, lined up with its edge as align says.
+    // Opens under item, lined up with its edge as align says. It stays a
+    // child of where it was declared and is only placed at item, so it
+    // stays open when item goes, as a ServiceCards card does when Models
+    // changes and the cards are made again.
     function openFrom(item) {
-        parent = item
+        _from = item
+        const under = item.mapToItem(parent, 0, item.height + 6)
+        x = align === "right" ? under.x + item.width - width : under.x
+        y = under.y
         open()
     }
+    // What it opens from: where it was declared, or openFrom's item.
+    property Item _from: parent
 
     // Lower case without accents, so "francais" finds "français".
     function _fold(s) { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase() }
@@ -58,7 +67,7 @@ MenuPopup {
     }
 
     readonly property int _rowHeight: 34
-    width: Math.max(parent ? parent.width : 0, 280)
+    width: Math.max(_from ? _from.width : 0, 280)
     implicitHeight: implicitContentHeight + topPadding + bottomPadding
     // Kept inside the window, over what opened it where there is no room
     // below.
@@ -78,6 +87,7 @@ MenuPopup {
         spacing: Theme.menuInset
         SearchField {
             id: search
+            objectName: "languageSearch"
             width: parent.width
             placeholderText: popover.searchText
             clearText: popover.clearText
@@ -95,6 +105,7 @@ MenuPopup {
             height: Math.min(popover.languages.length, 10) * (popover._rowHeight + list.spacing)
             ListView {
                 id: list
+                objectName: "languageRows"
                 anchors.fill: parent
                 clip: true
                 model: popover._shown
@@ -105,58 +116,28 @@ MenuPopup {
                 Accessible.role: Accessible.List
                 WheelScroll {}
                 ScrollBar.vertical: ScrollBar {}
-                delegate: Rectangle {
+                // The pointer moves the highlight as the arrows do, so one row
+                // is lit and Return takes it.
+                delegate: MenuItem {
                     id: row
                     required property var modelData
                     required property int index
-                    readonly property bool current: popover.choosing && modelData.id === popover.currentId
                     width: ListView.view.width
-                    height: popover._rowHeight
-                    radius: Theme.radiusLarge - Theme.menuInset
-                    color: tap.pressed ? Theme.fillStrong
-                         : index === popover._highlighted && (popover.choosing || popover._keyed) || hover.hovered ? Theme.fill
-                         : "transparent"
-                    Behavior on color { EaseColor {} }
+                    text: modelData.label
+                    help: modelData.help || ""
+                    iconName: modelData.icon || ""
+                    flagCode: modelData.icon ? "" : modelData.id
+                    current: popover.choosing && modelData.id === popover.currentId
+                    highlighted: index === popover._highlighted && (popover.choosing || popover._keyed)
+                    // Showing only languages, a row neither lights nor
+                    // gives under the pointer.
+                    hoverEnabled: popover.choosing
+                    down: popover.choosing && pressed
+                    // The search field keeps the keys.
+                    focusPolicy: Qt.NoFocus
+                    onHoveredChanged: if (hovered) popover._highlighted = index
+                    onClicked: if (popover.choosing) popover._take(index)
                     Accessible.role: popover.choosing ? Accessible.MenuItem : Accessible.ListItem
-                    Accessible.name: modelData.label
-                    Accessible.checked: current
-                    Accessible.onPressAction: popover._take(index)
-
-                    Flag {
-                        id: flag
-                        visible: !row.modelData.icon
-                        x: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        code: row.modelData.id
-                    }
-                    Icon {
-                        visible: !!row.modelData.icon
-                        anchors.centerIn: flag
-                        name: row.modelData.icon || ""
-                        size: 16
-                    }
-                    Txt {
-                        x: flag.x + flag.width + 10
-                        width: parent.width - x - 34
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: row.modelData.label
-                        variant: "label"
-                        elide: Text.ElideRight
-                    }
-                    Icon {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "check"
-                        size: 15
-                        color: Theme.accent
-                        opacity: row.current ? 1 : 0
-                        scale: row.current ? 1 : Theme.motionScale(0.4)
-                        Behavior on opacity { Ease { duration: Theme.fast } }
-                        Behavior on scale { Ease { duration: Theme.slow; curve: Theme.springy } }
-                    }
-                    HoverHandler { id: hover; enabled: popover.choosing }
-                    TapHandler { id: tap; enabled: popover.choosing; onTapped: popover._take(row.index) }
                 }
             }
             Txt {
