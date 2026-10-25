@@ -149,7 +149,7 @@ Column {
         SettingRow {
             title: TranscribeWords.profile
             help: TranscribeWords.profileHelp
-            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
+            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
         }
         SettingRow {
             enabled: view.refines

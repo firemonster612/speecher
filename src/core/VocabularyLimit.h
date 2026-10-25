@@ -19,6 +19,9 @@ QStringList limited(const QStringList &terms);
 // order: each spelling once ignoring ASCII case, and no more than fit in its
 // 1024 bytes of UTF-8, which is how the service reads the header.
 QStringList claudeVoiceKeyterms(const QStringList &terms);
+// Whether the speech service takes terms as hints: Claude Voice and a custom
+// endpoint do, the others none.
+bool takesKeyterms(const QString &speechProviderId);
 // The terms the chosen speech service receives from `terms`: none for one
 // that takes no hints, the capped prefix for a custom endpoint, and that
 // prefix as the Claude Voice header can carry it for Claude.

@@ -68,6 +68,11 @@ QStringList claudeVoiceKeyterms(const QStringList &terms)
     return kept;
 }
 
+bool takesKeyterms(const QString &speechProviderId)
+{
+    return speechProviderId == QStringLiteral("claude") || speechProviderId == QStringLiteral("endpoint");
+}
+
 QStringList speechKeyterms(const QStringList &terms, const QString &speechProviderId)
 {
     if (speechProviderId == QStringLiteral("claude")) {
@@ -92,7 +97,7 @@ QString summary(const QStringList &terms, const QStringList &keyTerms, const QSt
     const QString refinement = terms.size() > maxRefinementTerms
         ? QStringLiteral("the first %1 are used for refinement").arg(maxRefinementTerms)
         : QStringLiteral("all are used for refinement");
-    if (speechProviderId != QStringLiteral("claude") && speechProviderId != QStringLiteral("endpoint")) {
+    if (!takesKeyterms(speechProviderId)) {
         return (terms.size() == 1 ? QStringLiteral("1 term, used for refinement")
                                   : QStringLiteral("%1 terms, %2").arg(terms.size()).arg(refinement));
     }

@@ -120,9 +120,7 @@ struct SettingRow {
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
 // save. Rows missing here (the result duration) wait for the PR that wires
 // their page; launch at login is saved only where the platform can start
-// Speecher at login. So does the default Writing Profile, whose choices come
-// from a placeholder area (Library's profiles), since a made-up choice would
-// be saved as real.
+// Speecher at login.
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
@@ -215,6 +213,8 @@ const SettingRow settingRows[] = {
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),
     FIELD_ROW("customSystemPrompt", refinement.customSystemPrompt),
+    FIELD_ROW("defaultWritingProfile", refinement.defaultWritingProfile),
+    FIELD_ROW("additionalInstructions", refinement.additionalInstructions),
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
 

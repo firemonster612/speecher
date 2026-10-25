@@ -8,6 +8,7 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickInsights.h"
+#include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
@@ -450,6 +451,8 @@ private slots:
     void closingMainBeforeRemovalFinishesQuits()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         QuickStatus status(&controller);
         QuickDictation dictation(&controller);
@@ -508,6 +511,8 @@ private slots:
     void hidingMainStopsThePhoneCode()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());
@@ -545,6 +550,8 @@ private slots:
     void aHealthRowFollowsItsCheck()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.helperSucceeds = false;
@@ -577,6 +584,8 @@ private slots:
     void setupSettlesForWhatTheComputerAllows()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
@@ -619,6 +628,8 @@ private slots:
     void pastingTypeRowsFollowAccessibility()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         QuickSystem system(&controller, keyboard.system(), quietRemoval());

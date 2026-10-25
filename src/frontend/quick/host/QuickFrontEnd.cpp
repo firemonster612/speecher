@@ -121,6 +121,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, QObject *parent)
     , m_models(controller)
     , m_insights(controller)
     , m_accounts(controller)
+    , m_library(controller)
 {
     registerFonts();
     m_engine.addImageProvider(QStringLiteral("qr"), new QrCodeImageProvider);

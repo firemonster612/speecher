@@ -3,21 +3,17 @@ import QtQuick
 import Speecher.Wording
 import Speecher.Launch
 
-// Placeholder: the app ships this mock until its wiring PR replaces it.
-// Mock of what the Text pages show: Writing Profiles with their tones and
-// cleanup levels, the three word lists, and the app recognition rules. The
-// refinement providers and runners are Models'. Lists are plain arrays of
-// objects and are replaced, never edited in place, so bindings see every
-// change. Each list has one owner: speech services are Models', the fallback
-// profile is the defaultWritingProfile setting, and app types are the
-// pasting schema's.
+// What the Text pages show. Writing Profiles with their tones and cleanup
+// levels, the three word lists and the app matches are LibraryLists, real in
+// the app (host/QuickLibrary); this words them and derives what the pages
+// show from them. Each list has one owner: speech services, refinement
+// providers and runners are Models', paste rules are Settings rows, the
+// fallback profile is the defaultWritingProfile setting, and app types are
+// the pasting schema's.
 //
-// Preview states: --library=empty empties every list, and
-// --setting-<rowId>=<value> sets a settings row before the page loads.
-QtObject {
+// Preview states: --library=empty empties every list.
+LibraryLists {
     id: library
-
-    readonly property bool _empty: Launch.arg("library", "") === "empty"
 
     // Refinement ---------------------------------------------------------
 
@@ -62,12 +58,6 @@ QtObject {
         { id: "excited", label: "Excited", help: "Upbeat and enthusiastic." },
         { id: "gen_z", label: "Gen Z", help: "Gen Z slang and phrasing." }
     ]
-    property var customTones: _empty ? [] : [
-        { id: "custom_dry", name: "Dry", instruction: "Short sentences, no exclamation marks, a little deadpan." }
-    ]
-    property var customCleanupLevels: _empty ? [] : [
-        { id: "custom_notes", name: "Meeting notes", base: "balanced", instructions: "Turn lists of actions into bullet points, one owner per line." }
-    ]
     // Built-in and custom levels and tones as one choice each. A custom
     // level carries the built-in level it starts from as base.
     readonly property var levelOptions: cleanupLevels.concat(customCleanupLevels.map(l => ({
@@ -87,25 +77,16 @@ QtObject {
     }
     // Languages a profile's output language suggests.
     readonly property var outputLanguages: ["Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Chinese"]
-    property string additionalInstructions: _empty ? "" : "Write numbers as digits. Spell Speecher with one capital S."
-
-    property var profiles: [
-        { id: "work", name: "Work", icon: "briefcase", builtIn: true, cleanup: "balanced", tone: "none",
-          language: "", instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" },
-        { id: "email", name: "Email", icon: "mail", builtIn: true, cleanup: "strong_polish", tone: "formal",
-          language: "", instructions: "Keep it short and sign off with my first name.", speech: "", speechModel: "",
-          refinement: "anthropic", refinementModel: "claude-sonnet-5-5" },
-        { id: "personal", name: "Personal", icon: "message-circle", builtIn: true, cleanup: "light_cleanup", tone: "casual",
-          language: "", instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" },
-        { id: "ai_coding", name: "AI coding", icon: "bot", builtIn: true, cleanup: "balanced", tone: "none",
-          language: "", instructions: "Keep file names, flags and code identifiers exactly as said.", speech: "local",
-          speechModel: "parakeet", refinement: "", refinementModel: "" },
-        { id: "other", name: "Other", icon: "shapes", builtIn: true, cleanup: "balanced", tone: "none",
-          language: "", instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }
-    ].concat(_empty ? [] : [
-        { id: "custom_spanish", name: "Spanish replies", icon: "languages", builtIn: false, cleanup: "light_cleanup",
-          tone: "casual", language: "Spanish", instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }
-    ])
+    // A profile's icon: a built-in's own, a pen for one you added.
+    readonly property var _profileIcons: ({ work: "briefcase", email: "mail", personal: "message-circle", ai_coding: "bot", other: "shapes" })
+    function profileIcon(id) { return _profileIcons[id] || "pen-line" }
+    // "New profile", or "New profile 2" and on while that name is taken.
+    function newProfileName() {
+        const taken = name => profiles.some(p => p.name.toLowerCase() === name.toLowerCase())
+        let name = profilesText.newProfile
+        for (let n = 2; taken(name); ++n) name = profilesText.newProfile + " " + n
+        return name
+    }
     function profileName(id) { const p = profiles.find(o => o.id === id); return p ? p.name : id }
     // "Medium cleanup, Casual, Spanish", or "No cleanup".
     function profileSummary(p) {
@@ -117,7 +98,7 @@ QtObject {
     function profileApps(id) {
         const own = recognitionRules
         const builtIn = builtInRecognitionRules.filter(b => !own.some(r => r.match === b.match))
-        return own.concat(builtIn).filter(r => r.profile === id).map(r => r.name || r.match)
+        return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
     // Where a profile is used, given its apps and whether it is the one for
     // apps no match names: "Used in Slack, Linear and 2 more apps."
@@ -138,6 +119,7 @@ QtObject {
     // editor's.
     readonly property var profilesText: ({
         addProfile: "Add profile",
+        newProfile: "New profile",
         appMatches: "App matches",
         appMatchesHelp: "Which apps use which profile. Your own matches come first.",
         name: "Name",
@@ -177,103 +159,32 @@ QtObject {
     // A profile's own refinement provider, whose settings live on Refinement.
     function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s settings under Refinement." }
 
-    // Ids for what you add: given once, never reused, kept when renamed.
-    property int _lastId: 0
-    function newId(prefix) { return prefix + "_" + (++_lastId) }
-
-    // Deleting a profile, tone or level also drops what pointed at it, so
-    // nothing names something that is gone. Deleting a tone or level
-    // returns a function that puts back what the deletion changed, for an
-    // Undo.
-    function removeProfile(id) {
-        profiles = profiles.filter(p => p.id !== id)
-        recognitionRules = recognitionRules.map(r => r.profile === id ? Object.assign({}, r, { profile: "" }) : r)
-                                           .filter(r => r.category || r.profile)
-        terms = terms.map(t => t.profiles.includes(id) ? Object.assign({}, t, { profiles: t.profiles.filter(p => p !== id) }) : t)
-        if (Settings.values.defaultWritingProfile === id) Settings.set("defaultWritingProfile", "other")
-        if (Transcription.options.profile === id) Transcription.setOption("profile", Settings.values.defaultWritingProfile)
-    }
-    function removeTone(id) { return _removeChoice("customTones", "tone", id, "none") }
-    function removeLevel(id) {
-        const base = customCleanupLevels.find(l => l.id === id).base
-        return _removeChoice("customCleanupLevels", "cleanup", id, base === "custom_only" ? "balanced" : base)
-    }
-    // Removes entry id from the list named and moves every profile's and
-    // Transcribe's field that chose it to instead. The Undo puts the entry
-    // back where it was and points back only the fields that still hold
-    // instead, so edits made while its toast is up stay.
-    function _removeChoice(list, field, id, instead) {
-        const putBack = remove(list, library[list].findIndex(e => e.id === id))
-        const moved = profiles.filter(p => p[field] === id).map(p => p.id)
-        const transcribe = Transcription.options[field] === id
-        profiles = profiles.map(p => moved.includes(p.id) ? Object.assign({}, p, { [field]: instead }) : p)
-        if (transcribe) Transcription.setOption(field, instead)
-        return () => {
-            putBack()
-            profiles = profiles.map(p => moved.includes(p.id) && p[field] === instead ? Object.assign({}, p, { [field]: id }) : p)
-            if (transcribe && Transcription.options[field] === instead) Transcription.setOption(field, id)
-        }
-    }
-
     // Vocabulary ---------------------------------------------------------
 
-    property var terms: _empty ? [] : [
-        { term: "Speecher", keyTerm: true, context: "", profiles: [], source: "Added", uses: 214 },
-        { term: "Kubernetes", keyTerm: true, context: "The container platform, when I talk about clusters or deploys.",
-          profiles: ["work", "ai_coding"], source: "Added", uses: 38 },
-        { term: "Ngozi Okafor", keyTerm: true, context: "", profiles: [], source: "Learned", uses: 17 },
-        { term: "Qt Quick", keyTerm: true, context: "", profiles: ["ai_coding"], source: "Added", uses: 12 },
-        { term: "Lisbon office", keyTerm: false, context: "Our team in Portugal, not the city in general.",
-          profiles: ["work"], source: "Imported", uses: 6 },
-        { term: "pnpm", keyTerm: true, context: "", profiles: ["ai_coding"], source: "Imported", uses: 4 },
-        { term: "Wayland", keyTerm: false, context: "", profiles: [], source: "Added", uses: 0 }
-    ]
-    readonly property int keyTermLimit: 100
     // "3 of 100 key terms go to Claude Voice. Refinement uses all 7 terms."
-    readonly property string keyTermsText: terms.filter(t => t.keyTerm).length + " of " + keyTermLimit + " key terms go to "
-        + Models.service(Settings.values.speechProvider).label + ". Refinement uses all " + Words.count(terms.length, "term", "terms") + "."
-    // Adds the terms in a CSV the person picked; the mock picks one.
-    function importTerms() {
-        const incoming = [
-            { term: "Grafana", keyTerm: true, context: "", profiles: [], source: "Imported", uses: 0 },
-            { term: "Priya Raman", keyTerm: true, context: "", profiles: [], source: "Imported", uses: 0 }
-        ]
-        terms = terms.concat(incoming.filter(n => !terms.some(t => t.term === n.term)))
+    readonly property string keyTermsText: {
+        const service = Models.service(Settings.values.speechProvider).label
+        const speech = speechTakesKeyTerms ? keyTermsSent + " of " + keyTermLimit + " key terms go to " + service + "."
+                                           : service + " takes no key terms."
+        const refinement = terms.length > refinementTermLimit ? "Refinement uses the first " + Words.num(refinementTermLimit) + "."
+                                                              : "Refinement uses all " + Words.count(terms.length, "term", "terms") + "."
+        return speech + " " + refinement
     }
-
-    // Newest first.
-    property var corrections: _empty ? [] : [
-        { id: "c1", heard: "speaker", corrected: "Speecher", app: "Slack", confidence: 0.94, enabled: true },
-        { id: "c2", heard: "cube control", corrected: "kubectl", app: "Konsole", confidence: 0.88, enabled: true },
-        { id: "c3", heard: "in goes the", corrected: "Ngozi", app: "Thunderbird", confidence: 0.71, enabled: true },
-        { id: "c4", heard: "get hub", corrected: "GitHub", app: "Zed", confidence: 0.63, enabled: false }
-    ]
-
-    function undoLastCorrection() { corrections = corrections.slice(1) }
     // "3 of 5 in use.", or nothing without corrections.
     readonly property string correctionsInUseText: corrections.length
         ? corrections.filter(c => c.enabled).length + " of " + corrections.length + " in use." : ""
-
-    property var replacements: _empty ? [] : [
-        { phrase: "my address", replacement: "Rua Garrett 120, 1200-205 Lisboa" },
-        { phrase: "sign off", replacement: "Thanks,\nEnzo" },
-        { phrase: "standup template", replacement: "Yesterday:\nToday:\nBlocked on:\nSent on {date} at {time}" },
-        { phrase: "shrug", replacement: "¯\\_(ツ)_/¯" }
-    ]
-    // Adds the snippets in a JSON file the person picked; the mock picks one.
-    function importReplacements() {
-        const incoming = [
-            { phrase: "my phone", replacement: "+351 912 345 678" },
-            { phrase: "meeting link", replacement: "https://meet.example.com/enzo" }
-        ]
-        replacements = replacements.concat(incoming.filter(n => !replacements.some(r => r.phrase === n.phrase)))
-    }
 
     // The Vocabulary page's fixed wording: its tabs' buttons, forms and
     // empty lists.
     readonly property var vocabularyText: ({
         addTerm: "Add term",
         importTerms: "Import CSV",
+        importTermsTitle: "Import terms from a CSV file",
+        importReplacementsTitle: "Import snippets from a JSON file",
+        termsFiles: ["CSV files (*.csv)", "All files (*)"],
+        replacementsFiles: ["JSON files (*.json)", "All files (*)"],
+        noNewTerms: "That file has no terms you don't have.",
+        noNewReplacements: "That file has no phrases you don't have.",
         newTerm: "New term",
         editTerm: "Edit term",
         term: "Term",
@@ -285,6 +196,9 @@ QtObject {
         noTerms: "No vocabulary terms",
         noTermsHelp: "Add names and words the speech service should spell your way, or import a CSV.",
         undoCorrection: "Undo last correction",
+        editCorrection: "Edit correction",
+        heard: "Heard",
+        corrected: "Corrected",
         correctionsNeedAccessibility: "Turn on desktop accessibility to learn corrections after pasting.",
         noCorrections: "No learned corrections yet",
         noCorrectionsHelp: "When you fix a dictated word the same way more than once, the correction appears here.",
@@ -304,13 +218,28 @@ QtObject {
     readonly property string correctionsCount: Words.count(corrections.length, "learned correction", "learned corrections")
     readonly property string replacementsCount: Words.count(replacements.length, "replacement or snippet", "replacements and snippets")
     readonly property string replacementsCaption: Schema.row("bindingRules").help + " Matching ignores case and treats punctuation as spaces."
-    // Where a term came from, after its context: "Imported.", or nothing for one you added.
-    function termSource(term) { return term.source === "Learned" ? "Learned from your edits." : term.source === "Imported" ? "Imported." : "" }
+    // A term's context, then where it came from: "Our dashboards. Imported.",
+    // with nothing said for one you added.
+    function termDetail(term) {
+        const context = term.context && !/[.!?]$/.test(term.context) ? term.context + "." : term.context
+        const source = term.source === "learned" ? "Learned from your edits." : term.source === "csv" ? "Imported." : ""
+        return [context, source].filter(s => s).join(" ")
+    }
+    // After importing the list named: "Imported 2 terms.", or that nothing was new.
+    function importedText(list, added) {
+        const terms = list === "terms"
+        if (!added) return terms ? vocabularyText.noNewTerms : vocabularyText.noNewReplacements
+        return "Imported " + (terms ? Words.count(added, "term", "terms") : Words.count(added, "replacement", "replacements")) + "."
+    }
+    function importFailedText(error) { return "Nothing imported. " + error }
     // "Work and Chat only": the profiles a term is limited to.
     function termProfilesText(ids) { return Words.list(ids.map(profileName)) + " only" }
     function termUsesText(uses) { return Words.count(uses, "use", "uses") }
-    // "Learned in Slack, 92% sure"
-    function correctionSource(c) { return "Learned in " + c.app + ", " + Math.round(c.confidence * 100) + "% sure" }
+    // "Learned in org.kde.konsole, 92% sure", by its app's id, or in several apps
+    // for one learned in more than one.
+    function correctionSource(c) {
+        return "Learned in " + (c.app || "several apps") + ", " + Math.round(c.confidence * 100) + "% sure"
+    }
 
     // Pasting ------------------------------------------------------------
 
@@ -322,6 +251,7 @@ QtObject {
         automatic: "Automatic",
         addMatch: "Add match",
         newMatch: "New app match",
+        editMatch: "Edit app match",
         matchApp: "App name or ID",
         matchAppHelp: "Matches the application ID, application name, process name or accessible role.",
         app: "App",
@@ -338,11 +268,6 @@ QtObject {
         builtInMatchTip: "Click to add your own match for it."
     })
 
-    property var recognitionRules: _empty ? [] : [
-        { match: "obsidian", category: "office", profile: "personal" },
-        { match: "org.kde.neochat", category: "", profile: "personal" },
-        { match: "element", category: "", profile: "custom_spanish" }
-    ]
     // "2 of yours, 14 built in"
     readonly property string recognitionRulesText: recognitionRules.length + " of yours, " + builtInRecognitionRules.length + " built in"
     readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "app", "apps")
@@ -351,50 +276,27 @@ QtObject {
         return [rule.category ? categoryLabel(rule.category) : "",
                 rule.profile ? profileName(rule.profile) + " profile" : ""].filter(s => s).join(", ")
     }
-    // Matches Speecher ships with; name is how the app shows in a profile.
-    readonly property var builtInRecognitionRules: [
-        { match: "t3code", name: "T3 Code", category: "ai_coding", profile: "ai_coding" }, { match: "chatgpt", name: "ChatGPT", category: "ai_coding", profile: "ai_coding" },
-        { match: "codex", name: "Codex", category: "ai_coding", profile: "ai_coding" }, { match: "cursor", name: "Cursor", category: "ai_coding", profile: "ai_coding" },
-        { match: "zed", name: "Zed", category: "ai_coding", profile: "ai_coding" }, { match: "claude code", name: "Claude Code", category: "ai_coding", profile: "ai_coding" },
-        { match: "konsole", name: "Konsole", category: "terminal", profile: "work" }, { match: "ghostty", name: "Ghostty", category: "terminal", profile: "work" },
-        { match: "kitty", name: "Kitty", category: "terminal", profile: "work" }, { match: "alacritty", name: "Alacritty", category: "terminal", profile: "work" },
-        { match: "thunderbird", name: "Thunderbird", category: "email", profile: "email" }, { match: "kmail", name: "KMail", category: "email", profile: "email" },
-        { match: "firefox", name: "Firefox", category: "browser", profile: "" }, { match: "chrome", name: "Chrome", category: "browser", profile: "" },
-        { match: "libreoffice", name: "LibreOffice", category: "office", profile: "work" }, { match: "kate", name: "Kate", category: "code_editor", profile: "work" },
-        { match: "code", name: "VS Code", category: "code_editor", profile: "work" }, { match: "jetbrains", name: "JetBrains IDEs", category: "code_editor", profile: "work" },
-        { match: "signal", name: "Signal", category: "", profile: "personal" }, { match: "discord", name: "Discord", category: "", profile: "personal" },
-        { match: "telegram", name: "Telegram", category: "", profile: "personal" }, { match: "slack", name: "Slack", category: "", profile: "work" },
-        { match: "linear", name: "Linear", category: "", profile: "work" }, { match: "notion", name: "Notion", category: "", profile: "work" }
-    ]
 
-    // Editing ------------------------------------------------------------
-    // One set of edits for every list above, by property name.
+    // Refused edits ---------------------------------------------------------
 
-    function add(list, item) { library[list] = library[list].concat([item]) }
-    function update(list, index, item) {
-        const next = library[list].slice()
-        next[index] = Object.assign({}, next[index], item)
-        library[list] = next
+    // Why LibraryLists refused a form's save, for the list it edits: the
+    // reason add or update returned. Empty for none.
+    readonly property var _refusals: ({
+        profiles: { blank: "Give the profile a name.", taken: "Another profile has that name." },
+        customTones: { blank: "Give the tone a name.", taken: "Another tone has that name.",
+                       incomplete: "Add the instruction the tone follows." },
+        customCleanupLevels: { blank: "Give the level a name.", taken: "Another cleanup level has that name.",
+                               incomplete: "A Custom only level needs instructions." },
+        terms: { blank: "Type the term.", taken: "That term is in the list already." },
+        corrections: { blank: "Type what was heard.", taken: "Another correction fixes those words in that app.",
+                       incomplete: "Type what it's corrected to." },
+        replacements: { blank: "The phrase needs a letter or a number.", taken: "Another replacement has that phrase.",
+                        incomplete: "Type what Speecher writes." },
+        recognitionRules: { blank: "Type the app's name or ID.", taken: "You have a match for that app already.",
+                            incomplete: "Choose an app type, a profile or both." },
+        any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names." }
+    })
+    function refusalText(list, reason) {
+        return reason ? (_refusals[list] || {})[reason] || _refusals.any[reason] || "" : ""
     }
-    // Returns a function that puts the entry back where it was, for an Undo.
-    function remove(list, index) {
-        const next = library[list].slice()
-        const gone = next.splice(index, 1)[0]
-        library[list] = next
-        return () => {
-            const back = library[list].slice()
-            back.splice(index, 0, gone)
-            library[list] = back
-        }
-    }
-
-    // Later, so a binding that first touched Library isn't still reading
-    // Settings when the values change.
-    function _applySettingArgs() {
-        for (const a of Qt.application.arguments) {
-            const m = /^--setting-([^=]+)=(.*)$/.exec(a)
-            if (m) Settings.set(m[1], m[2] === "true" ? true : m[2] === "false" ? false : m[2] === "" ? [] : m[2])
-        }
-    }
-    Component.onCompleted: Qt.callLater(_applySettingArgs)
 }

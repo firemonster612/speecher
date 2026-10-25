@@ -259,7 +259,9 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/Target.cpp
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
+  src/core/VocabularyEdits.cpp
   src/core/WordPreview.cpp
+  src/core/WritingProfileEdits.cpp
   src/core/WritingProfileProviders.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
@@ -296,11 +298,14 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
+  src/core/SettingsEdit.h
   src/core/TranscriptState.h
   src/core/Target.h
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
+  src/core/VocabularyEdits.h
   src/core/WordPreview.h
+  src/core/WritingProfileEdits.h
   src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h
   src/dictation/PopupPresentation.h
@@ -1403,6 +1408,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_quick_insights.cpp
       tests/test_quick_accounts.cpp
       tests/test_quick_audio.cpp
+      tests/test_quick_library.cpp
       src/frontend/quick/host/QuickFrontEnd.cpp
       src/frontend/quick/host/QuickFrontEnd.h
       src/frontend/quick/host/QuickPopupWindow.cpp
@@ -1440,7 +1446,7 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_tray keywatch helper_install quick_settings quick_dictation quick_updates
-    quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio)
+    quick_transcription quick_system quick_models quick_insights quick_accounts quick_audio quick_library)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)

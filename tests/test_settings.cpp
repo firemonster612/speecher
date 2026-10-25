@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "core/ProviderChain.h"
+#include "core/WritingProfileEdits.h"
 #include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
 #include "core/settings/SettingsKeys.h"
@@ -1324,6 +1325,85 @@ private slots:
         QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
         QCOMPARE(snapshot.output.pasteRules.size(), 2);
         QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);
+    }
+
+    void removingAToneMovesItsProfilesAndUndoMovesBackOnlyTheUnchanged()
+    {
+        AppSettings settings;
+        settings.refinement.customTones = {{QStringLiteral("custom_dry"), QStringLiteral("Dry"), QStringLiteral("Deadpan.")},
+                                           {QStringLiteral("custom_warm"), QStringLiteral("Warm"), QStringLiteral("Kind.")}};
+        const auto setTone = [&settings](const QString &profile, const QString &tone) {
+            for (WritingProfileSettings &entry : settings.refinement.writingProfiles) {
+                if (entry.profile == profile) {
+                    entry.tone = tone;
+                }
+            }
+        };
+        const auto toneOf = [&settings](const QString &profile) {
+            return writingProfileSettingsFor(settings.refinement.writingProfiles, profile).tone;
+        };
+        setTone(WritingProfile::Work, QStringLiteral("custom_dry"));
+        setTone(WritingProfile::Email, QStringLiteral("custom_dry"));
+        setTone(WritingProfile::Personal, QStringLiteral("formal"));
+
+        const SettingsEdit undo = removeCustomTone(settings, QStringLiteral("custom_dry"));
+        QCOMPARE(settings.refinement.customTones.size(), 1);
+        QCOMPARE(settings.refinement.customTones.first().id, QStringLiteral("custom_warm"));
+        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
+        QCOMPARE(toneOf(WritingProfile::Email), QStringLiteral("none"));
+        QCOMPARE(toneOf(WritingProfile::Personal), QStringLiteral("formal"));
+
+        // Changed while the Undo was offered: the change stays.
+        setTone(WritingProfile::Email, QStringLiteral("casual"));
+        QVERIFY(undo);
+        undo(settings);
+        QCOMPARE(settings.refinement.customTones.size(), 2);
+        QCOMPARE(settings.refinement.customTones.first().id, QStringLiteral("custom_dry"));
+        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("custom_dry"));
+        QCOMPARE(toneOf(WritingProfile::Email), QStringLiteral("casual"));
+
+        QVERIFY(!removeCustomTone(settings, QStringLiteral("custom_gone")));
+    }
+
+    void removingACleanupLevelFallsBackToItsBase()
+    {
+        AppSettings settings;
+        settings.refinement.customCleanupLevels = {
+            {QStringLiteral("custom_notes"), QStringLiteral("Notes"), QStringLiteral("strong_polish"), QStringLiteral("Bullets.")},
+            {QStringLiteral("custom_raw"), QStringLiteral("Raw"), kCustomOnlyCleanupBase, QStringLiteral("Only commas.")}};
+        for (WritingProfileSettings &entry : settings.refinement.writingProfiles) {
+            if (entry.profile == WritingProfile::Work) {
+                entry.cleanupStrength = QStringLiteral("custom_notes");
+            } else if (entry.profile == WritingProfile::Email) {
+                entry.cleanupStrength = QStringLiteral("custom_raw");
+            }
+        }
+        const auto levelOf = [&settings](const QString &profile) {
+            return writingProfileSettingsFor(settings.refinement.writingProfiles, profile).cleanupStrength;
+        };
+
+        const SettingsEdit undoNotes = removeCustomCleanupLevel(settings, QStringLiteral("custom_notes"));
+        const SettingsEdit undoRaw = removeCustomCleanupLevel(settings, QStringLiteral("custom_raw"));
+        QVERIFY(settings.refinement.customCleanupLevels.isEmpty());
+        QCOMPARE(levelOf(WritingProfile::Work), QStringLiteral("strong_polish"));
+        QCOMPARE(levelOf(WritingProfile::Email), QStringLiteral("balanced"));
+
+        undoRaw(settings);
+        undoNotes(settings);
+        QCOMPARE(settings.refinement.customCleanupLevels.size(), 2);
+        QCOMPARE(settings.refinement.customCleanupLevels.first().id, QStringLiteral("custom_notes"));
+        QCOMPARE(levelOf(WritingProfile::Work), QStringLiteral("custom_notes"));
+        QCOMPARE(levelOf(WritingProfile::Email), QStringLiteral("custom_raw"));
+    }
+
+    void newCustomIdsAreFreshAndPrefixed()
+    {
+        const QString first = newCustomId(QStringLiteral("custom_tone"), {});
+        const QString second = newCustomId(QStringLiteral("custom_tone"), {first});
+        QVERIFY(first.startsWith(QStringLiteral("custom_tone_")));
+        QVERIFY(first.size() > QStringLiteral("custom_tone_").size());
+        QVERIFY(second != first);
+        QCOMPARE(writingProfileFromName(first), first);
     }
 };
 

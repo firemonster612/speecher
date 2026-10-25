@@ -61,8 +61,12 @@ public:
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
     void reconcileLaunchAtLogin();
     void setCorrectionLearningEnabled(bool enabled);
+    // Announces learnedCorrectionsChanged when the evidence learned a
+    // correction or strengthened one.
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
+    // SettingsCodecs::recordVocabularyUsage, announcing the uses it counted.
+    bool recordVocabularyUsage(const QString &text);
     // SettingsCodecs::addVocabularyTerms, announcing the terms it saved.
     // Saves nothing, returning nullopt, once deleteAll ran.
     std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
@@ -105,7 +109,6 @@ public:
     using SettingsCodecs::pasteRules;
     using SettingsCodecs::pauseMediaDuringTranscription;
     using SettingsCodecs::previewWords;
-    using SettingsCodecs::recordVocabularyUsage;
     using SettingsCodecs::refinementPreviewEnabled;
     using SettingsCodecs::selectionEditReviewEnabled;
     using SettingsCodecs::refinementProvider;
@@ -228,6 +231,7 @@ signals:
     void updateSettingsChanged();
     // After addVocabularyTerms saved terms no settings surface has drawn yet.
     void vocabularyAdded();
+    void vocabularyUsageRecorded();
     // The preference is saved whatever the operating system does with it, so
     // a refused or pending registration has to leave this way: the setting
     // reads as on while Speecher will not actually start at login.

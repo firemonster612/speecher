@@ -14,7 +14,7 @@ Section {
     id: section
 
     readonly property var categoryOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.appCategories.map(c => ({ id: c.id, label: c.label, icon: c.icon })))
-    readonly property var profileOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.profiles.map(p => ({ id: p.id, label: p.name, icon: p.icon })))
+    readonly property var profileOptions: [{ id: "", label: Library.pastingText.automatic }].concat(Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })))
     // The page scrolls to item, for the form a built-in chip opens.
     signal revealRequested(Item item)
 
@@ -26,17 +26,26 @@ Section {
     InlineForm {
         cancelText: Words.cancel
         id: matchForm
+        // The match being edited, as saved, or empty while adding.
+        property string editing
         property string category: ""
         property string profile: ""
-        function startAdd(match) { matchText.text = match; category = ""; profile = ""; open = true }
-        title: Library.pastingText.newMatch
-        saveText: Library.pastingText.addMatch
+        function start(match, type, profileId, key) {
+            matchText.text = match; category = type; profile = profileId; editing = key
+            error = ""; open = true
+        }
+        function startAdd(match) { start(match, "", "", "") }
+        function startEdit(rule) { start(rule.match, rule.category, rule.profile, rule.match) }
+        title: editing ? Library.pastingText.editMatch : Library.pastingText.newMatch
+        saveText: editing ? Words.save : Library.pastingText.addMatch
         canSave: matchText.text.trim().length > 0 && (category.length > 0 || profile.length > 0)
         open: Launch.arg("pasting-form", "") === "match"
         onCancelled: open = false
         onSaved: {
-            Library.add("recognitionRules", { match: matchText.text.trim(), category: category, profile: profile })
-            open = false
+            const rule = { match: matchText.text.trim(), category: category, profile: profile }
+            const refused = editing ? Library.update("recognitionRules", editing, rule) : Library.add("recognitionRules", rule)
+            error = Library.refusalText("recognitionRules", refused)
+            if (!refused) open = false
         }
         FormField {
             label: Library.pastingText.matchApp
@@ -83,6 +92,12 @@ Section {
             required property string key
             required property int index
             readonly property var rule: matches.entry(key)
+            // Saves a choice from the row, or says why it can't: a match
+            // with neither app type nor profile does nothing.
+            function change(patch) {
+                const refused = Library.update("recognitionRules", key, patch)
+                if (refused) Toaster.show(Library.refusalText("recognitionRules", refused), { icon: "triangle-alert", tone: "negative" })
+            }
             width: ListView.view.width
             first: index === 0 && matches.first
             Row {
@@ -97,7 +112,7 @@ Section {
                 implicitWidth: 184
                 options: section.categoryOptions
                 currentId: matchRow.rule.category
-                onChosen: id => Library.update("recognitionRules", matchRow.index, { category: id })
+                onChosen: id => matchRow.change({ category: id })
             }
             Select {
                 x: heads.typeX - Theme.rowInset + 196
@@ -105,10 +120,18 @@ Section {
                 implicitWidth: 170
                 options: section.profileOptions
                 currentId: matchRow.rule.profile
-                onChosen: id => Library.update("recognitionRules", matchRow.index, { profile: id })
+                onChosen: id => matchRow.change({ profile: id })
             }
             actions: [
-                IconButton { iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch; onClicked: { const name = matchRow.rule.match; const undo = Library.remove("recognitionRules", matchRow.index); Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: undo }) } }
+                IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: { matchForm.startEdit(matchRow.rule); section.revealRequested(matchForm) } },
+                IconButton {
+                    iconName: "trash-2"; size: 28; tooltip: Library.pastingText.deleteMatch
+                    onClicked: {
+                        const name = matchRow.rule.match
+                        const undo = Library.remove("recognitionRules", name)
+                        if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+                    }
+                }
             ]
         }
     }

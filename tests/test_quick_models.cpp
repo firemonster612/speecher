@@ -10,6 +10,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
+#include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -278,6 +279,8 @@ private slots:
     void setupTranscriptionIsDoneOnlyOnceTheServiceIsReady()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         // A Codex whose sign-in check finds one.
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
@@ -337,6 +340,8 @@ private slots:
         answer.message = QStringLiteral("ChatGPT didn't answer in time.");
         answer.kind = ProviderFailureKind::Timeout;
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&answer](QObject *parent) {
                 auto *codex = new test::FakeSpeechTranscriber(parent);
@@ -382,6 +387,8 @@ private slots:
     void setupOffersAFallbackOnlyWhereTheChainTakesIt()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
@@ -425,6 +432,8 @@ private slots:
     void setupOffersTheChosenModelsDownload()
     {
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
@@ -507,6 +516,8 @@ private slots:
     {
         QFETCH(QString, page);
         ApplicationController controller(true);
+        // The pages read Library, which works through this controller.
+        const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
