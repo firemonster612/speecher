@@ -95,10 +95,9 @@ Item {
     // Pages ---------------------------------------------------------------
     // One page in the list. A subpage is set in by indent under its parent,
     // with no icon, its wash (and the pill on it) starting right of the
-    // parent's guide. A
-    // page with subpages has a chevron that opens and closes them, as Right
-    // and Left do from the keyboard; it asks through openRequested and
-    // shows open.
+    // parent's guide. A page with subpages has a chevron that opens and
+    // closes them, as Right and Left do from the keyboard; it asks through
+    // openRequested and shows open.
     component Entry: Item {
         id: entry
         required property var page
@@ -142,7 +141,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 10
             Icon {
-                visible: entry.indent === 0
+                visible: !entry.page.parent
                 name: entry.page.icon
                 size: 16
                 color: entry.marked || entryHover.hovered ? Theme.text : Theme.textSecondary

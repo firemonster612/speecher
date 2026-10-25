@@ -439,6 +439,52 @@ private slots:
         QVERIFY(general->hasActiveFocus());
         QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("home")));
         QVERIFY(!dictation->property("open").toBool());
+
+        // A search that goes to another group from a subpage leaves focus on
+        // the subpage's parent, not on the subpage it folded away.
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        QTRY_VERIFY(refinement->property("open").toBool());
+        QTest::qWait(kSettleMs);
+        profiles->forceActiveFocus(Qt::TabFocusReason);
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(search);
+        QMetaObject::invokeMethod(search, "open");
+        const auto results = searchResults(search, QStringLiteral("accounts"));
+        const auto accounts = std::find_if(results.cbegin(), results.cend(),
+                                           [](const auto &result) { return result.first == QStringLiteral("accounts"); });
+        QVERIFY(accounts != results.cend());
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, int(accounts - results.cbegin())));
+        QCOMPARE(navigation->property("current").toString(), QStringLiteral("accounts"));
+        QVERIFY(!refinement->property("open").toBool());
+        QVERIFY(!profiles->hasActiveFocus());
+        QVERIFY(refinement->hasActiveFocus());
+    }
+
+    // Dictation's page says how each of its subpages is set now.
+    void dictationSaysHowItsSubpagesAreSet()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("dictation")));
+        const auto helpShown = [main](const QString &help) {
+            QList<QQuickItem *> items{main->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->isVisible() && item->property("help").toString() == help) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QTRY_VERIFY(helpShown(QStringLiteral("No dictation shortcut yet")));
     }
 
     void everySetupStepLoads_data() { themes(); }

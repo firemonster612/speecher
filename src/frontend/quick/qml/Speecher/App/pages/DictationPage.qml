@@ -26,7 +26,7 @@ Page {
         lines: ({
             shortcuts: page.keys.length ? page.t.startsDictation(page.keys) : page.t.noShortcut,
             microphone: Microphones.deviceName ? page.t.recordsFrom(Microphones.deviceName) : page.t.noMicrophone,
-            feedback: page.t.liveText(!!Settings.values.showLiveText) + ", " + page.t.sounds(!!Settings.values.playSounds)
+            feedback: page.t.liveText(Settings.values.showLiveText) + ", " + page.t.sounds(Settings.values.playSounds)
         })
     }
 }
