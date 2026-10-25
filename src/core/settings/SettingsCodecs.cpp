@@ -253,6 +253,16 @@ void SettingsCodecs::setWindowLayout(const QString &value)
                         value == QStringLiteral("split") ? QStringLiteral("split") : QStringLiteral("framed"));
 }
 
+bool SettingsCodecs::roundedCorners() const
+{
+    return value(SettingsKeys::UiRoundedCorners, true).toBool();
+}
+
+void SettingsCodecs::setRoundedCorners(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiRoundedCorners, value);
+}
+
 bool SettingsCodecs::pauseMediaDuringTranscription() const
 {
     return value(SettingsKeys::UiPauseMedia, true).toBool();
@@ -1534,6 +1544,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.colorScheme = colorScheme();
     settings.ui.translucency = translucency();
     settings.ui.windowLayout = windowLayout();
+    settings.ui.roundedCorners = roundedCorners();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
     settings.ui.soundsEnabled = soundsEnabled();
 

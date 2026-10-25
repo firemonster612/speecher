@@ -38,13 +38,14 @@ MenuPopup {
         // A mouse drags nothing on a desktop; touch still does.
         acceptedButtons: Qt.NoButton
         WheelScroll {}
+        T.ScrollBar.vertical: ScrollBar { id: bar; persistent: true }
         keyNavigationEnabled: true
         Keys.onReturnPressed: menu._pick(currentIndex)
         Keys.onEnterPressed: menu._pick(currentIndex)
         delegate: MenuItem {
             required property var modelData
             required property int index
-            width: ListView.view.width
+            width: ListView.view.width - bar.gutter
             text: modelData.label
             iconName: modelData.icon || ""
             help: modelData.help || ""

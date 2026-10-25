@@ -95,6 +95,7 @@ Page {
             }
         }
         SchemaRow { rowId: "translucency" }
+        SchemaRow { rowId: "roundedCorners" }
         // Saved only where Speecher can start at login.
         SchemaRow { rowId: "launchAtLogin"; shown: Settings.saves(rowId) }
     }

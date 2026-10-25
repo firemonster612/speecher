@@ -164,7 +164,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
-  Theme, Colors, Layout and Translucent sidebar settings.
+  Theme, Colors, Layout, Translucent sidebar and Rounded corners settings.
 - The popup has its own window (`host/QuickPopupWindow`), made with the
   engine and placed by the platform's `PopupPositioner`: an overlay
   layer-shell surface anchored to the bottom of the active screen on
@@ -245,7 +245,8 @@ compositor to blur behind its frame. The sidebar's inks are checked against
 that paper over a black and a white desktop. The page and cards stay
 opaque; search lays its blurred copy of the window on opaque paper. On
 Windows, whose Mica fills the whole window, the window drops its drawn
-shadow margin and corners for DWM's. Where
+shadow margin and corners for DWM's. With Rounded corners off (General),
+the window's corners are square, its own or DWM's. Where
 the platform cannot blur (no KWin blur, X11, Reduce transparency,
 Transparency effects off, high contrast) it stays opaque, and the row says
 why. Never make paper translucent without the blur: text over a sharp
@@ -508,6 +509,7 @@ Pictures of speech:
 Helpers:
 
 - `Grow on implicitHeight {}`: a size that eases once laid out.
+- `ScrollBar { persistent }`: `T.ScrollBar.vertical` on a scrolling view. It shows while scrolling; `persistent` keeps a narrow one in view, as `Select` and `Menu` lists do, and their rows end its `gutter` before it.
 - `Caret { edit }`: the blinking pencil caret after a TextEdit's last character, declared inside the edit.
 - `RichText.escape(s)`: text made safe to put in rich text, before adding markup.
 

@@ -151,6 +151,9 @@ QtObject {
     // The page beside the sidebar, edge to edge, instead of on a sheet framed
     // by the window; ThemeSetting follows the Layout setting.
     property bool split: false
+    // Windows draw their corners rounded; ThemeSetting follows the Rounded
+    // corners setting.
+    property bool roundedCorners: true
 
     readonly property color paper: scheme.paper      // window and sidebar
     readonly property color sheet: scheme.sheet      // the page

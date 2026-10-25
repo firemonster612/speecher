@@ -20,6 +20,7 @@ constexpr int backdropMica = 2;                   // DWMSBT_MAINWINDOW
 constexpr DWORD darkModeAttribute = 20;           // DWMWA_USE_IMMERSIVE_DARK_MODE
 constexpr DWORD cornerAttribute = 33;             // DWMWA_WINDOW_CORNER_PREFERENCE
 constexpr int cornersDefault = 0;                 // DWMWCP_DEFAULT
+constexpr int cornersSquare = 1;                  // DWMWCP_DONOTROUND
 constexpr int cornersRound = 2;                   // DWMWCP_ROUND
 
 // Settings > Personalization > Colors > Transparency effects.
@@ -74,9 +75,9 @@ bool WinWindowBackdrop::available() const
     return personalize.value(QStringLiteral("EnableTransparency"), 1).toInt() != 0;
 }
 
-// DWM's backdrop has no region or radius: Mica fills the window, and DWM
-// rounds the window's corners and gives it a shadow.
-void WinWindowBackdrop::set(QWindow *window, const QRect &area, int, bool dark)
+// DWM's backdrop has no region: Mica fills the window, and DWM gives it a
+// shadow and rounds its corners, or keeps them square for a radius of 0.
+void WinWindowBackdrop::set(QWindow *window, const QRect &area, int radius, bool dark)
 {
     if (!window) {
         return;
@@ -91,7 +92,7 @@ void WinWindowBackdrop::set(QWindow *window, const QRect &area, int, bool dark)
     const int type = area.isEmpty() ? backdropNone : backdropMica;
     DwmSetWindowAttribute(hwnd, systemBackdropTypeAttribute, &type, sizeof type);
     // A frameless window is square unless asked.
-    const int corners = area.isEmpty() ? cornersDefault : cornersRound;
+    const int corners = area.isEmpty() ? cornersDefault : radius > 0 ? cornersRound : cornersSquare;
     DwmSetWindowAttribute(hwnd, cornerAttribute, &corners, sizeof corners);
 }
 

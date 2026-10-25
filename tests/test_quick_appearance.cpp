@@ -372,15 +372,18 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("colorScheme")).toString(), QStringLiteral("steno"));
         QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
         QCOMPARE(settings.values().value(QStringLiteral("windowLayout")).toString(), QStringLiteral("framed"));
+        QCOMPARE(settings.values().value(QStringLiteral("roundedCorners")).toBool(), true);
 
         settings.set(QStringLiteral("colorScheme"), QStringLiteral("installed:BreezeDark"));
         settings.set(QStringLiteral("translucency"), false);
         settings.set(QStringLiteral("windowLayout"), QStringLiteral("split"));
+        settings.set(QStringLiteral("roundedCorners"), false);
 
         SettingsStore another;
         QCOMPARE(another.colorScheme(), QStringLiteral("installed:BreezeDark"));
         QCOMPARE(another.translucency(), false);
         QCOMPARE(another.windowLayout(), QStringLiteral("split"));
+        QCOMPARE(another.roundedCorners(), false);
         another.setWindowLayout(QStringLiteral("sideways"));
         QCOMPARE(another.windowLayout(), QStringLiteral("framed"));
     }
@@ -735,6 +738,129 @@ private slots:
         QCOMPARE(root->property("chosen").toString(), QStringLiteral("birch"));
         QTest::keyClick(window, Qt::Key_Space);
         QCOMPARE(root->property("chosen").toString(), QStringLiteral("birch"));
+    }
+
+    // The window's corners follow the Rounded corners setting as it changes.
+    void windowCornersFollowTheSetting()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAppearance appearance(&controller);
+        // Translucent on Windows, DWM draws the corners and the window none.
+        settings.set(QStringLiteral("translucency"), false);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.App
+            ClientWindow {
+                property ThemeSetting follows: ThemeSetting {}
+                width: 400; height: 300; visible: true
+            })",
+                          QUrl());
+        std::unique_ptr<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QVERIFY(window->property("cornerRadius").toInt() > 0);
+        settings.set(QStringLiteral("roundedCorners"), false);
+        QCOMPARE(window->property("cornerRadius").toInt(), 0);
+        settings.set(QStringLiteral("roundedCorners"), true);
+        QVERIFY(window->property("cornerRadius").toInt() > 0);
+    }
+
+    // A version too long for the sidebar is elided and ends inside it,
+    // instead of running under the page.
+    void aLongVersionEndsInsideTheSidebar()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.Theme
+            import Speecher.App
+            Window {
+                property alias brand: brand
+                width: 400; height: 100; visible: true
+                Brand { id: brand; width: Theme.sidebarWidth; title: "Speecher"; detail: "Version 0.2.1-nightly.20261025+g034abcdef1" }
+            })",
+                          QUrl());
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto *brand = root->property("brand").value<QQuickItem *>();
+        QVERIFY(QTest::qWaitForWindowExposed(qobject_cast<QQuickWindow *>(root.get())));
+
+        QQuickItem *detail = nullptr;
+        const std::function<void(QQuickItem *)> find = [&](QQuickItem *item) {
+            if (item->property("text").toString().startsWith(QLatin1String("Version"))) {
+                detail = item;
+            }
+            for (QQuickItem *child : item->childItems()) {
+                find(child);
+            }
+        };
+        find(brand);
+        QVERIFY(detail);
+        QVERIFY(detail->property("truncated").toBool());
+        QVERIFY(detail->mapToItem(brand, QPointF(detail->width(), 0)).x() <= brand->width());
+
+        brand->setProperty("detail", QStringLiteral("Version 0.2.1"));
+        QVERIFY(!detail->property("truncated").toBool());
+    }
+
+    // A dropdown's list that scrolls keeps a narrow scroll bar in view, its
+    // rows ending before it, in Select and Menu alike.
+    void scrollingDropdownsKeepTheirScrollBar()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.Controls
+            Window {
+                id: root
+                readonly property var many: Array.from({ length: 40 }, (_, i) => ({ id: "o" + i, label: "Option " + i }))
+                property alias select: select
+                property alias menu: menu
+                width: 600; height: 800; visible: true
+                Select { id: select; options: root.many }
+                Item { x: 300; width: 10; height: 10; Menu { id: menu; items: root.many } }
+            })",
+                          QUrl());
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(qobject_cast<QQuickWindow *>(root.get())));
+
+        const std::function<QQuickItem *(QQuickItem *, const char *)> find = [&](QQuickItem *item, const char *type) {
+            if (QLatin1String(item->metaObject()->className()).startsWith(QLatin1String(type))) {
+                return item;
+            }
+            for (QQuickItem *child : item->childItems()) {
+                if (QQuickItem *found = find(child, type)) {
+                    return found;
+                }
+            }
+            return static_cast<QQuickItem *>(nullptr);
+        };
+        QObject *select = root->property("select").value<QObject *>();
+        QObject *popups[] = {select->property("popup").value<QObject *>(), root->property("menu").value<QObject *>()};
+        for (QObject *popup : popups) {
+            QMetaObject::invokeMethod(popup, "open");
+            auto *list = popup->property("contentItem").value<QQuickItem *>();
+            QVERIFY(list);
+            QQuickItem *bar = nullptr;
+            QTRY_VERIFY((bar = find(list, "ScrollBar_")) && bar->isVisible());
+            // The thumb, which fades out at rest unless persistent.
+            const auto *thumb = bar->property("contentItem").value<QQuickItem *>();
+            QVERIFY(!bar->property("active").toBool());
+            QCOMPARE(thumb->opacity(), 1.0);
+            QQuickItem *row = find(list, "MenuItem_");
+            QVERIFY(row);
+            QCOMPARE(row->width(), list->width() - bar->width());
+            QMetaObject::invokeMethod(popup, "close");
+        }
     }
 
     // Where nothing blurs, search shows the translucency switch as General

@@ -30,6 +30,7 @@ Item {
     // In the window's title strip, which lies over it.
     Brand {
         id: brand
+        width: parent.width
         title: Words.shell.appName
         detail: Words.version(Status.version)
     }
