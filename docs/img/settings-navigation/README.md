@@ -9,7 +9,7 @@ holds the app rules as sections.
 ## Linux
 
 Captured at bfa34d63, offscreen with the KDE platform theme and Breeze in an
-isolated config (`SPEECHER_GRAB_PAGE=<page id>`), from a build with local
+isolated config, through the Qt Widgets screenshot path (since removed), from a build with local
 speech on, at the window's default size unless noted.
 
 - `linux-sidebar-headers.png`: the sidebar enlarged; each group titled like

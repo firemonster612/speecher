@@ -1,6 +1,5 @@
 #include "platform/KeywatchShortcutBinder.h"
 
-#include "core/settings/SettingsSchema.h"
 #include "platform/KeywatchSetup.h"
 #include "setup/KeywatchProtocol.h"
 
@@ -143,7 +142,10 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
         unwatch();
         m_helperBusy = true;
         const KeywatchSetupStatus status = KeywatchSetup::probe();
-        return status.state == KeywatchSetupState::Outdated ? status.detail : keyHelperBusyText();
+        return status.state == KeywatchSetupState::Outdated
+            ? status.detail
+            : QStringLiteral("Speecher's key helper is already watching as many keys as it allows. "
+                             "Use a key combination here instead.");
     }
     if (reply.refusal != quint8(keywatch::Refusal::None)) {
         const QString reason = QString::fromLatin1(refusalText(keywatch::Refusal(reply.refusal)));

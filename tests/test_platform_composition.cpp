@@ -5,13 +5,10 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
-#include "app/CommandLineTool.h"
-#include "app/CommandLineToolPresentation.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
-#include "app/UpdateBanner.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -28,9 +25,6 @@
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
-#include "ui/SetupAssistant.h"
-#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
-#include "ui/setup/SetupPages.h"
 #endif
 
 #include <QApplication>
@@ -61,9 +55,6 @@
 #include <QtEndian>
 #include <QUuid>
 
-#ifdef SPEECHER_WITH_KASSISTANT
-#include <KPageWidget>
-#endif
 #include <QTest>
 
 #include <iostream>
@@ -383,12 +374,6 @@ public:
         calls << QStringLiteral("showTranscribeFiles ") + paths.join(QLatin1Char(' '));
     }
 
-    bool captureMainWindow(const QString &path) override
-    {
-        calls << QStringLiteral("captureMainWindow ") + path;
-        return true;
-    }
-
     void showDictationError(const QString &message, const PopupErrorAction &) override
     {
         calls << QStringLiteral("showDictationError ") + message;
@@ -406,44 +391,6 @@ public:
 
     QStringList calls;
 };
-
-#ifdef Q_OS_UNIX
-// The strings in an AppleScript script, read the way AppleScript reads them:
-// \\ and \" are their escapes and a bare " ends one. The rest of the script,
-// with each string emptied to "", goes in rest. Empty when a string is not
-// well formed.
-QStringList appleScriptStrings(const QString &script, QString &rest)
-{
-    QStringList strings;
-    bool inString = false;
-    for (qsizetype i = 0; i < script.size(); ++i) {
-        QChar c = script.at(i);
-        if (c == QLatin1Char('"')) {
-            inString = !inString;
-            if (inString) {
-                strings.append(QString());
-            }
-            rest += c;
-            continue;
-        }
-        if (!inString) {
-            rest += c;
-            continue;
-        }
-        if (c == QLatin1Char('\\')) {
-            if (++i == script.size()) {
-                return {};
-            }
-            c = script.at(i);
-            if (c != QLatin1Char('\\') && c != QLatin1Char('"')) {
-                return {};
-            }
-        }
-        strings.last() += c;
-    }
-    return inString ? QStringList() : strings;
-}
-#endif
 
 // What speecher prints on stdout for the arguments after its name.
 QString printedBy(const QStringList &arguments, int *exitCode = nullptr)
@@ -644,6 +591,27 @@ private slots:
         QVERIFY(!controller.startFileTranscription({audio}, options, &error));
         QVERIFY(!error.isEmpty());
         controller.stopListening();
+    }
+
+    // A fresh profile on a daemon with no front end has no setup assistant to
+    // finish, so dictation and recording go on to ask for the microphone.
+    void freshProfileWithoutFrontEndSkipsSetup()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(false);
+
+        controller.startListening();
+        QVERIFY(platform->microphoneAnswer);
+        controller.stopListening();
+
+        platform->microphoneAnswer = nullptr;
+        QTemporaryDir dir;
+        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, nullptr,
+                                    {dir.filePath(QStringLiteral("take.wav"))}, {}, {}, {}, true);
+        QVERIFY(platform->microphoneAnswer);
     }
 
     void shortcutReleasePreservesRecordingError()
@@ -981,7 +949,10 @@ private slots:
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
             FakeSingleKeyShortcutBinder session(GlobalShortcutBinder::actionFor(role));
-            QCOMPARE(session.unsupportedBindingReason(c), watchedKeyStillTypesText(c));
+            QCOMPARE(session.unsupportedBindingReason(c),
+                     QStringLiteral("Speecher can only watch %1, not take it from other apps, so it would "
+                                    "still type while you dictate. Use another key or a key combination.")
+                         .arg(c.displayText()));
             QVERIFY(session.unsupportedBindingReason(f13).isEmpty());
         }
         FakeSingleKeyShortcutBinder dictation(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
@@ -1114,7 +1085,6 @@ private slots:
         QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
         // Without options the files still open in the window.
         QCOMPARE(parse({}).mode, LaunchMode::RunGui);
-        QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
 
         QCOMPARE(parse({QStringLiteral("--srt")}).headless.format, TranscriptFormat::Srt);
         QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
@@ -1557,7 +1527,7 @@ private slots:
                                        std::pair{QStringLiteral("custom_toms"), QStringLiteral("Tom's  notes")},
                                        std::pair{QStringLiteral("custom_help"), QStringLiteral("--help")},
                                        std::pair{QStringLiteral("custom_version"), QStringLiteral("--version")},
-                                       std::pair{QStringLiteral("custom_grab"), QStringLiteral("--grab")}}) {
+                                       std::pair{QStringLiteral("custom_daemon"), QStringLiteral("--daemon")}}) {
             draft.refinement.writingProfiles.append(
                 {id, QStringLiteral("balanced"), QStringLiteral("none"), QString(), name});
         }
@@ -1570,13 +1540,13 @@ private slots:
                                      QStringLiteral("Other"), QStringLiteral("custom_stand_up"),
                                      QStringLiteral("custom_standup"), QStringLiteral("custom_work"),
                                      QStringLiteral("Tom's-notes"), QStringLiteral("custom_help"),
-                                     QStringLiteral("custom_version"), QStringLiteral("custom_grab")}));
+                                     QStringLiteral("custom_version"), QStringLiteral("custom_daemon")}));
         const QStringList ids{QStringLiteral("email"),          QStringLiteral("personal"),
                               QStringLiteral("ai_coding"),      QStringLiteral("other"),
                               QStringLiteral("custom_stand_up"), QStringLiteral("custom_standup"),
                               QStringLiteral("custom_work"),    QStringLiteral("custom_toms"),
                               QStringLiteral("custom_help"),    QStringLiteral("custom_version"),
-                              QStringLiteral("custom_grab")};
+                              QStringLiteral("custom_daemon")};
         for (qsizetype index = 0; index < names.size(); ++index) {
             const CommandLineDecision decision = parseCommandLine(
                 {QStringLiteral("speecher"), QStringLiteral("toggle"), QStringLiteral("--profile"), names.at(index)},
@@ -1822,7 +1792,7 @@ private slots:
                  QStringList({QStringLiteral("-fsanitize")}));
         // Not even the options every command takes.
         for (const QString &term : {QStringLiteral("--version"), QStringLiteral("--help"), QStringLiteral("-h"),
-                                    QStringLiteral("--grab")}) {
+                                    QStringLiteral("--daemon")}) {
             const CommandLineDecision escaped = parse({QStringLiteral("add"), QStringLiteral("--"), term});
             QCOMPARE(escaped.mode, LaunchMode::RunCli);
             QCOMPARE(escaped.vocabularyTerms, QStringList({term}));
@@ -1861,694 +1831,7 @@ private slots:
 
 #endif
 
-#ifdef Q_OS_UNIX
-    // What macOS's "Install command line tool…" writes: a two-line script
-    // that runs the binary from a path a shell would otherwise split, with
-    // every argument intact, and hands back its exit status. Installing again
-    // replaces it, and a symlink there is replaced rather than written through.
-    void commandLineToolExecsTheBinaryWithItsArguments()
-    {
-        QTemporaryDir directory;
-        QVERIFY(directory.isValid());
-        const QString binary = directory.filePath(QStringLiteral("speecher it's \"$HOME\""));
-        QFile fake(binary);
-        QVERIFY(fake.open(QIODevice::WriteOnly));
-        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\nexit 3\n");
-        fake.close();
-        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
-        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
-        const auto install = [&] {
-            return QProcess::execute(QStringLiteral("/bin/sh"),
-                                     {QStringLiteral("-c"), commandLineToolInstallCommand(binary, tool)});
-        };
-
-        QCOMPARE(install(), 0);
-        QFile script(tool);
-        QVERIFY(script.open(QIODevice::ReadOnly));
-        const QByteArray contents = script.readAll();
-        QVERIFY(contents.startsWith("#!/bin/sh\n"));
-        QCOMPARE(contents.count('\n'), 2);
-        QProcess run;
-        run.start(tool, {QStringLiteral("a b"), QString(), QStringLiteral("*")});
-        QVERIFY(run.waitForFinished());
-        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b||*|"));
-        QCOMPARE(run.exitCode(), 3);
-
-        const QString elsewhere = directory.filePath(QStringLiteral("elsewhere"));
-        QVERIFY(QFile(elsewhere).open(QIODevice::WriteOnly));
-        QVERIFY(QFile::remove(tool));
-        QVERIFY(QFile::link(elsewhere, tool));
-        QCOMPARE(install(), 0);
-        QVERIFY(!QFileInfo(tool).isSymLink());
-        QCOMPARE(QFileInfo(elsewhere).size(), 0);
-        QCOMPARE(QDir(QFileInfo(tool).path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot),
-                 QStringList{QStringLiteral("speecher")});
-    }
-
-    // osascript reads the script's strings the way AppleScript does, so a
-    // path's backslashes and double quotes must reach sh as they were, and
-    // the password prompt must read as written.
-    void commandLineToolScriptKeepsTheBinaryPathIntact_data()
-    {
-        QTest::addColumn<QString>("name");
-        QTest::newRow("space") << QStringLiteral("speecher app");
-        QTest::newRow("backslash") << QStringLiteral("speecher\\app");
-        QTest::newRow("double quote") << QStringLiteral("speecher\"app");
-        QTest::newRow("single quote") << QStringLiteral("speecher'app");
-        QTest::newRow("dollar") << QStringLiteral("speecher$HOME");
-    }
-
-    void commandLineToolScriptKeepsTheBinaryPathIntact()
-    {
-        QFETCH(QString, name);
-        QTemporaryDir directory;
-        QVERIFY(directory.isValid());
-        const QString binary = directory.filePath(name);
-        QFile fake(binary);
-        QVERIFY(fake.open(QIODevice::WriteOnly));
-        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\n");
-        fake.close();
-        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
-        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
-        const QString script = commandLineToolInstallScript(binary, tool, true);
-
-        QString rest;
-        const QStringList strings = appleScriptStrings(script, rest);
-        QCOMPARE(rest, QStringLiteral("do shell script \"\" with prompt \"\" with administrator privileges"));
-        QCOMPARE(strings.size(), 2);
-        QCOMPARE(strings.at(1), commandLineToolPasswordPrompt());
-        QCOMPARE(QProcess::execute(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), strings.at(0)}), 0);
-        QProcess run;
-        run.start(tool, {QStringLiteral("a b")});
-        QVERIFY(run.waitForFinished());
-        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b|"));
-    }
-#endif
-
 #ifdef Q_OS_LINUX
-    void setupAssistantPutsTheGlobalShortcutBeforeFinish()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        SetupAssistant assistant(&controller);
-
-        const QStringList titles = assistant.pageTitles();
-        QCOMPARE(titles,
-                 QStringList({QStringLiteral("Welcome"),
-                              QStringLiteral("Transcription"),
-                              QStringLiteral("Microphone"),
-                              QStringLiteral("Accessibility"),
-                              QStringLiteral("Text delivery"),
-                              QStringLiteral("Refinement"),
-                              QStringLiteral("Global Shortcut"),
-                              QStringLiteral("Ready to dictate")}));
-        QVERIFY(titles.indexOf(QStringLiteral("Global Shortcut"))
-                < titles.indexOf(QStringLiteral("Ready to dictate")));
-
-        WelcomeSetupPage *welcome = nullptr;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
-                welcome = page;
-                break;
-            }
-        }
-        QVERIFY(welcome);
-        bool mentionsShortcut = false;
-        for (const QLabel *label : welcome->findChildren<QLabel *>()) {
-            mentionsShortcut = mentionsShortcut
-                || label->text().contains(QStringLiteral("and a Global Shortcut"));
-        }
-        QVERIFY(mentionsShortcut);
-
-        // The shortcut page is also a settings card control; as an assistant
-        // page it keeps the same margins as the pages around it.
-        LinuxGlobalShortcutSetupPage *shortcut = nullptr;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
-                shortcut = page;
-                break;
-            }
-        }
-        if (!shortcut) {
-            // CI-only failure diagnostics: show what the assistant's widget
-            // tree actually holds when the page cannot be found.
-            for (const QWidget *widget : assistant.findChildren<QWidget *>()) {
-                qWarning("child: %s objectName=%s",
-                         widget->metaObject()->className(),
-                         qPrintable(widget->objectName()));
-            }
-        }
-        QVERIFY(shortcut);
-        QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
-        QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
-
-        // The assistant keeps the application palette rather than retuning a
-        // role to fight its own style's separator.
-        QVERIFY(!assistant.testAttribute(Qt::WA_SetPalette));
-        QCOMPARE(assistant.palette().color(QPalette::Mid),
-                 QApplication::palette().color(QPalette::Mid));
-    }
-
-    void setupAssistantHidesSkipWhileStepsAreIncomplete()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        SetupAssistant assistant(&controller);
-        assistant.show();
-        QCoreApplication::processEvents();
-
-        QAbstractButton *skip = nullptr;
-        for (QAbstractButton *button : assistant.findChildren<QAbstractButton *>()) {
-            if (button->text() == QStringLiteral("Skip setup")) {
-                skip = button;
-                break;
-            }
-        }
-        QVERIFY(skip);
-        // On this fake platform the steps are incomplete (no provider signed
-        // in, no microphone input yet), so skipping is not offered on any
-        // page, the last one included.
-        QVERIFY(!skip->isVisible());
-        const int lastPage = assistant.pageTitles().indexOf(QStringLiteral("Ready to dictate"));
-        QCOMPARE(lastPage, assistant.pageTitles().size() - 1);
-#ifdef SPEECHER_WITH_KASSISTANT
-        for (int step = 0; step < lastPage; ++step) {
-            assistant.next();
-        }
-#else
-        assistant.setCurrentId(assistant.pageIds().at(lastPage));
-#endif
-        QCoreApplication::processEvents();
-        QVERIFY(!skip->isVisible());
-    }
-
-    void setupAssistantReturnsToTheFirstFailedStepInsteadOfFinishing()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        controller.settings()->setSetupCompleted(false);
-        SetupAssistant assistant(&controller);
-        auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
-        QVERIFY(transcription);
-        assistant.show();
-
-        // Walked with Next, as a person would: QWizard goes back only through
-        // pages it visited.
-        const int lastPage = assistant.pageTitles().size() - 1;
-        for (int step = 0; step < lastPage; ++step) {
-            assistant.next();
-        }
-        QCoreApplication::processEvents();
-
-        // Pressing Finish must land the user back on the first unfinished
-        // step rather than marking setup complete.
-        QVERIFY(QMetaObject::invokeMethod(&assistant, "accept"));
-        QCoreApplication::processEvents();
-
-        QVERIFY(!controller.settings()->setupCompleted());
-        QVERIFY(assistant.isVisible());
-        // With no sign-in and no downloaded model, Transcription is the
-        // first unfinished step.
-        if (transcription->ready()) QSKIP("A sign-in on this computer opens Transcription.");
-        QVERIFY(transcription->isVisible());
-    }
-
-    void globalShortcutSinglePageOnlyShowsTheShortcutPage()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        SetupAssistant assistant(&controller, SetupAssistantPage::GlobalShortcut);
-        assistant.show();
-
-        QCOMPARE(assistant.pageTitles(), QStringList({QStringLiteral("Global Shortcut")}));
-        int visibleSetupPages = 0;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            // The shortcut step's Cancel and Pause rows are pages of their own,
-            // nested inside it.
-            bool nested = false;
-            for (QWidget *ancestor = widget->parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
-                nested = nested || dynamic_cast<LinuxGlobalShortcutSetupPage *>(ancestor);
-            }
-            const bool setupPage = (dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget) && !nested)
-                || dynamic_cast<WelcomeSetupPage *>(widget)
-                || dynamic_cast<MicrophoneSetupPage *>(widget);
-            visibleSetupPages += setupPage && widget->isVisible();
-        }
-        QCOMPARE(visibleSetupPages, 1);
-    }
-
-    void globalShortcutPageEditsNativeShortcut()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        const QKeySequence initial(Qt::META | Qt::ALT | Qt::Key_D);
-        platform->binder->publishShortcut(initial);
-        LinuxGlobalShortcutSetupPage page(controller);
-
-        auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
-        auto *binding = page.findChild<QLabel *>(QStringLiteral("globalShortcutBinding"));
-        auto *description = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
-        auto *reset = page.findChild<QPushButton *>(QStringLiteral("resetGlobalShortcut"));
-        QVERIFY(capture && binding && description && reset);
-        // Idle, the row shows the bound combination beside a button that says
-        // what pressing it does.
-        QCOMPARE(binding->text(), initial.toString(QKeySequence::NativeText));
-        QCOMPARE(capture->text(), QStringLiteral("Change…"));
-        QCOMPARE(description->text(), QStringLiteral("Start or stop dictation from anywhere."));
-        QVERIFY(reset->isHidden());
-
-        page.show();
-        capture->click();
-        QCOMPARE(capture->text(), QStringLiteral("Cancel"));
-        QCOMPARE(description->text(),
-                 QStringLiteral("Press a key combination, or a single key such as Right Alt or F13."));
-        // Recording must not fire the bound shortcut.
-        QCOMPARE(platform->binder->suspendCount, 1);
-        const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
-        QTest::keyClick(capture, Qt::Key_Space, Qt::ControlModifier | Qt::AltModifier);
-        QCOMPARE(controller.globalShortcut().combination(), chosen);
-        QCOMPARE(platform->binder->resumeCount, 1);
-        QCOMPARE(binding->text(), QStringLiteral("Ctrl+Alt+Space"));
-        QCOMPARE(description->text(), QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
-
-        // Escape abandons the capture and keeps the bound combination.
-        capture->click();
-        QTest::keyClick(capture, Qt::Key_Escape);
-        QCOMPARE(controller.globalShortcut().combination(), chosen);
-        QCOMPARE(capture->text(), QStringLiteral("Change…"));
-
-        platform->binder->setShortcutError = QStringLiteral("That shortcut is already in use.");
-        capture->click();
-        QTest::keyClick(capture, Qt::Key_D, Qt::ControlModifier);
-        QCOMPARE(page.findChild<QLabel *>(QStringLiteral("shortcutCaptureFeedback"))->text(),
-                 QStringLiteral("That shortcut is already in use."));
-        // The failed capture leaves the row naming what is still bound.
-        QCOMPARE(binding->text(), QStringLiteral("Ctrl+Alt+Space"));
-
-        // Reset goes back to the default, and then has nothing left to do.
-        platform->binder->setShortcutError.clear();
-        QVERIFY(!reset->isHidden());
-        QCOMPARE(reset->text(), QStringLiteral("Reset to Meta+Alt+D"));
-        reset->click();
-        QCOMPARE(controller.globalShortcut().combination(), initial);
-        QVERIFY(reset->isHidden());
-    }
-
-    void globalShortcutPageWaitsForPortalSupportAndShowsItsResult()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->shortcutSupportKnown = false;
-        platform->binder->shortcutsSupported = false;
-        platform->binder->desktopChooser = true;
-        LinuxGlobalShortcutSetupPage page(controller);
-
-        auto *portal = page.findChild<QWidget *>(QStringLiteral("portalShortcut"));
-        auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
-        QVERIFY(portal);
-        QVERIFY(!portal->isHidden());
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral("Checking your desktop…"));
-
-        QPushButton *chooseShortcut = nullptr;
-        for (QPushButton *button : page.findChildren<QPushButton *>()) {
-            if (button->text() == QStringLiteral("Choose shortcut")) {
-                chooseShortcut = button;
-                break;
-            }
-        }
-        QVERIFY(chooseShortcut);
-        QVERIFY(!chooseShortcut->isEnabled());
-
-        platform->binder->publishSupport(true, true);
-        QVERIFY(chooseShortcut->isEnabled());
-        chooseShortcut->click();
-        QCOMPARE(platform->binder->registerCount, 1);
-
-        const QString result = QStringLiteral("Ctrl+Alt+Space");
-        platform->binder->publishShortcut(QKeySequence(result));
-        platform->binder->publishRegistrationResult(true, result);
-        QCOMPARE(status->text(),
-                 QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
-    }
-
-    void globalShortcutPageClearsASingleKeyOnPortalDesktops()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->desktopChooser = true;
-        platform->binder->publishShortcut(ShortcutBinding::singleKey(QStringLiteral("F13")));
-        LinuxGlobalShortcutSetupPage page(controller);
-
-        auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
-        auto *binding = page.findChild<QLabel *>(QStringLiteral("globalShortcutBinding"));
-        auto *clear = page.findChild<QPushButton *>(QStringLiteral("clearGlobalShortcut"));
-        QVERIFY(capture && binding && clear);
-        // Beside the desktop's Choose shortcut, the capture names what it records.
-        QCOMPARE(capture->text(), QStringLiteral("Set single key"));
-        QVERIFY(!clear->isHidden());
-
-        clear->click();
-        QVERIFY(!controller.globalShortcut().isSingleKey());
-        QCOMPARE(binding->text(), QStringLiteral("Not set"));
-        QVERIFY(clear->isHidden());
-    }
-
-    void globalShortcutPageKeepsPortalFailureAfterRestoringTheOldShortcut()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->desktopChooser = true;
-        const QKeySequence existing(Qt::CTRL | Qt::ALT | Qt::Key_Space);
-        platform->binder->publishShortcut(existing);
-        LinuxGlobalShortcutSetupPage page(controller);
-        auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
-        QVERIFY(status);
-
-        platform->binder->publishRegistrationResult(
-            false, QStringLiteral("Setup was cancelled. Try again."));
-        platform->binder->publishShortcut(existing);
-
-        QCOMPARE(status->text(), QStringLiteral("Setup was cancelled. Try again."));
-    }
-
-    void trayShortcutNoteOnlyClaimsAnIconWhereATrayExists()
-    {
-        QVERIFY(linuxTrayShortcutNote(true).contains(QStringLiteral("system tray")));
-        QVERIFY(!linuxTrayShortcutNote(false).contains(QStringLiteral("system tray")));
-        QVERIFY(linuxTrayShortcutNote(false)
-                    .contains(QStringLiteral("while Speecher is running")));
-    }
-
-    void globalShortcutPageExplainsTheTrayIcon()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        LinuxGlobalShortcutSetupPage page(controller);
-
-        auto *note = page.findChild<QLabel *>(QStringLiteral("globalShortcutTrayNote"));
-        QVERIFY(note);
-        QVERIFY(!note->isHidden());
-        QCOMPARE(note->text(),
-                 linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));
-
-        // The manual command starts Speecher itself, so the running-app
-        // caveat is withheld on desktops that cannot register a shortcut.
-        platform->binder->publishSupport(true, false);
-        QVERIFY(note->isHidden());
-    }
-
-    void finishPageListsWhatWasSetUpWhenEveryStepIsDone()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        FinishSetupPage page(controller);
-        page.setSteps({
-            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — ChatGPT Codex")},
-            {QStringLiteral("Accessibility"), true, QString()},
-            {QStringLiteral("Microphone"), true, QStringLiteral("Microphone — Yeti Stereo Microphone")},
-        });
-        page.show();
-        QCoreApplication::processEvents();
-
-        QStringList shown;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->isVisible()) {
-                shown << label->text();
-            }
-        }
-        QVERIFY(shown.contains(QStringLiteral("Setup is complete.")));
-        QVERIFY(shown.contains(QStringLiteral("Transcription — ChatGPT Codex")));
-        QVERIFY(shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
-        // A step with nothing chosen has nothing to report back.
-        QVERIFY(!shown.contains(QStringLiteral("Accessibility")));
-        QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
-    }
-
-    void finishPageReportsTheRefinementVerdict()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        FinishSetupPage page(controller);
-        SetupStepStatus refinement{QStringLiteral("Refinement"), true, QStringLiteral("Refinement — OpenAI")};
-        refinement.verdict = QStringLiteral("Not signed in");
-        refinement.verdictReady = false;
-        page.setSteps({refinement});
-        page.show();
-        QCoreApplication::processEvents();
-
-        QStringList shown;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->isVisible()) {
-                shown << label->text();
-            }
-        }
-        QVERIFY(shown.contains(QStringLiteral("Not signed in")));
-        QVERIFY(!shown.contains(QStringLiteral("Ready")));
-    }
-
-    void finishPageShowsADownloadThatIsStillGoing()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        const LocalModel &model = *findLocalModel(QStringLiteral("moonshine-small"));
-        FinishSetupPage page(controller);
-        page.setSteps({
-            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — Moonshine Small, on this computer"),
-             model.id},
-        });
-        page.show();
-        QCoreApplication::processEvents();
-        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
-        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
-
-        controller.localSetup()->download(model);
-        QCoreApplication::processEvents();
-        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
-        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
-        QStringList shown;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->isVisible()) {
-                shown << label->text();
-            }
-        }
-        QVERIFY(shown.contains(QStringLiteral("Setup is complete except for the speech model download.")));
-
-        page.findChild<QPushButton *>(QStringLiteral("finishDownloadCancel"))->click();
-        QCoreApplication::processEvents();
-        QVERIFY(!controller.localModelStore()->isDownloading(model.id));
-        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
-    }
-
-    void finishPageListsUnfinishedStepsAndGoesBackToThem()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        FinishSetupPage page(controller);
-        page.setSteps({
-            {QStringLiteral("Transcription"), false,
-             QStringLiteral("ChatGPT Codex is no longer signed in.")},
-            {QStringLiteral("Microphone"), true,
-             QStringLiteral("Microphone — Yeti Stereo Microphone")},
-        });
-        page.show();
-        QCoreApplication::processEvents();
-
-        QStringList shown;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->isVisible()) {
-                shown << label->text();
-            }
-        }
-        QVERIFY(shown.contains(QStringLiteral("A few steps still need attention:")));
-        QVERIFY(shown.contains(QStringLiteral("Transcription")));
-        QVERIFY(shown.contains(QStringLiteral("ChatGPT Codex is no longer signed in.")));
-        QVERIFY(shown.contains(
-            QStringLiteral("Finish becomes available once every step above is resolved.")));
-        // A blocked page reports what is left, not what already worked.
-        QVERIFY(!shown.contains(QStringLiteral("Setup is complete.")));
-        QVERIFY(!shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
-
-        QPushButton *goToStep = nullptr;
-        for (QPushButton *button : page.findChildren<QPushButton *>()) {
-            if (button->text() == QStringLiteral("Go to step")) {
-                goToStep = button;
-                break;
-            }
-        }
-        QVERIFY(goToStep);
-        QSignalSpy selected(&page, &FinishSetupPage::stepSelected);
-        goToStep->click();
-        QCOMPARE(selected.count(), 1);
-        // The index is into the list the page was given, so the wizard can
-        // resolve it back to the page that step belongs to.
-        QCOMPARE(selected.first().first().toInt(), 0);
-    }
-
-    void finishPageExplainsTheTrayIcon()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->publishShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
-        FinishSetupPage page(controller);
-
-        auto *note = page.findChild<QLabel *>(QStringLiteral("finishTrayNote"));
-        QVERIFY(note);
-        QVERIFY(!note->isHidden());
-        QCOMPARE(note->text(),
-                 linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));
-    }
-
-    void finishPageHidesTheTrayNoteNextToTheManualCommand()
-    {
-        // Supported desktop, but no shortcut bound: the page recommends the
-        // manual command, which starts Speecher itself.
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        FinishSetupPage page(controller);
-
-        auto *note = page.findChild<QLabel *>(QStringLiteral("finishTrayNote"));
-        QVERIFY(note);
-        QVERIFY(note->isHidden());
-        QVERIFY(!page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutCommand"))
-                     ->isHidden());
-    }
-
-    void globalShortcutPageShowsOnlyManualSetupWhenUnsupported()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->shortcutsSupported = false;
-        platform->binder->unsupported = QStringLiteral("Internal binder detail");
-        LinuxGlobalShortcutSetupPage page(controller);
-
-        auto *manual = page.findChild<QWidget *>(QStringLiteral("manualShortcut"));
-        QVERIFY(manual);
-        QVERIFY(!manual->isHidden());
-        QVERIFY(page.findChild<QWidget *>(QStringLiteral("portalShortcut"))->isHidden());
-        // The capture stays on offer: a single key needs no desktop service.
-        auto *captureBlock = page.findChild<QWidget *>(QStringLiteral("shortcutCapture"));
-        QVERIFY(captureBlock);
-        QVERIFY(!captureBlock->isHidden());
-        // While it waits, the row says only a single key can be recorded.
-        page.show();
-        page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"))->click();
-        QCOMPARE(captureBlock->findChild<QLabel *>(QStringLiteral("globalShortcutStatus"))->text(),
-                 QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own."));
-        QCOMPARE(page.findChildren<QGroupBox *>().size(), 0);
-
-        bool hasInstruction = false;
-        bool hasInternalDetail = false;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            hasInstruction = hasInstruction
-                || label->text() == linuxGlobalShortcutManualInstruction();
-            hasInternalDetail = hasInternalDetail
-                || label->text() == QStringLiteral("Internal binder detail");
-        }
-        QVERIFY(hasInstruction);
-        QVERIFY(!hasInternalDetail);
-        auto *command = page.findChild<QLabel *>(QStringLiteral("globalShortcutCommand"));
-        QVERIFY(command);
-        QVERIFY(command->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
-        QVERIFY(!command->text().isEmpty());
-    }
-
-    void finishPageNamesTheBoundGlobalShortcut()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        // The closing instruction follows the activation mode.
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
-        platform->binder->publishShortcut(
-            QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
-        FinishSetupPage page(controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        bool hasInstruction = false;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            hasInstruction = hasInstruction
-                || label->text() == QStringLiteral(
-                    "To dictate, tap Meta+Alt+D to toggle, or hold it to dictate until release.");
-        }
-        QVERIFY(hasInstruction);
-    }
-
-    void finishPageInstructionFollowsThePushToTalkActivationMode()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
-        platform->binder->publishShortcut(
-            QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
-        FinishSetupPage page(controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
-        QVERIFY(status);
-        QCOMPARE(status->text(),
-                 QStringLiteral("To dictate, hold Meta+Alt+D while you speak."));
-    }
-
-    void finishPageShowsTheManualGlobalShortcutCommand()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->shortcutsSupported = false;
-        FinishSetupPage page(controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        bool hasInstruction = false;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            hasInstruction = hasInstruction
-                || label->text() == linuxGlobalShortcutManualInstruction();
-        }
-        QVERIFY(hasInstruction);
-        auto *command = page.findChild<QLabel *>(
-            QStringLiteral("finishGlobalShortcutCommand"));
-        QVERIFY(command);
-        QCOMPARE(command->text(), linuxGlobalShortcutCommand());
-        QVERIFY(!command->isHidden());
-    }
-
-    void finishPageExplainsWhenASupportedShortcutIsUnset()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        platform->binder->shortcutsSupported = true;
-        FinishSetupPage page(controller);
-
-        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
-        auto *command = page.findChild<QLabel *>(
-            QStringLiteral("finishGlobalShortcutCommand"));
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral(
-            "No Global Shortcut is set yet. Go back to set one, or bind this command yourself:"));
-        QVERIFY(command);
-        QVERIFY(!command->isHidden());
-    }
-
-    void finishPageUpdatesWhenThePortalPublishesAShortcut()
-    {
-        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
-        ApplicationController controller(true, platform);
-        // The closing instruction follows the activation mode.
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
-        FinishSetupPage page(controller);
-        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
-        auto *command = page.findChild<QLabel *>(
-            QStringLiteral("finishGlobalShortcutCommand"));
-        QVERIFY(status);
-        QVERIFY(command);
-
-        platform->binder->publishShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
-
-        QCOMPARE(status->text(), QStringLiteral(
-            "To dictate, tap Meta+Alt+D to toggle, or hold it to dictate until release."));
-        QVERIFY(command->isHidden());
-    }
 
     void globalShortcutInstructionCommandMatchesTheInstallation()
     {
@@ -3250,13 +2533,11 @@ private slots:
         controller.showMain();
         controller.showSettings();
         controller.showSetup();
-        QVERIFY(controller.grabMainWindow(QStringLiteral("/tmp/speecher-grab.png")));
 
         QCOMPARE(frontEnd.calls,
                  QStringList({QStringLiteral("showMainWindow"),
                               QStringLiteral("showSettingsWindow"),
-                              QStringLiteral("showSetupAssistant"),
-                              QStringLiteral("captureMainWindow /tmp/speecher-grab.png")}));
+                              QStringLiteral("showSetupAssistant")}));
     }
 
     void aFinishedModelDownloadIsAnnouncedThroughTheFrontEnd()
@@ -3504,7 +2785,6 @@ private slots:
         QTemporaryDir dir;
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
-        QSignalSpy bannerChanges(controller.updateBanner(), &UpdateBanner::changed);
         QLocalSocket startClient;
         startClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
@@ -3512,8 +2792,7 @@ private slots:
                                     {dir.filePath(QStringLiteral("call.md"))});
         platform->microphoneAnswer(true);
         QTRY_VERIFY(controller.isRecording());
-        QVERIFY(!bannerChanges.isEmpty());
-        QCOMPARE(controller.updateBanner()->model().action, QStringLiteral("Restart after this recording"));
+        QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::Recording);
 
         QLocalSocket *stopReply = nullptr;
         bool stopRepliedFirst = false;

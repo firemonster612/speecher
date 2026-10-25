@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/DictationRecord.h"
-#include "core/settings/SettingsSchema.h"
+#include "core/ProviderReadiness.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"

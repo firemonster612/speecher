@@ -580,24 +580,6 @@ private slots:
         QVERIFY(!canExportAs(result, TranscriptFormat::Srt));
     }
 
-    // Refinement is the reason given only when the batch refined.
-    void subtitlesNoteGivesTheReasonThatApplies()
-    {
-        TranscribeFileResult timed;
-        timed.raw = timed.refined = QStringLiteral("heard");
-        timed.segments = {{0, 1000, QStringLiteral("heard")}};
-        TranscribeBatchLabels labels{QStringLiteral("Local Model"), {}};
-        const QString unrefined = subtitlesNote({timed}, labels);
-        QVERIFY(unrefined.contains(QStringLiteral("Raw Transcript")));
-        QVERIFY(!unrefined.contains(QStringLiteral("refinement")));
-
-        labels.refinement = QStringLiteral("OpenAI");
-        QVERIFY(subtitlesNote({timed}, labels).contains(QStringLiteral("refinement")));
-
-        timed.segments.clear();
-        QVERIFY(subtitlesNote({timed}, labels).contains(QStringLiteral("Local Model")));
-    }
-
     void aFailedFileDoesNotStopTheBatch()
     {
         const QString broken = m_dir.filePath(QStringLiteral("broken.wav"));

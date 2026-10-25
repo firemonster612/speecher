@@ -5,7 +5,7 @@
 # session with a minimal StatusNotifierWatcher on the session bus, and checks
 # over D-Bus that:
 #   * the daemon registers a StatusNotifierItem as soon as it starts,
-#   * the item's menu offers Start dictation, Settings… and Quit Speecher,
+#   * the item's menu offers Start dictation and Quit Speecher,
 #   * activating Start dictation over dbusmenu starts a session (tooltip and
 #     menu flip to the listening state) and the flipped item stops it again,
 #   * Quit ends the daemon and the item leaves the bus.

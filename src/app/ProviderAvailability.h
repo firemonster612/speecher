@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/settings/SettingsSchema.h"
+#include "core/ProviderReadiness.h"
 
 #include <QHash>
 #include <QObject>
@@ -11,9 +11,9 @@ class NetworkReachability;
 
 // The facts about whether a provider can work right now that nothing slow
 // has to be asked for: the operating system's reachability and the sign-ins
-// last seen. LocalSetup adds them to the LiveFacts settings and setup read,
-// beside the downloaded models and runners it knows itself, and
-// fallbackProblem() judges each provider from the lot.
+// last seen. LocalSetup adds them to its LiveFacts, beside the downloaded
+// models and runners it knows itself, and fallbackProblem() judges each
+// provider from the lot.
 class ProviderAvailability final : public QObject {
     Q_OBJECT
 

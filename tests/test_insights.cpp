@@ -7,7 +7,6 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QScopeGuard>
 #include <QTemporaryDir>
 
 using namespace speecher;
@@ -310,7 +309,6 @@ private slots:
             {recordOn(kToday, 2000000000), recordOn(kToday, 2000000000)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.words, 4000000000);
         QCOMPARE(summary.allTimeWords, 4000000000);
-        QCOMPARE(insightTiles(summary, kToday).first().value, QStringLiteral("4,000,000,000"));
         QVERIFY(insightsShareText(summary, InsightsRange::AllTime)
                     .contains(QStringLiteral("4,000,000,000 words dictated")));
     }
@@ -441,7 +439,6 @@ private slots:
         QCOMPARE(summary.allTimeWords, 1150);
         QCOMPARE(summary.passedMilestone, std::optional<int>(1000));
         QCOMPARE(summary.nextMilestone, 10000);
-        QCOMPARE(milestoneText(summary), QStringLiteral("8,850 to go. You passed 1,000 already."));
         QCOMPARE(summary.longest.audioMs, 90000);
         QCOMPARE(summary.longest.words, 200);
         QCOMPARE(summary.longest.appName, QStringLiteral("Slack"));
@@ -453,46 +450,11 @@ private slots:
         QCOMPARE(summary.firstDictation, QDate(2026, 9, 1));
     }
 
-    void recordsLeaveOutTheStreakRunningNow()
-    {
-        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100), recordOn(kToday, 50)};
-        const QList<InsightRecordText> rows =
-            insightRecords(summarize(records, InsightsRange::Last7Days, kToday), kToday);
-        QStringList titles;
-        for (const InsightRecordText &row : rows) {
-            titles << row.title;
-        }
-        QCOMPARE(titles, (QStringList{QStringLiteral("Next milestone: 1,000 words"),
-                                      QStringLiteral("Longest dictation"), QStringLiteral("Busiest day"),
-                                      QStringLiteral("Wordiest day"), QStringLiteral("First dictation")}));
-        QVERIFY(rows.first().milestoneBar);
-        QCOMPARE(rows.last().value, QStringLiteral("1 day ago"));
-    }
-
-    void learnedCorrectionsSayHowLearningStands()
-    {
-        QCOMPARE(learnedCorrectionsNote(0, true, true),
-                 QStringLiteral("Fix a dictated word the same way twice and it appears here."));
-        QCOMPARE(learnedCorrectionsAction(0, true), QString());
-        QCOMPARE(learnedCorrectionsNote(3, false, false), QStringLiteral("Learning is off."));
-        QCOMPARE(learnedCorrectionsAction(3, false), QStringLiteral("Turn on learning"));
-        QCOMPARE(learnedCorrectionsAction(3, true), QStringLiteral("Review learned corrections"));
-    }
-
     void everyMilestonePassed()
     {
         const InsightsSummary summary =
             summarize({recordOn(kToday, 1'200'000)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.nextMilestone, 0);
-        QCOMPARE(milestoneText(summary), QStringLiteral("You passed 1,000,000 words"));
-    }
-
-    void relativeDayNamesRecentDays()
-    {
-        QCOMPARE(relativeDay(kToday, kToday), QStringLiteral("today"));
-        QCOMPARE(relativeDay(kToday.addDays(-1), kToday), QStringLiteral("yesterday"));
-        QCOMPARE(relativeDay(QDate(2026, 9, 22), kToday), QStringLiteral("Tuesday"));
-        QCOMPARE(relativeDay(QDate(2026, 9, 19), kToday), QStringLiteral("Sep 19, 2026"));
     }
 
     void paceComparesWithTyping()
@@ -507,41 +469,11 @@ private slots:
                  QStringLiteral("That's 3.6× faster than typing at 40 words per minute."));
     }
 
-    void deltaTextWordsTheChange()
-    {
-        QCOMPARE(deltaText(29, QStringLiteral("30 days")), QStringLiteral("▲ 29% vs previous 30 days"));
-        QCOMPARE(deltaText(-4, QStringLiteral("week")), QStringLiteral("▼ 4% vs previous week"));
-        QCOMPARE(deltaText(0, QStringLiteral("week")), QStringLiteral("Same as previous week"));
-        QCOMPARE(deltaText(std::nullopt, QStringLiteral("week")), QString());
-    }
-
-    void streakTextWordsTheRun()
-    {
-        const auto streakOf = [](const QList<QDate> &days) {
-            QList<DictationRecord> records;
-            for (const QDate &day : days) records.append(recordOn(day));
-            return streakText(summarize(records, InsightsRange::AllTime, kToday), kToday);
-        };
-        QCOMPARE(streakOf({kToday.addDays(-1), kToday}), QStringLiteral("Your longest yet"));
-        QCOMPARE(streakOf({QDate(2026, 8, 1), QDate(2026, 8, 2), QDate(2026, 8, 3), kToday}),
-                 QStringLiteral("Best: 3 days"));
-        QCOMPARE(streakOf({kToday.addDays(-1)}), QStringLiteral("Dictate today to keep it going"));
-        QCOMPARE(streakOf({QDate(2026, 9, 20), QDate(2026, 9, 21), QDate(2026, 9, 22)}),
-                 QStringLiteral("3-day run ended Wednesday"));
-        QCOMPARE(streakOf({}), QString());
-    }
-
-    void audioAndClockText()
+    void audioTotalTextRoundsToHoursOrMinutes()
     {
         QCOMPARE(audioTotalText(4 * 3'600'000), QStringLiteral("4.0 hours"));
         QCOMPARE(audioTotalText(34 * 60'000), QStringLiteral("34 min"));
         QCOMPARE(audioTotalText(2'500'000'000LL), QStringLiteral("694.4 hours"));
-        QCOMPARE(clockText(67'000), QStringLiteral("1:07"));
-        InsightsSummary summary;
-        QCOMPARE(averageDictationText(summary), QStringLiteral("Nothing yet"));
-        summary.dictations = 3;
-        summary.averageAudioMs = 67'000;
-        QCOMPARE(averageDictationText(summary), QStringLiteral("Average dictation 1:07"));
     }
 
     void hourLabelUsesTwelveHourTime()
@@ -579,17 +511,6 @@ private slots:
                                              {12, QStringLiteral("Aug")}, {17, QStringLiteral("Sep")}}));
     }
 
-    void heatmapCaptionCountsOnlyTheWeeksDrawn()
-    {
-        // The latest two weeks start on Monday, Sep 14; the 13th is outside.
-        const InsightsSummary summary = summarize(
-            {recordOn(kToday), recordOn(kToday.addDays(-10)), recordOn(kToday.addDays(-13)),
-             recordOn(kToday.addDays(-200))},
-            InsightsRange::AllTime, kToday);
-        QCOMPARE(heatmapSpanText(summary, 2), QStringLiteral("2 days with dictation in the last 2 weeks"));
-        QCOMPARE(heatmapSpanText(summary, 53), QStringLiteral("4 days with dictation in the last year"));
-    }
-
     void shareTextListsThePeriodsNumbers()
     {
         const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
@@ -603,40 +524,6 @@ private slots:
                                 "2 dictations, 2 min of audio transcribed\n"
                                 "100 words per minute, 2.5× faster than typing\n"
                                 "Top apps: Kate 100%"));
-    }
-
-    void tilesReadInOneOrderWithOneLetterWeekdays()
-    {
-        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
-                                             recordOn(kToday, 50, 30000)};
-        const QList<InsightTileText> tiles =
-            insightTiles(summarize(records, InsightsRange::Last7Days, kToday), kToday);
-        QStringList titles;
-        for (const InsightTileText &tile : tiles) {
-            titles << tile.title;
-        }
-        QCOMPARE(titles, (QStringList{QStringLiteral("Words dictated"), QStringLiteral("Streak"),
-                                      QStringLiteral("Dictations"), QStringLiteral("Audio transcribed")}));
-        QCOMPARE(tiles.at(1).iconId, QStringLiteral("flame"));
-        QCOMPARE(tiles.at(1).value, QStringLiteral("2"));
-        QCOMPARE(tiles.at(1).unit, QStringLiteral("days"));
-        QVERIFY(tiles.at(1).showsWeek);
-        QCOMPARE(tiles.at(3).value + u' ' + tiles.at(3).unit, QStringLiteral("2 min"));
-
-        const QLocale previous;
-        QLocale::setDefault(QLocale(QLocale::German));
-        const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
-        QCOMPARE(heatmapRowLabels().at(0), QLocale().dayName(Qt::Monday, QLocale::ShortFormat));
-        QVERIFY(heatmapRowLabels().at(1).isEmpty());
-        QCOMPARE(learnedCorrectionsCaption(1), QStringLiteral("Correction learned"));
-        QCOMPARE(learnedCorrectionsCaption(2), QStringLiteral("Corrections learned"));
-
-        // Vietnamese narrow names are two letters, "T2" for Monday; Hindi's
-        // Monday is one letter with a vowel sign, two code units.
-        QLocale::setDefault(QLocale(QLocale::Vietnamese));
-        QCOMPARE(weekdayLetter(Qt::Monday), QStringLiteral("T"));
-        QLocale::setDefault(QLocale(QLocale::Hindi));
-        QCOMPARE(weekdayLetter(Qt::Monday), QString::fromUtf8("सो"));
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()

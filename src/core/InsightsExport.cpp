@@ -131,42 +131,4 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
 
-QString insightsJsonFileName(const QDate &today)
-{
-    return QStringLiteral("speecher-stats-%1.json").arg(isoDate(today));
-}
-
-InsightsShareLabels insightsShareLabels()
-{
-    return {
-        QStringLiteral("Share"),
-        QStringLiteral("Copy image with stats"),
-        QStringLiteral("Copy as text"),
-        QStringLiteral("Save as JSON…"),
-        QStringLiteral("Copied"),
-        QStringLiteral("Saved"),
-        QStringLiteral("Couldn't save"),
-        QStringLiteral("Save stats"),
-        QStringLiteral("JSON files"),
-    };
-}
-
-QString insightsImageTitle()
-{
-    return QStringLiteral("My Speecher stats");
-}
-
-QString insightsRangeLabel(InsightsRange range)
-{
-    QString period = insightsPeriodName(range);
-    period[0] = period.at(0).toUpper();
-    return period;
-}
-
-QString insightsImagePaceLine(const InsightsSummary &summary)
-{
-    if (summary.wordsPerMinute <= 0) return {};
-    return QStringLiteral("%1 · %2 words per minute").arg(summary.bookComparison, number(summary.wordsPerMinute));
-}
-
 } // namespace speecher

@@ -4,6 +4,7 @@
 #include <QList>
 #include <QHash>
 #include <QString>
+#include <QStringList>
 
 #include <optional>
 
@@ -94,6 +95,15 @@ struct AppRecognitionRule {
 QList<WritingProfileSettings> defaultWritingProfileSettings();
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
                                                   const QString &profile);
+
+// The built-in tones and cleanup levels, by stored id. "none" is no tone
+// override, or no cleanup.
+inline const QStringList kBuiltInTones{
+    QStringLiteral("none"),        QStringLiteral("formal"),  QStringLiteral("casual"),
+    QStringLiteral("very_casual"), QStringLiteral("excited"), QStringLiteral("gen_z")};
+inline const QStringList kBuiltInCleanupLevels{
+    QStringLiteral("none"), QStringLiteral("light_cleanup"), QStringLiteral("balanced"),
+    QStringLiteral("strong_polish")};
 
 // A tone the user defined: the model is told its name and follows the
 // instruction.

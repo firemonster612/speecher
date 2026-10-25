@@ -1,5 +1,4 @@
 #include "providers/CliProxyCredentials.h"
-#include "core/settings/SettingsSchema.h"
 
 #include "providers/OauthTokenRequest.h"
 #include "providers/ProviderFailureClassification.h"
@@ -102,8 +101,7 @@ QString resolveAccountFileName(const QString &directory,
     if (error) {
         *error = accounts.isEmpty()
             ? QStringLiteral("No CLI Proxy API %1 accounts found in %2").arg(type, directory)
-            : QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under %2")
-                    .arg(type, paneTitleForRow(QStringLiteral("openAiCliproxyAccount")));
+            : QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under Accounts").arg(type);
     }
     return {};
 }
@@ -326,8 +324,7 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
         }
         if (accounts.size() > 1) {
             return {false, {}, {},
-                    QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under %2")
-                    .arg(type, paneTitleForRow(QStringLiteral("openAiCliproxyAccount")))};
+                    QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under Accounts").arg(type)};
         }
         resolvedFileName = accounts.first().fileName;
     }

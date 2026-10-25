@@ -37,7 +37,7 @@ QtObject {
         { id: "audio", label: "Minutes of audio" }
     ]
 
-    // Home's fixed wording (core's homeText).
+    // Home's fixed wording.
     readonly property var text: ({
         yourDictation: "Your dictation",
         activity: "Activity",

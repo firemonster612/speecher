@@ -1,6 +1,5 @@
 #include "app/ProviderSetup.h"
 #include "core/LocalModelCatalog.h"
-#include "core/settings/SettingsSchema.h"
 
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
@@ -20,9 +19,8 @@
 namespace speecher {
 namespace {
 
-// Speed, accuracy and quality are rating bars (core/settings/ProviderRatings),
-// and the models behind a provider are in its Advanced list, so the stats
-// keep only what those leave out.
+// The stats leave out speed, accuracy, quality and the models behind a
+// provider, which the UI rates and lists on its own.
 QVector<ProviderStat> refinementProviderStats(const QString &id)
 {
     if (id == QStringLiteral("openai")) {
@@ -88,8 +86,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerSpeechProvider(
         {QStringLiteral("local"),
          QStringLiteral("Local Model"),
-         QStringLiteral("Download a model on the %1 page. It runs on this computer, with no account.")
-             .arg(paneTitle(QStringLiteral("localModels"))),
+         QStringLiteral("Download a model on the Local models page. It runs on this computer, with no account."),
          false,
          QStringLiteral("Runs on this computer: no account, works offline after a one-time "
                         "download. Languages depend on the model; speed on the model and this computer."),

@@ -5,16 +5,12 @@
 
 #include "app/ApplicationController.h"
 #include "app/ManifestUpdater.h"
-#include "app/UpdateBanner.h"
 #ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
 #endif
+#include "core/ReleaseNotes.h"
 #include "core/SettingsStore.h"
-#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
-#include "frontend/qt/QtFrontEnd.h"
-#include "ui/AppWindow.h"
-#include "ui/TranscriberPopup.h"
 
 #include <QFile>
 #include <QFrame>
@@ -59,24 +55,6 @@ public:
     }
 };
 #endif
-
-class QtFrontEndTestAccess {
-public:
-    static QFrame *updateBanner(QtFrontEnd &frontEnd)
-    {
-        return frontEnd.m_popup->findChild<QFrame *>(QStringLiteral("updateBanner"));
-    }
-
-    static QLabel *updateBannerText(QtFrontEnd &frontEnd)
-    {
-        return frontEnd.m_popup->findChild<QLabel *>(QStringLiteral("updateBannerText"));
-    }
-
-    static TranscriberPopup *popup(QtFrontEnd &frontEnd)
-    {
-        return frontEnd.m_popup;
-    }
-};
 
 } // namespace speecher
 
@@ -229,26 +207,6 @@ class UpdateControllerTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void releaseNotesNeverExceedTheRunningVersion()
-    {
-        SchemaContext context;
-        context.currentVersion = QStringLiteral("0.1.0");
-        const SettingsSchema schema = buildSettingsSchema(context);
-        const SettingsPage &page = schema.page(QStringLiteral("whatsNew"));
-        const SettingsRow *notes = nullptr;
-        for (const SettingsSection &section : page.sections) {
-            for (const SettingsRow &row : section.rows) {
-                if (row.id == QStringLiteral("whatsNewNotes")) {
-                    notes = &row;
-                }
-            }
-        }
-
-        QVERIFY(notes);
-        const QString markdown = notes->value(AppSettings{}).toString();
-        QVERIFY(markdown.contains(QStringLiteral("# Speecher 0.1.0")));
-        QVERIFY(!markdown.contains(QStringLiteral("# Speecher 0.1.1")));
-    }
 
     void parsesManifestAndComparesBuildNumbers()
     {
@@ -769,59 +727,6 @@ private slots:
     }
 
 #ifndef Q_OS_MACOS
-    void whatsNewChipOffersAutoHidesAndDismisses()
-    {
-        {
-            SettingsStore settings;
-            settings.raw().clear();
-            settings.setUpdatesLastRunVersion(QStringLiteral("0.0.1"));
-            settings.raw().setValue(QStringLiteral("updates/lastRunBuildNumber"), 1);
-        }
-        ApplicationController controller(true);
-        QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
-        QtFrontEnd frontEnd(&controller);
-        TranscriberPopup *popup = QtFrontEndTestAccess::popup(frontEnd);
-        auto *row = popup->findChild<QWidget *>(QStringLiteral("whatsNewRow"));
-        auto *message = popup->findChild<QLabel *>(QStringLiteral("whatsNewText"));
-        auto *action = popup->findChild<QPushButton *>(QStringLiteral("whatsNewAction"));
-        auto *timer = popup->findChild<QTimer *>(QStringLiteral("whatsNewAutoHide"));
-        QVERIFY(row && message && action && timer);
-        QVERIFY(!row->isHidden());
-        QVERIFY(message->text().contains(QStringLiteral("installed")));
-        QCOMPARE(action->text(), QStringLiteral("See what's new"));
-
-        // Auto-hide tidies the popup but keeps the offer pending; only the
-        // dismiss button drops it.
-        popup->showPopup(1);
-        QVERIFY(timer->isActive());
-        QCOMPARE(timer->interval(), 6000);
-        timer->stop();
-        timer->setInterval(0);
-        timer->start();
-        QTest::qWait(20);
-        QVERIFY(row->isHidden());
-        QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
-        popup->hide();
-
-        // The offer returns on the next popup, through the real show path
-        // rather than a hand-called refresh.
-        QMetaObject::invokeMethod(controller.session(),
-                                  "popupShowRequested",
-                                  Qt::DirectConnection,
-                                  Q_ARG(quint64, 2));
-        QVERIFY(!row->isHidden());
-
-        // Clicking the button asks to open the What's New page.
-        QSignalSpy whatsNewSpy(popup, &TranscriberPopup::whatsNewRequested);
-        action->click();
-        QCOMPARE(whatsNewSpy.count(), 1);
-
-        auto *dismiss = popup->findChild<QPushButton *>(QStringLiteral("whatsNewDismiss"));
-        QVERIFY(dismiss);
-        dismiss->click();
-        QVERIFY(row->isHidden());
-        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
-    }
 #endif
 
 #ifdef Q_OS_LINUX
@@ -955,161 +860,62 @@ private slots:
         QVERIFY(automaticCheckDue(last, 30, last - minuteMs));
     }
 
-    void updateBannerActionsDescribeWhatTheyDo()
+    void baseVersionsCompareNumericallyWithoutNightlySuffixes()
     {
-#ifndef Q_OS_MACOS
-        ApplicationController controller(true);
-        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
-        QVERIFY(updater);
-        AppWindow window(&controller);
-
-        ManifestUpdaterTestAccess::setManualInstallRequired(*updater, true);
-        ManifestUpdaterTestAccess::setState(
-            *updater,
-            UpdateController::State::Error,
-            QStringLiteral("Download the replacement from the release page."));
-        auto *action = window.findChild<QPushButton *>(QStringLiteral("updateAction"));
-        QVERIFY(action);
-        QCOMPARE(action->text(), QStringLiteral("Open release page"));
-        auto *dismiss = window.findChild<QToolButton *>(QStringLiteral("dismissUpdate"));
-        QVERIFY(dismiss && !dismiss->isHidden());
-        QCOMPARE(dismiss->toolTip(), QStringLiteral("Dismiss"));
-
-        ManifestUpdaterTestAccess::setManualInstallRequired(*updater, false);
-        ManifestUpdaterTestAccess::setAvailableVersion(
-            *updater, QStringLiteral("0.1.1"), UpdateChannel::Stable);
-        ManifestUpdaterTestAccess::setState(*updater,
-                                            UpdateController::State::UpdateAvailable);
-        auto *message = window.findChild<QLabel *>(QStringLiteral("updateBannerText"));
-        QVERIFY(message);
-        // A Nightly Build is offered a stable replacement; a stable build (the
-        // tag builds CI runs) is offered a plain update.
-        QCOMPARE(message->text(),
-                 updater->stableReplacementAvailable()
-                     ? QStringLiteral("Switch to Stable Release 0.1.1 (replaces this Nightly Build)")
-                     : QStringLiteral("Speecher 0.1.1 is available"));
-#endif
+        QCOMPARE(compareBaseVersions(QStringLiteral("0.2.0-nightly.20260901+gabc1234"),
+                                     QStringLiteral("0.2.0")),
+                 0);
+        QVERIFY(compareBaseVersions(QStringLiteral("0.10.0"), QStringLiteral("0.2.0")) > 0);
+        QVERIFY(compareBaseVersions(QStringLiteral("0.2.0"), QStringLiteral("0.2.1")) < 0);
+        QCOMPARE(compareBaseVersions(QStringLiteral("0.2.9+g1"), QStringLiteral("0.2.9")), 0);
+        QVERIFY(compareBaseVersions(QString(), QStringLiteral("0.1.0")) < 0);
     }
 
-    void laterHidesTheRestartBannerUntilAnotherVersion()
+    void releaseNotesShowOnlyThisPlatformsBullets()
     {
-#ifndef Q_OS_MACOS
-        ApplicationController controller(true);
-        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
-        QVERIFY(updater);
-        AppWindow window(&controller);
-        auto *banner = window.findChild<QFrame *>(QStringLiteral("updateBanner"));
-        auto *action = window.findChild<QPushButton *>(QStringLiteral("updateAction"));
-        QVERIFY(banner && action);
-
-        ManifestUpdaterTestAccess::setAvailableVersion(*updater, QStringLiteral("0.3.0"));
-        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
-        QPushButton *later = nullptr;
-        for (QPushButton *button : banner->findChildren<QPushButton *>()) {
-            if (button->text() == QStringLiteral("Later")) {
-                later = button;
-            }
-        }
-        QVERIFY(!banner->isHidden());
-        QCOMPARE(action->text(), QStringLiteral("Restart now"));
-        QVERIFY(later && !later->isHidden());
-        later->click();
-        QVERIFY(banner->isHidden());
-        QVERIFY(!controller.updateBanner()->model().visible);
-
-        // A newer offer brings the banner back.
-        ManifestUpdaterTestAccess::setAvailableVersion(*updater, QStringLiteral("0.3.1"));
-        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
-        QVERIFY(!banner->isHidden());
-#endif
+        const QString notes = QStringLiteral("## Added\n\n- A shared change that wraps\n  onto a second line.\n"
+                                             "- Linux: the tray.\n\n## Fixed\n\n- Windows: a fix.");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("macOS")),
+                 QStringLiteral("## Added\n\n- A shared change that wraps onto a second line."));
     }
 
-    void bannerAndChipVisibilityFollowUpdateState()
+    void releaseNotesDropThisPlatformsPrefixAndKeepNestedBullets()
     {
-        UpdateTestContext context;
-        TestManifestUpdater updater(&context.settings);
-        for (const UpdateController::State state : {UpdateController::State::Idle,
-                                                    UpdateController::State::Checking,
-                                                    UpdateController::State::CheckFailed,
-                                                    UpdateController::State::UpToDate}) {
-            ManifestUpdaterTestAccess::setState(updater, state, QStringLiteral("check failed"));
-            QVERIFY(!updater.bannerVisible());
-        }
-        ManifestUpdaterTestAccess::setAvailableVersion(updater, QStringLiteral("2.0"));
-        for (const UpdateController::State state : {UpdateController::State::UpdateAvailable,
-                                                    UpdateController::State::Downloading,
-                                                    UpdateController::State::ReadyToRestart,
-                                                    UpdateController::State::RestartPending,
-                                                    UpdateController::State::Restarting,
-                                                    UpdateController::State::Error}) {
-            ManifestUpdaterTestAccess::setState(updater, state, QStringLiteral("install failed"));
-            QVERIFY(updater.bannerVisible());
-        }
+        const QString notes = QStringLiteral("- Linux: the tray, with\n  two parts:\n  - a menu\n  - a panel\n"
+                                             "- Windows: a fix:\n  - its detail");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("Linux")),
+                 QStringLiteral("- The tray, with two parts:\n  - a menu\n  - a panel"));
+    }
 
-        // The chip half needs the Linux composition, whose updater is an
-        // AppImageUpdater; macOS composes MacSparkleUpdater and Sparkle owns
-        // its own UI there.
-#ifndef Q_OS_MACOS
-        ApplicationController controller(true);
-        QtFrontEnd frontEnd(&controller);
-        auto *controllerUpdater = dynamic_cast<ManifestUpdater *>(controller.updates());
-        QVERIFY(controllerUpdater);
-        QFrame *banner = QtFrontEndTestAccess::updateBanner(frontEnd);
-        QLabel *message = QtFrontEndTestAccess::updateBannerText(frontEnd);
-        QVERIFY(banner && message);
-        ManifestUpdaterTestAccess::setAvailableVersion(*controllerUpdater,
-                                                       QStringLiteral("2.0"));
-        const QList<std::pair<UpdateController::State, bool>> chipStates{
-            {UpdateController::State::Idle, false},
-            {UpdateController::State::Checking, false},
-            {UpdateController::State::CheckFailed, false},
-            {UpdateController::State::UpToDate, false},
-            {UpdateController::State::UpdateAvailable, true},
-            {UpdateController::State::Downloading, true},
-            {UpdateController::State::ReadyToRestart, true},
-            {UpdateController::State::RestartPending, true},
-            {UpdateController::State::Restarting, true},
-            {UpdateController::State::Error, true},
-        };
-        for (const auto &[state, visible] : chipStates) {
-            ManifestUpdaterTestAccess::setState(*controllerUpdater,
-                                                state,
-                                                QStringLiteral("install failed"));
-            QCOMPARE(!banner->isHidden(), visible);
+    // Every docs/releases note is built in, newest first.
+    void bundledReleaseNotesComeNewestFirst()
+    {
+        const QList<ReleaseNote> notes = bundledReleaseNotes();
+        QVERIFY(!notes.isEmpty());
+        for (qsizetype index = 1; index < notes.size(); ++index) {
+            QVERIFY2(compareBaseVersions(notes.at(index - 1).version, notes.at(index).version) > 0,
+                     qPrintable(notes.at(index).version));
         }
-        ManifestUpdaterTestAccess::setAutomaticCheckFailures(*controllerUpdater, 3);
-        ManifestUpdaterTestAccess::setState(*controllerUpdater,
-                                            UpdateController::State::CheckFailed,
-                                            QStringLiteral("Could not check for updates"));
-        QVERIFY(!banner->isHidden());
-        QCOMPARE(message->text(), QStringLiteral("Could not check for updates"));
-        ManifestUpdaterTestAccess::setState(*controllerUpdater,
-                                            UpdateController::State::Error,
-                                            QStringLiteral("install failed"));
-        QVERIFY(!banner->isHidden());
-        QCOMPARE(message->text(), QStringLiteral("install failed"));
-        ManifestUpdaterTestAccess::setState(*controllerUpdater,
-                                            UpdateController::State::Restarting);
-        QCOMPARE(message->text(), QStringLiteral("Restarting…"));
+        QCOMPARE(notes.last().version, QStringLiteral("0.1.0"));
+        // docs/releases/README.md: every note starts at a level-two heading.
+        QVERIFY(notes.first().markdown.startsWith(QStringLiteral("## ")));
+    }
 
-        // A nightly offer names its build and commit in the pill. The banner
-        // has no elide, so the popup grows for it; grab evidence when asked.
-        ManifestUpdaterTestAccess::setAvailableVersion(
-            *controllerUpdater, QStringLiteral("0.2.1-nightly.20260921+gabc1234"),
-            UpdateChannel::Nightly, 481);
-        ManifestUpdaterTestAccess::setState(*controllerUpdater,
-                                            UpdateController::State::UpdateAvailable);
-        QCOMPARE(message->text(),
-                 QStringLiteral("Speecher nightly build 481 (gabc1234) is available"));
-        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
-        if (!grabDir.isEmpty()) {
-            TranscriberPopup *popup = QtFrontEndTestAccess::popup(frontEnd);
-            popup->show();
-            QCoreApplication::processEvents();
-            popup->grab().save(grabDir + QStringLiteral("/popup-nightly-banner.png"));
-            popup->hide();
-        }
-#endif
+    void historyRecordsSplitIntoCommits()
+    {
+        const QChar rs(0x1e);
+        const QChar us(0x1f);
+        const QString log = rs + QStringLiteral("def5678") + us + QStringLiteral("Add the thing (#91)") + us
+            + QStringLiteral("A longer description.\n\nOver two paragraphs.\n") + rs + QStringLiteral("abc1234")
+            + us + QStringLiteral("Tidy the tray icon") + us + QStringLiteral("\n") + rs
+            + QStringLiteral("truncated");
+        const QList<HistoryCommit> commits = parseHistory(log);
+        QCOMPARE(commits.size(), 2);
+        QCOMPARE(commits.at(0).sha, QStringLiteral("def5678"));
+        QCOMPARE(commits.at(0).subject, QStringLiteral("Add the thing (#91)"));
+        QCOMPARE(commits.at(0).body, QStringLiteral("A longer description.\n\nOver two paragraphs."));
+        QCOMPARE(commits.at(1).subject, QStringLiteral("Tidy the tray icon"));
+        QVERIFY(commits.at(1).body.isEmpty());
     }
 
     void downgradeDoesNotCreatePendingWhatsNewState()

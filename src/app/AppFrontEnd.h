@@ -12,10 +12,11 @@ enum class SetupAssistantPage {
     GlobalShortcut,
 };
 
-// Everything ApplicationController needs from whichever user interface is
-// compiled in. One implementation per platform, so that the controller keeps
-// the session, permission and IPC responsibilities and holds no widgets; see
-// docs/adr/0001-per-platform-front-ends.md.
+// The windows ApplicationController asks the user interface to show. The UI
+// runs inside the daemon process, so the controller keeps the session,
+// permission and IPC responsibilities and holds no windows; see
+// docs/adr/0009-one-quick-ui-inside-the-daemon.md. With none attached, the
+// daemon runs without windows and these requests do nothing.
 class AppFrontEnd {
 public:
     virtual ~AppFrontEnd() = default;
@@ -28,16 +29,8 @@ public:
     virtual void showSetupAssistant(SetupAssistantPage page) = 0;
 
     // Shows the file transcription surface with these files listed, not yet
-    // started. A front end without one shows its main window.
-    virtual void showTranscribeFiles(const QStringList &paths)
-    {
-        Q_UNUSED(paths);
-        showMainWindow();
-    }
-
-    // Saves a picture of the main window, for the --grab screenshot path.
-    // False when there is no main window yet or the file could not be written.
-    virtual bool captureMainWindow(const QString &path) = 0;
+    // started.
+    virtual void showTranscribeFiles(const QStringList &paths) = 0;
 
     // Shows a dictation failure the controller raised itself rather than the
     // session, such as the refused microphone grant, with what fixes it.
@@ -47,17 +40,10 @@ public:
     virtual void alert() = 0;
 
     // A system notification for news that arrives while no Speecher window is
-    // on screen, such as a Local Model download finishing after setup closed:
-    // the tray balloon on Linux and Windows, the notification centre on macOS.
-    // Clicking it opens the settings window on pageId (see resolvePage). A
-    // front end with a window up already shows the news there and does
-    // nothing. The default is for front ends that have not been ported yet.
-    virtual void notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
-    {
-        Q_UNUSED(title);
-        Q_UNUSED(message);
-        Q_UNUSED(pageId);
-    }
+    // on screen, such as a Local Model download finishing after setup closed.
+    // Clicking it opens the settings window on pageId. A UI with a window up
+    // already shows the news there and does nothing.
+    virtual void notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId) = 0;
 };
 
 } // namespace speecher

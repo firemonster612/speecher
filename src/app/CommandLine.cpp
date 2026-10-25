@@ -6,7 +6,6 @@
 #include "app/SingleInstanceIpc.h"
 #include "core/Vocabulary.h"
 #include "core/settings/SettingsCodecs.h"
-#include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationTypes.h"
 #include "providers/ProviderRegistry.h"
@@ -45,30 +44,6 @@ std::optional<OutputFormat> requestedOutputFormat(const QStringList &arguments, 
         return std::nullopt;
     }
     return outputFormatFromString(value);
-}
-
-QString requestedOption(const QStringList &arguments, const QString &name, QString *error)
-{
-    for (qsizetype index = 1; index < arguments.size(); ++index) {
-        const QString argument = arguments.at(index);
-        if (argument.startsWith(name + QStringLiteral("="))) {
-            const QString value = argument.mid(name.size() + 1);
-            if (!value.isEmpty()) {
-                return value;
-            }
-        } else if (argument == name) {
-            if (index + 1 < arguments.size() && !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
-                return arguments.at(index + 1);
-            }
-        } else {
-            continue;
-        }
-        if (error) {
-            *error = QStringLiteral("%1 requires a value").arg(name);
-        }
-        return {};
-    }
-    return {};
 }
 
 // Starts a Speecher that outlives this command. Its standard streams go to the
@@ -235,30 +210,34 @@ Options:
   --help                   print this help
 )";
 
-// Each stored id and the name the command line gives it. Spelled out rather
-// than derived from the settings labels, so renaming a label never changes the
+// Each stored id and the name the command line gives it. Made from the ids
+// rather than the settings labels, so renaming a label never changes the
 // command line.
 using CliNames = QList<std::pair<QString, QString>>;
 
-const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
-                             {QStringLiteral("light_cleanup"), QStringLiteral("light")},
-                             {QStringLiteral("balanced"), QStringLiteral("medium")},
-                             {QStringLiteral("strong_polish"), QStringLiteral("high")}};
-const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
-                          {QStringLiteral("formal"), QStringLiteral("formal")},
-                          {QStringLiteral("casual"), QStringLiteral("casual")},
-                          {QStringLiteral("very_casual"), QStringLiteral("very-casual")},
-                          {QStringLiteral("excited"), QStringLiteral("excited")},
-                          {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
+// The cleanup levels the command line names by how much they change.
+const QHash<QString, QString> kCleanupCliNames{{QStringLiteral("light_cleanup"), QStringLiteral("light")},
+                                               {QStringLiteral("balanced"), QStringLiteral("medium")},
+                                               {QStringLiteral("strong_polish"), QStringLiteral("high")}};
 
-// The built-in names, then each custom tone or level the settings hold, by
-// its id without custom_ and with - for _.
-CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
+// The built-in ids, then each custom tone or level the settings hold, each
+// named by its id without custom_ and with - for _ unless renamed says
+// otherwise.
+template<typename Custom>
+CliNames cliNamesFor(const QStringList &builtIn, const QList<Custom> &custom,
+                     const QHash<QString, QString> &renamed = {})
 {
-    for (const RowOption &option : options) {
-        if (option.id.startsWith(kCustomIdPrefix)) {
-            names.append({option.id,
-                          option.id.mid(kCustomIdPrefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
+    const auto name = [](const QString &id) {
+        QString stripped = id.startsWith(kCustomIdPrefix) ? id.mid(kCustomIdPrefix.size()) : id;
+        return stripped.replace(QLatin1Char('_'), QLatin1Char('-'));
+    };
+    CliNames names;
+    for (const QString &id : builtIn) {
+        names.append({id, renamed.value(id, name(id))});
+    }
+    for (const Custom &choice : custom) {
+        if (choice.id.startsWith(kCustomIdPrefix)) {
+            names.append({choice.id, name(choice.id)});
         }
     }
     return names;
@@ -266,12 +245,12 @@ CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
 
 CliNames cleanupNames()
 {
-    return withCustomNames(kCleanupNames, cleanupStrengths(SettingsCodecs().customCleanupLevels()));
+    return cliNamesFor(kBuiltInCleanupLevels, SettingsCodecs().customCleanupLevels(), kCleanupCliNames);
 }
 
 CliNames toneNames()
 {
-    return withCustomNames(kToneNames, writingTones(SettingsCodecs().customTones()));
+    return cliNamesFor(kBuiltInTones, SettingsCodecs().customTones());
 }
 
 QStringList cliNames(const CliNames &choices)
@@ -283,27 +262,43 @@ QStringList cliNames(const CliNames &choices)
     return names;
 }
 
-QStringList providerIds(const QList<ProviderDescriptor> &providers)
+// Alphabetical: the registry orders providers by label.
+QStringList sortedProviderIds(const QList<ProviderDescriptor> &providers)
 {
-    QStringList ids;
-    for (const ProviderDescriptor &provider : providers) {
-        ids << provider.id;
-    }
+    QStringList ids = providerIds(providers);
     ids.sort();
     return ids;
 }
 
-QList<RowOption> writingProfiles()
+// A Writing Profile as the command line names it: a built-in's label or a
+// custom profile's name.
+struct NamedProfile {
+    QString id;
+    QString label;
+};
+
+// The built-in profiles, then the custom ones the settings hold.
+QList<NamedProfile> writingProfiles()
 {
-    return writingProfileChoices(SettingsCodecs().writingProfileSettings());
+    const QList<WritingProfileSettings> saved = SettingsCodecs().writingProfileSettings();
+    QList<NamedProfile> profiles;
+    for (const WritingProfileSettings &builtIn : defaultWritingProfileSettings()) {
+        profiles.append({builtIn.profile, writingProfileLabel(builtIn.profile, {})});
+    }
+    for (const WritingProfileSettings &profile : saved) {
+        if (!isBuiltInWritingProfile(profile.profile)) {
+            profiles.append({profile.profile, profile.name});
+        }
+    }
+    return profiles;
 }
 
 // The profiles' current names, for --help and errors. A name with a space is
 // quoted, as a shell needs it.
-QString writingProfileNames(const QList<RowOption> &profiles)
+QString writingProfileNames(const QList<NamedProfile> &profiles)
 {
     QStringList names;
-    for (const RowOption &profile : profiles) {
+    for (const NamedProfile &profile : profiles) {
         names << (profile.label.contains(QLatin1Char(' ')) ? QStringLiteral("\"%1\"").arg(profile.label)
                                                            : profile.label);
     }
@@ -319,11 +314,11 @@ QString writingProfileCliName(const QString &label)
 
 // The profiles a command-line value names by their current name, in any case,
 // or that name with - between words.
-QList<RowOption> writingProfilesNamed(const QList<RowOption> &profiles, const QString &value)
+QList<NamedProfile> writingProfilesNamed(const QList<NamedProfile> &profiles, const QString &value)
 {
     const QString wanted = value.trimmed().toLower();
-    QList<RowOption> matches;
-    for (const RowOption &profile : profiles) {
+    QList<NamedProfile> matches;
+    for (const NamedProfile &profile : profiles) {
         const QString name = profile.label.simplified().toLower();
         if (!name.isEmpty() && (wanted == name || wanted == writingProfileCliName(name))) {
             matches << profile;
@@ -338,14 +333,14 @@ QList<RowOption> writingProfilesNamed(const QList<RowOption> &profiles, const QS
 // value names no profile or more than one.
 std::optional<QString> writingProfileNamed(const QString &value, QString *error)
 {
-    const QList<RowOption> profiles = writingProfiles();
-    const QList<RowOption> matches = writingProfilesNamed(profiles, value);
+    const QList<NamedProfile> profiles = writingProfiles();
+    const QList<NamedProfile> matches = writingProfilesNamed(profiles, value);
     if (matches.size() == 1) {
         return matches.first().id;
     }
     if (matches.size() > 1) {
         QStringList described;
-        for (const RowOption &match : std::as_const(matches)) {
+        for (const NamedProfile &match : std::as_const(matches)) {
             described << QStringLiteral("%1 (%2)").arg(match.label,
                                                        isBuiltInWritingProfile(match.id) ? QStringLiteral("built-in")
                                                                                          : QStringLiteral("custom"));
@@ -354,7 +349,7 @@ std::optional<QString> writingProfileNamed(const QString &value, QString *error)
                      .arg(value, described.join(QStringLiteral(", ")));
         return std::nullopt;
     }
-    for (const RowOption &profile : profiles) {
+    for (const NamedProfile &profile : profiles) {
         if (profile.id == value) {
             return profile.id;
         }
@@ -365,13 +360,13 @@ std::optional<QString> writingProfileNamed(const QString &value, QString *error)
 
 // The name `completions --list profiles` offers for each profile, one that
 // --profile takes for it alone: its command-line name, or its id where
-// another profile has that name too or the name starts with -, as --help,
-// --version and --grab do, which the command line reads before --profile.
+// another profile has that name too or the name starts with -, as --help
+// and --version do, which the command line reads before --profile.
 QStringList writingProfileCompletions()
 {
-    const QList<RowOption> profiles = writingProfiles();
+    const QList<NamedProfile> profiles = writingProfiles();
     QStringList names;
-    for (const RowOption &profile : profiles) {
+    for (const NamedProfile &profile : profiles) {
         const QString name = writingProfileCliName(profile.label);
         if (name.isEmpty()) {
             continue;
@@ -393,8 +388,8 @@ QString helpText()
     registerProviders(registry, nullptr, nullptr);
     const QString separator = QStringLiteral(", ");
     return QString::fromUtf8(kHelp)
-        .arg(providerIds(registry.speechProviders()).join(separator),
-             providerIds(registry.refinementProviders()).join(separator),
+        .arg(sortedProviderIds(registry.speechProviders()).join(separator),
+             sortedProviderIds(registry.refinementProviders()).join(separator),
              cliNames(cleanupNames()).join(separator),
              writingProfileNames(writingProfiles()),
              cliNames(toneNames()).join(separator));
@@ -405,7 +400,7 @@ CompletionChoices completionChoices()
 {
     ProviderRegistry registry;
     registerProviders(registry, nullptr, nullptr);
-    return {providerIds(registry.speechProviders()), providerIds(registry.refinementProviders()),
+    return {sortedProviderIds(registry.speechProviders()), sortedProviderIds(registry.refinementProviders()),
             knownSpokenLanguages()};
 }
 
@@ -641,14 +636,6 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         }
         if (argument == QStringLiteral("--")) {
             optionsEnded = true;
-            continue;
-        }
-        // Read before this for the screenshot rig, which opens the window.
-        if (argument == QStringLiteral("--grab")) {
-            ++index;
-            continue;
-        }
-        if (argument.startsWith(QStringLiteral("--grab="))) {
             continue;
         }
         headless = true;
@@ -1113,12 +1100,6 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     }
 
     CommandLineDecision decision;
-    QString optionError;
-    decision.grabPath = requestedOption(options, QStringLiteral("--grab"), &optionError);
-    if (!optionError.isEmpty()) {
-        std::cerr << optionError.toStdString() << "\n";
-        return {LaunchMode::Exit, 2};
-    }
 
     const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
     if (verb == QStringLiteral("completions")) {
@@ -1142,7 +1123,6 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
         || verb == QStringLiteral("last")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
-        || verb == QStringLiteral("grab")
         || verb == QStringLiteral("record")
         || verb == QStringLiteral("quit");
     decision.startListening = arguments.contains(QStringLiteral("--start-listening"));
@@ -1328,7 +1308,7 @@ int runCliCommand(const CommandLineDecision &decision,
 
     if (command == QStringLiteral("stop") || command == QStringLiteral("cancel")
         || command == QStringLiteral("status")
-        || command == QStringLiteral("quit") || command == QStringLiteral("grab")) {
+        || command == QStringLiteral("quit")) {
         std::cout << "idle\n";
         return 0;
     }

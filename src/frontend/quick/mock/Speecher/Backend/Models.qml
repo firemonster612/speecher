@@ -223,7 +223,7 @@ QtObject {
         return m.languages + ", text " + m.textShows.toLowerCase() + (m.fit === "tight" ? ", " + m.fitLabel.toLowerCase() : "")
     }
 
-    // Wording core's localModelText gives the browser.
+    // The model browser's fixed wording.
     readonly property var text: ({
         useModel: "Use this model", testSpeed: "Test speed", inUse: "In use",
         suggested: "Suggested for this computer", tooLarge: "Too large for this computer",

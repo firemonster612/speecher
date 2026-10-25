@@ -2,8 +2,6 @@
 
 #include "core/AppSettings.h"
 
-#include <QLocale>
-
 #include <algorithm>
 
 namespace speecher {
@@ -338,21 +336,6 @@ QString modelFitLabel(ModelFit fit)
     return QStringLiteral("Too large");
 }
 
-QString modelRatingLabel(ModelRating rating)
-{
-    switch (rating) {
-    case ModelRating::Recommended:
-        return QStringLiteral("Recommended");
-    case ModelRating::Good:
-        return QStringLiteral("Good");
-    case ModelRating::Situational:
-        return QStringLiteral("Situational");
-    case ModelRating::NotRecommended:
-        break;
-    }
-    return QStringLiteral("Not recommended");
-}
-
 QString downloadSizeText(qint64 bytes)
 {
     constexpr double megabyte = 1e6;
@@ -368,64 +351,9 @@ QString speechSecondsText(double seconds)
     return QStringLiteral("%1 s").arg(std::max(seconds, 0.1), 0, 'f', 1);
 }
 
-QString wordErrorRateSources()
-{
-    return QStringLiteral("Clear speech: LibriSpeech test-clean. Everyday speech: FLEURS English.");
-}
-
-QString localModelText(LocalModelText text)
-{
-    switch (text) {
-    case LocalModelText::UseModel:
-        return QStringLiteral("Use this model");
-    case LocalModelText::TestSpeed:
-        return QStringLiteral("Test speed");
-    case LocalModelText::InUse:
-        return QStringLiteral("In use");
-    case LocalModelText::Suggested:
-        return QStringLiteral("Suggested for this computer");
-    case LocalModelText::YourChoice:
-        return QStringLiteral("Your choice");
-    case LocalModelText::TooLarge:
-        return QStringLiteral("Too large for this computer");
-    case LocalModelText::CompareNote:
-        return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
-                              "model is downloaded and tested here.");
-    case LocalModelText::DeleteModel:
-        return QStringLiteral("Delete model");
-    case LocalModelText::DeleteBody:
-        return QStringLiteral("The model file is removed from this computer. You can download it again later.");
-    }
-    return {};
-}
-
-QString deleteModelQuestion(const QString &modelName)
-{
-    return QStringLiteral("Delete %1?").arg(modelName);
-}
-
 QString textShowsValue(bool streams)
 {
     return streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop");
-}
-
-QString languagesValue(const LocalModel &model)
-{
-    if (model.languages.size() == 1) {
-        return QLocale::languageToString(QLocale::codeToLanguage(model.languages.first()));
-    }
-    return QStringLiteral("%1 languages").arg(model.languages.size());
-}
-
-QString downloadCaption(qint64 bytes)
-{
-    return QStringLiteral("Download %1").arg(downloadSizeText(bytes));
-}
-
-QStringList compareTableHeaders()
-{
-    return {QStringLiteral("Model"), QStringLiteral("Download"), QStringLiteral("Word errors"),
-            QStringLiteral("10 s of speech"), QStringLiteral("Text shows"), QStringLiteral("Memory")};
 }
 
 QString localModelSpeedLine(const LocalModel &model,

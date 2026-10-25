@@ -3,7 +3,7 @@
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WordPreview.h"
-#include "core/settings/FallbackPresentation.h"
+#include "core/ProviderReadiness.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
 
@@ -328,9 +328,9 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_lastTranscript.clear();
     m_transcript->clear();
     m_transcriptPipeline = {};
-    // Unfreeze before clearing: a front end whose preview honours the frozen
-    // flag (macOS, Windows) would otherwise drop this clear and keep showing the
-    // previous dictation's delivered words until the first new partial arrives.
+    // Unfreeze before clearing: a popup whose preview honours the frozen flag
+    // would otherwise drop this clear and keep showing the previous
+    // dictation's delivered words until the first new partial arrives.
     emit popupFrozenChanged(false);
     emit previewDisplayChanged({});
     emit popupRefiningChanged(false);

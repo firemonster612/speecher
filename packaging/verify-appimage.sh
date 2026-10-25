@@ -47,9 +47,7 @@ REQUIRED_FILES=(
   usr/plugins/iconengines/libqsvgicon.so
   usr/plugins/networkinformation/libqnetworkmanager.so
   usr/lib/libQt6Core.so.6
-  usr/lib/libKF6ColorScheme.so.6
   usr/lib/libKF6GlobalAccel.so.6
-  usr/lib/libKF6WidgetsAddons.so.6
   usr/lib/libLayerShellQtInterface.so.6
   usr/lib/libqt6keychain.so.1
   usr/lib/libtranscribe.so.0.2

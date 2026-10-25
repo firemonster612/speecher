@@ -135,9 +135,9 @@ if("${git_repository_result}" STREQUAL "0"
   endif()
 endif()
 
-# The What's New page lists the commits a nightly update brought in, so every
+# The Updates page lists the commits a nightly update brought in, so every
 # build embeds the recent first-parent history. Record separator 0x1e and field
-# separator 0x1f keep multi-line commit bodies parseable; SettingsSchema.cpp
+# separator 0x1f keep multi-line commit bodies parseable; core/ReleaseNotes.cpp
 # reads the format back. Non-git builds embed an empty file.
 set(SPEECHER_RELEASE_HISTORY_DIR "${CMAKE_CURRENT_BINARY_DIR}/release-history")
 file(MAKE_DIRECTORY "${SPEECHER_RELEASE_HISTORY_DIR}")

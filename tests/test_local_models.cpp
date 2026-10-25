@@ -1,9 +1,7 @@
 #include "app/LocalSetup.h"
-#include "app/SetupSteps.h"
 #include "core/SettingsStore.h"
 #include "core/SecretStore.h"
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
@@ -128,6 +126,40 @@ private slots:
         QVERIFY(!settings.secrets()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
     }
 
+    // Setup's fallback offer joins the chain behind the primary, and changes
+    // nothing, not even the runner selection, when the chain would drop it.
+    void setupFallbackOfferJoinsOnlyAChainThatWouldKeepIt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
+                                                  QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                  {QStringLiteral("gemma4:e4b")}}});
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+
+        const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
+        settings.setRefinementFallbackProviders(full);
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementFallbackProviders(), full);
+        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+
+        settings.setRefinementFallbackProviders({});
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
+
+        // Already a fallback.
+        settings.setLocalRunnerSettings({});
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+    }
+
     void endpointChecksDiscardSupersededResults_data()
     {
         QTest::addColumn<bool>("refinement");
@@ -247,59 +279,6 @@ private slots:
                  QString("LM Studio with m"));
     }
 
-    void setupStepsEndOnReadyAfterTheShortcut()
-    {
-        QStringList ids;
-        for (const SetupStepInfo &step : setupSteps()) ids.append(step.id);
-        QCOMPARE(ids.last(), QString("ready"));
-        QCOMPARE(ids.indexOf("shortcut"), ids.size() - 2);
-        QVERIFY(!ids.contains("profiles"));
-#ifdef Q_OS_WIN
-        const bool accessibilityStep = false;
-#else
-        const bool accessibilityStep = true;
-#endif
-        QCOMPARE(ids.contains("accessibility"), accessibilityStep);
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        QVERIFY(!ids.contains("delivery"));
-#else
-        QVERIFY(ids.contains("delivery"));
-#endif
-        QCOMPARE(findSetupStep("shortcut")->title, QString("Global Shortcut"));
-        QCOMPARE(setupChecklistLine("microphone", "Built-in"), QString("Microphone — Built-in"));
-        QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
-        QCOMPARE(setupProviderVerdict("endpoint", false), QString("Not set up"));
-        QCOMPARE(setupRefinementStatus("none", std::nullopt), QString("No cleanup"));
-        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("When the app isn't recognized"));
-    }
-
-    void theTranscriptionDeadEndNamesTheWayOut()
-    {
-        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
-        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
-        const auto cleanup = qScopeGuard([] {
-            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
-            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
-        });
-        // Nothing on this machine can transcribe: say how to get something,
-        // and that a server of one's own is a choice on the step.
-        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
-                 QString("This computer can't run a local speech model, and no ChatGPT, Claude, "
-                         "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
-                         "account and install Claude Code or Claude Desktop, or Codex. To use your "
-                         "own speech server, choose Custom Endpoint."));
-        // Any way out silences it, Custom Endpoint chosen included.
-        QVERIFY(setupTranscriptionDeadEnd(true, false, false, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, true, false, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, false, true, true).isEmpty());
-        QVERIFY(setupTranscriptionDeadEnd(false, false, false, false).isEmpty());
-        // An installed CLI makes signing in the missing step.
-        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
-        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
-                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found. To use your own "
-                         "speech server, choose Custom Endpoint."));
-    }
-
     void theTranscriptionStepOffersCustomEndpointAlways()
     {
         // Custom Endpoint is set up on the step, so it is a choice whatever
@@ -309,15 +288,6 @@ private slots:
         QVERIFY(offersSetupSpeechProvider("claude", false));
         QVERIFY(offersSetupSpeechProvider("local", true));
         QVERIFY(!offersSetupSpeechProvider("local", false));
-    }
-
-    void theTranscriptionGateSaysWhatTheChosenServiceNeeds()
-    {
-        QCOMPARE(setupTranscriptionBlocked("local", "Local Model"), QString("Download a speech model to continue."));
-        QCOMPARE(setupTranscriptionBlocked("endpoint", "Custom Endpoint"),
-                 QString("Enter your server's URL to continue."));
-        QCOMPARE(setupTranscriptionBlocked("codex", "ChatGPT Codex"), QString("ChatGPT Codex is not signed in."));
-        QCOMPARE(setupTranscriptionBlocked(QString(), QString()), QString("No transcription service is available."));
     }
 
     void tooSmallAMachineCannotRunAnyModel()
@@ -435,7 +405,9 @@ private slots:
         QCOMPARE(settings.localSpeechSettings().modelId, beforeProbe);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
-        QTRY_VERIFY(setup.hardwareKnown());
+        // The first Metal device init compiles ggml's shaders, which took
+        // about 45 s on a CI runner; the suite has 120 s.
+        QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
         QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
         QCOMPARE(setup.speechModelChoice().id, setup.suggestedModel().id);
         QVERIFY(!settings.localSpeechSettings().modelChosen);

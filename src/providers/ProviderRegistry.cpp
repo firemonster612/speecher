@@ -20,6 +20,15 @@ void sortProviders(QList<ProviderDescriptor> &providers)
 
 } // namespace
 
+QStringList providerIds(const QList<ProviderDescriptor> &providers)
+{
+    QStringList ids;
+    for (const ProviderDescriptor &provider : providers) {
+        ids << provider.id;
+    }
+    return ids;
+}
+
 ProviderRegistry::ProviderRegistry(QObject *parent)
     : QObject(parent)
 {
@@ -84,16 +93,6 @@ AppSettings ProviderRegistry::withProfileProviders(const AppSettings &settings,
     return resolved;
 }
 
-QList<RowOption> ProviderRegistry::rowOptions(ProviderRole role) const
-{
-    QList<RowOption> options;
-    const QList<ProviderDescriptor> providers = role == ProviderRole::Speech ? speechProviders() : refinementProviders();
-    for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label, provider.summary});
-    }
-    return options;
-}
-
 SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)
 {
     auto it = m_speech.find(id);
@@ -116,17 +115,6 @@ TranscriptRefiner *ProviderRegistry::createRefinementProvider(const QString &id,
 {
     const auto it = m_refinement.constFind(id);
     return it == m_refinement.constEnd() ? nullptr : it->factory(parent);
-}
-
-QString credentialSourceLabel(const QString &providerId, const QString &fallback)
-{
-    if (providerId == QStringLiteral("claude")) {
-        return QStringLiteral("Claude Code");
-    }
-    if (providerId == QStringLiteral("codex")) {
-        return QStringLiteral("Codex CLI or the ChatGPT app");
-    }
-    return fallback;
 }
 
 TranscriptRefiner *ProviderRegistry::refinementProvider(const QString &id)

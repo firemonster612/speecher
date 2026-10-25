@@ -25,8 +25,10 @@ Pages import `Speecher.Backend` and read only its singletons. The mock module
 in `mock/` and a future C++ module registered under the same URI expose the
 same API, so wiring means swapping the import path, not editing pages.
 
-- `Schema` is core's `SettingsSchema`: pages and rows with label, help, kind
-  and options. Pages place rows by id with `SchemaRow { rowId: "…" }`.
+- The UI owns its pages, rows and wording (ADR 0009). `Schema` lists the
+  pages and rows with label, help, kind and options, and pages place rows by
+  id with `SchemaRow { rowId: "…" }`. The values come from the daemon:
+  `AppSettings` and live state.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store.
 - Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
   and state pages show. Keep their properties plain (strings, numbers, arrays
@@ -48,8 +50,8 @@ same API, so wiring means swapping the import path, not editing pages.
 - The theme binding (`Theme.dark` from `Settings.themeControl` and the host
   scheme) lives in Main for now; the host must apply it to every window it
   creates, including ones opened without Main (the popup, the setup assistant).
-- Wording comes from the schema row. Text written in a page's QML belongs in
-  core once wired (ADR 0007), so keep it short and in one place per page.
+- Wording comes from the schema row or the page's QML, and stays in the UI
+  once wired, so keep it short and in one place per page.
   The shell's wording is `Status.text`, the popup's is the dictation's
   `text`, and words many places share (Cancel, Save, Copied, Remove, …) are
   `Words`.

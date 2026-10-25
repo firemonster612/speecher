@@ -221,18 +221,6 @@ jobs:
           done
           curl --fail --silent --cacert "$cert_dir/ca.pem" https://localhost:8443/ >/dev/null
           printf 'https_server=PASS trusted local HTTPS server reachable\n' >> evidence/summary.txt
-          cat > "$RUNNER_TEMP/read-image.swift" <<'SWIFT'
-          import Foundation
-          import Vision
-
-          let request = VNRecognizeTextRequest()
-          request.recognitionLevel = .accurate
-          try VNImageRequestHandler(url: URL(fileURLWithPath: CommandLine.arguments[1])).perform([request])
-          for observation in request.results ?? [] {
-              if let text = observation.topCandidates(1).first?.string { print(text) }
-          }
-          SWIFT
-          xcrun swiftc "$RUNNER_TEMP/read-image.swift" -o "$RUNNER_TEMP/read-image"
           cat > "$RUNNER_TEMP/drive.py" <<'PYTHON'
           import json
           import os
@@ -255,7 +243,6 @@ jobs:
           evidence = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'
           out = evidence / scenario
           out.mkdir(parents=True, exist_ok=True)
-          (out / 'grabs').mkdir(exist_ok=True)
           server = root / 'update-server'
           installed = root / 'installed' / 'speecher.app'
           fixtures = json.loads((evidence / 'fixtures.json').read_text())
@@ -374,21 +361,6 @@ jobs:
               return [line for line in lines if re.search(r'"GET /[^ ]+\.dmg HTTP/[^ ]+" 200', line)]
 
 
-          def screenshot(stage, expected_text):
-              ipc('showSettings')
-              time.sleep(2)  # AppKit/SwiftUI renders asynchronously after the IPC response.
-              before = set((out / 'grabs').glob('*.png'))
-              ipc('grab')
-              captures = set((out / 'grabs').glob('*.png')) - before
-              require(stage + '_capture', len(captures) == 1, 'native settings window saved by grab IPC')
-              image = out / f'{stage}.png'
-              shutil.copyfile(captures.pop(), image)
-              run('screencapture', '-x', str(out / f'{stage}-screen.png'))
-              text = run(str(root / 'read-image'), str(image)).stdout
-              (out / f'{stage}-ocr.txt').write_text(text)
-              require(stage + '_banner', expected_text in ' '.join(text.lower().split()), text.strip())
-
-
           success = False
           server_start = len((evidence / 'https-server.log').read_text().splitlines())
           started = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -413,22 +385,18 @@ jobs:
                       and 'app/setupCompleted=true' in seeded.stdout and 'updates/channel=nightly' in seeded.stdout,
                       seeded.stdout.strip())
               publish('offered')
-              env = dict(os.environ, SPEECHER_APPCAST_URL=base_url + feed,
-                         SPEECHER_GRAB_DIR=str(out / 'grabs'))
-              # LaunchServices relaunches must retain the test feed and screenshot directory.
-              for key in ('SPEECHER_APPCAST_URL', 'SPEECHER_GRAB_DIR'):
-                  run('launchctl', 'setenv', key, env[key])
+              env = dict(os.environ, SPEECHER_APPCAST_URL=base_url + feed)
+              # LaunchServices relaunches must retain the test feed.
+              run('launchctl', 'setenv', 'SPEECHER_APPCAST_URL', env['SPEECHER_APPCAST_URL'])
               with (out / 'stderr.log').open('w') as log:
                   process = subprocess.Popen([str(installed / 'Contents/MacOS/speecher'), '--daemon'],
                                              env=env, stdout=log, stderr=subprocess.STDOUT)
               initial = wait_for(lambda s: s['currentVersion'] == old['version'])
               require('running_old', initial['currentBuild'] == str(old['build']), json.dumps(initial))
-              ipc('showSettings')
               ipc('e2eUpdateCheck')
               offer = wait_for(lambda s: s['state'] in ('UpdateAvailable', 'Error', 'CheckFailed'))
               require('offer_n_plus_1', offer['state'] == 'UpdateAvailable' and offer['availableVersion'] == offered['version']
                       and offer['bannerVisible'] == 'true', json.dumps(offer))
-              screenshot('available', 'is available')
               require('no_download_before_swap', not requests(), json.dumps(requests()))
               publish('replacement')
               require('published_n_plus_2', (server / 'speecher.dmg').read_bytes() == (root / 'fixtures/replacement.dmg').read_bytes(),
@@ -446,12 +414,10 @@ jobs:
                           f'CFBundleVersion={info["CFBundleVersion"]}; expected {offered["build"]}')
                   require('relaunched_n_plus_1', final['currentVersion'] == offered['version']
                           and final['currentBuild'] == str(offered['build']) and final['pid'] != initial['pid'], json.dumps(final))
-                  screenshot('installed', 'is installed')
               else:
                   final = wait_for(lambda s: s['state'] == 'Error', 180)
                   require('signing_error', 'improperly signed' in final['error'].lower()
                           and 'could not be validated' in final['error'].lower() and final['bannerVisible'] == 'true', json.dumps(final))
-                  screenshot('error', 'improperly signed')
                   info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
                   require('old_bundle_preserved', info['CFBundleVersion'] == str(old['build'])
                           and final['currentBuild'] == str(old['build']), f'CFBundleVersion={info["CFBundleVersion"]}')

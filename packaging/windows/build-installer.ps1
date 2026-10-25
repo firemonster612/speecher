@@ -10,11 +10,7 @@ $BuildDir = Resolve-Path $BuildDir
 $Exe = Join-Path $BuildDir "speecher.exe"
 $StageDir = Join-Path $BuildDir "installer-staging"
 $AppDir = Join-Path $StageDir "app"
-$RedistDir = Join-Path $StageDir "redist"
 $DistDir = Join-Path $RootDir "dist"
-$RuntimeInstaller = Join-Path $RedistDir "WindowsAppRuntimeInstall-x64.exe"
-$RuntimeUrl = "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe"
-$RuntimeSha256 = "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc"
 
 if (-not (Test-Path $Exe)) {
     throw "Speecher executable not found: $Exe"
@@ -28,7 +24,6 @@ $Version = $Matches[1]
 
 Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item $AppDir -ItemType Directory -Force | Out-Null
-New-Item $RedistDir -ItemType Directory -Force | Out-Null
 New-Item $DistDir -ItemType Directory -Force | Out-Null
 
 Copy-Item $Exe $AppDir
@@ -38,16 +33,6 @@ if (-not (Test-Path $Launcher)) {
     throw "Console launcher not found: $Launcher"
 }
 Copy-Item $Launcher (Join-Path $AppDir "speecher.com")
-$Bootstrap = Join-Path $BuildDir "Microsoft.WindowsAppRuntime.Bootstrap.dll"
-if (-not (Test-Path $Bootstrap)) {
-    throw "Windows App Runtime bootstrap DLL not found: $Bootstrap"
-}
-Copy-Item $Bootstrap $AppDir
-$Winmds = Get-ChildItem $BuildDir -Filter *.winmd
-if (-not $Winmds) {
-    throw "Windows App Runtime winmd files were not found in $BuildDir"
-}
-$Winmds | Copy-Item -Destination $AppDir
 # transcribe.cpp and its ggml backend modules (one per CPU instruction set,
 # plus Vulkan), which it loads from its own directory.
 $Transcribe = Join-Path $BuildDir "transcribe.dll"
@@ -95,12 +80,6 @@ Copy-Item $OffscreenPlugin (Join-Path $AppDir "platforms") -Force
 # when the computer is offline.
 if (-not (Test-Path (Join-Path $AppDir "networkinformation\qnetworklistmanager.dll"))) {
     throw "windeployqt did not deploy Qt's network reachability plugin"
-}
-
-Invoke-WebRequest $RuntimeUrl -OutFile $RuntimeInstaller
-$ActualRuntimeSha256 = (Get-FileHash $RuntimeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($ActualRuntimeSha256 -ne $RuntimeSha256) {
-    throw "Windows App Runtime installer checksum mismatch: $ActualRuntimeSha256"
 }
 
 $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source

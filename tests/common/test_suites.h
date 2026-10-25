@@ -6,11 +6,6 @@
 #include <QVector>
 
 #include <cstdio>
-#include <memory>
-
-namespace speecher {
-class WinUiHost;
-}
 
 inline QVector<QByteArray> &testArguments()
 {
@@ -53,16 +48,12 @@ inline int runTestSuite(QObject *suite, int argc, char **argv)
     return QTest::qExec(suite, copiedArguments.size(), copiedArguments.data());
 }
 
-int runUiTests(int argc, char **argv);
-int runAppWindowTests(int argc, char **argv);
 int runTranscriptStateTests(int argc, char **argv);
 int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);
-int runSettingsSchemaTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
 int runPlatformCompositionTests(int argc, char **argv);
 #ifdef Q_OS_LINUX
-int runLinuxStyleChoiceTests(int argc, char **argv);
 int runLinuxTrayTests(int argc, char **argv);
 int runKeywatchTests(int argc, char **argv);
 int runHelperInstallTests(int argc, char **argv);
@@ -88,16 +79,9 @@ int runFileTranscriptionTests(int argc, char **argv);
 #ifdef Q_OS_UNIX
 int runUpdateControllerTests(int argc, char **argv);
 #endif
-#ifdef SPEECHER_WITH_SWIFT_UI
-int runMacFrontEndTests(int argc, char **argv);
-#endif
 #ifdef Q_OS_MACOS
 int runMacPlatformTests(int argc, char **argv);
 #endif
 #ifdef Q_OS_WIN
 int runWinPlatformTests(int argc, char **argv);
-#endif
-#ifdef SPEECHER_WITH_WINUI
-int runWinFrontEndTests(int argc, char **argv,
-                        std::unique_ptr<speecher::WinUiHost> host);
 #endif

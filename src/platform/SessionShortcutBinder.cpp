@@ -1,7 +1,6 @@
 #include "platform/SessionShortcutBinder.h"
 
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SettingsSchema.h"
 
 #include <QDebug>
 #include <QSettings>
@@ -10,6 +9,12 @@
 
 namespace speecher {
 namespace {
+
+// Why the desktop would not register a binding: another app holds it.
+QString ownedElsewhereText(const ShortcutBinding &binding)
+{
+    return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
+}
 
 // defaultFormat, like the rest of the settings, so tests that point it at a
 // temporary file never touch the real app's preferences.
@@ -60,7 +65,7 @@ bool SessionShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString
         letGo();
         m_holding = false;
         if (!take(shortcut.combination())) {
-            reason = globalShortcutOwnedElsewhereText(shortcut);
+            reason = ownedElsewhereText(shortcut);
         }
         letGo();
     }
@@ -137,7 +142,7 @@ QString SessionShortcutBinder::hold()
         return {};
     }
     m_holding = take(m_binding.combination());
-    return m_holding ? QString() : globalShortcutOwnedElsewhereText(m_binding);
+    return m_holding ? QString() : ownedElsewhereText(m_binding);
 }
 
 } // namespace speecher

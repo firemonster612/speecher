@@ -1,7 +1,12 @@
 # Speecher on Windows
 
-Speecher supports Windows 11 build 22000 or newer. The Windows app uses WinUI 3
-for its windows and keeps the shared dictation core in Qt.
+Speecher supports Windows 11 build 22000 or newer.
+
+The desktop UI is being replaced: the WinUI 3 front end is gone, and one Qt
+Quick UI will run on every platform
+([ADR 0009](adr/0009-one-quick-ui-inside-the-daemon.md)). Until it is ported
+to Windows, `speecher.exe` runs as a background app with no windows, and the
+command line talks to it.
 
 ## Building
 
@@ -23,8 +28,7 @@ pwsh packaging/windows/build-installer.ps1 -BuildDir build
 ```
 
 The script runs `windeployqt`, copies the Visual C++ runtime DLLs from the MSVC
-redist folder next to `speecher.exe`, downloads the pinned Windows App Runtime
-2.4.0 installer, checks its SHA-256 value, and writes
+redist folder next to `speecher.exe`, and writes
 `dist\Speecher-Setup-x64.exe` plus its checksum. Run it from an MSVC developer
 shell so that `VCToolsRedistDir` is set. Windows Update does not service these
 app-local runtime copies; each Speecher release brings the build toolset's
@@ -82,8 +86,8 @@ current user's registry under
 application cache under `%LOCALAPPDATA%`.
 
 The Windows port provides the in-app Global Shortcut, target detection and
-text insertion, media pause, target screenshots, the notification-area menu,
-and the dictation panel. Windows-only gaps are recorded in GitHub Issues.
+text insertion, media pause and target screenshots. Windows-only gaps are
+recorded in GitHub Issues.
 
 ## VM testing
 

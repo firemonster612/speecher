@@ -1,12 +1,21 @@
 #include "platform/SingleKeyShortcutBinder.h"
 
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SettingsSchema.h"
 
 #include <QSettings>
 
 namespace speecher {
 namespace {
+
+// Why a session shortcut cannot be a single key that types where Speecher can
+// only watch a single key, not take it (Windows, macOS): it would still type.
+QString watchedKeyStillTypesText(const ShortcutBinding &binding)
+{
+    return QStringLiteral(
+        "Speecher can only watch %1, not take it from other apps, so it would still type while "
+        "you dictate. Use another key or a key combination.")
+        .arg(binding.displayText());
+}
 
 void storeBinding(const QString &key, const ShortcutBinding &binding)
 {

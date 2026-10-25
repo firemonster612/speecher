@@ -98,8 +98,8 @@ QList<ProviderReport> localProviderReports()
 QList<ProviderReport> providerReports(const SettingsStore &settings, const LocalSetup &local,
                                       const ProviderRegistry &providers)
 {
-    return providerReports(settings.dictationSnapshot(), local.liveFacts(),
-                           providers.rowOptions(ProviderRole::Speech), providers.rowOptions(ProviderRole::Refinement));
+    return providerReports(settings.dictationSnapshot(), local.liveFacts(), providerIds(providers.speechProviders()),
+                           providerIds(providers.refinementProviders()), providers.labels());
 }
 
 QByteArray providerReportsJson(const QList<ProviderReport> &reports)

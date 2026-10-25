@@ -1,6 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "core/settings/FallbackPresentation.h"
+#include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QScopeGuard>
@@ -368,10 +368,10 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
     }
 
-    // The session and the Fallbacks row decide a language skip the same way,
+    // The session and fallbackProblem() decide a language skip the same way,
     // from the provider's own language list: Claude Voice can't listen for
     // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
-    void theSessionAndItsFallbackRowAgreeOnALanguageSkip()
+    void theSessionAndFallbackProblemAgreeOnALanguageSkip()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("af"));
@@ -387,13 +387,6 @@ private slots:
                  FallbackProblem::SpokenLanguage);
         QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("endpoint"), settings, facts),
                  FallbackProblem::None);
-        const QList<RowOption> providers{{QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
-                                         {QStringLiteral("claude"), QStringLiteral("Claude Voice")},
-                                         {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")}};
-        QCOMPARE(fallbackListPresentation(ProviderRole::Speech, settings, facts, providers, FallbackSurface::Settings)
-                     .items.first()
-                     .status,
-                 QStringLiteral("Claude Voice can't listen for your Spoken Language, so it is skipped."));
     }
 
     // What needs the internet: a provider that signs in, and a server that
@@ -1212,7 +1205,7 @@ private slots:
                  QStringLiteral("Input sent • Used Local Model. Your ChatGPT sign-in has expired."));
         const PopupErrorAction fix = outcome.first().at(2).value<PopupErrorAction>();
         QCOMPARE(fix.fix, ErrorFix::SettingsPage);
-        QCOMPARE(popupErrorActionLabel(fix), QStringLiteral("Open Accounts"));
+        QCOMPARE(fix.pageId, QStringLiteral("accounts"));
         QTest::qWait(400);
         QCOMPARE(rig.session->state(), DictationState::Delivering);
     }

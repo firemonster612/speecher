@@ -7,7 +7,6 @@
 #include "app/ProviderSetup.h"
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
-#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
@@ -17,9 +16,9 @@
 #include "app/AppImageUpdater.h"
 #endif
 #include "core/InsightsLog.h"
+#include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
-#include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
@@ -31,7 +30,6 @@
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QEventLoop>
 #include <QLocalSocket>
 #include <QStandardPaths>
@@ -72,6 +70,20 @@ QString microphoneAccessOffText()
                           "Microphone, then try again.");
 }
 
+// Why a Global Shortcut cannot take the binding another one already has.
+QString shortcutTakenText(GlobalShortcutRole takenBy)
+{
+    switch (takenBy) {
+    case GlobalShortcutRole::Cancel:
+        return QStringLiteral("That is already the Cancel Shortcut.");
+    case GlobalShortcutRole::Pause:
+        return QStringLiteral("That is already the Pause Shortcut.");
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return QStringLiteral("That is already the Global Shortcut for dictation.");
+}
+
 // Where recordings, insights and Local Models are kept.
 QString dataFolder()
 {
@@ -109,8 +121,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             && previousVersion != currentVersion;
         const bool upgraded = previousBuildNumber >= 0
             ? currentBuildNumber > previousBuildNumber
-            : compareBaseVersions(currentVersion, previousVersion) > 0
-                || migratedNightlyUpgrade;
+            : compareBaseVersions(currentVersion, previousVersion) > 0 || migratedNightlyUpgrade;
         if (upgraded
             && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
             m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
@@ -273,9 +284,6 @@ ApplicationController::ApplicationController(bool popupOnly,
     // After the stop replies above are written: recordingChanged(false) comes
     // before them.
     connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
-    m_updateBanner = new UpdateBanner(m_updates, this);
-    connect(m_session, &DictationSession::stateChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
-    connect(m_recording, &RecordingSession::recordingChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -543,11 +551,6 @@ UpdateController *ApplicationController::updates() const
     return m_updates;
 }
 
-UpdateBanner *ApplicationController::updateBanner() const
-{
-    return m_updateBanner;
-}
-
 QString ApplicationController::pendingWhatsNewVersion() const
 {
     return m_pendingWhatsNewVersion;
@@ -601,7 +604,7 @@ void ApplicationController::notifyModelReady(const QString &modelId)
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
-              : QStringLiteral("Choose it on the %1 page to dictate with it.").arg(paneTitle(QStringLiteral("localModels"))),
+              : QStringLiteral("Choose it on the Local models page to dictate with it."),
         QStringLiteral("localModels"));
 }
 
@@ -670,11 +673,6 @@ bool ApplicationController::enableAccessibility(QString *error)
     return enabled;
 }
 
-bool ApplicationController::grabMainWindow(const QString &path) const
-{
-    return m_frontEnd && m_frontEnd->captureMainWindow(path);
-}
-
 GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole role) const
 {
     switch (role) {
@@ -736,7 +734,7 @@ bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut,
     for (const GlobalShortcutRole other : globalShortcutRoles) {
         if (other != role && !shortcut.isEmpty() && shortcut.overlaps(globalShortcut(other))) {
             if (error) {
-                *error = globalShortcutTakenText(other);
+                *error = shortcutTakenText(other);
             }
             return false;
         }
@@ -852,7 +850,7 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 void ApplicationController::showTranscribeFiles(const QStringList &paths)
 {
     m_filesOpened = true;
-    if (!m_settings->setupCompleted()) {
+    if (setupPending()) {
         m_pendingTranscribeFiles += paths;
         showSetupAssistant();
         return;
@@ -1153,9 +1151,7 @@ void ApplicationController::handleIpcCommand(const QString &command,
         overrides.outputFormat = outputFormatFromString(outputFormat);
     }
     if (!writingProfile.isEmpty()) {
-        const QList<RowOption> profiles = writingProfileChoices(m_settings->writingProfileSettings());
-        if (std::none_of(profiles.cbegin(), profiles.cend(),
-                         [&writingProfile](const RowOption &profile) { return profile.id == writingProfile; })) {
+        if (offeredWritingProfile(writingProfile, m_settings->writingProfileSettings(), {}).isEmpty()) {
             SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
             return;
         }
@@ -1211,16 +1207,6 @@ void ApplicationController::handleIpcCommand(const QString &command,
     } else if (command == QStringLiteral("transcribe")) {
         showTranscribeFiles(files);
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("grab")) {
-        // Screenshot seam for end-to-end runs: saves the main window into
-        // SPEECHER_GRAB_DIR. The timestamp keeps a restarted process from
-        // overwriting a frame the pre-restart process saved.
-        const QString grabDir = qEnvironmentVariable("SPEECHER_GRAB_DIR");
-        const bool saved = !grabDir.isEmpty()
-            && grabMainWindow(QStringLiteral("%1/window-%2.png")
-                                  .arg(grabDir)
-                                  .arg(QDateTime::currentMSecsSinceEpoch()));
-        SingleInstanceIpc::writeResponse(socket, response(saved));
 #ifdef SPEECHER_E2E_HOOKS
     } else if (command == QStringLiteral("e2eUpdateCheck")) {
         m_updates->checkForUpdates(m_settings->updateChannel());
@@ -1292,8 +1278,6 @@ ApplicationController::~ApplicationController()
     for (const QMetaObject::Connection &publisher : std::as_const(m_statusPublishers)) {
         disconnect(publisher);
     }
-    delete m_updateBanner;
-    m_updateBanner = nullptr;
     delete m_updates;
     m_updates = nullptr;
     delete m_recording;
@@ -1324,9 +1308,14 @@ void ApplicationController::setupAssistantClosed()
     }
 }
 
+bool ApplicationController::setupPending() const
+{
+    return m_frontEnd && !m_settings->setupCompleted();
+}
+
 bool ApplicationController::ensureSetupCompleted()
 {
-    if (m_settings->setupCompleted()) {
+    if (!setupPending()) {
         return true;
     }
     showSetupAssistant();

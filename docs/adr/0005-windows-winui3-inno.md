@@ -1,6 +1,8 @@
 # Unpackaged WinUI 3 with a per-user Inno installer
 
-Status: accepted, 2026-09-05
+Status: accepted, 2026-09-05. The WinUI 3 front end and the Windows App Runtime it
+needed are superseded by [0009](0009-one-quick-ui-inside-the-daemon.md); the
+unpackaged per-user Inno installer and the update manifest stand.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Presentation lives in core
 
-Status: accepted, 2026-09-29
+Status: superseded by [0009](0009-one-quick-ui-inside-the-daemon.md), 2026-10-24 (accepted 2026-09-29)
 
 ## Context
 

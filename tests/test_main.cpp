@@ -15,11 +15,6 @@
 #include <windows.h>
 #endif
 
-#ifdef SPEECHER_WITH_WINUI
-#include "frontend/win/WinUiHost.h"
-#include <winrt/base.h>
-#endif
-
 int main(int argc, char **argv)
 {
 #ifdef Q_OS_WIN
@@ -48,18 +43,9 @@ int main(int argc, char **argv)
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, preferences.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, preferences.path());
 #endif
-#ifdef SPEECHER_WITH_WINUI
-    std::unique_ptr<speecher::WinUiHost> winUiHost;
-    try {
-        winUiHost = std::make_unique<speecher::WinUiHost>();
-    } catch (const winrt::hresult_error &error) {
-        qCritical() << "WinUI test host failed:" << QString::fromWCharArray(error.message().c_str());
-        return 1;
-    }
-#endif
 #ifdef Q_OS_WIN
-    // Bootstrap WinUI against the real profile first. Redirect later registry
-    // access, including native Startup Apps writes, for this test process only.
+    // Redirect registry access, including native Startup Apps writes, for this
+    // test process only.
     const std::wstring testRegistryPath =
         (QStringLiteral("Software\\SpeecherTests-")
          + QUuid::createUuid().toString(QUuid::Id128)).toStdWString();
@@ -81,16 +67,6 @@ int main(int argc, char **argv)
     }
 #endif
     QApplication app(argc, argv);
-#ifdef SPEECHER_WITH_WINUI
-    if (winUiHost) {
-        winUiHost->installNativeEventFilter();
-    }
-    const auto winUiShutdown = qScopeGuard([&winUiHost] {
-        if (winUiHost) {
-            winUiHost->shutdown();
-        }
-    });
-#endif
     QStandardPaths::setTestModeEnabled(true);
 #ifndef Q_OS_WIN
     // Refuse to run mutating suites if the production store ignores isolation.
@@ -119,14 +95,6 @@ int main(int argc, char **argv)
         return runWinPlatformTests(argc, argv);
     }
 #endif
-#ifdef SPEECHER_WITH_WINUI
-    if (qEnvironmentVariable("SPEECHER_TEST_ONLY_WIN_FRONTEND") == QStringLiteral("1")) {
-        if (!winUiHost) {
-            return 1;
-        }
-        return runWinFrontEndTests(argc, argv, std::move(winUiHost));
-    }
-#endif
 
     int result = 0;
     bool matched = selectedSuite.isEmpty();
@@ -135,16 +103,12 @@ int main(int argc, char **argv)
         matched = true;
         return true;
     };
-    if (selected("ui")) result |= runUiTests(argc, argv);
-    if (selected("app_window")) result |= runAppWindowTests(argc, argv);
     if (selected("transcript_state")) result |= runTranscriptStateTests(argc, argv);
     if (selected("bindings")) result |= runBindingsTests(argc, argv);
     if (selected("settings")) result |= runSettingsTests(argc, argv);
-    if (selected("settings_schema")) result |= runSettingsSchemaTests(argc, argv);
     if (selected("provider_registry")) result |= runProviderRegistryTests(argc, argv);
     if (selected("platform_composition")) result |= runPlatformCompositionTests(argc, argv);
 #ifdef Q_OS_LINUX
-    if (selected("linux_style_choice")) result |= runLinuxStyleChoiceTests(argc, argv);
     if (selected("linux_tray")) result |= runLinuxTrayTests(argc, argv);
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
@@ -170,19 +134,11 @@ int main(int argc, char **argv)
 #ifdef Q_OS_UNIX
     if (selected("update_controller")) result |= runUpdateControllerTests(argc, argv);
 #endif
-#ifdef SPEECHER_WITH_SWIFT_UI
-    if (selected("mac_front_end")) result |= runMacFrontEndTests(argc, argv);
-#endif
 #ifdef Q_OS_MACOS
     if (selected("mac_platform")) result |= runMacPlatformTests(argc, argv);
 #endif
 #ifdef Q_OS_WIN
     if (selected("win_platform")) result |= runWinPlatformTests(argc, argv);
-#endif
-#ifdef SPEECHER_WITH_WINUI
-    if (winUiHost) {
-        if (selected("win_front_end")) result |= runWinFrontEndTests(argc, argv, std::move(winUiHost));
-    }
 #endif
     if (!matched) qCritical() << "Unknown test suite:" << selectedSuite;
     return matched ? result : 1;

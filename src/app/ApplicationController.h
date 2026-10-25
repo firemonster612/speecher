@@ -35,7 +35,6 @@ class ProviderRegistry;
 class RecordingSession;
 class SecretStore;
 class SettingsStore;
-class UpdateBanner;
 class UpdateController;
 
 class ApplicationController : public QObject {
@@ -65,6 +64,11 @@ public:
     bool startFileTranscription(const QStringList &paths,
                                 const TranscribeOptions &options,
                                 QString *error = nullptr);
+    // Whether the setup assistant still has to run before dictation, recording
+    // or a window opens. Onboarding happens in the front end, so with none
+    // attached nothing waits for it; each start still checks its provider and
+    // the microphone.
+    bool setupPending() const;
     // Called by the front end once its first window is on screen. Startup work
     // that would compete with the first paint waits for this.
     void frontEndReady();
@@ -74,8 +78,6 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
-    // What every update banner and the Check for updates row show.
-    UpdateBanner *updateBanner() const;
     InsightsLog *insightsLog() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
@@ -104,10 +106,11 @@ public:
     // What a status line says about dictation now (dictationStatusLabel);
     // statusChanged carries it.
     QString statusLabel() const;
-    // The last transcript Speecher heard, which tray panels offer to copy
-    // again: the running preview, then the text as delivered. It outlives the
-    // dictation that produced it, including a failed one, so it is empty only
-    // until the first dictation says something.
+    // The last transcript Speecher heard, which `speecher last` prints and
+    // Home offers to copy again: the running preview, then the text as
+    // delivered. It outlives the dictation that produced it, including a
+    // failed one, so it is empty only until the first dictation says
+    // something.
     QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     // status's answer and each line status --watch is written: the dictation
@@ -120,7 +123,6 @@ public:
     bool enableAccessibility(QString *error = nullptr);
     // Platforms that do not push grants to a running process poll this.
     void refreshAccessibilityState();
-    bool grabMainWindow(const QString &path) const;
     // Each Global Shortcut question and change names the shortcut it is about:
     // the one that toggles dictation unless it says otherwise.
     bool globalShortcutsSupported(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
@@ -264,7 +266,6 @@ private:
     // The main window is up only because a plain launch shows it.
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
-    UpdateBanner *m_updateBanner = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;

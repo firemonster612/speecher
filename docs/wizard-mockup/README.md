@@ -9,9 +9,9 @@ framework, no network access. All nine pages share `wizard.css` and
 
 ## The real step list
 
-The shipping assistants read their steps from `src/app/SetupSteps.cpp`, so
-titles, leads, blocked reasons and the Ready checklist are worded once for all
-three platforms. The order is:
+The per-platform setup assistants, since removed, read their steps from one
+list in core, so titles, leads, blocked reasons and the Ready checklist were
+worded once for all three platforms. The order is:
 
 1. Welcome to Speecher
 2. Transcription

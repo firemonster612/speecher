@@ -1,6 +1,6 @@
 # Per-platform front ends over a shared settings schema
 
-Status: accepted, 2026-08-19
+Status: superseded by [0009](0009-one-quick-ui-inside-the-daemon.md), 2026-10-24 (accepted 2026-08-19)
 
 ## Context
 

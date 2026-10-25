@@ -35,7 +35,6 @@ ChangesEnvironment=yes
 
 [Files]
 Source: "{#SourceDir}\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#SourceDir}\redist\WindowsAppRuntimeInstall-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 ; Earlier installers left these behind: the redist, now replaced by app-local
 ; runtime DLLs, and a nested copy of the multimedia plugins with debug builds.
@@ -95,7 +94,6 @@ Root: HKCU; Subkey: "Software\Classes\Applications\speecher.exe\SupportedTypes";
 Root: HKCU; Subkey: "Software\Classes\Applications\speecher.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\speecher.exe"" ""%1"""
 
 [Run]
-Filename: "{tmp}\WindowsAppRuntimeInstall-x64.exe"; Parameters: "--quiet"; StatusMsg: "Installing Windows App Runtime..."; Flags: runhidden waituntilterminated
 Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchSpeecher
 Filename: "{app}\speecher.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
 
@@ -273,7 +271,7 @@ begin
     usUninstall:
       begin
         while SpeecherRunning() and not QuitSpeecher() do
-          if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
+          if SuppressibleMsgBox('Speecher is still running. Quit it, then click Retry.',
                                 mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
             Abort;
         RemoveFromPath();

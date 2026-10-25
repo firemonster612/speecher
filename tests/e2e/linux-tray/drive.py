@@ -149,10 +149,10 @@ def main() -> None:
     menu_path = sni_property(service, path, "Menu")
     items = menu_items(service, menu_path)
     log(f"menu items={items}")
-    for label in ("Start dictation", "Settings…", "Quit Speecher"):
+    for label in ("Start dictation", "Quit Speecher"):
         if label not in items:
             fail(f"menu is missing {label!r}")
-    ok("the menu offers Start dictation, Settings… and Quit Speecher")
+    ok("the menu offers Start dictation and Quit Speecher")
 
     menu_click(service, menu_path, items["Start dictation"])
     if not wait_tooltip(service, path, "Speecher is listening"):
