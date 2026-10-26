@@ -80,7 +80,13 @@ function failure(check) {
 }
 
 // The caption over the checks: "All 4 checks pass." or "3 of 4 checks pass."
+// A check that can't pass on this desktop and has a way round, so there is
+// nothing to fix: no global shortcut, where the start command works. It is
+// said in plain ink and not counted.
+function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
+
 function summary(checks) {
-    const passing = checks.filter(c => c.state === "ok").length;
-    return (passing === checks.length ? "All " + checks.length : passing + " of " + checks.length) + " checks pass.";
+    const counted = checks.filter(c => !settledHere(c));
+    const passing = counted.filter(c => c.state === "ok").length;
+    return (passing === counted.length ? "All " + counted.length : passing + " of " + counted.length) + " checks pass.";
 }

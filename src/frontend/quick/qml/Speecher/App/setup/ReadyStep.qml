@@ -15,6 +15,10 @@ StepPage {
     title: ""
 
     readonly property var _open: page.choices.steps.filter(s => !s.done && s.id !== "ready")
+    // An open step without which nothing can be dictated, as Home judges
+    // it: the microphone. A speech service that isn't ready may still have
+    // a fallback, so that step alone leaves setup almost ready.
+    readonly property bool _blocked: _open.some(s => s.id === "microphone")
     readonly property var _keys: Settings.values.globalShortcut || []
 
     Column {
@@ -33,7 +37,7 @@ StepPage {
                 Icon { anchors.centerIn: parent; name: "check"; size: 28; color: Theme.accentText }
             }
         }
-        MorphText { text: page._open.length ? Setup.text.almostReady : page.info.title; variant: "display" }
+        MorphText { text: page._blocked ? Setup.text.notReady : page._open.length ? Setup.text.almostReady : page.info.title; variant: "display" }
         // The shortcut, and what pressing it does as the Shortcuts page set it.
         Reveal {
             open: page._keys.length > 0

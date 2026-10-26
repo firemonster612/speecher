@@ -32,6 +32,7 @@ var text = {
     startDictating: "Start dictating",
     allPassed: "Every step passed its check.",
     almostReady: "Almost ready",
+    notReady: "Not ready to dictate yet",
     notChosen: "Not chosen",
     welcomeTitle: "Welcome to Speecher",
     welcomeHint: "Once setup is done, press it in any app, speak, and Speecher types what you said.",

@@ -21,6 +21,8 @@ Page {
         // The same check as Permissions & health's, and where the desktop lists the shortcuts.
         HealthRow {
             rowId: "globalShortcuts"
+            // Here the command row says what to do instead, right below.
+            help: Health.settledHere(check) ? Words.noShortcutHere : Health.failure(check) || Health.detail(check)
             // Where Speecher knows the desktop's own shortcut settings.
             Button {
                 visible: System.canOpenShortcutSettings

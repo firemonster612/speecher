@@ -23,7 +23,7 @@ FocusScope {
     property alias query: input.text
     // Rows this build can't set are left out, as their pages leave them out.
     readonly property var results: query.trim().length
-        ? Schema.search(query, 9, need => System[need]).filter(r => r.type !== "row" || Schema.settable(Schema.row(r.id), id => Settings.saves(id)))
+        ? Schema.search(query, 40, need => System[need]).filter(r => r.type !== "row" || Schema.settable(Schema.row(r.id), id => Settings.saves(id)))
         : _suggestions
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")

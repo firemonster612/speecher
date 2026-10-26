@@ -20,5 +20,5 @@ var rows = [
     { id: "startCommand", page: "shortcuts", section: "How shortcuts reach Speecher", kind: "custom",
       label: "Start from a terminal or your own keybinding",
       help: "Runs one dictation into the focused app. Add --profile or --tone to override them for that dictation.",
-      icon: "square-terminal", command: "speecher --start-listening", keywords: "command line cli terminal script keybinding start listening" }
+      command: "speecher --start-listening", keywords: "command line cli terminal script keybinding start listening" }
 ];

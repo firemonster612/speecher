@@ -115,6 +115,8 @@ QtObject {
             }
             return total
         }
+        // Ties keep the schema's order, so rows of one page read as they do
+        // there.
         const results = []
         for (const p of pages) {
             const parentTitle = p.parent ? page(p.parent).title : ""
@@ -128,7 +130,8 @@ QtObject {
             if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
                                       trail: rowTrail(r), score: s })
         }
-        results.sort((a, b) => b.score - a.score)
+        results.forEach((r, i) => r.order = i)
+        results.sort((a, b) => b.score - a.score || a.order - b.order)
         return results.slice(0, limit || 12)
     }
 

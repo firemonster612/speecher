@@ -27,6 +27,8 @@ SchemaRow {
         StateText {
             stateId: row.check.state ?? ""
             text: Health.status(row.check)
+            // Nothing to fix here, so plain ink.
+            tone: Health.settledHere(row.check) ? "neutral" : States.tone(stateId)
             anchors.verticalCenter: parent.verticalCenter
         }
         // The button's room eases open and shut as it fades.

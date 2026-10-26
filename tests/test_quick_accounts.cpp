@@ -8,6 +8,8 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJsonDocument>
@@ -237,6 +239,10 @@ private slots:
     {
         ApplicationController controller(true);
         controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        QuickSettings settings(&controller);
+        // The card asks Library which services the profiles use.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
@@ -256,6 +262,9 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        // The card asks Library which services the profiles use.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
@@ -273,6 +282,33 @@ private slots:
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("codex_oauth"));
         QTRY_COMPARE(state(), QStringLiteral("missing"));
         QCOMPARE(card->property("detail").toString(), codexFix);
+    }
+
+    // A card's state is toned only while something signs in through it, a
+    // writing profile's own service included.
+    void aServiceCardTonesOnlyWhatIsUsed()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("local"));
+        settings.set(QStringLiteral("speechFallbackList"), QStringList());
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("none"));
+        settings.set(QStringLiteral("refinementFallbacks"), QStringList());
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        const std::unique_ptr<QObject> card(
+            component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("anthropic")}}));
+        QVERIFY2(card, qPrintable(component.errorString()));
+        QVERIFY(!card->property("inUse").toBool());
+
+        AppSettings snapshot = controller.settings()->snapshot();
+        QVERIFY(!snapshot.refinement.writingProfiles.isEmpty());
+        snapshot.refinement.writingProfiles.first().speechProvider = QStringLiteral("claude");
+        controller.settings()->applySnapshot(snapshot);
+        QTRY_VERIFY(card->property("inUse").toBool());
     }
 
     // A sign-in setting saved from any page checks the sign-ins again; any

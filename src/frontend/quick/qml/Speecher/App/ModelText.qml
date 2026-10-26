@@ -26,7 +26,7 @@ QtObject {
                   access: "Uses your Claude Code sign-in.",
                   signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI, then check again.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
-        endpoint: { icon: "server", help: "A server you run. Speed, accuracy and languages depend on it.",
+        endpoint: { icon: "server", help: "Your server sets speed, accuracy and languages.",
                     access: "Your own speech server.", textShows: "Text after you stop", models: [] },
         local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.",
                  access: "No account, works offline after a one-time download.", models: [] }
@@ -237,7 +237,7 @@ QtObject {
     readonly property var _refiners: ({
         openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in." },
         anthropic: { icon: "claude", help: "Uses your Claude Code sign-in." },
-        local: { icon: "cpu", help: "Ollama, LM Studio or llama-server on this computer." },
+        local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Pastes your words as spoken." }
     })
