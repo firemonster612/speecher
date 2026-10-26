@@ -36,7 +36,8 @@ var text = {
     welcomeTitle: "Welcome to Speecher",
     welcomeHint: "Press it in any app, speak, and Speecher types what you said.",
     welcomeHintNoKeys: "Press your dictation shortcut in any app, speak, and Speecher types what you said.",
-    welcomeHintCommand: "Run speecher --start-listening from a terminal or your own keybinding, speak, and Speecher types what you said.",
+    // %1 is the start command.
+    welcomeHintCommand: "Run %1 from a terminal or your own keybinding, speak, and Speecher types what you said.",
     shortcutCommandOnly: "This desktop gives apps no shortcuts, so dictation starts with the speecher command, from a terminal or a keybinding of your own.",
     signInsFound: "Sign-ins found on this computer",
     noSignIns: "No sign-ins found yet. The next step helps you choose a service.",

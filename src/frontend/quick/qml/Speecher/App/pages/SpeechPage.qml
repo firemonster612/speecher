@@ -19,7 +19,7 @@ Page {
     readonly property var modelsSpec: Schema.row("speechModels")
     readonly property string primaryLabel: ModelText.service(primary).label
 
-    Component.onCompleted: { Models.checkComputer(); Models.checkSignIns() }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
     // Whether a service is the primary or one of its fallbacks, so its
     // settings matter.

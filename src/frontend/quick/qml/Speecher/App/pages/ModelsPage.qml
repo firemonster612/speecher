@@ -10,7 +10,7 @@ import "speech"
 Page {
     id: page
     title: Schema.page("models").title
-    subtitle: Models.hardwareKnown && Models.computer.chip ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
+    subtitle: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
 
     Component.onCompleted: Models.checkComputer()
 

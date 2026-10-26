@@ -25,7 +25,7 @@ Page {
         pageId: "dictation"
         lines: ({
             shortcuts: page.keys.length ? page.t.startsDictation(page.keys)
-                     : Health.find(System.checks, "globalShortcuts").reason === "unsupported" ? page.t.commandOnly : page.t.noShortcut,
+                     : Health.noShortcuts(System.checks) ? page.t.commandOnly : page.t.noShortcut,
             microphone: Microphones.deviceName ? page.t.recordsFrom(Microphones.deviceName) : Schema.row("audioDevice").noneLabel,
             feedback: page.t.liveText(Settings.values.showLiveText) + ", " + page.t.sounds(Settings.values.playSounds)
         })

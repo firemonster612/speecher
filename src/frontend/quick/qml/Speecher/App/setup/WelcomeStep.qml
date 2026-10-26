@@ -42,7 +42,7 @@ StepPage {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             text: demo.keys.length ? Setup.text.welcomeHint
-                : Health.find(System.checks, "globalShortcuts").reason === "unsupported" ? Setup.text.welcomeHintCommand
+                : Health.noShortcuts(System.checks) ? Setup.text.welcomeHintCommand.arg(Schema.row("startCommand").command)
                 : Setup.text.welcomeHintNoKeys
             tone: "secondary"
         }

@@ -9,16 +9,10 @@ import Speecher.App
 StepPage {
     id: page
     // The desktop gives Speecher no shortcut, so the command starts dictation.
-    readonly property bool unsupported: Health.find(System.checks, "globalShortcuts").reason === "unsupported"
+    readonly property bool unsupported: Health.noShortcuts(System.checks)
     subtitle: unsupported ? Setup.text.shortcutCommandOnly : info.description || ""
     Card {
-        SchemaRow {
-            rowId: "globalShortcut"
-            // Where the desktop gives Speecher no shortcut, the field is
-            // off and the row says so; the command starts dictation instead.
-            enabled: _saves && !page.unsupported
-            note: page.unsupported ? Words.noShortcutsHere : spec.help
-        }
+        SchemaRow { rowId: "globalShortcut" }
         SchemaRow { rowId: "shortcutBehavior" }
         SchemaRow { rowId: "cancelShortcut"; note: Setup.text.cancelShortcutHelp }
         // Where the desktop gives no shortcut, the command starts dictation

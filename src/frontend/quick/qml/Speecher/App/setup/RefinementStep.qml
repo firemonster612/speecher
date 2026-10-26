@@ -61,5 +61,5 @@ StepPage {
 
     // Refinement providers' sign-ins come from Accounts' checks, which
     // start the first time anything asks for Accounts.
-    Component.onCompleted: { Models.checkComputer(); Models.checkSignIns(); Accounts.services }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); Accounts.services }
 }

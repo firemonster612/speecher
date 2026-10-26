@@ -14,7 +14,9 @@ Reveal {
     readonly property bool checking: !!service.signInChecking
     readonly property string failure: service.signInCheckFailure || ""
 
-    open: !!service.signsIn && service.state !== "ready"
+    // Open once its check says it isn't ready, or couldn't reach it; not
+    // while the first check is still out.
+    open: !!service.signsIn && service.state !== "ready" && (service.state !== "unknown" || failure !== "")
     SettingRow {
         title: signIn.service.label
         // Why the last check failed wraps under the label, in place of the

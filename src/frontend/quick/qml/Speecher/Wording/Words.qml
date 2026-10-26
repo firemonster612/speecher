@@ -60,12 +60,12 @@ QtObject {
         disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
     // A service's line on Accounts: what to do when the keyring didn't
-    // answer or a ChatGPT or Claude sign-in is missing or expired, else
-    // core's own words, else where its last check found the sign-in
-    // (Accounts.services).
-    function signInDetail(service) {
+    // answer or, signing in through the Codex app or Claude Code (oauth),
+    // a sign-in is missing or expired; else core's own words, else where
+    // its last check found the sign-in (Accounts.services).
+    function signInDetail(service, oauth) {
         if (service.state === "unknown") return "Speecher couldn't read the system keychain. Check again in a moment."
-        const fix = !service.server && ({
+        const fix = oauth && ({
             openai: { missing: "No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.",
                       expired: "Your ChatGPT sign-in has expired. Sign in again in the Codex app." },
             anthropic: { missing: "Claude Code isn't signed in. Use its desktop app or /login in the claude CLI.",

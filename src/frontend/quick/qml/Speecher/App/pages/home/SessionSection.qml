@@ -13,16 +13,19 @@ import "words.js" as T
 // words heard so far take the latest dictation's.
 Section {
     id: session
+    objectName: "homeSession"
 
     readonly property var t: T.text
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
     readonly property var latest: Insights.latest
     readonly property bool hasShortcut: Status.shortcutKeys.length > 0
     // The desktop gives Speecher no shortcut, so there is none to set.
-    readonly property bool noShortcuts: Health.find(System.checks, "globalShortcuts").reason === "unsupported"
+    readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     // What Speecher knows stands in the way of dictating, each with the
     // page that fixes it: microphone access, a microphone, the speech
-    // service. A service not checked yet stands in nobody's way.
+    // service. A service not checked yet stands in nobody's way. Without
+    // a microphone nothing can start (blocked); the chosen service only
+    // warns, since a fallback or a Writing Profile's own service may do.
     readonly property var service: ModelText.service(Settings.values.speechProvider || "")
     readonly property var access: Health.find(System.checks, "microphoneAccess")
     readonly property var blockers: [
@@ -30,13 +33,13 @@ Section {
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
         service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: service.label, status: ModelText.status(service), page: "speech" } : null
     ].filter(b => b)
-    readonly property bool blocked: blockers.length > 0
+    readonly property bool blocked: blockers.some(b => b.id !== "speech")
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
-    title: status[Dictation.state] || (blocked ? t.notReady : hasShortcut || noShortcuts ? "Ready to dictate" : "Set a shortcut to start")
-    caption: blocked ? t.fixFirst : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere : t.noShortcut
+    title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
+    caption: blocked ? t.fixFirst : blockers.length ? t.serviceNotReady : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
     actions: Switcher {
         id: controls
         width: implicitWidth
@@ -90,7 +93,7 @@ Section {
 
     Switcher {
         travel: 0
-        currentIndex: session.live ? 1 : session.blocked ? 2 : 0
+        currentIndex: session.live ? 1 : session.blockers.length ? 2 : 0
 
         // The latest dictation, where it went, and Copy.
         Column {
@@ -145,6 +148,7 @@ Section {
             keyOf: b => b.id
             delegate: SettingRow {
                 id: blockerRow
+                objectName: "blocker_" + key
                 required property string key
                 required property int index
                 readonly property var blocker: blockerRows.entry(key)

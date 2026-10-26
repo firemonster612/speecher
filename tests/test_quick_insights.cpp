@@ -16,6 +16,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJSValue>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlComponent>
@@ -91,6 +92,12 @@ QStringList figureTips(QQuickItem *root)
         tips << figureTips(child);
     }
     return tips;
+}
+
+// A computer with one microphone, so Home has nothing in its way there.
+QList<AudioInputDeviceInfo> oneMicrophone()
+{
+    return {{QStringLiteral("mic"), QStringLiteral("Microphone"), true}};
 }
 
 } // namespace
@@ -341,9 +348,9 @@ private slots:
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
-        // microphone, the speech service.
+        // microphone, the speech service. Here a microphone is plugged in.
         QuickSystem system(&controller);
-        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
         QGuiApplication::clipboard()->clear();
 
@@ -393,6 +400,82 @@ private slots:
         QVERIFY(findText(home, QStringLiteral("Ended Thursday")));
     }
 
+    // With no microphone Home is not ready: it lists the microphone, hides
+    // Start dictation, and the row opens the Microphone page.
+    void homeListsWhatStopsDictation()
+    {
+        failOnUnexpectedWarnings();
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickStatus status(&controller);
+        QuickDictation dictation(&controller);
+        QuickInsights insights(&controller);
+        QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickModels models(&controller);
+
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nimport Speecher.App\n"
+                          "Window { width: 1100; height: 900; visible: true; property alias home: page\n"
+                          "    HomePage { id: page; anchors.fill: parent } }",
+                          QUrl());
+        std::unique_ptr<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        auto *home = window->property("home").value<QQuickItem *>();
+        QVERIFY(QTest::qWaitForWindowExposed(qobject_cast<QWindow *>(window.get())));
+        auto *session = home->findChild<QObject *>(QStringLiteral("homeSession"));
+        QVERIFY(session);
+        QVERIFY(session->property("blocked").toBool());
+        QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
+
+        // Delegates hang off the visual tree, not the object tree.
+        QQuickItem *row = nullptr;
+        QList<QQuickItem *> items{home};
+        while (!items.isEmpty() && !row) {
+            QQuickItem *item = items.takeLast();
+            items += item->childItems();
+            if (item->objectName() == QLatin1String("blocker_microphone")) row = item;
+        }
+        QVERIFY(row);
+        auto *navigation = engine.singletonInstance<QObject *>("Speecher.App", "Navigation");
+        QVERIFY(navigation);
+        QVERIFY(QMetaObject::invokeMethod(row, "clicked"));
+        QCOMPARE(navigation->property("current").toString(), QStringLiteral("microphone"));
+    }
+
+    // A speech service that isn't signed in is listed but doesn't stop
+    // dictation: a fallback or a Writing Profile's service may carry it.
+    void homeWarnsOfTheServiceWithoutBlocking()
+    {
+        failOnUnexpectedWarnings();
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickStatus status(&controller);
+        QuickDictation dictation(&controller);
+        QuickInsights insights(&controller);
+        QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, oneMicrophone);
+        QuickModels models(&controller);
+
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nimport Speecher.App\n"
+                          "Window { width: 1100; height: 900; property alias home: page\n"
+                          "    HomePage { id: page; anchors.fill: parent } }",
+                          QUrl());
+        std::unique_ptr<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
+        QVERIFY(session);
+        // Home asked for the sign-ins; the test's homes have none.
+        QTRY_COMPARE(session->property("blockers").value<QJSValue>().property(QStringLiteral("length")).toInt(), 1);
+        QCOMPARE(session->property("blockers").value<QJSValue>().property(0).property(QStringLiteral("id")).toString(),
+                 QStringLiteral("speech"));
+        QVERIFY(!session->property("blocked").toBool());
+        QCOMPARE(session->property("title").toString(), QStringLiteral("Ready to dictate"));
+    }
+
     void learnedCorrectionsOpenTheirRows()
     {
         failOnUnexpectedWarnings();
@@ -405,9 +488,9 @@ private slots:
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
-        // microphone, the speech service.
+        // microphone, the speech service. Here a microphone is plugged in.
         QuickSystem system(&controller);
-        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
 
         QQmlEngine engine;

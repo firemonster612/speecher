@@ -48,7 +48,7 @@ Page {
 
     // Refinement providers' sign-ins come from Accounts' checks, which
     // start the first time anything asks for Accounts.
-    Component.onCompleted: { Models.checkComputer(); Models.checkSignIns(); Accounts.services }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); Accounts.services }
 
     // A new primary leaves the fallbacks, and None clears them.
     function choose(id) {

@@ -60,6 +60,10 @@ var failures = {
 // follows the checks as they change.
 function find(checks, id) { return checks.find(c => c.id === id) || {}; }
 
+// Whether the desktop gives Speecher no global shortcut, so the start
+// command is the way to start dictation. Pass System.checks itself.
+function noShortcuts(checks) { return find(checks, "globalShortcuts").reason === "unsupported"; }
+
 function _words(check) { return (words[check.id] || {})[check.reason] || { status: "", detail: "" }; }
 
 function status(check) { return _words(check).status; }

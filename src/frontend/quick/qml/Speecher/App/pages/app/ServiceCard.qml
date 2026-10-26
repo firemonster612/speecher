@@ -20,6 +20,10 @@ Card {
     property real minimumHeadHeight: 0
     // Looked up in services, so the card follows every check.
     readonly property var service: Accounts.services.find(s => s.id === serviceId)
+    // Signing in through the Codex app or Claude Code, whose fixes the
+    // card can name; an API key or CLI Proxy API keeps core's words.
+    readonly property bool oauth: serviceId === "openai" ? ["auto", "codex_oauth"].includes(Settings.values.openAiAuthMode)
+                                : serviceId === "anthropic" && Settings.values.anthropicAuthMode === "oauth"
 
     Item {
         width: parent.width
@@ -56,7 +60,7 @@ Card {
                     }
                 }
             }
-            Txt { width: parent.width; text: Words.signInDetail(root.service); variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: Words.signInDetail(root.service, root.oauth); variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"

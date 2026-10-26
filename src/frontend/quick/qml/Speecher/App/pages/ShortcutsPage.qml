@@ -63,14 +63,7 @@ Page {
 
     Section {
         title: Schema.row("globalShortcut").section
-        SchemaRow {
-            rowId: "globalShortcut"
-            // Where the desktop gives Speecher no shortcut, the field is
-            // off and the row says so; the command starts dictation instead.
-            readonly property bool unsupported: Health.find(System.checks, "globalShortcuts").reason === "unsupported"
-            enabled: _saves && !unsupported
-            note: unsupported ? Words.noShortcutsHere : spec.help
-        }
+        SchemaRow { rowId: "globalShortcut" }
         SchemaRow { rowId: "shortcutBehavior" }
     }
 

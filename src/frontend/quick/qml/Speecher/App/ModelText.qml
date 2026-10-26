@@ -73,6 +73,13 @@ QtObject {
     }
     // What setup says of a service while its sign-in is checked.
     readonly property string checking: "Checking…"
+    // Asks for the speech sign-ins, as a page that shows them does when it
+    // opens, while one of ids (every service that signs in, by default)
+    // is still unknown; Check again asks Models.checkSignIns() itself.
+    function checkUnknownSignIns(ids) {
+        const unknown = s => s.signsIn && s.state === "unknown" && !s.signInChecking && (!ids || ids.includes(s.id))
+        if (Models.speechServices.some(unknown)) Models.checkSignIns()
+    }
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
     readonly property string signInUnknown: "Sign-in unknown"

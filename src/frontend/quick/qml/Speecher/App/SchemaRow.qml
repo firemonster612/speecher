@@ -22,9 +22,12 @@ SettingRow {
     // Usable once the backend saves the row or runs its action; a custom row
     // with no value draws content that has nothing to save.
     readonly property bool _saves: spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId)
+    // The dictation shortcut where the desktop gives Speecher none: off,
+    // saying so; the start command does its job.
+    readonly property bool _noShortcut: rowId === "globalShortcut" && Health.noShortcuts(System.checks)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place, and a row nothing saves yet says so.
-    property string note: (!_saves ? Words.notSavedYet : _blurs ? spec.help : spec.disabledHelp) || ""
+    property string note: (!_saves ? Words.notSavedYet : _noShortcut ? Words.noShortcutsHere : _blurs ? spec.help : spec.disabledHelp) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
@@ -33,7 +36,7 @@ SettingRow {
     iconName: spec.icon || ""
     // enabledWhen reads Settings.values here, in the binding, so the row
     // follows that value.
-    enabled: _blurs && _saves
+    enabled: _blurs && _saves && !_noShortcut
              && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
