@@ -707,10 +707,17 @@ private slots:
         QVERIFY(arrivingFrames > 0);
         QVERIFY(everyFrameMasked);
 
-        // From the bare bar to the receipt's 220 by 44.
+        // From the bare bar down to the receipt, which hugs its words: every
+        // frame on the way.
+        int morphingFrames = 0;
+        bool everyMorphingFrameMasked = true;
+        connect(capsule, &QQuickItem::widthChanged, &popup, [&] {
+            ++morphingFrames;
+            everyMorphingFrameMasked = everyMorphingFrameMasked && masksDrawn();
+        });
         emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsule->width() > 221 && capsule->width() < 279);
-        QVERIFY(masksDrawn());
+        QTRY_VERIFY(morphingFrames > 1 && capsule->width() < 220);
+        QVERIFY(everyMorphingFrameMasked);
     }
 
     // The window is as big as the popup ever grows; its mask follows the
