@@ -783,10 +783,17 @@ private slots:
         QVERIFY(!probe->property("sessionOnly").toBool());
         QVERIFY(probe->property("noWayIn").toBool());
         QVERIFY(!probe->property("chosen").toBool());
-        QVERIFY(!probe->property("keysOn").toBool());
-        QVERIFY(!probe->property("noKeyboardCheck").toBool());
+        // macOS presses ⌘V only with accessibility, so there keys alone don't
+        // get words in.
+#ifdef Q_OS_MACOS
+        const bool needsAccessibility = true;
+#else
+        const bool needsAccessibility = false;
+#endif
+        QCOMPARE(probe->property("keysOn").toBool(), needsAccessibility);
+        QCOMPARE(probe->property("noKeyboardCheck").toBool(), needsAccessibility);
         QVERIFY(probe->property("insertOnly").toBool());
-        QVERIFY(probe->property("keysOnly").toBool());
+        QCOMPARE(probe->property("keysOnly").toBool(), !needsAccessibility);
     }
 
     // The App rules page's app type rows need accessibility to know the app.

@@ -311,6 +311,27 @@ private slots:
         QTRY_VERIFY(card->property("inUse").toBool());
     }
 
+    // Refinement's sign-in row waits for Accounts' first answer, then says
+    // how to sign in.
+    void aRefinerSignInRowWaitsForTheCheck()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
+        const std::unique_ptr<QObject> row(
+            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QVERIFY2(row, qPrintable(component.errorString()));
+
+        QVERIFY(!row->property("shown").toBool());
+        QTRY_VERIFY(row->property("shown").toBool());
+        QVERIFY(!row->property("unknown").toBool());
+    }
+
     // A sign-in setting saved from any page checks the sign-ins again; any
     // other setting leaves them be.
     void aSignInSettingChecksAgain()
