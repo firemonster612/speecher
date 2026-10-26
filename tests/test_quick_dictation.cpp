@@ -77,6 +77,13 @@ QQuickItem *capsuleOf(QQuickWindow *window)
     return window->findChild<QQuickItem *>(QStringLiteral("capsule"));
 }
 
+// The size the capsule settles at for the popup's phase; a receipt's hugs
+// its words, which each platform's fonts set.
+QSizeF settledSize(QQuickItem *capsule)
+{
+    return capsule->parentItem()->property("target").toSizeF();
+}
+
 // The key a review's Replace names: the Mac keyboard's Return is Enter
 // elsewhere.
 #ifdef Q_OS_MACOS
@@ -716,7 +723,9 @@ private slots:
             everyMorphingFrameMasked = everyMorphingFrameMasked && masksDrawn();
         });
         emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
-        QTRY_VERIFY(morphingFrames > 1 && capsule->width() < 220);
+        QTRY_VERIFY(settledSize(capsule).width() < 280);
+        QTRY_COMPARE(capsule->width(), settledSize(capsule).width());
+        QVERIFY(morphingFrames > 1);
         QVERIFY(everyMorphingFrameMasked);
     }
 
@@ -761,7 +770,24 @@ private slots:
         emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
         auto *capsule = window->findChild<QQuickItem *>(QStringLiteral("capsule"));
         QVERIFY(capsule);
-        QTRY_VERIFY(capsule->width() < 220 && capsuleIs(qRound(capsule->width()), 44));
+        QTRY_VERIFY(settledSize(capsule).width() < 280);
+        QTRY_COMPARE(capsule->width(), settledSize(capsule).width());
+        // Its width is fractional, so the mask rounds out to within a pixel.
+        const auto masksCapsule = [window, capsule] {
+#if defined(Q_OS_MACOS)
+            Q_UNUSED(capsule);
+            return window->mask().isEmpty();
+#else
+            QRectF drawn = capsule->mapRectToScene(QRectF(0, 0, capsule->width(), capsule->height()));
+#if defined(Q_OS_WIN)
+            drawn.adjust(-20, -12, 20, 28);
+#endif
+            const QRect mask = window->mask().boundingRect();
+            return qAbs(mask.left() - drawn.left()) <= 1 && qAbs(mask.top() - drawn.top()) <= 1
+                && qAbs(mask.right() + 1 - drawn.right()) <= 1 && qAbs(mask.bottom() + 1 - drawn.bottom()) <= 1;
+#endif
+        };
+        QTRY_VERIFY(masksCapsule());
 
         // Faded out, the window goes.
         emit session->popupHideRequested();
