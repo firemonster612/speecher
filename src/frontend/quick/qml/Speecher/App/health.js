@@ -85,12 +85,28 @@ function failure(check) {
 // said in plain ink and not counted.
 function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
 
-// Whether dictated words only reach the clipboard: Speecher can't insert
-// them (accessible, System.accessibility, is false; on for the session
-// counts as on) nor press paste keys (the virtual keyboard's check isn't ok),
-// and the paste rule isn't clipboard only, which would be the choice.
-function wordsStayCopied(accessible, keyboard, pasteRule) {
-    return !accessible && !!keyboard.id && keyboard.state !== "ok" && pasteRule !== "clipboard_only";
+// What delivery needs, by the default paste rule and Paste with: direct
+// insertion needs accessibility, the virtual keyboard only needs the keys,
+// and otherwise either does; clipboard only, chosen, needs nothing.
+function deliveryNeeds(pasteRule, outputMethod) {
+    if (pasteRule === "clipboard_only") return "";
+    if (pasteRule === "direct_insert") return "accessibility";
+    if (outputMethod === "ydotool") return "keyboard";
+    return "either";
+}
+
+// Whether dictated words only reach the clipboard: what delivery needs
+// (deliveryNeeds) is missing. accessible is System.accessibility (on for the
+// session counts as on); keyboard is the virtual keyboard's check, absent
+// where there is none to need.
+function wordsStayCopied(accessible, keyboard, pasteRule, outputMethod) {
+    const keys = !keyboard.id || keyboard.state === "ok";
+    switch (deliveryNeeds(pasteRule, outputMethod)) {
+    case "accessibility": return !accessible;
+    case "keyboard": return !keys;
+    case "either": return !accessible && !keys;
+    default: return false;
+    }
 }
 
 function summary(checks) {

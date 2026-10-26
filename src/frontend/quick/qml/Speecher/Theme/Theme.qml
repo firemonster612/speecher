@@ -207,8 +207,9 @@ QtObject {
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.16 : 0.10)
     readonly property color accentRing: Qt.rgba(accent.r, accent.g, accent.b, 0.4)
 
-    readonly property color positive: dark ? "#6CCB8F" : "#2E7D4F"
-    readonly property color warning: dark ? "#E3B65C" : "#9A6A12"
+    // Status inks are text too, pushed to AA wherever they are laid.
+    readonly property color positive: readableOn(dark ? "#6CCB8F" : "#2E7D4F", _everyGround, 4.5, dark)
+    readonly property color warning: readableOn(dark ? "#E3B65C" : "#9A6A12", _everyGround, 4.5, dark)
     // The margin's red: live sound (the record dot, the level meter, the
     // popup's margin rule) and failures, which are text, at AA wherever they
     // are laid.

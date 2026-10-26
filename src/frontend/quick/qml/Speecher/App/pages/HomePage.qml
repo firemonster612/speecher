@@ -235,6 +235,8 @@ Page {
                     Behavior on opacity { Ease {} }
                     onClicked: Navigation.goToRow(learned.action.row)
                 }
+                // Learning needs accessibility; the notice turns it on.
+                AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can learn your corrections." }
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0
@@ -266,7 +268,8 @@ Page {
                 }
                 Reveal {
                     width: parent.width
-                    open: Insights.corrections.recent.length === 0
+                    // Nothing to say while the notice above says it.
+                    open: Insights.corrections.recent.length === 0 && T.correctionsCaption(Insights.corrections) !== ""
                     EmptyState { width: parent.width; compact: true; iconName: "spell-check"; text: T.correctionsCaption(Insights.corrections) }
                 }
             }

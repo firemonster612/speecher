@@ -44,23 +44,39 @@ StepPage {
             // Silent bars in the rule's colour, so red means sound is heard.
             compress: true
         }
-        StatusText {
+        // The test's state, and after a failed one, a way to try again.
+        Row {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: Theme.space5
-            // With no microphone the select already says so, so the plate
-            // says what to do in its place.
-            text: !Audio.hasMicrophones ? page.test.noMicrophoneHint
-                : Audio.heard ? page.test.heardText
-                : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
-                : page.test.notHeardText
-            tone: !Audio.hasMicrophones ? "neutral" : Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
+            spacing: Theme.space3
+            StatusText {
+                anchors.verticalCenter: parent.verticalCenter
+                // With no microphone the select already says so, so the plate
+                // says what to do in its place.
+                text: !Audio.hasMicrophones ? page.test.noMicrophoneHint
+                    : Audio.heard ? page.test.heardText
+                    : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
+                    : page.test.notHeardText
+                tone: !Audio.hasMicrophones ? "neutral" : Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
+            }
+            Reveal {
+                sideways: true
+                open: Audio.hasMicrophones && Audio.testError !== ""
+                anchors.verticalCenter: parent.verticalCenter
+                Button {
+                    text: page.test.retryLabel
+                    size: "small"
+                    onClicked: { Audio.releaseTest(page); Audio.holdTest(page) }
+                }
+            }
         }
     }
 
-    // What to do with a microphone: speak. Without one, the plate says it.
+    // What to do with a microphone that works: speak. Without one, or after
+    // a failed test, the plate says what to do instead.
     Reveal {
-        open: Audio.hasMicrophones
+        open: Audio.hasMicrophones && Audio.testError === ""
         Txt {
             width: parent.width
             text: page.test.setupHint

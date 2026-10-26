@@ -13,15 +13,24 @@ Page {
 
     // The steps a paste takes with the default paste and Paste with, in the
     // order core's delivery tries them, in words: [{ icon, label }].
-    readonly property var _route: System.pasteRoute.map(step => ({
+    // Without accessibility nothing is inserted, so the route leaves that out.
+    readonly property var _route: System.pasteRoute.filter(step => step !== "insert" || System.accessibility).map(step => ({
         insert: { icon: "text-cursor-input", label: "Insert directly" },
         // macOS pastes with ⌘V, terminals included.
         press: { icon: "keyboard", label: Qt.platform.os === "osx" ? "Press ⌘V"
                                         : Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
         copy: { icon: "clipboard", label: "Copy to clipboard" }
     })[step])
-    readonly property string _routeCaption: (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
-        + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
+    // Where words only reach the clipboard, what would get them further, as
+    // the default paste rule and Paste with need it.
+    readonly property string _routeCaption: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
+                                                                  Settings.values.globalPasteRule, Settings.values.outputMethod)
+        ? "Your words stay on the clipboard until " + ({ accessibility: "desktop accessibility is on.",
+                                                         keyboard: "the virtual keyboard is set up.",
+                                                         either: "desktop accessibility or the virtual keyboard is set up." })[
+              Health.deliveryNeeds(Settings.values.globalPasteRule, Settings.values.outputMethod)]
+        : (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
+          + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
 
     Section {
         plain: true
@@ -38,6 +47,7 @@ Page {
 
     Section {
         title: Schema.row("outputMethod").section
+        AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can insert your words directly." }
         SchemaRow { rowId: "outputMethod" }
         // The same check as Permissions & health's, with the setup's own menu after it.
         HealthRow {

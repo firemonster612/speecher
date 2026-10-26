@@ -17,7 +17,9 @@ Plate {
     readonly property bool running: Audio.testState === "running"
     // Whether the button's test is this page's: setup may hold it too.
     readonly property bool holding: Audio.testHolders.indexOf(root) >= 0
-    readonly property int levelHeight: 112
+    // The level's room: full while the test listens, less while it waits,
+    // so the idle plate isn't mostly empty.
+    readonly property int levelHeight: running ? 112 : 64
 
     // The page going away lets go of the microphone.
     Component.onDestruction: Audio.releaseTest(root)

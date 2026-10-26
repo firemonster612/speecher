@@ -25,11 +25,7 @@ var text = {
     noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind %1 to a key.",
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
-    fixFirst: "Dictation can start once these are fixed.",
-    fixFirstRestLimit: "Dictation can't start without the microphone rows; the others limit it.",
     wordsOnClipboard: "Words stay on the clipboard",
-    pastingNotReady: "Dictation works, but your words stay on the clipboard until this is fixed.",
-    serviceNotReady: "Dictation fails until this is fixed, unless a fallback or a writing profile's own service takes over.",
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
@@ -237,10 +233,25 @@ function milestones(s) {
 }
 function milestoneCaption(s) { return _count(s.allTimeWords, "word", "words") + " dictated in all." }
 
+// What the things Home lists do to dictation, in words, by their ids:
+// microphone access and a microphone stop it starting, the speech service
+// makes it fail unless something takes over, pasting only limits it.
+function readiness(ids) {
+    const start = [ids.includes("access") ? "microphone access is allowed" : "",
+                   ids.includes("microphone") ? "a microphone is found" : ""].filter(s => s)
+    const parts = []
+    if (start.length) parts.push("Dictation can't start until " + start.join(" and ") + ".")
+    if (ids.includes("speech"))
+        parts.push((start.length ? "Then it fails" : "Dictation fails") + " until Speech to text is fixed, unless a fallback or a writing profile's own service takes over.")
+    if (ids.includes("pasting"))
+        parts.push(parts.length ? "Pasting only limits it: your words stay on the clipboard." : "Dictation works, but your words stay on the clipboard until Pasting is set up.")
+    return parts.join(" ")
+}
+
 // The learned corrections card says how learning stands, and what to do.
 function correctionsCaption(c) {
     if (!c.learning) return "Learning is off."
-    if (!c.accessible) return "Speecher learns corrections once desktop accessibility is on."
+    if (!c.accessible) return ""
     if (!c.count) return "Fix a dictated word the same way twice and it appears here."
     return _count(c.count, "correction", "corrections") + " learned from edits you made after dictating."
 }

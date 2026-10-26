@@ -32,7 +32,7 @@ Section {
     // with keys (no virtual keyboard), they only reach the clipboard;
     // unless that is what was chosen, Home says so without blocking.
     readonly property bool clipboardOnly: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
-                                                                 Settings.values.globalPasteRule)
+                                                                 Settings.values.globalPasteRule, Settings.values.outputMethod)
     readonly property var blockers: [
         access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
@@ -45,9 +45,9 @@ Section {
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
     title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
-    caption: blocked ? (blockers.some(b => b.id === "speech" || b.id === "pasting") ? t.fixFirstRestLimit : t.fixFirst)
-           : blockers.some(b => b.id === "speech") ? t.serviceNotReady
-           : blockers.length ? t.pastingNotReady : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
+    // What the listed things do to dictation, in words, else how to start.
+    caption: blockers.length ? T.readiness(blockers.map(b => b.id))
+           : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
     actions: Switcher {
         id: controls
         width: implicitWidth
@@ -99,44 +99,72 @@ Section {
         }
     }
 
+    // What stands in the way, each row opening the page that fixes it.
+    component BlockerRows: RowList {
+        id: blockerRows
+        keyOf: b => b.id
+        delegate: SettingRow {
+            id: blockerRow
+            objectName: "blocker_" + key
+            required property string key
+            required property int index
+            readonly property var blocker: blockerRows.entry(key)
+            first: index === 0
+            title: blockerRow.blocker.title
+            clickable: true
+            onClicked: Navigation.go(blockerRow.blocker.page)
+            StatusText { text: blockerRow.blocker.status; tone: "warning" }
+        }
+    }
+
     Switcher {
         travel: 0
-        currentIndex: session.live ? 1 : session.blockers.length ? 2 : 0
+        currentIndex: session.live ? 1 : session.blocked ? 2 : 0
 
-        // The latest dictation, where it went, and Copy.
+        // What only limits dictation, if anything, over the latest dictation,
+        // where it went, and Copy.
         Column {
-            padding: Theme.space5
-            topPadding: Theme.space4
-            bottomPadding: Theme.space3
-            spacing: Theme.space2
-            Txt {
-                width: parent.width - 2 * parent.padding
-                text: session.latest ? session.latest.text : session.t.nothingYet
-                tone: session.latest ? "primary" : "tertiary"
-                variant: "lead"
-                wrapMode: Text.WordWrap
-            }
+            width: parent.width
+            BlockerRows { values: session.blocked ? [] : session.blockers }
             Reveal {
-                open: session.latest !== null
-                width: parent.width - 2 * parent.padding
-                Item {
-                    width: parent.width
-                    height: copy.height
-                    Txt {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: session.latest ? T.latestDetail(session.latest, Insights.today) : ""
-                        variant: "small"
-                        tone: "secondary"
-                    }
-                    CopyButton {
-                        id: copy
-                        anchors.right: parent.right
-                        anchors.rightMargin: -Theme.space1
-                        text: session.t.copy
-                        copiedText: Words.copied
-                        size: "small"
-                        variant: "ghost"
-                        onCopied: Insights.copyLatest()
+                open: !session.blocked && session.blockers.length > 0
+                Rectangle { x: Theme.rowInset; width: parent.width - 2 * Theme.rowInset; height: 1; color: Theme.rule }
+            }
+            Column {
+                width: parent.width
+                padding: Theme.space5
+                topPadding: Theme.space4
+                bottomPadding: Theme.space3
+                spacing: Theme.space2
+                Txt {
+                    width: parent.width - 2 * parent.padding
+                    text: session.latest ? session.latest.text : session.t.nothingYet
+                    tone: session.latest ? "primary" : "tertiary"
+                    variant: "lead"
+                    wrapMode: Text.WordWrap
+                }
+                Reveal {
+                    open: session.latest !== null
+                    width: parent.width - 2 * parent.padding
+                    Item {
+                        width: parent.width
+                        height: copy.height
+                        Txt {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: session.latest ? T.latestDetail(session.latest, Insights.today) : ""
+                            variant: "small"
+                            tone: "secondary"
+                        }
+                        CopyButton {
+                            id: copy
+                            anchors.right: parent.right
+                            anchors.rightMargin: -Theme.space1
+                            text: session.t.copy
+                            copiedText: Words.copied
+                            size: "small"
+                            variant: "ghost"
+                            onCopied: Insights.copyLatest()
+                        }
                     }
                 }
             }
@@ -149,23 +177,7 @@ Section {
             variant: "lead"
             wrapMode: Text.WordWrap
         }
-        // What stands in the way, each row opening the page that fixes it.
-        RowList {
-            id: blockerRows
-            values: session.blockers
-            keyOf: b => b.id
-            delegate: SettingRow {
-                id: blockerRow
-                objectName: "blocker_" + key
-                required property string key
-                required property int index
-                readonly property var blocker: blockerRows.entry(key)
-                first: index === 0
-                title: blockerRow.blocker.title
-                clickable: true
-                onClicked: Navigation.go(blockerRow.blocker.page)
-                StatusText { text: blockerRow.blocker.status; tone: "warning" }
-            }
-        }
+        // Something stands in the way: only its rows.
+        BlockerRows { values: session.blockers }
     }
 }

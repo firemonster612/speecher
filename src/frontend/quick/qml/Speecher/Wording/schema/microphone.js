@@ -15,7 +15,7 @@ var rows = [
       keywords: "microphone input device source headset usb default missing" },
     { id: "microphoneTest", page: "microphone", section: "Input", kind: "custom",
       label: "Test microphone", help: "Speak and watch the level to check that the microphone hears you.",
-      startLabel: "Start test", startingLabel: "Starting…", stopLabel: "Stop test",
+      startLabel: "Start test", startingLabel: "Starting…", stopLabel: "Stop test", retryLabel: "Try again",
       listeningText: "Listening to %1", noMicrophoneText: "No microphone found",
       accessOffText: "Microphone access is off.",
       heardText: "Speecher hears your microphone.", notHeardText: "Not heard yet",

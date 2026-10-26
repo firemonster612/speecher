@@ -512,6 +512,7 @@ private slots:
                     const QString unread = unreadable("text", page + sidebar, 7) + unreadable("textSecondary", page + sidebar, 4.5)
                                            + unreadable("textTertiary", page + sidebar, 3) + unreadable("accent", page, 4.5)
                                            + unreadable("negative", page + sidebar, 4.5)
+                                           + unreadable("warning", page + sidebar, 4.5) + unreadable("positive", page + sidebar, 4.5)
                                            + unreadable("accentText", {color("accent")}, 4.5);
                     if (!unread.isEmpty()) {
                         failures += label + unread;

@@ -757,9 +757,10 @@ private slots:
         QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
     }
 
-    // Home warns that words stay on the clipboard only when they can be
-    // neither inserted nor pasted with keys, and that wasn't the choice;
-    // accessibility on for the session still inserts.
+    // Home warns that words stay on the clipboard only when what delivery
+    // needs is missing and that wasn't the choice: direct insertion needs
+    // accessibility (on for the session counts), the virtual keyboard only
+    // its keys, and otherwise either does.
     void wordsStayCopiedOnlyWithNoWayIn()
     {
         QQmlEngine engine;
@@ -767,20 +768,25 @@ private slots:
             import QtQuick
             import Speecher.App
             QtObject {
-                readonly property var keyboardOff: ({ id: "virtualKeyboardHealth", state: "attention" })
-                readonly property bool sessionOnly: Health.wordsStayCopied(true, keyboardOff, "")
-                readonly property bool noWayIn: Health.wordsStayCopied(false, keyboardOff, "")
-                readonly property bool chosen: Health.wordsStayCopied(false, keyboardOff, "clipboard_only")
-                readonly property bool keyboardOn: Health.wordsStayCopied(false, { id: "virtualKeyboardHealth", state: "ok" }, "")
-                readonly property bool noKeyboardCheck: Health.wordsStayCopied(false, {}, "")
+                readonly property var off: ({ id: "virtualKeyboardHealth", state: "attention" })
+                readonly property var on: ({ id: "virtualKeyboardHealth", state: "ok" })
+                readonly property bool sessionOnly: Health.wordsStayCopied(true, off, "standard_paste", "automatic")
+                readonly property bool noWayIn: Health.wordsStayCopied(false, off, "standard_paste", "automatic")
+                readonly property bool chosen: Health.wordsStayCopied(false, off, "clipboard_only", "automatic")
+                readonly property bool keysOn: Health.wordsStayCopied(false, on, "standard_paste", "automatic")
+                readonly property bool noKeyboardCheck: Health.wordsStayCopied(false, {}, "standard_paste", "automatic")
+                readonly property bool insertOnly: Health.wordsStayCopied(false, on, "direct_insert", "automatic")
+                readonly property bool keysOnly: Health.wordsStayCopied(true, off, "standard_paste", "ydotool")
             }
         )");
         QVERIFY(probe);
         QVERIFY(!probe->property("sessionOnly").toBool());
         QVERIFY(probe->property("noWayIn").toBool());
         QVERIFY(!probe->property("chosen").toBool());
-        QVERIFY(!probe->property("keyboardOn").toBool());
+        QVERIFY(!probe->property("keysOn").toBool());
         QVERIFY(!probe->property("noKeyboardCheck").toBool());
+        QVERIFY(probe->property("insertOnly").toBool());
+        QVERIFY(probe->property("keysOnly").toBool());
     }
 
     // The App rules page's app type rows need accessibility to know the app.
