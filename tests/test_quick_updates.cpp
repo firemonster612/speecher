@@ -309,7 +309,7 @@ private slots:
         // Its turn ends a few seconds in.
         QTRY_VERIFY_WITH_TIMEOUT(!chip->property("open").toBool(), 8000);
 
-        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
         emit session->stateChanged(QStringLiteral("idle"));
         emit session->stateChanged(QStringLiteral("starting"));
         emit session->popupShowRequested(2);

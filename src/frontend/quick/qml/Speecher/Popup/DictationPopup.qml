@@ -80,7 +80,7 @@ Item {
     readonly property size target: {
         if (phase === "review") return Qt.size(widest, review.y * 2 + review.implicitHeight)
         if (followingUp) return Qt.size(widest, review.y + review.implicitHeight + liveHeight)
-        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(220, receipt.x + receipt.implicitWidth + receiptEnd)),
+        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(160, receipt.x + receipt.implicitWidth + receiptEnd)),
                                                                       Math.max(barHeight, receipt.implicitHeight + 20))
         return Qt.size(showText ? 460 : recording ? 280 : 220, liveHeight)
     }

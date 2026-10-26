@@ -51,5 +51,6 @@ var rows = [
       label: "Quiet below",
       help: "Raise this if background noise is being kept; lower it if soft speech is being cut.",
       value: 2, min: 1, max: 20, step: 1, unit: "%", enabledWhen: { id: "vadEnabled", equals: true },
+      disabledHelp: "Turn on Skip silence to set what counts as quiet.",
       keywords: "vad threshold silence noise sensitivity" }
 ];

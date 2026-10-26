@@ -31,7 +31,7 @@ Section {
     readonly property var blockers: [
         access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
-        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: service.label, status: ModelText.status(service), page: "speech" } : null
+        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: Schema.page("speech").title, status: ModelText.status(service), page: "speech" } : null
     ].filter(b => b)
     readonly property bool blocked: blockers.some(b => b.id !== "speech")
     // What the dictation is doing, as the heading says it.

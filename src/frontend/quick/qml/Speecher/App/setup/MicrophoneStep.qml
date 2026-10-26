@@ -22,6 +22,7 @@ StepPage {
         SchemaRow {
             rowId: "audioDevice"
             Select {
+                enabled: Audio.hasMicrophones
                 placeholder: Words.choose
                 options: Microphones.deviceOptions
                 currentId: Settings.values.audioDevice || ""
@@ -47,20 +48,25 @@ StepPage {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: Theme.space5
-            text: Audio.heard ? page.test.heardText
+            // With no microphone the select already says so, so the plate
+            // says what to do in its place.
+            text: !Audio.hasMicrophones ? page.test.noMicrophoneHint
+                : Audio.heard ? page.test.heardText
                 : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
                 : page.test.notHeardText
-            // No microphone is something to connect, amber as everywhere.
-            tone: Audio.heard ? "live" : !Audio.hasMicrophones ? "warning" : Audio.testError !== "" ? "negative" : "tertiary"
+            tone: !Audio.hasMicrophones ? "neutral" : Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
         }
     }
 
-    // What to do: speak, or with no microphone, connect one.
-    MorphText {
-        width: parent.width
-        text: Audio.hasMicrophones ? page.test.setupHint : page.test.noMicrophoneHint
-        variant: "small"
-        tone: "secondary"
-        wrap: true
+    // What to do with a microphone: speak. Without one, the plate says it.
+    Reveal {
+        open: Audio.hasMicrophones
+        Txt {
+            width: parent.width
+            text: page.test.setupHint
+            variant: "small"
+            tone: "secondary"
+            wrapMode: Text.WordWrap
+        }
     }
 }

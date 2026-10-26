@@ -91,6 +91,13 @@ Plate {
                 width: Math.min(parent.width, 420)
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Theme.space3
+                // The state as Home and setup say it, then what to do.
+                StatusText {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.device.noneLabel
+                    tone: "warning"
+                    indicator: "dot"
+                }
                 Txt {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter

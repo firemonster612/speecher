@@ -17,7 +17,7 @@ var words = {
     },
     desktopAccessibility: {
         unsupported: { status: "Not available", detail: "This Speecher build does not include desktop accessibility." },
-        off: { status: "Off", detail: "Speecher cannot tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
+        off: { status: "Off", detail: "Speecher can't tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
         sessionOnly: { status: "On for now", detail: "It turns off when you sign out, and paste rules and context with it.", fix: "Keep on" },
         on: { status: "On", detail: "Paste rules, context and learning can see the app you are in." }
     },

@@ -7,8 +7,33 @@ import Speecher.Wording
 import Speecher.App
 
 Page {
+    id: page
+    // The desktop gives Speecher no shortcut: the command is the way in, so
+    // the page says so and leads with it.
+    readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     title: Schema.page("shortcuts").title
-    subtitle: Schema.page("shortcuts").subtitle
+    subtitle: noShortcuts ? Schema.page("shortcuts").subtitleNoShortcuts : Schema.page("shortcuts").subtitle
+
+    // How shortcuts reach Speecher: first where the command is the way in,
+    // last where it is the extra.
+    component Reach: Section {
+        title: Schema.row("startCommand").section
+        // The same check as Permissions & health's, and where the desktop lists the shortcuts.
+        HealthRow {
+            rowId: "globalShortcuts"
+            // Where Speecher knows the desktop's own shortcut settings.
+            Button {
+                visible: System.canOpenShortcutSettings
+                text: "System settings"
+                size: "small"
+                trailingIcon: "external-link"
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: System.openShortcutSettings()
+            }
+        }
+        StartCommandRow {}
+    }
+    Reveal { open: page.noShortcuts; Reach {} }
 
     // The shortcut, big: the page's one picture. Holding the pointer on it
     // presses the keys and listens, as holding the shortcut does. With no
@@ -61,10 +86,15 @@ Page {
         }
     }
 
-    Section {
-        title: Schema.row("globalShortcut").section
-        SchemaRow { rowId: "globalShortcut" }
-        SchemaRow { rowId: "shortcutBehavior" }
+    // The dictation shortcut and what pressing it does: with no shortcut to
+    // be had, the command above runs one dictation, so both fold away.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("globalShortcut").section
+            SchemaRow { rowId: "globalShortcut" }
+            SchemaRow { rowId: "shortcutBehavior" }
+        }
     }
 
     Section {
@@ -74,21 +104,5 @@ Page {
         SchemaRow { rowId: "cancelShortcut" }
     }
 
-    Section {
-        title: Schema.row("startCommand").section
-        // The same check as Permissions & health's, and where the desktop lists the shortcuts.
-        HealthRow {
-            rowId: "globalShortcuts"
-            // Where Speecher knows the desktop's own shortcut settings.
-            Button {
-                visible: System.canOpenShortcutSettings
-                text: "System settings"
-                size: "small"
-                trailingIcon: "external-link"
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: System.openShortcutSettings()
-            }
-        }
-        StartCommandRow {}
-    }
+    Reveal { open: !page.noShortcuts; Reach {} }
 }

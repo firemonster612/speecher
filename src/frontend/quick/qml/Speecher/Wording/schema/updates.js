@@ -13,6 +13,8 @@ var rows = [
     { id: "updateCheckInterval", page: "updates", section: "How Speecher updates", kind: "choice", control: "select",
       label: "Check frequency", value: "1440",
       enabledWhen: { id: "autoCheckUpdates", equals: true }, keywords: "interval how often schedule",
+      help: "How often Speecher looks for a new version.",
+      disabledHelp: "Turn on automatic checks to choose how often.",
       options: [
           { id: "5", label: "Every 5 minutes" },
           { id: "15", label: "Every 15 minutes" },

@@ -164,7 +164,9 @@ QtObject {
     // The ink and paper the shades below mix from: hover, borders and fills
     // are text laid thinly over the surface.
     readonly property color sheetBorder: soft(text, dark ? 0.07 : 0.12)
-    readonly property color surface: dark ? mix(raised, sheet, 0.2) : mix(sheet, paper, 0.3)
+    // Recessed, a step below the page in both themes, so a picture or a
+    // field sits in the page rather than on it.
+    readonly property color surface: dark ? mix(sheet, paper, 0.35) : mix(sheet, paper, 0.3)
     readonly property color surfaceHover: dark ? mix(raised, text, 0.02) : paper
     readonly property color surfacePressed: dark ? mix(raised, text, 0.05) : mix(paper, text, 0.04)
     readonly property color border: soft(text, dark ? 0.10 : 0.16)

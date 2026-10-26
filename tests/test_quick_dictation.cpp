@@ -187,12 +187,12 @@ private slots:
         QTest::addColumn<QString>("title");
         QTest::addColumn<QString>("detail");
         QTest::addColumn<QString>("outcomeName");
-        QTest::newRow("inserted") << "Input sent" << int(PopupOutcome::Inserted) << "" << "Input sent" << "" << "inserted";
+        QTest::newRow("inserted") << "Sent to the app" << int(PopupOutcome::Inserted) << "" << "Sent to the app" << "" << "inserted";
         QTest::newRow("copied, with why") << "Copied • Your selection changed" << int(PopupOutcome::Copied) << ""
                                           << "Copied" << "Your selection changed" << "copied";
         QTest::newRow("fallback, with its fix")
-            << "Used raw transcript • Input sent • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
-            << "accounts" << "Used raw transcript" << "Input sent • Your Claude sign-in has expired." << "fallback";
+            << "Used raw transcript • Sent to the app • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
+            << "accounts" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
     }
 
     void receiptsSayWhatHappened()
@@ -708,7 +708,7 @@ private slots:
         QVERIFY(everyFrameMasked);
 
         // From the bare bar to the receipt's 220 by 44.
-        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
         QTRY_VERIFY(capsule->width() > 221 && capsule->width() < 279);
         QVERIFY(masksDrawn());
     }
@@ -750,9 +750,11 @@ private slots:
         };
         // Listening with no words yet: the bare bar.
         QTRY_VERIFY(capsuleIs(280, 44));
-        // The receipt's capsule hugs a short line.
-        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsuleIs(220, 44));
+        // The receipt's capsule hugs a short line, narrower than the bar.
+        emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
+        auto *capsule = window->findChild<QQuickItem *>(QStringLiteral("capsule"));
+        QVERIFY(capsule);
+        QTRY_VERIFY(capsule->width() < 220 && capsuleIs(qRound(capsule->width()), 44));
 
         // Faded out, the window goes.
         emit session->popupHideRequested();

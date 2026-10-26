@@ -30,7 +30,7 @@ Page {
                 id: demo
                 elapsed: 4
                 level: voice.level
-                receipt: ({ title: "Input sent", detail: "", outcome: "inserted", page: "" })
+                receipt: ({ title: "Sent to the app", detail: "", outcome: "inserted", page: "" })
             }
             DemoVoice { id: voice; running: demo.state === "listening" }
 

@@ -64,6 +64,6 @@ var rows = [
 
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",
-      help: "Removes the app menu entry, the speecher command, the icon and the Global Shortcut.",
+      help: "Removes the app menu entry, the speecher command, the icon and the global shortcut.",
       keywords: "uninstall delete appimage", needs: "canRemove" }
 ];

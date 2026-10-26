@@ -19,29 +19,31 @@ SettingRow {
     // in effect instead.
     property var value: _blurs ? Settings.values[rowId] : false
 
-    // Usable once the backend saves the row or runs its action; a custom row
-    // with no value draws content that has nothing to save.
-    readonly property bool _saves: spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId)
+    // Shown once this build saves the row or runs its action; until then it
+    // isn't offered at all, here or in search.
+    readonly property bool _saves: Schema.settable(spec, id => Settings.saves(id))
     // The dictation shortcut where the desktop gives Speecher none: off,
     // saying so; the start command does its job.
     readonly property bool _noShortcut: rowId === "globalShortcut" && Health.noShortcuts(System.checks)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place, and a row nothing saves yet says so.
-    property string note: (!_saves ? Words.notSavedYet : _noShortcut ? Words.noShortcutsHere : _blurs ? spec.help : spec.disabledHelp) || ""
+    // Whether the row that turns this one on is on (enabledWhen).
+    readonly property bool _turnedOn: !spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals
+    property string note: (_noShortcut ? Words.noShortcutsHere
+                           : !_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
     title: spec.label
     help: Settings.errors[rowId] || _secretError || note
     iconName: spec.icon || ""
-    // enabledWhen reads Settings.values here, in the binding, so the row
+    // _turnedOn reads Settings.values in its binding, so the row
     // follows that value.
-    enabled: _blurs && _saves && !_noShortcut
-             && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
+    enabled: _blurs && _saves && !_noShortcut && _turnedOn
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
     readonly property var _options: Schema.options(spec, need => System[need])
-    shown: Schema.available(spec, need => System[need])
+    shown: _saves && Schema.available(spec, need => System[need])
            && (!spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals)
     stacked: spec.kind === "choice" && spec.control === "cards"
 

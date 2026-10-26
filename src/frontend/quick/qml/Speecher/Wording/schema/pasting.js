@@ -38,7 +38,7 @@ var rows = [
       label: "Virtual keyboard", help: "Lets Speecher press the paste keys in other apps.",
       keywords: "ydotool uinput service setup permission", needs: "hasVirtualKeyboard" },
     { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
-      label: "Default paste", help: "How Speecher pastes unless an App rule says otherwise.",
+      label: "Default paste", help: "How Speecher pastes unless an app rule says otherwise.",
       value: "standard_paste", keywords: "paste method ctrl+v terminal direct insertion clipboard only default",
       options: pasteMethods },
     { id: "outputFormat", page: "pasting", section: "Delivery", kind: "choice",
@@ -56,7 +56,7 @@ var rows = [
       value: [], keywords: "app specific per-app paste rule application id override" },
     { id: "appRecognitionRules", page: "appRules", section: "Application recognition", kind: "custom",
       label: "Application recognition",
-      help: "Your matches come first. Each sets the app type for paste rules, the Writing Profile, or both.",
+      help: "Your matches come first. Each sets the app type for paste rules, the writing profile, or both.",
       keywords: "recognize identify match app type category writing profile built-in" }
 ].concat(categories.map(function (c) {
     return { id: "categoryPasteRule_" + c.id, page: "appRules", section: "Rules by app type", kind: "choice",

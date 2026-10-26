@@ -89,9 +89,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
   `SettingsStore`, so the CLI and the daemon see the same values. A row the
-  table lacks reads as absent, and SchemaRow greys it out where
-  `Settings.saves(id)` is false; add the row to the table when its page is
-  wired; until then its help says this version doesn't save it. The
+  table lacks reads as absent, and where `Settings.saves(id)` is false
+  (`Schema.settable`) SchemaRow and search leave the row out; add the row
+  to the table when its page is wired. The
   shortcut rows go to the controller, which binds and keeps them, and show
   the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
@@ -209,7 +209,7 @@ Palette (all in `Theme`; never write a hex value in a page):
 | `rule` | blue-grey, 16% | Dividers between rows |
 | `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
 | `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
-| `warning` | `#9A6A12` | Something to set up or fix that isn't a failure: a step still open, a service not signed in |
+| `warning` | `#9A6A12` | Something to set up or fix that isn't a failure: a step still open, the chosen service not signed in (an unchosen card says its state in plain ink) |
 | `positive` | `#2E7D4F` | A check that passed, such as a sign-in or a delivered dictation |
 
 The pad is Steno, the first of the colour schemes (Colors, on Appearance). A
@@ -329,8 +329,9 @@ Press, hover, selection:
 - A selection glides to the new item over `Theme.slow` springy. A selected
   card keeps its 1 px border and changes its colour and check.
 - A control that is disabled fades to `Theme.disabledOpacity`, easing. The
-  control owns the fade; a row fades its own text and the control in it
-  fades itself, so nothing fades twice. Something inactive but still
+  control owns the fade; a row fades its title and icon, not its help,
+  which says why it is off, and the control in it fades itself, so nothing
+  fades twice. Something inactive but still
   editable stays legible and says why in its help; it is not dimmed.
 - The focus ring shows for keyboard focus only: `visualFocus` on Templates
   controls, `FocusVisible` on custom ones. A text field shows its soft

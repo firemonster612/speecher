@@ -29,7 +29,7 @@ QtObject {
     readonly property string refinerModelHelp: "For these files only. Refinement keeps its own."
     readonly property string cleanup: "Cleanup level"
     readonly property string cleanupHelp: "How much the model may rewrite."
-    readonly property string profile: "Writing Profile"
+    readonly property string profile: "Writing profile"
     readonly property string profileHelp: "Sets the services, cleanup and tone below for these files. You can still change each."
     readonly property string tone: "Tone"
     readonly property string toneHelp: "Overrides the profile's tone, if set."

@@ -34,7 +34,7 @@ Page {
         return "Brings over " + Words.list([
             Words.count(bundle.terms, "vocabulary term", "vocabulary terms"),
             Words.count(bundle.replacements, "snippet", "snippets"),
-            Words.count(bundle.profiles, "Writing Profile", "Writing Profiles")]) + ". Never your accounts or API keys."
+            Words.count(bundle.profiles, "writing profile", "writing profiles")]) + ". Never your accounts or API keys."
     }
     function phoneNote(state) {
         switch (state) {

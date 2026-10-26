@@ -13,8 +13,10 @@ Item {
     id: brand
 
     property string title
-    // A quieter line under the title, such as the version.
+    // A quieter line under the title, such as the version, and the whole of
+    // it for its tooltip where the line is a short form.
     property string detail
+    property string detailTip
 
     readonly property real _wordsWidth: Math.max(titleLine.implicitWidth, detailLine.implicitWidth)
     implicitWidth: words.x + _wordsWidth + Theme.titleBarInset
@@ -40,11 +42,10 @@ Item {
             variant: "caption"
             tone: "tertiary"
             width: parent.width
-            // A nightly's version keeps its number and its commit.
             elide: Text.ElideMiddle
-            HoverHandler { id: detailHover; enabled: detailLine.truncated }
+            HoverHandler { id: detailHover; enabled: detailLine.truncated || brand.detailTip.length > 0 && brand.detailTip !== brand.detail }
             // Below, since the strip is at the window's top.
-            Tip { text: brand.detail; shown: detailHover.hovered; y: detailLine.height + 6; transformOrigin: Item.Top }
+            Tip { text: brand.detailTip || brand.detail; shown: detailHover.hovered; y: detailLine.height + 6; transformOrigin: Item.Top }
         }
     }
 }

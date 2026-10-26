@@ -282,7 +282,7 @@ private slots:
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(signIns.size(), 0);
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't start."));
+                 QStringLiteral("Sent to the app • Transcribed with Local Model. ChatGPT Codex couldn't start."));
     }
 
     void noSpeechProviderStartsAndTheErrorNamesEach()
@@ -489,7 +489,7 @@ private slots:
         rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
         QTRY_COMPARE(outcome.size(), 1);
-        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Input sent • No internet, so Local Model did this one."));
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Sent to the app • No internet, so Local Model did this one."));
     }
 
     // With no fallback, the start fails at once, and offers no settings page:
@@ -609,7 +609,7 @@ private slots:
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Used raw transcript • Input sent • ChatGPT Codex couldn't be reached and Local Model "
+                 QStringLiteral("Used raw transcript • Sent to the app • ChatGPT Codex couldn't be reached and Local Model "
                                 "didn't answer. • Part of the dictation may be missing. The connection dropped."));
         QTest::qWait(400);
         QCOMPARE(local->startCalls, 0);
@@ -883,7 +883,7 @@ private slots:
         QCOMPARE(openai->prepareCalls + openai->refineCalls, 0);
         QCOMPARE(anthropic->prepareCalls + anthropic->refineCalls, 0);
         QTRY_COMPARE(outcome.size(), 1);
-        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Input sent • No internet, so Local Runner did this one."));
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Sent to the app • No internet, so Local Runner did this one."));
     }
 
     // An unusable answer is not a missing service: no other refiner is
@@ -913,8 +913,8 @@ private slots:
         QCOMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
         QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
-        QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Input sent")
-                                                               : QStringLiteral("Used raw transcript • Input sent"));
+        QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Sent to the app")
+                                                               : QStringLiteral("Used raw transcript • Sent to the app"));
         QCOMPARE(outcome.first().at(1).value<PopupOutcome>(),
                  emptyAnswer ? PopupOutcome::Inserted : PopupOutcome::Fallback);
     }
@@ -1042,10 +1042,10 @@ private slots:
         QTest::addColumn<int>("reachability");
         QTest::addColumn<QString>("message");
         QTest::newRow("offline") << int(Reachability::Offline)
-                                 << QStringLiteral("Input sent • No internet, so Custom Endpoint and Local Runner did "
+                                 << QStringLiteral("Sent to the app • No internet, so Custom Endpoint and Local Runner did "
                                                    "this one.");
         QTest::newRow("unknown") << int(Reachability::Unknown)
-                                 << QStringLiteral("Input sent • Transcribed with Custom Endpoint. ChatGPT Codex "
+                                 << QStringLiteral("Sent to the app • Transcribed with Custom Endpoint. ChatGPT Codex "
                                                    "couldn't be reached. Cleaned up with Local Runner. OpenAI "
                                                    "couldn't be reached.");
     }
@@ -1093,7 +1093,7 @@ private slots:
         rig.session->stopListening();
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Input sent • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."));
+                 QStringLiteral("Sent to the app • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."));
         QCOMPARE(recorded.first().first().value<DictationRecord>().speechProviders,
                  (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
     }
@@ -1134,7 +1134,7 @@ private slots:
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The "
+                 QStringLiteral("Used raw transcript • Sent to the app • Part of the dictation may be missing. The "
                                 "connection dropped."));
     }
 
@@ -1152,7 +1152,7 @@ private slots:
         rig.session->stopListening();
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't be reached. A few "
+                 QStringLiteral("Sent to the app • Transcribed with Local Model. ChatGPT Codex couldn't be reached. A few "
                                 "words may be missing."));
     }
 
@@ -1164,8 +1164,8 @@ private slots:
         QTest::addColumn<QString>("message");
         QTest::addColumn<int>("outcome");
         QTest::newRow("without refinement")
-            << false << QStringLiteral("Used raw transcript • Input sent") << int(PopupOutcome::Fallback);
-        QTest::newRow("refined") << true << QStringLiteral("Input sent") << int(PopupOutcome::Inserted);
+            << false << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
+        QTest::newRow("refined") << true << QStringLiteral("Sent to the app") << int(PopupOutcome::Inserted);
     }
 
     void aCaptureFailureAfterWordsDeliversThem()
@@ -1202,7 +1202,7 @@ private slots:
         rig.session->stopListening();
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(outcome.first().at(0).toString(),
-                 QStringLiteral("Input sent • Used Local Model. Your ChatGPT sign-in has expired."));
+                 QStringLiteral("Sent to the app • Used Local Model. Your ChatGPT sign-in has expired."));
         const PopupErrorAction fix = outcome.first().at(2).value<PopupErrorAction>();
         QCOMPARE(fix.fix, ErrorFix::SettingsPage);
         QCOMPARE(fix.pageId, QStringLiteral("accounts"));
@@ -1221,7 +1221,7 @@ private slots:
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
         QTRY_COMPARE(outcome.size(), 1);
-        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Used raw transcript • Input sent"));
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Used raw transcript • Sent to the app"));
         QCOMPARE(outcome.first().at(2).value<PopupErrorAction>().fix, ErrorFix::None);
     }
 

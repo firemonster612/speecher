@@ -117,9 +117,15 @@ QtObject {
         const s = service(id)
         return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
     }
+    // In setup, what each needs and then how many languages it hears, the
+    // count a link to them as on the settings cards.
     function setupSpeechChoices(services) {
-        return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings,
-                                         [ratedAsNote(Models.speechRatings[s.id])]))
+        return services.map(s => {
+            const known = service(s.id)
+            const link = known.languageLink
+            return Object.assign(_choice(known, link ? known.access + " " + link + "." : known.access, Models.speechRatings,
+                                         [ratedAsNote(Models.speechRatings[s.id])]), { helpLink: link })
+        })
     }
 
     // Where a speech service stands in the chain: 0 for the service itself,

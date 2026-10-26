@@ -42,8 +42,9 @@ Item {
         PropertyAction { target: row; property: "_lit"; value: false }
     }
 
-    // The text, icon and chevron fade together when the row is disabled; the
-    // control in the slot fades itself.
+    // The title, icon and chevron fade together when the row is disabled;
+    // the help, which says why, stays readable; the control in the slot fades
+    // itself.
     property real _ink: enabled ? 1 : Theme.disabledOpacity
     Behavior on _ink { Ease {} }
     readonly property int _inset: Theme.rowInset
@@ -109,8 +110,7 @@ Item {
         y: row.stacked ? 14 : (row.height - height) / 2
         width: row.stacked ? row.width - x - row._inset : slot.x - x - (slot.width > 0 ? 20 : row._trail)
         spacing: 3
-        opacity: row._ink
-        Txt { text: row.title; variant: "label"; width: parent.width; wrapMode: Text.WordWrap }
+        Txt { text: row.title; variant: "label"; width: parent.width; wrapMode: Text.WordWrap; opacity: row._ink }
         LinkedText {
             id: helpText
             visible: row.help.length > 0

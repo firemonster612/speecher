@@ -1358,9 +1358,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QTest::addColumn<QString>("expectedMessage");
 
         QTest::newRow("clipboard kept")
-            << false << QStringLiteral("Copied • Input sent");
+            << false << QStringLiteral("Copied • Sent to the app");
         QTest::newRow("clipboard restored")
-            << true << QStringLiteral("Input sent");
+            << true << QStringLiteral("Sent to the app");
     }
 
     void outputVerifiedYdotoolReportsVirtualKeyboardOutcome()
@@ -1563,7 +1563,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             target);
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
-        QCOMPARE(result.message, QStringLiteral("Verified in Target"));
+        QCOMPARE(result.message, QStringLiteral("Pasted"));
         QCOMPARE(targetProvider.insertCalls, 1);
         QCOMPARE(targetProvider.insertedText, QStringLiteral("insert me"));
         QVERIFY(attempts.isEmpty());

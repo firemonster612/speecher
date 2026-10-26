@@ -25,7 +25,9 @@ StepPage {
             currentId: page.choices.speech
             unratedText: ModelText.unrated
             onActivated: id => page.choices.speech = id
+            onHelpLinkActivated: (id, at) => setupLanguages.show(at, ModelText.service(id).languages)
         }
+        LanguageList { id: setupLanguages }
         // The model Local Model runs, any in the catalog, and its download
         // until it is on this computer.
         Reveal {

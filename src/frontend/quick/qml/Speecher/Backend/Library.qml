@@ -210,10 +210,12 @@ LibraryLists {
         noReplacements: "No replacements or snippets",
         noReplacementsHelp: "Add a spoken phrase and the exact text to put in its place, or import snippets from JSON."
     })
-    // The tabs: "7 terms", "5 learned corrections", "4 replacements and snippets".
-    readonly property string termsCount: Words.count(terms.length, "term", "terms")
-    readonly property string correctionsCount: Words.count(corrections.length, "learned correction", "learned corrections")
-    readonly property string replacementsCount: Words.count(replacements.length, "replacement or snippet", "replacements and snippets")
+    // The tabs: the list's name, then how many it holds once it holds any:
+    // "Terms (7)", "Learned corrections", "Replacements (4)".
+    function _tab(name, n) { return n ? name + " (" + Words.num(n) + ")" : name }
+    readonly property string termsCount: _tab("Terms", terms.length)
+    readonly property string correctionsCount: _tab("Learned corrections", corrections.length)
+    readonly property string replacementsCount: _tab("Replacements", replacements.length)
     readonly property string replacementsCaption: Schema.row("bindingRules").help + " Matching ignores case and treats punctuation as spaces."
     // A term's context, then where it came from: "Our dashboards. Imported.",
     // with nothing said for one you added.
@@ -254,7 +256,7 @@ LibraryLists {
         app: "App",
         appType: "App type",
         appTypeHelp: "Picks the paste rule.",
-        profile: "Writing Profile",
+        profile: "Writing profile",
         profileHelp: "Picks how the text is cleaned up.",
         deleteMatch: "Delete match",
         noMatches: "No matches of your own",

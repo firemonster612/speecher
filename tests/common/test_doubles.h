@@ -517,7 +517,7 @@ public:
         return result;
     }
 
-    DeliveryResult result{true, DeliveryReceipt::InputSent, false, QStringLiteral("Input sent")};
+    DeliveryResult result{true, DeliveryReceipt::InputSent, false, QStringLiteral("Sent to the app")};
     int calls = 0;
     OutputSettings lastSettings;
     DeliveryContent lastContent;

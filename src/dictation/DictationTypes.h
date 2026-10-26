@@ -55,7 +55,7 @@ DictationToggleAction dictationToggleAction(const QString &stateName);
 
 // What a status line, such as Home's, says for a session state name. message
 // is the session's own words, DictationSession::lastMessage(): an error's
-// reason, or while delivering the receipt ("Input sent"); the other states
+// reason, or while delivering the receipt ("Sent to the app"); the other states
 // ignore it.
 QString dictationStatusLabel(const QString &stateName, const QString &message = {});
 

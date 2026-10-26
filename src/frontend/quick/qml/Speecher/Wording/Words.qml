@@ -30,8 +30,6 @@ QtObject {
     readonly property string hide: "Hide"
     readonly property string clear: "Clear"
     readonly property string choose: "Choose…"
-    // A settings row this version doesn't save yet, greyed.
-    readonly property string notSavedYet: "Not available in this version yet."
     readonly property string suggestions: "Suggestions"
     readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
@@ -127,6 +125,12 @@ QtObject {
     // The toast after deleting something a person made, which offers Undo.
     function deleted(name) { return "Deleted “" + name + "”" }
     function version(v) { return "Version " + v }
+    // A version as the title strip shows it: its number and channel
+    // ("Version 0.2.1 nightly"), the build and commit left to the tooltip.
+    function shortVersion(v) {
+        const m = /^(\d+\.\d+\.\d+)(?:-([a-z]+))?/.exec(v)
+        return m ? version(m[1] + (m[2] ? " " + m[2] : "")) : version(v)
+    }
     function updateReady(v) { return "Restart to update to " + v }
     function noMatches(query) { return "Nothing matches “" + query + "”" }
     function results(n) { return count(n, "result", "results") }

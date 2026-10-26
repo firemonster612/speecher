@@ -16,35 +16,44 @@ StepPage {
 
     // The whole idea in one picture: press the shortcut, talk, and the
     // words land where you were typing. Until there is a shortcut, the
-    // line alone says it.
+    // line says it; where the desktop gives none, the command follows it.
     Plate {
         id: demo
         readonly property var keys: Settings.values.globalShortcut || []
-        // With no keys, as tall as the line, which can wrap.
-        implicitHeight: keys.length ? 156 : hint.implicitHeight + 44
+        readonly property bool command: !keys.length && Health.noShortcuts(System.checks)
+        implicitHeight: picture.implicitHeight + (keys.length ? 56 : 44)
         height: implicitHeight
         Grow on implicitHeight {}
-        KeyCombo {
-            id: caps
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 28
-            keys: demo.keys
-            size: "large"
-            opacity: demo.keys.length ? 1 : 0
-            Behavior on opacity { Ease {} }
-        }
-        Txt {
-            id: hint
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: demo.keys.length ? 34 : 22
+        Column {
+            id: picture
+            anchors.centerIn: parent
             width: parent.width - Theme.space6 * 2
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            text: demo.keys.length ? Setup.text.welcomeHint
-                : Health.noShortcuts(System.checks) ? Setup.text.welcomeHintCommand.arg(Schema.row("startCommand").command)
-                : Setup.text.welcomeHintNoKeys
-            tone: "secondary"
+            spacing: Theme.space4
+            Reveal {
+                open: demo.keys.length > 0
+                Item {
+                    width: parent.width
+                    implicitHeight: caps.height + Theme.space2
+                    KeyCombo { id: caps; anchors.horizontalCenter: parent.horizontalCenter; keys: demo.keys; size: "large" }
+                }
+            }
+            Txt {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                text: demo.keys.length ? Setup.text.welcomeHint
+                    : demo.command ? Setup.text.welcomeHintCommand
+                    : Setup.text.welcomeHintNoKeys
+                tone: "secondary"
+            }
+            Reveal {
+                open: demo.command
+                Item {
+                    width: parent.width
+                    implicitHeight: chip.height
+                    CommandChip { id: chip; anchors.horizontalCenter: parent.horizontalCenter; command: Schema.row("startCommand").command }
+                }
+            }
         }
     }
 
