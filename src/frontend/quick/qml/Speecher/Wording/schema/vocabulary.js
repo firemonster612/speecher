@@ -5,7 +5,7 @@
 var rows = [
     { id: "vocabularyEntries", page: "vocabulary", section: "Terms", kind: "custom",
       label: "Terms",
-      help: "Names and words to spell your way. Refinement uses the terms for the dictation's profile; a term marked as a key term also goes to the speech service as a hint.",
+      help: "Names and words to spell your way, under every writing profile or only those you choose.",
       keywords: "words names spelling jargon dictionary custom vocabulary add import csv" },
     { id: "vocabularyKeyTerm", page: "vocabulary", section: "Terms", kind: "custom",
       label: "Key term", help: "Sent to the speech service as a hint, so it hears the term. Refinement uses every term either way.",

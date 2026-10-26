@@ -195,8 +195,8 @@ Page {
                             width: ListView.view.width
                             first: index === 0 && milestoneList.first
                             title: entry.label
-                            opacity: entry.state === "later" ? 0.45 : 1
-                            Behavior on opacity { Ease {} }
+                            // Not reached yet, in quiet ink rather than faded like a disabled row.
+                            titleTone: entry.state === "later" ? "tertiary" : "primary"
                             trailing: Row {
                                 spacing: milestone.next ? Theme.space3 : 0
                                 ProgressBar {

@@ -241,7 +241,7 @@ QtObject {
                      signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI." },
         local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
-        none: { icon: "circle-off", help: "Pastes your words as spoken." }
+        none: { icon: "circle-off", help: "Keeps your words as spoken." }
     })
     // A refinement provider with its wording, or None.
     function provider(id) {

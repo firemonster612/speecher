@@ -14,7 +14,7 @@ Plate {
 
     property var steps: []         // [{ icon, label }], tried in order
     property string appName
-    property string sample
+    property string sample         // empty when the words never reach the app
     property string caption
     // Words under the start, over the first step when there are several,
     // and over each step after it.
@@ -163,6 +163,7 @@ Plate {
     property bool _ready: false
     Component.onCompleted: _ready = true
     onStepsChanged: if (_ready && !replay.running) replay.start()
+    onSampleChanged: if (_ready && !replay.running) replay.start()
     SequentialAnimation {
         id: replay
         ScriptAction { script: { root._travel = Theme.movement > 0 ? 0 : 1; root._typed = 0 } }

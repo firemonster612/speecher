@@ -60,6 +60,7 @@ FocusScope {
         }
         return found
     }
+    function helpHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.helpHeight)) }
     function statusHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.statusHeight)) }
     function noteHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.noteHeight)) }
     function rowRated(row) { return _rowCards(row).some(c => c.rated) }
@@ -100,6 +101,7 @@ FocusScope {
                 required property int index
                 readonly property bool rated: modelData.bars !== undefined
                 readonly property int row: Math.floor(index / root.columns)
+                readonly property real helpHeight: help.height
                 readonly property real statusHeight: status.height
                 readonly property real noteHeight: note.text ? note.implicitHeight : 0
 
@@ -136,12 +138,11 @@ FocusScope {
                     variant: "label"
                     elide: Text.ElideRight
                 }
-                // helpLines kept for help, so a card with fewer lines up with
-                // its neighbours.
+                // Up to helpLines of help; a card with fewer keeps the room of
+                // its row's longest, so it lines up with its neighbours.
                 LinkedText {
                     id: help
                     objectName: "help_" + card.modelData.id
-                    readonly property real room: Math.ceil(helpMetrics.lineSpacing * lineHeight * maximumLineCount)
                     y: glyph.height + Theme.space2
                     width: parent.width
                     plainText: card.modelData.help || ""
@@ -152,13 +153,12 @@ FocusScope {
                     wrapMode: Text.WordWrap
                     maximumLineCount: root.helpLines
                     elide: Text.ElideRight
-                    FontMetrics { id: helpMetrics; font: help.font }
                 }
                 // Wrapped, and bounded at two lines, so a long problem stays
                 // on its card; assistive tech hears all of it.
                 StatusText {
                     id: status
-                    y: help.y + help.room + Theme.space1
+                    y: help.y + root.helpHeight(card.row) + Theme.space1
                     width: parent.width
                     wrap: true
                     maximumLineCount: 2
