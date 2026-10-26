@@ -55,7 +55,8 @@ StepPage {
         tone: page._open.length ? "primary" : "secondary"
     }
     // The steps still open, each a way back to it: first what dictation
-    // can't start without, then what it works without.
+    // needs (a microphone, and a speech service unless a fallback takes
+    // over), then what it works without.
     component StepCard: Card {
         id: stepCard
         property var steps: []
@@ -75,8 +76,8 @@ StepPage {
             }
         }
     }
-    readonly property var _needed: _open.filter(s => s.id === "microphone")
-    readonly property var _helpful: _open.filter(s => s.id !== "microphone")
+    readonly property var _needed: _open.filter(s => s.id === "microphone" || s.id === "transcription")
+    readonly property var _helpful: _open.filter(s => s.id !== "microphone" && s.id !== "transcription")
     Reveal {
         open: page._needed.length > 0
         StepCard { steps: page._needed }
