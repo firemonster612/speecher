@@ -19,19 +19,21 @@ SettingRow {
     // in effect instead.
     property var value: _blurs ? Settings.values[rowId] : false
 
+    // Usable once the backend saves the row or runs its action; a custom row
+    // with no value draws content that has nothing to save.
+    readonly property bool _saves: spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId)
     // The row's help; a page may give its own. Why the row's last save was
-    // refused shows in its place.
-    property string note: (_blurs ? spec.help : spec.disabledHelp) || ""
+    // refused shows in its place, and a row nothing saves yet says so.
+    property string note: (!_saves ? Words.notSavedYet : _blurs ? spec.help : spec.disabledHelp) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
     title: spec.label
     help: Settings.errors[rowId] || _secretError || note
     iconName: spec.icon || ""
-    // Usable once the backend saves the row or runs its action; a custom row
-    // with no value draws content that has nothing to save. enabledWhen reads
-    // Settings.values here, in the binding, so the row follows that value.
-    enabled: _blurs && (spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || Settings.saves(rowId))
+    // enabledWhen reads Settings.values here, in the binding, so the row
+    // follows that value.
+    enabled: _blurs && _saves
              && (!spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals)
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
@@ -178,6 +180,8 @@ SettingRow {
             text: root.spec.actionLabel || ""
             iconName: root.spec.actionIcon || ""
             variant: root.spec.variant || "secondary"
+            // Small, as every fix and action inside a row is.
+            size: "small"
             onClicked: Settings.act(root.rowId)
         }
     }

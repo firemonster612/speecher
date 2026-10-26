@@ -83,7 +83,7 @@ Item {
                         visible: page.subtitle.length > 0
                         text: page.subtitle
                         tone: "secondary"
-                        width: Math.min(parent.width, 600)
+                        width: Math.min(parent.width, 680)
                         wrapMode: Text.WordWrap
                     }
                 }

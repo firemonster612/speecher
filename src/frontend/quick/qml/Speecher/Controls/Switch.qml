@@ -32,7 +32,9 @@ T.Switch {
         // Pressing tints the track toward fillStrong, whichever way it is set.
         color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
         border.width: on ? 0 : 1
-        border.color: Theme.border
+        // Off, the edge and the knob stand out from the card at 3:1, so an
+        // off switch reads as a control and not as a disabled one.
+        border.color: Theme.borderStrong
         Behavior on color { EaseColor {} }
 
         Rectangle {
@@ -59,7 +61,7 @@ T.Switch {
             width: Math.max(size * 0.8, rightEdge - leftEdge)
             height: size
             radius: height / 2
-            color: track.on ? Theme.sheet : Theme.raised
+            color: track.on ? Theme.sheet : Theme.textTertiary
             Behavior on color { EaseColor { duration: Theme.base } }
             // The edge moving toward where the knob goes leads; the other
             // trails and overshoots a little as it lands. Under reduced

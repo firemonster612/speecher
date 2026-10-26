@@ -32,12 +32,12 @@ var words = {
         starting: { status: "Starting…", detail: "" },
         removing: { status: "Removing…", detail: "Your computer asks for your password to finish." },
         testing: { status: "Testing", detail: "Run the typing test to turn it on." },
-        disabled: { status: "Off", detail: "Set up, but turned off in Speecher, so Speecher copies to the clipboard.", fix: "Turn on" },
+        disabled: { status: "Off", detail: "Set up, but turned off in Speecher, so it can't press paste keys.", fix: "Turn on" },
         availableOutside: { status: "Not set up", detail: "ydotool is installed, but Speecher hasn't set it up. Setup asks for your password once.", fix: "Set up" },
-        notInstalled: { status: "Not set up", detail: "Speecher can only copy to the clipboard. Setup asks for your password once.", fix: "Set up" },
+        notInstalled: { status: "Not set up", detail: "Without it, Speecher can't press paste keys. Setup asks for your password once.", fix: "Set up" },
         needsUinputPermission: { status: "Needs permission", detail: "It can't reach /dev/uinput yet. Setup fixes that and asks for your password once.", fix: "Set up" },
         needsSignOut: { status: "Sign out first", detail: "Sign out and back in so this session can use the virtual keyboard." },
-        daemonNotRunning: { status: "Stopped", detail: "Set up, but its service isn't running, so Speecher copies to the clipboard.", fix: "Start" },
+        daemonNotRunning: { status: "Stopped", detail: "Set up, but its service isn't running, so Speecher can't press paste keys.", fix: "Start" },
         ready: { status: "Ready", detail: "Speecher types into other apps directly." },
         readyLayoutCaveat: { status: "Ready", detail: "Speecher types into other apps directly, as on a US keyboard layout." }
     }

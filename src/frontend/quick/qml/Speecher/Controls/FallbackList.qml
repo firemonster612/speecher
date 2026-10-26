@@ -185,11 +185,12 @@ Column {
         }
     }
 
-    // One more, from the options not in the list yet.
+    // One more, from the options not in the list yet. Its help speaks of
+    // the ones above, so it waits for there to be some.
     SettingRow {
         shown: root.addLabel.length > 0 && root.ids.length < root.maxCount && root.available.length > 0
         title: root.addLabel
-        help: root.addHelp
+        help: root.ids.length ? root.addHelp : ""
         iconName: "plus"
         Select {
             options: root.available

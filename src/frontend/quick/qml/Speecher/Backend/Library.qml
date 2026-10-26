@@ -96,10 +96,10 @@ LibraryLists {
         return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
     // Where a profile is used, given its apps and whether it is the one for
-    // apps no match names: "Used in Slack, Linear and 2 more apps."
+    // apps no match names: "Used in 22 apps." Matches are desktop IDs, not
+    // names, so the line counts them rather than listing them.
     function profileUse(apps, isFallback) {
-        const more = apps.length - 4
-        const used = apps.length === 0 ? "" : "Used in " + (more > 0 ? apps.slice(0, 4).join(", ") + " and " + Words.count(more, "more app", "more apps") : Words.list(apps)) + "."
+        const used = apps.length === 0 ? "" : "Used in " + Words.count(apps.length, "app", "apps") + "."
         if (isFallback) return used.length ? used + " Also used for apps no match names." : "Used for every app no match names."
         return used.length ? used : "No apps use it yet."
     }
@@ -125,6 +125,7 @@ LibraryLists {
         toneInstruction: "Instruction",
         toneInstructionHelp: "Refinement follows this when a profile picks the tone.",
         toneInstructionPlaceholder: "Short sentences, no exclamation marks.",
+        noTones: "No tones of your own",
         tonesEmpty: "Describe a voice once, such as short and deadpan, then pick it in any profile.",
         newLevel: "New cleanup level",
         editLevel: "Edit cleanup level",
@@ -134,6 +135,7 @@ LibraryLists {
         customOnly: "Custom only",
         levelInstructions: "Instructions",
         levelInstructionsPlaceholder: "Keep bullet points as bullet points.",
+        noLevels: "No cleanup levels of your own",
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
         languageHelp: "Translates what you say.",
@@ -189,7 +191,7 @@ LibraryLists {
         noTermsMatch: "No terms match",
         noTermsMatchHelp: "Try another spelling, or add it as a new term.",
         noTerms: "No vocabulary terms",
-        noTermsHelp: "Add names and words the speech service should spell your way, or import a CSV.",
+        noTermsHelp: "Add a name or product you say often, or import a list from a CSV file.",
         undoCorrection: "Undo last correction",
         editCorrection: "Edit correction",
         heard: "Heard",

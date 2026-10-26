@@ -14,6 +14,10 @@ Page {
     id: page
 
     readonly property int step: Transcription.step
+    // The cards say whether each service is signed in and a Local Runner
+    // is running. Refinement providers' sign-ins come from Accounts'
+    // checks, which start the first time anything asks for Accounts.
+    Component.onCompleted: { Models.checkSignIns(); Models.detectRunners(); Accounts.services }
 
     title: Schema.page("transcribe").title
     subtitle: Schema.page("transcribe").subtitle

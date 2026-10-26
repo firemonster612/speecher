@@ -99,35 +99,6 @@ StepPage {
                 }
             }
         }
-        // The sign-in the chosen service uses, as core last found it, or why
-        // the last check couldn't reach the service.
-        Reveal {
-            id: signIn
-            readonly property var service: ModelText.service(page.choices.speech)
-            readonly property bool checking: !!service.signInChecking
-            readonly property string failure: service.signInCheckFailure || ""
-            open: !!service.signsIn && service.state !== "ready"
-            SettingRow {
-                title: signIn.service.label
-                // Why the last check failed wraps under the label, in place
-                // of the help, as a refused setting's reason does.
-                help: !signIn.checking && signIn.failure ? signIn.failure : signIn.service.access
-                Row {
-                    spacing: Theme.space3
-                    StatusText {
-                        text: signIn.checking ? ModelText.checking : ModelText.status(signIn.service)
-                        busy: signIn.checking
-                        tone: !signIn.checking && signIn.failure ? "warning" : States.tone(signIn.service.state)
-                        indicator: "dot"
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Button {
-                        text: Words.checkAgain
-                        size: "small"
-                        onClicked: Models.checkSignIns()
-                    }
-                }
-            }
-        }
+        SignInRow { serviceId: page.choices.speech }
     }
 }

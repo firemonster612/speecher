@@ -43,23 +43,26 @@ Page {
         HealthRow {
             rowId: "virtualKeyboard"
             checkId: "virtualKeyboardHealth"
-            IconButton {
-                iconName: "ellipsis"
-                size: 28
-                tooltip: Words.more
-                enabled: System.virtualKeyboardActions.length > 0
-                opacity: enabled ? 1 : 0
+            // The menu's room folds away while it has nothing to offer, so
+            // the fix button ends on the row's inset like every control.
+            Reveal {
+                sideways: true
+                open: System.virtualKeyboardActions.length > 0
                 anchors.verticalCenter: parent.verticalCenter
-                Behavior on opacity { Ease {} }
-                onClicked: keyboardMenu.open()
-                Menu {
-                    id: keyboardMenu
-                    width: 240
-                    items: [
-                        { id: "disable", label: "Disable in Speecher", icon: "power-off", help: "Keeps the setup for later." },
-                        { id: "remove", label: "Remove setup", icon: "trash-2", help: "Asks for administrator permission." }
-                    ].filter(a => System.virtualKeyboardActions.includes(a.id))
-                    onPicked: id => id === "remove" ? System.removeVirtualKeyboard() : System.disableVirtualKeyboard()
+                IconButton {
+                    iconName: "ellipsis"
+                    size: 28
+                    tooltip: Words.more
+                    onClicked: keyboardMenu.open()
+                    Menu {
+                        id: keyboardMenu
+                        width: 240
+                        items: [
+                            { id: "disable", label: "Disable in Speecher", icon: "power-off", help: "Keeps the setup for later." },
+                            { id: "remove", label: "Remove setup", icon: "trash-2", help: "Asks for administrator permission." }
+                        ].filter(a => System.virtualKeyboardActions.includes(a.id))
+                        onPicked: id => id === "remove" ? System.removeVirtualKeyboard() : System.disableVirtualKeyboard()
+                    }
                 }
             }
         }

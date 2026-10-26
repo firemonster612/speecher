@@ -20,7 +20,7 @@ var categories = [
     { id: "email", label: "Email apps", icon: "mail", examples: "Thunderbird, KMail" },
     { id: "office", label: "Office apps", icon: "file-text", examples: "LibreOffice Writer" },
     { id: "code_editor", label: "Code editors", icon: "code", examples: "Kate, VS Code, JetBrains" },
-    { id: "ai_coding", label: "AI coding apps", icon: "bot", examples: "T3 Code, Cursor, Claude Code" },
+    { id: "ai_coding", label: "AI coding apps", icon: "bot", examples: "Cursor, Claude Code" },
     { id: "general", label: "Other apps", icon: "app-window", examples: "Everything else" }
 ];
 

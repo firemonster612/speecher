@@ -38,16 +38,17 @@ Page {
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
         promptCaption: "The rules refinement follows. Most people never change them."
     })
-    // Under the sample: who cleans it up, or that nothing does.
+    // Under the sample, which is an example: who would clean it up, or that
+    // nothing does.
     readonly property string sampleCaption: {
-        if (primary === "none") return "Pasted as spoken. Choose a provider below to clean it up."
+        if (primary === "none") return "An example, pasted as spoken. Choose a provider below to clean it up."
         const model = ModelText.refinementModel(primary)
-        return "Cleaned up by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
+        return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
     }
-    readonly property string fallbacksCaption: "If " + ModelText.provider(primary).label + " fails or can't be reached, "
-        + (fallbacks.length ? "Speecher tries these in order. Drag to reorder." : "the text is pasted as spoken.")
 
-    Component.onCompleted: Models.checkComputer()
+    // Refinement providers' sign-ins come from Accounts' checks, which
+    // start the first time anything asks for Accounts.
+    Component.onCompleted: { Models.checkComputer(); Models.checkSignIns(); Accounts.services }
 
     // A new primary leaves the fallbacks, and None clears them.
     function choose(id) {
@@ -196,8 +197,9 @@ Page {
                 visible: opacity > 0
                 minimumHeaderHeight: pair.paired ? contextSection.naturalHeaderHeight : 0
                 minimumCardHeight: pair.paired ? contextSection.naturalCardHeight : 0
-                title: Schema.row("refinementFallbacks").label
-                caption: page.fallbacksCaption
+                // Headed and worded as Speech to text's list is.
+                title: Schema.row("refinementFallbacks").headingText.arg(ModelText.provider(page.primary).label)
+                caption: Schema.row("refinementFallbacks").help
                 SearchLanding { rowIds: ["refinementFallbacks"]; target: fallbackSection }
                 FallbackList {
                     moveUpText: Words.moveUp
@@ -209,8 +211,9 @@ Page {
                         const s = ModelText.fallbackStatus(ModelText.provider(id), index, ModelText.provider(page.primary).label)
                         return { text: s.text, tone: States.tone(s.state) }
                     }
-                    emptyText: Schema.row("refinementFallbacks").emptyText
+                    emptyText: Schema.row("refinementFallbacks").emptyText.arg(ModelText.provider(page.primary).label)
                     addLabel: Schema.row("refinementFallbacks").addLabel
+                    addHelp: Schema.row("refinementFallbacks").addHelp
                     addPlaceholder: Words.choose
                     onEdited: ids => Settings.set("refinementFallbacks", ids)
                 }

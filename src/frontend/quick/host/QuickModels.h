@@ -162,8 +162,8 @@ public:
     // that shows the Local Runners looks for them with detectRunners().
     Q_INVOKABLE void checkComputer();
     // Asks the speech services that sign in whether they are signed in, for
-    // setup, where each is otherwise unknown until the first dictation; their
-    // state follows the answers.
+    // setup and the pages that choose a service, where each is otherwise
+    // unknown until the first dictation; their state follows the answers.
     Q_INVOKABLE void checkSignIns();
     // {id, label} of a speech service, the id as its label for one this
     // build lacks. Labels never change, so bindings may call it.

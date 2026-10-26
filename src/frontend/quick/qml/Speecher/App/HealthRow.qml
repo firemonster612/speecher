@@ -40,7 +40,6 @@ SchemaRow {
                 anchors.right: parent.right
                 text: row._fix
                 size: "small"
-                variant: row.check.state === "off" ? "primary" : "secondary"
                 enabled: row._canFix
                 opacity: row._canFix ? 1 : 0
                 visible: opacity > 0

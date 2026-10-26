@@ -381,7 +381,7 @@ private slots:
 
         rig.microphones.clear();
         rig.audio.refreshDevices();
-        QCOMPARE(options(), (QStringList{QStringLiteral("=No microphones found/Connect or enable an input device, then try again."),
+        QCOMPARE(options(), (QStringList{QStringLiteral("=No microphone found/Connect or enable an input device, then try again."),
                                          QStringLiteral("gone=Missing microphone/This saved microphone is not currently available.")}));
     }
 };

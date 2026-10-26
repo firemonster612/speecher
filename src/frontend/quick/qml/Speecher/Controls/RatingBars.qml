@@ -12,7 +12,7 @@ Column {
     property var bars: []        // [{ label, value }]; value null when unknown
     property string appearance: "compact"
     property color color: Theme.textSecondary
-    property string unknownText: "?"
+    property string unknownText: "–"
     property var scoreFormat: v => appearance === "wide" ? v + "/10" : String(v)
 
     // The ratings as assistive tech says them: "Accuracy 8.5 out of 10,

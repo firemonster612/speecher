@@ -82,12 +82,14 @@ Plate {
             }
         }
 
-        // No microphone: what to check, as tall as the stage it stands in for.
+        // No microphone: what to check, at its own height; the plate eases
+        // to the stage's when one appears.
         Item {
-            implicitHeight: root.levelHeight + Theme.space5 + Theme.controlHeight
+            implicitHeight: noMicrophone.implicitHeight
             Column {
+                id: noMicrophone
                 width: Math.min(parent.width, 420)
-                anchors.centerIn: parent
+                anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Theme.space3
                 Txt {
                     width: parent.width

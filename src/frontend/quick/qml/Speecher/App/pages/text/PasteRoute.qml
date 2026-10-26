@@ -154,6 +154,8 @@ Plate {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 16
         width: appCard.x - root._pad * 2
+        // Centred under the flow it describes.
+        horizontalAlignment: Text.AlignHCenter
         text: root.caption
         variant: "small"
         tone: "secondary"

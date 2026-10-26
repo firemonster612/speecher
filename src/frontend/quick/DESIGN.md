@@ -91,8 +91,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `SettingsStore`, so the CLI and the daemon see the same values. A row the
   table lacks reads as absent, and SchemaRow greys it out where
   `Settings.saves(id)` is false; add the row to the table when its page is
-  wired. The shortcut rows go to the controller, which binds and keeps them,
-  and show the keys the controller displays. While one records,
+  wired; until then its help says this version doesn't save it. The
+  shortcut rows go to the controller, which binds and keeps them, and show
+  the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
   the bound shortcuts let go of their keys. Where the desktop picks the keys
   (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
@@ -208,6 +209,8 @@ Palette (all in `Theme`; never write a hex value in a page):
 | `rule` | blue-grey, 16% | Dividers between rows |
 | `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
 | `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
+| `warning` | `#9A6A12` | Something to set up or fix that isn't a failure: a step still open, a service not signed in |
+| `positive` | `#2E7D4F` | A check that passed, such as a sign-in or a delivered dictation |
 
 The pad is Steno, the first of the colour schemes (Colors, on Appearance). A
 scheme is six roles, in light and dark: `paper`, `sheet`, `raised`, `text`,
@@ -519,7 +522,7 @@ Choosing:
 
 Input:
 
-- `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth` and `Select` to `Theme.selectWidth`; leave them at that in settings rows.
+- `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth`, and `Select`, `SuggestField` and `ShortcutField` to `Theme.selectWidth`, so choosers line up in a column of rows; leave them at that in settings rows.
 - `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
 
 Actions and menus:
@@ -558,7 +561,9 @@ In Speecher.App, besides SchemaRow:
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
-- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones.
+- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
+- `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
+- `StartCommandRow`: the `startCommand` row, the command that starts one dictation with a copy button, wherever the desktop gives no shortcut.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
 - `Brand { title; detail }`: the mark and the window's name in the title strip, for the main window and setup.
 - `LanguageList { show(at, codes) }`: a LanguagePopover that only shows the languages a service or model listens for, named and worded.

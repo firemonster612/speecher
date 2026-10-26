@@ -32,6 +32,7 @@ var pages = [
       subtitle: "The service that turns your voice into text, and what Speecher uses when it is unavailable.",
       keywords: "transcription service provider language fallback endpoint whisper" },
     { id: "models", parent: "speech", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
+      subtitle: "Speech models that run on this computer, offline once downloaded.",
       keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
 
     { id: "refinement", title: "Refinement", icon: "spell-check", file: "RefinementPage.qml",
@@ -53,6 +54,7 @@ var pages = [
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, what it keeps, and moving it to your phone or off this computer.",
+      subtitleNoStartup: "What Speecher keeps, and moving it to your phone or off this computer.",
       keywords: "login startup phone insights history uninstall remove" },
     { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
       subtitle: "How Speecher's windows look.",

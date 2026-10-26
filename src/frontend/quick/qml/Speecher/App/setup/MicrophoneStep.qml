@@ -40,6 +40,8 @@ StepPage {
             barWidth: 4
             gap: 3
             level: Audio.level
+            // Silent bars in the rule's colour, so red means sound is heard.
+            compress: true
         }
         StatusText {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -48,15 +50,17 @@ StepPage {
             text: Audio.heard ? page.test.heardText
                 : Audio.testState === "running" || Audio.testError !== "" ? Microphones.testStatus
                 : page.test.notHeardText
-            tone: Audio.heard ? "live" : Audio.testError !== "" ? "negative" : "tertiary"
+            // No microphone is something to connect, amber as everywhere.
+            tone: Audio.heard ? "live" : !Audio.hasMicrophones ? "warning" : Audio.testError !== "" ? "negative" : "tertiary"
         }
     }
 
-    Txt {
+    // What to do: speak, or with no microphone, connect one.
+    MorphText {
         width: parent.width
-        text: page.test.setupHint
+        text: Audio.hasMicrophones ? page.test.setupHint : page.test.noMicrophoneHint
         variant: "small"
         tone: "secondary"
-        wrapMode: Text.WordWrap
+        wrap: true
     }
 }

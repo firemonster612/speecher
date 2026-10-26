@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Theme
 import Speecher.Controls
@@ -17,26 +18,54 @@ Section {
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
     readonly property var latest: Insights.latest
     readonly property bool hasShortcut: Status.shortcutKeys.length > 0
+    // The desktop gives Speecher no shortcut, so there is none to set.
+    readonly property bool noShortcuts: Health.find(System.checks, "globalShortcuts").reason === "unsupported"
+    // What Speecher knows stands in the way of dictating, each with the
+    // page that fixes it: microphone access, a microphone, the speech
+    // service. A service not checked yet stands in nobody's way.
+    readonly property var service: ModelText.service(Settings.values.speechProvider || "")
+    readonly property var access: Health.find(System.checks, "microphoneAccess")
+    readonly property var blockers: [
+        access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
+        Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
+        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: service.label, status: ModelText.status(service), page: "speech" } : null
+    ].filter(b => b)
+    readonly property bool blocked: blockers.length > 0
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
-    title: status[Dictation.state] || "Ready to dictate"
-    caption: hasShortcut ? t.pressShortcut : t.noShortcut
+    title: status[Dictation.state] || (blocked ? t.notReady : hasShortcut || noShortcuts ? "Ready to dictate" : "Set a shortcut to start")
+    caption: blocked ? t.fixFirst : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere : t.noShortcut
     actions: Switcher {
         id: controls
         width: implicitWidth
         travel: 0
         currentIndex: session.live ? 1 : 0
 
+        // Start dictation, which needs no shortcut, after Set shortcut while
+        // there is a shortcut to set. While something stands in the way,
+        // the card below lists it instead.
         Row {
-            spacing: Theme.space5
+            spacing: Theme.space2
             KeyCombo { keys: Status.shortcutKeys; anchors.verticalCenter: parent.verticalCenter }
-            Button {
-                text: session.hasShortcut ? session.t.startDictation : session.t.setShortcut
-                iconName: session.hasShortcut ? "mic" : ""
-                size: "small"
-                onClicked: session.hasShortcut ? Dictation.startRequested() : Navigation.go("shortcuts")
+            Item { width: Theme.space3; height: 1; visible: session.hasShortcut }
+            Reveal {
+                sideways: true
+                open: !session.blocked && !session.hasShortcut && !session.noShortcuts
+                anchors.verticalCenter: parent.verticalCenter
+                Button { text: session.t.setShortcut; size: "small"; onClicked: Navigation.go("shortcuts") }
+            }
+            Reveal {
+                sideways: true
+                open: !session.blocked
+                anchors.verticalCenter: parent.verticalCenter
+                Button {
+                    text: session.t.startDictation
+                    iconName: "mic"
+                    size: "small"
+                    onClicked: Dictation.startRequested()
+                }
             }
         }
         Row {
@@ -61,7 +90,7 @@ Section {
 
     Switcher {
         travel: 0
-        currentIndex: session.live ? 1 : 0
+        currentIndex: session.live ? 1 : session.blocked ? 2 : 0
 
         // The latest dictation, where it went, and Copy.
         Column {
@@ -108,6 +137,23 @@ Section {
             text: Dictation.words
             variant: "lead"
             wrapMode: Text.WordWrap
+        }
+        // What stands in the way, each row opening the page that fixes it.
+        RowList {
+            id: blockerRows
+            values: session.blockers
+            keyOf: b => b.id
+            delegate: SettingRow {
+                id: blockerRow
+                required property string key
+                required property int index
+                readonly property var blocker: blockerRows.entry(key)
+                first: index === 0
+                title: blockerRow.blocker.title
+                clickable: true
+                onClicked: Navigation.go(blockerRow.blocker.page)
+                StatusText { text: blockerRow.blocker.status; tone: "warning" }
+            }
         }
     }
 }

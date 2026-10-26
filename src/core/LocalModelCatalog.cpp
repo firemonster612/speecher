@@ -185,7 +185,7 @@ const QList<LocalModel> catalog{
         .m4MaxMetalSpeed = 2.41,
         .ryzen4750uVulkanSpeed = 0,
         .rating = ModelRating::NotRecommended,
-        .bestFor = QStringLiteral("Nobody: Qwen3-ASR does as well at an eighth of the size"),
+        .bestFor = QStringLiteral("Not worth it: Qwen3-ASR does as well at an eighth of the size"),
         .pros = {QStringLiteral("Few mistakes on everyday speech")},
         .cons = {QStringLiteral("17 GB download"),
                  QStringLiteral("Text appears after you stop"),

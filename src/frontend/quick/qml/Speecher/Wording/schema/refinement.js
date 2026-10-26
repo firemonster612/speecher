@@ -7,8 +7,10 @@ var rows = [
     { id: "refinementRating", page: "refinement", section: "Provider", kind: "custom",
       label: "Rating", help: "Out of 10.", keywords: "quality speed score benchmark" },
     { id: "refinementFallbacks", page: "refinement", section: "Fallbacks", kind: "custom",
-      label: "Fallbacks", help: "Tried in order when the provider above fails.", value: ["anthropic"],
-      emptyText: "No fallbacks", addLabel: "Add a fallback",
+      label: "Fallbacks", help: "Speecher tries these top to bottom and tells you when it used one.", value: ["anthropic"],
+      headingText: "If %1 is unavailable",
+      emptyText: "None. If %1 is unavailable, your words are pasted as spoken.", addLabel: "Add a fallback",
+      addHelp: "Used when everything above is unavailable.",
       keywords: "backup failover retry order second provider" },
 
     { id: "openAiModel", page: "refinement", section: "ChatGPT", kind: "custom",

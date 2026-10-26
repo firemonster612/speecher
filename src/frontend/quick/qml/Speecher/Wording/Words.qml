@@ -30,6 +30,8 @@ QtObject {
     readonly property string hide: "Hide"
     readonly property string clear: "Clear"
     readonly property string choose: "Choose…"
+    // A settings row this version doesn't save yet, greyed.
+    readonly property string notSavedYet: "Not available in this version yet."
     readonly property string suggestions: "Suggestions"
     readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
@@ -41,6 +43,8 @@ QtObject {
     readonly property string resume: "Resume"
     // A shortcut field: unset, listening for keys, and its clear button.
     readonly property string notSet: "Not set"
+    // A shortcut row where the desktop gives Speecher no shortcut.
+    readonly property string noShortcutsHere: "Not available on this desktop."
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
     // A secret field: what it shows once a key is saved, and why a save or
@@ -52,12 +56,22 @@ QtObject {
     }
     // A sign-in's state, on Accounts and in setup.
     readonly property var signInStates: ({
-        signedIn: "Signed in", expired: "Expired", missing: "Not found", unknown: "Unknown",
+        signedIn: "Signed in", expired: "Expired", missing: "Not signed in", unknown: "Unknown",
         disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
-    // A service's line on Accounts: core's own words, else where its last
-    // check found the sign-in (Accounts.services).
+    // A service's line on Accounts: what to do when the keyring didn't
+    // answer or a ChatGPT or Claude sign-in is missing or expired, else
+    // core's own words, else where its last check found the sign-in
+    // (Accounts.services).
     function signInDetail(service) {
+        if (service.state === "unknown") return "Speecher couldn't read the system keychain. Check again in a moment."
+        const fix = !service.server && ({
+            openai: { missing: "No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.",
+                      expired: "Your ChatGPT sign-in has expired. Sign in again in the Codex app." },
+            anthropic: { missing: "Claude Code isn't signed in. Use its desktop app or /login in the claude CLI.",
+                         expired: "Claude Code's sign-in has expired. Sign in again, or use /login in the claude CLI." }
+        }[service.id] || {})[service.state]
+        if (fix) return fix
         if (service.detail) return service.detail
         if (service.server) return "Using CLI Proxy API at " + service.server
         if (service.id === "anthropic" && service.found === "signedIn")

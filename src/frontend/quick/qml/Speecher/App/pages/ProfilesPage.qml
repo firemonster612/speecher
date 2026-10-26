@@ -145,6 +145,7 @@ Page {
                 removeText: Words.delete_
                 items: Library.customTones.map(t => ({ id: t.id, title: t.name, detail: t.instruction }))
                 formOpen: toneForm.open
+                emptyTitle: Library.profilesText.noTones
                 emptyText: Library.profilesText.tonesEmpty
                 onEditClicked: i => toneForm.startEdit(i)
                 onRemoveClicked: i => {
@@ -204,6 +205,7 @@ Page {
                 removeText: Words.delete_
                 items: Library.customCleanupLevels.map(l => ({ id: l.id, title: l.name, detail: Library.levelDetail(l) }))
                 formOpen: levelForm.open
+                emptyTitle: Library.profilesText.noLevels
                 emptyText: Library.profilesText.levelsEmpty
                 onEditClicked: i => levelForm.startEdit(i)
                 onRemoveClicked: i => {

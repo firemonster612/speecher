@@ -16,6 +16,8 @@ import "home/words.js" as T
 // line says so in their place. The words are home/words.js's.
 Page {
     id: page
+    // Whether the speech service is signed in, for what stands in the way.
+    Component.onCompleted: Models.checkSignIns()
 
     readonly property var t: T.text
     readonly property var summary: Insights.summary

@@ -28,11 +28,16 @@ var text = {
     back: "Back",
     getStarted: "Get started",
     continue_: "Continue",
+    waits: "Continue opens once this step passes its check.",
     startDictating: "Start dictating",
     allPassed: "Every step passed its check.",
+    almostReady: "Almost ready",
     notChosen: "Not chosen",
     welcomeTitle: "Welcome to Speecher",
     welcomeHint: "Press it in any app, speak, and Speecher types what you said.",
+    welcomeHintNoKeys: "Press your dictation shortcut in any app, speak, and Speecher types what you said.",
+    welcomeHintCommand: "Run speecher --start-listening from a terminal or your own keybinding, speak, and Speecher types what you said.",
+    shortcutCommandOnly: "This desktop gives apps no shortcuts, so dictation starts with the speecher command, from a terminal or a keybinding of your own.",
     signInsFound: "Sign-ins found on this computer",
     noSignIns: "No sign-ins found yet. The next step helps you choose a service.",
     downloadModel: "Download a model to continue",
@@ -40,7 +45,8 @@ var text = {
     clipboardInstead: "Copy to the clipboard instead",
     clipboardInsteadHelp: "Skip the virtual keyboard. Speecher copies your words and you paste them yourself.",
     clipboardOnly: "Clipboard only",
-    cancelShortcutHelp: "Optional. Throws away the dictation in progress."
+    cancelShortcutHelp: "Optional. Throws away the dictation in progress.",
+    commandOnly: "The speecher command"
 };
 
 // The cases where a check that does not pass still lets its step go on,

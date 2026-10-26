@@ -64,7 +64,6 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: TranscribeWords.chooseFiles
                     iconName: "folder-open"
-                    variant: "primary"
                     onClicked: zone.chooseRequested()
                 }
             }

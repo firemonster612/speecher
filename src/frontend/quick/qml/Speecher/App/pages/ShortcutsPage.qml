@@ -11,12 +11,15 @@ Page {
     subtitle: Schema.page("shortcuts").subtitle
 
     // The shortcut, big: the page's one picture. Holding the pointer on it
-    // presses the keys and listens, as holding the shortcut does.
-    Section {
-        plain: true
+    // presses the keys and listens, as holding the shortcut does. With no
+    // shortcut there is nothing to picture, and the line of what pressing
+    // it does is the chosen option's own help below, so it folds away.
+    Reveal {
+        open: hero.keys.length > 0
         Plate {
             id: hero
             readonly property bool held: press.pressed
+            readonly property var keys: Settings.values.globalShortcut || []
             height: 132
             clip: true
 
@@ -24,7 +27,7 @@ Page {
                 id: caps
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 22
-                keys: Settings.values.globalShortcut || []
+                keys: hero.keys
                 size: "large"
                 pressed: hero.held
                 lit: hero.held
@@ -60,7 +63,14 @@ Page {
 
     Section {
         title: Schema.row("globalShortcut").section
-        SchemaRow { rowId: "globalShortcut" }
+        SchemaRow {
+            rowId: "globalShortcut"
+            // Where the desktop gives Speecher no shortcut, the field is
+            // off and the row says so; the command starts dictation instead.
+            readonly property bool unsupported: Health.find(System.checks, "globalShortcuts").reason === "unsupported"
+            enabled: _saves && !unsupported
+            note: unsupported ? Words.noShortcutsHere : spec.help
+        }
         SchemaRow { rowId: "shortcutBehavior" }
     }
 
@@ -86,20 +96,6 @@ Page {
                 onClicked: System.openShortcutSettings()
             }
         }
-        SchemaRow {
-            id: command
-            rowId: "startCommand"
-            Rectangle {
-                width: cmd.implicitWidth + 44
-                height: 30
-                radius: Theme.radius
-                color: Theme.sheet
-                border.width: 1
-                border.color: Theme.border
-                Txt { id: cmd; x: 12; anchors.verticalCenter: parent.verticalCenter; text: command.spec.command; variant: "code" }
-                CopyButton { copiedText: Words.copied; tooltip: Words.copy; size: "small"
-; onCopied: System.copy(command.spec.command); anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter }
-            }
-        }
+        StartCommandRow {}
     }
 }

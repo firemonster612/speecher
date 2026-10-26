@@ -139,6 +139,8 @@ Card {
                     Button {
                         id: download
                         anchors.right: parent.right
+                        // One width down the list, so the buttons make a column.
+                        width: Math.max(implicitWidth, 148)
                         iconName: "download"
                         text: ModelText.download(card.entry.sizeBytes)
                         size: "small"

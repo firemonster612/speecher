@@ -93,9 +93,10 @@ Item {
     readonly property int orbX: 10
     readonly property int orbSize: 24
     readonly property int contentX: orbX + orbSize + 10
-    // The room after the receipt's words: less where its buttons end it,
-    // since a button's own padding takes the rest.
-    readonly property int receiptEnd: receiptButtons.visible ? 8 : 18
+    // The room after the receipt's words, or after its buttons: about the
+    // gap above and below a small button, so it sits inside the pill's
+    // round end rather than against it.
+    readonly property int receiptEnd: receiptButtons.visible ? 14 : 18
     // A long edit or message scrolls past this height rather than growing
     // the capsule.
     readonly property int textMax: 180

@@ -21,6 +21,10 @@ var text = {
     stop: "Stop",
     pressShortcut: "Press the shortcut in any app to dictate into it.",
     noShortcut: "Set a dictation shortcut to dictate from any app.",
+    noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind speecher --start-listening to a key.",
+    notReady: "Not ready to dictate",
+    fixFirst: "Dictation can start once these are fixed.",
+
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
     insightsSettings: "Insights settings",

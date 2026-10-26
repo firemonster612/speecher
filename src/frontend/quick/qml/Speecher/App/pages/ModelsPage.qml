@@ -10,7 +10,7 @@ import "speech"
 Page {
     id: page
     title: Schema.page("models").title
-    subtitle: ModelText.ratedFor.arg(ModelText.computer)
+    subtitle: Models.hardwareKnown && Models.computer.chip ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
 
     Component.onCompleted: Models.checkComputer()
 
@@ -18,8 +18,12 @@ Page {
     // The library, or only what is on this computer (or on its way).
     property string show: "all"
     // The model in use comes first, then the suggestion, then the catalog.
+    // Until there is a suggestion for this computer, the catalog's own
+    // ratings order it, Recommended first.
     readonly property var listed: {
-        const rank = m => m.id === Models.inUse ? 0 : m.id === Models.suggestedModel ? 1 : 2
+        const rated = ["recommended", "good", "situational", "notRecommended"]
+        const rank = m => m.id === Models.inUse ? 0 : m.id === Models.suggestedModel ? 1
+                        : Models.suggestedModel ? 2 : 2 + rated.indexOf(m.rating)
         const onComputer = m => Models.downloaded.indexOf(m.id) >= 0 || Models.downloads[m.id] !== undefined
         const catalog = Models.catalog
         return catalog.filter(m => show === "all" || onComputer(m))
@@ -105,6 +109,7 @@ Page {
             Button {
                 text: folder.spec.actionLabel
                 iconName: "folder-open"
+                size: "small"
                 onClicked: Models.openModelFolder()
             }
         }

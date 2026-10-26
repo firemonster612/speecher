@@ -19,7 +19,7 @@ Page {
     readonly property var modelsSpec: Schema.row("speechModels")
     readonly property string primaryLabel: ModelText.service(primary).label
 
-    Component.onCompleted: Models.checkComputer()
+    Component.onCompleted: { Models.checkComputer(); Models.checkSignIns() }
 
     // Whether a service is the primary or one of its fallbacks, so its
     // settings matter.
@@ -52,6 +52,7 @@ Page {
             onActivated: id => page.choose(id)
             onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
+        SignInRow { serviceId: page.primary }
         LanguageList { id: serviceLanguages; objectName: "serviceLanguages" }
     }
 
@@ -143,7 +144,7 @@ Page {
                 id: models
                 title: page.modelsSpec.label
                 help: page.primary === "local" ? page.modelsSpec.localHelp : page.modelsSpec.help.arg(page.primaryLabel)
-                trailingText: String(page.serviceModels.length)
+                trailingText: Words.count(page.serviceModels.length, "model", "models")
                 SearchLanding {
                     rowIds: ["speechModels"]
                     target: models

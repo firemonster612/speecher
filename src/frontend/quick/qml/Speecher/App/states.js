@@ -3,14 +3,15 @@
 // How a sign-in, health or provider state reads on the app pages, as a
 // StatusText tone. States come from Accounts.services, System.checks and the
 // providers in Models. Ready states are positive, which StatusText shows
-// as plain text; states that need attention take a warning or negative tone.
+// as plain text. Something to set up, sign in to or turn on is a warning;
+// negative is for what failed or can't be used.
 
 var tones = {
     signedIn: "positive", ok: "positive", ready: "positive",
     expired: "warning", attention: "warning", signedOut: "warning",
     offline: "warning", noModel: "warning", noRunner: "warning", noServer: "warning", language: "warning",
-    unknown: "warning",
-    missing: "negative", off: "negative", checkFailed: "negative", disabled: "negative", unusable: "negative"
+    unknown: "warning", notChecked: "tertiary", missing: "warning", off: "warning",
+    checkFailed: "negative", disabled: "negative", unusable: "negative"
 };
 
 function tone(state) { return tones[state] || "neutral"; }

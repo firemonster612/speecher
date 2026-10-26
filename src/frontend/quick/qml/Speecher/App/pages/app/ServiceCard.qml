@@ -14,12 +14,16 @@ Card {
     id: root
 
     required property string serviceId
+    // The head's height, and the least it takes, so two cards side by side
+    // start their rows at the same height.
+    readonly property real naturalHeadHeight: head.implicitHeight + Theme.space4 * 2
+    property real minimumHeadHeight: 0
     // Looked up in services, so the card follows every check.
     readonly property var service: Accounts.services.find(s => s.id === serviceId)
 
     Item {
         width: parent.width
-        implicitHeight: head.implicitHeight + Theme.space4 * 2
+        implicitHeight: Math.max(root.naturalHeadHeight, root.minimumHeadHeight)
 
         Column {
             id: head

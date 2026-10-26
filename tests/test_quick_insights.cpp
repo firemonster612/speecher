@@ -4,9 +4,12 @@
 #include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickInsights.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickStatus.h"
+#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickDictation.h"
 
 #include <QClipboard>
@@ -337,6 +340,11 @@ private slots:
         QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        // Home says what stands in the way of dictating: the shortcut, the
+        // microphone, the speech service.
+        QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickModels models(&controller);
         QGuiApplication::clipboard()->clear();
 
         QQmlEngine engine;
@@ -396,6 +404,11 @@ private slots:
         QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        // Home says what stands in the way of dictating: the shortcut, the
+        // microphone, the speech service.
+        QuickSystem system(&controller);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickModels models(&controller);
 
         QQmlEngine engine;
         QQmlComponent component(&engine);

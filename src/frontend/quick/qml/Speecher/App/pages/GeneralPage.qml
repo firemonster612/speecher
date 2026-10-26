@@ -11,7 +11,8 @@ Page {
     id: page
     objectName: "generalPage"
     title: Schema.page("general").title
-    subtitle: Schema.page("general").subtitle
+    // Startup shows only where Speecher can start at login.
+    subtitle: Settings.saves("launchAtLogin") ? Schema.page("general").subtitle : Schema.page("general").subtitleNoStartup
 
     property bool _phoneOpen: false
     property bool _confirmClear: false
@@ -75,8 +76,12 @@ Page {
         spacing: Theme.space4
         readonly property real _half: (width - spacing) / 2
 
+        // The pair lines up: the same header and card heights.
         Section {
+            id: phoneSection
             width: pair._half
+            minimumHeaderHeight: insightsSection.naturalHeaderHeight
+            minimumCardHeight: insightsSection.naturalCardHeight
             title: Schema.row("copyToPhone").section
             SchemaRow {
                 rowId: "copyToPhone"
@@ -128,7 +133,10 @@ Page {
         }
 
         Section {
+            id: insightsSection
             width: pair._half
+            minimumHeaderHeight: phoneSection.naturalHeaderHeight
+            minimumCardHeight: phoneSection.naturalCardHeight
             title: Schema.row("insightsEnabled").section
             SchemaRow {
                 rowId: "insightsEnabled"
@@ -138,7 +146,7 @@ Page {
                 rowId: "clearInsights"
                 help: Insights.kept > 0
                       ? Words.count(Insights.kept, "dictation", "dictations") + " kept since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + "."
-                      : "Nothing is kept right now."
+                      : "No dictation history yet."
                 Button {
                     text: "Clear history…"
                     variant: "danger"

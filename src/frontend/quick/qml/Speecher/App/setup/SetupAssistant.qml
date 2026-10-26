@@ -12,7 +12,7 @@ ClientWindow {
     id: window
     width: 960
     // Tall enough for the longest step, Refinement, to show whole.
-    height: 720
+    height: 764
     minimumWidth: 860
     minimumHeight: 600
     visible: true
@@ -140,6 +140,16 @@ ClientWindow {
                 enabled: !window._last && window._limit === window.steps.length - 1
                 onClicked: window.finish()
                 opacity: enabled ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { Ease {} }
+            }
+            // Why Continue waits, where Skip would stand.
+            Txt {
+                x: Theme.sideInset
+                anchors.verticalCenter: parent.verticalCenter
+                text: Setup.text.waits
+                tone: "secondary"
+                opacity: !window._last && window._limit === window.step ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease {} }
             }
