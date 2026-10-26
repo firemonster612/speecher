@@ -14,7 +14,11 @@ Page {
         // the row says that too.
         HealthRow {
             rowId: "microphoneAccess"
-            help: Health.failure(check) || (Audio.hasMicrophones || check.state !== "ok" ? Health.detail(check) : Schema.row("microphoneAccess").noMicrophoneHelp)
+            readonly property bool noMicrophone: !Health.failure(check) && !Audio.hasMicrophones && check.state === "ok"
+            help: Health.failure(check) || (noMicrophone ? Schema.row("microphoneAccess").noMicrophoneHelp : Health.detail(check))
+            // The page it names is a link to it.
+            helpLink: noMicrophone ? Schema.page("dictation").title + " › " + Schema.page("microphone").title : ""
+            onHelpLinkActivated: Navigation.go("microphone")
         }
         HealthRow { rowId: "desktopAccessibility" }
         HealthRow { rowId: "globalShortcuts" }

@@ -32,9 +32,9 @@ T.Switch {
         // Pressing tints the track toward fillStrong, whichever way it is set.
         color: control.pressed ? Qt.tint(shade, Theme.fillStrong) : shade
         border.width: on ? 0 : 1
-        // Off, the edge and the knob stand out from the card at 3:1, so an
+        // Off, the edge and the knob are tertiary ink, 3:1 on the card, so an
         // off switch reads as a control and not as a disabled one.
-        border.color: Theme.borderStrong
+        border.color: Theme.textTertiary
         Behavior on color { EaseColor {} }
 
         Rectangle {

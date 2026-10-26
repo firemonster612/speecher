@@ -131,9 +131,11 @@ QtObject {
     function version(v) { return "Version " + v }
     // A version as the title strip shows it: its number and channel
     // ("Version 0.2.1 nightly"), the build and commit left to the tooltip.
-    function shortVersion(v) {
+    function shortVersion(v) { return version(versionNumber(v)) }
+    // A version's number and channel: "0.2.1 nightly".
+    function versionNumber(v) {
         const m = /^(\d+\.\d+\.\d+)(?:-([a-z]+))?/.exec(v)
-        return m ? version(m[1] + (m[2] ? " " + m[2] : "")) : version(v)
+        return m ? m[1] + (m[2] ? " " + m[2] : "") : v
     }
     function updateReady(v) { return "Restart to update to " + v }
     function noMatches(query) { return "Nothing matches “" + query + "”" }

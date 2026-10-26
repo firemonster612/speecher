@@ -200,7 +200,7 @@ QtObject {
     readonly property string tooLarge: "Too large for this computer"
     readonly property string ratedFor: "Ratings, speeds and fits are for this computer: %1."
     readonly property string ratedOnceChecked: "Ratings, speeds and fits will match this computer once it has been checked."
-    readonly property string compareNote: "Word errors are measured on clear read speech and on everyday speech. Times are estimates until a model is downloaded and tested here."
+    readonly property string compareNote: "Accuracy is measured on clear read speech and on everyday speech. Speed is an estimate until a model is downloaded and tested here."
     readonly property string deleteModel: "Delete model"
     readonly property string deleteBody: "The model file is removed from this computer. You can download it again later."
     function deleteQuestion(name) { return "Delete " + name + "?" }

@@ -149,13 +149,12 @@ Plate {
         }
     }
 
+    // Centred under the route it describes, from the first node to the app.
     Txt {
-        x: root._pad
+        width: Math.min(implicitWidth, root._endX - root._startX)
+        x: (root._startX + root._endX - width) / 2
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 16
-        width: appCard.x - root._pad * 2
-        // Centred under the flow it describes.
-        horizontalAlignment: Text.AlignHCenter
         text: root.caption
         variant: "small"
         tone: "secondary"

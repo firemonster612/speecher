@@ -208,7 +208,7 @@ Palette (all in `Theme`; never write a hex value in a page):
 | `raised` | `#FBFCF9` | Raised cards that hold grouped rows, buttons, menus |
 | `rule` | blue-grey, 16% | Dividers between rows |
 | `accent` | `#2B54C9` | Blue pencil: switches, selection, links, added text |
-| `negative` | `#D23F34` | The margin's red: live sound, failures, and the popup's margin rule |
+| `negative` | `#D23F34` | The margin's red: live sound, failures, the popup's margin rule, and words a proof strikes out |
 | `warning` | `#9A6A12` | Something to set up or fix that isn't a failure: a step still open, the chosen service not signed in (an unchosen card says its state in plain ink) |
 | `positive` | `#2E7D4F` | A check that passed, such as a sign-in or a delivered dictation |
 

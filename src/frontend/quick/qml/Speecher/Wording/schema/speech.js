@@ -4,7 +4,7 @@
 // model and the models list are custom: their choices come from Models.
 var rows = [
     { id: "speechProvider", page: "speech", section: "Service", kind: "custom",
-      label: "Service", help: "Service used to turn speech into a raw transcript.", value: "claude",
+      label: "Service", help: "Compare them here before choosing; fallbacks follow below.", value: "claude",
       keywords: "provider transcription engine claude voice chatgpt codex local model custom endpoint rating accuracy speed" },
     { id: "speechRating", page: "speech", section: "Service", kind: "custom",
       label: "Rating", help: "Out of 10.", keywords: "accuracy speed score benchmark streaming" },

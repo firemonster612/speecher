@@ -237,11 +237,13 @@ FocusScope {
                             keys: hit.spec && hit.spec.kind === "shortcut" ? (Settings.values[hit.modelData.id] || []) : []
                             size: "small"
                         }
-                        Badge {
+                        // The current value as plain text, as a row's trailing text.
+                        Txt {
                             visible: !!hit.spec && (hit.spec.kind === "choice" || hit.spec.kind === "slider")
-                            text: root.valueLabel(hit.spec)
+                            text: hit.spec ? root.valueLabel(hit.spec) : ""
+                            variant: "small"
+                            tone: "secondary"
                         }
-                        Icon { visible: hit.modelData.type === "page"; name: "arrow-right"; size: 15; color: Theme.textTertiary }
                     }
                     HoverHandler { onHoveredChanged: if (hovered) list.currentIndex = hit.index }
                     TapHandler { onTapped: root.activate(hit.index) }

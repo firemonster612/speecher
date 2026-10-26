@@ -28,6 +28,7 @@ Page {
 
     readonly property var t: ({
         current: v => "Speecher " + v,
+        build: v => "Build " + v + ".",
         channel: label => label + " channel.",
         nightlyOnStable: "A nightly build. The next update comes from the Stable channel.",
         whatsNewIn: v => v ? "What's new in " + v : "What's new in this build",
@@ -46,11 +47,13 @@ Page {
     Component.onCompleted: Updates.acknowledgeWhatsNew()
 
     Section {
-        title: page.t.current(Status.version)
+        // The number and channel; the whole build, for a bug report, is in
+        // the caption.
+        title: page.t.current(Words.versionNumber(Status.version))
         // A nightly running on the Stable channel says the next update leaves it.
-        caption: !page._channel ? ""
-               : Settings.values.updateChannel === "stable" && Status.version.indexOf("nightly") >= 0 ? page.t.nightlyOnStable
-               : page.t.channel(page._channel.label)
+        caption: (!page._channel ? ""
+                  : Settings.values.updateChannel === "stable" && Status.version.indexOf("nightly") >= 0 ? page.t.nightlyOnStable
+                  : page.t.channel(page._channel.label)) + " " + page.t.build(Status.version)
         UpdateStatus { channelLabel: page._channel ? page._channel.label : "" }
     }
 

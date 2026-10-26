@@ -26,6 +26,7 @@ var text = {
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
     fixFirst: "Dictation can start once these are fixed.",
+    fixFirstRestLimit: "Dictation can't start without the microphone rows; the others limit it.",
     wordsOnClipboard: "Words stay on the clipboard",
     pastingNotReady: "Dictation works, but your words stay on the clipboard until this is fixed.",
     serviceNotReady: "Dictation fails until this is fixed, unless a fallback or a writing profile's own service takes over.",

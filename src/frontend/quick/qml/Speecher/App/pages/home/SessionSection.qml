@@ -45,7 +45,8 @@ Section {
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
     title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
-    caption: blocked ? t.fixFirst : blockers.some(b => b.id === "speech") ? t.serviceNotReady
+    caption: blocked ? (blockers.some(b => b.id === "speech" || b.id === "pasting") ? t.fixFirstRestLimit : t.fixFirst)
+           : blockers.some(b => b.id === "speech") ? t.serviceNotReady
            : blockers.length ? t.pastingNotReady : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
     actions: Switcher {
         id: controls
