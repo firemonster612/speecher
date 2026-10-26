@@ -18,8 +18,8 @@ Notice {
     // How each of System.removal's steps reads, by part and outcome. A
     // failure gets the part's own error, which may be empty.
     readonly property var stepWords: ({
-        shortcutRegistration: { removed: "Removed the Global Shortcut registration.",
-            failed: e => e ? "Global Shortcut: " + e : "The Global Shortcut registration could not be removed." },
+        shortcutRegistration: { removed: "Removed the global shortcut registration.",
+            failed: e => e ? "Global shortcut: " + e : "The global shortcut registration could not be removed." },
         virtualKeyboardService: { failed: e => "Virtual keyboard service: " + e },
         virtualKeyboard: { removed: "Removed the virtual keyboard setup.",
             failed: e => e ? "Virtual keyboard: " + e : "The virtual keyboard setup could not be removed." },

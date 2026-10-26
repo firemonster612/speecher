@@ -16,6 +16,9 @@ import "home/words.js" as T
 // line says so in their place. The words are home/words.js's.
 Page {
     id: page
+    // Whether the chosen speech service is signed in, for what stands in
+    // the way.
+    Component.onCompleted: ModelText.checkUnknownSignIns([Settings.values.speechProvider])
 
     readonly property var t: T.text
     readonly property var summary: Insights.summary
@@ -192,8 +195,8 @@ Page {
                             width: ListView.view.width
                             first: index === 0 && milestoneList.first
                             title: entry.label
-                            opacity: entry.state === "later" ? 0.45 : 1
-                            Behavior on opacity { Ease {} }
+                            // Not reached yet, in quiet ink rather than faded like a disabled row.
+                            titleTone: entry.state === "later" ? "tertiary" : "primary"
                             trailing: Row {
                                 spacing: milestone.next ? Theme.space3 : 0
                                 ProgressBar {
@@ -232,6 +235,8 @@ Page {
                     Behavior on opacity { Ease {} }
                     onClicked: Navigation.goToRow(learned.action.row)
                 }
+                // Learning needs accessibility; the notice turns it on.
+                AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can learn your corrections." }
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0
@@ -263,7 +268,8 @@ Page {
                 }
                 Reveal {
                     width: parent.width
-                    open: Insights.corrections.recent.length === 0
+                    // Nothing to say while the notice above says it.
+                    open: Insights.corrections.recent.length === 0 && T.correctionsCaption(Insights.corrections) !== ""
                     EmptyState { width: parent.width; compact: true; iconName: "spell-check"; text: T.correctionsCaption(Insights.corrections) }
                 }
             }

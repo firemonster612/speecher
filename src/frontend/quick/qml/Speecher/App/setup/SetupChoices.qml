@@ -70,6 +70,8 @@ QtObject {
         case "shortcut": {
             const keys = Settings.values.globalShortcut || []
             const check = Health.find(System.checks, "globalShortcuts")
+            // A desktop that gives no shortcut leaves the command, which needs none.
+            if (check.reason === "unsupported") return { done: true, verdict: Setup.text.commandOnly }
             return { done: keys.length > 0 && check.state === "ok", verdict: keys.length ? keys.join(" ") : Words.notSet }
         }
         default:

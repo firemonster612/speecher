@@ -302,7 +302,7 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
-        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent"));
+        QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 
     // A follow-up is dictated as a session of its own, edits the revision
@@ -609,7 +609,7 @@ private slots:
         QCOMPARE(session.state(), DictationState::Reviewing);
         session.replaceSelection();
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
-        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent"));
+        QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 
     void selectionEditReviewEndsWithoutReplacing_data()
@@ -677,7 +677,7 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
         QCOMPARE(delivery.lastSettings.pasteRules,
                  (QList<PasteRule>{{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}}));
-        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent • Your selection changed"));
+        QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app • Your selection changed"));
     }
 
     // Speech that dropped after the instruction was heard leaves the session
@@ -1231,7 +1231,7 @@ private slots:
         QCOMPARE(media->resumeCalls, 1);
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
-                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The connection dropped."));
+                 QStringLiteral("Used raw transcript • Sent to the app • Part of the dictation may be missing. The connection dropped."));
         QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Fallback);
     }
 
@@ -1435,7 +1435,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("Keep this transcript."));
         QCOMPARE(message.count(), 1);
-        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent • Part of the dictation may be missing. The connection dropped."));
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app • Part of the dictation may be missing. The connection dropped."));
     }
 
     void dictationSessionIgnoresRefinerSignalsAfterFailureFallback()

@@ -13,7 +13,9 @@ Page {
 
     readonly property var t: ({
         systemColors: "System",
-        installedSchemes: "On this computer"
+        // Desktop schemes follow the theme too, so a dark one shows light in
+        // the Light theme; the heading says so.
+        installedSchemes: "On this computer, following the theme"
     })
 
     Section {

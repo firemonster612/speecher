@@ -41,6 +41,8 @@ QtObject {
     readonly property string resume: "Resume"
     // A shortcut field: unset, listening for keys, and its clear button.
     readonly property string notSet: "Not set"
+    // A shortcut row where the desktop gives Speecher no shortcut.
+    readonly property string noShortcutHere: "Your desktop gives Speecher no shortcut."
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
     // A secret field: what it shows once a key is saved, and why a save or
@@ -52,12 +54,22 @@ QtObject {
     }
     // A sign-in's state, on Accounts and in setup.
     readonly property var signInStates: ({
-        signedIn: "Signed in", expired: "Expired", missing: "Not found", unknown: "Unknown",
+        signedIn: "Signed in", expired: "Expired", missing: "Not signed in", unknown: "Unknown",
         disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
-    // A service's line on Accounts: core's own words, else where its last
-    // check found the sign-in (Accounts.services).
-    function signInDetail(service) {
+    // A service's line on Accounts: what to do when the keyring didn't
+    // answer or, signing in through the Codex app or Claude Code (oauth),
+    // a sign-in is missing or expired; else core's own words, else where
+    // its last check found the sign-in (Accounts.services).
+    function signInDetail(service, oauth) {
+        if (service.state === "unknown") return "Speecher couldn't read the system keychain. Check again in a moment."
+        const fix = oauth && ({
+            openai: { missing: "No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.",
+                      expired: "Your ChatGPT sign-in has expired. Sign in again in the Codex app." },
+            anthropic: { missing: "Claude Code isn't signed in. Use its desktop app or /login in the claude CLI.",
+                         expired: "Claude Code's sign-in has expired. Sign in again, or use /login in the claude CLI." }
+        }[service.id] || {})[service.state]
+        if (fix) return fix
         if (service.detail) return service.detail
         if (service.server) return "Using CLI Proxy API at " + service.server
         if (service.id === "anthropic" && service.found === "signedIn")
@@ -70,6 +82,10 @@ QtObject {
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
+    readonly property string openAccounts: "Open Accounts"
+    // A row that says how to sign in to a service: "Sign in to Claude".
+    function signInTo(name) { return "Sign in to " + name }
+    function signInUnknownFor(name) { return name + " sign-in unknown" }
     // What each service on Accounts is used for, by its id.
     readonly property var serviceUses: ({
         openai: "Used for dictation and cleanup.",
@@ -113,6 +129,14 @@ QtObject {
     // The toast after deleting something a person made, which offers Undo.
     function deleted(name) { return "Deleted “" + name + "”" }
     function version(v) { return "Version " + v }
+    // A version as the title strip shows it: its number and channel
+    // ("Version 0.2.1 nightly"), the build and commit left to the tooltip.
+    function shortVersion(v) { return version(versionNumber(v)) }
+    // A version's number and channel: "0.2.1 nightly".
+    function versionNumber(v) {
+        const m = /^(\d+\.\d+\.\d+)(?:-([a-z]+))?/.exec(v)
+        return m ? m[1] + (m[2] ? " " + m[2] : "") : v
+    }
     function updateReady(v) { return "Restart to update to " + v }
     function noMatches(query) { return "Nothing matches “" + query + "”" }
     function results(n) { return count(n, "result", "results") }

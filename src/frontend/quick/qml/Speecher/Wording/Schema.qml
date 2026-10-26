@@ -80,6 +80,12 @@ QtObject {
         if (spec.needs && !has(spec.needs)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
+    // Whether the row can be set in this build: a custom row with no value
+    // draws content with nothing to save, a secret goes to Accounts, and
+    // anything else needs saves(id), the backend saving it.
+    function settable(spec, saves) {
+        return spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || saves(spec.id)
+    }
     // The row's options this computer has.
     function options(spec, has) {
         return (spec.options || []).filter(o => !o.needs || has(o.needs))
@@ -109,10 +115,16 @@ QtObject {
             }
             return total
         }
+        // Ties keep the schema's order, so rows of one page read as they do
+        // there.
         const results = []
         for (const p of pages) {
             const parentTitle = p.parent ? page(p.parent).title : ""
-            const s = score([[p.title, 12], [parentTitle, 6], [p.keywords, 5]])
+            // A page whose title the query names, give or take its ending
+            // ("paste" for Pasting), comes before its own rows.
+            const stems = p.title.toLowerCase().split(/\s+/)
+            const named = words.every(w => w.length >= 4 && stems.some(t => t.startsWith(w.slice(0, -1))))
+            const s = score([[p.title, 12], [parentTitle, 6], [p.keywords, 5]]) + (named ? 30 : 0)
             if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon,
                                       trail: p.parent ? trail(p.id) : "", score: s + 4 })
         }
@@ -122,7 +134,8 @@ QtObject {
             if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
                                       trail: rowTrail(r), score: s })
         }
-        results.sort((a, b) => b.score - a.score)
+        results.forEach((r, i) => r.order = i)
+        results.sort((a, b) => b.score - a.score || a.order - b.order)
         return results.slice(0, limit || 12)
     }
 

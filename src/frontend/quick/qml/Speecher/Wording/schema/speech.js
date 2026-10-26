@@ -4,7 +4,7 @@
 // model and the models list are custom: their choices come from Models.
 var rows = [
     { id: "speechProvider", page: "speech", section: "Service", kind: "custom",
-      label: "Service", help: "Service used to turn speech into a raw transcript.", value: "claude",
+      label: "Service", help: "The service that turns your voice into text.", value: "claude",
       keywords: "provider transcription engine claude voice chatgpt codex local model custom endpoint rating accuracy speed" },
     { id: "speechRating", page: "speech", section: "Service", kind: "custom",
       label: "Rating", help: "Out of 10.", keywords: "accuracy speed score benchmark streaming" },
@@ -17,7 +17,7 @@ var rows = [
 
     // Every language core knows (knownSpokenLanguages), named in English
     // with the language's own name, which the language picker searches too.
-    { id: "spokenLanguage", page: "speech", section: "Language and accuracy", kind: "choice", control: "language",
+    { id: "spokenLanguage", page: "speech", section: "Language and accuracy", sectionAlone: "Language", kind: "choice", control: "language",
       label: "Spoken language", help: "The language you dictate in.", value: "en",
       keywords: "language locale english detect automatic multilingual",
       options: [

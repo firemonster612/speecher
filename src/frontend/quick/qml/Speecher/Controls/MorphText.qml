@@ -22,6 +22,7 @@ Item {
     property alias maximumLineCount: whole.maximumLineCount
     property alias elide: whole.elide
     readonly property alias truncated: whole.truncated
+    readonly property alias lineCount: whole.lineCount
 
     // While a change rolls, the line is split into a still head and tail
     // and the changing middle.

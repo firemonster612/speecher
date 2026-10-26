@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Templates as T
 import Speecher.Theme
 
-// Shows a shortcut as key caps. Clicking it listens for a new combination,
+// Shows a shortcut as key caps in a field's frame, as wide as a Select so
+// it lines up with them in a column of rows. Clicking it listens for a new combination,
 // which recorded brings back as key names (["Ctrl", "Shift", "F1"]). Escape
 // stops listening without recording, unless escapeRecords (for a shortcut
 // that may be Escape itself, such as cancel). Tab and Shift+Tab move focus
@@ -40,7 +41,7 @@ T.AbstractButton {
     }
 
     implicitHeight: Theme.controlHeight + 2
-    implicitWidth: content.width + clear.width + 16
+    implicitWidth: Math.max(Theme.selectWidth, content.width + clear.width + 16)
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     opacity: enabled ? 1 : Theme.disabledOpacity
@@ -74,10 +75,11 @@ T.AbstractButton {
     background: Rectangle {
         id: bg
         radius: Theme.radius
-        color: control.listening ? Theme.accentSoft : control.down ? Theme.fillStrong : control.hovered ? Theme.fill : "transparent"
-        border.width: control.listening ? 1 : 0
-        border.color: Theme.accent
+        color: control.listening ? Theme.accentSoft : control.down ? Theme.surfacePressed : control.hovered ? Theme.surfaceHover : Theme.surface
+        border.width: 1
+        border.color: control.listening ? Theme.accent : control.hovered ? Theme.borderStrong : Theme.border
         Behavior on color { EaseColor {} }
+        Behavior on border.color { EaseColor {} }
         SequentialAnimation on opacity {
             running: control.listening
             loops: Animation.Infinite
@@ -99,7 +101,7 @@ T.AbstractButton {
             KeyCombo { keys: control.keys }
             Txt {
                 text: control.listening ? control.listeningText : control.emptyText
-                tone: control.listening ? "accent" : "tertiary"
+                tone: control.listening ? "accent" : "secondary"
                 variant: "label"
             }
         }

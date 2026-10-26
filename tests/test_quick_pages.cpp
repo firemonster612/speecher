@@ -559,7 +559,7 @@ private slots:
              }},
             {QStringLiteral("delivering"), [session] { emit session->stateChanged(QStringLiteral("delivering")); }},
             {QStringLiteral("delivered"),
-             [session] { emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted); }},
+             [session] { emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted); }},
             {QStringLiteral("review"), [review] { review(false); }},
             {QStringLiteral("following"), [review] { review(true); }},
             {QStringLiteral("error"),

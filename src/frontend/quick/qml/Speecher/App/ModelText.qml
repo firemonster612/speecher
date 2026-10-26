@@ -12,27 +12,27 @@ QtObject {
 
     // Speech services ----------------------------------------------------------
 
-    // What each service is good at (settings), what it needs (setup), and
-    // how its text arrives; %1 in help is how many languages it listens
+    // What each service is good at, how to sign in to one that signs in,
+    // and how its text arrives; %1 in help is how many languages it listens
     // for. A service this table lacks, such as the test stub, shows its
     // label alone.
     readonly property var _services: ({
         codex: { icon: "openai", help: "Very accurate, %1.",
-                 access: "Uses your sign-in from the Codex app.", textShows: "A phrase at a time",
+                 signIn: "Sign in to ChatGPT in the Codex app, then check again.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
                           { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
         claude: { icon: "claude", help: "%1, automatic punctuation and numerals.",
-                  access: "Uses your Claude Code sign-in.", textShows: "Words as you speak",
+                  signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI, then check again.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
-        endpoint: { icon: "server", help: "A server you run. Speed, accuracy and languages depend on the server and its model.",
-                    access: "Your own speech server.", textShows: "Text after you stop", models: [] },
-        local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.",
-                 access: "No account, works offline after a one-time download.", models: [] }
+        endpoint: { icon: "server", help: "Your server sets speed, accuracy and languages.",
+                    textShows: "Text after you stop", models: [] },
+        local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.", models: [] }
     })
-    function _service(id) { return _services[id] || { icon: "circle", help: "", access: "", textShows: "", models: [] } }
+    function _service(id) { return _services[id] || { icon: "circle", help: "", textShows: "", models: [] } }
 
-    // A speech service with its wording: { id, label, icon, help, access,
-    // textShows, models, state, problem, languages }, and languageLink, the
+    // A speech service with its wording: { id, label, icon, help,
+    // signIn (how to sign in, for one that signs in), textShows, models,
+    // state, problem, languages }, and languageLink, the
     // part of help that says how many languages, where it does.
     function service(id) {
         const known = Models.speechServices.find(s => s.id === id)
@@ -51,11 +51,15 @@ QtObject {
     }
 
     // A provider's status beside it: its problem, as core says it, or Ready
-    // once nothing stands in its way. A Local Model still downloading says
-    // how far it is, and one not downloaded what it would fetch.
+    // once nothing stands in its way. One not yet checked says so, or why
+    // its sign-in check couldn't reach the service. A Local Model still
+    // downloading says how far it is, and one not downloaded what it would
+    // fetch.
     function status(provider) {
         if (provider.state === "ready") return "Ready"
-        if (provider.state === "unknown") return ""
+        if (provider.signInChecking) return checking
+        if (provider.state === "unknown")
+            return (provider.signInCheckFailure || (provider.signsIn ? signInUnknown : notChecked)).replace(/\.$/, "")
         if (provider.id === "local" && provider.state === "noModel" && !provider.refines) {
             const fraction = Models.downloads[Models.localModelChoice]
             if (fraction !== undefined) return "Downloading, " + Words.percent(fraction)
@@ -66,12 +70,30 @@ QtObject {
     }
     // What setup says of a service while its sign-in is checked.
     readonly property string checking: "Checking…"
+    // Asks for the speech sign-ins, as a page that shows them does when it
+    // opens, while one of ids (every service that signs in, by default)
+    // is still unknown; Check again asks Models.checkSignIns() itself.
+    function checkUnknownSignIns(ids) {
+        const unknown = s => s.signsIn && s.state === "unknown" && !s.signInChecking && (!ids || ids.includes(s.id))
+        if (Models.speechServices.some(unknown)) Models.checkSignIns()
+    }
+    readonly property string notChecked: "Not checked yet"
+    // A sign-in no check has vouched for yet, as Accounts says Unknown.
+    readonly property string signInUnknown: "Sign-in unknown"
+    // The state a choice's status is toned by: an unknown one is being
+    // checked, its check failed, or, for a sign-in, unknown as Accounts
+    // tones it; something that doesn't sign in is waiting for its check.
+    function _shownState(provider) {
+        if (provider.state !== "unknown") return provider.state
+        return provider.signInChecking ? "checking" : provider.signInCheckFailure ? "checkFailed"
+             : provider.signsIn ? "unknown" : "notChecked"
+    }
     // A provider as ServiceCards shows it, rated from ratings (Models'
     // ratings by id), or with no rating at all when ratings is left out.
     // note is the line under the ratings, its parts as sentences.
     function _choice(provider, help, ratings, noteParts) {
         const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                         state: provider.state, status: status(provider) }
+                         state: _shownState(provider), status: status(provider) }
         if (ratings) choice.bars = bars(ratings[provider.id])
         if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
         return choice
@@ -91,10 +113,6 @@ QtObject {
     function _helpChoice(id, noteParts) {
         const s = service(id)
         return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
-    }
-    function setupSpeechChoices(services) {
-        return services.map(s => _choice(service(s.id), service(s.id).access, Models.speechRatings,
-                                         [ratedAsNote(Models.speechRatings[s.id])]))
     }
 
     // Where a speech service stands in the chain: 0 for the service itself,
@@ -159,7 +177,7 @@ QtObject {
     // memory, 12 GB on the graphics card"
     readonly property string computer: {
         const c = Models.computer
-        if (!Models.hardwareKnown || !c.chip) return "this computer, still being checked"
+        if (!Models.hardwareKnown || !c.chip) return ""
         const gb = bytes => Math.round(bytes / 1e9) + " GB"
         return [c.chip + ", " + c.threads + " threads",
                 c.gpu ? c.gpu + " (" + c.gpuBackend + ")" : "no graphics acceleration",
@@ -178,7 +196,8 @@ QtObject {
     readonly property string suggested: "Suggested for this computer"
     readonly property string tooLarge: "Too large for this computer"
     readonly property string ratedFor: "Ratings, speeds and fits are for this computer: %1."
-    readonly property string compareNote: "Word errors are measured on clear read speech and on everyday speech. Times are estimates until a model is downloaded and tested here."
+    readonly property string ratedOnceChecked: "Ratings, speeds and fits will match this computer once it has been checked."
+    readonly property string compareNote: "Accuracy is measured on clear read speech and on everyday speech. Speed is an estimate until a model is downloaded and tested here."
     readonly property string deleteModel: "Delete model"
     readonly property string deleteBody: "The model file is removed from this computer. You can download it again later."
     function deleteQuestion(name) { return "Delete " + name + "?" }
@@ -213,11 +232,13 @@ QtObject {
     ]
 
     readonly property var _refiners: ({
-        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in." },
-        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in." },
-        local: { icon: "cpu", help: "Ollama, LM Studio or llama-server on this computer." },
+        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in.",
+                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Accounts." },
+        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in.",
+                     signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI." },
+        local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
-        none: { icon: "circle-off", help: "Pastes your words as spoken." }
+        none: { icon: "circle-off", help: "Keeps your words as spoken." }
     })
     // A refinement provider with its wording, or None.
     function provider(id) {

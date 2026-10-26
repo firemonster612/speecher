@@ -9,6 +9,7 @@ Column {
     id: root
 
     property var items: []
+    property string emptyTitle
     property string emptyText
     property bool formOpen: false
     property string editText
@@ -44,6 +45,6 @@ Column {
 
     Reveal {
         open: root.items.length === 0 && !root.formOpen
-        EmptyState { compact: true; text: root.emptyText }
+        EmptyState { compact: true; title: root.emptyTitle; text: root.emptyText }
     }
 }

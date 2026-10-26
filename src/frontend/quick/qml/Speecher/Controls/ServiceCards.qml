@@ -46,20 +46,24 @@ FocusScope {
         return best
     }
 
-    // Every card is one height, so statuses and ratings line up across the
-    // grid: a status or note takes the room of the tallest one.
-    readonly property real statusHeight: _tallest("statusHeight")
-    readonly property real noteHeight: _tallest("noteHeight")
-    // Counts the cards made, so _tallest looks again as they arrive.
+    // The cards of a row are one height, so their statuses and ratings
+    // line up as you compare them: a status or note takes the room of the
+    // row's tallest, and ratings take room where any card in the row has
+    // them. A row with none of either keeps no room for them.
+    // Counts the cards made, so these look again as they arrive.
     property int _made: 0
-    function _tallest(measure) {
-        let tallest = 0
-        for (let i = 0; i < _made && i < cards.count; ++i) {
+    function _rowCards(row) {
+        const found = []
+        for (let i = row * columns; i < Math.min((row + 1) * columns, _made, cards.count); ++i) {
             const card = cards.itemAt(i)
-            if (card) tallest = Math.max(tallest, card[measure])
+            if (card) found.push(card)
         }
-        return tallest
+        return found
     }
+    function helpHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.helpHeight)) }
+    function statusHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.statusHeight)) }
+    function noteHeight(row) { return Math.max(0, ..._rowCards(row).map(c => c.noteHeight)) }
+    function rowRated(row) { return _rowCards(row).some(c => c.rated) }
 
     implicitWidth: 520
     implicitHeight: grid.implicitHeight + Theme.space3 * 2
@@ -96,6 +100,8 @@ FocusScope {
                 required property var modelData
                 required property int index
                 readonly property bool rated: modelData.bars !== undefined
+                readonly property int row: Math.floor(index / root.columns)
+                readonly property real helpHeight: help.height
                 readonly property real statusHeight: status.height
                 readonly property real noteHeight: note.text ? note.implicitHeight : 0
 
@@ -103,7 +109,7 @@ FocusScope {
                 readonly property bool narrow: width < 220
 
                 width: (grid.width - grid.spacing * (root.columns - 1)) / root.columns
-                height: padding * 2 + ratings.y + ratings.height + (root.noteHeight > 0 ? Theme.space1 + root.noteHeight : 0)
+                height: padding * 2 + ratings.y + ratings.height + (root.noteHeight(row) > 0 ? Theme.space1 + root.noteHeight(row) : 0)
                 // Tighter where the cards are narrow.
                 padding: narrow ? 10 : width < 260 ? 12 : 14
                 selected: index === root.currentIndex
@@ -132,12 +138,11 @@ FocusScope {
                     variant: "label"
                     elide: Text.ElideRight
                 }
-                // helpLines kept for help, so a card with fewer lines up with
-                // its neighbours.
+                // Up to helpLines of help; a card with fewer keeps the room of
+                // its row's longest, so it lines up with its neighbours.
                 LinkedText {
                     id: help
                     objectName: "help_" + card.modelData.id
-                    readonly property real room: Math.ceil(helpMetrics.lineSpacing * lineHeight * maximumLineCount)
                     y: glyph.height + Theme.space2
                     width: parent.width
                     plainText: card.modelData.help || ""
@@ -148,34 +153,37 @@ FocusScope {
                     wrapMode: Text.WordWrap
                     maximumLineCount: root.helpLines
                     elide: Text.ElideRight
-                    FontMetrics { id: helpMetrics; font: help.font }
                 }
                 // Wrapped, and bounded at two lines, so a long problem stays
                 // on its card; assistive tech hears all of it.
                 StatusText {
                     id: status
-                    y: help.y + help.room + Theme.space1
+                    y: help.y + root.helpHeight(card.row) + Theme.space1
                     width: parent.width
                     wrap: true
                     maximumLineCount: 2
                     elide: Text.ElideRight
-                    text: card.modelData.status || ""
+                    // A hyphen inside a name ("llama-server") holds its
+                    // word together across a line end (a word joiner).
+                    text: (card.modelData.status || "").replace(/(\w)-(\w)/g, "$1-\u2060$2")
                     // A state core has not settled yet has no words, and
-                    // no dot either.
-                    tone: text ? card.modelData.tone || "neutral" : "neutral"
+                    // no dot either. Only the chosen card's state is toned:
+                    // a problem with one nobody chose stands in no way, so
+                    // it is said in plain ink.
+                    tone: text && card.modelData.id === root.currentId ? card.modelData.tone || "neutral" : "neutral"
                 }
                 Item {
                     id: ratings
-                    y: status.y + root.statusHeight + (card.narrow ? Theme.space1 : Theme.space2)
+                    y: status.y + root.statusHeight(card.row) + (card.narrow ? Theme.space1 : Theme.space2)
                     width: parent.width
-                    height: bars.implicitHeight
+                    height: root.rowRated(card.row) ? bars.implicitHeight : 0
                     RatingBars {
                         id: bars
                         // Pips and names a little narrower where the card is.
                         pipWidth: card.narrow ? 6 : card.width < 260 ? 8 : 9
                         labelWidth: card.narrow ? 50 : 58
                         // An unrated card keeps the bars' room, empty, so
-                        // every card is one height.
+                        // the cards of its row are one height.
                         bars: card.modelData.bars || [{ label: "", value: null }, { label: "", value: null }]
                         color: card.selected ? Theme.accent : Theme.textSecondary
                         opacity: card.rated && card.modelData.bars !== null ? 1 : 0

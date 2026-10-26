@@ -14,6 +14,9 @@ Page {
     id: page
 
     readonly property int step: Transcription.step
+    // The cards say whether each service is signed in and a Local Runner
+    // is running.
+    Component.onCompleted: { ModelText.checkUnknownSignIns(); Models.detectRunners() }
 
     title: Schema.page("transcribe").title
     subtitle: Schema.page("transcribe").subtitle

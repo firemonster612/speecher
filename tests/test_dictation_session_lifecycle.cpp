@@ -504,7 +504,7 @@ private slots:
             true,
             DeliveryReceipt::VerifiedInTarget,
             false,
-            QStringLiteral("Input sent"),
+            QStringLiteral("Sent to the app"),
         };
         ProviderRegistry registry;
         FakeSpeechTranscriber *speech = nullptr;
@@ -522,9 +522,9 @@ private slots:
         session.stopListening();
 
         QCOMPARE(message.count(), 1);
-        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app"));
         QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Inserted);
-        QCOMPARE(status.last().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(status.last().first().toString(), QStringLiteral("Sent to the app"));
         QCOMPARE(state.last().first().toString(), QStringLiteral("delivering"));
         QCOMPARE(int(session.state()), int(DictationState::Delivering));
 
@@ -1669,7 +1669,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(message.count(), 1, 250);
         QCOMPARE(message.first().at(0).toString(),
-                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. "
+                 QStringLiteral("Used raw transcript • Sent to the app • Part of the dictation may be missing. "
                                 "The connection dropped."));
     }
 

@@ -17,7 +17,7 @@ var words = {
     },
     desktopAccessibility: {
         unsupported: { status: "Not available", detail: "This Speecher build does not include desktop accessibility." },
-        off: { status: "Off", detail: "Speecher cannot tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
+        off: { status: "Off", detail: "Speecher can't tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
         sessionOnly: { status: "On for now", detail: "It turns off when you sign out, and paste rules and context with it.", fix: "Keep on" },
         on: { status: "On", detail: "Paste rules, context and learning can see the app you are in." }
     },
@@ -32,12 +32,12 @@ var words = {
         starting: { status: "Starting…", detail: "" },
         removing: { status: "Removing…", detail: "Your computer asks for your password to finish." },
         testing: { status: "Testing", detail: "Run the typing test to turn it on." },
-        disabled: { status: "Off", detail: "Set up, but turned off in Speecher, so Speecher copies to the clipboard.", fix: "Turn on" },
+        disabled: { status: "Off", detail: "Set up, but turned off in Speecher, so it can't press paste keys.", fix: "Turn on" },
         availableOutside: { status: "Not set up", detail: "ydotool is installed, but Speecher hasn't set it up. Setup asks for your password once.", fix: "Set up" },
-        notInstalled: { status: "Not set up", detail: "Speecher can only copy to the clipboard. Setup asks for your password once.", fix: "Set up" },
+        notInstalled: { status: "Not set up", detail: "Without it, Speecher can't press paste keys. Setup asks for your password once.", fix: "Set up" },
         needsUinputPermission: { status: "Needs permission", detail: "It can't reach /dev/uinput yet. Setup fixes that and asks for your password once.", fix: "Set up" },
         needsSignOut: { status: "Sign out first", detail: "Sign out and back in so this session can use the virtual keyboard." },
-        daemonNotRunning: { status: "Stopped", detail: "Set up, but its service isn't running, so Speecher copies to the clipboard.", fix: "Start" },
+        daemonNotRunning: { status: "Stopped", detail: "Set up, but its service isn't running, so Speecher can't press paste keys.", fix: "Start" },
         ready: { status: "Ready", detail: "Speecher types into other apps directly." },
         readyLayoutCaveat: { status: "Ready", detail: "Speecher types into other apps directly, as on a US keyboard layout." }
     }
@@ -60,6 +60,10 @@ var failures = {
 // follows the checks as they change.
 function find(checks, id) { return checks.find(c => c.id === id) || {}; }
 
+// Whether the desktop gives Speecher no global shortcut, so the start
+// command is the way to start dictation. Pass System.checks itself.
+function noShortcuts(checks) { return find(checks, "globalShortcuts").reason === "unsupported"; }
+
 function _words(check) { return (words[check.id] || {})[check.reason] || { status: "", detail: "" }; }
 
 function status(check) { return _words(check).status; }
@@ -76,7 +80,39 @@ function failure(check) {
 }
 
 // The caption over the checks: "All 4 checks pass." or "3 of 4 checks pass."
+// A check that can't pass on this desktop and has a way round, so there is
+// nothing to fix: no global shortcut, where the start command works. It is
+// said in plain ink and not counted.
+function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
+
+// What delivery needs, by the default paste rule and Paste with: direct
+// insertion needs accessibility, the virtual keyboard only needs the keys,
+// and otherwise either does; clipboard only, chosen, needs nothing. macOS
+// presses ⌘V only with accessibility too, so there it is all that's needed.
+function deliveryNeeds(pasteRule, outputMethod) {
+    if (pasteRule === "clipboard_only") return "";
+    if (pasteRule === "direct_insert" || Qt.platform.os === "osx") return "accessibility";
+    if (outputMethod === "ydotool") return "keyboard";
+    return "either";
+}
+
+// Whether dictated words only reach the clipboard: what delivery needs
+// (deliveryNeeds) is missing. accessible is System.accessibility (on for the
+// session counts as on); keyboard is the virtual keyboard's check, absent
+// where there is none to need.
+function wordsStayCopied(accessible, keyboard, pasteRule, outputMethod) {
+    const keys = !keyboard.id || keyboard.state === "ok";
+    switch (deliveryNeeds(pasteRule, outputMethod)) {
+    case "accessibility": return !accessible;
+    case "keyboard": return !keys;
+    case "either": return !accessible && !keys;
+    default: return false;
+    }
+}
+
 function summary(checks) {
-    const passing = checks.filter(c => c.state === "ok").length;
-    return (passing === checks.length ? "All " + checks.length : passing + " of " + checks.length) + " checks pass.";
+    const counted = checks.filter(c => !settledHere(c));
+    const passing = counted.filter(c => c.state === "ok").length;
+    const said = (passing === counted.length ? "All " + counted.length : passing + " of " + counted.length) + " checks pass.";
+    return counted.length < checks.length ? said + " Global shortcuts aren't offered on this desktop." : said;
 }

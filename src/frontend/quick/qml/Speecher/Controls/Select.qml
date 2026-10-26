@@ -62,7 +62,9 @@ T.ComboBox {
         }
         Txt {
             text: control._current ? control._current.label : control.placeholder
-            tone: control._current ? "primary" : "tertiary"
+            // A placeholder asks for a choice, so it reads more strongly
+            // than a field's hint, apart from a disabled Select.
+            tone: control._current ? "primary" : "secondary"
             variant: "label"
             elide: Text.ElideRight
             width: Math.min(implicitWidth, control.availableWidth - 22)

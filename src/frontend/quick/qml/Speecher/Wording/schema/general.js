@@ -34,7 +34,8 @@ var rows = [
 
     // Each health row's state, status and fix come from System.checks.
     { id: "microphoneAccess", page: "permissions", section: "", kind: "custom",
-      label: "Microphone access", keywords: "permission privacy recording input" },
+      label: "Microphone access", keywords: "permission privacy recording input",
+      noMicrophoneHelp: "Speecher can't see a microphone. Plug one in, or check Dictation › Microphone." },
     { id: "desktopAccessibility", page: "permissions", section: "", kind: "custom",
       label: "Desktop accessibility",
       keywords: "at-spi permission paste rules context learning target app" },
@@ -63,6 +64,6 @@ var rows = [
 
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",
-      help: "Removes the app menu entry, the speecher command, the icon and the Global Shortcut.",
+      help: "Removes the app menu entry, the speecher command, the icon and the global shortcut.",
       keywords: "uninstall delete appimage", needs: "canRemove" }
 ];

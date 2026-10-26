@@ -22,8 +22,8 @@ Page {
         }
     ]
 
-    // The two cards end together; rows that come and go with the sign-in
-    // source ease both cards' height.
+    // The two cards end together, and their rows start together; rows that
+    // come and go with the sign-in source ease both cards' height.
     Row {
         id: pair
         width: parent.width
@@ -36,6 +36,7 @@ Page {
             serviceId: "openai"
             width: pair._cardWidth
             height: pair._cardHeight
+            minimumHeadHeight: anthropic.naturalHeadHeight
             SchemaRow { rowId: "openAiAuthMode"; stacked: true }
             SchemaRow { objectName: "openAiApiKeyRow"; rowId: "openAiApiKey"; stacked: true; shown: Settings.values.openAiAuthMode === "settings" }
             SchemaRow {
@@ -50,6 +51,7 @@ Page {
             serviceId: "anthropic"
             width: pair._cardWidth
             height: pair._cardHeight
+            minimumHeadHeight: openAi.naturalHeadHeight
             SchemaRow { rowId: "anthropicAuthMode"; stacked: true }
             SchemaRow {
                 rowId: "anthropicCliproxyAccount"
@@ -79,7 +81,6 @@ Page {
                 trailing: StateText {
                     stateId: accountRow.account.state
                     text: Words.signInStates[accountRow.account.state]
-                    indicator: "dot"
                 }
             }
         }

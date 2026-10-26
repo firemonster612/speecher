@@ -32,7 +32,9 @@ Row {
         id: mark
         width: root.busy || root._dot ? 12 : 0
         height: 12
-        anchors.verticalCenter: parent.verticalCenter
+        // Beside the first line when the text wraps, else the middle.
+        anchors.verticalCenter: root.wrap ? undefined : parent.verticalCenter
+        y: root.wrap ? Math.max(0, (words.implicitHeight / Math.max(1, words.lineCount) - height) / 2) : 0
         Behavior on width { Ease {} }
         Spinner {
             anchors.centerIn: parent
@@ -59,6 +61,6 @@ Row {
         text: root.text
         variant: root.variant
         color: root._attention || root.tone === "accent" || root.tone === "tertiary" ? Theme.tone(root.tone) : Theme.textSecondary
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: root.wrap ? undefined : parent.verticalCenter
     }
 }

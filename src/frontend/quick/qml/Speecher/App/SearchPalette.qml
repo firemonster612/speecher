@@ -21,7 +21,10 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    readonly property var results: query.trim().length ? Schema.search(query, 9, need => System[need]) : _suggestions
+    // Rows this build can't set are left out, as their pages leave them out.
+    readonly property var results: query.trim().length
+        ? Schema.search(query, 40, need => System[need]).filter(r => r.type !== "row" || Schema.settable(Schema.row(r.id), id => Settings.saves(id)))
+        : _suggestions
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
@@ -139,7 +142,12 @@ FocusScope {
             id: listBox
             anchors.top: field.bottom
             width: parent.width
-            height: root.results.length ? Math.min(list.contentHeight + 16, 440) : empty.height
+            // Whole rows only, as many as fit under the card's top in the
+            // window, so no result is cut; more scroll, with a bar to say so.
+            readonly property int _fits: Math.max(3, Math.floor((root.height * 0.85 - field.height - footer.height
+                                                                - list.anchors.topMargin - 8) / list.rowHeight))
+            height: root.results.length ? list.anchors.topMargin + 8 + list.rowHeight * Math.min(root.results.length, _fits)
+                                        : empty.height
 
             Txt {
                 visible: root.query.trim().length === 0
@@ -153,6 +161,7 @@ FocusScope {
 
             ListView {
                 id: list
+                readonly property int rowHeight: 50
                 anchors.fill: parent
                 anchors.margins: 8
                 anchors.topMargin: root.query.trim().length === 0 ? 30 : 8
@@ -164,6 +173,7 @@ FocusScope {
                 // A mouse drags nothing on a desktop; touch still does.
                 acceptedButtons: Qt.NoButton
                 WheelScroll {}
+                T.ScrollBar.vertical: ScrollBar { persistent: list.contentHeight > list.height }
                 highlightMoveDuration: Theme.fast
                 highlightMoveVelocity: -1
                 highlight: Rectangle {
@@ -178,7 +188,7 @@ FocusScope {
                     required property int index
                     readonly property var spec: modelData.type === "row" ? Schema.row(modelData.id) : null
                     width: ListView.view.width
-                    height: 50
+                    height: list.rowHeight
 
                     Icon {
                         x: 19
@@ -227,11 +237,13 @@ FocusScope {
                             keys: hit.spec && hit.spec.kind === "shortcut" ? (Settings.values[hit.modelData.id] || []) : []
                             size: "small"
                         }
-                        Badge {
+                        // The current value as plain text, as a row's trailing text.
+                        Txt {
                             visible: !!hit.spec && (hit.spec.kind === "choice" || hit.spec.kind === "slider")
-                            text: root.valueLabel(hit.spec)
+                            text: hit.spec ? root.valueLabel(hit.spec) : ""
+                            variant: "small"
+                            tone: "secondary"
                         }
-                        Icon { visible: hit.modelData.type === "page"; name: "arrow-right"; size: 15; color: Theme.textTertiary }
                     }
                     HoverHandler { onHoveredChanged: if (hovered) list.currentIndex = hit.index }
                     TapHandler { onTapped: root.activate(hit.index) }

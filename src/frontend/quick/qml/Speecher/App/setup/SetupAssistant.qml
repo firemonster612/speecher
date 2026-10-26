@@ -12,7 +12,7 @@ ClientWindow {
     id: window
     width: 960
     // Tall enough for the longest step, Refinement, to show whole.
-    height: 720
+    height: 764
     minimumWidth: 860
     minimumHeight: 600
     visible: true
@@ -127,13 +127,14 @@ ClientWindow {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 68
-            Rectangle { x: Theme.sideInset; width: parent.width - Theme.sideInset * 2; height: 1; color: Theme.rule }
+            // In line with the step's content above.
+            Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
             // Skip and Back fade where they stand rather than reflowing the
             // footer; the main button's label rolls to its new wording. Skip
             // only passes steps that are already done, never goes around one.
             Button {
-                x: Theme.sideInset
+                x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 text: Setup.text.skip
                 variant: "ghost"
@@ -143,9 +144,19 @@ ClientWindow {
                 visible: opacity > 0
                 Behavior on opacity { Ease {} }
             }
+            // Why Continue waits, where Skip would stand.
+            Txt {
+                x: Theme.pageInset
+                anchors.verticalCenter: parent.verticalCenter
+                text: Setup.text.waits
+                tone: "secondary"
+                opacity: !window._last && window._limit === window.step ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { Ease {} }
+            }
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: Theme.sideInset
+                anchors.rightMargin: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space2
                 Button {
@@ -157,7 +168,7 @@ ClientWindow {
                     onClicked: window.go(window.step - 1)
                 }
                 Button {
-                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.startDictating : Setup.text.continue_
+                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.finish : Setup.text.continue_
                     variant: "primary"
                     enabled: window._limit > window.step || window._last && window._limit === window.step
                     onClicked: window._last ? window.finish() : window.go(window.step + 1)

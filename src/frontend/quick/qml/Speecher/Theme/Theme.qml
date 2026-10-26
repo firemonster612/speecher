@@ -164,7 +164,9 @@ QtObject {
     // The ink and paper the shades below mix from: hover, borders and fills
     // are text laid thinly over the surface.
     readonly property color sheetBorder: soft(text, dark ? 0.07 : 0.12)
-    readonly property color surface: dark ? mix(raised, sheet, 0.2) : mix(sheet, paper, 0.3)
+    // Recessed, a step below the page in both themes, so a picture or a
+    // field sits in the page rather than on it.
+    readonly property color surface: dark ? mix(sheet, paper, 0.35) : mix(sheet, paper, 0.3)
     readonly property color surfaceHover: dark ? mix(raised, text, 0.02) : paper
     readonly property color surfacePressed: dark ? mix(raised, text, 0.05) : mix(paper, text, 0.04)
     readonly property color border: soft(text, dark ? 0.10 : 0.16)
@@ -205,8 +207,9 @@ QtObject {
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.16 : 0.10)
     readonly property color accentRing: Qt.rgba(accent.r, accent.g, accent.b, 0.4)
 
-    readonly property color positive: dark ? "#6CCB8F" : "#2E7D4F"
-    readonly property color warning: dark ? "#E3B65C" : "#9A6A12"
+    // Status inks are text too, pushed to AA wherever they are laid.
+    readonly property color positive: readableOn(dark ? "#6CCB8F" : "#2E7D4F", _everyGround, 4.5, dark)
+    readonly property color warning: readableOn(dark ? "#E3B65C" : "#9A6A12", _everyGround, 4.5, dark)
     // The margin's red: live sound (the record dot, the level meter, the
     // popup's margin rule) and failures, which are text, at AA wherever they
     // are laid.
@@ -315,6 +318,9 @@ QtObject {
     readonly property int sidebarWidth: 232
     // Where text starts in from a window's side column and setup's footer.
     readonly property int sideInset: 22
+    // A page's content in from its sheet's sides, and anything that lines
+    // up with it, such as setup's footer.
+    readonly property int pageInset: 32
     readonly property int contentMaxWidth: 860
     // Width of a side column, for pages that set a label beside content.
     readonly property int marginWidth: 190

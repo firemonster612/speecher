@@ -29,25 +29,20 @@ Page {
     // The page's fixed wording.
     readonly property var t: ({
         providerSettings: "Provider settings",
-        signIn: "Sign-in",
-        openAiSignIn: "Uses your ChatGPT or Codex sign-in. API keys only cover cleanup.",
-        anthropicSignIn: "Uses your Claude Code sign-in, from its desktop app or /login in the claude CLI.",
-        openAccounts: "Open Accounts",
         ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
         ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Standard.",
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
         promptCaption: "The rules refinement follows. Most people never change them."
     })
-    // Under the sample: who cleans it up, or that nothing does.
+    // Under the sample, which is an example: who would clean it up, or that
+    // nothing does.
     readonly property string sampleCaption: {
-        if (primary === "none") return "Pasted as spoken. Choose a provider below to clean it up."
+        if (primary === "none") return "An example, pasted as spoken. Choose a provider below to clean it up."
         const model = ModelText.refinementModel(primary)
-        return "Cleaned up by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
+        return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
     }
-    readonly property string fallbacksCaption: "If " + ModelText.provider(primary).label + " fails or can't be reached, "
-        + (fallbacks.length ? "Speecher tries these in order. Drag to reorder." : "the text is pasted as spoken.")
 
-    Component.onCompleted: Models.checkComputer()
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
     // A new primary leaves the fallbacks, and None clears them.
     function choose(id) {
@@ -61,11 +56,11 @@ Page {
     Section {
         plain: true
         Plate {
-            height: sample.implicitHeight + Theme.space5 * 2
+            height: sample.implicitHeight + Theme.space4 * 2
             Column {
                 id: sample
                 x: Theme.space6
-                y: Theme.space5
+                y: Theme.space4
                 width: parent.width - Theme.space6 * 2
                 spacing: Theme.space3
                 DiffText {
@@ -93,6 +88,9 @@ Page {
             unratedText: ModelText.unrated
             onActivated: id => page.choose(id)
         }
+        // How to sign in to the chosen provider, under the cards as on
+        // Speech to text, while its card says it isn't ready.
+        RefinerSignInRow { providerId: page.primary }
     }
 
     // Settings for every provider a dictation may use: the chain's, and
@@ -122,11 +120,6 @@ Page {
                 currentIndex: Math.max(0, page.configurable.indexOf(providerSettings.shown))
 
                 Column {
-                    SettingRow {
-                        title: page.t.signIn
-                        help: page.t.openAiSignIn
-                        Button { text: page.t.openAccounts; size: "small"; onClicked: Navigation.go("accounts") }
-                    }
                     SchemaRow {
                         rowId: "openAiModel"
                         SuggestField {
@@ -152,11 +145,6 @@ Page {
                 }
 
                 Column {
-                    SettingRow {
-                        title: page.t.signIn
-                        help: page.t.anthropicSignIn
-                        Button { text: page.t.openAccounts; size: "small"; onClicked: Navigation.go("accounts") }
-                    }
                     SchemaRow {
                         rowId: "anthropicModel"
                         SuggestField {
@@ -176,61 +164,51 @@ Page {
         }
     }
 
-    // Two short groups side by side. Fallbacks fade away with no provider,
-    // and what refinement can see slides over to take the whole width.
+    // Fallbacks, full width as on Speech to text, while a provider refines.
+    Reveal {
+        open: page.refines && page.primary !== "none"
+        Section {
+            id: fallbackSection
+            // Headed and worded as Speech to text's list is.
+            title: Schema.row("refinementFallbacks").headingText.arg(ModelText.provider(page.primary).label)
+            caption: Schema.row("refinementFallbacks").help
+            SearchLanding { rowIds: ["refinementFallbacks"]; target: fallbackSection }
+            FallbackList {
+                moveUpText: Words.moveUp
+                moveDownText: Words.moveDown
+                removeText: Words.remove
+                ids: page.fallbacks
+                options: Models.refinementProviders.filter(p => p.id !== page.primary).map(p => ({ id: p.id, label: p.label }))
+                statusOf: (id, index) => {
+                    const s = ModelText.fallbackStatus(ModelText.provider(id), index, ModelText.provider(page.primary).label)
+                    return { text: s.text, tone: States.tone(s.state) }
+                }
+                emptyText: Schema.row("refinementFallbacks").emptyText.arg(ModelText.provider(page.primary).label)
+                addLabel: Schema.row("refinementFallbacks").addLabel
+                addHelp: Schema.row("refinementFallbacks").addHelp
+                addPlaceholder: Words.choose
+                onEdited: ids => Settings.set("refinementFallbacks", ids)
+            }
+        }
+    }
+
     Reveal {
         open: page.refines
-
-        Item {
-            id: pair
-            property real split: page.primary !== "none" ? 1 : 0
-            Behavior on split { Ease { duration: Theme.slow } }
-            readonly property bool paired: split === 1
-            width: parent.width
-            height: Math.max(fallbackSection.visible ? fallbackSection.height : 0, contextSection.height)
-
-            Section {
-                id: fallbackSection
-                width: (pair.width - Theme.space4) / 2
-                opacity: pair.split
-                visible: opacity > 0
-                minimumHeaderHeight: pair.paired ? contextSection.naturalHeaderHeight : 0
-                minimumCardHeight: pair.paired ? contextSection.naturalCardHeight : 0
-                title: Schema.row("refinementFallbacks").label
-                caption: page.fallbacksCaption
-                SearchLanding { rowIds: ["refinementFallbacks"]; target: fallbackSection }
-                FallbackList {
-                    moveUpText: Words.moveUp
-                    moveDownText: Words.moveDown
-                    removeText: Words.remove
-                    ids: page.fallbacks
-                    options: Models.refinementProviders.filter(p => p.id !== page.primary).map(p => ({ id: p.id, label: p.label }))
-                    statusOf: (id, index) => {
-                        const s = ModelText.fallbackStatus(ModelText.provider(id), index, ModelText.provider(page.primary).label)
-                        return { text: s.text, tone: States.tone(s.state) }
-                    }
-                    emptyText: Schema.row("refinementFallbacks").emptyText
-                    addLabel: Schema.row("refinementFallbacks").addLabel
-                    addPlaceholder: Words.choose
-                    onEdited: ids => Settings.set("refinementFallbacks", ids)
-                }
+        Section {
+            id: contextSection
+            title: Schema.row("targetContextControl").section
+            caption: page.t.contextCaption
+            AccessibilityNotice { text: Schema.row("targetContextControl").disabledHelp }
+            // Off while accessibility is, since that is what it does then.
+            SchemaRow {
+                rowId: "targetContextControl"
+                enabled: System.accessibility
+                value: System.accessibility ? Settings.values.targetContextControl : false
             }
-
-            Section {
-                id: contextSection
-                x: pair.split * (fallbackSection.width + Theme.space4)
-                width: pair.width - x
-                minimumHeaderHeight: pair.paired ? fallbackSection.naturalHeaderHeight : 0
-                minimumCardHeight: pair.paired ? fallbackSection.naturalCardHeight : 0
-                title: Schema.row("targetContextControl").section
-                caption: page.t.contextCaption
-                AccessibilityNotice { text: Schema.row("targetContextControl").disabledHelp }
-                SchemaRow { rowId: "targetContextControl"; enabled: System.accessibility }
-                SchemaRow {
-                    rowId: "includeScreenshotContext"
-                    enabled: page.inUse.some(id => !!ModelText.provider(id).readsScreenshots)
-                    help: enabled ? spec.help : spec.disabledHelp
-                }
+            SchemaRow {
+                rowId: "includeScreenshotContext"
+                enabled: page.inUse.some(id => !!ModelText.provider(id).readsScreenshots)
+                help: enabled ? spec.help : spec.disabledHelp
             }
         }
     }

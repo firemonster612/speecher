@@ -72,6 +72,17 @@ Column {
         }
     }
 
+    // The Writing Profile first, on its own card, since choosing one sets
+    // the services, cleanup and tone in both sections below; each can still
+    // be changed.
+    Section {
+        SettingRow {
+            title: TranscribeWords.profile
+            help: TranscribeWords.profileHelp
+            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
+        }
+    }
+
     // The service and the provider are chosen as on Speech to text and
     // Refinement, with the same rows.
     Section {
@@ -84,6 +95,8 @@ Column {
             onActivated: id => Transcription.setOption("service", id)
             onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
+        // How to sign in to the chosen service, as on Speech to text.
+        SignInRow { serviceId: view.options.service }
         LanguageList { id: serviceLanguages }
         // The model, for these files, of a service that has one to choose.
         // Without a downloaded Local Model the service's card says what to do.
@@ -173,6 +186,8 @@ Column {
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("refiner", id)
         }
+        // How to sign in to the chosen provider, as on Refinement.
+        RefinerSignInRow { providerId: view.options.refiner }
         // The refiner's model, for these files.
         SettingRow {
             enabled: view.refines
@@ -190,11 +205,6 @@ Column {
             title: TranscribeWords.cleanup
             help: view.refines ? TranscribeWords.cleanupHelp : TranscribeWords.needsRefiner
             CompactChoice { options: Library.levelOptions; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
-        }
-        SettingRow {
-            title: TranscribeWords.profile
-            help: TranscribeWords.profileHelp
-            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
         }
         SettingRow {
             enabled: view.refines

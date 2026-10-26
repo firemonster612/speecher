@@ -77,7 +77,7 @@ Card {
         TapHandler { id: summaryTap; onTapped: { focusVisible.pointed(); card.toggle() } }
 
         Column {
-            x: Theme.space5
+            x: Theme.rowInset
             width: trailing.x - x - Theme.space5
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space1
@@ -139,6 +139,8 @@ Card {
                     Button {
                         id: download
                         anchors.right: parent.right
+                        // One width down the list, so the buttons make a column.
+                        width: Math.max(implicitWidth, 148)
                         iconName: "download"
                         text: ModelText.download(card.entry.sizeBytes)
                         size: "small"
@@ -216,8 +218,8 @@ Card {
         open: card.expanded
 
         Column {
-            x: Theme.space5
-            width: parent.width - Theme.space5 * 2
+            x: Theme.rowInset
+            width: parent.width - Theme.rowInset * 2
             spacing: Theme.space4
             bottomPadding: Theme.space5
 

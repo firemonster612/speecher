@@ -25,6 +25,16 @@ Item {
     property var _all: []
     property int _dropped: 0
     property bool _trimming: false
+    // While the width changes (the capsule growing as it morphs), the
+    // words wrap onto lines they won't stay on, so nothing is trimmed until
+    // it has settled.
+    property bool _resizing: false
+    onWidthChanged: { _resizing = true; settled.restart() }
+    Timer {
+        id: settled
+        interval: Theme.page
+        onTriggered: { live._resizing = false; live._trim() }
+    }
 
     // Keeps the words that are still the same and replaces the rest from the
     // first one that changed, so a word heard in part ("Hel") gives way to
@@ -70,6 +80,7 @@ Item {
     // line leaves every other line wrapped as it was, so only the offset
     // changes, and that change is not animated.
     function _trim() {
+        if (_resizing) return
         const hidden = Math.ceil(flow.implicitHeight / lineHeight) - maxLines
         if (hidden < 1 || words.count < 2) return
         let firstLine = 0

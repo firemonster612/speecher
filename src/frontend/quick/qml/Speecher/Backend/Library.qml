@@ -96,11 +96,11 @@ LibraryLists {
         return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
     // Where a profile is used, given its apps and whether it is the one for
-    // apps no match names: "Used in Slack, Linear and 2 more apps."
+    // apps no match names: "Used in 22 apps." Matches are desktop IDs, not
+    // names, so the line counts them rather than listing them.
     function profileUse(apps, isFallback) {
-        const more = apps.length - 4
-        const used = apps.length === 0 ? "" : "Used in " + (more > 0 ? apps.slice(0, 4).join(", ") + " and " + Words.count(more, "more app", "more apps") : Words.list(apps)) + "."
-        if (isFallback) return used.length ? used + " Also used for apps no match names." : "Used for every app no match names."
+        const used = apps.length === 0 ? "" : "Used in " + Words.count(apps.length, "app", "apps") + "."
+        if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
         return used.length ? used : "No apps use it yet."
     }
     // The question before deleting a profile, and what deleting it changes.
@@ -125,6 +125,7 @@ LibraryLists {
         toneInstruction: "Instruction",
         toneInstructionHelp: "Refinement follows this when a profile picks the tone.",
         toneInstructionPlaceholder: "Short sentences, no exclamation marks.",
+        noTones: "No tones of your own",
         tonesEmpty: "Describe a voice once, such as short and deadpan, then pick it in any profile.",
         newLevel: "New cleanup level",
         editLevel: "Edit cleanup level",
@@ -134,9 +135,10 @@ LibraryLists {
         customOnly: "Custom only",
         levelInstructions: "Instructions",
         levelInstructionsPlaceholder: "Keep bullet points as bullet points.",
+        noLevels: "No cleanup levels of your own",
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
-        languageHelp: "Translates what you say.",
+        languageHelp: "Translates what you say. Pick one or type any language, regional varieties too.",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",
@@ -189,7 +191,7 @@ LibraryLists {
         noTermsMatch: "No terms match",
         noTermsMatchHelp: "Try another spelling, or add it as a new term.",
         noTerms: "No vocabulary terms",
-        noTermsHelp: "Add names and words the speech service should spell your way, or import a CSV.",
+        noTermsHelp: "Add a name or product you say often, or import a list from a CSV file.",
         undoCorrection: "Undo last correction",
         editCorrection: "Edit correction",
         heard: "Heard",
@@ -208,10 +210,12 @@ LibraryLists {
         noReplacements: "No replacements or snippets",
         noReplacementsHelp: "Add a spoken phrase and the exact text to put in its place, or import snippets from JSON."
     })
-    // The tabs: "7 terms", "5 learned corrections", "4 replacements and snippets".
-    readonly property string termsCount: Words.count(terms.length, "term", "terms")
-    readonly property string correctionsCount: Words.count(corrections.length, "learned correction", "learned corrections")
-    readonly property string replacementsCount: Words.count(replacements.length, "replacement or snippet", "replacements and snippets")
+    // The tabs: the list's name, then how many it holds once it holds any:
+    // "Terms (7)", "Learned corrections", "Replacements (4)".
+    function _tab(name, n) { return n ? name + " (" + Words.num(n) + ")" : name }
+    readonly property string termsCount: _tab("Terms", terms.length)
+    readonly property string correctionsCount: _tab("Learned corrections", corrections.length)
+    readonly property string replacementsCount: _tab("Replacements", replacements.length)
     readonly property string replacementsCaption: Schema.row("bindingRules").help + " Matching ignores case and treats punctuation as spaces."
     // A term's context, then where it came from: "Our dashboards. Imported.",
     // with nothing said for one you added.
@@ -252,7 +256,7 @@ LibraryLists {
         app: "App",
         appType: "App type",
         appTypeHelp: "Picks the paste rule.",
-        profile: "Writing Profile",
+        profile: "Writing profile",
         profileHelp: "Picks how the text is cleaned up.",
         deleteMatch: "Delete match",
         noMatches: "No matches of your own",

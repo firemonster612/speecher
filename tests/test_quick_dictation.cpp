@@ -77,6 +77,13 @@ QQuickItem *capsuleOf(QQuickWindow *window)
     return window->findChild<QQuickItem *>(QStringLiteral("capsule"));
 }
 
+// The size the capsule settles at for the popup's phase; a receipt's hugs
+// its words, which each platform's fonts set.
+QSizeF settledSize(QQuickItem *capsule)
+{
+    return capsule->parentItem()->property("target").toSizeF();
+}
+
 // The key a review's Replace names: the Mac keyboard's Return is Enter
 // elsewhere.
 #ifdef Q_OS_MACOS
@@ -187,12 +194,12 @@ private slots:
         QTest::addColumn<QString>("title");
         QTest::addColumn<QString>("detail");
         QTest::addColumn<QString>("outcomeName");
-        QTest::newRow("inserted") << "Input sent" << int(PopupOutcome::Inserted) << "" << "Input sent" << "" << "inserted";
+        QTest::newRow("inserted") << "Sent to the app" << int(PopupOutcome::Inserted) << "" << "Sent to the app" << "" << "inserted";
         QTest::newRow("copied, with why") << "Copied • Your selection changed" << int(PopupOutcome::Copied) << ""
                                           << "Copied" << "Your selection changed" << "copied";
         QTest::newRow("fallback, with its fix")
-            << "Used raw transcript • Input sent • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
-            << "accounts" << "Used raw transcript" << "Input sent • Your Claude sign-in has expired." << "fallback";
+            << "Used raw transcript • Sent to the app • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
+            << "accounts" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
     }
 
     void receiptsSayWhatHappened()
@@ -707,10 +714,19 @@ private slots:
         QVERIFY(arrivingFrames > 0);
         QVERIFY(everyFrameMasked);
 
-        // From the bare bar to the receipt's 220 by 44.
-        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsule->width() > 221 && capsule->width() < 279);
-        QVERIFY(masksDrawn());
+        // From the bare bar down to the receipt, which hugs its words: every
+        // frame on the way.
+        int morphingFrames = 0;
+        bool everyMorphingFrameMasked = true;
+        connect(capsule, &QQuickItem::widthChanged, &popup, [&] {
+            ++morphingFrames;
+            everyMorphingFrameMasked = everyMorphingFrameMasked && masksDrawn();
+        });
+        emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
+        QTRY_VERIFY(settledSize(capsule).width() < 280);
+        QTRY_COMPARE(capsule->width(), settledSize(capsule).width());
+        QVERIFY(morphingFrames > 1);
+        QVERIFY(everyMorphingFrameMasked);
     }
 
     // The window is as big as the popup ever grows; its mask follows the
@@ -750,9 +766,28 @@ private slots:
         };
         // Listening with no words yet: the bare bar.
         QTRY_VERIFY(capsuleIs(280, 44));
-        // The receipt's capsule hugs a short line.
-        emit session->popupMessageRequested(QStringLiteral("Input sent"), PopupOutcome::Inserted);
-        QTRY_VERIFY(capsuleIs(220, 44));
+        // The receipt's capsule hugs a short line, narrower than the bar.
+        emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
+        auto *capsule = window->findChild<QQuickItem *>(QStringLiteral("capsule"));
+        QVERIFY(capsule);
+        QTRY_VERIFY(settledSize(capsule).width() < 280);
+        QTRY_COMPARE(capsule->width(), settledSize(capsule).width());
+        // Its width is fractional, so the mask rounds out to within a pixel.
+        const auto masksCapsule = [window, capsule] {
+#if defined(Q_OS_MACOS)
+            Q_UNUSED(capsule);
+            return window->mask().isEmpty();
+#else
+            QRectF drawn = capsule->mapRectToScene(QRectF(0, 0, capsule->width(), capsule->height()));
+#if defined(Q_OS_WIN)
+            drawn.adjust(-20, -12, 20, 28);
+#endif
+            const QRect mask = window->mask().boundingRect();
+            return qAbs(mask.left() - drawn.left()) <= 1 && qAbs(mask.top() - drawn.top()) <= 1
+                && qAbs(mask.right() + 1 - drawn.right()) <= 1 && qAbs(mask.bottom() + 1 - drawn.bottom()) <= 1;
+#endif
+        };
+        QTRY_VERIFY(masksCapsule());
 
         // Faded out, the window goes.
         emit session->popupHideRequested();

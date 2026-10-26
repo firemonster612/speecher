@@ -17,7 +17,9 @@ Plate {
     readonly property bool running: Audio.testState === "running"
     // Whether the button's test is this page's: setup may hold it too.
     readonly property bool holding: Audio.testHolders.indexOf(root) >= 0
-    readonly property int levelHeight: 112
+    // The level's room: full while the test listens, less while it waits,
+    // so the idle plate isn't mostly empty.
+    readonly property int levelHeight: running ? 112 : 64
 
     // The page going away lets go of the microphone.
     Component.onDestruction: Audio.releaseTest(root)
@@ -71,7 +73,6 @@ Plate {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     readonly property bool stops: root.holding && root.running
-                    variant: stops ? "secondary" : "primary"
                     iconName: stops ? "square" : "mic"
                     busy: Audio.testState === "starting"
                     enabled: Audio.canToggleTest
@@ -82,13 +83,22 @@ Plate {
             }
         }
 
-        // No microphone: what to check, as tall as the stage it stands in for.
+        // No microphone: what to check, at its own height; the plate eases
+        // to the stage's when one appears.
         Item {
-            implicitHeight: root.levelHeight + Theme.space5 + Theme.controlHeight
+            implicitHeight: noMicrophone.implicitHeight
             Column {
+                id: noMicrophone
                 width: Math.min(parent.width, 420)
-                anchors.centerIn: parent
+                anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Theme.space3
+                // The state as Home and setup say it, then what to do.
+                StatusText {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.device.noneLabel
+                    tone: "warning"
+                    indicator: "dot"
+                }
                 Txt {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter

@@ -8,7 +8,7 @@ var text = {
     yourDictation: "Your dictation",
     activity: "Activity",
     timeOfDay: "Time of day",
-    profilesUsed: "Writing Profiles",
+    profilesUsed: "Writing profiles",
     apps: "Apps",
     records: "Records",
     milestones: "Milestones",
@@ -21,6 +21,11 @@ var text = {
     stop: "Stop",
     pressShortcut: "Press the shortcut in any app to dictate into it.",
     noShortcut: "Set a dictation shortcut to dictate from any app.",
+    noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind the speecher command to a key.",
+    ready: "Ready to dictate",
+    notReady: "Not ready to dictate",
+    wordsOnClipboard: "Words stay on the clipboard",
+
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
     insightsSettings: "Insights settings",
@@ -227,10 +232,21 @@ function milestones(s) {
 }
 function milestoneCaption(s) { return _count(s.allTimeWords, "word", "words") + " dictated in all." }
 
+// What dictation needs of the things Home lists, by their ids, in one
+// plain sentence; the rows name each problem and its fix.
+// Empty where only Pasting is listed: its row says it.
+function readiness(ids) {
+    const needs = [ids.includes("access") ? "microphone access" : "",
+                   ids.includes("microphone") ? "a microphone" : "",
+                   ids.includes("speech") ? "a working speech service" : ""].filter(s => s)
+    if (!needs.length) return ""
+    return "Dictation needs " + (needs.length > 1 ? needs.slice(0, -1).join(", ") + " and " + needs[needs.length - 1] : needs[0]) + "."
+}
+
 // The learned corrections card says how learning stands, and what to do.
 function correctionsCaption(c) {
     if (!c.learning) return "Learning is off."
-    if (!c.accessible) return "Speecher learns corrections once desktop accessibility is on."
+    if (!c.accessible) return ""
     if (!c.count) return "Fix a dictated word the same way twice and it appears here."
     return _count(c.count, "correction", "corrections") + " learned from edits you made after dictating."
 }
@@ -282,7 +298,7 @@ var _tips = [
     { page: "refinement", action: "Refinement settings",
       text: "Select some text, press the shortcut and say what to change, such as \"make this friendlier\"." },
     { page: "profiles", action: "Writing profiles",
-      text: "Writing Profiles set the tone and cleanup for each app, so Slack stays casual and email stays formal." },
+      text: "Writing profiles set the tone and cleanup for each app, so Slack stays casual and email stays formal." },
     { page: "vocabulary", action: "Vocabulary",
       text: "Names and terms in Vocabulary are spelled right the first time." },
     { page: "shortcuts", action: "Shortcuts",

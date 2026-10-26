@@ -321,7 +321,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         QString restoreError;
         const bool restored = copiedInitially && restorePreviousClipboard(verified, &restoreError);
         QString message = verified
-            ? QStringLiteral("Verified in Target")
+            ? QStringLiteral("Pasted")
             : copiedInitially
                 ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
                 : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(initialCopyError);
@@ -453,9 +453,9 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                         : QStringLiteral("Sent. Your dictation is also on the clipboard.")
                     : virtualKeyboardInput
                     ? restoredClipboard
-                        ? QStringLiteral("Input sent")
-                        : QStringLiteral("Copied • Input sent")
-                    : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
+                        ? QStringLiteral("Sent to the app")
+                        : QStringLiteral("Copied • Sent to the app")
+                    : verified ? QStringLiteral("Pasted") : QStringLiteral("Sent to the app");
             return {true,
                     copied ? DeliveryReceipt::Copied
                            : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,

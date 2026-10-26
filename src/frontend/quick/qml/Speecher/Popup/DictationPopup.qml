@@ -80,12 +80,15 @@ Item {
     readonly property size target: {
         if (phase === "review") return Qt.size(widest, review.y * 2 + review.implicitHeight)
         if (followingUp) return Qt.size(widest, review.y + review.implicitHeight + liveHeight)
-        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(220, receipt.x + receipt.implicitWidth + receiptEnd)),
+        if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(160, receipt.x + receipt.implicitWidth + receiptEnd)),
                                                                       Math.max(barHeight, receipt.implicitHeight + 20))
         return Qt.size(showText ? 460 : recording ? 280 : 220, liveHeight)
     }
     // The live bar, and the words above it when they show.
     readonly property real liveHeight: showText ? barHeight + words.y + words.implicitHeight - 4 : barHeight
+    // The tallest it gets while words come in: every line of live text
+    // shown, for a stage that holds it.
+    readonly property real tallestLive: barHeight + words.y + words.maxLines * words.lineHeight - 4
     readonly property int barHeight: 44
 
     // The orb sits in the pill's round left end, and words and sound start
@@ -93,9 +96,10 @@ Item {
     readonly property int orbX: 10
     readonly property int orbSize: 24
     readonly property int contentX: orbX + orbSize + 10
-    // The room after the receipt's words: less where its buttons end it,
-    // since a button's own padding takes the rest.
-    readonly property int receiptEnd: receiptButtons.visible ? 8 : 18
+    // The room after the receipt's words, or after its buttons: about the
+    // gap above and below a small button, so it sits inside the pill's
+    // round end rather than against it.
+    readonly property int receiptEnd: receiptButtons.visible ? 14 : 18
     // A long edit or message scrolls past this height rather than growing
     // the capsule.
     readonly property int textMax: 180

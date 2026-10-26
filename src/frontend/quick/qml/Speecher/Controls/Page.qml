@@ -46,7 +46,7 @@ Item {
 
         Column {
             id: column
-            width: Math.min(Theme.contentMaxWidth, flick.width - 64)
+            width: Math.min(Theme.contentMaxWidth, flick.width - Theme.pageInset * 2)
             x: (flick.width - width) / 2
             y: 28
             spacing: Theme.sectionGap
@@ -83,7 +83,7 @@ Item {
                         visible: page.subtitle.length > 0
                         text: page.subtitle
                         tone: "secondary"
-                        width: Math.min(parent.width, 600)
+                        width: Math.min(parent.width, 680)
                         wrapMode: Text.WordWrap
                     }
                 }

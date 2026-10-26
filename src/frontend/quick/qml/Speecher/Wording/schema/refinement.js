@@ -7,8 +7,10 @@ var rows = [
     { id: "refinementRating", page: "refinement", section: "Provider", kind: "custom",
       label: "Rating", help: "Out of 10.", keywords: "quality speed score benchmark" },
     { id: "refinementFallbacks", page: "refinement", section: "Fallbacks", kind: "custom",
-      label: "Fallbacks", help: "Tried in order when the provider above fails.", value: ["anthropic"],
-      emptyText: "No fallbacks", addLabel: "Add a fallback",
+      label: "Fallbacks", help: "Speecher tries these top to bottom and tells you when it used one.", value: ["anthropic"],
+      headingText: "If %1 is unavailable",
+      emptyText: "None. If %1 is unavailable, your words are pasted as spoken.", addLabel: "Add a fallback",
+      addHelp: "Used when everything above is unavailable.",
       keywords: "backup failover retry order second provider" },
 
     { id: "openAiModel", page: "refinement", section: "ChatGPT", kind: "custom",
@@ -94,8 +96,10 @@ var rows = [
       value: false, keywords: "prompt rules override instructions advanced" },
     { id: "customSystemPrompt", page: "refinement", section: "System prompt", kind: "custom",
       label: "Prompt", help: "Selection editing and local models keep their own prompts.",
-      keywords: "prompt edit text", enabledWhen: { id: "customSystemPromptEnabled", equals: true } },
+      keywords: "prompt edit text", enabledWhen: { id: "customSystemPromptEnabled", equals: true },
+      disabledHelp: "Turn on a custom system prompt above to edit it." },
     { id: "resetCustomSystemPrompt", page: "refinement", section: "System prompt", kind: "custom",
       label: "Built-in prompt", help: "The built-in prompt, at Medium cleanup with no tone.", actionLabel: "Reset to built-in",
-      keywords: "reset restore default prompt", enabledWhen: { id: "customSystemPromptEnabled", equals: true } }
+      keywords: "reset restore default prompt", enabledWhen: { id: "customSystemPromptEnabled", equals: true },
+      disabledHelp: "The built-in prompt is in use." }
 ];

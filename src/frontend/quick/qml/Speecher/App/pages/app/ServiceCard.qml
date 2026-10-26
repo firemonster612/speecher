@@ -14,12 +14,34 @@ Card {
     id: root
 
     required property string serviceId
+    // The head's height, and the least it takes, so two cards side by side
+    // start their rows at the same height.
+    readonly property real naturalHeadHeight: head.implicitHeight + Theme.space4 * 2
+    property real minimumHeadHeight: 0
     // Looked up in services, so the card follows every check.
     readonly property var service: Accounts.services.find(s => s.id === serviceId)
+    // Signing in through the Codex app or Claude Code, whose fixes the
+    // card can name; an API key or CLI Proxy API keeps core's words.
+    readonly property bool oauth: serviceId === "openai" ? ["auto", "codex_oauth"].includes(Settings.values.openAiAuthMode)
+                                : serviceId === "anthropic" && Settings.values.anthropicAuthMode === "oauth"
+    // Whether something signs in through this service now, so its state can
+    // stand in the way: a speech service or refinement provider chosen, a
+    // fallback or a writing profile's own, or for CLI Proxy API a sign-in or
+    // server that goes through it.
+    readonly property bool inUse: {
+        const v = Settings.values
+        const speech = [v.speechProvider].concat(v.speechFallbackList || [], Library.profiles.map(p => p.speech))
+        const refinement = [v.refinementProvider].concat(v.refinementFallbacks || [], Library.profiles.map(p => p.refinement))
+        if (serviceId === "openai") return speech.includes("codex") || refinement.includes("openai")
+        if (serviceId === "anthropic") return speech.includes("claude") || refinement.includes("anthropic")
+        return v.openAiAuthMode === "cliproxy" || v.anthropicAuthMode === "cliproxy" || !!v.cliproxyBaseUrl
+    }
+    // The line under the name: what Speecher found, or what to do.
+    readonly property string detail: Words.signInDetail(service, oauth)
 
     Item {
         width: parent.width
-        implicitHeight: head.implicitHeight + Theme.space4 * 2
+        implicitHeight: Math.max(root.naturalHeadHeight, root.minimumHeadHeight)
 
         Column {
             id: head
@@ -39,7 +61,8 @@ Card {
                     StateText {
                         stateId: root.service.state
                         text: Words.signInStates[root.service.state]
-                        indicator: "dot"
+                        // A sign-in nothing uses stands in no one's way.
+                        tone: root.inUse ? States.tone(stateId) : "neutral"
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     IconButton {
@@ -52,7 +75,7 @@ Card {
                     }
                 }
             }
-            Txt { width: parent.width; text: Words.signInDetail(root.service); variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: root.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"

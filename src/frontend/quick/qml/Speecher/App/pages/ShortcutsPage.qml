@@ -7,16 +7,46 @@ import Speecher.Wording
 import Speecher.App
 
 Page {
+    id: page
+    // The desktop gives Speecher no shortcut: the command is the way in, so
+    // the page says so and leads with it.
+    readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     title: Schema.page("shortcuts").title
-    subtitle: Schema.page("shortcuts").subtitle
+    subtitle: noShortcuts ? Schema.page("shortcuts").subtitleNoShortcuts : Schema.page("shortcuts").subtitle
+
+    // How shortcuts reach Speecher: first where the command is the way in,
+    // last where it is the extra.
+    component Reach: Section {
+        title: Schema.row("startCommand").section
+        // The same check as Permissions & health's, and where the desktop lists the shortcuts.
+        HealthRow {
+            rowId: "globalShortcuts"
+            // Here the command row says what to do instead, right below.
+            help: Health.settledHere(check) ? Words.noShortcutHere : Health.failure(check) || Health.detail(check)
+            // Where Speecher knows the desktop's own shortcut settings.
+            Button {
+                visible: System.canOpenShortcutSettings
+                text: "System settings"
+                size: "small"
+                trailingIcon: "external-link"
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: System.openShortcutSettings()
+            }
+        }
+        StartCommandRow {}
+    }
+    Reveal { open: page.noShortcuts; Reach {} }
 
     // The shortcut, big: the page's one picture. Holding the pointer on it
-    // presses the keys and listens, as holding the shortcut does.
-    Section {
-        plain: true
+    // presses the keys and listens, as holding the shortcut does. With no
+    // shortcut there is nothing to picture, and the line of what pressing
+    // it does is the chosen option's own help below, so it folds away.
+    Reveal {
+        open: hero.keys.length > 0
         Plate {
             id: hero
             readonly property bool held: press.pressed
+            readonly property var keys: Settings.values.globalShortcut || []
             height: 132
             clip: true
 
@@ -24,7 +54,7 @@ Page {
                 id: caps
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 22
-                keys: Settings.values.globalShortcut || []
+                keys: hero.keys
                 size: "large"
                 pressed: hero.held
                 lit: hero.held
@@ -58,48 +88,28 @@ Page {
         }
     }
 
-    Section {
-        title: Schema.row("globalShortcut").section
-        SchemaRow { rowId: "globalShortcut" }
-        SchemaRow { rowId: "shortcutBehavior" }
-    }
-
-    Section {
-        title: Schema.row("pauseShortcut").section
-        caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
-        SchemaRow { rowId: "pauseShortcut" }
-        SchemaRow { rowId: "cancelShortcut" }
-    }
-
-    Section {
-        title: Schema.row("startCommand").section
-        // The same check as Permissions & health's, and where the desktop lists the shortcuts.
-        HealthRow {
-            rowId: "globalShortcuts"
-            // Where Speecher knows the desktop's own shortcut settings.
-            Button {
-                visible: System.canOpenShortcutSettings
-                text: "System settings"
-                size: "small"
-                trailingIcon: "external-link"
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: System.openShortcutSettings()
-            }
-        }
-        SchemaRow {
-            id: command
-            rowId: "startCommand"
-            Rectangle {
-                width: cmd.implicitWidth + 44
-                height: 30
-                radius: Theme.radius
-                color: Theme.sheet
-                border.width: 1
-                border.color: Theme.border
-                Txt { id: cmd; x: 12; anchors.verticalCenter: parent.verticalCenter; text: command.spec.command; variant: "code" }
-                CopyButton { copiedText: Words.copied; tooltip: Words.copy; size: "small"
-; onCopied: System.copy(command.spec.command); anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter }
-            }
+    // The dictation shortcut and what pressing it does: with no shortcut to
+    // be had, the command above runs one dictation, so both fold away.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("globalShortcut").section
+            SchemaRow { rowId: "globalShortcut" }
+            SchemaRow { rowId: "shortcutBehavior" }
         }
     }
+
+    // Keys that act while dictating bind through the desktop too, so they
+    // fold away with the shortcut where it gives none.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("pauseShortcut").section
+            caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
+            SchemaRow { rowId: "pauseShortcut" }
+            SchemaRow { rowId: "cancelShortcut" }
+        }
+    }
+
+    Reveal { open: !page.noShortcuts; Reach {} }
 }

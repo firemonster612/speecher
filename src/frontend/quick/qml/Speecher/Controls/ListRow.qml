@@ -19,6 +19,7 @@ Item {
     property string detail
     property string iconName
     property string titleVariant: "label"
+    property string titleTone: "primary"
     // A long title, such as a dictation, wraps instead of eliding.
     property bool wrapTitle: false
     property int detailLines: 1
@@ -87,6 +88,7 @@ Item {
                 width: parent.width
                 text: row.title
                 variant: row.titleVariant
+                tone: row.titleTone
                 wrapMode: row.wrapTitle ? Text.WordWrap : Text.NoWrap
                 elide: row.wrapTitle ? Text.ElideNone : Text.ElideMiddle
             }

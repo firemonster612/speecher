@@ -27,7 +27,7 @@ var rows = [
       label: "Used in", help: "Apps are matched to profiles in Application recognition, under Pasting › App rules.",
       keywords: "apps applications match recognition" },
     { id: "defaultWritingProfile", page: "profiles", section: "Every profile", kind: "custom",
-      label: "When the app isn't recognized", help: "The profile for every app no match names.",
+      label: "When the app isn't recognized", help: "The profile for apps Speecher doesn't recognize.",
       value: "other", keywords: "fallback default profile unknown app unrecognized" },
 
     { id: "additionalInstructions", page: "profiles", section: "Every profile", kind: "custom",

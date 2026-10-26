@@ -30,9 +30,6 @@ StepPage {
             options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
             currentId: page.choices.cleanup
             unratedText: ModelText.unrated
-            // One line of help, so every choice fits the step at its
-            // default size.
-            helpLines: 1
             onActivated: id => page.choices.cleanup = id
         }
         Reveal {
@@ -62,5 +59,7 @@ StepPage {
         }
     }
 
-    Component.onCompleted: Models.checkComputer()
+    // Refinement providers' sign-ins come from Accounts' checks, which
+    // start the first time anything asks for Accounts.
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); Accounts.services }
 }

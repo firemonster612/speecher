@@ -156,13 +156,13 @@ Column {
             width: parent.width
             spacing: Theme.space2
             Select {
-                // Narrows rather than push New tone out of a narrow editor.
+                // Narrows rather than push Add tone out of a narrow editor.
                 width: Math.min(implicitWidth, toneRow.width - newTone.width - toneRow.spacing)
                 options: editor.tones
                 currentId: editor.tone.id
                 onChosen: id => editor.edited({ tone: id })
             }
-            Button { id: newTone; text: Library.profilesText.newTone; iconName: "plus"; variant: "ghost"; onClicked: editor.newToneRequested() }
+            Button { id: newTone; text: Library.profilesText.addTone; iconName: "plus"; onClicked: editor.newToneRequested() }
         }
     }
 
@@ -181,6 +181,9 @@ Column {
                 iconName: "languages"
                 text: editor.profile.language || ""
                 placeholderText: Schema.row("profileLanguage").placeholder
+                // Empty means the same as spoken, so at rest that reads as
+                // the value, as a Select's default does; editing, a hint.
+                placeholderTextColor: activeFocus ? Theme.textTertiary : Theme.text
                 suggestions: Library.outputLanguages.map(l => ({ id: l, label: l }))
                 onCommitted: v => editor.edited({ language: v.trim() })
             }

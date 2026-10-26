@@ -14,6 +14,10 @@ SearchLanding 1.0 SearchLanding.qml
 SubpageRows 1.0 SubpageRows.qml
 AccessibilityNotice 1.0 AccessibilityNotice.qml
 HealthRow 1.0 HealthRow.qml
+StartCommandRow 1.0 StartCommandRow.qml
+CommandChip 1.0 CommandChip.qml
+SignInRow 1.0 SignInRow.qml
+RefinerSignInRow 1.0 RefinerSignInRow.qml
 RemovalReport 1.0 RemovalReport.qml
 VirtualKeyboardTest 1.0 VirtualKeyboardTest.qml
 StateText 1.0 StateText.qml

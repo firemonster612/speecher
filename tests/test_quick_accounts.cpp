@@ -8,6 +8,8 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJsonDocument>
@@ -237,6 +239,10 @@ private slots:
     {
         ApplicationController controller(true);
         controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        QuickSettings settings(&controller);
+        // The card asks Library which services the profiles use.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
@@ -247,6 +253,107 @@ private slots:
 
         QCOMPARE(shown(), QVariant(QStringLiteral("checking")));
         QTRY_COMPARE(shown(), QVariant(QStringLiteral("missing")));
+    }
+
+    // A missing sign-in through the Codex app gets the card's own fix; an
+    // API key from the environment keeps core's line, which names the key.
+    void aServiceCardWordsItsSignInSource()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        // The card asks Library which services the profiles use.
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        const std::unique_ptr<QObject> card(
+            component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("openai")}}));
+        QVERIFY2(card, qPrintable(component.errorString()));
+        const auto state = [&card] { return card->property("service").toMap().value(QStringLiteral("state")).toString(); };
+        const QString codexFix = QStringLiteral("No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.");
+
+        QTRY_COMPARE(state(), QStringLiteral("missing"));
+        QCOMPARE(card->property("detail").toString(),
+                 card->property("service").toMap().value(QStringLiteral("detail")).toString());
+        QVERIFY(card->property("detail").toString() != codexFix);
+
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("codex_oauth"));
+        QTRY_COMPARE(state(), QStringLiteral("missing"));
+        QCOMPARE(card->property("detail").toString(), codexFix);
+    }
+
+    // A card's state is toned only while something signs in through it, a
+    // writing profile's own service included.
+    void aServiceCardTonesOnlyWhatIsUsed()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("local"));
+        settings.set(QStringLiteral("speechFallbackList"), QStringList());
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("none"));
+        settings.set(QStringLiteral("refinementFallbacks"), QStringList());
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        const std::unique_ptr<QObject> card(
+            component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("anthropic")}}));
+        QVERIFY2(card, qPrintable(component.errorString()));
+        QVERIFY(!card->property("inUse").toBool());
+
+        AppSettings snapshot = controller.settings()->snapshot();
+        QVERIFY(!snapshot.refinement.writingProfiles.isEmpty());
+        snapshot.refinement.writingProfiles.first().speechProvider = QStringLiteral("claude");
+        controller.settings()->applySnapshot(snapshot);
+        QTRY_VERIFY(card->property("inUse").toBool());
+    }
+
+    // Refinement's sign-in row waits for Accounts' first answer, then says
+    // how to sign in.
+    void aRefinerSignInRowWaitsForTheCheck()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
+        const std::unique_ptr<QObject> row(
+            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QVERIFY2(row, qPrintable(component.errorString()));
+
+        QVERIFY(!row->property("shown").toBool());
+        QTRY_VERIFY(row->property("shown").toBool());
+        QVERIFY(!row->property("unknown").toBool());
+    }
+
+    // An expired sign-in, which core leaves unknown, still gets the row, and
+    // Check again keeps it up while Accounts checks.
+    void aRefinerSignInRowShowsAnExpiredSignIn()
+    {
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        QVERIFY(!useExpiredCodexAccount(*controller.settings(), dir.path()).isEmpty());
+        QuickSettings settings(&controller);
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
+        const std::unique_ptr<QObject> row(
+            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QVERIFY2(row, qPrintable(component.errorString()));
+
+        QTRY_VERIFY(row->property("shown").toBool());
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("expired"));
+        accounts.recheck(QStringLiteral("openai"));
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("checking"));
+        QVERIFY(row->property("shown").toBool());
     }
 
     // A sign-in setting saved from any page checks the sign-ins again; any
