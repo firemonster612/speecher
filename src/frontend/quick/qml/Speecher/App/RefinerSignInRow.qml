@@ -14,7 +14,9 @@ SettingRow {
     // may well be there: say so and check again, as Accounts does. Any other
     // state, an expired sign-in included, is fixed on Accounts.
     readonly property bool unknown: (Accounts.services.find(s => s.id === providerId) || {}).state === "unknown"
-    shown: !!provider.signIn && provider.state !== "ready"
+    // Not while the first check is still out: core says unknown until it
+    // answers, and Accounts says checking.
+    shown: !!provider.signIn && provider.state !== "ready" && (provider.state !== "unknown" || unknown)
     title: unknown ? Words.signInUnknownFor(provider.label) : Words.signInTo(provider.label)
     help: unknown ? Words.signInDetail({ state: "unknown" }) : provider.signIn || ""
     Button {

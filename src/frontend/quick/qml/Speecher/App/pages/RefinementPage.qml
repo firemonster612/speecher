@@ -42,9 +42,7 @@ Page {
         return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
     }
 
-    // Refinement providers' sign-ins come from Accounts' checks, which
-    // start the first time anything asks for Accounts.
-    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); Accounts.services }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
     // A new primary leaves the fallbacks, and None clears them.
     function choose(id) {

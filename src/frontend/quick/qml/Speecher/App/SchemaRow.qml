@@ -22,17 +22,11 @@ SettingRow {
     // Shown once this build saves the row or runs its action; until then it
     // isn't offered at all, here or in search.
     readonly property bool _saves: Schema.settable(spec, id => Settings.saves(id))
-    // A shortcut row where the desktop gives Speecher none: off, saying so.
-    // The start, pause and cancel keys all bind through the desktop, so
-    // none can; the start command and the popup's buttons do their jobs.
-    readonly property bool _noShortcut: ["globalShortcut", "pauseShortcut", "cancelShortcut"].includes(rowId)
-                                        && Health.noShortcuts(System.checks)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place, and a row nothing saves yet says so.
     // Whether the row that turns this one on is on (enabledWhen).
     readonly property bool _turnedOn: !spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals
-    property string note: (_noShortcut ? Words.noShortcutsHere
-                           : !_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
+    property string note: (!_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
@@ -41,7 +35,7 @@ SettingRow {
     iconName: spec.icon || ""
     // _turnedOn reads Settings.values in its binding, so the row
     // follows that value.
-    enabled: _blurs && _saves && !_noShortcut && _turnedOn
+    enabled: _blurs && _saves && _turnedOn
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
     readonly property var _options: Schema.options(spec, need => System[need])

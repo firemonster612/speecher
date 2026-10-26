@@ -87,10 +87,11 @@ function settledHere(check) { return check.id === "globalShortcuts" && check.rea
 
 // What delivery needs, by the default paste rule and Paste with: direct
 // insertion needs accessibility, the virtual keyboard only needs the keys,
-// and otherwise either does; clipboard only, chosen, needs nothing.
+// and otherwise either does; clipboard only, chosen, needs nothing. macOS
+// presses ⌘V only with accessibility too, so there it is all that's needed.
 function deliveryNeeds(pasteRule, outputMethod) {
     if (pasteRule === "clipboard_only") return "";
-    if (pasteRule === "direct_insert") return "accessibility";
+    if (pasteRule === "direct_insert" || Qt.platform.os === "osx") return "accessibility";
     if (outputMethod === "ydotool") return "keyboard";
     return "either";
 }

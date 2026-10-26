@@ -21,7 +21,7 @@ Reveal {
         title: Words.signInTo(signIn.service.label)
         // Why the last check failed wraps under the label, in place of the
         // help, as a refused setting's reason does; else how to sign in.
-        help: !signIn.checking && signIn.failure ? signIn.failure : signIn.service.signIn || signIn.service.access
+        help: !signIn.checking && signIn.failure ? signIn.failure : signIn.service.signIn || ""
         Button {
             text: Words.checkAgain
             size: "small"

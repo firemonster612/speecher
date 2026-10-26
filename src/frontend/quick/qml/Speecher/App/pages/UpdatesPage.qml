@@ -51,9 +51,9 @@ Page {
         // the caption.
         title: page.t.current(Words.versionNumber(Status.version))
         // A nightly running on the Stable channel says the next update leaves it.
-        caption: (!page._channel ? ""
+        caption: [!page._channel ? ""
                   : Settings.values.updateChannel === "stable" && Status.version.indexOf("nightly") >= 0 ? page.t.nightlyOnStable
-                  : page.t.channel(page._channel.label)) + " " + page.t.build(Status.version)
+                  : page.t.channel(page._channel.label), page.t.build(Status.version)].filter(s => s).join(" ")
         UpdateStatus { channelLabel: page._channel ? page._channel.label : "" }
     }
 

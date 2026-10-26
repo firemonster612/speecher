@@ -219,7 +219,7 @@ Card {
 
         Column {
             x: Theme.rowInset
-            width: parent.width - Theme.space5 * 2
+            width: parent.width - Theme.rowInset * 2
             spacing: Theme.space4
             bottomPadding: Theme.space5
 

@@ -12,28 +12,25 @@ QtObject {
 
     // Speech services ----------------------------------------------------------
 
-    // What each service is good at (settings), what it needs (setup), and
-    // how its text arrives; %1 in help is how many languages it listens
+    // What each service is good at, how to sign in to one that signs in,
+    // and how its text arrives; %1 in help is how many languages it listens
     // for. A service this table lacks, such as the test stub, shows its
     // label alone.
     readonly property var _services: ({
         codex: { icon: "openai", help: "Very accurate, %1.",
-                 access: "Uses your sign-in from the Codex app.",
                  signIn: "Sign in to ChatGPT in the Codex app, then check again.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
                           { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
         claude: { icon: "claude", help: "%1, automatic punctuation and numerals.",
-                  access: "Uses your Claude Code sign-in.",
                   signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI, then check again.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
         endpoint: { icon: "server", help: "Your server sets speed, accuracy and languages.",
-                    access: "Your own speech server.", textShows: "Text after you stop", models: [] },
-        local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.",
-                 access: "No account, works offline after a one-time download.", models: [] }
+                    textShows: "Text after you stop", models: [] },
+        local: { icon: "cpu", help: "Runs on this computer: no account, works offline after a one-time download.", models: [] }
     })
-    function _service(id) { return _services[id] || { icon: "circle", help: "", access: "", textShows: "", models: [] } }
+    function _service(id) { return _services[id] || { icon: "circle", help: "", textShows: "", models: [] } }
 
-    // A speech service with its wording: { id, label, icon, help, access,
+    // A speech service with its wording: { id, label, icon, help,
     // signIn (how to sign in, for one that signs in), textShows, models,
     // state, problem, languages }, and languageLink, the
     // part of help that says how many languages, where it does.

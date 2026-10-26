@@ -497,7 +497,7 @@ Layout and rows:
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
 - `SchemaRow { rowId }` (in Speecher.App): a SettingRow built from the schema.
-- `ListRow { title; detail; iconName; titleVariant; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
+- `ListRow { title; detail; iconName; titleVariant; titleTone; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
 - `RowList { values; keyOf; entry(key); first }`: a non-scrolling list of rows that animates adds, removes and moves. Delegates take `required property string key`, read `list.entry(key)` (still there while a row fades out) and set `first: index === 0 && list.first`.
 - `Disclosure { title; help; trailingText; open; highlight() }`: a row that opens to more rows.
 - `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.
@@ -519,7 +519,7 @@ Choosing:
 - `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
-- `EditableList { items; emptyText; formOpen }`: things a person made, with edit and delete.
+- `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:
 
@@ -564,9 +564,11 @@ In Speecher.App, besides SchemaRow:
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
+- `RefinerSignInRow { providerId }`: under the cards that choose a refinement provider, while its sign-in isn't ready, how to sign in with Open Accounts, or, where Accounts couldn't read the keychain, Check again.
+- `CommandChip { command }`: a command in code type with a copy button.
 - `StartCommandRow`: the `startCommand` row, the command that starts one dictation with a copy button, wherever the desktop gives no shortcut.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
-- `Brand { title; detail }`: the mark and the window's name in the title strip, for the main window and setup.
+- `Brand { title; detail; detailTip }`: the mark and the window's name in the title strip, for the main window and setup.
 - `LanguageList { show(at, codes) }`: a LanguagePopover that only shows the languages a service or model listens for, named and worded.
 
 ## Building pages

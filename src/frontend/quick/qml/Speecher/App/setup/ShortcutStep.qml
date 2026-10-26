@@ -10,7 +10,7 @@ StepPage {
     id: page
     // The desktop gives Speecher no shortcut, so the command starts dictation.
     readonly property bool unsupported: Health.noShortcuts(System.checks)
-    subtitle: unsupported ? Setup.text.shortcutCommandOnly : info.description || ""
+    subtitle: unsupported ? Words.noShortcutHere : info.description || ""
     Card {
         // Where the desktop gives no shortcut, the command runs one
         // dictation, so the shortcut and what pressing it does fold away.

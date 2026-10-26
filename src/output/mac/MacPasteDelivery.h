@@ -8,7 +8,7 @@ namespace speecher {
 
 // Synthesises keystrokes with CGEvent. macOS drops posted events silently when
 // the process is not trusted for Accessibility, so every entry point refuses up
-// front rather than letting delivery report an "Sent to the app" receipt it cannot
+// front rather than letting delivery report a "Sent to the app" receipt it cannot
 // back up.
 class MacPasteDelivery {
 public:
