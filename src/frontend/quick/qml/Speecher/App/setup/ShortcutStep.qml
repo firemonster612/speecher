@@ -19,12 +19,15 @@ StepPage {
             SchemaRow { rowId: "globalShortcut" }
             SchemaRow { rowId: "shortcutBehavior" }
         }
-        SchemaRow { rowId: "cancelShortcut"; note: Setup.text.cancelShortcutHelp }
         // Where the desktop gives no shortcut, the command starts dictation
         // instead, and the step can go on without keys.
         Reveal {
             open: page.unsupported
             StartCommandRow {}
+        }
+        Reveal {
+            open: !page.unsupported
+            SchemaRow { rowId: "cancelShortcut"; note: Setup.text.cancelShortcutHelp }
         }
     }
 }

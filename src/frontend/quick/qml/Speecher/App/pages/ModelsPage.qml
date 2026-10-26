@@ -10,7 +10,7 @@ import "speech"
 Page {
     id: page
     title: Schema.page("models").title
-    subtitle: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
+    subtitle: Schema.page("models").subtitle
 
     Component.onCompleted: Models.checkComputer()
 
@@ -33,7 +33,8 @@ Page {
     Section {
         id: librarySection
         title: page.library.label
-        caption: page.library.help
+        // What the ratings, speeds and fits are measured against.
+        caption: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
         plain: true
         SearchLanding { rowIds: ["localModelBrowser"]; target: librarySection }
         actions: [

@@ -18,7 +18,7 @@ Reveal {
     // while the first check is still out.
     open: !!service.signsIn && service.state !== "ready" && (service.state !== "unknown" || failure !== "")
     SettingRow {
-        title: signIn.service.label
+        title: Words.signInTo(signIn.service.label)
         // Why the last check failed wraps under the label, in place of the
         // help, as a refused setting's reason does; else how to sign in.
         help: !signIn.checking && signIn.failure ? signIn.failure : signIn.service.signIn || signIn.service.access

@@ -15,12 +15,17 @@ Page {
     // loops, so each change below shows up straight away.
     Section {
         plain: true
+        // As tall as the popup gets at the Live text length, with the same
+        // room above it as below.
         Plate {
             id: stage
-            height: 172
+            implicitHeight: preview.tallestLive + 36
+            height: implicitHeight
+            Grow on implicitHeight {}
             clip: true
 
             DictationPopup {
+                id: preview
                 width: parent.width
                 height: parent.height - 18
                 source: demo

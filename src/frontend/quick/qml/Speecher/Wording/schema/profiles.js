@@ -15,7 +15,7 @@ var rows = [
       keywords: "tone formal casual excited gen z voice style" },
     { id: "profileLanguage", page: "profiles", section: "Profiles", kind: "custom",
       label: "Output language", help: "Writes in this language, whatever you speak. Translating uses at least Light cleanup.",
-      placeholder: "Same as spoken, or type a language", keywords: "translate translation language spanish french output" },
+      placeholder: "Same as spoken", keywords: "translate translation language spanish french output" },
     { id: "profileInstructions", page: "profiles", section: "Profiles", kind: "custom",
       label: "Instructions", help: "Added after the instructions for every profile.",
       placeholder: "Keep it short and sign off with my first name.", keywords: "instructions rules custom prompt" },

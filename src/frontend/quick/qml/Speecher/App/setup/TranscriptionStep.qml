@@ -20,8 +20,9 @@ StepPage {
 
     Card {
         ServiceCards {
-            // What each needs, where the settings pages say what it is good at.
-            options: States.withTones(ModelText.setupSpeechChoices(Models.speechServices))
+            // As Transcribe's cards: what each is good at and its rating; the
+            // row under them says how to sign in.
+            options: States.withTones(ModelText.fileSpeechChoices(Models.speechServices))
             currentId: page.choices.speech
             unratedText: ModelText.unrated
             onActivated: id => page.choices.speech = id

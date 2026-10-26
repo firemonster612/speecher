@@ -99,7 +99,7 @@ Page {
         SettingRow {
             readonly property var chosen: ModelText.provider(page.primary)
             shown: (page.primary === "openai" || page.primary === "anthropic") && chosen.state !== "ready"
-            title: chosen.label
+            title: Words.signInTo(chosen.label)
             help: page.primary === "openai" ? page.t.openAiSignIn : page.t.anthropicSignIn
             Button { text: page.t.openAccounts; size: "small"; onClicked: Navigation.go("accounts") }
         }

@@ -138,7 +138,7 @@ LibraryLists {
         noLevels: "No cleanup levels of your own",
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
-        languageHelp: "Translates what you say.",
+        languageHelp: "Translates what you say. Pick one or type any language, regional varieties too.",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",

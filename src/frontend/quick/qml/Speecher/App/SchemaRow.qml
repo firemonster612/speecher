@@ -22,9 +22,11 @@ SettingRow {
     // Shown once this build saves the row or runs its action; until then it
     // isn't offered at all, here or in search.
     readonly property bool _saves: Schema.settable(spec, id => Settings.saves(id))
-    // The dictation shortcut where the desktop gives Speecher none: off,
-    // saying so; the start command does its job.
-    readonly property bool _noShortcut: rowId === "globalShortcut" && Health.noShortcuts(System.checks)
+    // A shortcut row where the desktop gives Speecher none: off, saying so.
+    // The start, pause and cancel keys all bind through the desktop, so
+    // none can; the start command and the popup's buttons do their jobs.
+    readonly property bool _noShortcut: ["globalShortcut", "pauseShortcut", "cancelShortcut"].includes(rowId)
+                                        && Health.noShortcuts(System.checks)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place, and a row nothing saves yet says so.
     // Whether the row that turns this one on is on (enabledWhen).

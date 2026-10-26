@@ -86,6 +86,9 @@ Item {
     }
     // The live bar, and the words above it when they show.
     readonly property real liveHeight: showText ? barHeight + words.y + words.implicitHeight - 4 : barHeight
+    // The tallest it gets while words come in: every line of live text
+    // shown, for a stage that holds it.
+    readonly property real tallestLive: barHeight + words.y + words.maxLines * words.lineHeight - 4
     readonly property int barHeight: 44
 
     // The orb sits in the pill's round left end, and words and sound start

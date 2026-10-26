@@ -20,7 +20,7 @@ var pages = [
       keywords: "dictate start record popup shortcut microphone sounds" },
     { id: "shortcuts", parent: "dictation", title: "Shortcuts", icon: "keyboard", file: "ShortcutsPage.qml",
       subtitle: "Start, pause and cancel a dictation from any app, without leaving the keyboard.",
-      subtitleNoShortcuts: "This desktop gives apps no shortcuts, so dictation starts with the speecher command, from a terminal or a keybinding of your own.",
+      subtitleNoShortcuts: "Start a dictation with the speecher command, and pause or cancel it with the popup's buttons.",
       keywords: "hotkey keybinding push to talk toggle hold cancel pause" },
     { id: "microphone", parent: "dictation", title: "Microphone", icon: "mic", file: "MicrophonePage.qml",
       subtitle: "The microphone Speecher records from, and how much audio each recording keeps.",
@@ -43,7 +43,7 @@ var pages = [
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
       keywords: "tone style app per-app cleanup level instructions translate" },
     { id: "vocabulary", parent: "refinement", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
-      subtitle: "Words Speecher spells your way, fixes it learned from your edits, and phrases that become exact text.",
+      subtitle: "Words Speecher spells your way, corrections it learned from your edits, and phrases that become exact text.",
       keywords: "words names spelling corrections replacements snippets terms" },
 
     { id: "pasting", title: "Pasting", icon: "clipboard-paste", file: "PastingPage.qml",

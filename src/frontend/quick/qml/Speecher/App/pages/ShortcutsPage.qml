@@ -97,11 +97,16 @@ Page {
         }
     }
 
-    Section {
-        title: Schema.row("pauseShortcut").section
-        caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
-        SchemaRow { rowId: "pauseShortcut" }
-        SchemaRow { rowId: "cancelShortcut" }
+    // Keys that act while dictating bind through the desktop too, so they
+    // fold away with the shortcut where it gives none.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("pauseShortcut").section
+            caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
+            SchemaRow { rowId: "pauseShortcut" }
+            SchemaRow { rowId: "cancelShortcut" }
+        }
     }
 
     Reveal { open: !page.noShortcuts; Reach {} }
