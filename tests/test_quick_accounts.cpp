@@ -249,6 +249,32 @@ private slots:
         QTRY_COMPARE(shown(), QVariant(QStringLiteral("missing")));
     }
 
+    // A missing sign-in through the Codex app gets the card's own fix; an
+    // API key from the environment keeps core's line, which names the key.
+    void aServiceCardWordsItsSignInSource()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        const std::unique_ptr<QObject> card(
+            component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("openai")}}));
+        QVERIFY2(card, qPrintable(component.errorString()));
+        const auto state = [&card] { return card->property("service").toMap().value(QStringLiteral("state")).toString(); };
+        const QString codexFix = QStringLiteral("No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.");
+
+        QTRY_COMPARE(state(), QStringLiteral("missing"));
+        QCOMPARE(card->property("detail").toString(),
+                 card->property("service").toMap().value(QStringLiteral("detail")).toString());
+        QVERIFY(card->property("detail").toString() != codexFix);
+
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("codex_oauth"));
+        QTRY_COMPARE(state(), QStringLiteral("missing"));
+        QCOMPARE(card->property("detail").toString(), codexFix);
+    }
+
     // A sign-in setting saved from any page checks the sign-ins again; any
     // other setting leaves them be.
     void aSignInSettingChecksAgain()

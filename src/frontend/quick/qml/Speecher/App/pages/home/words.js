@@ -26,7 +26,7 @@ var text = {
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
     fixFirst: "Dictation can start once these are fixed.",
-    serviceNotReady: "Dictation uses a fallback, or a Writing Profile's own service, until this is fixed.",
+    serviceNotReady: "Dictation fails until this is fixed, unless a fallback or a Writing Profile's own service takes over.",
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",

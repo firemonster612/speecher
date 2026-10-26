@@ -24,6 +24,8 @@ Card {
     // card can name; an API key or CLI Proxy API keeps core's words.
     readonly property bool oauth: serviceId === "openai" ? ["auto", "codex_oauth"].includes(Settings.values.openAiAuthMode)
                                 : serviceId === "anthropic" && Settings.values.anthropicAuthMode === "oauth"
+    // The line under the name: what Speecher found, or what to do.
+    readonly property string detail: Words.signInDetail(service, oauth)
 
     Item {
         width: parent.width
@@ -60,7 +62,7 @@ Card {
                     }
                 }
             }
-            Txt { width: parent.width; text: Words.signInDetail(root.service, root.oauth); variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: root.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"
