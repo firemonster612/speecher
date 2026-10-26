@@ -46,7 +46,7 @@ Item {
 
         Column {
             id: column
-            width: Math.min(Theme.contentMaxWidth, flick.width - 64)
+            width: Math.min(Theme.contentMaxWidth, flick.width - Theme.pageInset * 2)
             x: (flick.width - width) / 2
             y: 28
             spacing: Theme.sectionGap

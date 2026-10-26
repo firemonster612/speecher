@@ -83,6 +83,7 @@ QtObject {
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
+    readonly property string openAccounts: "Open Accounts"
     // A row that says how to sign in to a service: "Sign in to Claude".
     function signInTo(name) { return "Sign in to " + name }
     // What each service on Accounts is used for, by its id.

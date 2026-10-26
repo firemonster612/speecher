@@ -29,9 +29,6 @@ Page {
     // The page's fixed wording.
     readonly property var t: ({
         providerSettings: "Provider settings",
-        openAiSignIn: "Sign in with the Codex app, or add an OpenAI API key on Accounts.",
-        anthropicSignIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI.",
-        openAccounts: "Open Accounts",
         ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
         ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Standard.",
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
@@ -93,16 +90,9 @@ Page {
             unratedText: ModelText.unrated
             onActivated: id => page.choose(id)
         }
-        // How to sign in to the chosen provider, under the cards as on Speech
-        // to text, while its card says it isn't ready; the fix is on
-        // Accounts, where API keys live too.
-        SettingRow {
-            readonly property var chosen: ModelText.provider(page.primary)
-            shown: (page.primary === "openai" || page.primary === "anthropic") && chosen.state !== "ready"
-            title: Words.signInTo(chosen.label)
-            help: page.primary === "openai" ? page.t.openAiSignIn : page.t.anthropicSignIn
-            Button { text: page.t.openAccounts; size: "small"; onClicked: Navigation.go("accounts") }
-        }
+        // How to sign in to the chosen provider, under the cards as on
+        // Speech to text, while its card says it isn't ready.
+        RefinerSignInRow { providerId: page.primary }
     }
 
     // Settings for every provider a dictation may use: the chain's, and

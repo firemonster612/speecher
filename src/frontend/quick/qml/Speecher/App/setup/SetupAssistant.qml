@@ -127,13 +127,14 @@ ClientWindow {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 68
-            Rectangle { x: Theme.sideInset; width: parent.width - Theme.sideInset * 2; height: 1; color: Theme.rule }
+            // In line with the step's content above.
+            Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
             // Skip and Back fade where they stand rather than reflowing the
             // footer; the main button's label rolls to its new wording. Skip
             // only passes steps that are already done, never goes around one.
             Button {
-                x: Theme.sideInset
+                x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 text: Setup.text.skip
                 variant: "ghost"
@@ -145,7 +146,7 @@ ClientWindow {
             }
             // Why Continue waits, where Skip would stand.
             Txt {
-                x: Theme.sideInset
+                x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 text: Setup.text.waits
                 tone: "secondary"
@@ -155,7 +156,7 @@ ClientWindow {
             }
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: Theme.sideInset
+                anchors.rightMargin: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space2
                 Button {

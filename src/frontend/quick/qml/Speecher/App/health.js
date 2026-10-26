@@ -85,8 +85,17 @@ function failure(check) {
 // said in plain ink and not counted.
 function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
 
+// Whether dictated words only reach the clipboard: Speecher can't insert
+// them (accessible, System.accessibility, is false; on for the session
+// counts as on) nor press paste keys (the virtual keyboard's check isn't ok),
+// and the paste rule isn't clipboard only, which would be the choice.
+function wordsStayCopied(accessible, keyboard, pasteRule) {
+    return !accessible && !!keyboard.id && keyboard.state !== "ok" && pasteRule !== "clipboard_only";
+}
+
 function summary(checks) {
     const counted = checks.filter(c => !settledHere(c));
     const passing = counted.filter(c => c.state === "ok").length;
-    return (passing === counted.length ? "All " + counted.length : passing + " of " + counted.length) + " checks pass.";
+    const said = (passing === counted.length ? "All " + counted.length : passing + " of " + counted.length) + " checks pass.";
+    return counted.length < checks.length ? said + " Global shortcuts aren't offered on this desktop." : said;
 }

@@ -54,24 +54,49 @@ StepPage {
         variant: page._open.length ? "heading" : "body"
         tone: page._open.length ? "primary" : "secondary"
     }
+    // The steps still open, each a way back to it: first what dictation
+    // can't start without, then what it works without.
+    component StepCard: Card {
+        id: stepCard
+        property var steps: []
+        RowList {
+            id: openSteps
+            values: stepCard.steps
+            delegate: SettingRow {
+                id: stepRow
+                required property string key
+                required property int index
+                readonly property var step: openSteps.entry(key)
+                first: index === 0 && openSteps.first
+                title: step.title
+                clickable: true
+                onClicked: page.choices.goTo(key)
+                StatusText { text: stepRow.step.verdict; tone: "warning" }
+            }
+        }
+    }
+    readonly property var _needed: _open.filter(s => s.id === "microphone")
+    readonly property var _helpful: _open.filter(s => s.id !== "microphone")
     Reveal {
-        open: page._open.length > 0
-        Card {
-            RowList {
-                id: openSteps
-                values: page._open
-                delegate: SettingRow {
-                    id: stepRow
-                    required property string key
-                    required property int index
-                    readonly property var step: openSteps.entry(key)
-                    first: index === 0 && openSteps.first
-                    title: step.title
-                    clickable: true
-                    onClicked: page.choices.goTo(key)
-                    StatusText { text: stepRow.step.verdict; tone: "warning" }
+        open: page._needed.length > 0
+        StepCard { steps: page._needed }
+    }
+    Reveal {
+        open: page._helpful.length > 0
+        Column {
+            width: parent.width
+            spacing: Theme.space2
+            Reveal {
+                open: page._needed.length > 0
+                Txt {
+                    width: parent.width
+                    text: Setup.text.worksWithout
+                    variant: "small"
+                    tone: "secondary"
+                    wrapMode: Text.WordWrap
                 }
             }
+            StepCard { steps: page._helpful }
         }
     }
 }

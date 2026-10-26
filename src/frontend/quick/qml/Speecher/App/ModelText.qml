@@ -235,8 +235,10 @@ QtObject {
     ]
 
     readonly property var _refiners: ({
-        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in." },
-        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in." },
+        openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in.",
+                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Accounts." },
+        anthropic: { icon: "claude", help: "Uses your Claude Code sign-in.",
+                     signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI." },
         local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Pastes your words as spoken." }

@@ -757,6 +757,32 @@ private slots:
         QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
     }
 
+    // Home warns that words stay on the clipboard only when they can be
+    // neither inserted nor pasted with keys, and that wasn't the choice;
+    // accessibility on for the session still inserts.
+    void wordsStayCopiedOnlyWithNoWayIn()
+    {
+        QQmlEngine engine;
+        const std::unique_ptr<QObject> probe = createQml(engine, R"(
+            import QtQuick
+            import Speecher.App
+            QtObject {
+                readonly property var keyboardOff: ({ id: "virtualKeyboardHealth", state: "attention" })
+                readonly property bool sessionOnly: Health.wordsStayCopied(true, keyboardOff, "")
+                readonly property bool noWayIn: Health.wordsStayCopied(false, keyboardOff, "")
+                readonly property bool chosen: Health.wordsStayCopied(false, keyboardOff, "clipboard_only")
+                readonly property bool keyboardOn: Health.wordsStayCopied(false, { id: "virtualKeyboardHealth", state: "ok" }, "")
+                readonly property bool noKeyboardCheck: Health.wordsStayCopied(false, {}, "")
+            }
+        )");
+        QVERIFY(probe);
+        QVERIFY(!probe->property("sessionOnly").toBool());
+        QVERIFY(probe->property("noWayIn").toBool());
+        QVERIFY(!probe->property("chosen").toBool());
+        QVERIFY(!probe->property("keyboardOn").toBool());
+        QVERIFY(!probe->property("noKeyboardCheck").toBool());
+    }
+
     // The App rules page's app type rows need accessibility to know the app.
     void appTypeRowsFollowAccessibility()
     {

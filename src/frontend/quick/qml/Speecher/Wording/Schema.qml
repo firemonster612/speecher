@@ -120,7 +120,11 @@ QtObject {
         const results = []
         for (const p of pages) {
             const parentTitle = p.parent ? page(p.parent).title : ""
-            const s = score([[p.title, 12], [parentTitle, 6], [p.keywords, 5]])
+            // A page whose title the query names, give or take its ending
+            // ("paste" for Pasting), comes before its own rows.
+            const stems = p.title.toLowerCase().split(/\s+/)
+            const named = words.every(w => w.length >= 4 && stems.some(t => t.startsWith(w.slice(0, -1))))
+            const s = score([[p.title, 12], [parentTitle, 6], [p.keywords, 5]]) + (named ? 30 : 0)
             if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon,
                                       trail: p.parent ? trail(p.id) : "", score: s + 4 })
         }

@@ -77,7 +77,7 @@ Card {
         TapHandler { id: summaryTap; onTapped: { focusVisible.pointed(); card.toggle() } }
 
         Column {
-            x: Theme.space5
+            x: Theme.rowInset
             width: trailing.x - x - Theme.space5
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space1
@@ -218,7 +218,7 @@ Card {
         open: card.expanded
 
         Column {
-            x: Theme.space5
+            x: Theme.rowInset
             width: parent.width - Theme.space5 * 2
             spacing: Theme.space4
             bottomPadding: Theme.space5

@@ -95,6 +95,8 @@ Column {
             onActivated: id => Transcription.setOption("service", id)
             onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
+        // How to sign in to the chosen service, as on Speech to text.
+        SignInRow { serviceId: view.options.service }
         LanguageList { id: serviceLanguages }
         // The model, for these files, of a service that has one to choose.
         // Without a downloaded Local Model the service's card says what to do.
@@ -184,6 +186,8 @@ Column {
             unratedText: ModelText.unrated
             onActivated: id => Transcription.setOption("refiner", id)
         }
+        // How to sign in to the chosen provider, as on Refinement.
+        RefinerSignInRow { providerId: view.options.refiner }
         // The refiner's model, for these files.
         SettingRow {
             enabled: view.refines

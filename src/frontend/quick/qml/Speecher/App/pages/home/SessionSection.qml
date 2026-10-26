@@ -28,18 +28,25 @@ Section {
     // warns, since a fallback or a Writing Profile's own service may do.
     readonly property var service: ModelText.service(Settings.values.speechProvider || "")
     readonly property var access: Health.find(System.checks, "microphoneAccess")
+    // Where words can neither be inserted (no accessibility) nor pasted
+    // with keys (no virtual keyboard), they only reach the clipboard;
+    // unless that is what was chosen, Home says so without blocking.
+    readonly property bool clipboardOnly: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
+                                                                 Settings.values.globalPasteRule)
     readonly property var blockers: [
         access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
-        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: Schema.page("speech").title, status: ModelText.status(service), page: "speech" } : null
+        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: Schema.page("speech").title, status: ModelText.status(service), page: "speech" } : null,
+        clipboardOnly ? { id: "pasting", title: Schema.page("pasting").title, status: t.wordsOnClipboard, page: "pasting" } : null
     ].filter(b => b)
-    readonly property bool blocked: blockers.some(b => b.id !== "speech")
+    readonly property bool blocked: blockers.some(b => b.id !== "speech" && b.id !== "pasting")
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
     title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
-    caption: blocked ? t.fixFirst : blockers.length ? t.serviceNotReady : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
+    caption: blocked ? t.fixFirst : blockers.some(b => b.id === "speech") ? t.serviceNotReady
+           : blockers.length ? t.pastingNotReady : hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut
     actions: Switcher {
         id: controls
         width: implicitWidth

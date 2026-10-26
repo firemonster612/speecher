@@ -469,9 +469,14 @@ private slots:
         auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
         // Home asked for the sign-ins; the test's homes have none.
-        QTRY_COMPARE(session->property("blockers").value<QJSValue>().property(QStringLiteral("length")).toInt(), 1);
-        QCOMPARE(session->property("blockers").value<QJSValue>().property(0).property(QStringLiteral("id")).toString(),
-                 QStringLiteral("speech"));
+        const auto listed = [session](const QString &id) {
+            const QJSValue blockers = session->property("blockers").value<QJSValue>();
+            for (int i = 0; i < blockers.property(QStringLiteral("length")).toInt(); ++i) {
+                if (blockers.property(i).property(QStringLiteral("id")).toString() == id) return true;
+            }
+            return false;
+        };
+        QTRY_VERIFY(listed(QStringLiteral("speech")));
         QVERIFY(!session->property("blocked").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Ready to dictate"));
     }

@@ -33,6 +33,7 @@ var text = {
     allPassed: "Every step passed its check.",
     almostReady: "Almost ready",
     notReady: "Not ready to dictate yet",
+    worksWithout: "Dictation works without these, but each makes it better:",
     notChosen: "Not chosen",
     welcomeTitle: "Welcome to Speecher",
     welcomeHint: "Once setup is done, press it in any app, speak, and Speecher types what you said.",

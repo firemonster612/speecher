@@ -163,7 +163,9 @@ FocusScope {
                     wrap: true
                     maximumLineCount: 2
                     elide: Text.ElideRight
-                    text: card.modelData.status || ""
+                    // A hyphen inside a name ("llama-server") holds its
+                    // word together across a line end (a word joiner).
+                    text: (card.modelData.status || "").replace(/(\w)-(\w)/g, "$1-\u2060$2")
                     // A state core has not settled yet has no words, and
                     // no dot either. Only the chosen card's state is toned:
                     // a problem with one nobody chose stands in no way, so

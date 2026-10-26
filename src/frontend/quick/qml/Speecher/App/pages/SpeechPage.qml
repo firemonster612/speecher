@@ -81,7 +81,8 @@ Page {
     }
 
     Section {
-        title: Schema.row("spokenLanguage").section
+        // "Language and accuracy" only while the accuracy row shows.
+        title: page.uses("codex") ? Schema.row("spokenLanguage").section : Schema.row("spokenLanguage").sectionAlone
         SchemaRow { rowId: "spokenLanguage" }
         Reveal {
             id: languageProblem

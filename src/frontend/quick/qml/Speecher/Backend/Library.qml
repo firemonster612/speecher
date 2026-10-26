@@ -100,7 +100,7 @@ LibraryLists {
     // names, so the line counts them rather than listing them.
     function profileUse(apps, isFallback) {
         const used = apps.length === 0 ? "" : "Used in " + Words.count(apps.length, "app", "apps") + "."
-        if (isFallback) return used.length ? used + " Also used for apps no match names." : "Used for every app no match names."
+        if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
         return used.length ? used : "No apps use it yet."
     }
     // The question before deleting a profile, and what deleting it changes.

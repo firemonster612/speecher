@@ -17,7 +17,7 @@ var rows = [
 
     // Every language core knows (knownSpokenLanguages), named in English
     // with the language's own name, which the language picker searches too.
-    { id: "spokenLanguage", page: "speech", section: "Language and accuracy", kind: "choice", control: "language",
+    { id: "spokenLanguage", page: "speech", section: "Language and accuracy", sectionAlone: "Language", kind: "choice", control: "language",
       label: "Spoken language", help: "The language you dictate in.", value: "en",
       keywords: "language locale english detect automatic multilingual",
       options: [

@@ -317,6 +317,9 @@ QtObject {
     readonly property int sidebarWidth: 232
     // Where text starts in from a window's side column and setup's footer.
     readonly property int sideInset: 22
+    // A page's content in from its sheet's sides, and anything that lines
+    // up with it, such as setup's footer.
+    readonly property int pageInset: 32
     readonly property int contentMaxWidth: 860
     // Width of a side column, for pages that set a label beside content.
     readonly property int marginWidth: 190
