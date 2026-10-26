@@ -41,7 +41,7 @@ var text = {
     welcomeHint: "Once setup is done, press it in any app, speak, and Speecher types what you said.",
     welcomeHintNoKeys: "Once setup is done, press your dictation shortcut in any app, speak, and Speecher types what you said.",
     welcomeHintCommand: "Once setup is done, run this from a terminal or your own keybinding, speak, and Speecher types what you said.",
-    shortcutCommandOnly: "Your desktop gives Speecher no shortcut, so dictation starts with the speecher command, from a terminal or a keybinding of your own.",
+    shortcutCommandOnly: "Your desktop gives Speecher no shortcut.",
     signInsFound: "Sign-ins found on this computer",
     noSignIns: "No sign-ins found yet. The next step helps you choose a service.",
     downloadModel: "Download a model to continue",

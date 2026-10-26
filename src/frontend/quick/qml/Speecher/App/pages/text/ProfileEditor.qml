@@ -181,6 +181,9 @@ Column {
                 iconName: "languages"
                 text: editor.profile.language || ""
                 placeholderText: Schema.row("profileLanguage").placeholder
+                // Empty means the same as spoken, so at rest that reads as
+                // the value, as a Select's default does; editing, a hint.
+                placeholderTextColor: activeFocus ? Theme.textTertiary : Theme.text
                 suggestions: Library.outputLanguages.map(l => ({ id: l, label: l }))
                 onCommitted: v => editor.edited({ language: v.trim() })
             }

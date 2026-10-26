@@ -47,7 +47,7 @@ Section {
     title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
     // What the listed things do to dictation, in words, else how to start.
     caption: T.readiness(blockers.map(b => b.id))
-           || (hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere.arg(Schema.row("startCommand").command) : t.noShortcut)
+           || (hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere : t.noShortcut)
     actions: Switcher {
         id: controls
         width: implicitWidth

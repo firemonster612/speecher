@@ -18,6 +18,10 @@ SchemaRow {
     readonly property var check: Health.find(System.checks, checkId)
     readonly property string _fix: Health.fix(check)
     readonly property bool _canFix: _fix.length > 0 && check.state !== "working"
+    // The state as worded; a page can say more than the check knows.
+    property string status: Health.status(check)
+    // Nothing to fix here, so plain ink.
+    property string statusTone: Health.settledHere(check) ? "neutral" : States.tone(check.state ?? "")
 
     help: Health.failure(check) || Health.detail(check)
 
@@ -26,9 +30,8 @@ SchemaRow {
         spacing: Theme.space3
         StateText {
             stateId: row.check.state ?? ""
-            text: Health.status(row.check)
-            // Nothing to fix here, so plain ink.
-            tone: Health.settledHere(row.check) ? "neutral" : States.tone(stateId)
+            text: row.status
+            tone: row.statusTone
             anchors.verticalCenter: parent.verticalCenter
         }
         // The button's room eases open and shut as it fades.

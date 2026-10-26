@@ -41,7 +41,7 @@ T.TextField {
         anchors.verticalCenter: parent.verticalCenter
         text: control.placeholderText
         variant: control.variant
-        tone: "tertiary"
+        color: control.placeholderTextColor
         elide: Text.ElideRight
         visible: !control.length && !control.preeditText
     }

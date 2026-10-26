@@ -21,8 +21,7 @@ var text = {
     stop: "Stop",
     pressShortcut: "Press the shortcut in any app to dictate into it.",
     noShortcut: "Set a dictation shortcut to dictate from any app.",
-    // %1 is the start command.
-    noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind %1 to a key.",
+    noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind the speecher command to a key.",
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
     wordsOnClipboard: "Words stay on the clipboard",
