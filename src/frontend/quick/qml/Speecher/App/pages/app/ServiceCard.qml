@@ -63,7 +63,6 @@ Card {
                         text: Words.signInStates[root.service.state]
                         // A sign-in nothing uses stands in no one's way.
                         tone: root.inUse ? States.tone(stateId) : "neutral"
-                        indicator: "dot"
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     IconButton {

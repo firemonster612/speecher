@@ -76,7 +76,7 @@ StepPage {
                     first: index === 0 && found.first
                     title: service.name
                     help: Words.signInDetail(service)
-                    StateText { stateId: foundRow.service.state; text: Words.signInStates[foundRow.service.state]; indicator: "dot" }
+                    StateText { stateId: foundRow.service.state; text: Words.signInStates[foundRow.service.state] }
                 }
             }
         }

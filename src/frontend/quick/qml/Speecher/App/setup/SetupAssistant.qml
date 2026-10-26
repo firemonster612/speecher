@@ -168,7 +168,7 @@ ClientWindow {
                     onClicked: window.go(window.step - 1)
                 }
                 Button {
-                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.startDictating : Setup.text.continue_
+                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.finish : Setup.text.continue_
                     variant: "primary"
                     enabled: window._limit > window.step || window._last && window._limit === window.step
                     onClicked: window._last ? window.finish() : window.go(window.step + 1)

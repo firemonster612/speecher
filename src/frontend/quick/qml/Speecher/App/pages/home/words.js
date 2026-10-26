@@ -233,19 +233,15 @@ function milestones(s) {
 }
 function milestoneCaption(s) { return _count(s.allTimeWords, "word", "words") + " dictated in all." }
 
-// What the things Home lists do to dictation, in words, by their ids:
-// microphone access and a microphone stop it starting, the speech service
-// makes it fail unless something takes over, pasting only limits it.
+// What dictation needs of the things Home lists, by their ids, in one
+// plain sentence; the rows name each problem and its fix.
+// Empty where only Pasting is listed: its row says it.
 function readiness(ids) {
-    const start = [ids.includes("access") ? "microphone access is allowed" : "",
-                   ids.includes("microphone") ? "a microphone is found" : ""].filter(s => s)
-    const parts = []
-    if (start.length) parts.push("Dictation can't start until " + start.join(" and ") + ".")
-    if (ids.includes("speech"))
-        parts.push((start.length ? "Then it fails" : "Dictation fails") + " until Speech to text is fixed, unless a fallback or a writing profile's own service takes over.")
-    if (ids.includes("pasting"))
-        parts.push(parts.length ? "Pasting only limits it: your words stay on the clipboard." : "Dictation works, but your words stay on the clipboard until Pasting is set up.")
-    return parts.join(" ")
+    const needs = [ids.includes("access") ? "microphone access" : "",
+                   ids.includes("microphone") ? "a microphone" : "",
+                   ids.includes("speech") ? "a working speech service" : ""].filter(s => s)
+    if (!needs.length) return ""
+    return "Dictation needs " + (needs.length > 1 ? needs.slice(0, -1).join(", ") + " and " + needs[needs.length - 1] : needs[0]) + "."
 }
 
 // The learned corrections card says how learning stands, and what to do.

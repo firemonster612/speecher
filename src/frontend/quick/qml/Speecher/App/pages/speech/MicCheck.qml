@@ -73,7 +73,6 @@ Plate {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     readonly property bool stops: root.holding && root.running
-                    variant: stops ? "secondary" : "primary"
                     iconName: stops ? "square" : "mic"
                     busy: Audio.testState === "starting"
                     enabled: Audio.canToggleTest

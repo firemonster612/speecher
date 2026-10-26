@@ -15,7 +15,7 @@ SettingRow {
     // state, an expired sign-in included, is fixed on Accounts.
     readonly property bool unknown: (Accounts.services.find(s => s.id === providerId) || {}).state === "unknown"
     shown: !!provider.signIn && provider.state !== "ready"
-    title: Words.signInTo(provider.label)
+    title: unknown ? Words.signInUnknownFor(provider.label) : Words.signInTo(provider.label)
     help: unknown ? Words.signInDetail({ state: "unknown" }) : provider.signIn || ""
     Button {
         text: row.unknown ? Words.checkAgain : Words.openAccounts

@@ -80,7 +80,12 @@ StepPage {
     readonly property var _helpful: _open.filter(s => s.id !== "microphone" && s.id !== "transcription")
     Reveal {
         open: page._needed.length > 0
-        StepCard { steps: page._needed }
+        Column {
+            width: parent.width
+            spacing: Theme.space2
+            Txt { width: parent.width; text: Setup.text.needs; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            StepCard { steps: page._needed }
+        }
     }
     Reveal {
         open: page._helpful.length > 0

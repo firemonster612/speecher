@@ -29,7 +29,9 @@ var text = {
     getStarted: "Get started",
     continue_: "Continue",
     waits: "Continue opens once this step passes its check.",
-    startDictating: "Start dictating",
+    // The last step's button closes setup; it starts nothing.
+    finish: "Finish setup",
+    needs: "Dictation needs these:",
     allPassed: "Every step passed its check.",
     almostReady: "Almost ready",
     notReady: "Not ready to dictate yet",

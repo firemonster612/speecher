@@ -86,6 +86,7 @@ QtObject {
     readonly property string openAccounts: "Open Accounts"
     // A row that says how to sign in to a service: "Sign in to Claude".
     function signInTo(name) { return "Sign in to " + name }
+    function signInUnknownFor(name) { return name + " sign-in unknown" }
     // What each service on Accounts is used for, by its id.
     readonly property var serviceUses: ({
         openai: "Used for dictation and cleanup.",

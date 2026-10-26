@@ -81,7 +81,6 @@ Page {
                 trailing: StateText {
                     stateId: accountRow.account.state
                     text: Words.signInStates[accountRow.account.state]
-                    indicator: "dot"
                 }
             }
         }
