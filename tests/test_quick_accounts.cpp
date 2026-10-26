@@ -332,6 +332,30 @@ private slots:
         QVERIFY(!row->property("unknown").toBool());
     }
 
+    // An expired sign-in, which core leaves unknown, still gets the row, and
+    // Check again keeps it up while Accounts checks.
+    void aRefinerSignInRowShowsAnExpiredSignIn()
+    {
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        QVERIFY(!useExpiredCodexAccount(*controller.settings(), dir.path()).isEmpty());
+        QuickSettings settings(&controller);
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickModels models(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
+        const std::unique_ptr<QObject> row(
+            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QVERIFY2(row, qPrintable(component.errorString()));
+
+        QTRY_VERIFY(row->property("shown").toBool());
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("expired"));
+        accounts.recheck(QStringLiteral("openai"));
+        QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("checking"));
+        QVERIFY(row->property("shown").toBool());
+    }
+
     // A sign-in setting saved from any page checks the sign-ins again; any
     // other setting leaves them be.
     void aSignInSettingChecksAgain()
