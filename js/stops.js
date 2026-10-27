@@ -5,10 +5,9 @@
 import { createScrub } from "./typing.js";
 import { talk, capOrbit } from "./scene.js";
 
-// The illustrative dictations the scenes replay, as the intro's examples show them
+// The vocabulary scene's illustrative dictation, as first heard, and the word it learns
 const MISHEARD = "run kube cuddle get pods in the staging namespace and tell me which ones are crash looping";
 const HEARD = "kube cuddle", FIXED = "kubectl";
-const CHAT = "Can we push the meeting to Friday?";
 // A resting pill murmurs: short, uneven bars, not a row of dots that reads as a loading indicator.
 export const idle = (t) => 0.1 + 0.3 * talk(t * 0.45);
 const clamp = (x) => Math.min(1, Math.max(0, x));
@@ -64,7 +63,6 @@ export function createStops({ reduced }) {
     keys.append(row);
   }
   const field = android.querySelector(".field .text");
-  field.textContent = CHAT;
   const fieldText = createScrub(field);
   let phoneP = 1;
 

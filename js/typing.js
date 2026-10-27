@@ -36,7 +36,7 @@ export function createTypist(paras) {
   for (const w of words) {
     times.push(acc);
     const len = w.textContent.length;
-    acc += (0.05 + 0.011 * len + (/[.,?]$/.test(w.textContent) ? 0.07 : 0));
+    acc += 0.05 + 0.011 * len + (/[.,?]$/.test(w.textContent) ? 0.07 : 0);
   }
   let start = null, shown = 0;
 
