@@ -307,12 +307,14 @@ html:not(.js) .main-dl, html:not(.js) .dl-req { display: none; }
   .rows a { grid-row: 1 / 3; grid-column: 2; min-width: 88px; padding: 8px 12px; font-size: 14px; }
 }
 
-/* short phones: drop one example rather than cut the stop off */
+/* short phones: tighter, so the stop isn't cut off */
 @media (max-width: 700px) and (max-height: 760px) {
   .hero { padding-top: 66px; }
-  .hero .slot { margin: 6vh 0 4vh; }
-  .out .mail { display: none; }
-  .out .agent { grid-column: 1 / -1; }
+  .hero .slot { margin: 3.5vh 0 3vh; }
+  /* all four examples in two rows of two */
+  .out { gap: 16px 10px; }
+  .chat, .cmd { grid-column: auto; }
+  .chat .say { font-size: 13px; }
   .plan .h-a, .plan .h-b { font-size: 36px; }
   .dl-words h2 { font-size: 38px; }
   .rows span { display: none; }
