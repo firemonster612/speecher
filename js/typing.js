@@ -1,7 +1,7 @@
 // Words land one at a time behind a moving caret, the way dictated text is typed into an app.
 
 // Wrap each word of a paragraph in a span. Inline elements (code, .dim) land as one unit.
-export function wrapWords(p) {
+function wrapWords(p) {
   const words = [];
   for (const child of [...p.childNodes]) {
     if (child.nodeType === Node.TEXT_NODE) {
@@ -24,8 +24,8 @@ export function wrapWords(p) {
   return words;
 }
 
-// paras: paragraphs typed in order. speed scales the pace (1 is a brisk dictation paste).
-export function createTypist(paras, { speed = 1 } = {}) {
+// paras: paragraphs typed in order, at the pace of a brisk dictation paste
+export function createTypist(paras) {
   for (const p of paras) p.classList.add("type");
   const words = paras.flatMap(wrapWords);
   const caret = document.createElement("span");
@@ -36,13 +36,12 @@ export function createTypist(paras, { speed = 1 } = {}) {
   for (const w of words) {
     times.push(acc);
     const len = w.textContent.length;
-    acc += (0.05 + 0.011 * len + (/[.,?]$/.test(w.textContent) ? 0.07 : 0)) / speed;
+    acc += (0.05 + 0.011 * len + (/[.,?]$/.test(w.textContent) ? 0.07 : 0));
   }
   let start = null, shown = 0;
 
   const place = () => (shown ? words[shown - 1].after(caret) : paras[0].prepend(caret));
   return {
-    duration: acc,
     get started() { return start !== null; },
     get done() { return start !== null && shown === words.length; },
     start(t) { start = t; caret.classList.remove("idle"); place(); },
@@ -61,7 +60,6 @@ export function createTypist(paras, { speed = 1 } = {}) {
       if (keepCaret) { place(); caret.classList.add("idle"); } else caret.remove();
     },
     hideCaret() { caret.remove(); },
-    reset() { for (const w of words) w.classList.remove("on"); shown = 0; start = null; caret.remove(); },
   };
 }
 

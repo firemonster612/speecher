@@ -5,7 +5,10 @@
 import { createScrub } from "./typing.js";
 import { talk, capOrbit } from "./scene.js";
 
-const S = window.SPEECHER_SAMPLES;
+// The illustrative dictations the scenes replay, as the intro's examples show them
+const MISHEARD = "run kube cuddle get pods in the staging namespace and tell me which ones are crash looping";
+const HEARD = "kube cuddle", FIXED = "kubectl";
+const CHAT = "Can we push the meeting to Friday?";
 // A resting pill murmurs: short, uneven bars, not a row of dots that reads as a loading indicator.
 export const idle = (t) => 0.1 + 0.3 * talk(t * 0.45);
 const clamp = (x) => Math.min(1, Math.max(0, x));
@@ -27,19 +30,18 @@ export function createStops({ reduced }) {
   const words = sec[2];
   const said = words.querySelector(".said");
   const tokens = [];
-  for (const raw of S.agent.raw.replace(S.agent.learned.heard, "\u0000").split(" ")) {
+  for (const raw of MISHEARD.replace(HEARD, "\u0000").split(" ")) {
     const el = document.createElement("span");
     el.className = "tk";
     if (raw === "\u0000") {
       el.classList.add("fix");
-      el.innerHTML = `${S.agent.learned.heard}<ins>${S.agent.learned.fixed}</ins>`;
+      el.innerHTML = `${HEARD}<ins>${FIXED}</ins>`;
     } else el.textContent = raw;
     said.append(" ", el);
     tokens.push(el);
   }
   const first = tokens[0], firstRaw = first.textContent;
   tokens.at(-1).insertAdjacentHTML("beforeend", '<span class="end">.</span>');
-  said.setAttribute("aria-label", S.agent.refined.replace(/`/g, ""));
   const learned = words.querySelector(".chip.learned");
   const fixIns = words.querySelector(".fix ins");
   let drop = { x: 0, y: 0 }, sweeping = false;
@@ -62,7 +64,7 @@ export function createStops({ reduced }) {
     keys.append(row);
   }
   const field = android.querySelector(".field .text");
-  field.textContent = S.chat.refined;
+  field.textContent = CHAT;
   const fieldText = createScrub(field);
   let phoneP = 1;
 

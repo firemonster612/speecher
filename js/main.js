@@ -35,7 +35,10 @@ function measure() {
   W = innerWidth; H = innerHeight;
   phone = W < 700;
   dpr = Math.min(devicePixelRatio || 1, 2);
-  for (const c of [clipCanvas, pillCanvas]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  for (const c of [clipCanvas, pillCanvas]) {
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+    c.style.width = W + "px"; c.style.height = H + "px";
+  }
   clipsCleared = false;
   measureSlots();
   stops.measure();
@@ -109,14 +112,16 @@ addEventListener("scroll", () => { if (scrollY > 8) skip(); }, { passive: true }
 // Scrolling moves stop by stop. One wheel, touch or key gesture can't carry past the next stop's
 // hold, however hard the flick. When a scroll comes to rest between two stops, it finishes the move
 // in the direction it was going, so a stop is never left half on screen. Links and Home/End go anywhere.
-let restY = 0, restTimer = 0, gesture = false;
+let restY = 0, restTimer = 0, gesture = false, lastY = 0, dir = 1;
 // 2 px of slack: tops are fractional on some window heights, and scrollY is rounded.
 const stopAt = (y) => { let i = 0; while (i < tops.length - 1 && y >= tops[i + 1] - 2) i++; return i; };
 const restSoon = () => { clearTimeout(restTimer); restTimer = setTimeout(settleScroll, 140); };
 for (const ev of ["wheel", "touchmove"]) addEventListener(ev, () => { gesture = true; restSoon(); }, { passive: true });
-addEventListener("keydown", (e) => { gesture = e.key !== "Home" && e.key !== "End"; restSoon(); });
+// Only scrolling keys count: Tab must be free to bring a focused link into view.
+addEventListener("keydown", (e) => { gesture = ["ArrowDown", "ArrowUp", "PageDown", "PageUp", " "].includes(e.key); restSoon(); });
 addEventListener("click", (e) => { if (e.target.closest('a[href^="#"]')) gesture = false; });
 addEventListener("scroll", () => {
+  if (scrollY !== lastY) { dir = Math.sign(scrollY - lastY); lastY = scrollY; }
   if (gesture) {
     const from = stopAt(restY);
     const lo = tops[Math.max(0, from - 1)];
@@ -130,15 +135,16 @@ function settleScroll() {
   const sy = scrollY, max = document.documentElement.scrollHeight - innerHeight;
   const i = stopAt(sy), holdEnd = tops[i] + holds[i];
   if (i < tops.length - 1 && sy > holdEnd + 2 && sy < max - 2) {
-    const target = Math.min(sy >= restY - 2 ? tops[i + 1] : holdEnd, max);
+    const target = Math.min(dir > 0 ? tops[i + 1] : holdEnd, max);
     scrollTo({ top: target, behavior: reduced ? "instant" : "smooth" });
     restY = target;
   } else restY = sy;
 }
 
-let lastW = 0, lastH = 0, measuredAt = 0;
+let lastSize = "", measuredAt = 0, pillCleared = false;
+const size = () => `${innerWidth}x${innerHeight}@${devicePixelRatio}`;
 function frame() {
-  if (innerWidth !== lastW || Math.abs(innerHeight - lastH) > 120) { lastW = innerWidth; lastH = innerHeight; measure(); }
+  if (size() !== lastSize) { lastSize = size(); measure(); }
   const t = now();
   if (t - measuredAt > 0.5) { measuredAt = t; measureSlots(); }
   const sy = scrollY;
@@ -186,9 +192,13 @@ function frame() {
   if (i === 0 && !skipped && feed > 0) level = Math.max(level, 0.12 + feed * 1.1);
   bars.push(level, t);
   const b = bars.read(t);
-  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  pctx.clearRect(0, 0, W, H);
-  drawPill(pctx, P, b, marks);
+  // past the last stop the pill is gone; clear it once rather than every frame
+  if (P.a > 0.01 || !pillCleared) {
+    pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    pctx.clearRect(0, 0, W, H);
+    drawPill(pctx, P, b, marks);
+  }
+  pillCleared = P.a <= 0.01;
 
   if (!reduced || needsFrame) requestAnimationFrame(frame);
   needsFrame = false;
@@ -204,7 +214,7 @@ if (reduced) {
 }
 
 await Promise.all([document.fonts.load("780 40px 'Mona Sans'"), document.fonts.load("500 16px 'Mona Sans Mono'")]);
-lastW = innerWidth; lastH = innerHeight;
+lastSize = size();
 measure();
 if (reduced) {
   pieces.forEach((p, i) => { p.classList.add("open"); typists[i].finish(i === pieces.length - 1); });

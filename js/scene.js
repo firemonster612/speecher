@@ -1,19 +1,19 @@
 // The pill and the voice clips that slide into it, drawn on two fixed canvases.
 
-export const COLORS = { lilac: "#9b88ee", sage: "#6aa77d", butter: "#ebbc32", coral: "#ec7552", ink: "#1e1d1b" };
+const COLORS = { lilac: "#9b88ee", sage: "#6aa77d", butter: "#ebbc32", coral: "#ec7552", ink: "#1e1d1b" };
 const PILL = "#1f1e1c", BAR = "#f2efe6";
 const BARS = 15;
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 export const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
 
-export function rng(seed) {
+function rng(seed) {
   let s = seed >>> 0;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
 // A speech-like level envelope: syllables grouped into words, with short pauses.
-export function envelope(n, rnd) {
+function envelope(n, rnd) {
   const a = new Float32Array(n);
   let i = 0;
   while (i < n) {

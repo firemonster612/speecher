@@ -20,7 +20,7 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--paper); color: var(--ink); scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { background: var(--paper); color: var(--ink); -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 450 17px/1.45 var(--sans); overflow-x: hidden; }
 a { color: inherit; }
 h1, h2, p, figure, ul { margin: 0; }
@@ -82,15 +82,14 @@ h1 { font-size: clamp(40px, min(5.9vw, 10.4vh), 116px); line-height: 0.98; max-w
 .dim { opacity: 0.5; }
 .mail .say + .say { margin-top: 8px; }
 .agent .dim { font-family: var(--mono); color: var(--coral); opacity: 1; font-weight: 700; }
-.agent code, .typed code { padding: 1px 5px; border-radius: 5px; background: rgba(236, 117, 82, 0.16); color: #b44a2c; }
+.agent code { padding: 1px 5px; border-radius: 5px; background: rgba(236, 117, 82, 0.16); color: #b44a2c; }
 .fine { position: absolute; bottom: 14px; left: 0; right: 0; font-size: 12px; color: var(--ink-2); }
 
 /* typing: words land one by one, a caret leads */
 .js .type .w { display: none; }
 .js .type .w.on { display: inline-block; animation: land 0.16s cubic-bezier(.2, .8, .3, 1) both; }
-.w { white-space: pre-wrap; }
 @keyframes land { from { opacity: 0; transform: translateY(0.18em); } to { opacity: 1; transform: none; } }
-.w { display: inline-block; }
+.w { display: inline-block; white-space: pre-wrap; }
 .caret { display: inline-block; width: 2.5px; height: 1.08em; margin-left: 1px; vertical-align: -0.17em; border-radius: 1px; background: var(--c, var(--ink)); }
 .caret.idle { animation: blink 1.05s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -204,6 +203,8 @@ h1 { font-size: clamp(40px, min(5.9vw, 10.4vh), 116px); line-height: 0.98; max-w
 .dl-words footer { margin-top: 3vh; font-size: 15px; color: var(--ink-2); }
 .dl-list { grid-column: 1; grid-row: 1; align-self: center; display: grid; gap: 1.6vh; }
 .main-dl { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: clamp(56px, 9vh, 84px); padding: 0 1.3em 0 1.5em; border-radius: 999px; background: var(--ink); color: var(--paper); text-decoration: none; font-weight: 650; font-size: clamp(18px, min(1.6vw, 2.9vh), 26px); }
+/* without scripts the visitor's platform isn't known, so the rows below list them all */
+html:not(.js) .main-dl, html:not(.js) .dl-req { display: none; }
 .main-dl b { font-weight: 760; }
 .dl-req { margin: -0.2vh 0 0.6vh 1.6em; font-size: clamp(13px, min(1.05vw, 2vh), 16px); color: var(--ink-2); }
 .rows { display: grid; gap: 1vh; }
@@ -325,7 +326,6 @@ h1 { font-size: clamp(40px, min(5.9vw, 10.4vh), 116px); line-height: 0.98; max-w
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
   .js .hero-copy > *, .js .mark path, .js .type .w.on, .chip.learned.landed { animation: none !important; }
   .js .mark path { stroke-dashoffset: 0; }
   .js .piece { opacity: 1; transform: none; transition: none; }
