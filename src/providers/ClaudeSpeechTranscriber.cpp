@@ -15,8 +15,11 @@ namespace {
 SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QString *accessToken)
 {
     const AnthropicAuth auth = AnthropicAuthProvider::forSpeech(accounts).resolve(true);
-    // Warms the version cache the voice client reads as it connects.
-    ClaudeCredentials::installedVersion();
+    // Warms the version cache the voice client reads as it connects, for
+    // Claude Code's own sign-in only, as before.
+    if (accounts.anthropicAuthMode != QStringLiteral("cliproxy")) {
+        ClaudeCredentials::installedVersion();
+    }
     *accessToken = auth.accessToken;
     return {auth.ok, auth.error, auth.kind, auth.httpStatus};
 }
