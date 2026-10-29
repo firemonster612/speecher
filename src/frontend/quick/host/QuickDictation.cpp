@@ -23,9 +23,16 @@ QString phaseFor(DictationState state)
         return QStringLiteral("transcribing");
     case DictationState::Reviewing:
         return QStringLiteral("review");
-    default:
-        return dictationStateName(state);
+    case DictationState::Idle:
+    case DictationState::Starting:
+    case DictationState::Listening:
+    case DictationState::Paused:
+    case DictationState::Refining:
+    case DictationState::Delivering:
+    case DictationState::Error:
+        break;
     }
+    return dictationStateName(state);
 }
 
 QString outcomeName(PopupOutcome outcome)
@@ -191,18 +198,17 @@ void QuickDictation::setErrorDismissMs(int ms)
 
 void QuickDictation::followSession(DictationState state)
 {
-    const QString phase = phaseFor(state);
-    if (phase == QLatin1String("starting")) {
+    if (state == DictationState::Starting) {
         // The last dictation's refinement and error are not this one's.
         update(m_refined, QString(), &QuickDictationState::refinedChanged);
         update(m_error, errorMessage({}, {}), &QuickDictationState::errorChanged);
     }
     // A cancel's receipt follows the session going idle, and a receipt or an
     // error stays up until the session hides the popup.
-    if (phase == QLatin1String("idle") && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
+    if (state == DictationState::Idle && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
         return;
     }
-    setState(phase);
+    setState(phaseFor(state));
 }
 
 void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, const PopupErrorAction &fix)

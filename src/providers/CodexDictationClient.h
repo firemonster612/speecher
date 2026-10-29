@@ -62,7 +62,7 @@ signals:
     void completed();
     void connected();
     void closed();
-    void failed(const QString &message, bool retryable, SpeechPhase phase,
+    void failed(const QString &message, bool retryable, speecher::SpeechPhase phase,
                 speecher::ProviderFailureKind kind);
 
 private:
