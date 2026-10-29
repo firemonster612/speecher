@@ -507,13 +507,24 @@ jobs:
           cache: true
 
       # The SDK does not ship a SPIRV-HeadersConfig.cmake that find_package
-      # sees, so the header-only package comes from vcpkg.
+      # sees, so the header-only package is installed from Khronos' source.
+      # Not through vcpkg: it fetches msys2's pkgconf for a .pc file nothing
+      # reads, and a slow msys2 mirror stalled this step for 14 minutes.
       - name: Install SPIRV-Headers
         shell: pwsh
         run: |
-          vcpkg install spirv-headers:x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
-          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          $version = 'vulkan-sdk-1.4.357.0'
+          $archive = "$env:RUNNER_TEMP/spirv-headers.tar.gz"
+          Invoke-WebRequest "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/$version.tar.gz" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4d703067a7e06331ccb37bdfed3f9b7879cc61969a2689ae95c95db34a47ff07') {
+            throw "SPIRV-Headers $version does not match its pinned hash"
+          }
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          $prefix = "$env:RUNNER_TEMP/spirv-headers" -replace '\\','/'
+          cmake -S "$env:RUNNER_TEMP/SPIRV-Headers-$version" -B "$env:RUNNER_TEMP/spirv-headers-build" -G Ninja -DSPIRV_HEADERS_ENABLE_TESTS=OFF "-DCMAKE_INSTALL_PREFIX=$prefix"
+          if ($LASTEXITCODE -ne 0) { throw "Configuring SPIRV-Headers failed" }
+          cmake --install "$env:RUNNER_TEMP/spirv-headers-build"
+          if ($LASTEXITCODE -ne 0) { throw "Installing SPIRV-Headers failed" }
           Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
 
       - name: Configure
