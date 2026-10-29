@@ -1163,6 +1163,11 @@ private slots:
             }
             QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(target), 250);
 
+            QElapsedTimer sinceCancel;
+            qint64 hiddenAfterMs = -1;
+            connect(&session, &DictationSession::popupHideRequested, &session,
+                    [&] { hiddenAfterMs = sinceCancel.elapsed(); });
+            sinceCancel.start();
             session.cancel();
 
             QCOMPARE(int(session.state()), int(DictationState::Idle));
@@ -1180,11 +1185,11 @@ private slots:
             QCOMPARE(int(session.state()), int(DictationState::Idle));
             QCOMPARE(delivery->calls, 0);
             QCOMPARE(recorded.count(), 0);
-            // "Canceled" stays up for the result duration setting.
+            // "Canceled" stays up for the result duration setting, timed when
+            // it went rather than by a wait, which load can stretch.
             if (target == DictationState::Listening) {
-                QTest::qWait(100);
-                QCOMPARE(hidden.count(), 0);
-                QTRY_COMPARE_WITH_TIMEOUT(hidden.count(), 1, 700);
+                QTRY_COMPARE(hidden.count(), 1);
+                QVERIFY2(hiddenAfterMs >= settings.completionStatusDurationMs(), qPrintable(QString::number(hiddenAfterMs)));
             }
         }
     }
@@ -1783,7 +1788,7 @@ private slots:
         registry.speechProvider(QStringLiteral("claude"));
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
         speech->backgroundPrepare = true;
-        speech->backgroundPrepareDelayMs = 180;
+        speech->backgroundPrepareDelayMs = 500;
         speech->refreshRequired = true;
 
         QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
@@ -1791,12 +1796,14 @@ private slots:
         timer.start();
         session.startListening();
 
-        QVERIFY(timer.elapsed() < 100);
+        // Back before the preparation's sleep ends, as waiting on it would
+        // not be.
+        QVERIFY2(timer.elapsed() < qint64(speech->backgroundPrepareDelayMs), qPrintable(QString::number(timer.elapsed())));
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(refreshSpy.count(), 0);
         QVERIFY(!audio->started);
 
-        QTRY_COMPARE_WITH_TIMEOUT(refreshSpy.count(), 1, 250);
+        QTRY_COMPARE(refreshSpy.count(), 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
         QCOMPARE(speech->backgroundPrepareCalls, 1);
         QCOMPARE(speech->prepareCalls, 1);
@@ -1869,7 +1876,7 @@ private slots:
         registry.refinementProvider(QStringLiteral("openai"));
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
         refiner->backgroundRefresh = true;
-        refiner->backgroundRefreshDelayMs = 180;
+        refiner->backgroundRefreshDelayMs = 500;
         refiner->refreshRequired = true;
 
         QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
@@ -1877,12 +1884,14 @@ private slots:
         timer.start();
         session.startListening();
 
-        QVERIFY(timer.elapsed() < 100);
+        // Back before the refresh's sleep ends, as waiting on it would
+        // not be.
+        QVERIFY2(timer.elapsed() < qint64(refiner->backgroundRefreshDelayMs), qPrintable(QString::number(timer.elapsed())));
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(refreshSpy.count(), 0);
         QVERIFY(!audio->started);
 
-        QTRY_COMPARE_WITH_TIMEOUT(refreshSpy.count(), 1, 250);
+        QTRY_COMPARE(refreshSpy.count(), 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
         QCOMPARE(refiner->backgroundRefreshCalls, 1);
         QCOMPARE(refiner->refreshCalls, 1);
