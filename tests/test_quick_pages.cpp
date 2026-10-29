@@ -621,9 +621,22 @@ private slots:
             ribbon.paint(&painter);
             return image;
         };
+        // Its strength: the sum of its alpha.
+        const auto strength = [](const QImage &image) {
+            qint64 sum = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    sum += qAlpha(image.pixel(x, y));
+                }
+            }
+            return sum;
+        };
         const QImage before = drawn();
         ribbon.setProperty("pausedColor", QColor(Qt::white));
         QVERIFY(drawn() != before);
+        // Back in the first colours it is as strong as it was.
+        ribbon.setProperty("pausedColor", QColor(Qt::black));
+        QVERIFY(std::abs(strength(drawn()) - strength(before)) < strength(before) / 20);
     }
 
 private:

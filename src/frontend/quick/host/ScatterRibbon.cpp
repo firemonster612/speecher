@@ -32,6 +32,8 @@ constexpr qreal kAfterglow = 0.06;
 constexpr qreal kGlowShrink = 3;
 // A stalled frame resumes the figure rather than leaping it on.
 constexpr qreal kLongestStep = 0.05;
+// Frames at 60 fps for a still figure's afterglow to build up fully.
+constexpr int kSettleFrames = 30;
 
 // Eases value toward target, most of the way in about ms, at any frame rate.
 qreal follow(qreal value, qreal target, qreal ms, qreal dt)
@@ -170,11 +172,15 @@ void RibbonFigure::step(qreal dt, QSizeF strip, bool listening, qreal movement)
 ScatterRibbon::ScatterRibbon(QQuickItem *parent)
     : QQuickPaintedItem(parent)
 {
-    // A still figure draws no more frames, so it redraws itself in the new colours.
+    // A still figure draws no more frames, so it redraws itself in the new
+    // colours: over enough frames for the afterglow to build up as it does
+    // when the figure settles.
     connect(this, &ScatterRibbon::paletteChanged, this, [this] {
         if (!moving() && !m_trail.isNull()) {
             m_trail.fill(Qt::transparent);
-            drawTrail(0);
+            for (int frame = 0; frame < kSettleFrames; ++frame) {
+                drawTrail(1.0 / 60);
+            }
             update();
         }
     });
