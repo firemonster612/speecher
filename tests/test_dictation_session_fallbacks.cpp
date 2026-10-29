@@ -457,17 +457,18 @@ private slots:
     // failing afterwards reports nothing more.
     void aMicrophoneRefusedWhileTheNextProviderPreparesKeepsItsError()
     {
+        // The fallback's preparation is under way when the microphone
+        // refuses, and only ends once the start has failed. Declared before
+        // the rig, so they outlive the worker the rig waits for.
+        QSemaphore preparing;
+        std::atomic_bool prepareStarted = false;
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        // A check failing midway must not leave the worker waiting.
+        const auto unblock = qScopeGuard([&preparing] { preparing.release(); });
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         local->backgroundPrepare = true;
         local->prepareResult = {false, QStringLiteral("offline"), Network};
-        // The fallback's preparation is under way when the microphone
-        // refuses, and only ends once the start has failed.
-        QSemaphore preparing;
-        // A check failing midway must not leave the worker waiting.
-        const auto unblock = qScopeGuard([&preparing] { preparing.release(); });
-        std::atomic_bool prepareStarted = false;
         local->duringBackgroundPrepare = [&preparing, &prepareStarted] {
             prepareStarted = true;
             preparing.acquire();
