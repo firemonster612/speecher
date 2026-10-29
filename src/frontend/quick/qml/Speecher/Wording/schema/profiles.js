@@ -28,7 +28,7 @@ var rows = [
       keywords: "apps applications match recognition" },
     { id: "defaultWritingProfile", page: "profiles", section: "Every profile", kind: "custom",
       label: "When the app isn't recognized", help: "The profile for apps Speecher doesn't recognize.",
-      value: "other", keywords: "fallback default profile unknown app unrecognized" },
+      keywords: "fallback default profile unknown app unrecognized" },
 
     { id: "additionalInstructions", page: "profiles", section: "Every profile", kind: "custom",
       label: "Instructions for every profile",

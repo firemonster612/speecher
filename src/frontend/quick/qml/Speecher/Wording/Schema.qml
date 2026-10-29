@@ -20,8 +20,7 @@ import "schema/updates.js" as Updates
 // values under the same ids, and option ids are the values core stores.
 //
 // Row fields: id, page, section, kind (toggle, choice, slider, text, secret,
-// shortcut, action, custom), label, help, value (the row's default; the app
-// shows core's. A custom row without one has nothing to save), options
+// shortcut, action, custom), label, help, options
 // [{ id, label, help?, icon? }], control (segmented, select, cards, or
 // language for the Spoken language's LanguageSelect) for choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
@@ -80,11 +79,11 @@ QtObject {
         if (spec.needs && !has(spec.needs)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
-    // Whether the row can be set in this build: a custom row with no value
-    // draws content with nothing to save, a secret goes to Accounts, and
-    // anything else needs saves(id), the backend saving it.
+    // Whether the row can be set in this build: a custom row draws its own
+    // content, a secret goes to Accounts, and anything else needs saves(id),
+    // the backend saving it.
     function settable(spec, saves) {
-        return spec.kind === "custom" && spec.value === undefined || spec.kind === "secret" || saves(spec.id)
+        return spec.kind === "custom" || spec.kind === "secret" || saves(spec.id)
     }
     // The row's options this computer has.
     function options(spec, has) {
