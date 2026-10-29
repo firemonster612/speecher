@@ -119,7 +119,7 @@ void ClaudeSpeechTranscriber::createClient(quint64 attemptId,
         }
     });
     connect(client, &ClaudeVoiceClient::failed, this,
-            [this, client, attemptId](const QString &message, bool retryable, const QString &phase,
+            [this, client, attemptId](const QString &message, bool retryable, SpeechPhase phase,
                                       ProviderFailureKind kind) {
         if (m_client == client && m_attemptId == attemptId) {
             emit failed({attemptId, message, retryable, phase, kind});

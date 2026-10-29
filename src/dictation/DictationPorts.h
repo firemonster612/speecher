@@ -82,7 +82,7 @@ struct SpeechFailure {
     quint64 attemptId = 0;
     QString message;
     bool retryable = false;
-    QString phase;
+    SpeechPhase phase = SpeechPhase::Connect;
     ProviderFailureKind kind = ProviderFailureKind::Other;
     int httpStatus = 0;
 };

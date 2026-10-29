@@ -231,9 +231,9 @@ private slots:
         // The first, chosen again during a dictation, is tried afterwards:
         // its failure came after the choice had moved on, so holds nothing.
         rig.input()->startResult = true;
-        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.stateChanged(DictationState::Listening);
         QuickSettings(&controller).set(QStringLiteral("audioDevice"), yeti);
-        emit controller.stateChanged(QStringLiteral("idle"));
+        emit controller.stateChanged(DictationState::Idle);
         QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.input()->device, yeti);
@@ -254,9 +254,9 @@ private slots:
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
 
         // Chosen during a dictation, so the test starts on it afterwards.
-        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.stateChanged(DictationState::Listening);
         settings.set(QStringLiteral("audioDevice"), yeti);
-        emit controller.stateChanged(QStringLiteral("idle"));
+        emit controller.stateChanged(DictationState::Idle);
         QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));
         QCOMPARE(rig.input()->device, yeti);
@@ -268,7 +268,7 @@ private slots:
         Rig rig(controller);
         rig.audio.holdTest(&rig.page);
 
-        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.stateChanged(DictationState::Listening);
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
         QVERIFY(!rig.audio.canToggleTest());
         rig.audio.holdTest(&rig.page);
@@ -276,7 +276,7 @@ private slots:
         QCOMPARE(rig.audio.testState(), QStringLiteral("stopped"));
 
         // The page still shows it, so it listens again.
-        emit controller.stateChanged(QStringLiteral("idle"));
+        emit controller.stateChanged(DictationState::Idle);
         QVERIFY(rig.audio.canToggleTest());
         QCoreApplication::processEvents();
         QCOMPARE(rig.audio.testState(), QStringLiteral("running"));

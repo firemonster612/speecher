@@ -18,79 +18,82 @@ QString dictationStateName(DictationState state)
     return QStringLiteral("error");
 }
 
-DictationToggleAction dictationToggleAction(const QString &stateName)
+DictationToggleAction dictationToggleAction(DictationState state)
 {
-    const QString lowered = stateName.toLower();
-    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
-        || lowered == QStringLiteral("paused")) {
+    switch (state) {
+    case DictationState::Starting:
+    case DictationState::Listening:
+    case DictationState::Paused:
         return {QStringLiteral("Stop dictation"), true};
-    }
-    if (lowered == QStringLiteral("refining")) {
+    case DictationState::Refining:
         return {QStringLiteral("Cancel refinement"), true};
-    }
     // As the Global Shortcut does then: a follow-up instruction.
-    if (lowered == QStringLiteral("reviewing")) {
+    case DictationState::Reviewing:
         return {QStringLiteral("Ask for more changes"), true};
-    }
     // Nothing to do while the text is on its way, so the control says why.
-    if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
-        return {dictationStatusLabel(lowered), false};
+    case DictationState::Stopping:
+    case DictationState::Delivering:
+        return {dictationStatusLabel(state), false};
+    case DictationState::Idle:
+    case DictationState::Error:
+        break;
     }
-    // Keyed on the state name because that is what the callers receive over
-    // their state-change signals, so the compiler cannot enforce coverage:
-    // an unrecognised or future state name deliberately falls through to an
-    // enabled Start, which is also what idle and error present.
     return {QStringLiteral("Start dictation"), true};
 }
 
-QString dictationStatusLabel(const QString &stateName, const QString &message)
+QString dictationStatusLabel(DictationState state, const QString &message)
 {
-    const QString lowered = stateName.toLower();
-    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")) {
+    switch (state) {
+    case DictationState::Starting:
+    case DictationState::Listening:
         return QStringLiteral("Listening…");
-    }
-    if (lowered == QStringLiteral("paused")) {
+    case DictationState::Paused:
         return QStringLiteral("Paused");
-    }
-    if (lowered == QStringLiteral("stopping")) {
+    case DictationState::Stopping:
         return QStringLiteral("Transcribing…");
-    }
-    if (lowered == QStringLiteral("refining")) {
+    case DictationState::Refining:
         return QStringLiteral("Refining…");
-    }
-    if (lowered == QStringLiteral("delivering")) {
+    case DictationState::Delivering:
         return message.isEmpty() ? QStringLiteral("Delivering…") : message;
-    }
-    if (lowered == QStringLiteral("reviewing")) {
+    case DictationState::Reviewing:
         return QStringLiteral("Review the edit in the popup");
-    }
-    if (lowered == QStringLiteral("error")) {
+    case DictationState::Error:
         return message.isEmpty() ? QStringLiteral("Dictation failed") : message;
+    case DictationState::Idle:
+        break;
     }
     return QStringLiteral("Idle");
 }
 
-bool dictationListeningPresentation(const QString &stateName)
+bool dictationListeningPresentation(DictationState state)
 {
-    const QString lowered = stateName.toLower();
-    return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening");
+    return state == DictationState::Starting || state == DictationState::Listening;
 }
 
-bool dictationCancelable(const QString &stateName)
+bool dictationCancelable(DictationState state)
 {
-    const QString lowered = stateName.toLower();
-    return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
-        || lowered == QStringLiteral("paused") || lowered == QStringLiteral("stopping")
-        || lowered == QStringLiteral("refining") || lowered == QStringLiteral("reviewing");
+    switch (state) {
+    case DictationState::Starting:
+    case DictationState::Listening:
+    case DictationState::Paused:
+    case DictationState::Stopping:
+    case DictationState::Refining:
+    case DictationState::Reviewing:
+        return true;
+    case DictationState::Idle:
+    case DictationState::Delivering:
+    case DictationState::Error:
+        break;
+    }
+    return false;
 }
 
-bool dictationPausable(const QString &stateName)
+bool dictationPausable(DictationState state)
 {
-    const QString lowered = stateName.toLower();
-    return lowered == QStringLiteral("listening") || lowered == QStringLiteral("paused");
+    return state == DictationState::Listening || state == DictationState::Paused;
 }
 
-SessionKeys sessionKeysWanted(const QString &stateName,
+SessionKeys sessionKeysWanted(DictationState state,
                               bool reviewUp,
                               bool escapeCancelsDictation,
                               const ShortcutBinding &cancelShortcut,
@@ -101,10 +104,10 @@ SessionKeys sessionKeysWanted(const QString &stateName,
         return {};
     }
     const ShortcutBinding escape{QKeySequence(Qt::Key_Escape)};
-    const bool waiting = stateName.toLower() == QStringLiteral("reviewing");
-    const bool cancels = dictationCancelable(stateName) && escapeCancelsDictation && pauseShortcut != escape;
+    const bool waiting = state == DictationState::Reviewing;
+    const bool cancels = dictationCancelable(state) && escapeCancelsDictation && pauseShortcut != escape;
     // A Pause Shortcut of Escape holds it while a follow-up can be paused.
-    const bool keepsReview = reviewUp && !(dictationPausable(stateName) && pauseShortcut == escape);
+    const bool keepsReview = reviewUp && !(dictationPausable(state) && pauseShortcut == escape);
     return {cancelShortcut != escape && (keepsReview || cancels), waiting};
 }
 

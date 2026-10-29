@@ -80,26 +80,26 @@ private slots:
         auto *icon = tray.findChild<QSystemTrayIcon *>();
         auto *toggle = icon->contextMenu()->findChild<QAction *>(QStringLiteral("trayToggleDictation"));
 
-        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.stateChanged(DictationState::Listening);
         QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher is listening"));
 
-        emit controller.stateChanged(QStringLiteral("starting"));
+        emit controller.stateChanged(DictationState::Starting);
         QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
 
         // Toggling mid-refinement cancels the refinement, so the action says
         // so; during stopping/delivering it does nothing.
-        emit controller.stateChanged(QStringLiteral("refining"));
+        emit controller.stateChanged(DictationState::Refining);
         QCOMPARE(toggle->text(), QStringLiteral("Cancel refinement"));
         QVERIFY(toggle->isEnabled());
 
-        emit controller.stateChanged(QStringLiteral("stopping"));
+        emit controller.stateChanged(DictationState::Stopping);
         QVERIFY(!toggle->isEnabled());
 
-        emit controller.stateChanged(QStringLiteral("delivering"));
+        emit controller.stateChanged(DictationState::Delivering);
         QVERIFY(!toggle->isEnabled());
 
-        emit controller.stateChanged(QStringLiteral("idle"));
+        emit controller.stateChanged(DictationState::Idle);
         QCOMPARE(toggle->text(), QStringLiteral("Start dictation"));
         QVERIFY(toggle->isEnabled());
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher"));
@@ -119,7 +119,7 @@ private slots:
         const QRgb taskbarText =
             personalize.value(QStringLiteral("SystemUsesLightTheme"), 1).toInt() != 0 ? qRgb(0, 0, 0) : qRgb(255, 255, 255);
 
-        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.stateChanged(DictationState::Listening);
         const QImage image = icon->icon().pixmap(32).toImage();
         int inked = 0;
         for (int y = 0; y < image.height(); ++y) {

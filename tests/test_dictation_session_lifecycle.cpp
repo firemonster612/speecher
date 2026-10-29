@@ -31,54 +31,54 @@ private slots:
     // these, so each state's words are pinned here once.
     void statusLabelAndToggleSayWhatEachStateMeans()
     {
-        QCOMPARE(dictationStatusLabel(QStringLiteral("idle")), QStringLiteral("Idle"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("starting")), QStringLiteral("Listening…"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("listening")), QStringLiteral("Listening…"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("stopping")), QStringLiteral("Transcribing…"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("refining")), QStringLiteral("Refining…"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("delivering")), QStringLiteral("Delivering…"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("delivering"), QStringLiteral("Copied")),
+        QCOMPARE(dictationStatusLabel(DictationState::Idle), QStringLiteral("Idle"));
+        QCOMPARE(dictationStatusLabel(DictationState::Starting), QStringLiteral("Listening…"));
+        QCOMPARE(dictationStatusLabel(DictationState::Listening), QStringLiteral("Listening…"));
+        QCOMPARE(dictationStatusLabel(DictationState::Stopping), QStringLiteral("Transcribing…"));
+        QCOMPARE(dictationStatusLabel(DictationState::Refining), QStringLiteral("Refining…"));
+        QCOMPARE(dictationStatusLabel(DictationState::Delivering), QStringLiteral("Delivering…"));
+        QCOMPARE(dictationStatusLabel(DictationState::Delivering, QStringLiteral("Copied")),
                  QStringLiteral("Copied"));
-        QCOMPARE(dictationStatusLabel(QStringLiteral("error"), QStringLiteral("Microphone unavailable")),
+        QCOMPARE(dictationStatusLabel(DictationState::Error, QStringLiteral("Microphone unavailable")),
                  QStringLiteral("Microphone unavailable"));
         // A message outside delivering and error is the last session's.
-        QCOMPARE(dictationStatusLabel(QStringLiteral("idle"), QStringLiteral("Copied")), QStringLiteral("Idle"));
+        QCOMPARE(dictationStatusLabel(DictationState::Idle, QStringLiteral("Copied")), QStringLiteral("Idle"));
 
-        QCOMPARE(dictationToggleAction(QStringLiteral("idle")).label, QStringLiteral("Start dictation"));
-        QCOMPARE(dictationToggleAction(QStringLiteral("listening")).label, QStringLiteral("Stop dictation"));
-        QCOMPARE(dictationToggleAction(QStringLiteral("refining")).label, QStringLiteral("Cancel refinement"));
-        QVERIFY(dictationToggleAction(QStringLiteral("refining")).enabled);
-        QVERIFY(!dictationToggleAction(QStringLiteral("stopping")).enabled);
-        QVERIFY(!dictationToggleAction(QStringLiteral("delivering")).enabled);
-        QVERIFY(dictationToggleAction(QStringLiteral("error")).enabled);
-        QCOMPARE(dictationStatusLabel(QStringLiteral("reviewing")),
+        QCOMPARE(dictationToggleAction(DictationState::Idle).label, QStringLiteral("Start dictation"));
+        QCOMPARE(dictationToggleAction(DictationState::Listening).label, QStringLiteral("Stop dictation"));
+        QCOMPARE(dictationToggleAction(DictationState::Refining).label, QStringLiteral("Cancel refinement"));
+        QVERIFY(dictationToggleAction(DictationState::Refining).enabled);
+        QVERIFY(!dictationToggleAction(DictationState::Stopping).enabled);
+        QVERIFY(!dictationToggleAction(DictationState::Delivering).enabled);
+        QVERIFY(dictationToggleAction(DictationState::Error).enabled);
+        QCOMPARE(dictationStatusLabel(DictationState::Reviewing),
                  QStringLiteral("Review the edit in the popup"));
-        QCOMPARE(dictationToggleAction(QStringLiteral("reviewing")).label, QStringLiteral("Ask for more changes"));
-        QVERIFY(dictationToggleAction(QStringLiteral("reviewing")).enabled);
+        QCOMPARE(dictationToggleAction(DictationState::Reviewing).label, QStringLiteral("Ask for more changes"));
+        QVERIFY(dictationToggleAction(DictationState::Reviewing).enabled);
     }
 
     // The session shortcuts hold their keys only while their action applies:
     // cancel from Starting through Refining, pause while Listening or Paused.
     void sessionShortcutsApplyOnlyWhileTheirActionDoes()
     {
-        for (const QString &state : {QStringLiteral("Listening"), QStringLiteral("Paused")}) {
+        for (const DictationState state : {DictationState::Listening, DictationState::Paused}) {
             QVERIFY(dictationPausable(state));
             QVERIFY(dictationCancelable(state));
         }
-        for (const QString &state : {QStringLiteral("Starting"), QStringLiteral("Refining")}) {
+        for (const DictationState state : {DictationState::Starting, DictationState::Refining}) {
             QVERIFY(!dictationPausable(state));
             QVERIFY(dictationCancelable(state));
         }
-        QVERIFY(!dictationPausable(QStringLiteral("Idle")));
-        QVERIFY(!dictationCancelable(QStringLiteral("Idle")));
+        QVERIFY(!dictationPausable(DictationState::Idle));
+        QVERIFY(!dictationCancelable(DictationState::Idle));
         // Cancel keeps the original while an edit is reviewed.
-        QVERIFY(dictationCancelable(QStringLiteral("Reviewing")));
-        QVERIFY(!dictationPausable(QStringLiteral("Reviewing")));
+        QVERIFY(dictationCancelable(DictationState::Reviewing));
+        QVERIFY(!dictationPausable(DictationState::Reviewing));
     }
 
     void sessionKeysAreTakenOnlyWhileTheyAct_data()
     {
-        QTest::addColumn<QString>("state");
+        QTest::addColumn<DictationState>("state");
         QTest::addColumn<bool>("reviewUp");
         QTest::addColumn<bool>("escapeCancelsDictation");
         QTest::addColumn<QString>("cancelShortcut");
@@ -89,28 +89,28 @@ private slots:
         const QString none;
         const QString escape = QStringLiteral("Esc");
         // Windows and macOS: Escape cancels from Starting through Refining.
-        QTest::newRow("listening, Windows and macOS") << "listening" << false << true << none << none << false << true << false;
-        QTest::newRow("idle") << "idle" << false << true << none << none << false << false << false;
-        QTest::newRow("delivering") << "delivering" << false << true << none << none << false << false << false;
-        QTest::newRow("Cancel Shortcut is Escape") << "listening" << false << true << escape << none << false << false << false;
-        QTest::newRow("Pause Shortcut is Escape") << "listening" << false << true << none << escape << false << false << false;
+        QTest::newRow("listening, Windows and macOS") << DictationState::Listening << false << true << none << none << false << true << false;
+        QTest::newRow("idle") << DictationState::Idle << false << true << none << none << false << false << false;
+        QTest::newRow("delivering") << DictationState::Delivering << false << true << none << none << false << false << false;
+        QTest::newRow("Cancel Shortcut is Escape") << DictationState::Listening << false << true << escape << none << false << false << false;
+        QTest::newRow("Pause Shortcut is Escape") << DictationState::Listening << false << true << none << escape << false << false << false;
         // Linux takes nothing while dictating.
-        QTest::newRow("listening, Linux") << "listening" << false << false << none << none << false << false << false;
+        QTest::newRow("listening, Linux") << DictationState::Listening << false << false << none << none << false << false << false;
         // Waiting for review, every platform: Escape keeps and Enter replaces.
-        QTest::newRow("reviewing, Linux") << "reviewing" << true << false << none << none << false << true << true;
-        QTest::newRow("reviewing, Pause Shortcut is Escape") << "reviewing" << true << true << none << escape << false << true << true;
-        QTest::newRow("reviewing, Cancel Shortcut is Escape") << "reviewing" << true << false << escape << none << false << false << true;
-        QTest::newRow("reviewing, suspended") << "reviewing" << true << true << none << none << true << false << false;
+        QTest::newRow("reviewing, Linux") << DictationState::Reviewing << true << false << none << none << false << true << true;
+        QTest::newRow("reviewing, Pause Shortcut is Escape") << DictationState::Reviewing << true << true << none << escape << false << true << true;
+        QTest::newRow("reviewing, Cancel Shortcut is Escape") << DictationState::Reviewing << true << false << escape << none << false << false << true;
+        QTest::newRow("reviewing, suspended") << DictationState::Reviewing << true << true << none << none << true << false << false;
         // Dictating a follow-up, every platform: Escape keeps the review
         // rather than reaching the Target; Enter is free for the dictation.
-        QTest::newRow("following up, Linux") << "listening" << true << false << none << none << false << true << false;
-        QTest::newRow("following up, Pause Shortcut is Escape") << "listening" << true << false << none << escape << false << false << false;
-        QTest::newRow("following up, refining, Pause Shortcut is Escape") << "refining" << true << false << none << escape << false << true << false;
+        QTest::newRow("following up, Linux") << DictationState::Listening << true << false << none << none << false << true << false;
+        QTest::newRow("following up, Pause Shortcut is Escape") << DictationState::Listening << true << false << none << escape << false << false << false;
+        QTest::newRow("following up, refining, Pause Shortcut is Escape") << DictationState::Refining << true << false << none << escape << false << true << false;
     }
 
     void sessionKeysAreTakenOnlyWhileTheyAct()
     {
-        QFETCH(QString, state);
+        QFETCH(DictationState, state);
         QFETCH(bool, reviewUp);
         QFETCH(bool, escapeCancelsDictation);
         QFETCH(QString, cancelShortcut);
@@ -525,7 +525,7 @@ private slots:
         QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app"));
         QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Inserted);
         QCOMPARE(status.last().first().toString(), QStringLiteral("Sent to the app"));
-        QCOMPARE(state.last().first().toString(), QStringLiteral("delivering"));
+        QCOMPARE(state.last().first().value<DictationState>(), DictationState::Delivering);
         QCOMPARE(int(session.state()), int(DictationState::Delivering));
 
         const QList<QTimer *> completionTimers =
@@ -539,7 +539,7 @@ private slots:
         completionTimer->stop();
         QVERIFY(QMetaObject::invokeMethod(completionTimer, "timeout", Qt::DirectConnection));
         QCOMPARE(hidden.count(), 1);
-        QCOMPARE(state.last().first().toString(), QStringLiteral("idle"));
+        QCOMPARE(state.last().first().value<DictationState>(), DictationState::Idle);
         QCOMPARE(int(session.state()), int(DictationState::Idle));
 
         // A clipboard-only receipt reports itself as copied, not sent.
@@ -708,7 +708,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("sentence a"));
         // A mid-dictation stream drop reconnects on a fresh attempt; the
         // accuracy pass of that attempt covers only the audio that follows.
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         QTRY_COMPARE_WITH_TIMEOUT(speech->startCalls, 2, 250);
         speech->emitFinalText(QStringLiteral("sentence bee"));
 
@@ -1664,7 +1664,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("kept"));
         speech->autoCompleteOnFinish = false;
         session.pause();
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(message.count(), 1, 250);
@@ -1763,7 +1763,7 @@ private slots:
         speech->autoCompleteOnFinish = false;
         audio->pushAudio(QByteArrayLiteral("pcm"));
         session.stopListening();
-        speech->emitFailure(QStringLiteral("temporary disconnect"), true);
+        speech->emitFailure(QStringLiteral("temporary disconnect"), true, SpeechPhase::Finalize);
 
         QCOMPARE(speech->startCalls, 1);
         QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm")}));

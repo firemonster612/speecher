@@ -628,7 +628,7 @@ private slots:
                                                if (failsInsideStartAttempt) {
                                                    speech->onStartAttempt = [speech] {
                                                        speech->emitFailure(QStringLiteral("refused"), false,
-                                                                           QStringLiteral("connect"),
+                                                                           SpeechPhase::Connect,
                                                                            ProviderFailureKind::Network);
                                                    };
                                                } else {
@@ -687,7 +687,7 @@ private slots:
 
         QVERIFY(session.start({audio}, options));
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
-        codex->emitFailure(QStringLiteral("dropped"), false, QStringLiteral("streaming"), ProviderFailureKind::Network);
+        codex->emitFailure(QStringLiteral("dropped"), false, SpeechPhase::Streaming, ProviderFailureKind::Network);
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
@@ -718,7 +718,7 @@ private slots:
 
         QVERIFY(session.start({audio}, options));
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
-        codex->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"), ProviderFailureKind::Network);
+        codex->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect, ProviderFailureKind::Network);
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
@@ -773,7 +773,7 @@ private slots:
             return [message, kind](QObject *parent) {
                 auto *speech = new FakeSpeechTranscriber(parent);
                 speech->onStartAttempt = [speech, message, kind] {
-                    speech->emitFailure(message, false, QStringLiteral("connect"), kind);
+                    speech->emitFailure(message, false, SpeechPhase::Connect, kind);
                 };
                 return speech;
             };
@@ -828,7 +828,7 @@ private slots:
         QVERIFY(microphone.active);
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
         microphone.pushAudio(microphoneChunk(8000));
-        codex->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"), ProviderFailureKind::Network);
+        codex->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect, ProviderFailureKind::Network);
         microphone.pushAudio(microphoneChunk(8000));
         QTRY_COMPARE_WITH_TIMEOUT(m_script.bytes, 9600, 10000);
         microphone.pushAudio(microphoneChunk(0));
@@ -1400,7 +1400,7 @@ private slots:
         QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
         m_codex->emitFinalText(QStringLiteral("Said before."));
         m_codex->emitPartialText(QStringLiteral("And then"));
-        m_codex->emitFailure(QStringLiteral("Unsupported audio"), false, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Unsupported audio"), false, SpeechPhase::Streaming,
                              ProviderFailureKind::Other);
         const RecordingStatus status = recording.status();
         QVERIFY(status.recording);
@@ -1436,7 +1436,7 @@ private slots:
         QVERIFY(!outcome);
         QVERIFY(!recording.isRecording());
 
-        m_codex->emitFailure(QStringLiteral("Too many sessions"), true, QStringLiteral("connect"),
+        m_codex->emitFailure(QStringLiteral("Too many sessions"), true, SpeechPhase::Connect,
                              ProviderFailureKind::Network);
         QCOMPARE(outcome, std::optional<QString>(QStringLiteral("Too many sessions")));
         QVERIFY(!QFileInfo::exists(path));
@@ -1467,13 +1467,13 @@ private slots:
         int connects = 0;
         m_codex->onStartAttempt = [this, &connects] {
             if (++connects < 2) {
-                m_codex->emitFailure(QStringLiteral("Host unreachable"), true, QStringLiteral("connect"),
+                m_codex->emitFailure(QStringLiteral("Host unreachable"), true, SpeechPhase::Connect,
                                      ProviderFailureKind::Network);
                 return;
             }
             m_codex->emitConnected();
         };
-        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Reconnecting);
         QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Connection reset"));
@@ -1524,7 +1524,7 @@ private slots:
         }
         // Once, for the first line the file did not take.
         QCOMPARE(problems.count(), 1);
-        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         QTRY_COMPARE_WITH_TIMEOUT(m_codex->startCalls, 2, 5000);
         m_codex->emitFinalText(QStringLiteral("Written again."));
@@ -1610,7 +1610,7 @@ private slots:
                 m_codex->emitConnected();
                 return;
             }
-            m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("connect"),
+            m_codex->emitFailure(QStringLiteral("Unauthorized"), false, SpeechPhase::Connect,
                                  ProviderFailureKind::Authentication);
         };
         const auto streamState = [&recording] { return recording.status().streams.first().state; };
@@ -1622,7 +1622,7 @@ private slots:
 
         m_codex->refreshRequired = false;
         expiredUpTo = 2;
-        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, SpeechPhase::Streaming,
                              ProviderFailureKind::Authentication);
         QCOMPARE(streamState(), RecordingStream::State::Reconnecting);
         QTRY_COMPARE_WITH_TIMEOUT(preparedAtStarts, QList<int>({2, 3}), 5000);
@@ -1630,7 +1630,7 @@ private slots:
 
         // Signed out for good.
         expiredUpTo = 100;
-        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, SpeechPhase::Streaming,
                              ProviderFailureKind::Authentication);
         QTRY_COMPARE_WITH_TIMEOUT(streamState(), RecordingStream::State::Stopped, 5000);
         QCOMPARE(preparedAtStarts, QList<int>({2, 3, 4}));
@@ -1652,7 +1652,7 @@ private slots:
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         m_codex->emitPartialText(QStringLiteral("Before the drop"));
         const quint64 dropped = m_codex->currentAttemptId;
-        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         QVERIFY(m_codex->cancelledAttempts.contains(dropped));
         m_codex->emitFinalText(QStringLiteral("Before the drop."));
@@ -1694,7 +1694,7 @@ private slots:
             QTest::qWait(1000);
         }
         QCOMPARE(m_codex->audioChunks.size(), 2);
-        m_codex->emitFailure(QStringLiteral("Timed out"), true, QStringLiteral("connect"),
+        m_codex->emitFailure(QStringLiteral("Timed out"), true, SpeechPhase::Connect,
                              ProviderFailureKind::Timeout);
 
         QTRY_VERIFY_WITH_TIMEOUT(claude && claude->startCalls == 1, 10000);
@@ -1720,10 +1720,10 @@ private slots:
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
         m_codex->onStartAttempt = [this] {
-            m_codex->emitFailure(QStringLiteral("Host unreachable"), true, QStringLiteral("connect"),
+            m_codex->emitFailure(QStringLiteral("Host unreachable"), true, SpeechPhase::Connect,
                                  ProviderFailureKind::Network);
         };
-        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         microphone->pushAudio(microphoneChunk(8000));
         const int startsBefore = m_codex->startCalls;
@@ -1750,7 +1750,7 @@ private slots:
         });
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         // 2 seconds, then 10 minutes, all before the reconnect.
         microphone->pushAudio(QByteArray(2 * 32000, '\1'));
@@ -1984,7 +1984,7 @@ private slots:
         systemAudioStarts = true;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
         problems.clear();
-        streamingCodexes().last()->emitFailure(QStringLiteral("Unsupported audio"), false, QStringLiteral("streaming"),
+        streamingCodexes().last()->emitFailure(QStringLiteral("Unsupported audio"), false, SpeechPhase::Streaming,
                                       ProviderFailureKind::Other);
         QVERIFY(recording.isRecording());
         QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
@@ -2078,7 +2078,7 @@ private slots:
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
         systemAudio->pushAudio(microphoneChunk(8000));
-        streamingCodexes().at(1)->emitFailure(QStringLiteral("Unsupported audio"), false, QStringLiteral("streaming"),
+        streamingCodexes().at(1)->emitFailure(QStringLiteral("Unsupported audio"), false, SpeechPhase::Streaming,
                                               ProviderFailureKind::Other);
         QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
         recording.stop();
@@ -2157,7 +2157,7 @@ private slots:
         recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         streamingCodexes().at(0)->emitConnected();
-        streamingCodexes().at(1)->emitFailure(QStringLiteral("Too many sessions"), false, QStringLiteral("connect"),
+        streamingCodexes().at(1)->emitFailure(QStringLiteral("Too many sessions"), false, SpeechPhase::Connect,
                                               ProviderFailureKind::Other);
         QCOMPARE(outcome, std::optional<QString>(QString()));
         QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
@@ -2320,7 +2320,7 @@ private slots:
         int themCancels = 0;
         streamingCodexes().at(1)->onCancelAttempt = [&themCancels](quint64) { ++themCancels; };
 
-        streamingCodexes().at(0)->emitFailure(QStringLiteral("Too many sessions"), true, QStringLiteral("connect"),
+        streamingCodexes().at(0)->emitFailure(QStringLiteral("Too many sessions"), true, SpeechPhase::Connect,
                                               ProviderFailureKind::Network);
         QCOMPARE(outcome, std::optional<QString>(QStringLiteral("Too many sessions")));
         QCOMPARE(themCancels, 1);

@@ -167,7 +167,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     connect(client, &CodexDictationClient::failed,
             this, [this, client, attemptId](const QString &message,
                                             bool retryable,
-                                            const QString &phase,
+                                            SpeechPhase phase,
                                             ProviderFailureKind kind) {
                 if (m_client == client && m_attemptId == attemptId) {
                     emit failed({attemptId, message, retryable, phase, kind});

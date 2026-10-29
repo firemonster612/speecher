@@ -41,10 +41,10 @@ private slots:
         session.startListening();
         QTRY_COMPARE(session.state(), DictationState::Listening);
         speech->emitPartialText(QStringLiteral("surviving words"));
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         if (exhaustRecovery) {
-            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
-            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+            speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
+            speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         } else {
             session.stopListening();
         }
@@ -706,7 +706,7 @@ private slots:
         QTRY_COMPARE(session.state(), DictationState::Listening);
         speech->emitPartialText(QStringLiteral("make it friday"));
         for (int failure = 0; failure < 3; ++failure) {
-            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+            speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         }
         QTRY_COMPARE(refiner->refineCalls, 1);
         refiner->emitCompletedText(QStringLiteral("The release is Friday."));
@@ -1254,7 +1254,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("keep this"));
         speech->emitPartialText(QStringLiteral("and these words"));
         QSignalSpy states(&session, &DictationSession::stateChanged);
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
 
         QCOMPARE(int(session.state()), int(DictationState::Listening));
         QCOMPARE(audio->isActive(), true);
@@ -1293,13 +1293,13 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         speech->emitFinalText(QStringLiteral("keep this transcript"));
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         QCOMPARE(speech->startCalls, 3);
         QCOMPARE(int(session.state()), int(DictationState::Listening));
         QCOMPARE(delivery->calls, 0);
 
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
@@ -1312,7 +1312,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 2000);
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         QCOMPARE(speech->startCalls, 5);
         QCOMPARE(int(session.state()), int(DictationState::Listening));
     }
@@ -1370,7 +1370,7 @@ private slots:
         // Each drop follows a stream that had been healthy, so none of them
         // spends the budget meant for a stream that keeps failing.
         for (int drop = 0; drop < 5; ++drop) {
-            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+            speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         }
         QCOMPARE(speech->startCalls, 6);
         QCOMPARE(session.state(), DictationState::Listening);
@@ -1393,7 +1393,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         // Retryable, but the stream never came up: the user should see the error now.
-        speech->emitFailure(QStringLiteral("connection refused"), true, QStringLiteral("connect"));
+        speech->emitFailure(QStringLiteral("connection refused"), true, SpeechPhase::Connect);
 
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
         QCOMPARE(speech->startCalls, 1);

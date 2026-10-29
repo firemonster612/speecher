@@ -15,16 +15,17 @@ QuickDictation *g_instance = nullptr;
 constexpr int msPerSecond = 1000;
 int g_errorDismissMs = 0;
 
-// The popup's phase for a session state name.
-QString phaseFor(const QString &stateName)
+// The popup's phase for a session state.
+QString phaseFor(DictationState state)
 {
-    if (stateName == QLatin1String("stopping")) {
+    switch (state) {
+    case DictationState::Stopping:
         return QStringLiteral("transcribing");
-    }
-    if (stateName == QLatin1String("reviewing")) {
+    case DictationState::Reviewing:
         return QStringLiteral("review");
+    default:
+        return dictationStateName(state);
     }
-    return stateName;
 }
 
 QString outcomeName(PopupOutcome outcome)
@@ -188,9 +189,9 @@ void QuickDictation::setErrorDismissMs(int ms)
     g_errorDismissMs = ms;
 }
 
-void QuickDictation::followSession(const QString &stateName)
+void QuickDictation::followSession(DictationState state)
 {
-    const QString phase = phaseFor(stateName);
+    const QString phase = phaseFor(state);
     if (phase == QLatin1String("starting")) {
         // The last dictation's refinement and error are not this one's.
         update(m_refined, QString(), &QuickDictationState::refinedChanged);

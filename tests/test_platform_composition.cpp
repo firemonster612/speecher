@@ -2737,7 +2737,7 @@ private slots:
 
         // The stream drops and does not come back.
         codex->onStartAttempt = nullptr;
-        codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                            ProviderFailureKind::Network);
         const QList<QJsonObject> dropped = linesWritten(watcher);
         QCOMPARE(dropped.size(), 1);

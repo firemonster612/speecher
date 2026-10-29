@@ -315,8 +315,8 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
 #ifdef Q_OS_MACOS
-    connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
-        if (state != QStringLiteral("Listening")) {
+    connect(m_session, &DictationSession::stateChanged, this, [this](DictationState state) {
+        if (state != DictationState::Listening) {
             return;
         }
         const std::optional<float> volume = m_platform->inputVolume();
@@ -342,12 +342,12 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_session, &DictationSession::transcriptDelivered, this, keepTranscript);
     connect(m_session, &DictationSession::audioLevelChanged, this, &ApplicationController::audioLevelChanged);
     // Pause and resume make no sound; only starting and stopping do.
-    connect(m_session, &DictationSession::statusChanged, this, [this, wasPaused = false](const QString &status) mutable {
-        const bool resumed = std::exchange(wasPaused, m_session->state() == DictationState::Paused)
-            && status == QStringLiteral("Listening");
+    connect(m_session, &DictationSession::stateChanged, this, [this, wasPaused = false]() mutable {
+        const DictationState state = m_session->state();
+        const bool resumed = std::exchange(wasPaused, state == DictationState::Paused)
+            && state == DictationState::Listening;
         if (m_settings->soundsEnabled() && !resumed
-            && (status == QStringLiteral("Listening")
-                || status == QStringLiteral("Stopping"))) {
+            && (state == DictationState::Listening || state == DictationState::Stopping)) {
             if (m_frontEnd) {
                 m_frontEnd->alert();
             }
@@ -610,14 +610,14 @@ const PlatformComposition *ApplicationController::platform() const
     return m_platform.get();
 }
 
-QString ApplicationController::stateName() const
+DictationState ApplicationController::dictationState() const
 {
-    return m_session->stateName();
+    return m_session->reportedState();
 }
 
 QString ApplicationController::statusLabel() const
 {
-    return dictationStatusLabel(m_session->stateName(), m_session->lastMessage());
+    return dictationStatusLabel(m_session->reportedState(), m_session->lastMessage());
 }
 
 QString ApplicationController::lastTranscript() const
@@ -763,7 +763,7 @@ void ApplicationController::updateSessionShortcuts()
     if (!m_session) {
         return;
     }
-    const QString state = m_session->stateName();
+    const DictationState state = m_session->reportedState();
     const ShortcutBinding cancelShortcut = globalShortcut(GlobalShortcutRole::Cancel);
     const SessionKeys wanted = sessionKeysWanted(state, m_session->reviewUp(), m_platform->escapeCancelsDictation(),
                                                  cancelShortcut,

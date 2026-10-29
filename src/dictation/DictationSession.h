@@ -44,6 +44,10 @@ public:
     ~DictationSession() override;
 
     DictationState state() const;
+    // The state stateChanged and the status line report: Starting while a
+    // start waits for the microphone to stop, otherwise state().
+    DictationState reportedState() const;
+    // reportedState()'s name, as IPC and the command line carry it.
     QString stateName() const;
     // A start that arrived while the microphone was stopping and waits for it.
     bool startPending() const;
@@ -102,7 +106,7 @@ public slots:
     static void setStableAttemptMs(int ms);
 
 signals:
-    void stateChanged(const QString &stateName);
+    void stateChanged(DictationState state);
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
     void transcriptDelivered(const QString &text);

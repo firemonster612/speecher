@@ -215,7 +215,7 @@ private slots:
         QCOMPARE(updates.restartBlocker(), QString());
 
         blocker = UpdateController::RestartBlocker::Dictation;
-        emit controller.session()->stateChanged(QStringLiteral("listening"));
+        emit controller.session()->stateChanged(DictationState::Listening);
         QCOMPARE(changed.count(), 1);
         QCOMPARE(updates.restartBlocker(), QStringLiteral("dictation"));
 
@@ -299,7 +299,7 @@ private slots:
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         DictationSession *session = controller.session();
-        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(DictationState::Starting);
         emit session->popupShowRequested(1);
         QQuickWindow *popup = openWindow("PopupWindow");
         QVERIFY(popup);
@@ -310,8 +310,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!chip->property("open").toBool(), 8000);
 
         emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted);
-        emit session->stateChanged(QStringLiteral("idle"));
-        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(DictationState::Idle);
+        emit session->stateChanged(DictationState::Starting);
         emit session->popupShowRequested(2);
         QVERIFY(chip->property("open").toBool());
     }

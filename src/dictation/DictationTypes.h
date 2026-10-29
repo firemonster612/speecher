@@ -41,7 +41,7 @@ enum class DictationState {
 QString dictationStateName(DictationState state);
 QString dictationStateLabel(DictationState state, const QString &message = {});
 
-// What a Start/Stop control presents for a session state name, matching
+// What a Start/Stop control presents for a session state, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
 // starting and listening, cancels a refinement, dictates a follow-up to an
 // edit under review, and does nothing during stopping and delivering, when
@@ -51,24 +51,24 @@ struct DictationToggleAction {
     bool enabled = true;
 };
 
-DictationToggleAction dictationToggleAction(const QString &stateName);
+DictationToggleAction dictationToggleAction(DictationState state);
 
-// What a status line, such as Home's, says for a session state name. message
+// What a status line, such as Home's, says for a session state. message
 // is the session's own words, DictationSession::lastMessage(): an error's
 // reason, or while delivering the receipt ("Sent to the app"); the other states
 // ignore it.
-QString dictationStatusLabel(const QString &stateName, const QString &message = {});
+QString dictationStatusLabel(DictationState state, const QString &message = {});
 
 // Whether a tray shows the listening icon, tooltip and level meter for a
-// session state name: the states where the microphone is open or about to be.
-bool dictationListeningPresentation(const QString &stateName);
+// session state: the states where the microphone is open or about to be.
+bool dictationListeningPresentation(DictationState state);
 
-// Whether a session state name is one a cancel would throw away, Starting
+// Whether a session state is one a cancel would throw away, Starting
 // through Refining, or Reviewing, where cancel keeps the original selection:
 // trays offer Cancel then, and Windows and macOS take Escape.
-bool dictationCancelable(const QString &stateName);
+bool dictationCancelable(DictationState state);
 // Whether pause or resume applies: Listening or Paused.
-bool dictationPausable(const QString &stateName);
+bool dictationPausable(DictationState state);
 
 // Which of Escape and Enter a session wants taken from the desktop.
 struct SessionKeys {
@@ -86,7 +86,7 @@ struct SessionKeys {
 // Shortcut of Escape while the follow-up can be paused. Enter
 // replaces while the edit waits. Nothing is taken while the session
 // shortcuts are suspended, as while one is being recorded.
-SessionKeys sessionKeysWanted(const QString &stateName,
+SessionKeys sessionKeysWanted(DictationState state,
                               bool reviewUp,
                               bool escapeCancelsDictation,
                               const ShortcutBinding &cancelShortcut,

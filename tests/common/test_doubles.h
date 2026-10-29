@@ -340,7 +340,7 @@ public:
 
     void emitFailure(const QString &message,
                      bool retryable = false,
-                     const QString &phase = {},
+                     SpeechPhase phase = SpeechPhase::Streaming,
                      ProviderFailureKind kind = ProviderFailureKind::Other)
     {
         emit failed({currentAttemptId, message, retryable, phase, kind});

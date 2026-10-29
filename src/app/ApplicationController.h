@@ -22,6 +22,7 @@ namespace speecher {
 class AppFrontEnd;
 enum class SetupAssistantPage;
 class DictationSession;
+enum class DictationState;
 class FileTranscriptionSession;
 struct TranscribeOptions;
 class AudioInput;
@@ -102,7 +103,8 @@ public:
     // Where the sign-ins learned along the way are noted for settings status.
     ProviderAvailability *providerAvailability() const;
     const PlatformComposition *platform() const;
-    QString stateName() const;
+    // The Dictation Session's state as it reports it (reportedState).
+    DictationState dictationState() const;
     // What a status line says about dictation now (dictationStatusLabel);
     // statusChanged carries it.
     QString statusLabel() const;
@@ -193,7 +195,7 @@ public slots:
                           bool microphoneOnly = false);
 
 signals:
-    void stateChanged(const QString &stateName);
+    void stateChanged(DictationState state);
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
     void transcriptDelivered(const QString &text);
