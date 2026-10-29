@@ -16,7 +16,7 @@ SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QStri
 {
     const AnthropicAuth auth = AnthropicAuthProvider::forSpeech(accounts).resolve(true);
     // Warms the version cache the voice client reads as it connects, for
-    // Claude Code's own sign-in only, as before.
+    // Claude Code's own sign-in only.
     if (accounts.anthropicAuthMode != QStringLiteral("cliproxy")) {
         ClaudeCredentials::installedVersion();
     }
