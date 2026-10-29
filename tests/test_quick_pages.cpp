@@ -576,18 +576,21 @@ private slots:
     }
 
     // The popup's ribbon keeps every point finite and inside its strip, the
-    // bar, through a loud voice, a pause and reduced motion.
+    // bar, through a loud voice, a pause, the capsule widening from 280 to
+    // 460 for live words and reduced motion.
     void ribbonStaysInsideTheBar()
     {
         RibbonFigure figure;
-        const QRectF strip(0, 0, 160, 44);
+        // The strip is 160 px wide in the 280 capsule and 340 in the 460.
         const struct {
             qreal seconds;
+            qreal width;
             bool listening;
             qreal movement;
-        } phases[] = {{3, true, 1}, {1, false, 1}, {1, true, 0}};
+        } phases[] = {{3, 160, true, 1}, {1, 160, false, 1}, {2, 340, true, 1}, {1, 340, true, 0}};
         qreal loosest = 0;
         for (const auto &phase : phases) {
+            const QRectF strip(0, 0, phase.width, 44);
             for (int frame = 0; frame < phase.seconds * 60; ++frame) {
                 // A level every 50 ms, a word starting every 100 ms.
                 if (frame % 3 == 0) {
@@ -604,8 +607,37 @@ private slots:
         QVERIFY(loosest > 0.5);
     }
 
+    // The ribbon's loop keeps its size in the 280 capsule, about 145 px, as
+    // the capsule widens to 460: a second loop unfurls beside it rather than
+    // either stretching.
+    void ribbonLoopsKeepTheirSize()
+    {
+        RibbonFigure figure;
+        // Each loop's width, from the points that show; below 0 for a loop that doesn't.
+        const auto widths = [&figure] {
+            qreal low[2] = {1e9, 1e9}, high[2] = {-1e9, -1e9};
+            for (const RibbonFigure::Point &point : figure.points()) {
+                if (point.shown > 0) {
+                    low[point.second] = std::min(low[point.second], point.home.x());
+                    high[point.second] = std::max(high[point.second], point.home.x());
+                }
+            }
+            return std::pair{high[0] - low[0], high[1] - low[1]};
+        };
+        // The strip widens from 160 to 332 px over half a second, as the
+        // capsule does once the clock reads 10:00 and takes a digit's room.
+        for (int frame = 0; frame < 120; ++frame) {
+            figure.step(1.0 / 60, {160 + 172 * std::min(1.0, frame / 30.0), 44}, true, 1);
+            const auto [first, second] = widths();
+            QVERIFY2(first < 150 && second < 150, qPrintable(QStringLiteral("%1, %2").arg(first).arg(second)));
+        }
+        const auto [first, second] = widths();
+        QVERIFY2(std::abs(first - 145) < 5 && std::abs(second - 145) < 5,
+                 qPrintable(QStringLiteral("%1, %2").arg(first).arg(second)));
+    }
+
     // Shown again while the voice holds one level, the ribbon still hears it
-    // and frees points, drawn here in white among black.
+    // and warms toward its accent, drawn here as white from black.
     void reshownRibbonHearsTheLevel()
     {
         // An item shows again only under a parent.
@@ -627,14 +659,53 @@ private slots:
         QPainter painter(&image);
         ribbon.paint(&painter);
         painter.end();
-        int freed = 0;
+        int warm = 0;
         for (int y = 0; y < image.height(); ++y) {
             for (int x = 0; x < image.width(); ++x) {
                 const QColor pixel = QColor::fromRgba(qUnpremultiply(image.pixel(x, y)));
-                freed += pixel.alpha() > 64 && pixel.lightness() > 128;
+                warm += pixel.alpha() > 64 && pixel.lightness() > 128;
             }
         }
-        QVERIFY(freed > 0);
+        QVERIFY(warm > 0);
+    }
+
+    // Paused after a loud voice, the ribbon goes on until it rests: further
+    // frames would draw it no stronger or fainter than where it stopped.
+    void pausedRibbonStopsAtRest()
+    {
+        ScatterRibbon ribbon;
+        ribbon.setSize({160, 44});
+        ribbon.setListening(true);
+        ribbon.setLevel(1);
+        for (int frame = 0; frame < 60; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        ribbon.setListening(false);
+        while (ribbon.moving()) {
+            ribbon.advance(1.0 / 60);
+        }
+        const auto drawn = [&ribbon] {
+            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            ribbon.paint(&painter);
+            return image;
+        };
+        // Its strength: the sum of its alpha.
+        const auto strength = [](const QImage &image) {
+            qint64 sum = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    sum += qAlpha(image.pixel(x, y));
+                }
+            }
+            return sum;
+        };
+        const qint64 stopped = strength(drawn());
+        for (int frame = 0; frame < 120; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        QVERIFY2(std::abs(strength(drawn()) - stopped) < stopped / 50, qPrintable(QStringLiteral("%1 then %2").arg(stopped).arg(strength(drawn()))));
     }
 
     // Once paused and still, the ribbon draws no more frames, yet takes a
