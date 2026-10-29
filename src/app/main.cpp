@@ -459,7 +459,7 @@ int main(int argc, char **argv)
     if (decision.mode == LaunchMode::RunCli) {
         // No QApplication: talking to a running instance must not need a display.
         QCoreApplication app(argc, argv);
-        if (decision.ipcCommand == QStringLiteral("watchStatus")) {
+        if (decision.ipcCommand == IpcCommand::WatchStatus) {
             installWatchEndOnCtrlC();
         }
         return runCliCommand(decision, platform);
@@ -535,30 +535,30 @@ int main(int argc, char **argv)
 #endif
     controller.updates()->start();
     QString ipcError;
-    if (!controller.startIpc(&ipcError)) {
-        const QString showCommand = !decision.transcribeFiles.isEmpty()
-            ? QStringLiteral("transcribe")
-            : decision.showSettings ? QStringLiteral("showSettings")
-                                    : QStringLiteral("showMain");
+    const IpcListenResult listened = controller.startIpc(&ipcError);
+    if (listened != IpcListenResult::Listening) {
+        const IpcCommand showCommand = !decision.transcribeFiles.isEmpty() ? IpcCommand::Transcribe
+            : decision.showSettings                                       ? IpcCommand::ShowSettings
+                                                                          : IpcCommand::ShowMain;
+        const IpcRequest showRequest{showCommand, {}, decision.transcribeFiles};
         // An older running instance answers a command it does not know, such
         // as transcribe, with a refusal; say so rather than exit as if the
         // files had opened.
         IpcResponse response;
-        const auto answered = [&response, &showCommand] {
+        const auto answered = [&response, showCommand] {
             if (response.ok) {
                 return 0;
             }
-            std::cerr << "The running Speecher instance refused " << showCommand.toStdString() << ": "
+            std::cerr << "The running Speecher instance refused " << ipcCommandName(showCommand).toStdString() << ": "
                       << response.message.toStdString() << "\n";
             return 1;
         };
 #ifdef Q_OS_WIN
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
-            auto result = SingleInstanceIpc::sendCommandDetailed(
-                showCommand, SessionOverrides(), decision.transcribeFiles, &response);
+            auto result = SingleInstanceIpc::sendRequest(showRequest, &response);
             // The startup claim can precede the winning instance's pipe listener.
-            if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
+            if (listened == IpcListenResult::AnotherInstance) {
                 QDeadlineTimer deadline(750);
                 while (result == IpcCommandResult::Unavailable && !deadline.hasExpired()) {
                     QThread::msleep(25);
@@ -566,8 +566,7 @@ int main(int argc, char **argv)
                     if (remaining <= 0) {
                         break;
                     }
-                    result = SingleInstanceIpc::sendCommandDetailed(
-                        showCommand, SessionOverrides(), decision.transcribeFiles, &response, int(remaining));
+                    result = SingleInstanceIpc::sendRequest(showRequest, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
@@ -575,9 +574,7 @@ int main(int argc, char **argv)
             }
         }
 #else
-        if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, &response)
-                == IpcCommandResult::Sent) {
+        if (!daemon && SingleInstanceIpc::sendRequest(showRequest, &response) == IpcCommandResult::Sent) {
             return answered();
         }
 #endif
@@ -608,18 +605,7 @@ int main(int argc, char **argv)
     } else {
         if (decision.startListening) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {
-                const SessionOverrides &overrides = decision.sessionOverrides;
-                if (overrides.outputFormat || overrides.writingProfile || overrides.spokenLanguage) {
-                    controller.handleIpcCommand(QStringLiteral("start"),
-                                                overrides.outputFormat ? outputFormatName(*overrides.outputFormat)
-                                                                       : QString(),
-                                                nullptr,
-                                                {},
-                                                overrides.writingProfile.value_or(QString()),
-                                                overrides.spokenLanguage.value_or(QString()));
-                } else {
-                    controller.startListening();
-                }
+                controller.startListeningWith(decision.sessionOverrides);
             });
         }
         if (decision.showSettings) {

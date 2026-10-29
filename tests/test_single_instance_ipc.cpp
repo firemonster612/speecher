@@ -114,7 +114,7 @@ static std::unique_ptr<QThread> startCommandLine(const CommandLineDecision &deci
     return thread;
 }
 
-static CommandLineDecision statusDecision(const QString &command, bool json)
+static CommandLineDecision statusDecision(IpcCommand command, bool json)
 {
     CommandLineDecision decision;
     decision.mode = LaunchMode::RunCli;
@@ -148,13 +148,13 @@ private slots:
         };
         std::unique_ptr<QThread> first(QThread::create([&] {
             SingleInstanceIpc ipc(firstPlatform);
-            firstListening = ipc.listen();
+            firstListening = ipc.listen() == IpcListenResult::Listening;
             firstDone.release();
             exitThreads.acquire();
         }));
         std::unique_ptr<QThread> second(QThread::create([&] {
             SingleInstanceIpc ipc(secondPlatform);
-            secondListening = ipc.listen();
+            secondListening = ipc.listen() == IpcListenResult::Listening;
             secondDone.release();
             exitThreads.acquire();
         }));
@@ -184,7 +184,7 @@ private slots:
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc second(platform);
         QString error;
-        QVERIFY(!second.listen(&error));
+        QCOMPARE(second.listen(&error), IpcListenResult::AnotherInstance);
         QVERIFY(error.contains(name));
 
         QLocalSocket socket;
@@ -209,7 +209,7 @@ private slots:
             QStringList{listenName, legacyName});
         SingleInstanceIpc second(platform);
         QString error;
-        QVERIFY(!second.listen(&error));
+        QCOMPARE(second.listen(&error), IpcListenResult::AnotherInstance);
         QVERIFY(error.contains(legacyName));
 
         QLocalSocket socket;
@@ -234,7 +234,7 @@ private slots:
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
         QString error;
-        QVERIFY2(ipc.listen(&error), qPrintable(error));
+        QVERIFY2(ipc.listen(&error) == IpcListenResult::Listening, qPrintable(error));
 
         QLocalSocket socket;
         socket.connectToServer(name);
@@ -253,11 +253,8 @@ private slots:
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         IpcResponse response;
         QString error;
-        const IpcCommandResult result = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
-                                                                               &response,
-                                                                               75,
-                                                                               platform,
-                                                                               &error);
+        const IpcCommandResult result =
+            SingleInstanceIpc::sendRequest({IpcCommand::Toggle}, &response, 75, platform, &error);
         QCOMPARE(result, IpcCommandResult::NoResponse);
         QVERIFY(error.contains(QStringLiteral("did not respond")));
 
@@ -271,8 +268,8 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
 
         QLocalSocket socket;
         socket.connectToServer(name);
@@ -285,7 +282,33 @@ private slots:
         socket.write(QByteArrayLiteral("gle\"}\n"));
         socket.flush();
         QTRY_COMPARE(commands.count(), 1);
-        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("toggle"));
+        QCOMPARE(commands.first().at(0).value<IpcRequest>().command, IpcCommand::Toggle);
+    }
+
+    // An older client can send a request and only later its newline. The
+    // request is read as soon as it is whole; the newline is not a request.
+    void singleInstanceIpcIgnoresALateNewline()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
+        QSignalSpy refusals(&ipc, &SingleInstanceIpc::requestRefused);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{\"command\":\"recordStart\"}"));
+        socket.flush();
+        QTRY_COMPARE(commands.count(), 1);
+        // Frames on one socket are handled in order, so once the next
+        // command arrives the newline before it has been handled.
+        socket.write(QByteArrayLiteral("\n{\"command\":\"stop\"}\n"));
+        socket.flush();
+        QTRY_COMPARE(commands.count(), 2);
+        QCOMPARE(refusals.count(), 0);
     }
 
     void singleInstanceIpcReadsTwoFramedCommands()
@@ -294,8 +317,8 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
 
         QLocalSocket socket;
         socket.connectToServer(name);
@@ -303,64 +326,136 @@ private slots:
         socket.write(QByteArrayLiteral("{\"command\":\"start\"}\n{\"command\":\"stop\"}\n"));
         socket.flush();
         QTRY_COMPARE(commands.count(), 2);
-        QCOMPARE(commands.at(0).at(0).toString(), QStringLiteral("start"));
-        QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
+        QCOMPARE(commands.at(0).at(0).value<IpcRequest>().command, IpcCommand::Start);
+        QCOMPARE(commands.at(1).at(0).value<IpcRequest>().command, IpcCommand::Stop);
     }
 
-    void singleInstanceIpcCarriesTheFilesToTranscribe()
+    // A request and its answer as the previous release wrote them, byte for
+    // byte, and what each means. Peers from either release must keep
+    // understanding each other.
+    void previousReleaseBytes_data()
     {
-        const QString name = uniqueIpcName();
-        QLocalServer::removeServer(name);
-        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [](const QString &, const QString &, QLocalSocket *socket, const QStringList &) {
-                    SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
-                });
-        const QStringList files{QStringLiteral("/tmp/a.wav"), QStringLiteral("/tmp/b c.mp3")};
+        QTest::addColumn<QByteArray>("requestBytes");
+        QTest::addColumn<IpcRequest>("request");
+        QTest::addColumn<QByteArray>("responseBytes");
+        QTest::addColumn<IpcResponse>("response");
 
-        QThread *client = QThread::create([platform, files] {
-            SingleInstanceIpc::sendCommandDetailed(
-                QStringLiteral("transcribe"), SessionOverrides(), files, nullptr, 2000, platform);
-        });
-        client->start();
-        QTRY_COMPARE(commands.count(), 1);
-        client->wait();
-        delete client;
-        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("transcribe"));
-        QCOMPARE(commands.first().at(3).toStringList(), files);
+        IpcResponse echoed{true, QStringLiteral("starting"), {}};
+        echoed.writingProfile = QStringLiteral("ai_coding");
+        echoed.spokenLanguage = QStringLiteral("de");
+        QTest::newRow("toggle with --format, --profile and --language")
+            << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"html","spokenLanguage":"de",)"
+                                 R"("writingProfile":"ai_coding"})" "\n")
+            << IpcRequest{IpcCommand::Toggle,
+                          {OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"spokenLanguage":"de","state":"starting",)"
+                                 R"("writingProfile":"ai_coding"})" "\n")
+            << echoed;
+        QTest::newRow("transcribe")
+            << QByteArrayLiteral(R"({"command":"transcribe","files":["/tmp/a.wav","/tmp/b c.mp3"]})" "\n")
+            << IpcRequest{IpcCommand::Transcribe, {}, {QStringLiteral("/tmp/a.wav"), QStringLiteral("/tmp/b c.mp3")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"state":"idle"})" "\n")
+            << IpcResponse{true, QStringLiteral("idle"), {}};
+        QTest::newRow("record start")
+            << QByteArrayLiteral(R"({"command":"recordStart","files":["/tmp/call.md"],"microphoneOnly":true,)"
+                                 R"("terms":["kwin"]})" "\n")
+            << IpcRequest{IpcCommand::RecordStart, {}, {QStringLiteral("/tmp/call.md")}, {QStringLiteral("kwin")}, true}
+            << QByteArrayLiteral(R"({"message":"Not recording","ok":false,"state":"idle"})" "\n")
+            << IpcResponse{false, QStringLiteral("idle"), QStringLiteral("Not recording")};
+        IpcResponse skipped{true, QStringLiteral("idle"), {}};
+        skipped.skippedTerms = {QStringLiteral("kwin")};
+        QTest::newRow("vocabulary add")
+            << QByteArrayLiteral(R"({"command":"addVocabulary","terms":["FileTranscriptionSession","kwin"]})" "\n")
+            << IpcRequest{IpcCommand::AddVocabulary, {}, {},
+                          {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"skippedTerms":["kwin"],"state":"idle"})" "\n")
+            << skipped;
+        IpcResponse transcript{true, QStringLiteral("idle"), {}};
+        transcript.text = QStringLiteral("Ship it on Friday.");
+        QTest::newRow("last")
+            << QByteArrayLiteral(R"({"command":"last"})" "\n") << IpcRequest{IpcCommand::Last}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"state":"idle","text":"Ship it on Friday."})" "\n")
+            << transcript;
+        IpcResponse unknown{false, QStringLiteral("idle"), QStringLiteral("Unknown command")};
+        unknown.unknownCommand = true;
+        QTest::newRow("a command the instance doesn't know")
+            << QByteArrayLiteral(R"({"command":"providers"})" "\n") << IpcRequest{IpcCommand::Providers}
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n") << unknown;
     }
 
-    void singleInstanceIpcCarriesTheSessionOverrides()
+    // A command line from the previous release, talking to this instance.
+    void previousReleaseBytes()
     {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(IpcRequest, request);
+        QFETCH(QByteArray, responseBytes);
+        QFETCH(IpcResponse, response);
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
-        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [](const QString &, const QString &, QLocalSocket *socket) {
-                    SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
+        SingleInstanceIpc ipc(std::make_shared<FakeSingleInstancePlatform>(name));
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QList<IpcRequest> received;
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&received, response](const IpcRequest &request, QLocalSocket *socket) {
+                    received << request;
+                    SingleInstanceIpc::writeResponse(socket, response);
                 });
 
-        QThread *client = QThread::create([platform] {
-            SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
-                                                   {OutputFormat::Html, QStringLiteral("ai_coding"),
-                                                    QStringLiteral("de")},
-                                                   nullptr,
-                                                   2000,
-                                                   platform);
-        });
+        QLocalSocket client;
+        client.connectToServer(name);
+        QVERIFY(client.waitForConnected(500));
+        client.write(requestBytes);
+        client.flush();
+        QTRY_VERIFY(client.canReadLine());
+        QCOMPARE(received, QList{request});
+        QCOMPARE(client.readLine(), responseBytes);
+    }
+
+    // This command line, talking to an instance from the previous release.
+    void previousReleaseInstance_data()
+    {
+        previousReleaseBytes_data();
+    }
+
+    void previousReleaseInstance()
+    {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(IpcRequest, request);
+        QFETCH(QByteArray, responseBytes);
+        QFETCH(IpcResponse, response);
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        QLocalServer olderInstance;
+        QVERIFY(olderInstance.listen(name));
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+
+        IpcResponse answer;
+        IpcCommandResult result = IpcCommandResult::Unavailable;
+        std::unique_ptr<QThread> client(QThread::create([&] {
+            result = SingleInstanceIpc::sendRequest(request, &answer, 5000, platform);
+        }));
         client->start();
-        QTRY_COMPARE(commands.count(), 1);
-        client->wait();
-        delete client;
-        QCOMPARE(commands.first().at(1).toString(), QStringLiteral("html"));
-        QCOMPARE(commands.first().at(4).toString(), QStringLiteral("ai_coding"));
-        QCOMPARE(commands.first().at(5).toString(), QStringLiteral("de"));
+        const auto joinClient = qScopeGuard([&client] { client->wait(); });
+        QVERIFY(olderInstance.waitForNewConnection(5000));
+        QLocalSocket *socket = olderInstance.nextPendingConnection();
+        QByteArray sent;
+        while (!sent.endsWith('\n') && socket->waitForReadyRead(5000)) {
+            sent += socket->readAll();
+        }
+        QCOMPARE(sent, requestBytes);
+        socket->write(responseBytes);
+        socket->flush();
+        QVERIFY(QTest::qWaitFor([&client] { return client->isFinished(); }, 5000));
+
+        QCOMPARE(result, IpcCommandResult::Sent);
+        QCOMPARE(answer.ok, response.ok);
+        QCOMPARE(answer.state, response.state);
+        QCOMPARE(answer.message, response.message);
+        QCOMPARE(answer.unknownCommand, response.unknownCommand);
+        QCOMPARE(answer.writingProfile, response.writingProfile);
+        QCOMPARE(answer.spokenLanguage, response.spokenLanguage);
+        QCOMPARE(answer.text, response.text);
+        QCOMPARE(answer.skippedTerms, response.skippedTerms);
     }
 
     // record start hands over its file and terms; every record command's answer
@@ -371,8 +466,8 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
         const RecordingStatus reconnecting{
             true, QStringLiteral("/tmp/call.md"), 3723000,
             {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
@@ -391,34 +486,36 @@ private slots:
                                       0,
                                       {},
                                       echoCancellationNotBuiltText()};
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&](const QString &command, const QString &, QLocalSocket *socket) {
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&](const IpcRequest &request, QLocalSocket *socket) {
                     IpcResponse reply{true, QStringLiteral("idle"), {}};
-                    reply.recording = command == QStringLiteral("recordStatus") ? reconnecting
-                        : command == QStringLiteral("recordStop")               ? stoppedIncomplete
-                                                                                : started;
+                    reply.recording = request.command == IpcCommand::RecordStatus ? reconnecting
+                        : request.command == IpcCommand::RecordStop               ? stoppedIncomplete
+                                                                                  : started;
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
 
         IpcResponse response;
         QThread *client = QThread::create([platform, &response] {
-            SingleInstanceIpc::sendRecordStart(QStringLiteral("/tmp/call.md"), {QStringLiteral("readSharedChoice")},
-                                               true, &response, 2000, platform);
+            SingleInstanceIpc::sendRequest({IpcCommand::RecordStart, {}, {QStringLiteral("/tmp/call.md")},
+                                            {QStringLiteral("readSharedChoice")}, true},
+                                           &response, 2000, platform);
         });
         client->start();
         QTRY_VERIFY(client->isFinished());
         delete client;
-        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("recordStart"));
-        QCOMPARE(commands.first().at(3).toStringList(), QStringList{QStringLiteral("/tmp/call.md")});
-        QCOMPARE(commands.first().at(6).toStringList(), QStringList{QStringLiteral("readSharedChoice")});
-        QVERIFY(commands.first().at(7).toBool());
+        const IpcRequest recordStart = commands.first().at(0).value<IpcRequest>();
+        QCOMPARE(recordStart.command, IpcCommand::RecordStart);
+        QCOMPARE(recordStart.files, QStringList{QStringLiteral("/tmp/call.md")});
+        QCOMPARE(recordStart.terms, QStringList{QStringLiteral("readSharedChoice")});
+        QVERIFY(recordStart.microphoneOnly);
         QVERIFY(response.recording && response.recording->recording);
 
         std::ostringstream out;
         std::ostringstream err;
         // Runs a record command as the command line does; returns its exit
         // status, with what it printed in out and err.
-        const auto run = [&](const QString &command, bool json) {
+        const auto run = [&](IpcCommand command, bool json) {
             CommandLineDecision decision;
             decision.mode = LaunchMode::RunCli;
             decision.ipcCommand = command;
@@ -442,7 +539,7 @@ private slots:
         };
         // A start that runs with a problem still succeeds, and says what on
         // stderr: a system audio stream that failed, echo cancellation off.
-        QCOMPARE(run(QStringLiteral("recordStart"), false), 0);
+        QCOMPARE(run(IpcCommand::RecordStart, false), 0);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
         QCOMPARE(QString::fromStdString(err.str()),
                  QStringLiteral("The system audio stream stopped: No default output.\n") + echoCancellationNotBuiltText()
@@ -460,7 +557,7 @@ private slots:
         QCOMPARE(recordingStatusFromJson(startedJson).streams.first().state, RecordingStream::State::Paused);
         QCOMPARE(recordingStatusFromJson(startedJson).echoCancellationWarning, echoCancellationNotBuiltText());
 
-        QCOMPARE(run(QStringLiteral("recordStatus"), true), 0);
+        QCOMPARE(run(IpcCommand::RecordStatus, true), 0);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
                  QJsonObject({{QStringLiteral("recording"), true},
                               {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
@@ -476,14 +573,14 @@ private slots:
                                 "The microphone stream was down so long that the oldest 00:00:02 of audio waiting for it "
                                 "was dropped.\n"));
 
-        QCOMPARE(run(QStringLiteral("recordStatus"), false), 0);
+        QCOMPARE(run(IpcCommand::RecordStatus, false), 0);
         QCOMPARE(QString::fromStdString(out.str()),
                  QStringLiteral("path: /tmp/call.md\nduration: 01:02:03\n"
                                 "microphone: reconnecting, Connection reset, lost 00:00:02 of audio\n"));
 
         // A recording whose file missed lines still prints the file, says
         // what it missed, and fails.
-        QCOMPARE(run(QStringLiteral("recordStop"), false), 1);
+        QCOMPARE(run(IpcCommand::RecordStop, false), 1);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
         QCOMPARE(QString::fromStdString(err.str()),
                  QStringLiteral("Could not write /tmp/call.md: No space left on device (2 lines missing)\n"));
@@ -505,19 +602,18 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [echoes](const QString &, const QString &, QLocalSocket *socket, const QStringList &,
-                         const QString &writingProfile) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [echoes](const IpcRequest &request, QLocalSocket *socket) {
                     IpcResponse reply{true, QStringLiteral("starting"), {}};
                     if (echoes) {
-                        reply.writingProfile = writingProfile;
+                        reply.writingProfile = request.overrides.writingProfile.value_or(QString());
                     }
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("toggle");
+        decision.ipcCommand = IpcCommand::Toggle;
         decision.sessionOverrides.writingProfile = QStringLiteral("work");
 
         int exitCode = -1;
@@ -533,32 +629,33 @@ private slots:
     void lastPrintsTheRunningInstancesTranscript_data()
     {
         QTest::addColumn<QString>("text");
-        QTest::addColumn<QString>("message");
+        QTest::addColumn<bool>("unknownCommand");
         QTest::addColumn<int>("exitCode");
-        QTest::newRow("a transcript") << QStringLiteral("Ship it on Friday.") << QString() << 0;
-        QTest::newRow("no transcript yet") << QString() << QString() << 1;
-        QTest::newRow("instance older than last") << QString() << kUnknownIpcCommandMessage << 1;
+        QTest::newRow("a transcript") << QStringLiteral("Ship it on Friday.") << false << 0;
+        QTest::newRow("no transcript yet") << QString() << false << 1;
+        QTest::newRow("instance older than last") << QString() << true << 1;
     }
 
     void lastPrintsTheRunningInstancesTranscript()
     {
         QFETCH(QString, text);
-        QFETCH(QString, message);
+        QFETCH(bool, unknownCommand);
         QFETCH(int, exitCode);
-        IpcResponse reply{!text.isEmpty(), QStringLiteral("idle"), message};
+        IpcResponse reply{!text.isEmpty(), QStringLiteral("idle"), {}};
         reply.text = text;
+        reply.unknownCommand = unknownCommand;
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [reply](const QString &, const QString &, QLocalSocket *socket) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [reply](const IpcRequest &, QLocalSocket *socket) {
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("last");
+        decision.ipcCommand = IpcCommand::Last;
 
         std::ostringstream out;
         std::ostringstream err;
@@ -579,22 +676,20 @@ private slots:
         }
         QCOMPARE(lastExitCode, exitCode);
         QCOMPARE(QString::fromStdString(out.str()), text.isEmpty() ? QString() : text + QLatin1Char('\n'));
-        QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), !message.isEmpty());
+        QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), unknownCommand);
     }
 
     void providersAsksTheRunningApp_data()
     {
-        QTest::addColumn<QString>("message");
         QTest::addColumn<bool>("answered");
-        QTest::newRow("the app's reports") << QString() << true;
-        QTest::newRow("app older than providers") << kUnknownIpcCommandMessage << false;
+        QTest::newRow("the app's reports") << true;
+        QTest::newRow("app older than providers") << false;
     }
 
     // The running app's reports arrive as it judged them. One that doesn't
     // know the command leaves them to this process without a word.
     void providersAsksTheRunningApp()
     {
-        QFETCH(QString, message);
         QFETCH(bool, answered);
         const QList<ProviderReport> sent{
             {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true, true, false, false,
@@ -602,19 +697,21 @@ private slots:
             {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), false, true,
              std::nullopt, true, {}},
         };
-        IpcResponse reply{true, QStringLiteral("idle"), message};
+        IpcResponse reply{answered, QStringLiteral("idle"), {}};
         if (answered) {
             reply.text = QString::fromUtf8(providerReportsJson(sent));
+        } else {
+            reply.unknownCommand = true;
         }
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QString command;
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [reply, &command](const QString &received, const QString &, QLocalSocket *socket) {
-                    command = received;
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QList<IpcCommand> commands;
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [reply, &commands](const IpcRequest &received, QLocalSocket *socket) {
+                    commands << received.command;
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
 
@@ -626,7 +723,7 @@ private slots:
         client->start();
         QTRY_VERIFY(client->isFinished());
         delete client;
-        QCOMPARE(command, QStringLiteral("providers"));
+        QCOMPARE(commands, QList{IpcCommand::Providers});
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QCOMPARE(reports.has_value(), answered);
         if (answered) {
@@ -646,15 +743,15 @@ private slots:
     void vocabularyAddSendsTheTermsToTheRunningInstance_data()
     {
         QTest::addColumn<bool>("saved");
-        QTest::addColumn<QString>("message");
+        QTest::addColumn<bool>("unknownCommand");
         QTest::addColumn<int>("exitCode");
         QTest::addColumn<QString>("stderrText");
         QTest::newRow("one already listed")
-            << true << QString() << 0 << QStringLiteral("Already in the vocabulary: kwin\n");
+            << true << false << 0 << QStringLiteral("Already in the vocabulary: kwin\n");
         QTest::newRow("save failed")
-            << false << QString() << 1 << QStringLiteral("Could not save the vocabulary to Speecher's settings.\n");
+            << false << false << 1 << QStringLiteral("Could not save the vocabulary to Speecher's settings.\n");
         QTest::newRow("instance older than vocabulary add")
-            << false << kUnknownIpcCommandMessage << 1
+            << false << true << 1
             << QStringLiteral("The running Speecher is older and doesn't know `vocabulary add`. Quit it with "
                               "`speecher quit` and run the command again.\n");
     }
@@ -662,21 +759,20 @@ private slots:
     void vocabularyAddSendsTheTermsToTheRunningInstance()
     {
         QFETCH(bool, saved);
-        QFETCH(QString, message);
+        QFETCH(bool, unknownCommand);
         QFETCH(int, exitCode);
         QFETCH(QString, stderrText);
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
         QStringList received;
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&received, saved, message](const QString &, const QString &, QLocalSocket *socket,
-                                            const QStringList &, const QString &, const QString &,
-                                            const QStringList &terms) {
-                    received = terms;
-                    IpcResponse reply{saved, QStringLiteral("idle"), message};
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&received, saved, unknownCommand](const IpcRequest &request, QLocalSocket *socket) {
+                    received = request.terms;
+                    IpcResponse reply{saved, QStringLiteral("idle"), {}};
+                    reply.unknownCommand = unknownCommand;
                     if (saved) {
                         reply.skippedTerms = {QStringLiteral("kwin")};
                     }
@@ -684,7 +780,7 @@ private slots:
                 });
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.ipcCommand = IpcCommand::AddVocabulary;
         decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")};
 
         std::ostringstream out;
@@ -719,7 +815,7 @@ private slots:
         settings.raw().sync();
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.ipcCommand = IpcCommand::AddVocabulary;
         decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")};
 
         std::ostringstream err;
@@ -747,7 +843,7 @@ private slots:
         const auto removeDirectory = qScopeGuard([path] { QDir().rmdir(path); });
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.ipcCommand = IpcCommand::AddVocabulary;
         decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession")};
 
         std::ostringstream err;
@@ -766,10 +862,10 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc](const QString &command, const QString &, QLocalSocket *socket) {
-                    if (command == QStringLiteral("watchStatus")) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&ipc](const IpcRequest &request, QLocalSocket *socket) {
+                    if (request.command == IpcCommand::WatchStatus) {
                         ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
                     } else {
                         SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
@@ -806,7 +902,7 @@ private slots:
 
         IpcCommandResult result = IpcCommandResult::Unavailable;
         std::unique_ptr<QThread> client(QThread::create([platform, &result] {
-            result = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("status"), nullptr, 2000, platform);
+            result = SingleInstanceIpc::sendRequest({IpcCommand::Status}, nullptr, 2000, platform);
         }));
         client->start();
         QVERIFY(QTest::qWaitFor([&client] { return client->isFinished(); }, 5000));
@@ -821,10 +917,10 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc](const QString &, const QString &, QLocalSocket *socket) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&ipc](const IpcRequest &, QLocalSocket *socket) {
                     ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
                 });
 
@@ -885,19 +981,19 @@ private slots:
         std::ostringstream err;
         int exitCode = -1;
         std::unique_ptr<QThread> cli =
-            startCommandLine(statusDecision(QStringLiteral("watchStatus"), json), platform, out, err, exitCode);
+            startCommandLine(statusDecision(IpcCommand::WatchStatus, json), platform, out, err, exitCode);
         // Past the first look for an app, which finds none.
         QTest::qWait(300);
 
         auto ipc = std::make_unique<SingleInstanceIpc>(platform);
-        QVERIFY(ipc->listen());
-        QStringList commands;
-        connect(ipc.get(), &SingleInstanceIpc::commandReceived, ipc.get(),
-                [&ipc, &commands](const QString &command, const QString &, QLocalSocket *socket) {
-                    commands << command;
+        QCOMPARE(ipc->listen(), IpcListenResult::Listening);
+        QList<IpcCommand> commands;
+        connect(ipc.get(), &SingleInstanceIpc::requestReceived, ipc.get(),
+                [&ipc, &commands](const IpcRequest &request, QLocalSocket *socket) {
+                    commands << request.command;
                     ipc->addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
                 });
-        QTRY_COMPARE_WITH_TIMEOUT(commands, QStringList{QStringLiteral("watchStatus")}, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(commands, QList{IpcCommand::WatchStatus}, 5000);
         IpcResponse recording{true, QStringLiteral("idle"), {}};
         recording.recording = RecordingStatus{
             true, QStringLiteral("/tmp/call.md"), 3723000,
@@ -922,10 +1018,10 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         auto ipc = std::make_unique<SingleInstanceIpc>(platform);
-        QVERIFY(ipc->listen());
+        QCOMPARE(ipc->listen(), IpcListenResult::Listening);
         int watches = 0;
-        connect(ipc.get(), &SingleInstanceIpc::commandReceived, ipc.get(),
-                [&ipc, &watches](const QString &, const QString &, QLocalSocket *socket) {
+        connect(ipc.get(), &SingleInstanceIpc::requestReceived, ipc.get(),
+                [&ipc, &watches](const IpcRequest &, QLocalSocket *socket) {
                     if (++watches == 1) {
                         socket->disconnectFromServer();
                     } else {
@@ -936,7 +1032,7 @@ private slots:
         std::ostringstream err;
         int exitCode = -1;
         std::unique_ptr<QThread> cli =
-            startCommandLine(statusDecision(QStringLiteral("watchStatus"), false), platform, out, err, exitCode);
+            startCommandLine(statusDecision(IpcCommand::WatchStatus, false), platform, out, err, exitCode);
         QTRY_COMPARE_WITH_TIMEOUT(watches, 2, 5000);
         QCoreApplication::processEvents();
         ipc.reset();
@@ -956,10 +1052,10 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
         QPointer<QLocalSocket> watcher;
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc, &watcher](const QString &, const QString &, QLocalSocket *socket) {
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&ipc, &watcher](const IpcRequest &, QLocalSocket *socket) {
                     watcher = socket;
                     ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
                 });
@@ -967,7 +1063,7 @@ private slots:
         std::unique_ptr<QThread> cli(QThread::create([platform, &exitCode] {
             // No buffer: every write fails, as one to a closed pipe does.
             std::streambuf *const stdoutBuffer = std::cout.rdbuf(nullptr);
-            exitCode = runCliCommand(statusDecision(QStringLiteral("watchStatus"), false), platform);
+            exitCode = runCliCommand(statusDecision(IpcCommand::WatchStatus, false), platform);
             std::cout.rdbuf(stdoutBuffer);
         }));
         cli->start();
@@ -983,9 +1079,9 @@ private slots:
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         SingleInstanceIpc ipc(std::make_shared<FakeSingleInstancePlatform>(name));
-        QVERIFY(ipc.listen());
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc](const QString &, const QString &, QLocalSocket *socket) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&ipc](const IpcRequest &, QLocalSocket *socket) {
                     ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
                 });
         QLocalSocket watcher;
@@ -1012,7 +1108,7 @@ private slots:
         std::ostringstream out;
         std::ostringstream err;
         int exitCode = -1;
-        std::unique_ptr<QThread> cli = startCommandLine(statusDecision(QStringLiteral("status"), true),
+        std::unique_ptr<QThread> cli = startCommandLine(statusDecision(IpcCommand::Status, true),
                                                         std::make_shared<FakeSingleInstancePlatform>(name), out, err,
                                                         exitCode);
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
@@ -1026,16 +1122,18 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [](const QString &, const QString &, QLocalSocket *socket) {
-                    SingleInstanceIpc::writeResponse(socket, {false, QStringLiteral("idle"), kUnknownIpcCommandMessage});
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [](const IpcRequest &, QLocalSocket *socket) {
+                    IpcResponse refusal{false, QStringLiteral("idle"), {}};
+                    refusal.unknownCommand = true;
+                    SingleInstanceIpc::writeResponse(socket, refusal);
                 });
         std::ostringstream out;
         std::ostringstream err;
         int exitCode = -1;
         std::unique_ptr<QThread> cli =
-            startCommandLine(statusDecision(QStringLiteral("watchStatus"), false), platform, out, err, exitCode);
+            startCommandLine(statusDecision(IpcCommand::WatchStatus, false), platform, out, err, exitCode);
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
         QCOMPARE(exitCode, 1);
         QCOMPARE(QString::fromStdString(out.str()), QString());
@@ -1050,8 +1148,8 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
 
         QLocalSocket socket;
         socket.connectToServer(name);
@@ -1074,8 +1172,8 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
 
         QLocalSocket silent[8];
         for (QLocalSocket &socket : silent) {
@@ -1092,7 +1190,7 @@ private slots:
         client.write(QByteArrayLiteral("{\"command\":\"toggle\"}\n"));
         client.flush();
         QTRY_COMPARE(commands.count(), 1);
-        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("toggle"));
+        QCOMPARE(commands.first().at(0).value<IpcRequest>().command, IpcCommand::Toggle);
     }
 
     void singleInstanceIpcSurvivesAClientThatDisconnectsAfterSending()
@@ -1104,10 +1202,10 @@ private slots:
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
-        QVERIFY(ipc.listen());
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
-        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc](const QString &, const QString &, QLocalSocket *socket, const QStringList &) {
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&ipc](const IpcRequest &, QLocalSocket *socket) {
                     ipc.writeResponse(socket, {true, QStringLiteral("idle"), {}});
                 });
 

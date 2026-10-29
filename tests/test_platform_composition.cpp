@@ -717,8 +717,9 @@ private slots:
 
         platform->microphoneAnswer = nullptr;
         QTemporaryDir dir;
-        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, nullptr,
-                                    {dir.filePath(QStringLiteral("take.wav"))}, {}, {}, {}, true);
+        IpcRequest recordStart{IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("take.wav"))}};
+        recordStart.microphoneOnly = true;
+        controller.handleIpcRequest(recordStart, nullptr);
         QVERIFY(platform->microphoneAnswer);
     }
 
@@ -1353,7 +1354,7 @@ private slots:
         const CommandLineDecision decision =
             parseCommandLine({QStringLiteral("speecher"), QStringLiteral("cancel")}, {});
         QCOMPARE(decision.mode, LaunchMode::RunCli);
-        QCOMPARE(decision.ipcCommand, QStringLiteral("cancel"));
+        QCOMPARE(decision.ipcCommand, IpcCommand::Cancel);
     }
 
     void transcribeOptionsRunWithoutAWindow()
@@ -1573,7 +1574,7 @@ private slots:
         const CommandLineDecision start =
             parse({QStringLiteral("start"), QStringLiteral("--to"), QStringLiteral("call.md"), QStringLiteral("--mic-only")});
         QCOMPARE(start.mode, LaunchMode::RunCli);
-        QCOMPARE(start.ipcCommand, QStringLiteral("recordStart"));
+        QCOMPARE(start.ipcCommand, IpcCommand::RecordStart);
         QCOMPARE(start.recordPath, QDir::current().absoluteFilePath(QStringLiteral("call.md")));
         QVERIFY(start.recordMicrophoneOnly);
         QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
@@ -1587,9 +1588,9 @@ private slots:
         QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--vocab-file"), vocabulary}).vocabularyTerms,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         const CommandLineDecision status = parse({QStringLiteral("status"), QStringLiteral("--json")});
-        QCOMPARE(status.ipcCommand, QStringLiteral("recordStatus"));
+        QCOMPARE(status.ipcCommand, IpcCommand::RecordStatus);
         QVERIFY(status.json);
-        QCOMPARE(parse({QStringLiteral("stop")}).ipcCommand, QStringLiteral("recordStop"));
+        QCOMPARE(parse({QStringLiteral("stop")}).ipcCommand, IpcCommand::RecordStop);
 
         std::ostringstream usage;
         std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
@@ -1619,12 +1620,12 @@ private slots:
         const auto parse = [](QStringList options) {
             return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("status")} + options, {});
         };
-        QCOMPARE(parse({}).ipcCommand, QStringLiteral("status"));
+        QCOMPARE(parse({}).ipcCommand, IpcCommand::Status);
         QVERIFY(!parse({}).json);
         QVERIFY(parse({QStringLiteral("--json")}).json);
         const CommandLineDecision watch = parse({QStringLiteral("--watch"), QStringLiteral("--json")});
         QCOMPARE(watch.mode, LaunchMode::RunCli);
-        QCOMPARE(watch.ipcCommand, QStringLiteral("watchStatus"));
+        QCOMPARE(watch.ipcCommand, IpcCommand::WatchStatus);
         QVERIFY(watch.json);
 
         std::ostringstream usage;
@@ -2088,7 +2089,7 @@ private slots:
         const CommandLineDecision decision =
             parse({QStringLiteral("add"), QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")});
         QCOMPARE(decision.mode, LaunchMode::RunCli);
-        QCOMPARE(decision.ipcCommand, QStringLiteral("addVocabulary"));
+        QCOMPARE(decision.ipcCommand, IpcCommand::AddVocabulary);
         QCOMPARE(decision.vocabularyTerms,
                  QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("add"), QStringLiteral("--"), QStringLiteral("-fsanitize")}).vocabularyTerms,
@@ -2123,12 +2124,12 @@ private slots:
         const CommandLineDecision decision = parseCommandLine(
             {QStringLiteral("speecher"), QStringLiteral("quit")}, {});
         QCOMPARE(decision.mode, LaunchMode::RunCli);
-        QCOMPARE(decision.ipcCommand, QStringLiteral("quit"));
+        QCOMPARE(decision.ipcCommand, IpcCommand::Quit);
 
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QSignalSpy requested(&controller, &ApplicationController::quitRequested);
-        controller.handleIpcCommand(QStringLiteral("quit"), {}, nullptr);
+        controller.handleIpcRequest({IpcCommand::Quit}, nullptr);
         QCOMPARE(requested.count(), 1);
     }
 
@@ -2645,8 +2646,8 @@ private slots:
         controller.setFrontEnd(&frontEnd);
         controller.settings()->setSetupCompleted(true);
 
-        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr,
-                                    {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")});
+        controller.handleIpcRequest(
+            {IpcCommand::Transcribe, {}, {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")}}, nullptr);
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
     }
@@ -2663,7 +2664,7 @@ private slots:
         QLocalSocket client;
         client.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
-        controller.handleIpcCommand(QStringLiteral("providers"), {}, server.nextPendingConnection());
+        controller.handleIpcRequest({IpcCommand::Providers}, server.nextPendingConnection());
         QVERIFY(client.waitForReadyRead(2000));
 
         const QJsonObject answer = QJsonDocument::fromJson(client.readLine()).object();
@@ -2679,6 +2680,43 @@ private slots:
         QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
     }
 
+    void theControllerRefusesARequestItCannotServe_data()
+    {
+        QTest::addColumn<QByteArray>("requestBytes");
+        QTest::addColumn<QByteArray>("responseBytes");
+        // Byte for byte what the previous release answered: its command line
+        // reads "Unknown command" as an instance older than the command.
+        QTest::newRow("unknown command")
+            << QByteArrayLiteral(R"({"command":"rewind"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n");
+        QTest::newRow("unknown command with a field of another shape")
+            << QByteArrayLiteral(R"({"command":"rewind","files":"x","spokenLanguage":"xx"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n");
+        QTest::newRow("unknown output format")
+            << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"rtf"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown output format","ok":false,"state":"idle"})" "\n");
+        // The previous release left this unanswered until the client gave up.
+        QTest::newRow("not JSON")
+            << QByteArrayLiteral("toggle\n")
+            << QByteArrayLiteral(R"({"message":"Invalid request","ok":false,"state":"idle"})" "\n");
+    }
+
+    void theControllerRefusesARequestItCannotServe()
+    {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(QByteArray, responseBytes);
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->ipcName = uniqueControllerIpcName();
+        ApplicationController controller(true, platform);
+        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
+
+        QLocalSocket client;
+        connectToController(client, platform->ipcName);
+        client.write(requestBytes);
+        QTRY_VERIFY(client.canReadLine());
+        QCOMPARE(client.readLine(), responseBytes);
+    }
+
     // The controller answers status on its own IPC with the recording, and
     // writes a watcher a line on each change of the dictation state. A
     // watcher's further commands are ignored: none doubles its lines or ends
@@ -2688,7 +2726,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->ipcName = uniqueControllerIpcName();
         ApplicationController controller(true, platform);
-        QVERIFY(controller.startIpc());
+        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
 
         QLocalSocket status;
         connectToController(status, platform->ipcName);
@@ -2739,7 +2777,7 @@ private slots:
                 codex->onStartAttempt = [codex = codex.data()] { codex->emitConnected(); };
                 return codex.data();
             });
-        QVERIFY(controller.startIpc());
+        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
         QTemporaryDir dir;
 
         QLocalSocket start;
@@ -2805,7 +2843,7 @@ private slots:
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("call.md"));
 
-        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, nullptr, {path});
+        controller.handleIpcRequest({IpcCommand::RecordStart, {}, {path}}, nullptr);
         platform->microphoneAnswer(true);
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
@@ -2851,8 +2889,8 @@ private slots:
         QLocalSocket startClient;
         startClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
-        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, server.nextPendingConnection(),
-                                    {dir.filePath(QStringLiteral("call.md"))});
+        controller.handleIpcRequest({IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("call.md"))}},
+                                    server.nextPendingConnection());
         platform->microphoneAnswer(true);
         QTRY_VERIFY(controller.isRecording());
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::Recording);
@@ -2871,7 +2909,7 @@ private slots:
         stopClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
         stopReply = server.nextPendingConnection();
-        controller.handleIpcCommand(QStringLiteral("recordStop"), {}, stopReply);
+        controller.handleIpcRequest({IpcCommand::RecordStop}, stopReply);
         QTRY_COMPARE(restartAttempts.count(), 1);
         QVERIFY(stopRepliedFirst);
         QTRY_VERIFY(stopClient.canReadLine());
@@ -2914,7 +2952,7 @@ private slots:
         controller.settings()->setSetupCompleted(false);
 
         controller.showTranscribeFiles({QStringLiteral("/a.wav")});
-        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr, {QStringLiteral("/b.wav")});
+        controller.handleIpcRequest({IpcCommand::Transcribe, {}, {QStringLiteral("/b.wav")}}, nullptr);
         QCOMPARE(frontEnd.calls,
                  QStringList({QStringLiteral("showSetupAssistant"), QStringLiteral("showSetupAssistant")}));
 

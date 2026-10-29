@@ -173,11 +173,13 @@ public:
     // The setup assistant closed, finished or not: the main window shows,
     // unless files held through setup are about to open in their own.
     void setupAssistantClosed();
-    bool startIpc(QString *error = nullptr);
+    IpcListenResult startIpc(QString *error = nullptr);
 
 public slots:
     void toggle();
     void startListening();
+    // A start with the --format, --profile or --language it was given.
+    void startListeningWith(const SessionOverrides &overrides);
     void stopListening();
     // Throws away the dictation in progress, or one about to start.
     void cancel();
@@ -185,14 +187,8 @@ public slots:
     void showSettings();
     void showSetup();
     void quitApplication();
-    void handleIpcCommand(const QString &command,
-                          const QString &outputFormat,
-                          QLocalSocket *socket,
-                          const QStringList &files = {},
-                          const QString &writingProfile = {},
-                          const QString &spokenLanguage = {},
-                          const QStringList &terms = {},
-                          bool microphoneOnly = false);
+    // Serves request and answers it on socket, which may be null.
+    void handleIpcRequest(const IpcRequest &request, QLocalSocket *socket);
 
 signals:
     void stateChanged(DictationState state);

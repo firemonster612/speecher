@@ -220,7 +220,9 @@ const SettingRow settingRows[] = {
 
     FIELD_ROW("outputMethod", output.method),
     {"outputFormat", [](const AppSettings &s) { return QVariant(outputFormatName(s.output.format)); },
-     [](AppSettings &s, const QVariant &v) { s.output.format = outputFormatFromString(v.toString()); }},
+     [](AppSettings &s, const QVariant &v) {
+         s.output.format = outputFormatFromString(v.toString()).value_or(OutputFormat::PlainText);
+     }},
     FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
     // Every app gets a rule, so the default paste never inherits; without one
     // core only copies.

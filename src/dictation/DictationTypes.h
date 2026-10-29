@@ -21,6 +21,8 @@ struct SessionOverrides {
     std::optional<QString> writingProfile;
     // A Spoken Language: a language code, or kAutomaticSpokenLanguage.
     std::optional<QString> spokenLanguage;
+
+    bool operator==(const SessionOverrides &other) const = default;
 };
 
 enum class DictationState {

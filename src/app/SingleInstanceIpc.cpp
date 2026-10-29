@@ -1,9 +1,7 @@
 #include "app/SingleInstanceIpc.h"
 
 #include <QDeadlineTimer>
-#include <QJsonArray>
 #include <QJsonDocument>
-#include <QJsonObject>
 #include <QJsonParseError>
 #include <QLocalSocket>
 #ifdef Q_OS_WIN
@@ -30,15 +28,6 @@ constexpr int maximumStatusWatchers = 32;
 // rather than buffered for without end.
 constexpr qint64 maximumStatusBacklogBytes = 256 * 1024;
 
-QStringList stringList(const QJsonValue &array)
-{
-    QStringList strings;
-    for (const QJsonValue &value : array.toArray()) {
-        strings << value.toString();
-    }
-    return strings;
-}
-
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
     QLocalSocket socket;
@@ -61,7 +50,7 @@ QString activeInstanceMessage(const QString &name)
 // Connects socket to the running instance and writes request to it.
 // Unavailable when no instance accepts the connection.
 IpcCommandResult connectAndWrite(QLocalSocket &socket,
-                                 const QJsonObject &request,
+                                 const IpcRequest &request,
                                  int timeoutMs,
                                  std::shared_ptr<const SingleInstancePlatform> platform,
                                  QString *error)
@@ -73,8 +62,7 @@ IpcCommandResult connectAndWrite(QLocalSocket &socket,
             socket.abort();
             continue;
         }
-        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
-        requestBytes.append('\n');
+        const QByteArray requestBytes = ipcRequestFrame(request);
         if (socket.write(requestBytes) != requestBytes.size()) {
             if (error) {
                 *error = QStringLiteral("Could not write command to running Speecher instance");
@@ -87,30 +75,6 @@ IpcCommandResult connectAndWrite(QLocalSocket &socket,
     return IpcCommandResult::Unavailable;
 }
 
-// Reads one response frame into response. False when it is not a JSON object.
-bool readResponse(const QByteArray &frame, IpcResponse *response)
-{
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        return false;
-    }
-    const QJsonObject object = document.object();
-    if (response) {
-        response->ok = object.value(QStringLiteral("ok")).toBool();
-        response->state = object.value(QStringLiteral("state")).toString();
-        response->message = object.value(QStringLiteral("message")).toString();
-        response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
-        response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
-        response->text = object.value(QStringLiteral("text")).toString();
-        response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
-        if (object.contains(QStringLiteral("recording"))) {
-            response->recording = recordingStatusFromJson(object.value(QStringLiteral("recording")).toObject());
-        }
-    }
-    return true;
-}
-
 QString invalidResponseMessage()
 {
     return QStringLiteral("Running Speecher instance returned an invalid IPC response");
@@ -119,69 +83,6 @@ QString invalidResponseMessage()
 QString noResponseMessage()
 {
     return QStringLiteral("Running Speecher instance did not respond");
-}
-
-IpcCommandResult sendRequest(const QJsonObject &request,
-                             IpcResponse *response,
-                             int timeoutMs,
-                             std::shared_ptr<const SingleInstancePlatform> platform,
-                             QString *error)
-{
-    QLocalSocket socket;
-    const IpcCommandResult connected = connectAndWrite(socket, request, timeoutMs, std::move(platform), error);
-    if (connected != IpcCommandResult::Sent) {
-        return connected;
-    }
-    QDeadlineTimer deadline(timeoutMs);
-    QByteArray responseBytes;
-    while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
-        if (socket.bytesAvailable() == 0
-            && !socket.waitForReadyRead(deadline.remainingTime())) {
-            break;
-        }
-        responseBytes.append(socket.readAll());
-    }
-    if (responseBytes.isEmpty()) {
-        if (error) {
-            *error = noResponseMessage();
-        }
-        return IpcCommandResult::NoResponse;
-    }
-    const qsizetype newline = responseBytes.indexOf('\n');
-    if (!readResponse(newline >= 0 ? responseBytes.left(newline) : responseBytes, response)) {
-        if (error) {
-            *error = invalidResponseMessage();
-        }
-        return IpcCommandResult::InvalidResponse;
-    }
-    return IpcCommandResult::Sent;
-}
-
-QByteArray responseFrame(const IpcResponse &response)
-{
-    QJsonObject object{
-        {QStringLiteral("ok"), response.ok},
-        {QStringLiteral("state"), response.state},
-        {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
-    };
-    if (!response.writingProfile.isEmpty()) {
-        object.insert(QStringLiteral("writingProfile"), response.writingProfile);
-    }
-    if (!response.spokenLanguage.isEmpty()) {
-        object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
-    }
-    if (!response.text.isEmpty()) {
-        object.insert(QStringLiteral("text"), response.text);
-    }
-    if (!response.skippedTerms.isEmpty()) {
-        object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
-    }
-    if (response.recording) {
-        object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
-    }
-    QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
-    responseBytes.append('\n');
-    return responseBytes;
 }
 
 // Writes a status watcher its next line without waiting on it: one that has
@@ -243,7 +144,7 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     socket->readAll();
                     return;
                 }
-                // Collect complete frames before emitting: a commandReceived slot can
+                // Collect complete frames before emitting: a requestReceived slot can
                 // disconnect the socket, whose disconnected handler removes the buffer
                 // this loop would otherwise still reference.
                 QList<QByteArray> frames;
@@ -290,20 +191,17 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     if (m_statusWatchers.contains(socket)) {
                         break;
                     }
-                    QJsonParseError parseError;
-                    const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
-                    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+                    // A newline sent after a request already read without one
+                    // ends that request; it is not a request of its own.
+                    if (frame.trimmed().isEmpty()) {
                         continue;
                     }
-                    const QJsonObject object = document.object();
-                    emit commandReceived(object.value(QStringLiteral("command")).toString(),
-                                         object.value(QStringLiteral("outputFormat")).toString(),
-                                         socket,
-                                         stringList(object.value(QStringLiteral("files"))),
-                                         object.value(QStringLiteral("writingProfile")).toString(),
-                                         object.value(QStringLiteral("spokenLanguage")).toString(),
-                                         stringList(object.value(QStringLiteral("terms"))),
-                                         object.value(QStringLiteral("microphoneOnly")).toBool());
+                    IpcResponse refusal;
+                    if (const std::optional<IpcRequest> request = ipcRequestFromFrame(frame, &refusal)) {
+                        emit requestReceived(*request, socket);
+                    } else {
+                        emit requestRefused(refusal, socket);
+                    }
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -356,7 +254,7 @@ QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatfo
     return resolved->ipcListenName();
 }
 
-bool SingleInstanceIpc::listen(QString *error)
+IpcListenResult SingleInstanceIpc::listen(QString *error)
 {
     const QString listenName = socketName();
 #ifdef Q_OS_WIN
@@ -378,13 +276,13 @@ bool SingleInstanceIpc::listen(QString *error)
                            : QStringLiteral("Could not reserve Speecher instance: Windows error %1")
                                  .arg(guardError);
         }
-        return false;
+        return guard ? IpcListenResult::AnotherInstance : IpcListenResult::Failed;
     }
     if (canConnectToServer(listenName, 200)) {
         if (error) {
             *error = activeInstanceMessage(listenName);
         }
-        return false;
+        return IpcListenResult::AnotherInstance;
     }
 #endif
     for (const QString &candidate : m_platform->ipcConnectCandidates()) {
@@ -392,7 +290,7 @@ bool SingleInstanceIpc::listen(QString *error)
             if (error) {
                 *error = activeInstanceMessage(candidate);
             }
-            return false;
+            return IpcListenResult::AnotherInstance;
         }
     }
 
@@ -400,7 +298,7 @@ bool SingleInstanceIpc::listen(QString *error)
 #ifdef Q_OS_WIN
         m_instanceGuard = std::exchange(guard, nullptr);
 #endif
-        return true;
+        return IpcListenResult::Listening;
     }
 
     const QString firstError = m_server.errorString();
@@ -409,7 +307,7 @@ bool SingleInstanceIpc::listen(QString *error)
         if (error) {
             *error = activeInstanceMessage(listenName);
         }
-        return false;
+        return IpcListenResult::AnotherInstance;
     }
 
     QLocalServer::removeServer(listenName);
@@ -417,87 +315,53 @@ bool SingleInstanceIpc::listen(QString *error)
         if (error) {
             *error = m_server.errorString().isEmpty() ? firstError : m_server.errorString();
         }
-        return false;
+        return IpcListenResult::Failed;
     }
 #ifdef Q_OS_WIN
     m_instanceGuard = std::exchange(guard, nullptr);
 #endif
-    return true;
+    return IpcListenResult::Listening;
 }
 
-IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
-                                                        IpcResponse *response,
-                                                        int timeoutMs,
-                                                        std::shared_ptr<const SingleInstancePlatform> platform,
-                                                        QString *error)
+IpcCommandResult SingleInstanceIpc::sendRequest(const IpcRequest &request,
+                                                IpcResponse *response,
+                                                int timeoutMs,
+                                                std::shared_ptr<const SingleInstancePlatform> platform,
+                                                QString *error)
 {
-    return sendCommandDetailed(command, SessionOverrides(), response, timeoutMs, std::move(platform), error);
-}
-
-IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
-                                                        const SessionOverrides &overrides,
-                                                        IpcResponse *response,
-                                                        int timeoutMs,
-                                                        std::shared_ptr<const SingleInstancePlatform> platform,
-                                                        QString *error)
-{
-    return sendCommandDetailed(command, overrides, {}, response, timeoutMs, std::move(platform), error);
-}
-
-IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
-                                                        const SessionOverrides &overrides,
-                                                        const QStringList &files,
-                                                        IpcResponse *response,
-                                                        int timeoutMs,
-                                                        std::shared_ptr<const SingleInstancePlatform> platform,
-                                                        QString *error)
-{
-    QJsonObject request{{QStringLiteral("command"), command}};
-    if (overrides.outputFormat) {
-        request.insert(QStringLiteral("outputFormat"), outputFormatName(*overrides.outputFormat));
+    QLocalSocket socket;
+    const IpcCommandResult connected = connectAndWrite(socket, request, timeoutMs, std::move(platform), error);
+    if (connected != IpcCommandResult::Sent) {
+        return connected;
     }
-    if (overrides.writingProfile) {
-        request.insert(QStringLiteral("writingProfile"), *overrides.writingProfile);
+    QDeadlineTimer deadline(timeoutMs);
+    QByteArray responseBytes;
+    while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
+        if (socket.bytesAvailable() == 0
+            && !socket.waitForReadyRead(deadline.remainingTime())) {
+            break;
+        }
+        responseBytes.append(socket.readAll());
     }
-    if (overrides.spokenLanguage) {
-        request.insert(QStringLiteral("spokenLanguage"), *overrides.spokenLanguage);
+    if (responseBytes.isEmpty()) {
+        if (error) {
+            *error = noResponseMessage();
+        }
+        return IpcCommandResult::NoResponse;
     }
-    if (!files.isEmpty()) {
-        request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
+    const qsizetype newline = responseBytes.indexOf('\n');
+    const std::optional<IpcResponse> answer =
+        ipcResponseFromFrame(newline >= 0 ? responseBytes.left(newline) : responseBytes);
+    if (!answer) {
+        if (error) {
+            *error = invalidResponseMessage();
+        }
+        return IpcCommandResult::InvalidResponse;
     }
-    return sendRequest(request, response, timeoutMs, std::move(platform), error);
-}
-
-IpcCommandResult SingleInstanceIpc::sendRecordStart(const QString &path,
-                                                    const QStringList &terms,
-                                                    bool microphoneOnly,
-                                                    IpcResponse *response,
-                                                    int timeoutMs,
-                                                    std::shared_ptr<const SingleInstancePlatform> platform,
-                                                    QString *error)
-{
-    QJsonObject request{{QStringLiteral("command"), QStringLiteral("recordStart")}};
-    if (!path.isEmpty()) {
-        request.insert(QStringLiteral("files"), QJsonArray{path});
+    if (response) {
+        *response = *answer;
     }
-    if (!terms.isEmpty()) {
-        request.insert(QStringLiteral("terms"), QJsonArray::fromStringList(terms));
-    }
-    if (microphoneOnly) {
-        request.insert(QStringLiteral("microphoneOnly"), true);
-    }
-    return sendRequest(request, response, timeoutMs, std::move(platform), error);
-}
-
-IpcCommandResult SingleInstanceIpc::sendVocabularyTerms(const QStringList &terms,
-                                                        IpcResponse *response,
-                                                        int timeoutMs,
-                                                        std::shared_ptr<const SingleInstancePlatform> platform,
-                                                        QString *error)
-{
-    const QJsonObject request{{QStringLiteral("command"), QStringLiteral("addVocabulary")},
-                              {QStringLiteral("terms"), QJsonArray::fromStringList(terms)}};
-    return sendRequest(request, response, timeoutMs, std::move(platform), error);
+    return IpcCommandResult::Sent;
 }
 
 IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
@@ -507,7 +371,7 @@ IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const I
 {
     QLocalSocket socket;
     const IpcCommandResult connected = connectAndWrite(
-        socket, {{QStringLiteral("command"), QStringLiteral("watchStatus")}}, timeoutMs, std::move(platform), error);
+        socket, {IpcCommand::WatchStatus}, timeoutMs, std::move(platform), error);
     if (connected != IpcCommandResult::Sent) {
         return connected;
     }
@@ -520,8 +384,8 @@ IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const I
         open = socket.waitForReadyRead(answered ? -1 : timeoutMs);
         buffer.append(socket.readAll());
         for (qsizetype newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
-            IpcResponse status;
-            if (!readResponse(buffer.left(newline), &status)) {
+            const std::optional<IpcResponse> status = ipcResponseFromFrame(buffer.left(newline));
+            if (!status) {
                 if (error) {
                     *error = invalidResponseMessage();
                 }
@@ -529,7 +393,7 @@ IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const I
             }
             buffer.remove(0, newline + 1);
             answered = true;
-            if (!onStatus(status)) {
+            if (!onStatus(*status)) {
                 return IpcCommandResult::Sent;
             }
         }
@@ -560,12 +424,12 @@ void SingleInstanceIpc::addStatusWatcher(QLocalSocket *socket, const IpcResponse
     m_requestBuffers.remove(socket);
     m_incompleteRequestDeadlines.remove(socket);
     m_statusWatchers.append(socket);
-    writeStatus(socket, responseFrame(status));
+    writeStatus(socket, ipcResponseFrame(status));
 }
 
 void SingleInstanceIpc::publishStatus(const IpcResponse &status)
 {
-    const QByteArray frame = responseFrame(status);
+    const QByteArray frame = ipcResponseFrame(status);
     // Copied: dropping a watcher runs its disconnected handler, which can
     // delete it and null its entry.
     for (const QPointer<QLocalSocket> &socket : QList(m_statusWatchers)) {
@@ -583,7 +447,7 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
-    socket->write(responseFrame(response));
+    socket->write(ipcResponseFrame(response));
     socket->flush();
     socket->disconnectFromServer();
 }

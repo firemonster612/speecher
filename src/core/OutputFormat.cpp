@@ -2,11 +2,15 @@
 
 namespace speecher {
 
-OutputFormat outputFormatFromString(const QString &value)
+std::optional<OutputFormat> outputFormatFromString(const QString &value)
 {
-    return value.trimmed().compare(QStringLiteral("html"), Qt::CaseInsensitive) == 0
-        ? OutputFormat::Html
-        : OutputFormat::PlainText;
+    const QString name = value.trimmed();
+    for (const OutputFormat format : {OutputFormat::PlainText, OutputFormat::Html}) {
+        if (name.compare(outputFormatName(format), Qt::CaseInsensitive) == 0) {
+            return format;
+        }
+    }
+    return std::nullopt;
 }
 
 QString outputFormatName(OutputFormat format)
