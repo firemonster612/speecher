@@ -1571,8 +1571,25 @@ if(SPEECHER_BUILD_TESTS)
   foreach(suite IN LISTS SPEECHER_TEST_SUITES)
     add_test(NAME speecher_${suite} COMMAND speecher_tests --suite ${suite})
     set_tests_properties(speecher_${suite} PROPERTIES
-      ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" RUN_SERIAL TRUE TIMEOUT 120)
+      ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 120)
   endforeach()
+  # Suites run in parallel: test_main.cpp gives each process its own settings
+  # and sign-in homes, and each suite its own data folders. These share what
+  # the computer has one of.
+  # The live checks play through the sound server and switch its default
+  # output, and use the session's clipboard and accessibility bus.
+  set_tests_properties(speecher_platform_live PROPERTIES RUN_SERIAL TRUE)
+  if(APPLE OR WIN32)
+    # A dictation through the real platform takes Escape and Enter, and
+    # Windows' own suite more keys, as hot keys only one process at a time
+    # can hold. Linux tests reach no shortcut service.
+    set(SPEECHER_HOT_KEY_SUITES platform_composition quick_dictation quick_pages quick_updates)
+    if(WIN32)
+      list(APPEND SPEECHER_HOT_KEY_SUITES win_platform)
+    endif()
+    list(TRANSFORM SPEECHER_HOT_KEY_SUITES PREPEND speecher_)
+    set_tests_properties(${SPEECHER_HOT_KEY_SUITES} PROPERTIES RESOURCE_LOCK hot_keys)
+  endif()
   # Its drift calls play over half an hour of audio through AEC3.
   set_tests_properties(speecher_echo_canceller PROPERTIES TIMEOUT 300)
   # qmllint over the UI's QML modules. .qmllint.ini makes any warning fail it.
@@ -1593,6 +1610,7 @@ if(SPEECHER_BUILD_TESTS)
   # The endpoint key and migration suites also run against a working keyring,
   # which the developer's own session may not offer (a locked collection falls
   # back to the settings file). Skipped where gnome-keyring is not installed.
+  # Each brings its own bus, keyring and home, so runs beside the plain suite.
   if(UNIX AND NOT APPLE)
     find_program(SPEECHER_DBUS_RUN_SESSION dbus-run-session)
     find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
@@ -1601,12 +1619,12 @@ if(SPEECHER_BUILD_TESTS)
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
                 $<TARGET_FILE:speecher_tests> --suite custom_endpoints)
       set_tests_properties(speecher_custom_endpoints_keyring PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
       add_test(NAME speecher_migration_keyring
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
                 $<TARGET_FILE:speecher_tests> --suite migration)
       set_tests_properties(speecher_migration_keyring PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
     endif()
   endif()
 
