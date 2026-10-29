@@ -1,5 +1,6 @@
 #include "frontend/quick/host/QuickInsights.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
@@ -180,7 +181,7 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::refreshCorrections);
     connect(settings, &SettingsStore::learnedCorrectionsChanged, this, &QuickInsights::refreshCorrections);
     connect(settings, &SettingsStore::correctionLearningEnabledChanged, this, &QuickInsights::refreshCorrections);
-    connect(controller, &ApplicationController::accessibilityStateChanged, this, &QuickInsights::refreshCorrections);
+    connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickInsights::refreshCorrections);
     connect(controller, &ApplicationController::lastTranscriptChanged, this, &QuickInsights::latestChanged);
     connect(controller, &ApplicationController::lastRecordChanged, this, &QuickInsights::latestChanged);
     // The latest dictation's profile goes by its current name.
@@ -406,7 +407,7 @@ void QuickInsights::refreshCorrections()
         {QStringLiteral("count"), int(learned.size())},
         {QStringLiteral("learning"), settings->correctionLearningEnabled()},
         {QStringLiteral("accessible"),
-         !m_controller->accessibilitySupported() || m_controller->accessibilityEnabled()},
+         !m_controller->accessibility()->supported() || m_controller->accessibility()->enabled()},
         {QStringLiteral("recent"), recent},
     };
     emit correctionsChanged();

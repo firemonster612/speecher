@@ -5,20 +5,17 @@
 #include <optional>
 
 #include <QDate>
-#include <QElapsedTimer>
 #include <QObject>
-#include <QPointer>
 
-#include "app/SingleInstanceIpc.h"
+#include "app/PlatformComposition.h"
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
+#include "dictation/DictationTypes.h"
 #include "platform/GlobalShortcutBinder.h"
-
-class QLocalSocket;
-class QTimer;
 
 namespace speecher {
 
+class AccessibilityMonitor;
 class AppFrontEnd;
 enum class SetupAssistantPage;
 class DictationSession;
@@ -27,7 +24,9 @@ class FileTranscriptionSession;
 struct TranscribeOptions;
 class AudioInput;
 class SessionKeyGrab;
+class ShortcutGesture;
 class InsightsLog;
+class IpcCommandHandler;
 class LocalModelStore;
 class LocalSetup;
 class NetworkReachability;
@@ -37,6 +36,7 @@ class RecordingSession;
 class SecretStore;
 class SettingsStore;
 class UpdateController;
+class WhatsNewTracker;
 
 class ApplicationController : public QObject {
     Q_OBJECT
@@ -62,6 +62,14 @@ public:
     // A recording, which `speecher record` starts and stops, runs beside
     // dictation and file transcription with a microphone input of its own.
     bool isRecording() const;
+    // Starts a recording once setup is complete and the microphone is allowed.
+    // done gets why it did not start, or nothing once it records; macOS may
+    // ask for the microphone first, and the provider's stream must connect, so
+    // it can come long after.
+    void startRecording(const QString &path,
+                        const QStringList &vocabulary,
+                        bool microphoneOnly,
+                        std::function<void(const QString &error)> done);
     bool startFileTranscription(const QStringList &paths,
                                 const TranscribeOptions &options,
                                 QString *error = nullptr);
@@ -89,8 +97,7 @@ public:
     // The Clear insights history action, once the person has confirmed it.
     // False when the history file could not be deleted.
     bool clearInsights();
-    QString pendingWhatsNewVersion() const;
-    void clearPendingWhatsNew();
+    WhatsNewTracker *whatsNew() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
     // Owned here so a download outlives whichever window started it.
@@ -114,17 +121,8 @@ public:
     // failed one, so it is empty only until the first dictation says
     // something.
     QString lastTranscript() const;
-    IpcResponse response(bool ok = true, const QString &message = {}) const;
-    // status's answer and each line status --watch is written: the dictation
-    // state and the recording.
-    IpcResponse statusResponse() const;
     QString outputSummary() const;
-    bool accessibilitySupported() const;
-    bool accessibilityEnabled() const;
-    bool accessibilityPersistent() const;
-    bool enableAccessibility(QString *error = nullptr);
-    // Platforms that do not push grants to a running process poll this.
-    void refreshAccessibilityState();
+    AccessibilityMonitor *accessibility() const;
     // Each Global Shortcut question and change names the shortcut it is about:
     // the one that toggles dictation unless it says otherwise.
     bool globalShortcutsSupported(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
@@ -136,10 +134,6 @@ public:
     bool setGlobalShortcut(const ShortcutBinding &shortcut,
                            QString *error = nullptr,
                            GlobalShortcutRole role = GlobalShortcutRole::Dictation);
-    // False once a press has proved that the bound backend never reports key
-    // release, which is what makes push-to-talk behave as toggle. Answered from
-    // what the shortcut has already done, never probed; it starts out true.
-    bool globalShortcutReportsRelease() const;
     // Lets a shortcut recorder see the bound combinations, and Escape, as key
     // events.
     void suspendGlobalShortcut();
@@ -173,10 +167,15 @@ public:
     // The setup assistant closed, finished or not: the main window shows,
     // unless files held through setup are about to open in their own.
     void setupAssistantClosed();
-    IpcListenResult startIpc(QString *error = nullptr);
+    // Serves the command line over the local socket once main() has it listen.
+    IpcCommandHandler *ipcCommands() const;
 
 public slots:
     void toggle();
+    // A toggle with the --format, --profile or --language it was given.
+    // Unlike toggle(), it checks setup before stopping an active session, as
+    // the IPC toggle always has.
+    void toggleWith(const SessionOverrides &overrides);
     void startListening();
     // A start with the --format, --profile or --language it was given.
     void startListeningWith(const SessionOverrides &overrides);
@@ -187,8 +186,6 @@ public slots:
     void showSettings();
     void showSetup();
     void quitApplication();
-    // Serves request and answers it on socket, which may be null.
-    void handleIpcRequest(const IpcRequest &request, QLocalSocket *socket);
 
 signals:
     void stateChanged(DictationState state);
@@ -199,12 +196,9 @@ signals:
     void lastRecordChanged();
     void recordingChanged(bool recording);
     void audioLevelChanged(float level);
-    void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
     void globalShortcutSupportChanged();
-    void globalShortcutReleaseSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail, GlobalShortcutRole role);
-    void whatsNewChanged();
     void quitRequested();
 
 private:
@@ -213,20 +207,14 @@ private:
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
+    // A dictation is under way, or a start waits for the microphone grant.
     bool sessionActive() const;
-    void handleShortcutPressed();
-    void handleShortcutReleased(qint64 heldMs);
-    void forgetShortcutGesture();
     GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
     // Arms the Cancel and Pause Shortcuts while their action applies, and
     // takes Escape while a session can be cancelled, nothing records keys and
     // neither of them is Escape.
     void updateSessionShortcuts();
     void dropPendingStart();
-    void startRecording(const QString &path,
-                        const QStringList &vocabulary,
-                        bool microphoneOnly,
-                        QLocalSocket *socket);
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;
@@ -242,11 +230,6 @@ private:
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
     RecordingSession *m_recording = nullptr;
-    // record stop's clients, answered once the last utterance is written.
-    QList<QPointer<QLocalSocket>> m_recordStopReplies;
-    // Write status watchers each change. Cut first on teardown, which
-    // deletes the recording before the session.
-    QList<QMetaObject::Connection> m_statusPublishers;
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
     bool m_filesOpened = false;
@@ -262,24 +245,12 @@ private:
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
     SessionKeyGrab *m_sessionKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
-    SingleInstanceIpc *m_ipc = nullptr;
-    bool m_accessibilitySupported = false;
-    bool m_accessibilityEnabled = false;
-    bool m_accessibilityPersistent = false;
-    QString m_pendingWhatsNewVersion;
-#ifdef Q_OS_MACOS
-    QTimer *m_accessibilityPoll = nullptr;
-#endif
+    IpcCommandHandler *m_ipcCommands = nullptr;
+    ShortcutGesture *m_shortcutGesture = nullptr;
+    WhatsNewTracker *m_whatsNew = nullptr;
+    AccessibilityMonitor *m_accessibility = nullptr;
     bool m_deferredStartupScheduled = false;
     bool m_deferredStartupDone = false;
-    // Only a press that started a session can end it on release; a press that
-    // stopped one must not restart it.
-    QElapsedTimer m_shortcutPress;
-    bool m_shortcutStartedSession = false;
-    bool m_shortcutDown = false;
-    bool m_shortcutReleaseSeen = false;
-    bool m_shortcutPressedWhileDown = false;
-    QTimer *m_pushToTalkStart = nullptr;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;
     // Set for good once quitApplication() runs; guards its re-entry and

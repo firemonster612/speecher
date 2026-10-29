@@ -2,10 +2,12 @@
 #include "common/test_doubles.h"
 #include "common/test_manifest_updater_access.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
+#include "app/IpcCommandHandler.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -719,7 +721,7 @@ private slots:
         QTemporaryDir dir;
         IpcRequest recordStart{IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("take.wav"))}};
         recordStart.microphoneOnly = true;
-        controller.handleIpcRequest(recordStart, nullptr);
+        controller.ipcCommands()->handle(recordStart, nullptr);
         QVERIFY(platform->microphoneAnswer);
     }
 
@@ -2129,7 +2131,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QSignalSpy requested(&controller, &ApplicationController::quitRequested);
-        controller.handleIpcRequest({IpcCommand::Quit}, nullptr);
+        controller.ipcCommands()->handle({IpcCommand::Quit}, nullptr);
         QCOMPARE(requested.count(), 1);
     }
 
@@ -2545,8 +2547,7 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        QSignalSpy accessibilityChanged(&controller,
-                                        &ApplicationController::accessibilityStateChanged);
+        QSignalSpy accessibilityChanged(controller.accessibility(), &AccessibilityMonitor::stateChanged);
         QVERIFY(platform->binder);
         QCOMPARE(platform->binder->bindCount, 0);
 
@@ -2554,9 +2555,9 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
 
         QCOMPARE(platform->binder->bindCount, 1);
-        QVERIFY(controller.accessibilitySupported());
-        QVERIFY(controller.accessibilityEnabled());
-        QVERIFY(!controller.accessibilityPersistent());
+        QVERIFY(controller.accessibility()->supported());
+        QVERIFY(controller.accessibility()->enabled());
+        QVERIFY(!controller.accessibility()->persistent());
 
         // The fallback timer must not run the startup a second time.
         controller.frontEndReady();
@@ -2569,19 +2570,18 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->accessibility = {true, false, false};
         ApplicationController controller(true, platform);
-        QSignalSpy accessibilityChanged(&controller,
-                                        &ApplicationController::accessibilityStateChanged);
+        QSignalSpy accessibilityChanged(controller.accessibility(), &AccessibilityMonitor::stateChanged);
 
         controller.frontEndReady();
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
-        QVERIFY(!controller.accessibilityEnabled());
+        QVERIFY(!controller.accessibility()->enabled());
         QVERIFY(platform->accessibilityRefresh);
 
         platform->accessibility = {true, true, true};
         platform->accessibilityRefresh();
 
-        QVERIFY(controller.accessibilityEnabled());
-        QVERIFY(controller.accessibilityPersistent());
+        QVERIFY(controller.accessibility()->enabled());
+        QVERIFY(controller.accessibility()->persistent());
         QCOMPARE(accessibilityChanged.count(), 2);
         QCOMPARE(accessibilityChanged.last().at(1).toBool(), true);
     }
@@ -2646,7 +2646,7 @@ private slots:
         controller.setFrontEnd(&frontEnd);
         controller.settings()->setSetupCompleted(true);
 
-        controller.handleIpcRequest(
+        controller.ipcCommands()->handle(
             {IpcCommand::Transcribe, {}, {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")}}, nullptr);
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
@@ -2664,7 +2664,7 @@ private slots:
         QLocalSocket client;
         client.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
-        controller.handleIpcRequest({IpcCommand::Providers}, server.nextPendingConnection());
+        controller.ipcCommands()->handle({IpcCommand::Providers}, server.nextPendingConnection());
         QVERIFY(client.waitForReadyRead(2000));
 
         const QJsonObject answer = QJsonDocument::fromJson(client.readLine()).object();
@@ -2708,7 +2708,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->ipcName = uniqueControllerIpcName();
         ApplicationController controller(true, platform);
-        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
+        QCOMPARE(controller.ipcCommands()->listen(), IpcListenResult::Listening);
 
         QLocalSocket client;
         connectToController(client, platform->ipcName);
@@ -2726,7 +2726,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->ipcName = uniqueControllerIpcName();
         ApplicationController controller(true, platform);
-        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
+        QCOMPARE(controller.ipcCommands()->listen(), IpcListenResult::Listening);
 
         QLocalSocket status;
         connectToController(status, platform->ipcName);
@@ -2777,7 +2777,7 @@ private slots:
                 codex->onStartAttempt = [codex = codex.data()] { codex->emitConnected(); };
                 return codex.data();
             });
-        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
+        QCOMPARE(controller.ipcCommands()->listen(), IpcListenResult::Listening);
         QTemporaryDir dir;
 
         QLocalSocket start;
@@ -2843,7 +2843,7 @@ private slots:
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("call.md"));
 
-        controller.handleIpcRequest({IpcCommand::RecordStart, {}, {path}}, nullptr);
+        controller.ipcCommands()->handle({IpcCommand::RecordStart, {}, {path}}, nullptr);
         platform->microphoneAnswer(true);
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
@@ -2889,8 +2889,8 @@ private slots:
         QLocalSocket startClient;
         startClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
-        controller.handleIpcRequest({IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("call.md"))}},
-                                    server.nextPendingConnection());
+        controller.ipcCommands()->handle({IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("call.md"))}},
+                                         server.nextPendingConnection());
         platform->microphoneAnswer(true);
         QTRY_VERIFY(controller.isRecording());
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::Recording);
@@ -2909,7 +2909,7 @@ private slots:
         stopClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
         stopReply = server.nextPendingConnection();
-        controller.handleIpcRequest({IpcCommand::RecordStop}, stopReply);
+        controller.ipcCommands()->handle({IpcCommand::RecordStop}, stopReply);
         QTRY_COMPARE(restartAttempts.count(), 1);
         QVERIFY(stopRepliedFirst);
         QTRY_VERIFY(stopClient.canReadLine());
@@ -2952,7 +2952,7 @@ private slots:
         controller.settings()->setSetupCompleted(false);
 
         controller.showTranscribeFiles({QStringLiteral("/a.wav")});
-        controller.handleIpcRequest({IpcCommand::Transcribe, {}, {QStringLiteral("/b.wav")}}, nullptr);
+        controller.ipcCommands()->handle({IpcCommand::Transcribe, {}, {QStringLiteral("/b.wav")}}, nullptr);
         QCOMPARE(frontEnd.calls,
                  QStringList({QStringLiteral("showSetupAssistant"), QStringLiteral("showSetupAssistant")}));
 

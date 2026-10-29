@@ -5,6 +5,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/ManifestUpdater.h"
+#include "app/WhatsNewTracker.h"
 #ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
 #endif
@@ -1020,7 +1021,7 @@ private slots:
         }
 
         ApplicationController controller(true);
-        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
+        QVERIFY(controller.whatsNew()->pendingVersion().isEmpty());
         QCOMPARE(controller.settings()->updatesLastRunVersion(),
                  QStringLiteral(SPEECHER_VERSION));
     }
@@ -1038,7 +1039,7 @@ private slots:
         }
 
         ApplicationController controller(true);
-        QCOMPARE(controller.pendingWhatsNewVersion(), previous);
+        QCOMPARE(controller.whatsNew()->pendingVersion(), previous);
         QCOMPARE(controller.settings()->updatesLastRunVersion(),
                  QStringLiteral(SPEECHER_VERSION));
         QCOMPARE(controller.settings()->raw()

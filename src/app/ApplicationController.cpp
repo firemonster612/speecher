@@ -1,13 +1,16 @@
 #include "app/ApplicationController.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
+#include "app/IpcCommandHandler.h"
 #include "app/LocalSetup.h"
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
-#include "app/ProvidersCommand.h"
+#include "app/ShortcutGesture.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateController.h"
+#include "app/WhatsNewTracker.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
 #elif defined(Q_OS_WIN)
@@ -17,7 +20,6 @@
 #endif
 #include "core/InsightsLog.h"
 #include "core/ProviderTable.h"
-#include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -32,11 +34,7 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
-#include <QLocalSocket>
 #include <QStandardPaths>
-#ifdef SPEECHER_E2E_HOOKS
-#include <QMetaEnum>
-#endif
 #include <QTimer>
 #ifdef Q_OS_MACOS
 #include <QPermissions>
@@ -48,20 +46,9 @@
 namespace speecher {
 namespace {
 
-// Hybrid: a press toggles, and a hold longer than this is push-to-talk that
-// ends with the key. 400 ms suited a two-hand chord; a one-finger tap on a
-// single key lands and lifts in about 100 ms, and a deliberate hold is past
-// 250 ms before the first word is out, so this sits clear of both gestures.
-constexpr qint64 hybridHoldMs = 250;
-// Push-to-talk: a press that lifts inside this window is a brush of the key,
-// not a dictation, and must leave no trace.
-constexpr int pushToTalkMisfireMs = 200;
 // How long a quit mid-dictation waits for the asynchronous media-resume calls
 // to leave the process before the event loop stops for good.
 constexpr int mediaResumeGraceMs = 200;
-#ifdef Q_OS_MACOS
-constexpr int accessibilityPollMs = 5000;
-#endif
 // How long after launch opened files still replace the default main window.
 constexpr int defaultMainWindowGraceMs = 3000;
 
@@ -107,49 +94,22 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, this))
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, this))
     , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
-    , m_ipc(new SingleInstanceIpc(m_platform, this))
-    , m_pushToTalkStart(new QTimer(this))
+    , m_shortcutGesture(new ShortcutGesture(*m_settings, [this] { return sessionActive(); }, this))
+    , m_whatsNew(new WhatsNewTracker(*m_settings, this))
 {
-    const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
-    const qint64 currentBuildNumber = SPEECHER_BUILD_NUMBER;
-    const QString previousVersion = m_settings->updatesLastRunVersion();
-    const qint64 previousBuildNumber = m_settings->updatesLastRunBuildNumber();
-    if (previousVersion != currentVersion || previousBuildNumber != currentBuildNumber) {
-        const bool migratedNightlyUpgrade = previousBuildNumber < 0
-            && !previousVersion.isEmpty()
-            && previousVersion.contains(QStringLiteral("-nightly"))
-            && currentVersion.contains(QStringLiteral("-nightly"))
-            && previousVersion != currentVersion;
-        const bool upgraded = previousBuildNumber >= 0
-            ? currentBuildNumber > previousBuildNumber
-            : compareBaseVersions(currentVersion, previousVersion) > 0 || migratedNightlyUpgrade;
-        if (upgraded
-            && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
-            m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
-        }
-        m_settings->setUpdatesLastRunVersion(currentVersion);
-        m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
-    }
-    m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     // The login item is the person's, which an isolated instance leaves alone.
     if (!SettingsKeys::isolatedInstance()) {
         m_settings->setLaunchAtLoginReconciler(
             [this](bool enabled, QString *error) { return m_platform->setLaunchAtLogin(enabled, error); });
         m_settings->reconcileLaunchAtLogin();
     }
-    connect(m_shortcutBinder,
-            &GlobalShortcutBinder::activated,
-            this,
-            &ApplicationController::handleShortcutPressed);
-    connect(m_shortcutBinder,
-            &GlobalShortcutBinder::deactivated,
-            this,
-            &ApplicationController::handleShortcutReleased);
-    m_pushToTalkStart->setSingleShot(true);
-    m_pushToTalkStart->setInterval(pushToTalkMisfireMs);
-    connect(m_pushToTalkStart, &QTimer::timeout, this, &ApplicationController::startListening);
+    connect(m_shortcutBinder, &GlobalShortcutBinder::activated, m_shortcutGesture, &ShortcutGesture::press);
+    connect(m_shortcutBinder, &GlobalShortcutBinder::deactivated, m_shortcutGesture, &ShortcutGesture::release);
+    connect(m_shortcutGesture, &ShortcutGesture::toggleRequested, this, &ApplicationController::toggle);
+    connect(m_shortcutGesture, &ShortcutGesture::startRequested, this, &ApplicationController::startListening);
+    connect(m_shortcutGesture, &ShortcutGesture::stopRequested, this, &ApplicationController::stopListening);
     connect(m_shortcutBinder, &GlobalShortcutBinder::bindingChanged, this, [this] {
-        forgetShortcutGesture();
+        m_shortcutGesture->forget();
         emit globalShortcutChanged();
     });
     connect(m_shortcutBinder,
@@ -247,13 +207,6 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
     connect(m_session, &DictationSession::microphoneChanged, m_recording, &RecordingSession::setDictating);
     connect(m_session, &DictationSession::listeningChanged, m_recording, &RecordingSession::setDictationListening);
-    connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
-        IpcResponse reply = response();
-        reply.recording = status;
-        for (const QPointer<QLocalSocket> &socket : std::exchange(m_recordStopReplies, {})) {
-            SingleInstanceIpc::writeResponse(socket, reply);
-        }
-    });
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, this);
 #elif defined(Q_OS_WIN)
@@ -273,9 +226,6 @@ ApplicationController::ApplicationController(bool popupOnly,
         return m_recording->isRecording() ? RestartBlocker::Recording : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
-    // After the stop replies above are written: recordingChanged(false) comes
-    // before them.
-    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -303,19 +253,10 @@ ApplicationController::ApplicationController(bool popupOnly,
         emit lastRecordChanged();
     });
 
-    connect(m_ipc, &SingleInstanceIpc::requestReceived, this, &ApplicationController::handleIpcRequest);
-    connect(m_ipc, &SingleInstanceIpc::requestRefused, this, [this](const IpcResponse &refusal, QLocalSocket *socket) {
-        IpcResponse reply = refusal;
-        reply.state = response().state;
-        SingleInstanceIpc::writeResponse(socket, reply);
-    });
-    // Not on each tick of the recording's duration, which every line carries.
-    const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
-    m_statusPublishers = {
-        connect(m_session, &DictationSession::stateChanged, this, publishStatus),
-        connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus),
-        connect(m_recording, &RecordingSession::problemChanged, this, publishStatus),
-    };
+    m_ipcCommands = new IpcCommandHandler(*this, *m_recording, m_platform, this);
+    // After record stop's replies are written: recordingChanged(false) comes
+    // before them.
+    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
@@ -358,15 +299,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             }
         }
     });
-#ifdef Q_OS_MACOS
-    m_accessibilityPoll = new QTimer(this);
-    m_accessibilityPoll->setInterval(accessibilityPollMs);
-    connect(m_accessibilityPoll,
-            &QTimer::timeout,
-            this,
-            &ApplicationController::refreshAccessibilityState);
-#endif
-    m_platform->watchAccessibilityChanges(this, [this] { refreshAccessibilityState(); });
+    m_accessibility = new AccessibilityMonitor(*m_platform, this);
     // A process that never shows a window still has to warm up, so the wait for
     // the front end is capped rather than open-ended.
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
@@ -402,43 +335,22 @@ bool ApplicationController::isRecording() const
     return m_recording->isRecording();
 }
 
-// macOS may ask for the microphone first, and the provider's stream must
-// connect, so the reply waits for both.
 void ApplicationController::startRecording(const QString &path,
                                            const QStringList &vocabulary,
                                            bool microphoneOnly,
-                                           QLocalSocket *socket)
+                                           std::function<void(const QString &error)> done)
 {
     if (!ensureSetupCompleted()) {
-        SingleInstanceIpc::writeResponse(socket, response(false, recordingNeedsSetupText()));
+        done(recordingNeedsSetupText());
         return;
     }
     m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, microphoneOnly,
-                                               socket = QPointer(socket)](bool granted) {
+                                               done = std::move(done)](bool granted) {
         if (!granted) {
-            SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
+            done(microphoneAccessOffText());
             return;
         }
-        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, [this, socket](const QString &error) {
-            if (!error.isEmpty()) {
-                SingleInstanceIpc::writeResponse(socket, response(false, error));
-                return;
-            }
-            // A command line that stopped waiting said the start failed, so
-            // nothing may record behind its back.
-            if (!socket || socket->state() != QLocalSocket::ConnectedState) {
-                qWarning() << "record start's caller left before it answered; discarding the recording";
-                m_recording->discard();
-                return;
-            }
-            IpcResponse reply = response();
-            reply.recording = m_recording->status();
-            if (!m_settings->recordingConsentNoticeShown()) {
-                m_settings->setRecordingConsentNoticeShown(true);
-                reply.message = recordingConsentNotice();
-            }
-            SingleInstanceIpc::writeResponse(socket, reply);
-        });
+        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, done);
     });
 }
 
@@ -521,21 +433,7 @@ void ApplicationController::runDeferredStartup()
     for (const GlobalShortcutRole role : globalShortcutRoles) {
         shortcutBinder(role)->bind();
     }
-    const AccessibilityState state = m_platform->accessibilityState();
-    const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
-    m_accessibilitySupported = state.supported;
-    m_accessibilityEnabled = state.enabled || requestSucceeded;
-    m_accessibilityPersistent = state.persistent;
-#ifdef Q_OS_MACOS
-    if (m_accessibilityEnabled) {
-        m_accessibilityPoll->stop();
-    } else {
-        m_accessibilityPoll->start();
-    }
-#endif
-    emit accessibilityStateChanged(m_accessibilitySupported,
-                                   m_accessibilityEnabled,
-                                   m_accessibilityPersistent);
+    m_accessibility->checkAtStartup();
 }
 
 SettingsStore *ApplicationController::settings() const
@@ -548,19 +446,9 @@ UpdateController *ApplicationController::updates() const
     return m_updates;
 }
 
-QString ApplicationController::pendingWhatsNewVersion() const
+WhatsNewTracker *ApplicationController::whatsNew() const
 {
-    return m_pendingWhatsNewVersion;
-}
-
-void ApplicationController::clearPendingWhatsNew()
-{
-    if (m_pendingWhatsNewVersion.isEmpty()) {
-        return;
-    }
-    m_pendingWhatsNewVersion.clear();
-    m_settings->setUpdatesPendingWhatsNewVersion({});
-    emit whatsNewChanged();
+    return m_whatsNew;
 }
 
 SecretStore *ApplicationController::secretStore() const
@@ -630,44 +518,14 @@ QString ApplicationController::lastTranscript() const
     return m_lastTranscript;
 }
 
-IpcResponse ApplicationController::response(bool ok, const QString &message) const
-{
-    const SessionResponse sessionResponse = m_session->response(ok, message);
-    return {sessionResponse.ok, sessionResponse.state, sessionResponse.message};
-}
-
-IpcResponse ApplicationController::statusResponse() const
-{
-    IpcResponse reply = response();
-    reply.recording = m_recording->status();
-    return reply;
-}
-
 QString ApplicationController::outputSummary() const
 {
     return m_platform->outputSummary();
 }
 
-bool ApplicationController::accessibilitySupported() const
+AccessibilityMonitor *ApplicationController::accessibility() const
 {
-    return m_accessibilitySupported;
-}
-
-bool ApplicationController::accessibilityEnabled() const
-{
-    return m_accessibilityEnabled;
-}
-
-bool ApplicationController::accessibilityPersistent() const
-{
-    return m_accessibilityPersistent;
-}
-
-bool ApplicationController::enableAccessibility(QString *error)
-{
-    const bool enabled = m_platform->enableAccessibilityPermanently(error);
-    refreshAccessibilityState();
-    return enabled;
+    return m_accessibility;
 }
 
 GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole role) const
@@ -796,9 +654,9 @@ bool ApplicationController::removeGlobalShortcutRegistration(QString *error, Glo
     return shortcutBinder(role)->removeRegistration(error);
 }
 
-IpcListenResult ApplicationController::startIpc(QString *error)
+IpcCommandHandler *ApplicationController::ipcCommands() const
 {
-    return m_ipc->listen(error);
+    return m_ipcCommands;
 }
 
 void ApplicationController::showMainWindow()
@@ -910,119 +768,12 @@ bool ApplicationController::sessionActive() const
 {
     const DictationState state = m_session->state();
     return state == DictationState::Starting || state == DictationState::Listening
-        || state == DictationState::Paused || m_session->startPending();
-}
-
-// One binding drives every activation mode; the mode decides what a press and
-// a release do. The auto-repeat guard below applies to all of them.
-void ApplicationController::handleShortcutPressed()
-{
-    // Key auto-repeat while held must not toggle again. A second press with no
-    // release between it and the first is ambiguous: auto-repeat of a held key
-    // (ignore) or a deliberate re-press on a desktop that never reports release
-    // (toggle). The signals are identical, so the first gesture after launch
-    // cannot satisfy both. We bias toward toggle until a release proves the
-    // platform reports them: a wrongly swallowed press on a no-release desktop
-    // could never be unstuck, whereas the mis-bias only costs the very first
-    // hold, and only on a backend that streams auto-repeat as extra presses
-    // (KGlobalAccel suppresses those at the binder; today's portal backends
-    // fire once). handleShortcutReleased latches the guard on for good.
-    if (m_shortcutDown && m_shortcutReleaseSeen) {
-        return;
-    }
-    // That same unreleased second press is what proves the backend reports no
-    // release, and with no release there is no "while held" to honour. From here
-    // on push-to-talk takes the toggle path outright, which is the degradation
-    // hybrid already gets by never reaching its release branch.
-    if (m_shortcutDown && !m_shortcutPressedWhileDown) {
-        m_shortcutPressedWhileDown = true;
-        emit globalShortcutReleaseSupportChanged();
-    }
-    m_shortcutDown = true;
-    m_shortcutPress.start();
-    m_shortcutStartedSession = !sessionActive() && !m_microphoneStartPending;
-    if (m_shortcutStartedSession && globalShortcutReportsRelease()
-        && m_settings->shortcutActivationMode() == ShortcutActivationMode::PushToTalk) {
-        // Deferred rather than started and cancelled: cancelling a Starting
-        // session still opens the microphone and shows the popup for an
-        // instant, which is a trace. The very first gesture on a desktop that
-        // never reports release still lands here; its timer fires and the next
-        // press ends the session as in every mode, so nothing wedges.
-        m_pushToTalkStart->start();
-        return;
-    }
-    toggle();
-}
-
-// Everything handleShortcutPressed learned applies to the binding and backend
-// it learned it on. A new one may report releases where the old one did not,
-// or the reverse, and a stale "held, release seen" latch would discard every
-// press the new binding makes. No gesture can be in flight across a rebind, so
-// the whole gesture state goes back to what it was at launch.
-void ApplicationController::forgetShortcutGesture()
-{
-    m_pushToTalkStart->stop();
-    m_shortcutDown = false;
-    m_shortcutStartedSession = false;
-    const bool reportedRelease = globalShortcutReportsRelease();
-    m_shortcutReleaseSeen = false;
-    m_shortcutPressedWhileDown = false;
-    if (!reportedRelease) {
-        emit globalShortcutReleaseSupportChanged();
-    }
-}
-
-bool ApplicationController::globalShortcutReportsRelease() const
-{
-    return m_shortcutReleaseSeen || !m_shortcutPressedWhileDown;
-}
-
-void ApplicationController::handleShortcutReleased(qint64 heldMs)
-{
-    m_shortcutDown = false;
-    const bool firstRelease = !m_shortcutReleaseSeen;
-    m_shortcutReleaseSeen = true;
-    // A release settles the question for good, including against an auto-repeat
-    // backend whose extra press looked like a missing one.
-    if (firstRelease && m_shortcutPressedWhileDown) {
-        emit globalShortcutReleaseSupportChanged();
-    }
-    if (!m_shortcutStartedSession) {
-        return;
-    }
-    m_shortcutStartedSession = false;
-    const bool starting = sessionActive() || m_microphoneStartPending;
-    // Whatever the mode is now, a pending deferred start must not survive the
-    // release: the mode can have changed since the press, and a session that
-    // begins after the key is already up is push-to-talk's misfire, not a tap.
-    const bool deferredStartPending = m_pushToTalkStart->isActive();
-    m_pushToTalkStart->stop();
-    switch (m_settings->shortcutActivationMode()) {
-    case ShortcutActivationMode::Toggle:
-        return;
-    case ShortcutActivationMode::PushToTalk:
-        if (!deferredStartPending && starting) {
-            stopListening();
-        }
-        return;
-    case ShortcutActivationMode::Hybrid: {
-        // The first dictation after a launch opens the microphone cold and
-        // keeps the main thread busy for a few hundred milliseconds, so a
-        // tap's release is handled well past hybridHoldMs. Timed here it read
-        // as a hold and cancelled the dictation it had just started; the
-        // binder's physical hold says what the key actually did.
-        const qint64 held = heldMs >= 0 ? heldMs : m_shortcutPress.elapsed();
-        if (starting && held > hybridHoldMs) {
-            stopListening();
-        }
-        return;
-    }
-    }
+        || state == DictationState::Paused || m_session->startPending() || m_microphoneStartPending;
 }
 
 void ApplicationController::toggle()
 {
-    if (sessionActive() || m_microphoneStartPending) {
+    if (sessionActive()) {
         stopListening();
         return;
     }
@@ -1030,6 +781,18 @@ void ApplicationController::toggle()
         return;
     }
     startWithMicrophone([this] { m_session->toggle(); });
+}
+
+void ApplicationController::toggleWith(const SessionOverrides &overrides)
+{
+    if (!ensureSetupCompleted()) {
+        return;
+    }
+    if (sessionActive()) {
+        stopListening();
+        return;
+    }
+    startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
 }
 
 void ApplicationController::startListening()
@@ -1049,7 +812,7 @@ void ApplicationController::startListeningWith(const SessionOverrides &overrides
 // must not begin after the session it belongs to was stopped or cancelled.
 void ApplicationController::dropPendingStart()
 {
-    m_pushToTalkStart->stop();
+    m_shortcutGesture->dropDeferredStart();
     ++m_microphoneStartGeneration;
     m_microphoneStartPending = false;
 }
@@ -1065,7 +828,7 @@ void ApplicationController::cancel()
     dropPendingStart();
     // The push-to-talk key that started the session may still be down; its
     // release must not act on a session that is already gone.
-    m_shortcutStartedSession = false;
+    m_shortcutGesture->forgetStartedSession();
     m_session->cancel();
 }
 
@@ -1115,149 +878,18 @@ void ApplicationController::quitApplication()
     emit quitRequested();
 }
 
-void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSocket *socket)
-{
-    const SessionOverrides &overrides = request.overrides;
-    if (overrides.writingProfile
-        && offeredWritingProfile(*overrides.writingProfile, m_settings->writingProfileSettings(), {}).isEmpty()) {
-        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
-        return;
-    }
-    // toggle and start echo the overrides they read; see IpcResponse::writingProfile.
-    const auto acknowledge = [this, socket, &overrides] {
-        IpcResponse reply = response();
-        reply.writingProfile = overrides.writingProfile.value_or(QString());
-        reply.spokenLanguage = overrides.spokenLanguage.value_or(QString());
-        SingleInstanceIpc::writeResponse(socket, reply);
-    };
-    switch (request.command) {
-    case IpcCommand::Toggle:
-        if (!ensureSetupCompleted()) {
-            acknowledge();
-            return;
-        }
-        if (sessionActive() || m_microphoneStartPending) {
-            stopListening();
-        } else {
-            startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
-        }
-        acknowledge();
-        return;
-    case IpcCommand::Start:
-        startListeningWith(overrides);
-        acknowledge();
-        return;
-    case IpcCommand::Stop:
-        stopListening();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::Cancel:
-        cancel();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowMain:
-        showMain();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowSettings:
-        showSettings();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowSetup:
-        showSetup();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::Transcribe:
-        showTranscribeFiles(request.files);
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-#ifdef SPEECHER_E2E_HOOKS
-    case IpcCommand::E2eUpdateCheck:
-        m_updates->checkForUpdates(m_settings->updateChannel());
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eUpdateStatus:
-        SingleInstanceIpc::writeResponse(socket, {
-            true,
-            QString::fromLatin1(QMetaEnum::fromType<UpdateController::State>().valueToKey(int(m_updates->state()))),
-            QStringLiteral("currentVersion=%1\ncurrentBuild=%2\navailableVersion=%3\nerror=%4\nbannerVisible=%5\npid=%6")
-                .arg(m_updates->currentVersion())
-                .arg(SPEECHER_BUILD_NUMBER)
-                .arg(m_updates->availableVersion(), m_updates->errorMessage(),
-                     m_updates->bannerVisible() ? QStringLiteral("true") : QStringLiteral("false"))
-                .arg(QCoreApplication::applicationPid()),
-        });
-        return;
-    case IpcCommand::E2ePause:
-        m_session->pause();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eResume:
-        m_session->resume();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eUpdateAccept:
-        SingleInstanceIpc::writeResponse(socket, response());
-        m_updates->installAndRestart();
-        return;
-#endif
-    case IpcCommand::RecordStart:
-        startRecording(request.files.value(0), request.terms, request.microphoneOnly, socket);
-        return;
-    case IpcCommand::RecordStatus: {
-        IpcResponse reply = response();
-        reply.recording = m_recording->status();
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::RecordStop:
-        if (!m_recording->isRecording()) {
-            SingleInstanceIpc::writeResponse(socket, response(false, notRecordingText()));
-            return;
-        }
-        m_recordStopReplies.append(socket);
-        m_recording->stop();
-        return;
-    case IpcCommand::Status:
-        SingleInstanceIpc::writeResponse(socket, statusResponse());
-        return;
-    case IpcCommand::WatchStatus:
-        m_ipc->addStatusWatcher(socket, statusResponse());
-        return;
-    case IpcCommand::Last: {
-        IpcResponse reply = response(!m_lastTranscript.isEmpty());
-        reply.text = m_lastTranscript;
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::Providers: {
-        IpcResponse reply = response();
-        reply.text = QString::fromUtf8(providerReportsJson(providerReports(*m_settings, *m_localSetup, *m_providers)));
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::AddVocabulary: {
-        const std::optional<QStringList> held = m_settings->addVocabularyTerms(request.terms);
-        IpcResponse reply = response(held.has_value());
-        reply.skippedTerms = held.value_or(QStringList());
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::Quit:
-        SingleInstanceIpc::writeResponse(socket, response());
-        quitApplication();
-        return;
-    }
-}
-
 // Children are otherwise deleted in creation order, which puts the provider
 // registry (owner of the transcriber and refiner) before the session that still
 // points at them. Tear the dependents down first.
 ApplicationController::~ApplicationController()
 {
-    for (const QMetaObject::Connection &publisher : std::as_const(m_statusPublishers)) {
-        disconnect(publisher);
-    }
+    // Status watchers are written each change, and deleting the recording and
+    // the session below makes some; cut the IPC off from them first.
+    disconnect(m_session, nullptr, m_ipcCommands, nullptr);
+    disconnect(m_recording, nullptr, m_ipcCommands, nullptr);
+    // The gesture asks the session whether one is active; no binder may reach
+    // it once the session is gone.
+    disconnect(m_shortcutBinder, nullptr, m_shortcutGesture, nullptr);
     delete m_updates;
     m_updates = nullptr;
     delete m_recording;
@@ -1300,30 +932,6 @@ bool ApplicationController::ensureSetupCompleted()
     }
     showSetupAssistant();
     return false;
-}
-
-void ApplicationController::refreshAccessibilityState()
-{
-    const AccessibilityState state = m_platform->accessibilityState();
-    const bool changed = m_accessibilitySupported != state.supported
-        || m_accessibilityEnabled != state.enabled
-        || m_accessibilityPersistent != state.persistent;
-    m_accessibilitySupported = state.supported;
-    m_accessibilityEnabled = state.enabled;
-    m_accessibilityPersistent = state.persistent;
-#ifdef Q_OS_MACOS
-    if (m_accessibilityEnabled) {
-        m_accessibilityPoll->stop();
-    } else if (!m_accessibilityPoll->isActive()) {
-        m_accessibilityPoll->start();
-    }
-#endif
-    if (!changed) {
-        return;
-    }
-    emit accessibilityStateChanged(m_accessibilitySupported,
-                                   m_accessibilityEnabled,
-                                   m_accessibilityPersistent);
 }
 
 } // namespace speecher

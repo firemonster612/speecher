@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
+#include "app/WhatsNewTracker.h"
 #include "common/test_manifest_updater_access.h"
 #include "common/test_quick_windows.h"
 #include "core/SettingsStore.h"
@@ -280,14 +281,14 @@ private slots:
             QuickFrontEnd ui(&controller, &tray);
             ui.showTranscribeFiles({});
             QCOMPARE(mainPage(), QStringLiteral("transcribe"));
-            QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
+            QVERIFY(!controller.whatsNew()->pendingVersion().isEmpty());
         }
         ApplicationController controller(true);
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
         QCOMPARE(mainPage(), QStringLiteral("updates"));
-        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
+        QVERIFY(controller.whatsNew()->pendingVersion().isEmpty());
     }
 
     // What's New takes a turn in each new popup, also when a dictation starts

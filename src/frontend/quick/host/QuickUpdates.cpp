@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
+#include "app/WhatsNewTracker.h"
 #include "core/ReleaseNotes.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -48,7 +49,7 @@ QuickUpdates::QuickUpdates(ApplicationController *controller, UpdateController *
     : QObject(parent)
     , m_controller(controller)
     , m_updates(updates)
-    , m_lastSeenVersion(controller->pendingWhatsNewVersion())
+    , m_lastSeenVersion(controller->whatsNew()->pendingVersion())
     , m_whatsNew(whatsNewMap(speecher::whatsNew(bundledReleaseNotes(), embeddedHistory(), m_lastSeenVersion,
                                                 updates->currentVersion())))
 {
@@ -58,7 +59,7 @@ QuickUpdates::QuickUpdates(ApplicationController *controller, UpdateController *
     connect(controller->session(), &DictationSession::stateChanged, this, &QuickUpdates::changed);
     connect(controller, &ApplicationController::recordingChanged, this, &QuickUpdates::changed);
     connect(updates, &UpdateController::openReleasePageRequested, this, &QuickUpdates::openAllReleases);
-    connect(controller, &ApplicationController::whatsNewChanged, this, &QuickUpdates::whatsNewPendingChanged);
+    connect(controller->whatsNew(), &WhatsNewTracker::pendingChanged, this, &QuickUpdates::whatsNewPendingChanged);
 }
 
 QuickUpdates::~QuickUpdates()
@@ -167,7 +168,7 @@ bool QuickUpdates::attention() const
 
 bool QuickUpdates::whatsNewPending() const
 {
-    return !m_controller->pendingWhatsNewVersion().isEmpty();
+    return !m_controller->whatsNew()->pendingVersion().isEmpty();
 }
 
 QVariantMap QuickUpdates::whatsNew() const
@@ -214,7 +215,7 @@ bool QuickUpdates::newSince(const QString &sinceVersion) const
 
 void QuickUpdates::acknowledgeWhatsNew()
 {
-    m_controller->clearPendingWhatsNew();
+    m_controller->whatsNew()->clearPending();
 }
 
 void QuickUpdates::showWhatsNew()
