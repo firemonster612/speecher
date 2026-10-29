@@ -1,6 +1,7 @@
 package app.speecher.android.dictation
 
 import android.text.InputType
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText
 import app.speecher.protocol.WritingProfile

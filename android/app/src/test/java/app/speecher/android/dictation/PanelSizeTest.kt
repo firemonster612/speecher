@@ -2,6 +2,9 @@ package app.speecher.android.dictation
 
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import app.speecher.android.settings.PanelSize
+import app.speecher.android.settings.SettingsStore
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.panelHeight
 import org.junit.Assert.assertEquals
 import org.junit.Test

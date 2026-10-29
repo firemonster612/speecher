@@ -5,6 +5,8 @@ import android.os.Looper
 import androidx.core.content.edit
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import app.speecher.android.settings.SettingsStore
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings

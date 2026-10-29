@@ -35,9 +35,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.speecher.android.R
-import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.FailureReason
-import app.speecher.android.dictation.SpeechProvider
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.SpeechProvider
 import app.speecher.protocol.ProviderFailureKind
 
 private val bottom: (@Composable () -> Unit) -> @Composable () -> Unit = { content ->

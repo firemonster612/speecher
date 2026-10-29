@@ -1,4 +1,4 @@
-package app.speecher.android.dictation
+package app.speecher.android.settings
 
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength

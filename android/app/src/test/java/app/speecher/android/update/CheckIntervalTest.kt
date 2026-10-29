@@ -1,8 +1,8 @@
 package app.speecher.android.update
 
 import android.content.Context
-import app.speecher.android.dictation.SettingsStore
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.settings.SettingsStore
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.updateCheckLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

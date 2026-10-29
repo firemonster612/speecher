@@ -24,8 +24,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import app.speecher.android.dictation.ButtonLayout
-import app.speecher.android.dictation.InsertAction
+import app.speecher.android.settings.ButtonLayout
+import app.speecher.android.settings.InsertAction
 
 internal val ButtonLayout.label: String
     get() =

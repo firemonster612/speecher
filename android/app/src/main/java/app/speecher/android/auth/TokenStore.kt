@@ -4,8 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.core.content.edit
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.oauth
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.oauth
 import app.speecher.protocol.OAuthHttpException
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens

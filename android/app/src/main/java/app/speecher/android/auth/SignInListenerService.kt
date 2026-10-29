@@ -10,8 +10,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import app.speecher.android.R
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.label
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.label
 
 private const val CHANNEL = "sign-in"
 private const val NOTIFICATION_ID = 1

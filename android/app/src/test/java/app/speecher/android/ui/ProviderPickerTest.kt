@@ -10,10 +10,10 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.speecher.android.dictation.CleanupProvider
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.SpeechProvider
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.settings.SpeecherSettings
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

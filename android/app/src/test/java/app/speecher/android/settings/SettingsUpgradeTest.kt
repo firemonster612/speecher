@@ -1,7 +1,9 @@
-package app.speecher.android.dictation
+package app.speecher.android.settings
 
 import android.content.Context
 import androidx.core.content.edit
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.SpeechProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

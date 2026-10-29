@@ -1,7 +1,7 @@
 package app.speecher.android.ui
 
-import app.speecher.android.dictation.SpeechProvider
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.VocabularyWord
 import org.junit.Assert.assertEquals
 import org.junit.Test

@@ -1,5 +1,8 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import java.io.File

@@ -20,9 +20,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.SettingsStore
-import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.targetApp
+import app.speecher.android.settings.SettingsStore
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.LearnedCorrection
 import kotlin.math.roundToInt
 

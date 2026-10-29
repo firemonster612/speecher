@@ -23,21 +23,21 @@ import app.speecher.android.dictation.CorrectionObserver
 import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
-import app.speecher.android.dictation.SettingsStore
-import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
-import app.speecher.android.dictation.oauth
-import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
-import app.speecher.android.dictation.sharedExecutor
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.dictation.uncoveredRows
+import app.speecher.android.provider.oauth
+import app.speecher.android.provider.resolveSpeech
+import app.speecher.android.settings.SettingsStore
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.ChipMargin
 import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SavePositionPill
 import app.speecher.android.ui.SpeecherTheme
+import app.speecher.android.update.installingUpdate
 import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -342,7 +342,7 @@ class SpeecherChipService : AccessibilityService() {
 
     private fun onChipTap() {
         // Android is replacing the app, which would end the dictation within seconds.
-        if (ActiveDictation.installingUpdate) return
+        if (installingUpdate) return
         ImeSwap(this).rememberPrevious()
         val engine = startDictation()
         // Only now, before the swap, does the focused field still belong to the app being dictated

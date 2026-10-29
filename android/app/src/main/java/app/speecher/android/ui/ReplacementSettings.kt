@@ -34,7 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.Replacement
 import app.speecher.protocol.importReplacements
 import app.speecher.protocol.normalizedPhrase

@@ -1,5 +1,7 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.settings.SettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

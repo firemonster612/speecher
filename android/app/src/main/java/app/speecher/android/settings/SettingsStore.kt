@@ -1,4 +1,4 @@
-package app.speecher.android.dictation
+package app.speecher.android.settings
 
 import android.content.Context
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
@@ -7,6 +7,13 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.provider.OpenAiSpeed
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.RefinementChoice
+import app.speecher.android.provider.cleanup
+import app.speecher.android.provider.defaultProvider
+import app.speecher.android.provider.defaultRefinement
+import app.speecher.android.provider.speech
 import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes

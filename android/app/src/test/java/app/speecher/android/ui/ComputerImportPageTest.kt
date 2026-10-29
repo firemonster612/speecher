@@ -3,7 +3,7 @@ package app.speecher.android.ui
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.transfer.ComputerSettings
 import app.speecher.android.transfer.withImported
 import app.speecher.protocol.VocabularyWord

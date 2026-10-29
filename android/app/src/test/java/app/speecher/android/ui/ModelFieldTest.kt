@@ -11,10 +11,10 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.requestFocus
-import app.speecher.android.dictation.CleanupProvider
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.RefinementChoice
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.RefinementChoice
+import app.speecher.android.settings.SpeecherSettings
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

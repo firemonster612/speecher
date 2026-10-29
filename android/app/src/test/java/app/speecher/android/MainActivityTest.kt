@@ -7,8 +7,8 @@ import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
-import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.Recovery
+import app.speecher.android.provider.Provider
 import app.speecher.android.ui.ComputerImportViewModel
 import org.junit.Rule
 import org.junit.Test

@@ -3,7 +3,7 @@ package app.speecher.android.ui
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.speecher.android.dictation.Provider
+import app.speecher.android.provider.Provider
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

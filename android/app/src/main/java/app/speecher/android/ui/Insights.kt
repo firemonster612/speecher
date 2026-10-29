@@ -27,9 +27,9 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.InsightTile
 import app.speecher.android.dictation.InsightsRange
-import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.insightTiles
 import app.speecher.android.dictation.summarize
+import app.speecher.android.settings.SpeecherSettings
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.LocalDateTime

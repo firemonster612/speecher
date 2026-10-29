@@ -11,7 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import app.speecher.android.dictation.PanelSize
+import app.speecher.android.settings.PanelSize
 
 internal val PanelSize.label: String
     get() =

@@ -1,4 +1,4 @@
-package app.speecher.android.dictation
+package app.speecher.android.settings
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

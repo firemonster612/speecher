@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
-import app.speecher.android.dictation.sharedExecutor
+import app.speecher.android.sharedExecutor
 import java.util.concurrent.Executor
 import kotlin.math.sqrt
 
