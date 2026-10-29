@@ -315,7 +315,10 @@ private slots:
     void init()
     {
         SettingsStore().raw().clear();
-        QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).removeRecursively();
+        // Only the schemes this suite writes: the rest of the shared data
+        // folder holds the other suites' own, which may be running alongside.
+        QDir(colorSchemesFolder(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)))
+            .removeRecursively();
         QFile::remove(kdeglobals());
     }
 
