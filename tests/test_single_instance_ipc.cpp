@@ -1020,7 +1020,8 @@ private slots:
         // Past the first look for an app, which finds none and prints idle.
         // Waits without failing here: the watch runs until Speecher quits, so
         // the checks come once it has.
-        (void)QTest::qWaitFor([&] { return output.text() == printed.left(printed.indexOf(QLatin1Char('\n')) + 1); }, 5000);
+        const bool idleBeforeSpeecher =
+            QTest::qWaitFor([&] { return output.text() == printed.left(printed.indexOf(QLatin1Char('\n')) + 1); }, 5000);
 
         auto ipc = std::make_unique<SingleInstanceIpc>(platform);
         QCOMPARE(ipc->listen(), IpcListenResult::Listening);
@@ -1044,6 +1045,7 @@ private slots:
         ipc.reset();
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QVERIFY(idleBeforeSpeecher);
         QCOMPARE(exitCode, 0);
         QCOMPARE(output.text(), printed);
         QCOMPARE(QString::fromStdString(err.str()), QString());
