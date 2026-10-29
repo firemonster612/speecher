@@ -2680,6 +2680,40 @@ private slots:
         QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
     }
 
+    void theControllerRefusesARequestItCannotServe_data()
+    {
+        QTest::addColumn<QByteArray>("requestBytes");
+        QTest::addColumn<QByteArray>("responseBytes");
+        // Byte for byte what the previous release answered: its command line
+        // reads "Unknown command" as an instance older than the command.
+        QTest::newRow("unknown command")
+            << QByteArrayLiteral(R"({"command":"rewind"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n");
+        QTest::newRow("unknown output format")
+            << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"rtf"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown output format","ok":false,"state":"idle"})" "\n");
+        // The previous release left this unanswered until the client gave up.
+        QTest::newRow("not JSON")
+            << QByteArrayLiteral("toggle\n")
+            << QByteArrayLiteral(R"({"message":"Invalid request","ok":false,"state":"idle"})" "\n");
+    }
+
+    void theControllerRefusesARequestItCannotServe()
+    {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(QByteArray, responseBytes);
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->ipcName = uniqueControllerIpcName();
+        ApplicationController controller(true, platform);
+        QCOMPARE(controller.startIpc(), IpcListenResult::Listening);
+
+        QLocalSocket client;
+        connectToController(client, platform->ipcName);
+        client.write(requestBytes);
+        QTRY_VERIFY(client.canReadLine());
+        QCOMPARE(client.readLine(), responseBytes);
+    }
+
     // The controller answers status on its own IPC with the recording, and
     // writes a watcher a line on each change of the dictation state. A
     // watcher's further commands are ignored: none doubles its lines or ends

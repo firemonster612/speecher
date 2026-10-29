@@ -355,6 +355,134 @@ private slots:
         QCOMPARE(commands.first().at(0).value<IpcRequest>().overrides, expected);
     }
 
+    // A request and its answer as the previous release wrote them, byte for
+    // byte, and what each means. Peers from either release must keep
+    // understanding each other.
+    void previousReleaseBytes_data()
+    {
+        QTest::addColumn<QByteArray>("requestBytes");
+        QTest::addColumn<IpcRequest>("request");
+        QTest::addColumn<QByteArray>("responseBytes");
+        QTest::addColumn<IpcResponse>("response");
+
+        IpcResponse echoed{true, QStringLiteral("starting"), {}};
+        echoed.writingProfile = QStringLiteral("ai_coding");
+        echoed.spokenLanguage = QStringLiteral("de");
+        QTest::newRow("toggle with --format, --profile and --language")
+            << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"html","spokenLanguage":"de",)"
+                                 R"("writingProfile":"ai_coding"})" "\n")
+            << IpcRequest{IpcCommand::Toggle,
+                          {OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"spokenLanguage":"de","state":"starting",)"
+                                 R"("writingProfile":"ai_coding"})" "\n")
+            << echoed;
+        QTest::newRow("transcribe")
+            << QByteArrayLiteral(R"({"command":"transcribe","files":["/tmp/a.wav","/tmp/b c.mp3"]})" "\n")
+            << IpcRequest{IpcCommand::Transcribe, {}, {QStringLiteral("/tmp/a.wav"), QStringLiteral("/tmp/b c.mp3")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"state":"idle"})" "\n")
+            << IpcResponse{true, QStringLiteral("idle"), {}};
+        QTest::newRow("record start")
+            << QByteArrayLiteral(R"({"command":"recordStart","files":["/tmp/call.md"],"microphoneOnly":true,)"
+                                 R"("terms":["kwin"]})" "\n")
+            << IpcRequest{IpcCommand::RecordStart, {}, {QStringLiteral("/tmp/call.md")}, {QStringLiteral("kwin")}, true}
+            << QByteArrayLiteral(R"({"message":"Not recording","ok":false,"state":"idle"})" "\n")
+            << IpcResponse{false, QStringLiteral("idle"), QStringLiteral("Not recording")};
+        IpcResponse skipped{true, QStringLiteral("idle"), {}};
+        skipped.skippedTerms = {QStringLiteral("kwin")};
+        QTest::newRow("vocabulary add")
+            << QByteArrayLiteral(R"({"command":"addVocabulary","terms":["FileTranscriptionSession","kwin"]})" "\n")
+            << IpcRequest{IpcCommand::AddVocabulary, {}, {},
+                          {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")}}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"skippedTerms":["kwin"],"state":"idle"})" "\n")
+            << skipped;
+        IpcResponse transcript{true, QStringLiteral("idle"), {}};
+        transcript.text = QStringLiteral("Ship it on Friday.");
+        QTest::newRow("last")
+            << QByteArrayLiteral(R"({"command":"last"})" "\n") << IpcRequest{IpcCommand::Last}
+            << QByteArrayLiteral(R"({"message":null,"ok":true,"state":"idle","text":"Ship it on Friday."})" "\n")
+            << transcript;
+        IpcResponse unknown{false, QStringLiteral("idle"), QStringLiteral("Unknown command")};
+        unknown.unknownCommand = true;
+        QTest::newRow("a command the instance doesn't know")
+            << QByteArrayLiteral(R"({"command":"providers"})" "\n") << IpcRequest{IpcCommand::Providers}
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n") << unknown;
+    }
+
+    // A command line from the previous release, talking to this instance.
+    void previousReleaseBytes()
+    {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(IpcRequest, request);
+        QFETCH(QByteArray, responseBytes);
+        QFETCH(IpcResponse, response);
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        SingleInstanceIpc ipc(std::make_shared<FakeSingleInstancePlatform>(name));
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QList<IpcRequest> received;
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [&received, response](const IpcRequest &request, QLocalSocket *socket) {
+                    received << request;
+                    SingleInstanceIpc::writeResponse(socket, response);
+                });
+
+        QLocalSocket client;
+        client.connectToServer(name);
+        QVERIFY(client.waitForConnected(500));
+        client.write(requestBytes);
+        client.flush();
+        QTRY_VERIFY(client.canReadLine());
+        QCOMPARE(received, QList{request});
+        QCOMPARE(client.readLine(), responseBytes);
+    }
+
+    // This command line, talking to an instance from the previous release.
+    void previousReleaseInstance_data()
+    {
+        previousReleaseBytes_data();
+    }
+
+    void previousReleaseInstance()
+    {
+        QFETCH(QByteArray, requestBytes);
+        QFETCH(IpcRequest, request);
+        QFETCH(QByteArray, responseBytes);
+        QFETCH(IpcResponse, response);
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        QLocalServer olderInstance;
+        QVERIFY(olderInstance.listen(name));
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+
+        IpcResponse answer;
+        IpcCommandResult result = IpcCommandResult::Unavailable;
+        std::unique_ptr<QThread> client(QThread::create([&] {
+            result = SingleInstanceIpc::sendRequest(request, &answer, 5000, platform);
+        }));
+        client->start();
+        const auto joinClient = qScopeGuard([&client] { client->wait(); });
+        QVERIFY(olderInstance.waitForNewConnection(5000));
+        QLocalSocket *socket = olderInstance.nextPendingConnection();
+        QByteArray sent;
+        while (!sent.endsWith('\n') && socket->waitForReadyRead(5000)) {
+            sent += socket->readAll();
+        }
+        QCOMPARE(sent, requestBytes);
+        socket->write(responseBytes);
+        socket->flush();
+        QVERIFY(QTest::qWaitFor([&client] { return client->isFinished(); }, 5000));
+
+        QCOMPARE(result, IpcCommandResult::Sent);
+        QCOMPARE(answer.ok, response.ok);
+        QCOMPARE(answer.state, response.state);
+        QCOMPARE(answer.message, response.message);
+        QCOMPARE(answer.unknownCommand, response.unknownCommand);
+        QCOMPARE(answer.writingProfile, response.writingProfile);
+        QCOMPARE(answer.spokenLanguage, response.spokenLanguage);
+        QCOMPARE(answer.text, response.text);
+        QCOMPARE(answer.skippedTerms, response.skippedTerms);
+    }
+
     // record start hands over its file and terms; every record command's answer
     // carries the recording, which record status prints.
     void recordCommandsCarryTheRecordingBothWays()
