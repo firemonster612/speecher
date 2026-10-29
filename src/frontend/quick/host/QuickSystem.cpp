@@ -356,11 +356,8 @@ QString QuickSystem::virtualKeyboardTest() const
 
 QStringList QuickSystem::pasteRoute() const
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    // With no default paste of its own, Speecher copies, as delivery does.
-    const PasteRule *rule = findPasteRule(settings.output.pasteRules, PasteRuleScope::Global, QString());
-    return TextDelivery::pasteRoute(settings.output,
-                                    rule && rule->enabled ? rule->method : PasteMethod::ClipboardOnly);
+    const OutputSettings output = m_controller->settings()->dictationSnapshot().output;
+    return TextDelivery::pasteRoute(output, globalPasteMethod(output.pasteRules));
 }
 
 bool QuickSystem::hasVirtualKeyboard() const

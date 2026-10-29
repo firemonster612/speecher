@@ -114,10 +114,17 @@ PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
     if (const auto rule = enabledRule(PasteRuleScope::Category, appCategoryName(target.category))) {
         return *rule;
     }
-    if (const auto rule = enabledRule(PasteRuleScope::Global, QString())) {
-        return *rule;
+    return {PasteRuleScope::Global, QString(), globalPasteMethod(rules), true};
+}
+
+PasteMethod globalPasteMethod(const QList<PasteRule> &rules)
+{
+    for (const PasteRule &rule : rules) {
+        if (rule.enabled && rule.scope == PasteRuleScope::Global) {
+            return rule.method;
+        }
     }
-    return {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true};
+    return PasteMethod::ClipboardOnly;
 }
 
 const PasteRule *findPasteRule(const QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)

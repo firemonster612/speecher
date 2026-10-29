@@ -224,13 +224,10 @@ const SettingRow settingRows[] = {
          s.output.format = outputFormatFromString(v.toString()).value_or(OutputFormat::PlainText);
      }},
     FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
-    // Every app gets a rule, so the default paste never inherits; without one
-    // core only copies.
+    // The default paste never inherits: without a rule of its own, core only
+    // copies.
     {"globalPasteRule",
-     [](const AppSettings &s) {
-         const QVariant method = pasteRuleValue(s, PasteRuleScope::Global, QString());
-         return method == inheritPasteRule ? QVariant(pasteMethodName(PasteMethod::ClipboardOnly)) : method;
-     },
+     [](const AppSettings &s) { return QVariant(pasteMethodName(globalPasteMethod(s.output.pasteRules))); },
      [](AppSettings &s, const QVariant &v) { setPasteRuleValue(s, PasteRuleScope::Global, QString(), v); }},
     CATEGORY_PASTE_ROW("terminal"),
     CATEGORY_PASTE_ROW("browser"),
