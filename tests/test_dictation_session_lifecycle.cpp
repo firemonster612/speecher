@@ -1190,7 +1190,7 @@ private slots:
             QCOMPARE(recorded.count(), 0);
             // "Canceled" stays up for the result duration setting, timed when
             // it went rather than by a wait, which load can stretch. Less 50 ms
-            // for a timer's millisecond rounding.
+            // of slack for the timer, which still fails a hide straight away.
             if (target == DictationState::Listening) {
                 QTRY_COMPARE(hidden.count(), 1);
                 QVERIFY2(hiddenAfterMs >= settings.completionStatusDurationMs() - 50,
