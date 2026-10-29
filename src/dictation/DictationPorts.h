@@ -132,7 +132,9 @@ class TargetProvider : public QObject {
 
 public:
     using QObject::QObject;
-    virtual Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) = 0;
+    // What the platform sees of the focused target. Its category and the
+    // other recognition decisions are core's: see classifiedTarget.
+    virtual Target capture() = 0;
     virtual bool stillFocused(const Target &target)
     {
         Q_UNUSED(target);

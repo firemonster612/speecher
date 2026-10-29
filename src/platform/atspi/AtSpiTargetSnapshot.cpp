@@ -634,63 +634,16 @@ qint64 parentProcessId(qint64 processId)
     return match.hasMatch() ? match.captured(1).toLongLong() : 0;
 }
 
-QString executableName(const QString &path)
-{
-    return path.sliced(path.lastIndexOf(QLatin1Char('/')) + 1).trimmed().toLower();
-}
-
 bool processLooksLikeAiCodingTool(qint64 processId)
 {
-    static const QSet<QString> commands{
-        QStringLiteral("aider"),
-        QStringLiteral("amp"),
-        QStringLiteral("auggie"),
-        QStringLiteral("claude"),
-        QStringLiteral("cline"),
-        QStringLiteral("codex"),
-        QStringLiteral("copilot"),
-        QStringLiteral("crush"),
-        QStringLiteral("cursor-agent"),
-        QStringLiteral("droid"),
-        QStringLiteral("gemini"),
-        QStringLiteral("goose"),
-        QStringLiteral("kiro-cli"),
-        QStringLiteral("kilocode"),
-        QStringLiteral("kimi"),
-        QStringLiteral("opencode"),
-        QStringLiteral("openhands"),
-        QStringLiteral("pi"),
-        QStringLiteral("q"),
-        QStringLiteral("qwen"),
-        QStringLiteral("replit"),
-        QStringLiteral("roo"),
-        QStringLiteral("trae"),
-        QStringLiteral("vibe"),
-        QStringLiteral("windsurf"),
-    };
-    if (commands.contains(processName(processId).toLower())) {
-        return true;
-    }
-
+    QStringList commandLine;
     QFile file(QStringLiteral("/proc/%1/cmdline").arg(processId));
-    if (!file.open(QIODevice::ReadOnly)) return false;
-    const QList<QByteArray> arguments = file.read(16 * 1024).split('\0');
-    QStringList executableParts;
-    for (int index = 0; index < arguments.size() && index < 2; ++index) {
-        const QString argument = QString::fromLocal8Bit(arguments.at(index)).trimmed();
-        if (!argument.isEmpty()) {
-            executableParts.append(argument);
-            executableParts.append(executableName(argument));
+    if (file.open(QIODevice::ReadOnly)) {
+        for (const QByteArray &argument : file.read(16 * 1024).split('\0')) {
+            commandLine.append(QString::fromLocal8Bit(argument));
         }
     }
-    if (executableParts.isEmpty()) return false;
-    if (commands.contains(executableName(executableParts.first()))) {
-        return true;
-    }
-
-    Target probe;
-    probe.processName = executableParts.join(QLatin1Char(' '));
-    return classifyTarget(probe) == AppCategory::AiCoding;
+    return isAiCodingProcess(processName(processId), commandLine);
 }
 
 bool processHasTerminalAncestor(qint64 processId)
@@ -871,7 +824,6 @@ TargetSnapshot TargetSnapshot::capture()
         if (target.terminalHost) {
             target.aiCodingToolActive = terminalHasAiCodingTool(target);
         }
-        target.category = classifyTarget(target);
         target.fingerprint = fingerprint(target);
         snapshot.m_accessible = AccessibleHandle(focused);
         const int start = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;

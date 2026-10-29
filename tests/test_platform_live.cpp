@@ -301,7 +301,7 @@ private slots:
             QSKIP("Live Plasma AT-SPI check is opt-in");
         }
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = classifiedTarget(provider.capture());
         const AppSettings settings = SettingsStore().snapshot();
         const QString profile = resolveWritingProfile(
             target,
@@ -775,7 +775,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = classifiedTarget(provider.capture());
         QVERIFY2(target.hasIdentity(), "No focused Plasma target was found");
         QVERIFY2(!target.secure, "Live delivery refuses secure targets");
 

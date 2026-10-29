@@ -126,14 +126,12 @@ class FakeTargetProvider final : public TargetProvider {
 public:
     using TargetProvider::TargetProvider;
 
-    Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override
+    Target capture() override
     {
         ++captureCalls;
         if (onCapture) {
             onCapture();
         }
-        // Read after onCapture, as the real provider reads them after its wait.
-        lastRecognitionRules = recognitionRules;
         return target;
     }
 
@@ -166,7 +164,6 @@ public:
     }
 
     Target target;
-    QList<AppRecognitionRule> lastRecognitionRules;
     int captureCalls = 0;
     int insertCalls = 0;
     bool focused = true;

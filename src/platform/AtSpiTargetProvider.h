@@ -19,7 +19,7 @@ class AtSpiTargetProvider final : public TargetProvider {
 public:
     explicit AtSpiTargetProvider(QObject *parent = nullptr);
     ~AtSpiTargetProvider() override;
-    Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override;
+    Target capture() override;
     bool stillFocused(const Target &target) override;
     FocusMatch focusMatch(const Target &target) override;
     bool canInsertText(const Target &target) override;
@@ -34,7 +34,7 @@ public:
 
 private:
     void clearAccessible();
-    Target compositorFallbackTarget(const QList<AppRecognitionRule> &recognitionRules);
+    Target compositorFallbackTarget();
 
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;

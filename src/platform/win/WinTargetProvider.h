@@ -16,7 +16,7 @@ public:
     explicit WinTargetProvider(QObject *parent = nullptr);
     ~WinTargetProvider() override;
 
-    Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override;
+    Target capture() override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target,

@@ -180,6 +180,14 @@ QList<AppRecognitionRule> recognitionRulesWithMigratedProfileOverrides(
 bool isTerminalTarget(const Target &target);
 AppCategory classifyTarget(const Target &target,
                            const QList<AppRecognitionRule> &customRules = {});
+// A TargetProvider's capture with the recognition policy applied: the category
+// from the custom rules, then the built-ins, and a terminal's text never
+// edited. Providers report what they saw and leave both decisions to this.
+Target classifiedTarget(Target target, const QList<AppRecognitionRule> &customRules = {});
+// Whether a running process is an AI coding tool, from its name and its
+// command line. Only the first two arguments count: the executable, or an
+// interpreter and the script it runs.
+bool isAiCodingProcess(const QString &processName, const QStringList &commandLine);
 QString inferWritingProfile(const Target &target, const QString &fallback = WritingProfile::Other);
 QString resolveWritingProfile(const Target &target,
                               const QList<WritingProfileOverride> &overrides,
