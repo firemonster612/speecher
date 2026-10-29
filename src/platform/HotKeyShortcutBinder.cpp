@@ -68,7 +68,7 @@ bool HotKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString 
     if (shortcut.isEmpty()) {
         removeRegistration();
         m_shortcut = {};
-        m_settings->forgetGlobalShortcutCombination(action().role);
+        m_settings->setGlobalShortcut(action().role, m_shortcut);
         emit bindingChanged();
         return true;
     }
