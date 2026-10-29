@@ -949,26 +949,32 @@ private slots:
     {
         SettingsStore settings;
         FakeAudioInput microphone;
-        microphone.onStart = [&microphone] {
+        QElapsedTimer sinceSpeech;
+        microphone.onStart = [&microphone, &sinceSpeech] {
             for (int i = 0; i < 5; ++i) {
                 QTimer::singleShot(i * 100, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(0)); });
             }
-            QTimer::singleShot(500, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(8000)); });
+            QTimer::singleShot(500, &microphone, [&microphone, &sinceSpeech] {
+                microphone.pushAudio(microphoneChunk(8000));
+                sinceSpeech.start();
+            });
         };
         HeadlessTranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
         options.refinementProviderId = QStringLiteral("none");
         std::ostringstream out;
         std::ostringstream err;
-        // A run the silence never ends stops here instead, which fails below.
+        // A run the 0.3 s pause does not end stops here instead, which fails
+        // below: well past the pause after speech, or 10 s in all.
         QElapsedTimer clock;
         clock.start();
         bool stoppedByTest = false;
+        const auto stop = [&] {
+            stoppedByTest = (sinceSpeech.isValid() && sinceSpeech.elapsed() > 1500) || clock.elapsed() > 10000;
+            return stoppedByTest;
+        };
 
-        QCOMPARE(runHeadlessListen(options, 300, &microphone,
-                                   [&] { return stoppedByTest = clock.elapsed() > 10000; }, false, &settings,
-                                   m_registry.get(), out, err),
-                 0);
+        QCOMPARE(runHeadlessListen(options, 300, &microphone, stop, false, &settings, m_registry.get(), out, err), 0);
         QVERIFY(!stoppedByTest);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
         // Enter is not read here, so the hint leaves it out.

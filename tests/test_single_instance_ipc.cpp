@@ -112,7 +112,7 @@ protected:
             const QMutexLocker lock(&m_mutex);
             m_text.push_back(traits_type::to_char_type(character));
         }
-        return character;
+        return traits_type::not_eof(character);
     }
 
     std::streamsize xsputn(const char *text, std::streamsize count) override
@@ -1018,7 +1018,9 @@ private slots:
         std::unique_ptr<QThread> cli =
             startCommandLine(statusDecision(IpcCommand::WatchStatus, json), platform, out, err, exitCode);
         // Past the first look for an app, which finds none and prints idle.
-        QTRY_COMPARE_WITH_TIMEOUT(output.text(), printed.left(printed.indexOf(QLatin1Char('\n')) + 1), 5000);
+        // Waits without failing here: the watch runs until Speecher quits, so
+        // the checks come once it has.
+        (void)QTest::qWaitFor([&] { return output.text() == printed.left(printed.indexOf(QLatin1Char('\n')) + 1); }, 5000);
 
         auto ipc = std::make_unique<SingleInstanceIpc>(platform);
         QCOMPARE(ipc->listen(), IpcListenResult::Listening);
@@ -1038,7 +1040,7 @@ private slots:
         ipc->publishStatus(recording);
         // Quit only once the watch has printed both: Windows drops what the
         // watch has not read yet when Speecher's end of the pipe closes.
-        QTRY_COMPARE_WITH_TIMEOUT(output.text(), printed, 5000);
+        (void)QTest::qWaitFor([&] { return output.text() == printed; }, 5000);
         ipc.reset();
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
@@ -1072,12 +1074,13 @@ private slots:
         std::unique_ptr<QThread> cli =
             startCommandLine(statusDecision(IpcCommand::WatchStatus, false), platform, out, err, exitCode);
         // Running, it is not idle. Speecher quits only once the watch has
-        // printed that, as Windows drops what it has not read.
-        QTRY_COMPARE_WITH_TIMEOUT(output.text(), QStringLiteral("listening\n"), 10000);
-        QCOMPARE(watches, 2);
+        // printed that, as Windows drops what it has not read; the checks
+        // come once the watch has ended with it.
+        (void)QTest::qWaitFor([&] { return output.text() == QStringLiteral("listening\n"); }, 10000);
         ipc.reset();
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QCOMPARE(watches, 2);
         QCOMPARE(exitCode, 0);
         QCOMPARE(output.text(), QStringLiteral("listening\n"));
         QCOMPARE(QString::fromStdString(err.str()), QString());
