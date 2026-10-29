@@ -278,6 +278,8 @@ follows the same setting.
 - Icons only where they help find something: the sidebar, a file type, an
   action. No tinted icon squares, no icon on every row.
 - No gradients, glows, coloured shadows or decorative washes.
+  The popup's scatter ribbon is the one exception: its afterglow and soft
+  glow are part of the level animation.
 
 ## Consistency rules
 

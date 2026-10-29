@@ -1,6 +1,7 @@
 // The whole Quick UI as the daemon shows it, over the real Backend, in light
 // and dark: every page of Main and a few searches, every setup step and every
-// popup state load and draw without a QML warning.
+// popup state load and draw without a QML warning, and the popup's level
+// animation stays inside its bar.
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 
@@ -14,6 +15,7 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QGuiApplication>
 #include <QJSValue>
@@ -569,6 +571,35 @@ private slots:
                                                    PopupErrorAction{});
              }},
         });
+    }
+
+    // The popup's ribbon keeps every point finite and inside its strip, the
+    // bar, through a loud voice, a pause and reduced motion.
+    void ribbonStaysInsideTheBar()
+    {
+        RibbonFigure figure;
+        const QRectF strip(0, 0, 160, 44);
+        const struct {
+            qreal seconds;
+            bool listening;
+            qreal movement;
+        } phases[] = {{3, true, 1}, {1, false, 1}, {1, true, 0}};
+        qreal loosest = 0;
+        for (const auto &phase : phases) {
+            for (int frame = 0; frame < phase.seconds * 60; ++frame) {
+                // A level every 50 ms, a word starting every 100 ms.
+                if (frame % 3 == 0) {
+                    figure.hear(frame % 6 == 0 ? 0.95 : 0.05, phase.listening);
+                }
+                figure.step(1.0 / 60, strip.size(), phase.listening, phase.movement);
+                for (const RibbonFigure::Point &point : figure.points()) {
+                    QVERIFY2(strip.contains(point.at), qPrintable(QStringLiteral("%1, %2").arg(point.at.x()).arg(point.at.y())));
+                    loosest = std::max(loosest, point.looseness);
+                }
+            }
+        }
+        // The voice did scatter points, so the bounds were tested.
+        QVERIFY(loosest > 0.5);
     }
 
 private:
