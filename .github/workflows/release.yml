@@ -499,12 +499,8 @@ jobs:
           key: windows-2025-release
           save: ${{ github.event_name != 'pull_request' }}
 
-      # glslc for transcribe.cpp's Vulkan backend; the installer ships it. Only
-      # packaging builds it: its shaders are about a minute and a half that no
-      # compiler cache covers, and only a CMakeLists.txt change, which packages,
-      # changes them.
+      # glslc for transcribe.cpp's Vulkan backend; the installer ships it.
       - name: Install Vulkan SDK
-        if: env.PACKAGE == 'true'
         uses: humbletim/install-vulkan-sdk@v1.2
         with:
           version: 1.4.309.0
@@ -513,7 +509,6 @@ jobs:
       # The SDK does not ship a SPIRV-HeadersConfig.cmake that find_package
       # sees, so the header-only package comes from vcpkg.
       - name: Install SPIRV-Headers
-        if: env.PACKAGE == 'true'
         shell: pwsh
         run: |
           vcpkg install spirv-headers:x64-windows
@@ -523,9 +518,7 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: |
-          $vulkan = if ($env:PACKAGE -eq 'true') { 'ON' } else { 'OFF' }
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON "-DSPEECHER_LOCAL_SPEECH_VULKAN=$vulkan"
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh
