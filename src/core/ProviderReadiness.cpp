@@ -12,9 +12,6 @@ namespace speecher {
 
 namespace {
 
-const QString kLocal = QStringLiteral("local");
-const QString kEndpoint = QStringLiteral("endpoint");
-
 // A server on this computer or its network, which keeps answering without
 // internet: localhost, a bare or .local name, or a private address.
 bool isLocalNetworkServer(const QString &url)
@@ -113,7 +110,8 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
                               const AppSettings &settings, const LiveFacts &facts)
 {
     const FallbackProblem problem = fallbackProblem(role, id, settings, facts);
-    const bool localRunner = role == ProviderRole::Refinement && id == kLocal;
+    const std::optional<ProviderId> provider = parseProviderId(id);
+    const bool localRunner = role == ProviderRole::Refinement && provider == ProviderId::Local;
     ProviderReport report{id, role, label, providerSignsIn(id)};
     report.problemKind = problem;
     report.configured = problem != FallbackProblem::NoModel && problem != FallbackProblem::NoServer
@@ -130,7 +128,7 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
     }
     const bool signInUnseen = report.signsIn && !report.signedIn;
     const bool runnerUnchecked = localRunner && (!facts.runnersChecked || facts.detectingRunners);
-    const bool serverUnchecked = id == kEndpoint && !endpointCheck(role, facts).answered();
+    const bool serverUnchecked = provider == ProviderId::Endpoint && !endpointCheck(role, facts).answered();
     if (problem != FallbackProblem::None) {
         report.usable = false;
     } else if (!signInUnseen && !runnerUnchecked && !serverUnchecked) {
@@ -151,14 +149,15 @@ bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &pr
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,
                                 const LiveFacts &facts)
 {
-    if (providerId == kLocal && role == ProviderRole::Speech) {
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::Local && role == ProviderRole::Speech) {
         if (!facts.downloadedModels.contains(settings.speech.local.modelId)) {
             return FallbackProblem::NoModel;
         }
         return fallbackSkipsSpokenLanguage(settings.speech, providerId) ? FallbackProblem::SpokenLanguage
                                                                          : FallbackProblem::None;
     }
-    if (providerId == kLocal) {
+    if (provider == ProviderId::Local) {
         const QString runner = settings.refinement.localRunner.runner;
         // The Local Runner refuses to clean up without a model.
         if (!runner.isEmpty() && settings.refinement.localRunner.lacksModel()) {
@@ -172,10 +171,10 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     if (role == ProviderRole::Speech && fallbackSkipsSpokenLanguage(settings.speech, providerId)) {
         return FallbackProblem::SpokenLanguage;
     }
-    if (providerId == kEndpoint && serverUrl(role, settings).isEmpty()) {
+    if (provider == ProviderId::Endpoint && serverUrl(role, settings).isEmpty()) {
         return FallbackProblem::NoServer;
     }
-    if (providerId == kEndpoint) {
+    if (provider == ProviderId::Endpoint) {
         const EndpointCheckFacts check = endpointCheck(role, facts);
         if (check.answered() && !check.ok) {
             return FallbackProblem::CheckFailed;
@@ -191,7 +190,7 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
 
 bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings)
 {
-    if (providerId == kEndpoint) {
+    if (parseProviderId(providerId) == ProviderId::Endpoint) {
         return !isLocalNetworkServer(serverUrl(role, settings));
     }
     return providerSignsIn(providerId);
@@ -234,18 +233,17 @@ QList<QStringList> providerReportTable(const QList<ProviderReport> &reports)
 
 bool providerSignsIn(const QString &providerId)
 {
-    static const QStringList accounts{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
-                                      QStringLiteral("anthropic")};
-    return accounts.contains(providerId);
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    return provider && !providerAccountName(*provider).isEmpty();
 }
 
 QString signInName(const QString &providerId, const QString &label)
 {
-    if (providerId == QStringLiteral("codex")) {
-        return QStringLiteral("ChatGPT");
-    }
-    if (providerId == QStringLiteral("claude")) {
-        return QStringLiteral("Claude");
+    // A speech provider is named for the account it signs in to; a refinement
+    // provider keeps the label its registry gives it.
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::Claude || provider == ProviderId::Codex) {
+        return providerAccountName(*provider);
     }
     return label;
 }

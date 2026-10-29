@@ -1,6 +1,7 @@
 #include "providers/LocalSpeechTranscriber.h"
 
 #include "core/LocalModelCatalog.h"
+#include "core/ProviderTable.h"
 #include "providers/LocalModelStore.h"
 
 #include <algorithm>
@@ -63,7 +64,7 @@ LocalSpeechTranscriber::~LocalSpeechTranscriber()
 
 QString LocalSpeechTranscriber::id() const
 {
-    return QStringLiteral("local");
+    return providerKey(ProviderId::Local);
 }
 
 QString LocalSpeechTranscriber::label() const

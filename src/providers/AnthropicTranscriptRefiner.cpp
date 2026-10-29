@@ -1,6 +1,7 @@
 #include "providers/AnthropicTranscriptRefiner.h"
 
 #include "core/EndpointUrl.h"
+#include "core/ProviderTable.h"
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
@@ -78,7 +79,7 @@ AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
 
 QString AnthropicTranscriptRefiner::id() const
 {
-    return QStringLiteral("anthropic");
+    return providerKey(ProviderId::Anthropic);
 }
 
 QString AnthropicTranscriptRefiner::label() const

@@ -1,5 +1,7 @@
 #include "app/ShellCompletions.h"
 
+#include "core/ProviderTable.h"
+
 #include <QMap>
 
 #include <optional>
@@ -42,7 +44,7 @@ QMap<QString, std::optional<Values>> completedOptions(const CompletionChoices &c
         {QStringLiteral("--model"), Values{choices.speechProviders}},
         {QStringLiteral("--no-vocabulary"), flag},
         {QStringLiteral("--vocab-file"), Values{{}, {}, Paths::Files}},
-        {QStringLiteral("--refine"), Values{choices.refinementProviders + QStringList{QStringLiteral("none")}}},
+        {QStringLiteral("--refine"), Values{choices.refinementProviders + QStringList{kNoRefinementProvider}}},
         {QStringLiteral("--cleanup"), Values{{}, kCompletionCleanupLevels}},
         {QStringLiteral("--tone"), Values{{}, kCompletionTones}},
         {QStringLiteral("--output"),

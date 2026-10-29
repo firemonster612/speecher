@@ -2,6 +2,7 @@
 
 #include "app/ProviderAvailability.h"
 #include "core/ProviderChain.h"
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
@@ -35,7 +36,7 @@ std::optional<SpeechEndpointSettings> speechEndpointInUse(const AppSettings &set
 {
     const QStringList chain =
         providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
-    if (!chain.contains(QStringLiteral("endpoint")) || settings.speech.endpoint.baseUrl.isEmpty()) {
+    if (!chain.contains(providerKey(ProviderId::Endpoint)) || settings.speech.endpoint.baseUrl.isEmpty()) {
         return std::nullopt;
     }
     return connection(settings.speech.endpoint);
@@ -46,7 +47,7 @@ std::optional<RefinementEndpoint> refinementEndpointInUse(const AppSettings &set
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings.refinement);
     const QStringList chain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
                                             settings.refinement.fallbackProviderIds);
-    if (!chain.contains(QStringLiteral("endpoint")) || endpoint.apiBase.isEmpty()) {
+    if (!chain.contains(providerKey(ProviderId::Endpoint)) || endpoint.apiBase.isEmpty()) {
         return std::nullopt;
     }
     return connection(endpoint);
@@ -217,7 +218,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
     });
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     if (auto *local = qobject_cast<LocalSpeechTranscriber *>(
-            m_providers.speechProvider(QStringLiteral("local")))) {
+            m_providers.speechProvider(providerKey(ProviderId::Local)))) {
         connect(local, &LocalSpeechTranscriber::speedTestFinished, this,
                 [this](const QString &modelId, double seconds, const QString &error) {
                     m_speedTestModel.clear();
@@ -398,7 +399,7 @@ std::optional<std::pair<qint64, qint64>> LocalSetup::downloadProgress(const QStr
 void LocalSetup::runSpeedTest(const QString &modelId)
 {
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
-    auto *local = qobject_cast<LocalSpeechTranscriber *>(m_providers.speechProvider(QStringLiteral("local")));
+    auto *local = qobject_cast<LocalSpeechTranscriber *>(m_providers.speechProvider(providerKey(ProviderId::Local)));
     if (!local || m_speedTestModel == modelId || m_speedTestQueue.contains(modelId)) {
         return;
     }
@@ -477,7 +478,8 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
     ModelState state;
     state.downloading = m_models.isDownloading(model.id);
     state.downloaded = !state.downloading && m_models.isDownloaded(model);
-    state.inUse = state.downloaded && speech.providerId == QStringLiteral("local") && speech.local.modelId == model.id;
+    state.inUse = state.downloaded && parseProviderId(speech.providerId) == ProviderId::Local
+        && speech.local.modelId == model.id;
     state.problem = m_downloadErrors.value(model.id, m_speedTestErrors.value(model.id));
     const auto measured = measuredSeconds(model.id);
     const auto estimate = m_hardwareKnown ? estimatedSpeed(model, m_hardware.profile) : std::nullopt;
@@ -618,7 +620,7 @@ QString LocalSetup::endpointStatus(const EndpointState &state)
 
 std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole role) const
 {
-    const QString local = QStringLiteral("local");
+    const QString local = providerKey(ProviderId::Local);
     if (role == ProviderRole::Speech) {
         const LocalModel &model = suggestedModel();
         if (fit(model) != ModelFit::Fits || !localModelListensFor(model, m_settings.spokenLanguage())) {

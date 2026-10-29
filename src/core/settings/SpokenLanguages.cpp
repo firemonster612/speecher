@@ -1,6 +1,7 @@
 #include "core/settings/SpokenLanguages.h"
 
 #include "core/LocalModelCatalog.h"
+#include "core/ProviderTable.h"
 
 #include <QLocale>
 
@@ -48,16 +49,17 @@ QString englishName(const QString &language)
 
 QStringList spokenLanguages(const SpeechSettings &speech)
 {
-    if (speech.providerId == QStringLiteral("claude")) {
+    const std::optional<ProviderId> provider = parseProviderId(speech.providerId);
+    if (provider == ProviderId::Claude) {
         return withAutomatic(claudeVoiceLanguages);
     }
-    if (speech.providerId == QStringLiteral("codex")) {
+    if (provider == ProviderId::Codex) {
         return withAutomatic(codexLanguages);
     }
-    if (speech.providerId == QStringLiteral("endpoint")) {
+    if (provider == ProviderId::Endpoint) {
         return withAutomatic(endpointLanguages());
     }
-    if (speech.providerId == QStringLiteral("local")) {
+    if (provider == ProviderId::Local) {
         const LocalModel *model = findLocalModel(speech.local.modelId);
         if (!model) {
             return {};
@@ -76,7 +78,7 @@ QString requestedSpokenLanguage(const QString &language)
 bool listensForSpokenLanguage(const SpeechSettings &speech)
 {
     const LocalModel *model =
-        speech.providerId == QStringLiteral("local") ? findLocalModel(speech.local.modelId) : nullptr;
+        parseProviderId(speech.providerId) == ProviderId::Local ? findLocalModel(speech.local.modelId) : nullptr;
     if (model) {
         return localModelListensFor(*model, speech.language);
     }
@@ -90,7 +92,7 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
         return {};
     }
     const LocalModel *model =
-        speech.providerId == QStringLiteral("local") ? findLocalModel(speech.local.modelId) : nullptr;
+        parseProviderId(speech.providerId) == ProviderId::Local ? findLocalModel(speech.local.modelId) : nullptr;
     const QString service = model ? model->name : serviceLabel;
     if (speech.language == QLatin1String(kAutomaticSpokenLanguage)) {
         return QStringLiteral("%1 can't detect the language. Choose the language you speak.").arg(service);

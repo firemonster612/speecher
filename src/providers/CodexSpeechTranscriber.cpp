@@ -1,5 +1,7 @@
 #include "providers/CodexSpeechTranscriber.h"
 
+#include "core/ProviderTable.h"
+
 #include "providers/CliProxyCredentials.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
@@ -67,7 +69,7 @@ CodexSpeechTranscriber::CodexSpeechTranscriber(QObject *parent)
 
 QString CodexSpeechTranscriber::id() const
 {
-    return QStringLiteral("codex");
+    return providerKey(ProviderId::Codex);
 }
 
 QString CodexSpeechTranscriber::label() const

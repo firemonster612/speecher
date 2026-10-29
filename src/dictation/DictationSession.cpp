@@ -1,5 +1,6 @@
 #include "dictation/DictationSession.h"
 
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WordPreview.h"
@@ -439,7 +440,7 @@ bool DictationSession::selectProviders()
         failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("speech")});
         return false;
     }
-    if (settings.refinement.providerId != QStringLiteral("none")) {
+    if (settings.refinement.providerId != kNoRefinementProvider) {
         selectTranscriptRefiner(settings.refinement.providerId, nullptr);
     }
     m_speechChain = providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
@@ -487,7 +488,7 @@ void DictationSession::prepareSpeechProvider()
         std::optional<RefinementRefreshJob> refinerRefreshJob;
         bool refinerRefreshRequired = false;
         const RefinementSettings refinement = m_sessionSettings->refinement;
-        if (m_state == DictationState::Starting && m_refiner && refinement.providerId != QStringLiteral("none")
+        if (m_state == DictationState::Starting && m_refiner && refinement.providerId != kNoRefinementProvider
             && !m_refinerRefreshed && !offlineFor(ProviderRole::Refinement, refinement.providerId)) {
             refinerRefreshJob = m_refiner->createRefreshJob(refinement);
             refinerRefreshRequired = refinerRefreshJob ? refinerRefreshJob->showRefreshIndicator
@@ -1231,7 +1232,7 @@ void DictationSession::beginRefinement(quint64 generation)
     m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
-    if (settings.refinement.providerId == QStringLiteral("none")
+    if (settings.refinement.providerId == kNoRefinementProvider
         || refinement.style == QStringLiteral("none")) {
         if (pipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("Selection editing requires refinement to be enabled"));

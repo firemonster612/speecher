@@ -12,11 +12,8 @@ bool isChainProviderId(ProviderRole role, const QString &id)
         return true;
     }
 #endif
-    static const QStringList speech{QStringLiteral("claude"), QStringLiteral("codex"),
-                                    QStringLiteral("local"), QStringLiteral("endpoint")};
-    static const QStringList refinement{QStringLiteral("openai"), QStringLiteral("anthropic"),
-                                        QStringLiteral("local"), QStringLiteral("endpoint")};
-    return (role == ProviderRole::Speech ? speech : refinement).contains(id);
+    const std::optional<ProviderId> provider = parseProviderId(id);
+    return provider && providerServes(*provider, role);
 }
 
 QStringList normalizedFallbackProviders(ProviderRole role,
@@ -24,7 +21,7 @@ QStringList normalizedFallbackProviders(ProviderRole role,
                                         const QStringList &fallbacks)
 {
     QStringList kept;
-    if (role == ProviderRole::Refinement && primary == QStringLiteral("none")) {
+    if (role == ProviderRole::Refinement && primary == kNoRefinementProvider) {
         return kept;
     }
     for (const QString &id : fallbacks) {
@@ -40,7 +37,7 @@ QStringList normalizedFallbackProviders(ProviderRole role,
 
 QStringList providerChain(ProviderRole role, const QString &primary, const QStringList &fallbacks)
 {
-    if (role == ProviderRole::Refinement && primary == QStringLiteral("none")) {
+    if (role == ProviderRole::Refinement && primary == kNoRefinementProvider) {
         return {};
     }
     QStringList chain{primary};

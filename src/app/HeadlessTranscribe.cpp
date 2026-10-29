@@ -1,5 +1,6 @@
 #include "app/HeadlessTranscribe.h"
 
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "platform/audio/AudioPcmConverter.h"
@@ -87,7 +88,7 @@ QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegist
     if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
         return QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(resolved.speechProviderId);
     }
-    if (resolved.refinementProviderId != QStringLiteral("none")
+    if (resolved.refinementProviderId != kNoRefinementProvider
         && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
         return QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
             .arg(resolved.refinementProviderId);
@@ -266,7 +267,7 @@ int runHeadlessTranscribe(const QStringList &files,
     // Subtitles come from the timed Raw Transcript, so refining would be a
     // call whose text nobody sees.
     if (options.format != TranscriptFormat::Text) {
-        sessionOptions.refinementProviderId = QStringLiteral("none");
+        sessionOptions.refinementProviderId = kNoRefinementProvider;
     }
     const bool refines = refinesTranscripts(sessionOptions, settings->snapshot().refinement);
     const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;

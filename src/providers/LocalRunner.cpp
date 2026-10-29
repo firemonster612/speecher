@@ -1,4 +1,6 @@
 #include "providers/LocalRunner.h"
+
+#include "core/ProviderTable.h"
 #include "providers/EndpointRequest.h"
 
 #include "providers/BlockingHttp.h"
@@ -161,7 +163,7 @@ LocalRunnerRefiner::LocalRunnerRefiner(QObject *parent)
 
 QString LocalRunnerRefiner::id() const
 {
-    return QStringLiteral("local");
+    return providerKey(ProviderId::Local);
 }
 
 QString LocalRunnerRefiner::label() const
