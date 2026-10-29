@@ -103,7 +103,7 @@ jobs:
       # only the Qt QML modules this list names.
       - name: Check the packages carry every Qt QML module the UI imports
         run: |
-          missing="$(grep -rhoE '^\s*import Qt[A-Za-z0-9.]*' src/frontend/quick | awk '{print $2}' | tr . / | sort -u \
+          missing="$(grep -rhoE '^\s*\.?import Qt[A-Za-z0-9.]*' src/frontend/quick | awk '{print $2}' | tr . / | sort -u \
             | grep -vxF -f <(grep -v '^#' packaging/qt-qml-modules.txt | grep .) || true)"
           if [ -n "$missing" ]; then
             echo "Add these to packaging/qt-qml-modules.txt:" >&2
