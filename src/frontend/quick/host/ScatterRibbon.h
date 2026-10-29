@@ -76,10 +76,10 @@ class ScatterRibbon : public QQuickPaintedItem {
     // Theme.movement: at 0 only the brightness follows the voice.
     Q_PROPERTY(qreal movement MEMBER m_movement)
     // Theme.dark: the dots and glow are a little stronger on a dark sheet.
-    Q_PROPERTY(bool dark MEMBER m_dark)
-    Q_PROPERTY(QColor color MEMBER m_color)
-    Q_PROPERTY(QColor freedColor MEMBER m_freedColor)
-    Q_PROPERTY(QColor pausedColor MEMBER m_pausedColor)
+    Q_PROPERTY(bool dark MEMBER m_dark NOTIFY paletteChanged)
+    Q_PROPERTY(QColor color MEMBER m_color NOTIFY paletteChanged)
+    Q_PROPERTY(QColor freedColor MEMBER m_freedColor NOTIFY paletteChanged)
+    Q_PROPERTY(QColor pausedColor MEMBER m_pausedColor NOTIFY paletteChanged)
     // Whether advance still changes anything: while listening, and while it
     // settles once paused.
     Q_PROPERTY(bool moving READ moving NOTIFY movingChanged)
@@ -97,10 +97,14 @@ public:
     Q_INVOKABLE void advance(qreal seconds);
     void paint(QPainter *painter) override;
 
+protected:
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
+
 signals:
     void levelChanged();
     void listeningChanged();
     void movingChanged();
+    void paletteChanged();
 
 private:
     // How dim the paused figure gets before it counts as still.

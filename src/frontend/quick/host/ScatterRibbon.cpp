@@ -25,8 +25,6 @@ constexpr qreal kDriftX = 14;
 constexpr qreal kDriftY = 5;
 // A level under this is the microphone's own noise.
 constexpr qreal kSilent = 0.02;
-// How often the level arrives (s).
-constexpr qreal kLevelTick = 0.05;
 // How long a moving point's afterglow lasts (s).
 constexpr qreal kAfterglow = 0.06;
 // The glow is the trail shrunk this many px to one and stretched back,
@@ -113,7 +111,6 @@ void RibbonFigure::hear(qreal level, bool listening)
     if (listening && onset > 0.08) {
         m_burst = std::min(1.2, m_burst + onset * 3);
     }
-    m_smoothed += (shown - m_smoothed) * (1 - std::exp(-kLevelTick / (shown > m_smoothed ? 0.04 : 0.16)));
 }
 
 void RibbonFigure::step(qreal dt, QSizeF strip, bool listening, qreal movement)
@@ -126,6 +123,10 @@ void RibbonFigure::step(qreal dt, QSizeF strip, bool listening, qreal movement)
         return;
     }
 
+    // Where the level has been, eased frame by frame, so a word start after
+    // a quiet stretch counts from the quiet even when no new level arrived.
+    const qreal shown = m_level < kSilent ? 0 : std::sqrt(m_level);
+    m_smoothed = follow(m_smoothed, shown, shown > m_smoothed ? 120 : 480, dt);
     // raw^0.7 keeps the voice's range.
     const qreal voice = listening && m_level >= kSilent ? std::pow(m_level, 0.7) : 0;
     m_envelope = follow(m_envelope, voice, voice > m_envelope ? 30 : 120, dt);
@@ -169,6 +170,28 @@ void RibbonFigure::step(qreal dt, QSizeF strip, bool listening, qreal movement)
 ScatterRibbon::ScatterRibbon(QQuickItem *parent)
     : QQuickPaintedItem(parent)
 {
+    // A still figure draws no more frames, so it redraws itself in the new colours.
+    connect(this, &ScatterRibbon::paletteChanged, this, [this] {
+        if (!moving() && !m_trail.isNull()) {
+            m_trail.fill(Qt::transparent);
+            drawTrail(0);
+            update();
+        }
+    });
+}
+
+void ScatterRibbon::itemChange(ItemChange change, const ItemChangeData &data)
+{
+    // Each showing starts from the still figure, not where the last one ended.
+    if (change == ItemVisibleHasChanged && data.boolValue) {
+        const bool wasMoving = moving();
+        m_figure = RibbonFigure();
+        m_trail = QImage();
+        if (moving() != wasMoving) {
+            emit movingChanged();
+        }
+    }
+    QQuickPaintedItem::itemChange(change, data);
 }
 
 void ScatterRibbon::setLevel(qreal level)
@@ -224,10 +247,15 @@ void ScatterRibbon::drawTrail(qreal dt)
         m_trail = trail;
     }
 
-    {
-        QPainter painter(&m_trail);
-        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-        painter.fillRect(QRectF(QPointF(), size()), QColor(0, 0, 0, qRound(255 * std::exp(-dt / kAfterglow))));
+    // Rounds down, so a fading pixel reaches nothing rather than lingering
+    // as a faint haze where points have been.
+    const uint keep = uint(256 * std::exp(-dt / kAfterglow));
+    for (int y = 0; y < m_trail.height(); ++y) {
+        auto *line = reinterpret_cast<QRgb *>(m_trail.scanLine(y));
+        for (int x = 0; x < m_trail.width(); ++x) {
+            const QRgb p = line[x];
+            line[x] = qRgba(qRed(p) * keep >> 8, qGreen(p) * keep >> 8, qBlue(p) * keep >> 8, qAlpha(p) * keep >> 8);
+        }
     }
 
     const qreal dim = m_figure.dim(), voice = m_figure.envelope();

@@ -18,7 +18,9 @@
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QGuiApplication>
+#include <QImage>
 #include <QJSValue>
+#include <QPainter>
 #include <QPointer>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -600,6 +602,28 @@ private slots:
         }
         // The voice did scatter points, so the bounds were tested.
         QVERIFY(loosest > 0.5);
+    }
+
+    // Once paused and still, the ribbon draws no more frames, yet takes a
+    // new theme's colours.
+    void stillRibbonTakesNewColours()
+    {
+        ScatterRibbon ribbon;
+        ribbon.setSize({160, 44});
+        ribbon.setProperty("pausedColor", QColor(Qt::black));
+        while (ribbon.moving()) {
+            ribbon.advance(1.0 / 60);
+        }
+        const auto drawn = [&ribbon] {
+            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            ribbon.paint(&painter);
+            return image;
+        };
+        const QImage before = drawn();
+        ribbon.setProperty("pausedColor", QColor(Qt::white));
+        QVERIFY(drawn() != before);
     }
 
 private:
