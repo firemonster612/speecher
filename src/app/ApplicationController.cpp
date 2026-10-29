@@ -20,7 +20,6 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
-#include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
@@ -303,7 +302,12 @@ ApplicationController::ApplicationController(bool popupOnly,
         emit lastRecordChanged();
     });
 
-    connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
+    connect(m_ipc, &SingleInstanceIpc::requestReceived, this, &ApplicationController::handleIpcRequest);
+    connect(m_ipc, &SingleInstanceIpc::requestRefused, this, [this](const IpcResponse &refusal, QLocalSocket *socket) {
+        IpcResponse reply = refusal;
+        reply.state = response().state;
+        SingleInstanceIpc::writeResponse(socket, reply);
+    });
     // Not on each tick of the recording's duration, which every line carries.
     const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
     m_statusPublishers = {
@@ -791,7 +795,7 @@ bool ApplicationController::removeGlobalShortcutRegistration(QString *error, Glo
     return shortcutBinder(role)->removeRegistration(error);
 }
 
-bool ApplicationController::startIpc(QString *error)
+IpcListenResult ApplicationController::startIpc(QString *error)
 {
     return m_ipc->listen(error);
 }
@@ -1029,10 +1033,15 @@ void ApplicationController::toggle()
 
 void ApplicationController::startListening()
 {
+    startListeningWith({});
+}
+
+void ApplicationController::startListeningWith(const SessionOverrides &overrides)
+{
     if (!ensureSetupCompleted()) {
         return;
     }
-    startWithMicrophone([this] { m_session->startListening(); });
+    startWithMicrophone([this, overrides] { m_session->startListeningWith(overrides); });
 }
 
 // A start still waiting for the push-to-talk delay or the microphone grant
@@ -1105,45 +1114,23 @@ void ApplicationController::quitApplication()
     emit quitRequested();
 }
 
-void ApplicationController::handleIpcCommand(const QString &command,
-                                             const QString &outputFormat,
-                                             QLocalSocket *socket,
-                                             const QStringList &files,
-                                             const QString &writingProfile,
-                                             const QString &spokenLanguage,
-                                             const QStringList &terms,
-                                             bool microphoneOnly)
+void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSocket *socket)
 {
-    SessionOverrides overrides;
-    if (!outputFormat.isEmpty()) {
-        if (outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
-            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown output format")));
-            return;
-        }
-        overrides.outputFormat = outputFormatFromString(outputFormat);
-    }
-    if (!writingProfile.isEmpty()) {
-        if (offeredWritingProfile(writingProfile, m_settings->writingProfileSettings(), {}).isEmpty()) {
-            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
-            return;
-        }
-        overrides.writingProfile = writingProfile;
-    }
-    if (!spokenLanguage.isEmpty()) {
-        if (!isKnownSpokenLanguage(spokenLanguage)) {
-            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown spoken language")));
-            return;
-        }
-        overrides.spokenLanguage = spokenLanguage;
+    const SessionOverrides &overrides = request.overrides;
+    if (overrides.writingProfile
+        && offeredWritingProfile(*overrides.writingProfile, m_settings->writingProfileSettings(), {}).isEmpty()) {
+        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
+        return;
     }
     // toggle and start echo the overrides they read; see IpcResponse::writingProfile.
-    const auto acknowledge = [this, socket, &writingProfile, &spokenLanguage] {
+    const auto acknowledge = [this, socket, &overrides] {
         IpcResponse reply = response();
-        reply.writingProfile = writingProfile;
-        reply.spokenLanguage = spokenLanguage;
+        reply.writingProfile = overrides.writingProfile.value_or(QString());
+        reply.spokenLanguage = overrides.spokenLanguage.value_or(QString());
         SingleInstanceIpc::writeResponse(socket, reply);
     };
-    if (command == QStringLiteral("toggle")) {
+    switch (request.command) {
+    case IpcCommand::Toggle:
         if (!ensureSetupCompleted()) {
             acknowledge();
             return;
@@ -1154,36 +1141,41 @@ void ApplicationController::handleIpcCommand(const QString &command,
             startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
         }
         acknowledge();
-    } else if (command == QStringLiteral("start")) {
-        if (!ensureSetupCompleted()) {
-            acknowledge();
-            return;
-        }
-        startWithMicrophone([this, overrides] { m_session->startListeningWith(overrides); });
+        return;
+    case IpcCommand::Start:
+        startListeningWith(overrides);
         acknowledge();
-    } else if (command == QStringLiteral("stop")) {
+        return;
+    case IpcCommand::Stop:
         stopListening();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("cancel")) {
+        return;
+    case IpcCommand::Cancel:
         cancel();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("showMain")) {
+        return;
+    case IpcCommand::ShowMain:
         showMain();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("showSettings")) {
+        return;
+    case IpcCommand::ShowSettings:
         showSettings();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("showSetup")) {
+        return;
+    case IpcCommand::ShowSetup:
         showSetup();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("transcribe")) {
-        showTranscribeFiles(files);
+        return;
+    case IpcCommand::Transcribe:
+        showTranscribeFiles(request.files);
         SingleInstanceIpc::writeResponse(socket, response());
+        return;
 #ifdef SPEECHER_E2E_HOOKS
-    } else if (command == QStringLiteral("e2eUpdateCheck")) {
+    case IpcCommand::E2eUpdateCheck:
         m_updates->checkForUpdates(m_settings->updateChannel());
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("e2eUpdateStatus")) {
+        return;
+    case IpcCommand::E2eUpdateStatus:
         SingleInstanceIpc::writeResponse(socket, {
             true,
             QString::fromLatin1(QMetaEnum::fromType<UpdateController::State>().valueToKey(int(m_updates->state()))),
@@ -1194,51 +1186,66 @@ void ApplicationController::handleIpcCommand(const QString &command,
                      m_updates->bannerVisible() ? QStringLiteral("true") : QStringLiteral("false"))
                 .arg(QCoreApplication::applicationPid()),
         });
-    } else if (command == QStringLiteral("e2ePause")) {
+        return;
+    case IpcCommand::E2ePause:
         m_session->pause();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("e2eResume")) {
+        return;
+    case IpcCommand::E2eResume:
         m_session->resume();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("e2eUpdateAccept")) {
+        return;
+    case IpcCommand::E2eUpdateAccept:
         SingleInstanceIpc::writeResponse(socket, response());
         m_updates->installAndRestart();
+        return;
 #endif
-    } else if (command == QStringLiteral("recordStart")) {
-        startRecording(files.value(0), terms, microphoneOnly, socket);
-    } else if (command == QStringLiteral("recordStatus")) {
+    case IpcCommand::RecordStart:
+        startRecording(request.files.value(0), request.terms, request.microphoneOnly, socket);
+        return;
+    case IpcCommand::RecordStatus: {
         IpcResponse reply = response();
         reply.recording = m_recording->status();
         SingleInstanceIpc::writeResponse(socket, reply);
-    } else if (command == QStringLiteral("recordStop")) {
+        return;
+    }
+    case IpcCommand::RecordStop:
         if (!m_recording->isRecording()) {
             SingleInstanceIpc::writeResponse(socket, response(false, notRecordingText()));
             return;
         }
         m_recordStopReplies.append(socket);
         m_recording->stop();
-    } else if (command == QStringLiteral("status")) {
+        return;
+    case IpcCommand::Status:
         SingleInstanceIpc::writeResponse(socket, statusResponse());
-    } else if (command == QStringLiteral("watchStatus")) {
+        return;
+    case IpcCommand::WatchStatus:
         m_ipc->addStatusWatcher(socket, statusResponse());
-    } else if (command == QStringLiteral("last")) {
+        return;
+    case IpcCommand::Last: {
         IpcResponse reply = response(!m_lastTranscript.isEmpty());
         reply.text = m_lastTranscript;
         SingleInstanceIpc::writeResponse(socket, reply);
-    } else if (command == QStringLiteral("providers")) {
+        return;
+    }
+    case IpcCommand::Providers: {
         IpcResponse reply = response();
         reply.text = QString::fromUtf8(providerReportsJson(providerReports(*m_settings, *m_localSetup, *m_providers)));
         SingleInstanceIpc::writeResponse(socket, reply);
-    } else if (command == QStringLiteral("addVocabulary")) {
-        const std::optional<QStringList> held = m_settings->addVocabularyTerms(terms);
+        return;
+    }
+    case IpcCommand::AddVocabulary: {
+        const std::optional<QStringList> held = m_settings->addVocabularyTerms(request.terms);
         IpcResponse reply = response(held.has_value());
         reply.skippedTerms = held.value_or(QStringList());
         SingleInstanceIpc::writeResponse(socket, reply);
-    } else if (command == QStringLiteral("quit")) {
+        return;
+    }
+    case IpcCommand::Quit:
         SingleInstanceIpc::writeResponse(socket, response());
         quitApplication();
-    } else {
-        SingleInstanceIpc::writeResponse(socket, response(false, kUnknownIpcCommandMessage));
+        return;
     }
 }
 

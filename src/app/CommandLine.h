@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/HeadlessTranscribe.h"
+#include "app/IpcMessages.h"
 #include "dictation/DictationTypes.h"
 
 #include <QString>
@@ -36,7 +37,7 @@ struct CommandLineDecision {
     LaunchMode mode = LaunchMode::RunGui;
     int exitCode = 0;
     // RunCli: the IPC command to send.
-    QString ipcCommand;
+    IpcCommand ipcCommand = IpcCommand::Status;
     // RunCli's addVocabulary: the terms to save. record start: --vocab-file's
     // terms, for that recording only.
     QStringList vocabularyTerms;

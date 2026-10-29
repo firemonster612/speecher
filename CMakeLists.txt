@@ -574,6 +574,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
+  src/app/IpcMessages.cpp
   src/app/ManifestUpdater.cpp
   src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
@@ -602,6 +603,7 @@ set(SPEECHER_APP_HEADERS
   src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
+  src/app/IpcMessages.h
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h

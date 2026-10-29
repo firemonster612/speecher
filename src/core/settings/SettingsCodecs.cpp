@@ -1210,7 +1210,8 @@ void SettingsCodecs::setOutputMethod(const QString &value)
 
 OutputFormat SettingsCodecs::outputFormat() const
 {
-    return outputFormatFromString(value(SettingsKeys::OutputFormat, QStringLiteral("plain")).toString());
+    return outputFormatFromString(value(SettingsKeys::OutputFormat, QStringLiteral("plain")).toString())
+        .value_or(OutputFormat::PlainText);
 }
 
 void SettingsCodecs::setOutputFormat(OutputFormat value)

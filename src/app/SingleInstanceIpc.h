@@ -1,8 +1,7 @@
 #pragma once
 
+#include "app/IpcMessages.h"
 #include "app/PlatformComposition.h"
-#include "dictation/DictationTypes.h"
-#include "recording/RecordingStatus.h"
 
 #include <QDeadlineTimer>
 #include <QLocalServer>
@@ -18,32 +17,22 @@
 
 namespace speecher {
 
-struct IpcResponse {
-    bool ok = false;
-    QString state;
-    QString message;
-    // The Writing Profile id and Spoken Language a toggle or start request
-    // carried, echoed so a client can tell an instance that predates
-    // --profile or --language, which ignores them.
-    QString writingProfile;
-    QString spokenLanguage;
-    // The last transcript, in reply to the last command.
-    QString text;
-    // The terms an addVocabulary request carried that the list held already.
-    QStringList skippedTerms;
-    // The record commands' answer: the recording now, or the one stopped.
-    std::optional<RecordingStatus> recording;
-};
-
-// The message an instance answers a command it doesn't know with. Clients
-// compare against it to tell an instance older than their command.
-inline const QString kUnknownIpcCommandMessage = QStringLiteral("Unknown command");
+// How long a client waits for the running instance to take a request and
+// to answer it.
+inline constexpr int kIpcTimeoutMs = 2500;
 
 enum class IpcCommandResult {
     Sent,
     Unavailable,
     NoResponse,
     InvalidResponse,
+};
+
+enum class IpcListenResult {
+    Listening,
+    // Another Speecher holds the socket; it answers requests in our place.
+    AnotherInstance,
+    Failed,
 };
 
 class SingleInstanceIpc : public QObject {
@@ -53,44 +42,15 @@ public:
     explicit SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform = {}, QObject *parent = nullptr);
     ~SingleInstanceIpc() override;
 
-    bool listen(QString *error = nullptr);
+    // error says why when the result is not Listening.
+    IpcListenResult listen(QString *error = nullptr);
     QString socketName() const;
     static QString socketName(std::shared_ptr<const SingleInstancePlatform> platform);
-    static IpcCommandResult sendCommandDetailed(const QString &command,
-                                                IpcResponse *response,
-                                                int timeoutMs = 2500,
-                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                                QString *error = nullptr);
-    static IpcCommandResult sendCommandDetailed(const QString &command,
-                                                const SessionOverrides &overrides,
-                                                IpcResponse *response,
-                                                int timeoutMs = 2500,
-                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                                QString *error = nullptr);
-    // files rides along as the request's "files" array: the transcribe
-    // command's files.
-    static IpcCommandResult sendCommandDetailed(const QString &command,
-                                                const SessionOverrides &overrides,
-                                                const QStringList &files,
-                                                IpcResponse *response,
-                                                int timeoutMs = 2500,
-                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                                QString *error = nullptr);
-    // The recordStart command: path (empty for the default file) as the
-    // "files" array, terms as "terms", and "microphoneOnly" for --mic-only.
-    static IpcCommandResult sendRecordStart(const QString &path,
-                                            const QStringList &terms,
-                                            bool microphoneOnly,
-                                            IpcResponse *response,
-                                            int timeoutMs,
-                                            std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                            QString *error = nullptr);
-    // The addVocabulary command, with terms as the request's "terms" array.
-    static IpcCommandResult sendVocabularyTerms(const QStringList &terms,
-                                                IpcResponse *response,
-                                                int timeoutMs = 2500,
-                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                                QString *error = nullptr);
+    static IpcCommandResult sendRequest(const IpcRequest &request,
+                                        IpcResponse *response,
+                                        int timeoutMs = kIpcTimeoutMs,
+                                        std::shared_ptr<const SingleInstancePlatform> platform = {},
+                                        QString *error = nullptr);
     // The watchStatus command, for status --watch: calls onStatus with each
     // status the running instance writes, the current one at once and then
     // one on every change, until the instance closes the connection or
@@ -98,7 +58,7 @@ public:
     // none is running, NoResponse when one closes the connection or stays
     // silent before answering.
     static IpcCommandResult watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
-                                        int timeoutMs = 2500,
+                                        int timeoutMs = kIpcTimeoutMs,
                                         std::shared_ptr<const SingleInstancePlatform> platform = {},
                                         QString *error = nullptr);
 
@@ -108,14 +68,11 @@ public:
     void publishStatus(const IpcResponse &status);
 
 signals:
-    void commandReceived(const QString &command,
-                         const QString &outputFormat,
-                         QLocalSocket *socket,
-                         const QStringList &files,
-                         const QString &writingProfile,
-                         const QString &spokenLanguage,
-                         const QStringList &terms,
-                         bool microphoneOnly);
+    // Answer each with writeResponse.
+    void requestReceived(const IpcRequest &request, QLocalSocket *socket);
+    // A request the instance cannot serve, and the answer it gets once the
+    // instance fills in its state.
+    void requestRefused(const IpcResponse &refusal, QLocalSocket *socket);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

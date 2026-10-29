@@ -19,8 +19,6 @@
 namespace speecher {
 namespace {
 
-const QString kProvidersCommand = QStringLiteral("providers");
-
 QString roleName(ProviderRole role)
 {
     return role == ProviderRole::Speech ? QStringLiteral("speech") : QStringLiteral("refinement");
@@ -135,9 +133,9 @@ std::optional<QList<ProviderReport>> runningAppProviderReports(
 {
     IpcResponse response;
     const IpcCommandResult result =
-        SingleInstanceIpc::sendCommandDetailed(kProvidersCommand, &response, 2500, platform, error);
-    // sendCommandDetailed() says why an app that runs didn't answer.
-    if (result != IpcCommandResult::Sent || response.message == kUnknownIpcCommandMessage) {
+        SingleInstanceIpc::sendRequest({IpcCommand::Providers}, &response, kIpcTimeoutMs, platform, error);
+    // sendRequest() says why an app that runs didn't answer.
+    if (result != IpcCommandResult::Sent || response.unknownCommand) {
         return std::nullopt;
     }
     std::optional<QList<ProviderReport>> reports = reportsFromJson(response.text);

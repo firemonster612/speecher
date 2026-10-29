@@ -36,14 +36,12 @@ std::optional<OutputFormat> requestedOutputFormat(const QStringList &arguments, 
         }
         return std::nullopt;
     }
-    const QString value = arguments.at(optionIndex + 1).trimmed().toLower();
-    if (value != QStringLiteral("plain") && value != QStringLiteral("html")) {
-        if (error) {
-            *error = QStringLiteral("Unknown output format: %1").arg(value);
-        }
-        return std::nullopt;
+    const QString value = arguments.at(optionIndex + 1);
+    const std::optional<OutputFormat> format = outputFormatFromString(value);
+    if (!format && error) {
+        *error = QStringLiteral("Unknown output format: %1").arg(value.trimmed().toLower());
     }
-    return outputFormatFromString(value);
+    return format;
 }
 
 // Starts a Speecher that outlives this command. Its standard streams go to the
@@ -769,7 +767,7 @@ QString parseVocabularyArguments(const QStringList &arguments, CommandLineDecisi
         return QStringLiteral("vocabulary add needs at least one term");
     }
     decision->mode = LaunchMode::RunCli;
-    decision->ipcCommand = QStringLiteral("addVocabulary");
+    decision->ipcCommand = IpcCommand::AddVocabulary;
     decision->vocabularyTerms = terms;
     return {};
 }
@@ -787,8 +785,8 @@ int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &pla
 {
     IpcResponse response;
     QString ipcError;
-    const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(
-        QStringLiteral("last"), &response, 2500, platform, &ipcError);
+    const IpcCommandResult ipcResult =
+        SingleInstanceIpc::sendRequest({IpcCommand::Last}, &response, kIpcTimeoutMs, platform, &ipcError);
     if (ipcResult == IpcCommandResult::Unavailable) {
         return 1;
     }
@@ -796,7 +794,7 @@ int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &pla
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-    if (response.message == kUnknownIpcCommandMessage) {
+    if (response.unknownCommand) {
         return reportOlderInstance("doesn't know `last`");
     }
     if (response.text.isEmpty()) {
@@ -813,14 +811,16 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
 {
     IpcResponse response;
     QString ipcError;
-    const IpcCommandResult ipcResult = SingleInstanceIpc::sendVocabularyTerms(terms, &response, 2500, platform, &ipcError);
+    IpcRequest request{IpcCommand::AddVocabulary};
+    request.terms = terms;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendRequest(request, &response, kIpcTimeoutMs, platform, &ipcError);
     std::optional<QStringList> held;
     if (ipcResult == IpcCommandResult::Unavailable) {
         held = SettingsCodecs::addVocabularyTerms(terms);
     } else if (ipcResult != IpcCommandResult::Sent) {
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
-    } else if (response.message == kUnknownIpcCommandMessage) {
+    } else if (response.unknownCommand) {
         return reportOlderInstance("doesn't know `vocabulary add`");
     } else if (response.ok) {
         held = response.skippedTerms;
@@ -868,7 +868,9 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
             return QStringLiteral("Unknown record %1 option: %2").arg(subcommand, argument);
         }
     }
-    decision->ipcCommand = QStringLiteral("record") + subcommand.at(0).toUpper() + subcommand.mid(1);
+    decision->ipcCommand = subcommand == QStringLiteral("start") ? IpcCommand::RecordStart
+        : subcommand == QStringLiteral("status")                 ? IpcCommand::RecordStatus
+                                                                 : IpcCommand::RecordStop;
     return {};
 }
 
@@ -876,12 +878,12 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
 // mistake.
 QString parseStatusArguments(const QStringList &arguments, CommandLineDecision *decision)
 {
-    decision->ipcCommand = QStringLiteral("status");
+    decision->ipcCommand = IpcCommand::Status;
     for (const QString &argument : arguments) {
         if (argument == QStringLiteral("--json")) {
             decision->json = true;
         } else if (argument == QStringLiteral("--watch")) {
-            decision->ipcCommand = QStringLiteral("watchStatus");
+            decision->ipcCommand = IpcCommand::WatchStatus;
         } else {
             return QStringLiteral("Unknown status option: %1").arg(argument);
         }
@@ -916,7 +918,7 @@ int printStatusJson(const std::shared_ptr<const SingleInstancePlatform> &platfor
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult result =
-        SingleInstanceIpc::sendCommandDetailed(QStringLiteral("status"), &response, 2500, platform, &ipcError);
+        SingleInstanceIpc::sendRequest({IpcCommand::Status}, &response, kIpcTimeoutMs, platform, &ipcError);
     if (result == IpcCommandResult::Unavailable) {
         response = idleStatus();
     } else if (result != IpcCommandResult::Sent) {
@@ -951,10 +953,10 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
         std::cout << line.toStdString() << std::endl;
         return bool(std::cout);
     };
-    QString refusal;
+    std::optional<IpcResponse> refusal;
     const auto onStatus = [&](const IpcResponse &status) {
         if (!status.ok) {
-            refusal = status.message;
+            refusal = status;
             return true;
         }
         return print(status);
@@ -966,7 +968,7 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
     // closes the connection.
     QString ipcError;
     IpcCommandResult result;
-    while ((result = SingleInstanceIpc::watchStatus(onStatus, 2500, platform, &ipcError))
+    while ((result = SingleInstanceIpc::watchStatus(onStatus, kIpcTimeoutMs, platform, &ipcError))
                == IpcCommandResult::Unavailable
            || result == IpcCommandResult::NoResponse) {
         if (result == IpcCommandResult::Unavailable && !print(idleStatus())) {
@@ -978,11 +980,11 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-    if (refusal == kUnknownIpcCommandMessage) {
+    if (refusal && refusal->unknownCommand) {
         return reportOlderInstance("doesn't know `status --watch`");
     }
-    if (!refusal.isEmpty()) {
-        std::cerr << refusal.toStdString() << "\n";
+    if (refusal && !refusal->message.isEmpty()) {
+        std::cerr << refusal->message.toStdString() << "\n";
         return 1;
     }
     return 0;
@@ -1020,18 +1022,23 @@ int printRecordingStatus(const RecordingStatus &status, bool json)
 int runRecordCommand(const CommandLineDecision &decision,
                      const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
-    const QString &command = decision.ipcCommand;
-    const bool start = command == QStringLiteral("recordStart");
+    const IpcCommand command = decision.ipcCommand;
+    const bool start = command == IpcCommand::RecordStart;
     const int timeoutMs = start ? kRecordStartTimeoutMs
-        : command == QStringLiteral("recordStop") ? kRecordStopTimeoutMs
-                                                  : 2500;
+        : command == IpcCommand::RecordStop ? kRecordStopTimeoutMs
+                                            : kIpcTimeoutMs;
+    IpcRequest request{command};
+    if (start) {
+        if (!decision.recordPath.isEmpty()) {
+            request.files = {decision.recordPath};
+        }
+        request.terms = decision.vocabularyTerms;
+        request.microphoneOnly = decision.recordMicrophoneOnly;
+    }
     IpcResponse response;
     QString ipcError;
     const auto send = [&] {
-        return start ? SingleInstanceIpc::sendRecordStart(decision.recordPath, decision.vocabularyTerms,
-                                                          decision.recordMicrophoneOnly, &response, timeoutMs,
-                                                          platform, &ipcError)
-                     : SingleInstanceIpc::sendCommandDetailed(command, &response, timeoutMs, platform, &ipcError);
+        return SingleInstanceIpc::sendRequest(request, &response, timeoutMs, platform, &ipcError);
     };
     IpcCommandResult result = send();
     if (result == IpcCommandResult::Unavailable && start) {
@@ -1046,7 +1053,7 @@ int runRecordCommand(const CommandLineDecision &decision,
         }
     }
     if (result == IpcCommandResult::Unavailable) {
-        if (command == QStringLiteral("recordStatus")) {
+        if (command == IpcCommand::RecordStatus) {
             return printRecordingStatus({}, decision.json);
         }
         std::cerr << (start ? QStringLiteral("Speecher did not start") : notRecordingText()).toStdString() << "\n";
@@ -1057,14 +1064,14 @@ int runRecordCommand(const CommandLineDecision &decision,
         return 1;
     }
     if (!response.ok) {
-        if (response.message == kUnknownIpcCommandMessage) {
+        if (response.unknownCommand) {
             return reportOlderInstance("cannot record");
         }
         std::cerr << response.message.toStdString() << "\n";
         return 1;
     }
     const RecordingStatus status = response.recording.value_or(RecordingStatus());
-    if (command == QStringLiteral("recordStatus")) {
+    if (command == IpcCommand::RecordStatus) {
         return printRecordingStatus(status, decision.json);
     }
     // record start's message is the consent notice, on the first one ever.
@@ -1178,11 +1185,10 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             }
             return decision;
         }
-        decision.ipcCommand = verb == QStringLiteral("settings")
-            ? QStringLiteral("showSettings")
-            : verb == QStringLiteral("setup")
-                ? QStringLiteral("showSetup")
-                : verb;
+        // The other verbs are their commands' names.
+        decision.ipcCommand = verb == QStringLiteral("settings") ? IpcCommand::ShowSettings
+            : verb == QStringLiteral("setup")                    ? IpcCommand::ShowSetup
+                                                                 : ipcCommandNamed(verb).value();
         return decision;
     }
 
@@ -1272,30 +1278,28 @@ bool quitOnLastWindowClosed(LaunchMode mode)
 int runCliCommand(const CommandLineDecision &decision,
                   const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
-    const QString &command = decision.ipcCommand;
-    if (command == QStringLiteral("last")) {
+    const IpcCommand command = decision.ipcCommand;
+    switch (command) {
+    case IpcCommand::Last:
         return printLastTranscript(platform);
-    }
-    if (command == QStringLiteral("addVocabulary")) {
+    case IpcCommand::AddVocabulary:
         return addVocabularyTerms(decision.vocabularyTerms, platform);
-    }
-    if (command.startsWith(QStringLiteral("record"))) {
+    case IpcCommand::RecordStart:
+    case IpcCommand::RecordStatus:
+    case IpcCommand::RecordStop:
         return runRecordCommand(decision, platform);
-    }
-    if (command == QStringLiteral("watchStatus")) {
+    case IpcCommand::WatchStatus:
         return watchStatus(decision.json, platform);
+    default:
+        break;
     }
-    if (command == QStringLiteral("status") && decision.json) {
+    if (command == IpcCommand::Status && decision.json) {
         return printStatusJson(platform);
     }
     IpcResponse response;
     QString ipcError;
-    const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
-                                                                              decision.sessionOverrides,
-                                                                              &response,
-                                                                              2500,
-                                                                              platform,
-                                                                              &ipcError);
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendRequest(
+        {command, decision.sessionOverrides}, &response, kIpcTimeoutMs, platform, &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {
         const SessionOverrides &overrides = decision.sessionOverrides;
         const bool ignoredProfile = overrides.writingProfile && response.writingProfile != *overrides.writingProfile;
@@ -1311,15 +1315,14 @@ int runCliCommand(const CommandLineDecision &decision,
         return 1;
     }
 
-    if (command == QStringLiteral("stop") || command == QStringLiteral("cancel")
-        || command == QStringLiteral("status")
-        || command == QStringLiteral("quit")) {
+    if (command == IpcCommand::Stop || command == IpcCommand::Cancel || command == IpcCommand::Status
+        || command == IpcCommand::Quit) {
         std::cout << "idle\n";
         return 0;
     }
-    const bool started = command == QStringLiteral("showSettings")
+    const bool started = command == IpcCommand::ShowSettings
         ? startDetachedSettings(platform.get())
-        : command == QStringLiteral("showSetup")
+        : command == IpcCommand::ShowSetup
             ? startDetachedSetup(platform.get())
             : startDetachedListening(platform.get(), sessionOverrideArguments(decision.sessionOverrides));
     if (!started) {
