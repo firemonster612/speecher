@@ -11,6 +11,7 @@
 #include "frontend/quick/host/QuickUpdates.h"
 #include "platform/PopupPositioner.h"
 
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 // The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
@@ -308,13 +310,20 @@ private slots:
         QuickDictation dictation(&controller);
         DictationSession *session = controller.session();
         QSignalSpy hidden(session, &DictationSession::popupHideRequested);
+        // Taken as the error shows, which is up for only 50 ms: polling can
+        // miss it on a busy machine.
+        std::optional<DictationState> sessionWhenShown;
+        connect(&dictation, &QuickDictation::stateChanged, &dictation, [&] {
+            if (dictation.property("state").toString() == QLatin1String("error")) {
+                sessionWhenShown = session->state();
+            }
+        });
 
         // Straight to the session: the controller on macOS first asks for
         // the microphone, which a bare test binary can't be given.
         session->startListening();
-        QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("error"));
-        QCOMPARE(session->state(), DictationState::Error);
         QTRY_COMPARE(hidden.count(), 1);
+        QVERIFY(sessionWhenShown == DictationState::Error);
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
@@ -372,10 +381,19 @@ private slots:
         const auto state = [&dictation] { return dictation.property("state").toString(); };
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
         QTest::qWait(200);
+        QElapsedTimer sinceAgain;
+        sinceAgain.start();
+        qint64 dismissedAfterMs = -1;
+        connect(&dictation, &QuickDictation::stateChanged, &dictation, [&] {
+            if (state() == QLatin1String("idle")) {
+                dismissedAfterMs = sinceAgain.elapsed();
+            }
+        });
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
-        QTest::qWait(150);
-        QCOMPARE(state(), QStringLiteral("error"));
         QTRY_COMPARE(state(), QStringLiteral("idle"));
+        // Longer than the 100 ms the first had left, timed when it went
+        // rather than when a wait ended, which load can stretch.
+        QVERIFY2(dismissedAfterMs > 200, qPrintable(QString::number(dismissedAfterMs)));
     }
 
     void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
@@ -407,11 +425,15 @@ private slots:
         QTest::mouseMove(window, QPoint(1, 1));
         QTRY_COMPARE(state(), QStringLiteral("idle"));
 
-        // The pointer is already there when the next one shows.
+        // The pointer is already there when the next one shows, and holds
+        // it. Long, so the hold, however late the popup's first frame, is
+        // what this waits for rather than a race with the countdown.
+        QuickDictation::setErrorDismissMs(60000);
+        QSignalSpy holds(&dictation, &QuickDictation::errorHoldRequested);
         QTest::mouseMove(window, centreOf(capsule));
         dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
         popup.show(0);
-        QTest::qWait(600);
+        QTRY_VERIFY(!holds.isEmpty() && holds.last().first().toBool());
         QCOMPARE(state(), QStringLiteral("error"));
 
         QQuickItem *dismiss = nullptr;
