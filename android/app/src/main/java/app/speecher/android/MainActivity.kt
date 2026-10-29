@@ -426,14 +426,19 @@ class MainActivity : ComponentActivity() {
             val recovery = IntentCompat.getSerializableExtra(intent, RECOVERY, Recovery::class.java)
         ) {
             is Recovery.SignIn -> signInFromSettings(recovery.account)
-            is Recovery.OpenApp ->
-                recovery.page?.let {
-                    page = Page.Settings
-                    settingsPage = it
-                }
+            Recovery.ChooseSpokenLanguage,
+            Recovery.CheckSpeechServer -> openSettings(SettingsPage.Transcription)
+            Recovery.ChooseCleanup -> openSettings(SettingsPage.Profiles)
+            // Speecher opens as it was; a fresh start lands on Setup, whose microphone step asks.
+            Recovery.AllowMicrophone,
             Recovery.Retry,
             null -> {}
         }
+    }
+
+    private fun openSettings(settings: SettingsPage) {
+        page = Page.Settings
+        settingsPage = settings
     }
 
     /**

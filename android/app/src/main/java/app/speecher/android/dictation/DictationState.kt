@@ -1,6 +1,5 @@
 package app.speecher.android.dictation
 
-import app.speecher.android.ui.SettingsPage
 import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.protocol.CustomCleanupLevel
@@ -200,15 +199,25 @@ val ProviderFailureKind.needsSignIn: Boolean
 /**
  * What the panel's recovery button does for a failure. [Retry] runs in place; the others switch
  * back and open Speecher, which receives them as its [RECOVERY][app.speecher.android.RECOVERY]
- * extra.
+ * extra and shows where the person can do what the case names.
  */
 sealed interface Recovery : Serializable {
     data object Retry : Recovery
 
     data class SignIn(val account: Provider) : Recovery
 
-    /** Opens Speecher at [page], or wherever it was left when null. */
-    data class OpenApp(val page: SettingsPage?) : Recovery
+    /** The fix is in Speecher itself rather than a sign-in. */
+    sealed interface OpenApp : Recovery
+
+    data object AllowMicrophone : OpenApp
+
+    data object ChooseSpokenLanguage : OpenApp
+
+    /** Check a Custom Endpoint's key and address. */
+    data object CheckSpeechServer : OpenApp
+
+    /** Choose a cleanup level for the Writing Profile. */
+    data object ChooseCleanup : OpenApp
 }
 
 val FailureReason.recovery: Recovery
@@ -217,13 +226,13 @@ val FailureReason.recovery: Recovery
             FailureReason.MicrophoneUnavailable,
             FailureReason.Commit,
             FailureReason.SelectionChanged -> Recovery.Retry
-            FailureReason.MicrophoneDenied -> Recovery.OpenApp(null)
-            is FailureReason.SpokenLanguage -> Recovery.OpenApp(SettingsPage.Transcription)
-            FailureReason.SelectionNeedsCleanup -> Recovery.OpenApp(SettingsPage.Profiles)
+            FailureReason.MicrophoneDenied -> Recovery.AllowMicrophone
+            is FailureReason.SpokenLanguage -> Recovery.ChooseSpokenLanguage
+            FailureReason.SelectionNeedsCleanup -> Recovery.ChooseCleanup
             is FailureReason.ProviderFailed ->
                 if (!kind.needsSignIn) Recovery.Retry
                 // A server the person chose has no sign-in; its settings hold the key.
-                else account?.let(Recovery::SignIn) ?: Recovery.OpenApp(SettingsPage.Transcription)
+                else account?.let(Recovery::SignIn) ?: Recovery.CheckSpeechServer
         }
 
 /**
