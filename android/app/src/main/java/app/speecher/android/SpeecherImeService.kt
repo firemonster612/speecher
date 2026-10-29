@@ -13,15 +13,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
-import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
+import app.speecher.android.dictation.DictationSession
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.recovery
 import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.targetApp
-import app.speecher.android.provider.cleanup
-import app.speecher.android.provider.resolveSignedIn
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
 
@@ -32,6 +31,8 @@ fun speecherImeId(context: Context): String =
 class SpeecherImeService : InputMethodService() {
     private val owner = ServiceViewOwner()
     private var panelState = mutableStateOf<DictationState>(DictationState.Listening())
+    /** The settings of the session the panel shows, kept after it ends while the panel hides. */
+    private val settings = mutableStateOf(SpeecherSettings())
     /** Whether the minimize control flipped this session's panel away from its chosen size. */
     private val sizeToggled = mutableStateOf(false)
     private var panel: View? = null
@@ -39,8 +40,8 @@ class SpeecherImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         ImeSwap(this).let { if (it.stranded()) it.switchBack(this) }
-        panelState.value = ActiveDictation.state
-        ActiveDictation.observe = ::showState
+        ActiveDictation.session?.let { show(it, it.engine.state) }
+        ActiveDictation.observe = ::show
         ActiveDictation.onInserted = ::switchBack
     }
 
@@ -62,7 +63,7 @@ class SpeecherImeService : InputMethodService() {
             view.setContent {
                 val size =
                     shownPanelSize(
-                        ActiveDictation.settings.panelSize,
+                        settings.value.panelSize,
                         sizeToggled.value,
                         panelState.value,
                     )
@@ -71,30 +72,24 @@ class SpeecherImeService : InputMethodService() {
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
-                        ActiveDictation.settings.shownButtonLayout,
+                        settings.value.shownButtonLayout,
                         size,
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
                         onInsert = {
-                            if (ActiveDictation.engine?.insert() == true)
-                                view.vibrateForStartOrStop()
+                            if (ActiveDictation.session?.engine?.insert() == true)
+                                view.vibrateForStartOrStop(settings.value)
                         },
                         onInsertRefined = {
-                            val stopped =
-                                ActiveDictation.engine?.insertRefined(
-                                    resolveSignedIn(
-                                            ActiveDictation.settings.refinementProvider.account,
-                                            TokenStore(this).signedIn(),
-                                        )
-                                        .cleanup
-                                ) == true
-                            if (stopped) view.vibrateForStartOrStop()
+                            val session = ActiveDictation.session
+                            if (session?.engine?.insertRefined(session.cleanup) == true)
+                                view.vibrateForStartOrStop(settings.value)
                         },
                         onRecover = ::recover,
-                        onPause = { ActiveDictation.engine?.pause() },
-                        onResume = { ActiveDictation.engine?.resume() },
-                        transcriptionPreview = ActiveDictation.settings.transcriptionPreviewEnabled,
-                        refinementPreview = ActiveDictation.settings.refinementPreviewEnabled,
+                        onPause = { ActiveDictation.session?.engine?.pause() },
+                        onResume = { ActiveDictation.session?.engine?.resume() },
+                        transcriptionPreview = settings.value.transcriptionPreviewEnabled,
+                        refinementPreview = settings.value.refinementPreviewEnabled,
                     )
                 }
             }
@@ -125,13 +120,17 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        ActiveDictation.connection = currentInputConnection
-        ActiveDictation.target = attribute?.let { targetApp(it, packageManager) }
+        ActiveDictation.session?.let { session ->
+            session.connection = currentInputConnection
+            session.target = attribute?.let { targetApp(it, packageManager) }
+        }
     }
 
     override fun onFinishInput() {
-        ActiveDictation.connection = null
-        ActiveDictation.target = null
+        ActiveDictation.session?.let { session ->
+            session.connection = null
+            session.target = null
+        }
         super.onFinishInput()
     }
 
@@ -156,7 +155,7 @@ class SpeecherImeService : InputMethodService() {
     override fun onWindowShown() {
         handler.removeCallbacks(dismiss)
         super.onWindowShown()
-        keepScreenOn(panelState.value.takeIf { ActiveDictation.engine != null })
+        keepScreenOn(panelState.value.takeIf { ActiveDictation.session != null })
     }
 
     override fun onWindowHidden() {
@@ -164,7 +163,8 @@ class SpeecherImeService : InputMethodService() {
         handler.postDelayed(dismiss, DISMISS_GRACE_MILLIS)
     }
 
-    fun showState(state: DictationState) {
+    private fun show(session: DictationSession, state: DictationState) {
+        settings.value = session.settings
         panelState.value = state
         keepScreenOn(state)
     }
@@ -177,11 +177,7 @@ class SpeecherImeService : InputMethodService() {
     private fun keepScreenOn(state: DictationState?) {
         val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         val panel = window.window ?: return
-        if (
-            ActiveDictation.settings.keepScreenOn &&
-                state != null &&
-                state !is DictationState.Failed
-        )
+        if (settings.value.keepScreenOn && state != null && state !is DictationState.Failed)
             panel.addFlags(flag)
         else panel.clearFlags(flag)
     }
@@ -190,7 +186,8 @@ class SpeecherImeService : InputMethodService() {
     private fun recover() {
         val recovery = (panelState.value as? DictationState.Failed)?.reason?.recovery ?: return
         if (recovery == Recovery.Retry) {
-            if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
+            if (ActiveDictation.session?.engine?.retry() == true)
+                panel?.vibrateForStartOrStop(settings.value)
             return
         }
         switchBack()
@@ -221,10 +218,9 @@ class SpeecherImeService : InputMethodService() {
 private const val DISMISS_GRACE_MILLIS = 750L
 
 /**
- * The desktop's start and stop sounds, as a vibration when the person turned it on. The view's
- * haptics follow the phone's touch feedback setting.
+ * The desktop's start and stop sounds, as a vibration when the person turned it on in the session's
+ * [settings]. The view's haptics follow the phone's touch feedback setting.
  */
-fun View.vibrateForStartOrStop() {
-    if (ActiveDictation.settings.vibrationEnabled)
-        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+fun View.vibrateForStartOrStop(settings: SpeecherSettings) {
+    if (settings.vibrationEnabled) performHapticFeedback(HapticFeedbackConstants.CONFIRM)
 }

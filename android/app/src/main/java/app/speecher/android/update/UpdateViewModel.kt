@@ -265,8 +265,8 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 // Replacing the app ends its process, and a dictation with it; and Android only
                 // shows its prompt, or the failure, over an app on screen. Nothing suspends between
                 // this check and the commit, and the chip starts dictations on this same thread.
-                while (ActiveDictation.engine != null || !onScreen) {
-                    if (ActiveDictation.engine != null) {
+                while (ActiveDictation.session != null || !onScreen) {
+                    if (ActiveDictation.session != null) {
                         state = UpdateState.WaitingForDictation(release)
                     }
                     delay(500)

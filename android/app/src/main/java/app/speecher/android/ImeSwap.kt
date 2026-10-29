@@ -33,7 +33,7 @@ class ImeSwap(private val context: Context) {
 
     /** Our keyboard is the default but nothing is dictating: a swap a dead process never undid. */
     fun stranded(): Boolean =
-        ActiveDictation.engine == null &&
+        ActiveDictation.session == null &&
             previousId != null &&
             Settings.Secure.getString(
                 context.contentResolver,

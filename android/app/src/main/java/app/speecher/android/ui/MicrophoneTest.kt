@@ -20,7 +20,7 @@ class MicrophoneTest(
         (shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) -> Unit,
     private val executor: Executor = sharedExecutor,
     private val dictating: () -> Boolean = {
-        ActiveDictation.engine?.state is DictationState.Listening
+        ActiveDictation.session?.engine?.state is DictationState.Listening
     },
 ) {
     var running by mutableStateOf(false)

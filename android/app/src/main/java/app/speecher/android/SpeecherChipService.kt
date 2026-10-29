@@ -17,19 +17,13 @@ import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
-import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.CorrectionObserver
-import app.speecher.android.dictation.DictationEngine
-import app.speecher.android.dictation.DictationState
-import app.speecher.android.dictation.FailureReason
-import app.speecher.android.dictation.createDictationEngine
+import app.speecher.android.dictation.DictationSession
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.dictation.uncoveredRows
-import app.speecher.android.provider.oauth
-import app.speecher.android.provider.resolveSpeech
 import app.speecher.android.settings.SettingsStore
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.ChipMargin
@@ -38,7 +32,6 @@ import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SavePositionPill
 import app.speecher.android.ui.SpeecherTheme
 import app.speecher.android.update.installingUpdate
-import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -89,9 +82,7 @@ class SpeecherChipService : AccessibilityService() {
             swap.clear()
         }
         // The keyboard is gone by the time the person edits what it inserted; this service is not.
-        ActiveDictation.watchCorrections = { window, app ->
-            handler.post { corrections.observe(window, app) }
-        }
+        ActiveDictation.watchCorrections = corrections::observe
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -344,16 +335,22 @@ class SpeecherChipService : AccessibilityService() {
         // Android is replacing the app, which would end the dictation within seconds.
         if (installingUpdate) return
         ImeSwap(this).rememberPrevious()
-        val engine = startDictation()
+        // Speech connects before the keyboard swap lands and the IME reads the field, so the app
+        // comes from the focused field here, for the speech hints to follow its Writing Profile.
+        val target =
+            findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.let {
+                targetApp(it.toString(), packageManager, passwordFocused)
+            }
+        val session = ActiveDictation.start(this, target)
         // Only now, before the swap, does the focused field still belong to the app being dictated
         // into.
-        captureScreen(engine)
+        captureScreen(session)
         val switched = runCatching {
             softKeyboardController.switchToInputMethod(speecherImeId(this))
         }
             .getOrDefault(false)
         if (switched) {
-            chip?.vibrateForStartOrStop()
+            chip?.vibrateForStartOrStop(session.settings)
             removeChip()
         } else {
             // Our keyboard isn't enabled; setup isn't finished, so send them there.
@@ -364,62 +361,23 @@ class SpeecherChipService : AccessibilityService() {
         }
     }
 
-    /** The mic starts on the tap, before the keyboard swap lands, to cover the swap gap. */
-    private fun startDictation(): DictationEngine {
-        val settings = SettingsStore(this).load()
-        val tokens = TokenStore(this)
-        ActiveDictation.settings = settings
-        ActiveDictation.state = DictationState.Listening()
-        ActiveDictation.end()
-        ActiveDictation.observe?.invoke(DictationState.Listening())
-        // Speech connects before the keyboard swap lands and the IME reads the field, so the app
-        // comes from the focused field here, for the speech hints to follow its Writing Profile.
-        ActiveDictation.target =
-            findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.let {
-                targetApp(it.toString(), packageManager, passwordFocused)
-            }
-        val engine =
-            createDictationEngine(
-                this,
-                settings,
-                { ActiveDictation.connection },
-                { state ->
-                    val reason = (state as? DictationState.Failed)?.reason
-                    if (
-                        reason is FailureReason.ProviderFailed &&
-                            reason.kind == ProviderFailureKind.Authentication
-                    )
-                        reason.account?.let { tokens.endSession(it.oauth) }
-                    ActiveDictation.state = state
-                    ActiveDictation.observe?.invoke(state)
-                },
-                { ActiveDictation.onInserted?.invoke() },
-            )
-        ActiveDictation.engine = engine
-        engine.start(resolveSpeech(settings.transcriptionProvider, tokens.signedIn()))
-        return engine
-    }
-
     /**
      * Reads what the user opted into sharing from the focused field's own window, so nothing from
      * another app, the status bar, a notification or the keyboard goes out under the target's name.
-     * Both parts arrive later on the executor and are dropped if the session has ended; a failed or
-     * rate-limited screenshot is simply absent.
+     * Both parts arrive later on the executor and are dropped with the session if it has ended; a
+     * failed or rate-limited screenshot is simply absent.
      */
-    private fun captureScreen(engine: DictationEngine) {
-        val settings = ActiveDictation.settings
+    private fun captureScreen(session: DictationSession) {
+        val settings = session.settings
         if (!settings.refinementEnabled || !settings.useTargetContext || passwordFocused) return
         val target = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.window ?: return
         val root = target.root ?: return
         if (settings.includeScreenText) {
-            sharedExecutor.execute {
-                val screen = screenCapture(root)
-                ActiveDictation.storeCapture(engine) { this.screen = screen }
-            }
+            sharedExecutor.execute { session.screen = screenCapture(root) }
         }
         if (!settings.includeScreenshot) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            takeScreenshotOfWindow(target.id, sharedExecutor, screenshotCallback(engine))
+            takeScreenshotOfWindow(target.id, sharedExecutor, screenshotCallback(session))
             return
         }
         // Before Android 14 only the whole display can be captured: keep the target's bounds, less
@@ -440,12 +398,12 @@ class SpeecherChipService : AccessibilityService() {
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             sharedExecutor,
-            screenshotCallback(engine, Rect(bounds.left, rows.first, bounds.right, rows.last + 1)),
+            screenshotCallback(session, Rect(bounds.left, rows.first, bounds.right, rows.last + 1)),
         )
     }
 
-    /** Encodes the screenshot, or its [crop] when given, and keeps it while [engine] is running. */
-    private fun screenshotCallback(engine: DictationEngine, crop: Rect? = null) =
+    /** Encodes the screenshot, or its [crop] when given, and keeps it in [session]. */
+    private fun screenshotCallback(session: DictationSession, crop: Rect? = null) =
         object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
                 // Runs on the executor: a failed encode is a skipped screenshot, not a crash.
@@ -465,7 +423,7 @@ class SpeecherChipService : AccessibilityService() {
                         }
                             .getOrNull()
                     }
-                ActiveDictation.storeCapture(engine) { screenshotJpeg = jpeg }
+                session.screenshotJpeg = jpeg
             }
 
             override fun onFailure(errorCode: Int) = Unit

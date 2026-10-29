@@ -7,7 +7,6 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
-import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
@@ -19,7 +18,6 @@ import app.speecher.android.provider.label
 import app.speecher.android.provider.oauth
 import app.speecher.android.provider.speech
 import app.speecher.android.settings.SettingsStore
-import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.sharedExecutor
 import app.speecher.android.sharedHttp
 import app.speecher.protocol.Cancellation
@@ -60,14 +58,17 @@ private data class Endpoints(
     val transcribe: String? = null,
 )
 
-/** Android wiring; call [DictationEngine.start] on the chip tap before the IME appears. */
+/**
+ * Android wiring for [session]'s engine, reading its field and captures as they change; call
+ * [DictationEngine.start] on the chip tap before the IME appears.
+ */
 fun createDictationEngine(
     context: Context,
-    settings: SpeecherSettings,
-    connection: () -> InputConnection?,
+    session: DictationSession,
     onState: (DictationState) -> Unit,
-    onInserted: () -> Unit = {},
+    onInserted: () -> Unit,
 ): DictationEngine {
+    val settings = session.settings
     val store = TokenStore(context)
     val http = sharedHttp
     val microphone = Microphone(context)
@@ -122,7 +123,7 @@ fun createDictationEngine(
                 DateFormat.getTimeFormat(context).format(now),
             ),
             settings.learnedCorrections,
-            ActiveDictation.target?.packageName.orEmpty(),
+            session.target?.packageName.orEmpty(),
         )
     }
     fun token(account: Provider) =
@@ -165,11 +166,11 @@ fun createDictationEngine(
     fun targetContext() =
         refinementContext(
                 settings,
-                ActiveDictation.target,
-                ActiveDictation.screen,
-                ActiveDictation.screenshotJpeg,
+                session.target,
+                session.screen,
+                session.screenshotJpeg,
             ) { length ->
-                connection()?.getSurroundingText(length, length, 0)?.let {
+                session.connection?.getSurroundingText(length, length, 0)?.let {
                     // A selection made backwards reports its start after its end.
                     val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
                     nearbyText(it.text, start, end, it.offset)
@@ -212,7 +213,7 @@ fun createDictationEngine(
             val terms =
                 speechTerms(
                     settings.vocabulary,
-                    writingProfile(settings, ActiveDictation.target),
+                    writingProfile(settings, session.target),
                     settings.learnedCorrections,
                 )
             // Each speech provider's client; a new provider adds its branch here.
@@ -267,10 +268,9 @@ fun createDictationEngine(
         else null,
         { text ->
             // Kept before the commit, as the desktop does, so words that fail to go in stay too.
-            val target = ActiveDictation.target
-            if (target?.secure != true)
-                ActiveDictation.latest = LatestTranscript(text, target?.label)
-            val connection = connection()
+            val target = session.target
+            if (target?.secure != true) latestTranscript = LatestTranscript(text, target?.label)
+            val connection = session.connection
             // Read before the commit: the text on each side pins the words for an edit after it.
             val window =
                 connection
@@ -283,14 +283,29 @@ fun createDictationEngine(
             val committed = connection?.commitText(text, 1) == true
             if (committed) {
                 SettingsStore(context).recordVocabularyUsage(text)
+                // Read when it runs: the chip service may have gone in the meantime.
                 if (window != null && target != null)
-                    ActiveDictation.watchCorrections?.invoke(window, target.packageName)
+                    main.post {
+                        ActiveDictation.watchCorrections?.invoke(window, target.packageName)
+                    }
                 main.post(onInserted)
             }
             committed
         },
         sharedExecutor,
-        { next -> main.post { onState(next) } },
+        { next ->
+            main.post {
+                // A rejected sign-in ends the account's session, the opposite of the
+                // clearSessionEnded calls above.
+                val reason = (next as? DictationState.Failed)?.reason
+                if (
+                    reason is FailureReason.ProviderFailed &&
+                        reason.kind == ProviderFailureKind.Authentication
+                )
+                    reason.account?.let { store.endSession(it.oauth) }
+                onState(next)
+            }
+        },
         // A refused request, as during a phone call, needs nothing: the media plays on, the
         // dictation goes ahead, and abandoning focus never granted does nothing.
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
@@ -302,14 +317,14 @@ fun createDictationEngine(
             if (SettingsStore(context).insightsEnabled()) {
                 recordInsight(
                     insightsFile(context),
-                    dictationRecord(inserted, settings, ActiveDictation.target),
+                    dictationRecord(inserted, settings, session.target),
                 )
             }
         },
         selection = {
             // A password field's text never leaves the device, selected or not.
-            if (ActiveDictation.target?.secure == false)
-                connection()?.getSelectedText(0)?.toString()?.takeIf(String::isNotEmpty)
+            if (session.target?.secure == false)
+                session.connection?.getSelectedText(0)?.toString()?.takeIf(String::isNotEmpty)
             else null
         },
         // The screenshot stays behind, as on the desktop: the edit is of the text, not the screen.
