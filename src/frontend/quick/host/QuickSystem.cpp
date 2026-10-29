@@ -243,6 +243,12 @@ QString phoneStateName(PhoneTransferState state)
     return QStringLiteral("waiting");
 }
 
+// What the default paste needs of the computer with these settings.
+TextDelivery::PasteNeed defaultPasteNeed(const OutputSettings &output)
+{
+    return TextDelivery::pasteNeed(output, globalPasteMethod(output.pasteRules));
+}
+
 } // namespace
 
 #ifdef Q_OS_LINUX
@@ -356,11 +362,36 @@ QString QuickSystem::virtualKeyboardTest() const
 
 QStringList QuickSystem::pasteRoute() const
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    // With no default paste of its own, Speecher copies, as delivery does.
-    const PasteRule *rule = findPasteRule(settings.output.pasteRules, PasteRuleScope::Global, QString());
-    return TextDelivery::pasteRoute(settings.output,
-                                    rule && rule->enabled ? rule->method : PasteMethod::ClipboardOnly);
+    const OutputSettings output = m_controller->settings()->dictationSnapshot().output;
+    return TextDelivery::pasteRoute(output, globalPasteMethod(output.pasteRules));
+}
+
+QString QuickSystem::pasteNeed() const
+{
+    switch (defaultPasteNeed(m_controller->settings()->dictationSnapshot().output)) {
+    case TextDelivery::PasteNeed::Accessibility:
+        return QStringLiteral("accessibility");
+    case TextDelivery::PasteNeed::VirtualKeyboard:
+        return QStringLiteral("keyboard");
+    case TextDelivery::PasteNeed::Either:
+        return QStringLiteral("either");
+    case TextDelivery::PasteNeed::Nothing:
+        break;
+    }
+    return {};
+}
+
+bool QuickSystem::wordsStayCopied() const
+{
+#ifdef Q_OS_LINUX
+    // Ready as its health row says: set up, with no setup or typing test
+    // under way.
+    const bool keyboard = virtualKeyboardCheck(m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
+#else
+    const bool keyboard = false;
+#endif
+    return TextDelivery::wordsStayCopied(defaultPasteNeed(m_controller->settings()->dictationSnapshot().output),
+                                         accessibility(), keyboard);
 }
 
 bool QuickSystem::hasVirtualKeyboard() const

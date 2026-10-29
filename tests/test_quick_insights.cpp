@@ -8,7 +8,6 @@
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickDictation.h"
 
@@ -344,7 +343,6 @@ private slots:
         controller.insightsLog()->append(recordOn(kToday, 120));
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello there."));
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
@@ -407,7 +405,6 @@ private slots:
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         QuickSystem system(&controller);
@@ -451,7 +448,6 @@ private slots:
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         QuickSystem system(&controller);
@@ -489,7 +485,6 @@ private slots:
         QVERIFY(controller.settings()->recordCorrectionEvidence({QStringLiteral("cute"), QStringLiteral("Qt"), 0.95},
                                                                QStringLiteral("org.kde.kate")));
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the

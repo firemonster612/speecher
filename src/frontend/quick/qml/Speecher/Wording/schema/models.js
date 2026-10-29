@@ -9,7 +9,7 @@ var rows = [
 
     { id: "localIdleUnload", page: "models", section: "Performance and storage", kind: "choice", control: "select",
       label: "Unload the model when idle", help: "Frees memory. The next dictation loads it again while you speak.",
-      value: "10", keywords: "memory ram free unload idle timeout",
+      keywords: "memory ram free unload idle timeout",
       options: [
           { id: "1", label: "After 1 minute" },
           { id: "10", label: "After 10 minutes" },
@@ -19,9 +19,9 @@ var rows = [
     { id: "localAcceleration", page: "models", section: "Performance and storage", kind: "custom",
       label: "Acceleration", help: "Automatic picks the fastest graphics card and falls back to the CPU.",
       runningHelp: "The loaded model is running on %1.",
-      value: "auto", keywords: "gpu cuda vulkan metal rocm cpu backend hardware speed" },
+      keywords: "gpu cuda vulkan metal rocm cpu backend hardware speed" },
     { id: "localGraphicsCard", page: "models", section: "Performance and storage", kind: "custom",
-      label: "Graphics card", help: "The card this acceleration runs on.", value: "",
+      label: "Graphics card", help: "The card this acceleration runs on.",
       keywords: "gpu device card nvidia amd intel" },
     { id: "localModelFolder", page: "models", section: "Performance and storage", kind: "custom",
       label: "Model folder", help: "Where downloaded models are kept.", actionLabel: "Open model folder",

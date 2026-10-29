@@ -44,6 +44,17 @@ public:
     // order: insert (straight into the app, through accessibility), press
     // (the paste keys) and copy (the words left on the clipboard).
     static QStringList pasteRoute(const OutputSettings &settings, PasteMethod pasteMethod);
+    // What deliver needs of the computer to get words past the clipboard with
+    // this paste method and these settings: nothing (it only copies, or
+    // presses the paste keys itself), desktop accessibility (to insert, and
+    // on macOS to press ⌘V), the virtual keyboard (to press the keys), or
+    // either of them.
+    enum class PasteNeed { Nothing, Accessibility, VirtualKeyboard, Either };
+    static PasteNeed pasteNeed(const OutputSettings &settings, PasteMethod pasteMethod);
+    // Whether words get no further than the clipboard: what need asks for is
+    // missing. accessibility counts when it is on only for the session;
+    // virtualKeyboard is the keyboard ready to type.
+    static bool wordsStayCopied(PasteNeed need, bool accessibility, bool virtualKeyboard);
     static QStringList orderedMethods(const OutputSettings &settings);
     static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
 

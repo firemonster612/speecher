@@ -115,7 +115,6 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_settings(controller)
     , m_appearance(controller)
     , m_audio(controller)
-    , m_status(controller)
     , m_dictation(controller)
     , m_updates(controller, controller->updates())
     , m_transcription(controller)

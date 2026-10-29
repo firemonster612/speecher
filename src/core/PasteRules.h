@@ -36,6 +36,9 @@ QString pasteMethodName(PasteMethod method);
 PasteMethod pasteMethodFromName(const QString &name);
 QList<PasteRule> defaultPasteRules();
 PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target);
+// How Speecher pastes into an app no narrower rule names: the global rule's
+// method while it is on, otherwise clipboard only.
+PasteMethod globalPasteMethod(const QList<PasteRule> &rules);
 // The rule stored for a scope and match, such as the terminal category's, or
 // nullptr. Matches compare as resolvePasteRule compares them: application IDs
 // ignore case and surrounding spaces, app types ignore case, and the global

@@ -54,6 +54,119 @@ static QString liveRefine(const QString &rawTranscript,
     return completed.first().first().toString();
 }
 
+static const QString kAndroidGoldenDir =
+    QStringLiteral(SPEECHER_SOURCE_DIR "/android/protocol/src/test/resources/refinement-prompt/");
+
+// The Android port's golden prompts, recorded from this builder, by file
+// name. Each builds the context the matching case in the port's
+// TargetTest.kt resolves, so a prompt change here fails until the goldens are
+// re-recorded.
+static QMap<QString, QString> androidGoldenPrompts()
+{
+    QMap<QString, QString> prompts;
+    const CustomTone terse{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                           QStringLiteral("Short sentences, lowercase, no greetings or sign-offs.")};
+    const CustomCleanupLevel tersePrompt{QStringLiteral("custom_terse_prompt"),
+                                         QStringLiteral("Terse prompt"), kCustomOnlyCleanupBase,
+                                         QStringLiteral("Keep the prompt under three sentences.")};
+    const auto unknown = [] {
+        RefinementContext context;
+        context.includeNearbyText = false;
+        return context;
+    };
+    const auto chatGpt = [&] {
+        RefinementContext context = unknown();
+        context.target.applicationId = QStringLiteral("com.openai.chatgpt");
+        context.target.applicationName = QStringLiteral("ChatGPT");
+        context.target.category = AppCategory::AiCoding;
+        context.writingProfile = WritingProfile::AiCoding;
+        return context;
+    };
+    const auto withMessageAroundCaret = [](RefinementContext context) {
+        context.includeNearbyText = true;
+        context.target.nearbyTextBefore = QStringLiteral("Dinner at ");
+        context.target.nearbyTextAfter = QStringLiteral(" works for me");
+        context.target.caretOffset = 10;
+        context.target.selectionStart = 10;
+        context.target.selectionEnd = 15;
+        return context;
+    };
+
+    {
+        // Recorded before instructions existed: blank instructions and
+        // prompt leave it as it was.
+        RefinementContext context = unknown();
+        context.additionalInstructions = QStringLiteral(" \n");
+        context.customSystemPrompt = QStringLiteral("\n");
+        prompts[QStringLiteral("light-unknown")] =
+            dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context);
+    }
+    prompts[QStringLiteral("strong-chatgpt")] =
+        dictationRefinementSystemPrompt(QStringLiteral("strong_polish"), chatGpt());
+    {
+        RefinementContext context = unknown();
+        context.target.applicationId = QStringLiteral("com.google.android.apps.messaging");
+        context.target.applicationName = QStringLiteral("Messages");
+        context.target.category = AppCategory::General;
+        context.tone = QStringLiteral("casual");
+        prompts[QStringLiteral("balanced-messages")] =
+            dictationRefinementSystemPrompt(QStringLiteral("balanced"), withMessageAroundCaret(context));
+    }
+    {
+        RefinementContext context = unknown();
+        context.tone = QStringLiteral("casual");
+        context.additionalInstructions = QStringLiteral("Spell it Speecher.\nKeep British spelling.");
+        context.profileInstructions = QStringLiteral("Sign off with Best, Enzo");
+        prompts[QStringLiteral("balanced-instructions")] =
+            dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
+    }
+    {
+        RefinementContext context = unknown();
+        context.tone = terse.id;
+        context.customTone = terse;
+        prompts[QStringLiteral("balanced-custom-tone")] =
+            dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
+    }
+    {
+        RefinementContext context = unknown();
+        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                  QStringLiteral("light_cleanup"),
+                                                  QStringLiteral("Use bullet points.")};
+        prompts[QStringLiteral("light-custom-level")] =
+            dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context);
+    }
+    {
+        RefinementContext context = chatGpt();
+        context.cleanupLevel = tersePrompt;
+        prompts[QStringLiteral("custom-only-chatgpt")] =
+            dictationRefinementSystemPrompt(kCustomOnlyCleanupBase, context);
+    }
+    {
+        RefinementContext context = unknown();
+        context.tone = terse.id;
+        context.customTone = terse;
+        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                  QStringLiteral("strong_polish"),
+                                                  QStringLiteral("Use bullet points.")};
+        context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        prompts[QStringLiteral("custom-prompt-tone-level")] =
+            dictationRefinementSystemPrompt(QStringLiteral("strong_polish"), context);
+    }
+    {
+        RefinementContext context = withMessageAroundCaret(chatGpt());
+        context.tone = terse.id;
+        context.customTone = terse;
+        context.cleanupLevel = tersePrompt;
+        context.outputLanguage = QStringLiteral("French");
+        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        context.spokenLanguage = QStringLiteral("es");
+        context.target.selectedText = QStringLiteral("seven");
+        context.editSelection = true;
+        prompts[QStringLiteral("edit-chatgpt")] = refinementSystemPrompt(kCustomOnlyCleanupBase, context);
+    }
+    prompts[QStringLiteral("built-in")] = builtInDictationSystemPrompt();
+    return prompts;
+}
 
 class RefinersTests : public QObject {
     Q_OBJECT
@@ -657,21 +770,32 @@ private slots:
                                 R"("raw_transcript":"deploy to cube"})"));
     }
 
-    // The Android port's golden prompt, recorded from this builder before
-    // instructions existed: blank instructions and prompt leave it as it was.
-    void blankInstructionsLeaveThePromptUnchanged()
+    void promptsMatchTheAndroidGoldens_data()
     {
-        QFile golden(QStringLiteral(SPEECHER_SOURCE_DIR
-                                    "/android/protocol/src/test/resources/refinement-prompt/light-unknown.txt"));
+        QTest::addColumn<QString>("prompt");
+        const QMap<QString, QString> prompts = androidGoldenPrompts();
+        for (auto it = prompts.cbegin(); it != prompts.cend(); ++it) {
+            QTest::newRow(qPrintable(it.key())) << it.value();
+        }
+    }
+
+    void promptsMatchTheAndroidGoldens()
+    {
+        QFETCH(QString, prompt);
+        QFile golden(kAndroidGoldenDir + QLatin1String(QTest::currentDataTag()) + QStringLiteral(".txt"));
         // Text mode: a Windows checkout may have turned the file's line
         // endings into CRLF.
         QVERIFY(golden.open(QIODevice::ReadOnly | QIODevice::Text));
-        RefinementContext context;
-        context.includeNearbyText = false;
-        context.additionalInstructions = QStringLiteral(" \n");
-        context.customSystemPrompt = QStringLiteral("\n");
-        QCOMPARE(dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context),
-                 QString::fromUtf8(golden.readAll()));
+        QCOMPARE(prompt, QString::fromUtf8(golden.readAll()));
+    }
+
+    void everyAndroidGoldenHasAPrompt()
+    {
+        QStringList goldens;
+        for (const QFileInfo &file : QDir(kAndroidGoldenDir).entryInfoList({QStringLiteral("*.txt")}, QDir::Files)) {
+            goldens << file.completeBaseName();
+        }
+        QCOMPARE(goldens, androidGoldenPrompts().keys());
     }
 
     // A custom tone's instruction follows the built-in tone rule, and the

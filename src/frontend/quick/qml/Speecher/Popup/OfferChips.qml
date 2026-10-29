@@ -52,7 +52,7 @@ Column {
         open: chips.active && chips._whatsNewNow && Updates.whatsNewPending
         // The bare number: a nightly's suffix says nothing to someone
         // reading what changed.
-        text: chips.t.installed(Status.version.split("-")[0])
+        text: chips.t.installed(Updates.version.split("-")[0])
         onDismissed: Updates.acknowledgeWhatsNew()
         Button { text: chips.t.seeWhatsNew; size: "small"; onClicked: Updates.showWhatsNew() }
     }

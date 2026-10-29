@@ -24,7 +24,7 @@ var rows = [
     { id: "correctionLearningControl", page: "vocabulary", section: "Learned corrections", kind: "toggle",
       label: "Learn corrections",
       help: "After pasting, Speecher briefly watches for your edits and learns corrections you repeat.",
-      value: true, keywords: "learn automatic fix edits watch" },
+      keywords: "learn automatic fix edits watch" },
     { id: "learnedCorrections", page: "vocabulary", section: "Learned corrections", kind: "custom",
       label: "Learned corrections", help: "Turn a correction off to stop using it.",
       keywords: "corrections fixes heard corrected undo confidence" },

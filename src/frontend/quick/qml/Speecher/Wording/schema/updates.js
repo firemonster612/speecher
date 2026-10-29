@@ -2,16 +2,16 @@
 
 var rows = [
     { id: "updateChannel", page: "updates", section: "How Speecher updates", kind: "choice", control: "segmented",
-      label: "Update channel", value: "stable", keywords: "nightly stable beta release builds",
+      label: "Update channel", keywords: "nightly stable beta release builds",
       options: [
           { id: "stable", label: "Stable", icon: "shield-check", help: "Hand-tested releases." },
           { id: "nightly", label: "Nightly", icon: "flask-conical", help: "Untested builds from every push to master." }
       ] },
     { id: "autoCheckUpdates", page: "updates", section: "How Speecher updates", kind: "toggle",
-      label: "Check for updates automatically", value: true,
+      label: "Check for updates automatically",
       keywords: "auto background check" },
     { id: "updateCheckInterval", page: "updates", section: "How Speecher updates", kind: "choice", control: "select",
-      label: "Check frequency", value: "1440",
+      label: "Check frequency",
       enabledWhen: { id: "autoCheckUpdates", equals: true }, keywords: "interval how often schedule",
       help: "How often Speecher looks for a new version.",
       disabledHelp: "Turn on automatic checks to choose how often.",
@@ -27,7 +27,7 @@ var rows = [
           { id: "custom", label: "Custom" }
       ] },
     { id: "updateCheckCustomInterval", page: "updates", section: "How Speecher updates", kind: "custom",
-      label: "Custom interval", help: "Between 5 minutes and 30 days.", value: { number: 3, unit: "days" },
+      label: "Custom interval", help: "Between 5 minutes and 30 days.",
       keywords: "interval minutes hours days",
       options: [
           { id: "minutes", label: "Minutes" },
@@ -35,7 +35,7 @@ var rows = [
           { id: "days", label: "Days" }
       ] },
     { id: "autoInstallUpdates", page: "updates", section: "How Speecher updates", kind: "toggle",
-      label: "Download and install updates automatically", value: true,
+      label: "Download and install updates automatically",
       help: "Updates install in the background and take effect after a restart.",
       keywords: "auto install background appimage" }
 ];

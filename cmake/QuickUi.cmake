@@ -63,6 +63,7 @@ target_include_directories(speecher_quick_popup PRIVATE "${SPEECHER_QUICK_DIR}/h
 # Every area is C++ over core, and Library.qml words LibraryLists.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/qml/Speecher/Backend"
   SOURCES
+    "${SPEECHER_QUICK_DIR}/host/QmlValues.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAppearance.cpp"
@@ -79,8 +80,6 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QuickLibrary.h"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.h"
-    "${SPEECHER_QUICK_DIR}/host/QuickStatus.cpp"
-    "${SPEECHER_QUICK_DIR}/host/QuickStatus.h"
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.h"
     "${SPEECHER_QUICK_DIR}/host/QuickTranscription.cpp"

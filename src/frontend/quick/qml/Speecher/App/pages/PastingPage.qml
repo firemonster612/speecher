@@ -21,15 +21,13 @@ Page {
                                         : Settings.values.globalPasteRule === "terminal_paste" ? "Press Ctrl+Shift+V" : "Press Ctrl+V" },
         copy: { icon: "clipboard", label: "Copy to clipboard" }
     })[step])
-    readonly property bool _staysCopied: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
-                                                               Settings.values.globalPasteRule, Settings.values.outputMethod)
     // Where words only reach the clipboard, what would get them further, as
     // the default paste rule and Paste with need it.
-    readonly property string _routeCaption: _staysCopied
+    readonly property string _routeCaption: System.wordsStayCopied
         ? "Your words stay on the clipboard until " + ({ accessibility: "desktop accessibility is on.",
                                                          keyboard: "the virtual keyboard is set up.",
                                                          either: "desktop accessibility or the virtual keyboard is set up." })[
-              Health.deliveryNeeds(Settings.values.globalPasteRule, Settings.values.outputMethod)]
+              System.pasteNeed]
         : (Settings.values.outputFormat === "html" ? "Pastes formatted text" : "Pastes plain text")
           + (Settings.values.restoreClipboardAfterTyping ? ", then puts back what was on your clipboard." : " and leaves it on your clipboard.")
 
@@ -40,7 +38,7 @@ Page {
             caption: page._routeCaption
             appName: "Slack"
             // Words that stay on the clipboard never reach the app.
-            sample: page._staysCopied ? "" : "Can you send me last quarter's numbers by Friday?"
+            sample: System.wordsStayCopied ? "" : "Can you send me last quarter's numbers by Friday?"
             startLabel: "Your words"
             firstLabel: "First"
             fallbackLabel: "If that fails"

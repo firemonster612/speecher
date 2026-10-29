@@ -85,31 +85,6 @@ function failure(check) {
 // said in plain ink and not counted.
 function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
 
-// What delivery needs, by the default paste rule and Paste with: direct
-// insertion needs accessibility, the virtual keyboard only needs the keys,
-// and otherwise either does; clipboard only, chosen, needs nothing. macOS
-// presses ⌘V only with accessibility too, so there it is all that's needed.
-function deliveryNeeds(pasteRule, outputMethod) {
-    if (pasteRule === "clipboard_only") return "";
-    if (pasteRule === "direct_insert" || Qt.platform.os === "osx") return "accessibility";
-    if (outputMethod === "ydotool") return "keyboard";
-    return "either";
-}
-
-// Whether dictated words only reach the clipboard: what delivery needs
-// (deliveryNeeds) is missing. accessible is System.accessibility (on for the
-// session counts as on); keyboard is the virtual keyboard's check, absent
-// where there is none to need.
-function wordsStayCopied(accessible, keyboard, pasteRule, outputMethod) {
-    const keys = !keyboard.id || keyboard.state === "ok";
-    switch (deliveryNeeds(pasteRule, outputMethod)) {
-    case "accessibility": return !accessible;
-    case "keyboard": return !keys;
-    case "either": return !accessible && !keys;
-    default: return false;
-    }
-}
-
 function summary(checks) {
     const counted = checks.filter(c => !settledHere(c));
     const passing = counted.filter(c => c.state === "ok").length;

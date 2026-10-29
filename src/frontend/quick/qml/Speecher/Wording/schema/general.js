@@ -2,7 +2,7 @@
 
 var rows = [
     { id: "themeControl", page: "appearance", section: "", kind: "custom",
-      label: "Theme", help: "Follow your desktop, or pick one.", value: "system",
+      label: "Theme", help: "Follow your desktop, or pick one.",
       keywords: "appearance dark light mode colour color scheme",
       options: [
           { id: "system", label: "System" },
@@ -12,11 +12,11 @@ var rows = [
     // A scheme's id: one of Theme.presets, "system", or "installed:<id>" for
     // one of Appearance.installedSchemes.
     { id: "colorScheme", page: "appearance", section: "", kind: "custom",
-      label: "Colors", help: "Each comes in light and dark, and follows the theme.", value: "steno",
+      label: "Colors", help: "Each comes in light and dark, and follows the theme.",
       keywords: "colour color scheme palette accent tint kde plasma desktop installed" },
     { id: "windowLayout", page: "appearance", section: "", kind: "custom",
       label: "Layout", help: "Pages on a sheet framed by the window, or beside the sidebar edge to edge.",
-      value: "framed", keywords: "split framed sidebar frame border navigation window",
+      keywords: "split framed sidebar frame border navigation window",
       options: [
           { id: "framed", label: "Framed" },
           { id: "split", label: "Split" }
@@ -24,13 +24,13 @@ var rows = [
     { id: "translucency", page: "appearance", section: "", kind: "toggle",
       label: "Translucent sidebar", help: "Your desktop shows through the sidebar, blurred.",
       disabledHelp: "Your desktop can't blur behind windows, or has transparency turned down.",
-      needsBlur: true, value: true, keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
+      needsBlur: true, keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
     { id: "roundedCorners", page: "appearance", section: "", kind: "toggle",
       label: "Rounded corners", help: "Round the window's corners, or keep them square.",
-      value: true, keywords: "corner radius round square window frame border" },
+      keywords: "corner radius round square window frame border" },
     { id: "launchAtLogin", page: "general", section: "Startup", kind: "toggle",
       label: "Start Speecher at login", help: "Dictation only works while Speecher is running.",
-      value: true, keywords: "startup autostart boot launch" },
+      keywords: "startup autostart boot launch" },
 
     // Each health row's state, status and fix come from System.checks.
     { id: "microphoneAccess", page: "permissions", section: "", kind: "custom",
@@ -57,7 +57,7 @@ var rows = [
       label: "Keep insights about your dictation",
       help: "Word counts, times and app names, never text or audio. Stays on this computer.",
       offHelp: "Nothing new is recorded while this is off. History you already have stays until you clear it.",
-      value: true, keywords: "stats statistics history privacy tracking" },
+      keywords: "stats statistics history privacy tracking" },
     { id: "clearInsights", page: "general", section: "Insights", kind: "custom",
       label: "Insights history", help: "Delete every recorded dictation from this computer.",
       keywords: "delete clear erase privacy reset stats" },

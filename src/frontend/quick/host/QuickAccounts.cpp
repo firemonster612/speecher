@@ -1,17 +1,19 @@
 #include "frontend/quick/host/QuickAccounts.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QDebug>
 
-#include <cstddef>
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -44,17 +46,6 @@ const struct SecretRow {
 };
 
 const QString cliproxyAccountTypes[] = {QStringLiteral("codex"), QStringLiteral("claude")};
-
-template <typename Row, std::size_t count>
-const Row *findRow(const Row (&rows)[count], const QString &id)
-{
-    for (const Row &row : rows) {
-        if (id == QLatin1String(row.id)) {
-            return &row;
-        }
-    }
-    return nullptr;
-}
 
 QString stateName(SignInState state)
 {
@@ -156,6 +147,9 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
 {
     g_instance = this;
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickAccounts::settingsSaved);
+    // Setup's fallback offer saves providers without a snapshot, so which
+    // sign-ins are in use may change with it.
+    connect(controller->localSetup(), &LocalSetup::changed, this, &QuickAccounts::servicesChanged);
 }
 
 QuickAccounts::~QuickAccounts()
@@ -203,6 +197,7 @@ QVariantMap QuickAccounts::service(const QString &id) const
     const bool answered = m_checks.contains(id);
     const bool checking = m_pending.contains(id) || !answered;
     const SignInCheck check = m_checks.value(id);
+    const bool inUse = signInInUse(row->service, m_controller->settings()->dictationSnapshot());
     return {
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), QLatin1String(row->name)},
@@ -211,6 +206,7 @@ QVariantMap QuickAccounts::service(const QString &id) const
         {QStringLiteral("detail"), check.detail},
         {QStringLiteral("server"), check.server},
         {QStringLiteral("directory"), check.directory},
+        {QStringLiteral("inUse"), inUse},
     };
 }
 
@@ -418,12 +414,18 @@ void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool sav
     }
 }
 
-void QuickAccounts::settingsSaved()
+void QuickAccounts::settingsSaved(const AppSettings &previous)
 {
     if (!m_started) {
         return;
     }
-    const QStringList settings = signInSettings(m_controller->settings()->dictationSnapshot());
+    const AppSettings current = m_controller->settings()->dictationSnapshot();
+    if (std::ranges::any_of(serviceRows, [&](const ServiceRow &row) {
+            return signInInUse(row.service, previous) != signInInUse(row.service, current);
+        })) {
+        emit servicesChanged();
+    }
+    const QStringList settings = signInSettings(current);
     if (settings == m_signInSettings) {
         return;
     }

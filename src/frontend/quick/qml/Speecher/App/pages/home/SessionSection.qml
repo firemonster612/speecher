@@ -18,7 +18,8 @@ Section {
     readonly property var t: T.text
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
     readonly property var latest: Insights.latest
-    readonly property bool hasShortcut: Status.shortcutKeys.length > 0
+    readonly property var shortcutKeys: Settings.values.globalShortcut || []
+    readonly property bool hasShortcut: shortcutKeys.length > 0
     // The desktop gives Speecher no shortcut, so there is none to set.
     readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     // What Speecher knows stands in the way of dictating, each with the
@@ -31,8 +32,7 @@ Section {
     // Where words can neither be inserted (no accessibility) nor pasted
     // with keys (no virtual keyboard), they only reach the clipboard;
     // unless that is what was chosen, Home says so without blocking.
-    readonly property bool clipboardOnly: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
-                                                                 Settings.values.globalPasteRule, Settings.values.outputMethod)
+    readonly property bool clipboardOnly: System.wordsStayCopied
     readonly property var blockers: [
         access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
@@ -59,7 +59,7 @@ Section {
         // the card below lists it instead.
         Row {
             spacing: Theme.space2
-            KeyCombo { keys: Status.shortcutKeys; anchors.verticalCenter: parent.verticalCenter }
+            KeyCombo { keys: session.shortcutKeys; anchors.verticalCenter: parent.verticalCenter }
             Item { width: Theme.space3; height: 1; visible: session.hasShortcut }
             Reveal {
                 sideways: true

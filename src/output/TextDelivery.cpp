@@ -549,6 +549,43 @@ QStringList TextDelivery::pasteRoute(const OutputSettings &settings, PasteMethod
     return route;
 }
 
+TextDelivery::PasteNeed TextDelivery::pasteNeed(const OutputSettings &settings, PasteMethod pasteMethod)
+{
+    if (pasteMethod == PasteMethod::ClipboardOnly) {
+        return PasteNeed::Nothing;
+    }
+#ifdef Q_OS_MACOS
+    // ⌘V reaches another app only through accessibility.
+    Q_UNUSED(settings)
+    return PasteNeed::Accessibility;
+#else
+    if (pasteMethod == PasteMethod::DirectInsert) {
+        return PasteNeed::Accessibility;
+    }
+    if (!OutputMethod::hasVirtualKeyboard) {
+        return PasteNeed::Nothing;
+    }
+    return OutputMethod::normalized(settings.method) == QString::fromLatin1(OutputMethod::Ydotool)
+        ? PasteNeed::VirtualKeyboard
+        : PasteNeed::Either;
+#endif
+}
+
+bool TextDelivery::wordsStayCopied(PasteNeed need, bool accessibility, bool virtualKeyboard)
+{
+    switch (need) {
+    case PasteNeed::Accessibility:
+        return !accessibility;
+    case PasteNeed::VirtualKeyboard:
+        return !virtualKeyboard;
+    case PasteNeed::Either:
+        return !accessibility && !virtualKeyboard;
+    case PasteNeed::Nothing:
+        break;
+    }
+    return false;
+}
+
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 {
     return orderedMethods(settings, PasteMethod::StandardPaste);

@@ -51,6 +51,11 @@ public:
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
     // Saves the draft, unless deleteAll ran.
     void applySnapshot(const AppSettings &draft);
+    // Saves what change makes of a dictation snapshot, unless it returns
+    // false; returns whether it saved. The snapshot leaves unread keyring
+    // secrets unread and applySnapshot keeps them, so an edit never clears a
+    // key it didn't read.
+    bool edit(const std::function<bool(AppSettings &)> &change);
     // Clears every setting and deletes the settings file, as removing
     // Speecher with its settings does. Afterwards nothing the store holds is
     // saved: not a snapshot, a setter, a codec's write or a sync of raw()

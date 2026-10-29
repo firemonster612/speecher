@@ -7,6 +7,7 @@
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -78,11 +79,6 @@ QString measureName(RatingMeasure measure)
         break;
     }
     return QStringLiteral("speed");
-}
-
-QVariant optionalNumber(std::optional<double> value)
-{
-    return value ? QVariant(*value) : QVariant::fromValue(nullptr);
 }
 
 QVariantList barList(const QList<Rating> &bars)
@@ -476,10 +472,10 @@ void QuickModels::use(const QString &id)
         return;
     }
     // The store drops Local Model from the fallbacks once it is the primary.
-    SettingsStore *store = m_controller->settings();
-    AppSettings draft = store->dictationSnapshot();
-    draft.speech.providerId = providerKey(ProviderId::Local);
-    store->applySnapshot(draft);
+    m_controller->settings()->edit([](AppSettings &draft) {
+        draft.speech.providerId = providerKey(ProviderId::Local);
+        return true;
+    });
     m_controller->localSetup()->chooseSpeechModel(id);
 }
 

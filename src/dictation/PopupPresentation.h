@@ -32,10 +32,6 @@ QString popupMessageSeparator();
 // result does.
 QString cancelledOutcomeText();
 
-// Error text wraps at this width (logical pixels, points or DIPs) and the
-// capsule grows taller rather than wider.
-inline constexpr int kPopupErrorWrapWidth = 520;
-
 // An error dismisses itself after popupErrorDismissMs, with a countdown bar
 // beneath it: never sooner than this, and longer for a longer message so it
 // can be read, up to 30 seconds.
