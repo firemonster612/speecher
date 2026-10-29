@@ -539,6 +539,16 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }
 
+    void aiCodingProcessesAreRecognizedByNameOrCommandLine()
+    {
+        QVERIFY(isAiCodingProcess(QStringLiteral("claude"), {}));
+        QVERIFY(isAiCodingProcess(QStringLiteral("MainThread"), {QStringLiteral("/home/me/.local/bin/droid")}));
+        QVERIFY(isAiCodingProcess(QStringLiteral("node"),
+                                  {QStringLiteral("node"),
+                                   QStringLiteral("/usr/lib/node_modules/@openai/codex/bin/codex.js")}));
+        QVERIFY(!isAiCodingProcess(QStringLiteral("zsh"), {QStringLiteral("-zsh")}));
+    }
+
     void recognitionRulesRejectEmptyMatchesAndRespectBuiltInBoundaries()
     {
         Target target;
@@ -1094,7 +1104,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         class TargetWithBaseline final : public TargetProvider {
         public:
-            Target capture(const QList<AppRecognitionRule> &) override { return {}; }
+            Target capture() override { return {}; }
             bool stillFocused(const Target &) override { return true; }
             bool preparePaste(const Target &) override { prepared = true; return true; }
             bool prepared = false;
@@ -1131,7 +1141,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         // the backend calls must refuse the keystroke.
         class ProviderLosingFocus final : public TargetProvider {
         public:
-            Target capture(const QList<AppRecognitionRule> &) override { return {}; }
+            Target capture() override { return {}; }
             bool stillFocused(const Target &) override { return ++checks <= 2; }
             int checks = 0;
         } targetProvider;

@@ -248,7 +248,7 @@ void WinTargetProvider::clearCapture()
     m_replacedSelectionEnd.reset();
 }
 
-Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRules)
+Target WinTargetProvider::capture()
 {
     clearCapture();
     Target target;
@@ -332,10 +332,6 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
     // rather than over the selection, so its text is never edited.
     if (target.terminalHost) {
         target.editable = false;
-    }
-    target.category = classifyTarget(target, recognitionRules);
-    if (target.terminalHost && target.category == AppCategory::General) {
-        target.category = AppCategory::Terminal;
     }
     return target;
 }

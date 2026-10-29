@@ -42,14 +42,13 @@ void AtSpiTargetProvider::clearAccessible()
     m_snapshot.reset();
 }
 
-Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRules)
+Target AtSpiTargetProvider::capture()
 {
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
-    target.category = classifyTarget(target, recognitionRules);
     if (!target.hasIdentity()) {
-        Target fromCompositor = compositorFallbackTarget(recognitionRules);
+        Target fromCompositor = compositorFallbackTarget();
         if (fromCompositor.hasIdentity()) {
             return fromCompositor;
         }
@@ -60,8 +59,7 @@ Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognition
 // Accessibility found no focus target. Ask the compositor which window is
 // active so a terminal that never reached the a11y bus still resolves to the
 // terminal paste rule instead of the global blind-paste chord.
-Target AtSpiTargetProvider::compositorFallbackTarget(
-    const QList<AppRecognitionRule> &recognitionRules)
+Target AtSpiTargetProvider::compositorFallbackTarget()
 {
     if (!m_activeWindow) {
         m_activeWindow = std::make_unique<KWinActiveWindow>();
@@ -80,7 +78,6 @@ Target AtSpiTargetProvider::compositorFallbackTarget(
     target.processId = window->processId;
     target.compositorWindowId = window->internalId;
     target.compositorActive = true;
-    target.category = classifyTarget(target, recognitionRules);
     target.terminalHost = isTerminalTarget(target);
     return target;
 }
@@ -113,7 +110,7 @@ TargetProvider::FocusMatch AtSpiTargetProvider::focusMatch(const Target &target)
         return m_snapshot && m_snapshot->matches(target, true) ? FocusMatch::Same
                                                                : FocusMatch::Different;
     }
-    const Target active = compositorFallbackTarget({});
+    const Target active = compositorFallbackTarget();
     if (!active.compositorActive) {
         return FocusMatch::Different;
     }

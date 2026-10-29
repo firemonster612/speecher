@@ -636,8 +636,6 @@ private slots:
         settings.raw().clear();
         settings.setPauseMediaDuringTranscription(true);
         settings.setRefinementProvider(QStringLiteral("none"));
-        const QList<AppRecognitionRule> rules{{QStringLiteral("org.example.shell"), AppCategory::Terminal, std::nullopt}};
-        settings.setAppRecognitionRules(rules);
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -651,7 +649,6 @@ private slots:
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(target->captureCalls, 1, 250);
-        QCOMPARE(target->lastRecognitionRules, rules);
         QCOMPARE(int(session.state()), int(DictationState::Idle));
         QVERIFY(!speech);
         QCOMPARE(media->pauseCalls, 0);
@@ -754,15 +751,15 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.setRefinementProvider(QStringLiteral("none"));
+        // The person's own rule outranks Kate's built-in Code editor match.
         settings.setAppRecognitionRules({
-            {QStringLiteral("org.example.shell"), AppCategory::Terminal, std::nullopt},
+            {QStringLiteral("org.kde.kate"), AppCategory::Terminal, std::nullopt},
         });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto targetProvider = std::make_unique<FakeTargetProvider>();
         targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
-        targetProvider->target.category = AppCategory::CodeEditor;
         targetProvider->target.caretOffset = 42;
         auto delivery = std::make_unique<FakeDelivery>();
         ProviderRegistry registry;
@@ -780,7 +777,6 @@ private slots:
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(targetProvider->captureCalls, 0);
         QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
-        QCOMPARE(targetProvider->lastRecognitionRules, settings.appRecognitionRules());
         QCOMPARE(int(session.state()), int(DictationState::Listening));
         speech->emitFinalText(QStringLiteral("hello"));
         session.stopListening();
@@ -788,6 +784,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastTarget.applicationId, QStringLiteral("org.kde.kate"));
         QCOMPARE(delivery->lastTarget.caretOffset, 42);
+        QCOMPARE(delivery->lastTarget.category, AppCategory::Terminal);
     }
 
     void deliveredDictationIsRecordedOnlyWhenInsightsAreOn_data()

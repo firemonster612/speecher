@@ -364,13 +364,13 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 
     clearScreenshotContext();
     // Capturing can spin an event loop, where a stop or cancel ends this start
-    // and drops the session settings: the rules capture reads after it are a
-    // copy.
+    // and drops the session settings: the rules classification reads after it
+    // are a copy.
     const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
     // A follow-up edits the same selection, so the Target is the review's:
     // capturing again would also replace the control the provider tracks.
     Target target = m_followingUp ? m_review->target
-        : m_targetProvider ? m_targetProvider->capture(rules)
+        : m_targetProvider ? m_targetProvider->capture()
                            : Target{};
     if (generation != m_generation) {
         return;
@@ -1434,9 +1434,7 @@ bool DictationSession::selectionUnchanged()
     if (m_targetProvider->focusMatch(m_target) != TargetProvider::FocusMatch::Same) {
         return false;
     }
-    // A copy: capturing can spin an event loop where a cancel drops the settings.
-    const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
-    const Target now = m_targetProvider->capture(rules);
+    const Target now = m_targetProvider->capture();
     return now.selectedText == m_target.selectedText && now.selectionStart == m_target.selectionStart
         && now.selectionEnd == m_target.selectionEnd;
 }

@@ -1,6 +1,7 @@
 #include "core/Target.h"
 
 #include <QRegularExpression>
+#include <QSet>
 #include <QStringList>
 
 #include <algorithm>
@@ -313,6 +314,71 @@ AppCategory classifyTarget(const Target &target,
         }
     }
     return target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
+}
+
+// The commands AI coding tools run as in a terminal. The built-in AI coding
+// recognition rules hold their product names, which short commands such as
+// "q" or "pi" can't safely be matched as.
+static const QSet<QString> &aiCodingCommands()
+{
+    static const QSet<QString> commands{
+        QStringLiteral("aider"),
+        QStringLiteral("amp"),
+        QStringLiteral("auggie"),
+        QStringLiteral("claude"),
+        QStringLiteral("cline"),
+        QStringLiteral("codex"),
+        QStringLiteral("copilot"),
+        QStringLiteral("crush"),
+        QStringLiteral("cursor-agent"),
+        QStringLiteral("droid"),
+        QStringLiteral("gemini"),
+        QStringLiteral("goose"),
+        QStringLiteral("kiro-cli"),
+        QStringLiteral("kilocode"),
+        QStringLiteral("kimi"),
+        QStringLiteral("opencode"),
+        QStringLiteral("openhands"),
+        QStringLiteral("pi"),
+        QStringLiteral("q"),
+        QStringLiteral("qwen"),
+        QStringLiteral("replit"),
+        QStringLiteral("roo"),
+        QStringLiteral("trae"),
+        QStringLiteral("vibe"),
+        QStringLiteral("windsurf"),
+    };
+    return commands;
+}
+
+static QString executableName(const QString &path)
+{
+    return path.sliced(path.lastIndexOf(QLatin1Char('/')) + 1).trimmed().toLower();
+}
+
+bool isAiCodingProcess(const QString &processName, const QStringList &commandLine)
+{
+    if (aiCodingCommands().contains(processName.toLower())) {
+        return true;
+    }
+    QStringList executableParts;
+    for (const QString &argument : commandLine.mid(0, 2)) {
+        const QString trimmed = argument.trimmed();
+        if (!trimmed.isEmpty()) {
+            executableParts.append(trimmed);
+            executableParts.append(executableName(trimmed));
+        }
+    }
+    if (executableParts.isEmpty()) {
+        return false;
+    }
+    if (aiCodingCommands().contains(executableName(executableParts.first()))) {
+        return true;
+    }
+
+    Target probe;
+    probe.processName = executableParts.join(QLatin1Char(' '));
+    return classifyTarget(probe) == AppCategory::AiCoding;
 }
 
 QString inferWritingProfile(const Target &target, const QString &fallback)

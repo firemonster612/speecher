@@ -24,7 +24,7 @@ public:
     explicit MacTargetProvider(QObject *parent = nullptr);
     ~MacTargetProvider() override;
 
-    Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override;
+    Target capture() override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
