@@ -30,11 +30,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
-import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.clearInsights
 import app.speecher.android.dictation.insightsFile
+import app.speecher.android.dictation.latestTranscript
 import app.speecher.android.dictation.loadInsights
 import app.speecher.android.provider.Provider
 import app.speecher.android.provider.SpeechProvider
@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                 onOpenWhatsNew = ::openWhatsNew,
                                 onDismissWhatsNew = updates::dismissWhatsNew,
-                                latest = ActiveDictation.latest,
+                                latest = latestTranscript,
                             )
                         }
                     Page.Setup ->
