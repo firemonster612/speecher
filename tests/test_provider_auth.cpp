@@ -1087,9 +1087,9 @@ private slots:
         QTemporaryDir dir;
         const QDateTime expired = QDateTime::currentDateTimeUtc().addSecs(-60);
 
-        RefinementSettings refinement;
-        refinement.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
-        QFile credentials(refinement.claudeCredentialsPath);
+        AccountSettings accounts;
+        accounts.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QFile credentials(accounts.claudeCredentialsPath);
         QVERIFY(credentials.open(QIODevice::WriteOnly));
         credentials.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"), QJsonObject{
             {QStringLiteral("accessToken"), QStringLiteral("expired-token")},
@@ -1097,17 +1097,16 @@ private slots:
             {QStringLiteral("expiresAt"), double(expired.toMSecsSinceEpoch())},
         }}}).toJson());
         credentials.close();
-        const RefinementPrepareResult claude = AnthropicTranscriptRefiner().prepare(refinement);
+        const RefinementPrepareResult claude = AnthropicTranscriptRefiner().prepare({}, accounts);
         QVERIFY(!claude.ok);
         QCOMPARE(claude.kind, kind);
         QCOMPARE(claude.httpStatus, httpStatus);
 
-        SpeechSettings speech;
-        speech.codexAuthMode = QStringLiteral("cliproxy");
-        speech.cliproxyOauthDir = dir.path();
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
                                      QStringLiteral("codex"), QStringLiteral("stale-token"), expired));
-        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare(speech);
+        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare({}, accounts);
         QVERIFY(!codex.ok);
         QCOMPARE(codex.kind, kind);
         QCOMPARE(codex.httpStatus, httpStatus);
@@ -1127,10 +1126,10 @@ private slots:
     void missingSignInIsUnavailable()
     {
         QTemporaryDir dir;
-        SpeechSettings speech;
-        speech.codexAuthMode = QStringLiteral("cliproxy");
-        speech.cliproxyOauthDir = dir.path();
-        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare(speech);
+        AccountSettings accounts;
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
+        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare({}, accounts);
         QVERIFY(!codex.ok);
         QCOMPARE(codex.kind, ProviderFailureKind::Unavailable);
     }
@@ -1310,11 +1309,12 @@ private slots:
                                      QStringLiteral("claude-token-a"), QDateTime::currentDateTimeUtc().addSecs(3600)));
 
         AnthropicTranscriptRefiner refiner;
-        RefinementSettings settings;
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
-        settings.cliproxyOauthDir = dir.path();
-        QVERIFY(!refiner.requiresRefresh(settings));
-        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        const RefinementSettings settings;
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
+        QVERIFY(!refiner.requiresRefresh(settings, accounts));
+        const RefinementPrepareResult prepared = refiner.prepare(settings, accounts);
         QVERIFY2(prepared.ok, qPrintable(prepared.message));
     }
 
@@ -1355,9 +1355,10 @@ private slots:
         QTemporaryDir dir;
         AppSettings settings;
         RefinementSettings &refinement = settings.refinement;
-        refinement.cliproxyOauthDir = dir.path();
-        refinement.anthropicAuthMode = QStringLiteral("cliproxy");
-        refinement.openAiAuthMode = QStringLiteral("settings");
+        AccountSettings &accounts = settings.accounts;
+        accounts.cliproxyOauthDir = dir.path();
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = QStringLiteral("settings");
 
         SignInCheck cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::Missing);
@@ -1400,10 +1401,10 @@ private slots:
         QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
 
         // Claude Code's own sign-in.
-        refinement.anthropicAuthMode = QStringLiteral("oauth");
-        refinement.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        accounts.anthropicAuthMode = QStringLiteral("oauth");
+        accounts.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Missing);
-        QVERIFY(writeJsonCredentials(refinement.claudeCredentialsPath, QStringLiteral("secret-token"),
+        QVERIFY(writeJsonCredentials(accounts.claudeCredentialsPath, QStringLiteral("secret-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(-60)));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
     }
@@ -1426,8 +1427,8 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), chosen, codex, QStringLiteral("a"), expired));
         QVERIFY(writeCliProxyAccount(dir.path(), other, codex, QStringLiteral("b"), expired));
         AppSettings settings;
-        settings.refinement.cliproxyOauthDir = dir.path();
-        settings.refinement.openAiCliproxyAccount = chosen;
+        settings.accounts.cliproxyOauthDir = dir.path();
+        settings.accounts.openAiCliproxyAccount = chosen;
 
         QCOMPARE(renewSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::SignedIn);
         QCOMPARE(server.requests.size(), 1);
@@ -1442,8 +1443,8 @@ private slots:
                                                   {QStringLiteral("expired"), expired.toString(Qt::ISODate)}})
                             .toJson());
         noRefresh.close();
-        settings.refinement.anthropicAuthMode = QStringLiteral("cliproxy");
-        settings.refinement.anthropicCliproxyAccount = claude;
+        settings.accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.accounts.anthropicCliproxyAccount = claude;
         const SignInCheck anthropic = renewSignIn(SignInService::Anthropic, settings, nullptr);
         QCOMPARE(anthropic.state, SignInState::Expired);
         QCOMPARE(anthropic.detail, QStringLiteral("CLI Proxy API account claude-a@example.com.json has no refresh "

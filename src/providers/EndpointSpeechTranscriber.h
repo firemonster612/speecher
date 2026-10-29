@@ -49,8 +49,8 @@ public:
 
     QString id() const override;
     QString label() const override;
-    bool requiresRefresh(const SpeechSettings &settings) const override;
-    SpeechPrepareResult prepare(const SpeechSettings &settings) override;
+    bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
+    SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool streamsFinalText(const SpeechSettings &settings) const override;
     int utteranceAnswerTimeoutMs() const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;

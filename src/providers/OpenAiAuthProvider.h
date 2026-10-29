@@ -7,6 +7,7 @@
 namespace speecher {
 
 class SecretStore;
+struct AccountSettings;
 struct RefinementSettings;
 
 struct OpenAiAuth {
@@ -42,9 +43,16 @@ public:
                                 const QString &cliproxyBaseUrl = {},
                                 const QString &cliproxyApiKey = {});
 
+    // The sign-in Codex dictation uses: a ChatGPT sign-in, never an API key,
+    // so the Codex app's own unless the OpenAI auth mode is cliproxy. Its
+    // websocket connects to OpenAI itself, so a CLI Proxy API server plays
+    // no part.
+    static OpenAiAuthProvider forSpeech(const AccountSettings &accounts);
     // The sign-in OpenAI refinement uses with these settings; secretStore
     // reads the saved API key.
-    static OpenAiAuthProvider forRefinement(SecretStore *secretStore, const RefinementSettings &settings);
+    static OpenAiAuthProvider forRefinement(SecretStore *secretStore,
+                                            const AccountSettings &accounts,
+                                            const RefinementSettings &refinement);
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     OpenAiAuthStatus status() const;

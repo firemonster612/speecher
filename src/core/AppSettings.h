@@ -205,18 +205,12 @@ struct SpeechSettings {
     // Up to two providers tried in order when providerId is unavailable;
     // never providerId itself. See ProviderChain.h.
     QStringList fallbackProviderIds;
-    QString claudeAuthMode = QStringLiteral("oauth");
-    QString codexAuthMode = QStringLiteral("auto");
     bool codexFinalRetranscribe = true;
     // The Spoken Language: a language code, or kAutomaticSpokenLanguage.
     QString language = QStringLiteral("en");
     QStringList vocabulary;
-    QString claudeCredentialsPath;
     QString claudeEndpointBase;
     QString claudeVoicePath;
-    QString cliproxyOauthDir;
-    QString claudeCliproxyAccount;
-    QString codexCliproxyAccount;
     LocalSpeechSettings local;
     SpeechEndpointSettings endpoint;
     // Never stored. Transcribe sets it so a provider that can time its
@@ -302,27 +296,19 @@ struct RefinementSettings {
     QStringList fallbackProviderIds;
     QString style = QStringLiteral("balanced");
     QString openAiModel = QStringLiteral("gpt-6-luna");
-    QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
     // "standard", "fast" or "ultrafast"; see effectiveOpenAiSpeed.
     QString openAiSpeed = QStringLiteral("fast");
-    QString openAiCliproxyAccount;
     QString anthropicModel = QStringLiteral("claude-opus-5-5");
-    QString anthropicAuthMode = QStringLiteral("oauth");
     QString anthropicEffort = QStringLiteral("low");
     bool anthropicFastMode = true;
-    QString anthropicCliproxyAccount;
-    QString cliproxyOauthDir;
-    // What the user typed, or empty for automatic detection. cliproxyOauthDir
-    // above carries the resolved directory; saving that back would pin a
-    // detected path forever, so the settings surface edits this one.
-    QString cliproxyOauthDirConfigured;
+    // The CLI Proxy API server refinement goes through in the cliproxy auth
+    // mode, instead of the account files; empty for none.
     QString cliproxyBaseUrl;
     QString cliproxyApiKey;
     RefinementEndpointSettings endpoint;
     LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    QString claudeCredentialsPath;
     QStringList bindingVocabulary;
     QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
@@ -341,6 +327,29 @@ struct RefinementSettings {
     // Offered after the built-in tones and cleanup levels.
     QList<CustomTone> customTones;
     QList<CustomCleanupLevel> customCleanupLevels;
+};
+
+// How Speecher signs in to each provider family: the Anthropic auth mode
+// covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode
+// Codex dictation and OpenAI refinement, so the speech and refinement
+// providers of a family share these.
+struct AccountSettings {
+    // "auto", "codex_oauth", "codex_api_key", "env", "settings" or "cliproxy".
+    QString openAiAuthMode = QStringLiteral("auto");
+    // "oauth" (Claude Code's credentials) or "cliproxy".
+    QString anthropicAuthMode = QStringLiteral("oauth");
+    // The chosen CLI Proxy API Account file of each type, or empty while the
+    // directory holds only one.
+    QString openAiCliproxyAccount;
+    QString anthropicCliproxyAccount;
+    // The CLI Proxy API account directory in use, detected when nothing was
+    // typed.
+    QString cliproxyOauthDir;
+    // What the user typed, or empty for automatic detection. Saving
+    // cliproxyOauthDir back would pin a detected path forever, so the
+    // settings surface edits this one.
+    QString cliproxyOauthDirConfigured;
+    QString claudeCredentialsPath;
 };
 
 struct OutputSettings {
@@ -380,6 +389,7 @@ struct AppSettings {
     AudioCaptureSettings audio;
     QList<AppRecognitionRule> appRecognitionRules;
     RefinementSettings refinement;
+    AccountSettings accounts;
     OutputSettings output;
     UpdateSettings updates;
     ShortcutActivationMode shortcutActivationMode = ShortcutActivationMode::Hybrid;

@@ -171,16 +171,16 @@ QString LocalRunnerRefiner::label() const
     return QStringLiteral("Local Runner");
 }
 
-bool LocalRunnerRefiner::requiresRefresh(const RefinementSettings &) const
+bool LocalRunnerRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const
 {
     return false;
 }
 
-void LocalRunnerRefiner::refresh(const RefinementSettings &)
+void LocalRunnerRefiner::refresh(const RefinementSettings &, const AccountSettings &)
 {
 }
 
-RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &settings)
+RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
 {
     if (settings.localRunner.lacksModel()) {
         return {false, QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner)),
@@ -192,9 +192,10 @@ RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &se
 void LocalRunnerRefiner::refine(const QString &rawTranscript,
                                 const QStringList &vocabulary,
                                 const RefinementContext &context,
-                                const RefinementSettings &settings)
+                                const RefinementSettings &settings,
+                                const AccountSettings &accounts)
 {
-    const RefinementPrepareResult prepared = prepare(settings);
+    const RefinementPrepareResult prepared = prepare(settings, accounts);
     if (!prepared.ok) {
         emit failed({prepared.kind, prepared.message});
         return;

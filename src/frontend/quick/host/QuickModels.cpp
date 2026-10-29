@@ -435,7 +435,7 @@ void QuickModels::checkComputer()
 void QuickModels::checkSignIns()
 {
     m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
-                                                             m_controller->settings()->dictationSnapshot().speech);
+                                                             m_controller->settings()->dictationSnapshot());
 }
 
 QVariantMap QuickModels::service(const QString &id) const

@@ -39,7 +39,7 @@ public:
     // the service says nothing about the sign-in and notes nothing; it
     // leaves its failure instead. A provider already being checked is left
     // to that check.
-    void checkSpeechSignIns(ProviderRegistry &registry, const SpeechSettings &speech);
+    void checkSpeechSignIns(ProviderRegistry &registry, const AppSettings &settings);
     // Whether that check runs for a provider, and why its last one couldn't
     // reach the service: the provider's message, empty once one gets through
     // and while one runs.

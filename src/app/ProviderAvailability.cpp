@@ -22,7 +22,7 @@ void ProviderAvailability::noteSignIn(const QString &providerId, bool signedIn)
     emit changed();
 }
 
-void ProviderAvailability::checkSpeechSignIns(ProviderRegistry &registry, const SpeechSettings &speech)
+void ProviderAvailability::checkSpeechSignIns(ProviderRegistry &registry, const AppSettings &settings)
 {
     for (const ProviderDescriptor &descriptor : registry.speechProviders()) {
         if (!providerSignsIn(descriptor.id) || checkingSignIn(descriptor.id)) {
@@ -45,9 +45,9 @@ void ProviderAvailability::checkSpeechSignIns(ProviderRegistry &registry, const 
             }
             emit changed();
         };
-        std::optional<SpeechPrepareJob> job = provider->createPrepareJob(speech);
+        std::optional<SpeechPrepareJob> job = provider->createPrepareJob(settings.speech, settings.accounts);
         if (!job || !job->run) {
-            note(provider->prepare(speech));
+            note(provider->prepare(settings.speech, settings.accounts));
             continue;
         }
         runProviderProbe<SpeechPrepareResult>(&registry, this, std::move(job->run), note);

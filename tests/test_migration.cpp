@@ -206,6 +206,14 @@ private slots:
         controller = launch();
         checkMasterState(*controller);
         QCOMPARE(controller->settings()->snapshot().ui.colorScheme, QStringLiteral("fixture-scheme"));
+        // The edit saved the whole snapshot; the sign-in keys, which speech
+        // and refinement share, went back as the file had them.
+        const QSettings fixture(fixtureDir + QStringLiteral("master-0.2.0.conf"), QSettings::IniFormat);
+        for (const char *key : {"openai/auth/mode", "anthropic/auth/mode", "openai/cliproxyAccount",
+                                "anthropic/cliproxyAccount", "cliproxy/oauthDir", "claude/credentialsPath"}) {
+            QVERIFY2(fixture.contains(key), key);
+            QCOMPARE(controller->settings()->raw().value(key).toString(), fixture.value(key).toString());
+        }
     }
 
     // Other values a 0.2.0 user can have saved, each over the same file.
@@ -362,7 +370,7 @@ private:
 
         QCOMPARE(settings.speech.providerId, QStringLiteral("codex"));
         QVERIFY(!settings.speech.codexFinalRetranscribe);
-        QCOMPARE(settings.speech.claudeCredentialsPath, QStringLiteral("/tmp/speecher-fixture-claude/.credentials.json"));
+        QCOMPARE(settings.accounts.claudeCredentialsPath, QStringLiteral("/tmp/speecher-fixture-claude/.credentials.json"));
         QCOMPARE(settings.speech.claudeEndpointBase, QStringLiteral("https://claude.fixture.test"));
         QCOMPARE(settings.speech.claudeVoicePath, QStringLiteral("/v1/voice-fixture"));
 
@@ -414,15 +422,15 @@ private:
         // 0.2.0's default models move to the ones that replaced them.
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
         QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
-        QCOMPARE(settings.refinement.openAiAuthMode, QStringLiteral("settings"));
+        QCOMPARE(settings.accounts.openAiAuthMode, QStringLiteral("settings"));
         QCOMPARE(settings.refinement.openAiEffort, QStringLiteral("medium"));
         QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
-        QCOMPARE(settings.refinement.openAiCliproxyAccount, QStringLiteral("openai-fixture@example.com"));
-        QCOMPARE(settings.refinement.anthropicAuthMode, QStringLiteral("cliproxy"));
+        QCOMPARE(settings.accounts.openAiCliproxyAccount, QStringLiteral("openai-fixture@example.com"));
+        QCOMPARE(settings.accounts.anthropicAuthMode, QStringLiteral("cliproxy"));
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("high"));
         QVERIFY(!settings.refinement.anthropicFastMode);
-        QCOMPARE(settings.refinement.anthropicCliproxyAccount, QStringLiteral("claude-fixture@example.com"));
-        QCOMPARE(settings.refinement.cliproxyOauthDirConfigured, QStringLiteral("/tmp/speecher-fixture-oauth"));
+        QCOMPARE(settings.accounts.anthropicCliproxyAccount, QStringLiteral("claude-fixture@example.com"));
+        QCOMPARE(settings.accounts.cliproxyOauthDirConfigured, QStringLiteral("/tmp/speecher-fixture-oauth"));
         QCOMPARE(settings.refinement.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
 
         QCOMPARE(settings.refinement.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
@@ -465,7 +473,7 @@ private:
         // What the person never chose stays unchosen.
         QVERIFY(!store.raw().contains(SettingsKeys::RefinementProvider));
         QVERIFY(store.raw().value(SettingsKeys::CliproxyOauthDir).toString().isEmpty());
-        QVERIFY(settings.refinement.cliproxyOauthDirConfigured.isEmpty());
+        QVERIFY(settings.accounts.cliproxyOauthDirConfigured.isEmpty());
         QVERIFY(settings.speech.codexFinalRetranscribe);
 
         const WritingProfileSettings &lab = profile(settings, customProfile);

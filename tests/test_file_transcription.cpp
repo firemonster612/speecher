@@ -79,8 +79,8 @@ public:
 
     QString id() const override { return QStringLiteral("claude"); }
     QString label() const override { return QStringLiteral("Scripted"); }
-    bool requiresRefresh(const SpeechSettings &) const override { return false; }
-    SpeechPrepareResult prepare(const SpeechSettings &) override { return {true, {}}; }
+    bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override { return false; }
+    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override { return {true, {}}; }
 
     void startAttempt(quint64, const SpeechSettings &settings) override
     {

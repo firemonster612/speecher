@@ -634,7 +634,7 @@ private slots:
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         RefinementContext context;
 
-        refiner.refine(QStringLiteral("done"), {}, context, settings);
+        refiner.refine(QStringLiteral("done"), {}, context, settings, {});
 
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
         QCOMPARE(completed.first().first().toString(), QStringLiteral("Done."));
@@ -654,7 +654,7 @@ private slots:
         QVERIFY(!body.contains(QStringLiteral("speed")));
 
         // Failures name the custom endpoint, not Anthropic.
-        refiner.refine(QStringLiteral("x"), {}, context, settings);
+        refiner.refine(QStringLiteral("x"), {}, context, settings, {});
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
         const QString message = failed.first().first().value<ProviderFailure>().message;
         QVERIFY2(message.startsWith(QStringLiteral("Custom Endpoint refinement")), qPrintable(message));
@@ -673,7 +673,7 @@ private slots:
         settings.endpoint.model = QStringLiteral("m");
         EndpointTranscriptRefiner refiner;
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-        refiner.refine(QStringLiteral("x"), {}, {}, settings);
+        refiner.refine(QStringLiteral("x"), {}, {}, settings, {});
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
         const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
         QCOMPARE(failure.kind, ProviderFailureKind::Unavailable);

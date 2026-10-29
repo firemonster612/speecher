@@ -169,12 +169,12 @@ QString EndpointSpeechTranscriber::label() const
     return QStringLiteral("Custom Endpoint");
 }
 
-bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &) const
+bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &) const
 {
     return false;
 }
 
-SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &settings)
+SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
 {
     if (settings.endpoint.baseUrl.isEmpty()) {
         return {false, QStringLiteral("Set the speech endpoint's server URL in Settings."),

@@ -313,9 +313,10 @@ private slots:
             QSKIP("Live Claude Voice check is opt-in");
         }
 
-        const SpeechSettings speech = SettingsStore().snapshot().speech;
+        const AppSettings settings = SettingsStore().snapshot();
+        const SpeechSettings &speech = settings.speech;
         const ClaudeCredentialResult credentials = ClaudeCredentials::load(
-            speech.claudeCredentialsPath,
+            settings.accounts.claudeCredentialsPath,
             true);
         QVERIFY2(credentials.ok, qPrintable(credentials.error));
 

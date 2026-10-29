@@ -11,10 +11,10 @@ ProviderSignIn::ProviderSignIn(SettingsStore &settings)
 {
 }
 
-QString ProviderSignIn::cliproxyAccount(const QString &providerId) const
+QString ProviderSignIn::chosenAccount(const QString &type) const
 {
-    return providerId == QStringLiteral("codex") ? m_settings.openAiCliproxyAccount()
-                                                 : m_settings.anthropicCliproxyAccount();
+    return type == QStringLiteral("codex") ? m_settings.openAiCliproxyAccount()
+                                           : m_settings.anthropicCliproxyAccount();
 }
 
 QString ProviderSignIn::resolvedAccountDirectory() const
@@ -25,7 +25,7 @@ QString ProviderSignIn::resolvedAccountDirectory() const
 QList<CliProxyAccount> ProviderSignIn::accounts(const QString &type) const
 {
     QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(resolvedAccountDirectory(), type);
-    const QString chosen = cliproxyAccount(type);
+    const QString chosen = chosenAccount(type);
     const bool found = std::any_of(accounts.cbegin(), accounts.cend(),
                                    [&chosen](const CliProxyAccount &account) { return account.fileName == chosen; });
     if (!chosen.isEmpty() && !found) {

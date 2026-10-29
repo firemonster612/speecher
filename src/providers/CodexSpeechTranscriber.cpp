@@ -2,7 +2,6 @@
 
 #include "core/ProviderTable.h"
 
-#include "providers/CliProxyCredentials.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/PcmWav.h"
@@ -36,28 +35,19 @@ QString transcribeEndpoint()
                               : override;
 }
 
-SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *accessToken)
+SpeechPrepareResult prepareCodex(const AccountSettings &accounts, QString *accessToken)
 {
-    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
-        const CliProxyCredentialResult credentials = CliProxyCredentials::loadWithRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("codex"), settings.codexCliproxyAccount);
-        accessToken->clear();
-        if (credentials.ok) {
-            *accessToken = credentials.accessToken;
-        }
-        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
+    const OpenAiAuth auth = OpenAiAuthProvider::forSpeech(accounts).resolve();
+    *accessToken = auth.ok ? auth.bearerToken : QString();
+    if (auth.ok) {
+        return {true, {}};
     }
-    const OpenAiAuth auth = OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth")).resolve();
-    if (!auth.ok) {
-        accessToken->clear();
-        return {false,
-                QStringLiteral("%1. Sign in with ChatGPT in the ChatGPT app or Codex CLI.")
-                    .arg(auth.status),
-                auth.kind,
-                auth.httpStatus};
-    }
-    *accessToken = auth.bearerToken;
-    return {true, {}};
+    // A CLI Proxy API account's error says which account; the Codex app's
+    // sign-in needs saying where to sign in.
+    const QString message = auth.source == QStringLiteral("cliproxy")
+        ? auth.status
+        : QStringLiteral("%1. Sign in with ChatGPT in the ChatGPT app or Codex CLI.").arg(auth.status);
+    return {false, message, auth.kind, auth.httpStatus};
 }
 
 } // namespace
@@ -77,32 +67,27 @@ QString CodexSpeechTranscriber::label() const
     return QStringLiteral("ChatGPT");
 }
 
-bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
+bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const
 {
-    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
-        return CliProxyCredentials::accountNeedsRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("codex"), settings.codexCliproxyAccount);
-    }
-    return OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth"))
-        .requiresCodexOauthRefresh();
+    return OpenAiAuthProvider::forSpeech(accounts).requiresCodexOauthRefresh();
 }
 
 std::optional<SpeechPrepareJob> CodexSpeechTranscriber::createPrepareJob(
-    const SpeechSettings &settings)
+    const SpeechSettings &settings, const AccountSettings &accounts)
 {
     auto accessToken = std::make_shared<QString>();
     SpeechPrepareJob job;
-    job.showRefreshIndicator = requiresRefresh(settings);
-    job.run = [settings, accessToken] { return prepareCodex(settings, accessToken.get()); };
+    job.showRefreshIndicator = requiresRefresh(settings, accounts);
+    job.run = [accounts, accessToken] { return prepareCodex(accounts, accessToken.get()); };
     job.apply = [this, accessToken](const SpeechPrepareResult &result) {
         m_accessToken = result.ok ? *accessToken : QString();
     };
     return job;
 }
 
-SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &settings)
+SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &, const AccountSettings &accounts)
 {
-    return prepareCodex(settings, &m_accessToken);
+    return prepareCodex(accounts, &m_accessToken);
 }
 
 void CodexSpeechTranscriber::startAttempt(quint64 attemptId,

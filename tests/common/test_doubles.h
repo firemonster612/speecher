@@ -223,7 +223,7 @@ public:
         return QStringLiteral("Fake Speech");
     }
 
-    bool requiresRefresh(const SpeechSettings &) const override
+    bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override
     {
         return refreshRequired;
     }
@@ -238,7 +238,7 @@ public:
         return utteranceAnswerTimeout.value_or(SpeechTranscriber::utteranceAnswerTimeoutMs());
     }
 
-    std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &) override
+    std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &, const AccountSettings &) override
     {
         if (!backgroundPrepare) {
             return std::nullopt;
@@ -263,7 +263,7 @@ public:
         return job;
     }
 
-    SpeechPrepareResult prepare(const SpeechSettings &) override
+    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override
     {
         ++prepareCalls;
         return prepareResult;
@@ -404,12 +404,12 @@ public:
         return QStringLiteral("Fake Refiner");
     }
 
-    bool requiresRefresh(const RefinementSettings &) const override
+    bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override
     {
         return refreshRequired;
     }
 
-    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &) override
+    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &, const AccountSettings &) override
     {
         if (!backgroundRefresh || !refreshRequired) {
             return std::nullopt;
@@ -430,12 +430,12 @@ public:
         return job;
     }
 
-    void refresh(const RefinementSettings &) override
+    void refresh(const RefinementSettings &, const AccountSettings &) override
     {
         ++refreshCalls;
     }
 
-    RefinementPrepareResult prepare(const RefinementSettings &) override
+    RefinementPrepareResult prepare(const RefinementSettings &, const AccountSettings &) override
     {
         ++prepareCalls;
         return prepareResult;
@@ -449,7 +449,8 @@ public:
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
                 const RefinementContext &context,
-                const RefinementSettings &settings) override
+                const RefinementSettings &settings,
+                const AccountSettings &) override
     {
         ++refineCalls;
         lastRawTranscript = rawTranscript;
