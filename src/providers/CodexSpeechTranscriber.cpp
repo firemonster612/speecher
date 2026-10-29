@@ -277,3 +277,5 @@ void CodexSpeechTranscriber::cancelAttempt(quint64 attemptId)
 }
 
 } // namespace speecher
+
+// CI timing probe for #312; not for merging.
