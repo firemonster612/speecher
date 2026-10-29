@@ -813,7 +813,8 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
     QString ipcError;
     IpcRequest request{IpcCommand::AddVocabulary};
     request.terms = terms;
-    const IpcCommandResult ipcResult = SingleInstanceIpc::sendRequest(request, &response, kIpcTimeoutMs, platform, &ipcError);
+    const IpcCommandResult ipcResult =
+        SingleInstanceIpc::sendRequest(request, &response, kIpcTimeoutMs, platform, &ipcError);
     std::optional<QStringList> held;
     if (ipcResult == IpcCommandResult::Unavailable) {
         held = SettingsCodecs::addVocabularyTerms(terms);

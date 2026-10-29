@@ -13,7 +13,6 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 
 namespace speecher {
 

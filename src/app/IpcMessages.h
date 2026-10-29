@@ -87,9 +87,9 @@ struct IpcResponse {
 };
 
 QByteArray ipcRequestFrame(const IpcRequest &request);
-// Reads a request frame, with or without its newline. When it is not one the
-// instance can serve, returns nothing and sets refusal to the answer it gets;
-// the refusal's state is left for the instance to fill in.
+// Reads a request frame without its newline. When it is not one the instance
+// can serve, returns nothing and sets refusal to the answer it gets; the
+// refusal's state is left for the instance to fill in.
 std::optional<IpcRequest> ipcRequestFromFrame(const QByteArray &frame, IpcResponse *refusal);
 
 QByteArray ipcResponseFrame(const IpcResponse &response);
