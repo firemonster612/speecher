@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
@@ -320,7 +321,7 @@ private slots:
     void wordsStayCopiedUntilTheKeyboardIsReady()
     {
         ApplicationController controller(true);
-        QVERIFY(!controller.accessibilityEnabled());
+        QVERIFY(!controller.accessibility()->enabled());
         FakeKeyboard missing;
         QuickSystem without(&controller, missing.system(), quietRemoval());
         QCOMPARE(without.pasteNeed(), QStringLiteral("either"));
