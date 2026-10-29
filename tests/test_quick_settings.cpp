@@ -428,15 +428,15 @@ private slots:
 
         // Past the far end, still held.
         QPointF end = drag(inset + 4, control->width() + 30);
-        QVERIFY2(qAbs(knob->x() + knob->width() - (track->width() - inset)) < 1,
-                 qPrintable(QStringLiteral("knob ends at %1, not %2").arg(knob->x() + knob->width()).arg(track->width() - inset)));
+        QTRY_VERIFY2(qAbs(knob->x() + knob->width() - (track->width() - inset)) < 1,
+                     qPrintable(QStringLiteral("knob ends at %1, not %2").arg(knob->x() + knob->width()).arg(track->width() - inset)));
         QVERIFY(!control->property("checked").toBool());
         QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
         QVERIFY(control->property("checked").toBool());
 
         // And back past the start.
         end = drag(control->width() - inset - 4, -30);
-        QVERIFY2(qAbs(knob->x() - inset) < 1, qPrintable(QStringLiteral("knob starts at %1, not %2").arg(knob->x()).arg(inset)));
+        QTRY_VERIFY2(qAbs(knob->x() - inset) < 1, qPrintable(QStringLiteral("knob starts at %1, not %2").arg(knob->x()).arg(inset)));
         QVERIFY(control->property("checked").toBool());
         QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
         QVERIFY(!control->property("checked").toBool());
