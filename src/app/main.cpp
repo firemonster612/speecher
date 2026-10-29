@@ -4,6 +4,7 @@
 #endif
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
+#include "app/IpcCommandHandler.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/ProvidersCommand.h"
@@ -535,7 +536,7 @@ int main(int argc, char **argv)
 #endif
     controller.updates()->start();
     QString ipcError;
-    const IpcListenResult listened = controller.startIpc(&ipcError);
+    const IpcListenResult listened = controller.ipcCommands()->listen(&ipcError);
     if (listened != IpcListenResult::Listening) {
         const IpcCommand showCommand = !decision.transcribeFiles.isEmpty() ? IpcCommand::Transcribe
             : decision.showSettings                                       ? IpcCommand::ShowSettings

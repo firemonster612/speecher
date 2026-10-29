@@ -412,7 +412,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
 
     QString firstError;
     if (std::optional<DeliveryResult> pasted = pasteThroughBackends(
-            settings, content, target, {pasteMethod, choice.currentFocusFallback}, previousClipboard, &firstError)) {
+            settings, content, target, choice, previousClipboard, &firstError)) {
         return *pasted;
     }
     return {

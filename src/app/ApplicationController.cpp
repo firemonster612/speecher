@@ -654,9 +654,9 @@ bool ApplicationController::removeGlobalShortcutRegistration(QString *error, Glo
     return shortcutBinder(role)->removeRegistration(error);
 }
 
-IpcListenResult ApplicationController::startIpc(QString *error)
+IpcCommandHandler *ApplicationController::ipcCommands() const
 {
-    return m_ipcCommands->listen(error);
+    return m_ipcCommands;
 }
 
 void ApplicationController::showMainWindow()
@@ -878,11 +878,6 @@ void ApplicationController::quitApplication()
     emit quitRequested();
 }
 
-void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSocket *socket)
-{
-    m_ipcCommands->handle(request, socket);
-}
-
 // Children are otherwise deleted in creation order, which puts the provider
 // registry (owner of the transcriber and refiner) before the session that still
 // points at them. Tear the dependents down first.
@@ -892,6 +887,11 @@ ApplicationController::~ApplicationController()
     // the session below makes some; cut the IPC off from them first.
     disconnect(m_session, nullptr, m_ipcCommands, nullptr);
     disconnect(m_recording, nullptr, m_ipcCommands, nullptr);
+    // The gesture asks the session whether one is active; no binder may reach
+    // it once the session is gone.
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        disconnect(shortcutBinder(role), nullptr, m_shortcutGesture, nullptr);
+    }
     delete m_updates;
     m_updates = nullptr;
     delete m_recording;

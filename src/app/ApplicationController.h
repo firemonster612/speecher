@@ -12,7 +12,6 @@
 #include "core/ShortcutBinding.h"
 #include "platform/GlobalShortcutBinder.h"
 
-class QLocalSocket;
 
 namespace speecher {
 
@@ -79,9 +78,6 @@ public:
     // attached nothing waits for it; each start still checks its provider and
     // the microphone.
     bool setupPending() const;
-    // Opens the setup assistant while setupPending(), and says whether a start
-    // may go ahead.
-    bool ensureSetupCompleted();
     // Called by the front end once its first window is on screen. Startup work
     // that would compete with the first paint waits for this.
     void frontEndReady();
@@ -171,11 +167,14 @@ public:
     // The setup assistant closed, finished or not: the main window shows,
     // unless files held through setup are about to open in their own.
     void setupAssistantClosed();
-    IpcListenResult startIpc(QString *error = nullptr);
+    // Serves the command line over the local socket once main() has it listen.
+    IpcCommandHandler *ipcCommands() const;
 
 public slots:
     void toggle();
     // A toggle with the --format, --profile or --language it was given.
+    // Unlike toggle(), it checks setup before stopping an active session, as
+    // the IPC toggle always has.
     void toggleWith(const SessionOverrides &overrides);
     void startListening();
     // A start with the --format, --profile or --language it was given.
@@ -187,8 +186,6 @@ public slots:
     void showSettings();
     void showSetup();
     void quitApplication();
-    // Serves request and answers it on socket, which may be null.
-    void handleIpcRequest(const IpcRequest &request, QLocalSocket *socket);
 
 signals:
     void stateChanged(DictationState state);
@@ -209,6 +206,7 @@ private:
     void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
+    bool ensureSetupCompleted();
     // A dictation is under way, or a start waits for the microphone grant.
     bool sessionActive() const;
     GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
