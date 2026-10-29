@@ -196,6 +196,12 @@ public:
     using SettingsCodecs::setShortcutActivationMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::shortcutActivationMode;
+    using SettingsCodecs::globalShortcut;
+    using SettingsCodecs::setGlobalShortcut;
+    using SettingsCodecs::forgetGlobalShortcutCombination;
+    using SettingsCodecs::forgetGlobalShortcutSingleKey;
+    using SettingsCodecs::portalShortcutCleared;
+    using SettingsCodecs::setPortalShortcutCleared;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;
     using SettingsCodecs::colorScheme;

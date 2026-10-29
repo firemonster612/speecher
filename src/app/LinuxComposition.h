@@ -26,6 +26,7 @@ public:
     WindowBackdrop *createWindowBackdrop(QObject *parent) const override;
     SessionKeyGrab *createSessionKeyGrab(QObject *parent) const override;
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                     SettingsStore *settings,
                                                      QObject *parent) const override;
 
     AccessibilityState accessibilityState() const override;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/ShortcutBinding.h"
-#include "core/settings/SettingsKeys.h"
 
 #include <QObject>
 #include <QString>
@@ -10,9 +9,9 @@ namespace speecher {
 
 // What a binder needs to know about the Global Shortcut it serves.
 struct GlobalShortcutAction {
-    // Where Speecher keeps the binding, on platforms without a desktop
-    // registry of their own.
-    QString settingsKey;
+    // Which Global Shortcut it is, which also names where SettingsStore keeps
+    // the binding on platforms without a desktop registry of their own.
+    GlobalShortcutRole role = GlobalShortcutRole::Dictation;
     // The desktop shortcut service's name for it (KGlobalAccel, the portal).
     QString id;
     // What the desktop's own shortcut settings call it.
@@ -43,13 +42,13 @@ public:
     {
         switch (role) {
         case GlobalShortcutRole::Cancel:
-            return {SettingsKeys::CancelShortcut,
+            return {GlobalShortcutRole::Cancel,
                     QStringLiteral("cancel-dictation"),
                     QStringLiteral("Cancel dictation"),
                     {},
                     true};
         case GlobalShortcutRole::Pause:
-            return {SettingsKeys::PauseShortcut,
+            return {GlobalShortcutRole::Pause,
                     QStringLiteral("pause-dictation"),
                     QStringLiteral("Pause or resume dictation"),
                     {},
@@ -57,7 +56,7 @@ public:
         case GlobalShortcutRole::Dictation:
             break;
         }
-        return {SettingsKeys::GlobalShortcut,
+        return {GlobalShortcutRole::Dictation,
                 QStringLiteral("toggle-dictation"),
                 QStringLiteral("Toggle dictation"),
                 defaultShortcut()};

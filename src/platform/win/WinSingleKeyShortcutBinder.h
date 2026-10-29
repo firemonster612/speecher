@@ -24,6 +24,7 @@ class WinSingleKeyShortcutBinder final : public SingleKeyShortcutBinder {
 
 public:
     explicit WinSingleKeyShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
 

@@ -1310,6 +1310,66 @@ void SettingsCodecs::setShortcutActivationMode(ShortcutActivationMode value)
     m_settings.setValue(SettingsKeys::ShortcutActivationMode, shortcutActivationModeName(value));
 }
 
+namespace {
+
+QString globalShortcutKey(GlobalShortcutRole role)
+{
+    switch (role) {
+    case GlobalShortcutRole::Cancel:
+        return SettingsKeys::CancelShortcut;
+    case GlobalShortcutRole::Pause:
+        return SettingsKeys::PauseShortcut;
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return SettingsKeys::GlobalShortcut;
+}
+
+QString portalShortcutClearedKey(GlobalShortcutRole role)
+{
+    return globalShortcutKey(role) + QStringLiteral("PortalCleared");
+}
+
+} // namespace
+
+ShortcutBinding SettingsCodecs::globalShortcut(GlobalShortcutRole role) const
+{
+    return ShortcutBinding::fromString(value(globalShortcutKey(role), QString()).toString());
+}
+
+void SettingsCodecs::setGlobalShortcut(GlobalShortcutRole role, const ShortcutBinding &value)
+{
+    m_settings.setValue(globalShortcutKey(role), value.toString());
+}
+
+void SettingsCodecs::forgetGlobalShortcutCombination(GlobalShortcutRole role)
+{
+    if (!globalShortcut(role).isSingleKey()) {
+        m_settings.remove(globalShortcutKey(role));
+    }
+}
+
+void SettingsCodecs::forgetGlobalShortcutSingleKey(GlobalShortcutRole role)
+{
+    if (globalShortcut(role).isSingleKey()) {
+        m_settings.remove(globalShortcutKey(role));
+    }
+}
+
+bool SettingsCodecs::portalShortcutCleared(GlobalShortcutRole role) const
+{
+    return value(portalShortcutClearedKey(role), false).toBool();
+}
+
+void SettingsCodecs::setPortalShortcutCleared(GlobalShortcutRole role, bool value)
+{
+    if (value) {
+        m_settings.setValue(portalShortcutClearedKey(role), true);
+    } else {
+        m_settings.remove(portalShortcutClearedKey(role));
+    }
+}
+
 UpdateChannel SettingsCodecs::updateChannel() const
 {
     return updateChannelFromName(

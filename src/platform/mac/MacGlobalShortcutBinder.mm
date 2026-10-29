@@ -1,11 +1,9 @@
 #include "platform/mac/MacGlobalShortcutBinder.h"
 
-#include "core/settings/SettingsKeys.h"
 #include "platform/mac/MacKeyCode.h"
 
 #include <QDebug>
 #include <QHash>
-#include <QSettings>
 
 #import <Carbon/Carbon.h>
 
@@ -94,26 +92,6 @@ bool carbonHotKeyFor(const QKeySequence &shortcut,
         *modifiers |= shiftKey;
     }
     return true;
-}
-
-QKeySequence savedShortcut(const GlobalShortcutAction &action)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    // The stored value can be a single key ("key:…"), which belongs to the
-    // single-key binder and must not parse as a sequence here.
-    const ShortcutBinding stored =
-        ShortcutBinding::fromString(settings.value(action.settingsKey).toString());
-    return stored.combination().isEmpty() ? action.defaultShortcut : stored.combination();
-}
-
-void storeShortcut(const QString &key, const QKeySequence &shortcut)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    settings.setValue(key, shortcut.toString());
 }
 
 } // namespace
@@ -317,9 +295,10 @@ private:
     EventTime m_pressedAt = 0;
 };
 
-MacGlobalShortcutBinder::MacGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : GlobalShortcutBinder(std::move(action), parent)
-    , m_shortcut(savedShortcut(this->action()))
+MacGlobalShortcutBinder::MacGlobalShortcutBinder(SettingsStore *settings,
+                                                 GlobalShortcutAction action,
+                                                 QObject *parent)
+    : HotKeyShortcutBinder(settings, std::move(action), parent)
     , m_hotKey(std::make_unique<CarbonHotKey>(
           this, false, [this] { emit activated(); }, [this](qint64 heldMs) { emit deactivated(heldMs); }))
 {
@@ -327,95 +306,25 @@ MacGlobalShortcutBinder::MacGlobalShortcutBinder(GlobalShortcutAction action, QO
 
 MacGlobalShortcutBinder::~MacGlobalShortcutBinder() = default;
 
-bool MacGlobalShortcutBinder::supported() const
+bool MacGlobalShortcutBinder::registerKeys(const QKeySequence &keys, QString *error)
 {
-    return true;
+    return m_hotKey->registerKeys(keys, error);
 }
 
-QString MacGlobalShortcutBinder::unsupportedReason() const
+void MacGlobalShortcutBinder::unregisterKeys()
 {
-    return {};
-}
-
-void MacGlobalShortcutBinder::bind()
-{
-    if (m_shortcut.isEmpty()) {
-        return;
-    }
-    if (m_suspensionCount > 0) {
-        m_resumeBinding = true;
-        return;
-    }
-    QString error;
-    if (!m_hotKey->registerKeys(m_shortcut, &error)) {
-        qWarning().noquote() << "Could not register the global shortcut:" << error;
-    }
-}
-
-ShortcutBinding MacGlobalShortcutBinder::shortcut() const
-{
-    return m_shortcut;
-}
-
-bool MacGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)
-{
-    const QString reason = unsupportedBindingReason(shortcut);
-    if (!reason.isEmpty()) {
-        if (error) {
-            *error = reason;
-        }
-        return false;
-    }
-    if (shortcut.isEmpty()) {
-        removeRegistration();
-        m_shortcut = {};
-        storeShortcut(action().settingsKey, m_shortcut);
-        return true;
-    }
-    if (!m_hotKey->registerKeys(shortcut.combination(), error)) {
-        return false;
-    }
-    if (m_suspensionCount > 0) {
-        // Validate conflicts now, but leave keys available to other recorders.
-        m_resumeBinding = true;
-        m_hotKey->unregister();
-    }
-    m_shortcut = shortcut.combination();
-    storeShortcut(action().settingsKey, m_shortcut);
-    return true;
-}
-
-// A Carbon hotkey is consumed system-wide and never arrives as an app key
-// event, so recording it (or any replacement) needs the registration gone.
-void MacGlobalShortcutBinder::suspend()
-{
-    if (m_suspensionCount++ > 0) return;
-    m_resumeBinding = m_hotKey->registered();
     m_hotKey->unregister();
 }
 
-QString MacGlobalShortcutBinder::resume()
+bool MacGlobalShortcutBinder::registered() const
 {
-    if (m_suspensionCount == 0 || --m_suspensionCount > 0) return {};
-    QString error;
-    if (m_resumeBinding) {
-        m_resumeBinding = false;
-        m_hotKey->registerKeys(m_shortcut, &error);
-    }
-    return error;
+    return m_hotKey->registered();
 }
 
-// The router calls this when a single key replaces the combination: the
-// Carbon hotkey has to go now, not at the next launch, or both would fire.
-bool MacGlobalShortcutBinder::removeRegistration(QString *)
-{
-    m_resumeBinding = false;
-    m_hotKey->unregister();
-    return true;
-}
-
-MacSessionShortcutBinder::MacSessionShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : SessionShortcutBinder(std::move(action), parent)
+MacSessionShortcutBinder::MacSessionShortcutBinder(SettingsStore *settings,
+                                                   GlobalShortcutAction action,
+                                                   QObject *parent)
+    : SessionShortcutBinder(settings, std::move(action), parent)
     , m_hotKey(std::make_unique<CarbonHotKey>(this, true, [this] { emit activated(); }))
 {
 }

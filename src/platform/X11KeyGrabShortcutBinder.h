@@ -15,7 +15,7 @@ class X11KeyGrabShortcutBinder final : public SessionShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit X11KeyGrabShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr);
+    X11KeyGrabShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent = nullptr);
     ~X11KeyGrabShortcutBinder() override;
 
     bool supported() const override;

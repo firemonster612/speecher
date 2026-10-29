@@ -11,6 +11,8 @@ class QTimer;
 
 namespace speecher {
 
+class SettingsStore;
+
 struct PortalShortcut {
     QString id;
     QVariantMap properties;
@@ -24,6 +26,7 @@ class PortalGlobalShortcutBinder final : public GlobalShortcutBinder,
 
 public:
     explicit PortalGlobalShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
 
@@ -75,6 +78,7 @@ private:
     void closeRequest();
     void disconnectRequest();
 
+    SettingsStore *m_settings;
     bool m_supported = false;
     bool m_supportKnown = true;
     bool m_bindWhenSupported = false;

@@ -176,13 +176,14 @@ WindowBackdrop *WindowsComposition::createWindowBackdrop(QObject *parent) const
 }
 
 GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                     SettingsStore *settings,
                                                                      QObject *parent) const
 {
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
     GlobalShortcutBinder *combination = action.sessionOnly
-        ? static_cast<GlobalShortcutBinder *>(new WinSessionShortcutBinder(action))
-        : new WinGlobalShortcutBinder(action);
-    return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(action), parent);
+        ? static_cast<GlobalShortcutBinder *>(new WinSessionShortcutBinder(settings, action))
+        : new WinGlobalShortcutBinder(settings, action);
+    return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(settings, action), parent);
 }
 
 SessionKeyGrab *WindowsComposition::createSessionKeyGrab(QObject *parent) const

@@ -5,8 +5,10 @@
 
 namespace speecher {
 
-WinSingleKeyShortcutBinder::WinSingleKeyShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : SingleKeyShortcutBinder(std::move(action), parent)
+WinSingleKeyShortcutBinder::WinSingleKeyShortcutBinder(SettingsStore *settings,
+                                                       GlobalShortcutAction action,
+                                                       QObject *parent)
+    : SingleKeyShortcutBinder(settings, std::move(action), parent)
 {
 }
 

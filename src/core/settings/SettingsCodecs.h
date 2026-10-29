@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/ShortcutBinding.h"
 #include "core/settings/SettingsFile.h"
 
 #include <optional>
@@ -86,6 +87,20 @@ public:
     int completionStatusDurationMs() const; void setCompletionStatusDurationMs(int value);
     QList<PasteRule> pasteRules() const; void setPasteRules(const QList<PasteRule> &rules);
     ShortcutActivationMode shortcutActivationMode() const; void setShortcutActivationMode(ShortcutActivationMode value);
+    // The binding Speecher keeps for a Global Shortcut, a combination or a
+    // single key; empty when none is stored. Where a desktop shortcut service
+    // keeps the combination (KGlobalAccel, the portal), only a single key and
+    // the session shortcuts are stored here.
+    ShortcutBinding globalShortcut(GlobalShortcutRole role) const; void setGlobalShortcut(GlobalShortcutRole role, const ShortcutBinding &value);
+    // A Global Shortcut's combination binder and single-key binder share its
+    // stored binding. Each forgets only a binding of its own kind, so one side
+    // clearing just after the other side set a binding keeps that binding.
+    void forgetGlobalShortcutCombination(GlobalShortcutRole role);
+    void forgetGlobalShortcutSingleKey(GlobalShortcutRole role);
+    // The person let the portal's shortcut go. The portal hands an app's
+    // shortcuts back whenever a session is restored, so until a new one is
+    // bound, Speecher restores none.
+    bool portalShortcutCleared(GlobalShortcutRole role) const; void setPortalShortcutCleared(GlobalShortcutRole role, bool value);
     UpdateChannel updateChannel() const; void setUpdateChannel(UpdateChannel value);
     bool autoCheckUpdates() const; void setAutoCheckUpdates(bool value);
     bool autoInstallUpdates() const; void setAutoInstallUpdates(bool value);

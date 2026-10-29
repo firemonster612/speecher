@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/GlobalShortcutBinder.h"
+#include "platform/HotKeyShortcutBinder.h"
 #include "platform/SessionShortcutBinder.h"
 
 #include <memory>
@@ -12,32 +12,23 @@ namespace speecher {
 class CarbonHotKey;
 
 // Carbon hot keys are the only macOS API that reports key release as well as
-// press without an Accessibility grant, which is what push-to-talk needs. macOS
-// has no desktop-wide shortcut registry to store the binding in, so it lives in
-// Speecher's own settings.
-class MacGlobalShortcutBinder : public GlobalShortcutBinder {
+// press without an Accessibility grant, which is what push-to-talk needs.
+class MacGlobalShortcutBinder final : public HotKeyShortcutBinder {
     Q_OBJECT
 
 public:
     explicit MacGlobalShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
     ~MacGlobalShortcutBinder() override;
 
-    bool supported() const override;
-    QString unsupportedReason() const override;
-    void bind() override;
-    ShortcutBinding shortcut() const override;
-    bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) override;
-    void suspend() override;
-    QString resume() override;
-    bool removeRegistration(QString *error = nullptr) override;
+protected:
+    bool registerKeys(const QKeySequence &keys, QString *error) override;
+    void unregisterKeys() override;
+    bool registered() const override;
 
 private:
-    QKeySequence m_shortcut;
-    // Setup and settings can record concurrently; only the last resume binds.
-    int m_suspensionCount = 0;
-    bool m_resumeBinding = false;
     std::unique_ptr<CarbonHotKey> m_hotKey;
 };
 
@@ -48,7 +39,7 @@ class MacSessionShortcutBinder final : public SessionShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit MacSessionShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr);
+    MacSessionShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent = nullptr);
     ~MacSessionShortcutBinder() override;
 
     bool supported() const override;
