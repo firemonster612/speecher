@@ -303,11 +303,12 @@ private slots:
         socket.write(QByteArrayLiteral("{\"command\":\"recordStart\"}"));
         socket.flush();
         QTRY_COMPARE(commands.count(), 1);
-        socket.write(QByteArrayLiteral("\n"));
+        // Frames on one socket are handled in order, so once the next
+        // command arrives the newline before it has been handled.
+        socket.write(QByteArrayLiteral("\n{\"command\":\"stop\"}\n"));
         socket.flush();
-        QTest::qWait(100);
+        QTRY_COMPARE(commands.count(), 2);
         QCOMPARE(refusals.count(), 0);
-        QCOMPARE(socket.state(), QLocalSocket::ConnectedState);
     }
 
     void singleInstanceIpcReadsTwoFramedCommands()
