@@ -1118,8 +1118,10 @@ private slots:
         for (int i = 0; i < 300; ++i) {
             microphone->pushAudio(microphoneChunk(8000));
         }
+        // The recording works through all 30 s as fast as the CPU allows: about
+        // 10 s on a macOS runner shared with the other suites.
         QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList({QStringLiteral("Part 1."), QStringLiteral("Part 2.")}),
-                                  10000);
+                                  30000);
         QCOMPARE(heardAtEnds, QList<qsizetype>({25, 30}));
     }
 
