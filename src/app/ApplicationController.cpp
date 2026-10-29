@@ -2,11 +2,11 @@
 
 #include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
+#include "app/IpcCommandHandler.h"
 #include "app/LocalSetup.h"
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
-#include "app/ProvidersCommand.h"
 #include "app/ShortcutGesture.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateController.h"
@@ -34,11 +34,7 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
-#include <QLocalSocket>
 #include <QStandardPaths>
-#ifdef SPEECHER_E2E_HOOKS
-#include <QMetaEnum>
-#endif
 #include <QTimer>
 #ifdef Q_OS_MACOS
 #include <QPermissions>
@@ -98,7 +94,6 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, this))
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, this))
     , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
-    , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_shortcutGesture(new ShortcutGesture(*m_settings, [this] { return sessionActive(); }, this))
     , m_whatsNew(new WhatsNewTracker(*m_settings, this))
 {
@@ -212,13 +207,6 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
     connect(m_session, &DictationSession::microphoneChanged, m_recording, &RecordingSession::setDictating);
     connect(m_session, &DictationSession::listeningChanged, m_recording, &RecordingSession::setDictationListening);
-    connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
-        IpcResponse reply = response();
-        reply.recording = status;
-        for (const QPointer<QLocalSocket> &socket : std::exchange(m_recordStopReplies, {})) {
-            SingleInstanceIpc::writeResponse(socket, reply);
-        }
-    });
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, this);
 #elif defined(Q_OS_WIN)
@@ -238,9 +226,6 @@ ApplicationController::ApplicationController(bool popupOnly,
         return m_recording->isRecording() ? RestartBlocker::Recording : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
-    // After the stop replies above are written: recordingChanged(false) comes
-    // before them.
-    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -268,19 +253,10 @@ ApplicationController::ApplicationController(bool popupOnly,
         emit lastRecordChanged();
     });
 
-    connect(m_ipc, &SingleInstanceIpc::requestReceived, this, &ApplicationController::handleIpcRequest);
-    connect(m_ipc, &SingleInstanceIpc::requestRefused, this, [this](const IpcResponse &refusal, QLocalSocket *socket) {
-        IpcResponse reply = refusal;
-        reply.state = response().state;
-        SingleInstanceIpc::writeResponse(socket, reply);
-    });
-    // Not on each tick of the recording's duration, which every line carries.
-    const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
-    m_statusPublishers = {
-        connect(m_session, &DictationSession::stateChanged, this, publishStatus),
-        connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus),
-        connect(m_recording, &RecordingSession::problemChanged, this, publishStatus),
-    };
+    m_ipcCommands = new IpcCommandHandler(*this, *m_recording, m_platform, this);
+    // After record stop's replies are written: recordingChanged(false) comes
+    // before them.
+    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
@@ -359,43 +335,22 @@ bool ApplicationController::isRecording() const
     return m_recording->isRecording();
 }
 
-// macOS may ask for the microphone first, and the provider's stream must
-// connect, so the reply waits for both.
 void ApplicationController::startRecording(const QString &path,
                                            const QStringList &vocabulary,
                                            bool microphoneOnly,
-                                           QLocalSocket *socket)
+                                           std::function<void(const QString &error)> done)
 {
     if (!ensureSetupCompleted()) {
-        SingleInstanceIpc::writeResponse(socket, response(false, recordingNeedsSetupText()));
+        done(recordingNeedsSetupText());
         return;
     }
     m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, microphoneOnly,
-                                               socket = QPointer(socket)](bool granted) {
+                                               done = std::move(done)](bool granted) {
         if (!granted) {
-            SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
+            done(microphoneAccessOffText());
             return;
         }
-        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, [this, socket](const QString &error) {
-            if (!error.isEmpty()) {
-                SingleInstanceIpc::writeResponse(socket, response(false, error));
-                return;
-            }
-            // A command line that stopped waiting said the start failed, so
-            // nothing may record behind its back.
-            if (!socket || socket->state() != QLocalSocket::ConnectedState) {
-                qWarning() << "record start's caller left before it answered; discarding the recording";
-                m_recording->discard();
-                return;
-            }
-            IpcResponse reply = response();
-            reply.recording = m_recording->status();
-            if (!m_settings->recordingConsentNoticeShown()) {
-                m_settings->setRecordingConsentNoticeShown(true);
-                reply.message = recordingConsentNotice();
-            }
-            SingleInstanceIpc::writeResponse(socket, reply);
-        });
+        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, done);
     });
 }
 
@@ -563,19 +518,6 @@ QString ApplicationController::lastTranscript() const
     return m_lastTranscript;
 }
 
-IpcResponse ApplicationController::response(bool ok, const QString &message) const
-{
-    const SessionResponse sessionResponse = m_session->response(ok, message);
-    return {sessionResponse.ok, sessionResponse.state, sessionResponse.message};
-}
-
-IpcResponse ApplicationController::statusResponse() const
-{
-    IpcResponse reply = response();
-    reply.recording = m_recording->status();
-    return reply;
-}
-
 QString ApplicationController::outputSummary() const
 {
     return m_platform->outputSummary();
@@ -714,7 +656,7 @@ bool ApplicationController::removeGlobalShortcutRegistration(QString *error, Glo
 
 IpcListenResult ApplicationController::startIpc(QString *error)
 {
-    return m_ipc->listen(error);
+    return m_ipcCommands->listen(error);
 }
 
 void ApplicationController::showMainWindow()
@@ -841,6 +783,18 @@ void ApplicationController::toggle()
     startWithMicrophone([this] { m_session->toggle(); });
 }
 
+void ApplicationController::toggleWith(const SessionOverrides &overrides)
+{
+    if (!ensureSetupCompleted()) {
+        return;
+    }
+    if (sessionActive()) {
+        stopListening();
+        return;
+    }
+    startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
+}
+
 void ApplicationController::startListening()
 {
     startListeningWith({});
@@ -926,137 +880,7 @@ void ApplicationController::quitApplication()
 
 void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSocket *socket)
 {
-    const SessionOverrides &overrides = request.overrides;
-    if (overrides.writingProfile
-        && offeredWritingProfile(*overrides.writingProfile, m_settings->writingProfileSettings(), {}).isEmpty()) {
-        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
-        return;
-    }
-    // toggle and start echo the overrides they read; see IpcResponse::writingProfile.
-    const auto acknowledge = [this, socket, &overrides] {
-        IpcResponse reply = response();
-        reply.writingProfile = overrides.writingProfile.value_or(QString());
-        reply.spokenLanguage = overrides.spokenLanguage.value_or(QString());
-        SingleInstanceIpc::writeResponse(socket, reply);
-    };
-    switch (request.command) {
-    case IpcCommand::Toggle:
-        if (!ensureSetupCompleted()) {
-            acknowledge();
-            return;
-        }
-        if (sessionActive()) {
-            stopListening();
-        } else {
-            startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
-        }
-        acknowledge();
-        return;
-    case IpcCommand::Start:
-        startListeningWith(overrides);
-        acknowledge();
-        return;
-    case IpcCommand::Stop:
-        stopListening();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::Cancel:
-        cancel();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowMain:
-        showMain();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowSettings:
-        showSettings();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::ShowSetup:
-        showSetup();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::Transcribe:
-        showTranscribeFiles(request.files);
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-#ifdef SPEECHER_E2E_HOOKS
-    case IpcCommand::E2eUpdateCheck:
-        m_updates->checkForUpdates(m_settings->updateChannel());
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eUpdateStatus:
-        SingleInstanceIpc::writeResponse(socket, {
-            true,
-            QString::fromLatin1(QMetaEnum::fromType<UpdateController::State>().valueToKey(int(m_updates->state()))),
-            QStringLiteral("currentVersion=%1\ncurrentBuild=%2\navailableVersion=%3\nerror=%4\nbannerVisible=%5\npid=%6")
-                .arg(m_updates->currentVersion())
-                .arg(SPEECHER_BUILD_NUMBER)
-                .arg(m_updates->availableVersion(), m_updates->errorMessage(),
-                     m_updates->bannerVisible() ? QStringLiteral("true") : QStringLiteral("false"))
-                .arg(QCoreApplication::applicationPid()),
-        });
-        return;
-    case IpcCommand::E2ePause:
-        m_session->pause();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eResume:
-        m_session->resume();
-        SingleInstanceIpc::writeResponse(socket, response());
-        return;
-    case IpcCommand::E2eUpdateAccept:
-        SingleInstanceIpc::writeResponse(socket, response());
-        m_updates->installAndRestart();
-        return;
-#endif
-    case IpcCommand::RecordStart:
-        startRecording(request.files.value(0), request.terms, request.microphoneOnly, socket);
-        return;
-    case IpcCommand::RecordStatus: {
-        IpcResponse reply = response();
-        reply.recording = m_recording->status();
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::RecordStop:
-        if (!m_recording->isRecording()) {
-            SingleInstanceIpc::writeResponse(socket, response(false, notRecordingText()));
-            return;
-        }
-        m_recordStopReplies.append(socket);
-        m_recording->stop();
-        return;
-    case IpcCommand::Status:
-        SingleInstanceIpc::writeResponse(socket, statusResponse());
-        return;
-    case IpcCommand::WatchStatus:
-        m_ipc->addStatusWatcher(socket, statusResponse());
-        return;
-    case IpcCommand::Last: {
-        IpcResponse reply = response(!m_lastTranscript.isEmpty());
-        reply.text = m_lastTranscript;
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::Providers: {
-        IpcResponse reply = response();
-        reply.text = QString::fromUtf8(providerReportsJson(providerReports(*m_settings, *m_localSetup, *m_providers)));
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::AddVocabulary: {
-        const std::optional<QStringList> held = m_settings->addVocabularyTerms(request.terms);
-        IpcResponse reply = response(held.has_value());
-        reply.skippedTerms = held.value_or(QStringList());
-        SingleInstanceIpc::writeResponse(socket, reply);
-        return;
-    }
-    case IpcCommand::Quit:
-        SingleInstanceIpc::writeResponse(socket, response());
-        quitApplication();
-        return;
-    }
+    m_ipcCommands->handle(request, socket);
 }
 
 // Children are otherwise deleted in creation order, which puts the provider
@@ -1064,9 +888,10 @@ void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSo
 // points at them. Tear the dependents down first.
 ApplicationController::~ApplicationController()
 {
-    for (const QMetaObject::Connection &publisher : std::as_const(m_statusPublishers)) {
-        disconnect(publisher);
-    }
+    // Status watchers are written each change, and deleting the recording and
+    // the session below makes some; cut the IPC off from them first.
+    disconnect(m_session, nullptr, m_ipcCommands, nullptr);
+    disconnect(m_recording, nullptr, m_ipcCommands, nullptr);
     delete m_updates;
     m_updates = nullptr;
     delete m_recording;
