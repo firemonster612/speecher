@@ -5,13 +5,13 @@
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QDebug>
 
-#include <cstddef>
 #include <utility>
 
 namespace speecher {
@@ -44,17 +44,6 @@ const struct SecretRow {
 };
 
 const QString cliproxyAccountTypes[] = {QStringLiteral("codex"), QStringLiteral("claude")};
-
-template <typename Row, std::size_t count>
-const Row *findRow(const Row (&rows)[count], const QString &id)
-{
-    for (const Row &row : rows) {
-        if (id == QLatin1String(row.id)) {
-            return &row;
-        }
-    }
-    return nullptr;
-}
 
 QString stateName(SignInState state)
 {

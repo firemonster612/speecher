@@ -466,15 +466,7 @@ QVariantMap QuickLibrary::importReplacements(const QUrl &file)
 
 bool QuickLibrary::save(const std::function<bool(AppSettings &)> &edit)
 {
-    // As Settings.set does: the snapshot leaves unread keyring secrets
-    // unread, and applySnapshot keeps them.
-    SettingsStore *store = m_controller->settings();
-    AppSettings draft = store->dictationSnapshot();
-    if (!edit(draft)) {
-        return false;
-    }
-    store->applySnapshot(draft);
-    return true;
+    return m_controller->settings()->edit(edit);
 }
 
 QString QuickLibrary::saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit)

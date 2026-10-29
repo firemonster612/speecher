@@ -7,10 +7,10 @@
 #include "core/PasteRules.h"
 #include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QDebug>
 
-#include <cstddef>
 #include <type_traits>
 
 namespace speecher {
@@ -357,17 +357,6 @@ QString shortcutRowId(GlobalShortcutRole role)
 }
 
 // The row of either table with this id, or nullptr.
-template <typename Row, std::size_t count>
-const Row *findRow(const Row (&rows)[count], const QString &id)
-{
-    for (const Row &row : rows) {
-        if (id == QLatin1String(row.id)) {
-            return &row;
-        }
-    }
-    return nullptr;
-}
-
 } // namespace
 
 QStringList shortcutKeys(const QString &display)
@@ -452,16 +441,14 @@ void QuickSettings::set(const QString &id, const QVariant &value)
             return;
         }
     }
-    // The snapshot leaves unread keyring secrets unread, and applySnapshot
-    // keeps them, so saving one row never clears a key.
-    SettingsStore *store = m_controller->settings();
-    AppSettings draft = store->dictationSnapshot();
-    if (row->writeHere) {
-        row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
-    } else {
-        row->write(draft, value);
-    }
-    store->applySnapshot(draft);
+    m_controller->settings()->edit([&](AppSettings &draft) {
+        if (row->writeHere) {
+            row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
+        } else {
+            row->write(draft, value);
+        }
+        return true;
+    });
 }
 
 void QuickSettings::act(const QString &id)

@@ -5,6 +5,7 @@
 #include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QClipboard>
 #include <QDebug>
@@ -51,12 +52,6 @@ std::optional<Value> valueOf(const std::array<std::pair<const char *, Value>, si
 QVariant jsDate(const QDate &date)
 {
     return date.isValid() ? QVariant(date.startOfDay()) : QVariant();
-}
-
-template <typename Number>
-QVariant optionalNumber(const std::optional<Number> &value)
-{
-    return value ? QVariant::fromValue(*value) : QVariant();
 }
 
 QString milestoneState(Milestone::State state)

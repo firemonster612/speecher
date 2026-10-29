@@ -242,6 +242,16 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
     return settings;
 }
 
+bool SettingsStore::edit(const std::function<bool(AppSettings &)> &change)
+{
+    AppSettings draft = dictationSnapshot();
+    if (!change(draft)) {
+        return false;
+    }
+    applySnapshot(draft);
+    return true;
+}
+
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
     if (m_settings.deleted()) {
