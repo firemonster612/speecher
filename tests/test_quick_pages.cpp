@@ -669,8 +669,6 @@ private slots:
         QVERIFY(warm > 0);
     }
 
-    // Once paused and still, the ribbon draws no more frames, yet takes a
-    // new theme's colours.
     // Paused after a loud voice, the ribbon goes on until it rests: further
     // frames would draw it no stronger or fainter than where it stopped.
     void pausedRibbonStopsAtRest()
@@ -710,6 +708,8 @@ private slots:
         QVERIFY2(std::abs(strength(drawn()) - stopped) < stopped / 50, qPrintable(QStringLiteral("%1 then %2").arg(stopped).arg(strength(drawn()))));
     }
 
+    // Once paused and still, the ribbon draws no more frames, yet takes a
+    // new theme's colours.
     void stillRibbonTakesNewColours()
     {
         ScatterRibbon ribbon;
