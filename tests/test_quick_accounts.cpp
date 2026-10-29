@@ -302,13 +302,18 @@ private slots:
         const std::unique_ptr<QObject> card(
             component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("anthropic")}}));
         QVERIFY2(card, qPrintable(component.errorString()));
-        QVERIFY(!card->property("inUse").toBool());
+        const auto inUse = [&accounts] {
+            return service(accounts, QStringLiteral("anthropic")).value(QStringLiteral("inUse")).toBool();
+        };
+        QVERIFY(!inUse());
 
+        QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
         AppSettings snapshot = controller.settings()->snapshot();
         QVERIFY(!snapshot.refinement.writingProfiles.isEmpty());
         snapshot.refinement.writingProfiles.first().speechProvider = QStringLiteral("claude");
         controller.settings()->applySnapshot(snapshot);
-        QTRY_VERIFY(card->property("inUse").toBool());
+        QVERIFY(changed.count() > 0);
+        QVERIFY(inUse());
     }
 
     // Refinement's sign-in row waits for Accounts' first answer, then says

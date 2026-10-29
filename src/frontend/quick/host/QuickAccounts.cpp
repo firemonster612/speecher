@@ -12,6 +12,7 @@
 
 #include <QDebug>
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -192,6 +193,7 @@ QVariantMap QuickAccounts::service(const QString &id) const
     const bool answered = m_checks.contains(id);
     const bool checking = m_pending.contains(id) || !answered;
     const SignInCheck check = m_checks.value(id);
+    const bool inUse = signInInUse(row->service, m_controller->settings()->dictationSnapshot());
     return {
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), QLatin1String(row->name)},
@@ -200,6 +202,7 @@ QVariantMap QuickAccounts::service(const QString &id) const
         {QStringLiteral("detail"), check.detail},
         {QStringLiteral("server"), check.server},
         {QStringLiteral("directory"), check.directory},
+        {QStringLiteral("inUse"), inUse},
     };
 }
 
@@ -407,12 +410,18 @@ void QuickAccounts::finishSecretChange(const QString &rowId, bool done, bool sav
     }
 }
 
-void QuickAccounts::settingsSaved()
+void QuickAccounts::settingsSaved(const AppSettings &previous)
 {
     if (!m_started) {
         return;
     }
-    const QStringList settings = signInSettings(m_controller->settings()->dictationSnapshot());
+    const AppSettings current = m_controller->settings()->dictationSnapshot();
+    if (std::ranges::any_of(serviceRows, [&](const ServiceRow &row) {
+            return signInInUse(row.service, previous) != signInInUse(row.service, current);
+        })) {
+        emit servicesChanged();
+    }
+    const QStringList settings = signInSettings(current);
     if (settings == m_signInSettings) {
         return;
     }

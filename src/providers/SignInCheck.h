@@ -43,5 +43,11 @@ SignInCheck checkSignIn(SignInService service, AppSettings settings, SecretStore
 // renews the account each of OpenAI and Anthropic has chosen. Worker threads
 // only.
 SignInCheck renewSignIn(SignInService service, AppSettings settings, SecretStore *secrets);
+// Whether Speecher signs in through the service with these settings, so its
+// state can stand in the way: ChatGPT for Codex dictation or OpenAI
+// refinement, Claude for Claude Voice or Anthropic refinement, each as the
+// choice, a fallback or a Writing Profile's own; CLI Proxy API for a sign-in
+// or server that goes through it.
+bool signInInUse(SignInService service, const AppSettings &settings);
 
 } // namespace speecher

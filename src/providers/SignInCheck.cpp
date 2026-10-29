@@ -200,4 +200,23 @@ SignInCheck renewSignIn(SignInService service, AppSettings settings, SecretStore
     return renewed;
 }
 
+bool signInInUse(SignInService service, const AppSettings &settings)
+{
+    const RefinementSettings &refinement = settings.refinement;
+    if (service == SignInService::CliProxy) {
+        return refinement.openAiAuthMode == QLatin1String("cliproxy")
+            || refinement.anthropicAuthMode == QLatin1String("cliproxy") || !refinement.cliproxyBaseUrl.isEmpty();
+    }
+    QStringList speech = QStringList{settings.speech.providerId} + settings.speech.fallbackProviderIds;
+    QStringList refiners = QStringList{refinement.providerId} + refinement.fallbackProviderIds;
+    for (const WritingProfileSettings &profile : refinement.writingProfiles) {
+        speech << profile.speechProvider;
+        refiners << profile.refinementProvider;
+    }
+    if (service == SignInService::OpenAi) {
+        return speech.contains(QLatin1String("codex")) || refiners.contains(QLatin1String("openai"));
+    }
+    return speech.contains(QLatin1String("claude")) || refiners.contains(QLatin1String("anthropic"));
+}
+
 } // namespace speecher

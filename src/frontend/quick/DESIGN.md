@@ -82,8 +82,10 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - `Accounts`: each service's sign-in is core's check, run on a worker; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
   through the daemon's `SecretStore`, and QML sees only whether a key is
-  saved and why a save or clear failed. The speech providers' sign-ins
-  (ChatGPT, Claude) have one owner, core's `ProviderAvailability`:
+  saved and why a save or clear failed. Each service's `inUse`, core's
+  `signInInUse`, says whether the settings sign in through it. The speech
+  providers' sign-ins (ChatGPT, Claude) have one owner, core's
+  `ProviderAvailability`:
   `Models` shows them, setup checks them, and renewing a sign-in on Accounts
   checks them again.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,

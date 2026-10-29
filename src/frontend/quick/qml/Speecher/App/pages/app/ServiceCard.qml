@@ -24,18 +24,6 @@ Card {
     // card can name; an API key or CLI Proxy API keeps core's words.
     readonly property bool oauth: serviceId === "openai" ? ["auto", "codex_oauth"].includes(Settings.values.openAiAuthMode)
                                 : serviceId === "anthropic" && Settings.values.anthropicAuthMode === "oauth"
-    // Whether something signs in through this service now, so its state can
-    // stand in the way: a speech service or refinement provider chosen, a
-    // fallback or a writing profile's own, or for CLI Proxy API a sign-in or
-    // server that goes through it.
-    readonly property bool inUse: {
-        const v = Settings.values
-        const speech = [v.speechProvider].concat(v.speechFallbackList || [], Library.profiles.map(p => p.speech))
-        const refinement = [v.refinementProvider].concat(v.refinementFallbacks || [], Library.profiles.map(p => p.refinement))
-        if (serviceId === "openai") return speech.includes("codex") || refinement.includes("openai")
-        if (serviceId === "anthropic") return speech.includes("claude") || refinement.includes("anthropic")
-        return v.openAiAuthMode === "cliproxy" || v.anthropicAuthMode === "cliproxy" || !!v.cliproxyBaseUrl
-    }
     // The line under the name: what Speecher found, or what to do.
     readonly property string detail: Words.signInDetail(service, oauth)
 
@@ -62,7 +50,7 @@ Card {
                         stateId: root.service.state
                         text: Words.signInStates[root.service.state]
                         // A sign-in nothing uses stands in no one's way.
-                        tone: root.inUse ? States.tone(stateId) : "neutral"
+                        tone: root.service.inUse ? States.tone(stateId) : "neutral"
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     IconButton {

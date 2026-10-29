@@ -25,13 +25,13 @@ class QuickAccounts final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Accounts)
     QML_SINGLETON
-    // [{ id, name, state, found, detail, server, directory }] for
+    // [{ id, name, state, found, detail, server, directory, inUse }] for
     // openai, anthropic and cliproxy. state is signedIn, expired, missing,
     // unknown (the keyring did not answer) or checking. found is the last
     // check's state, which the rest describe: detail is core's line, server
     // the CLI Proxy API server the sign-in goes through, directory the account
     // directory it reads, each possibly empty; they stay until the next check
-    // answers. The speech providers' sign-ins (Codex, Claude Voice) are
+    // answers. inUse says the settings sign in through it (signInInUse). The speech providers' sign-ins (Codex, Claude Voice) are
     // ProviderAvailability's, which Models shows; renewing a service checks
     // those again.
     Q_PROPERTY(QVariantList services READ services NOTIFY servicesChanged)
@@ -104,7 +104,7 @@ private:
     // the same secret in progress is done.
     void writeSecret(const QString &rowId, const QString &value);
     void finishSecretChange(const QString &rowId, bool done, bool saved);
-    void settingsSaved();
+    void settingsSaved(const AppSettings &previous);
 
     ApplicationController *m_controller;
     bool m_started = false;
