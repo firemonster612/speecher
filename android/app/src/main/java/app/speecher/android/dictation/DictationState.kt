@@ -1,5 +1,6 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.ui.SettingsPage
 import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.protocol.CustomCleanupLevel
@@ -15,6 +16,7 @@ import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.withoutDeleted
+import java.io.Serializable
 
 /** The two accounts Speecher can sign in to. Each one can transcribe and refine. */
 enum class Provider {
@@ -114,9 +116,9 @@ sealed interface DictationState {
 
     /**
      * Dictation stopped. [transcript] holds whatever was heard before the failure. [detail] is
-     * diagnostic and never shown, except a spoken language mismatch's, which is already its words.
-     * [editsSelection] is set when the dictation was editing the field's selection: the words are
-     * instructions, so the panel offers no Insert and the field stays as it was.
+     * diagnostic and never shown. [editsSelection] is set when the dictation was editing the
+     * field's selection: the words are instructions, so the panel offers no Insert and the field
+     * stays as it was.
      */
     data class Failed(
         val reason: FailureReason,
@@ -126,7 +128,7 @@ sealed interface DictationState {
     ) : DictationState
 }
 
-/** Why dictation failed. Each reason maps to one recovery action in the panel. */
+/** Why dictation failed. Each reason has one [recovery]. */
 sealed interface FailureReason {
     /** Recovery: open the app to grant the microphone. */
     data object MicrophoneDenied : FailureReason
@@ -134,8 +136,11 @@ sealed interface FailureReason {
     /** Another app may hold the microphone. Recovery: retry. */
     data object MicrophoneUnavailable : FailureReason
 
-    /** The provider can't listen for the saved spoken language. Recovery: open the app. */
-    data object SpokenLanguage : FailureReason
+    /**
+     * [provider] can't listen for the saved spoken [language], a code. Recovery: open the
+     * Transcription settings to choose another.
+     */
+    data class SpokenLanguage(val provider: SpeechProvider, val language: String) : FailureReason
 
     /**
      * The transcript exists but insertion into the field failed, so the panel offers a single retry
@@ -143,7 +148,10 @@ sealed interface FailureReason {
      */
     data object Commit : FailureReason
 
-    /** A selection edit with the profile's cleanup set to None. Recovery: open the app. */
+    /**
+     * A selection edit with the profile's cleanup set to None. Recovery: open the Profiles
+     * settings.
+     */
     data object SelectionNeedsCleanup : FailureReason
 
     /**
@@ -189,13 +197,34 @@ sealed interface FailureReason {
 val ProviderFailureKind.needsSignIn: Boolean
     get() = this == ProviderFailureKind.Authentication || this == ProviderFailureKind.Unavailable
 
-/** The account to sign in to, when signing in is what fixes this failure. */
-val FailureReason.signInAccount: Provider?
-    get() = (this as? FailureReason.ProviderFailed)?.takeIf { it.kind.needsSignIn }?.account
+/**
+ * What the panel's recovery button does for a failure. [Retry] runs in place; the others switch
+ * back and open Speecher, which receives them as its [RECOVERY][app.speecher.android.RECOVERY]
+ * extra.
+ */
+sealed interface Recovery : Serializable {
+    data object Retry : Recovery
 
-/** Whether a server's settings fix this failure: it turned down its key, or it isn't set up. */
-val FailureReason.needsServerSettings: Boolean
-    get() = this is FailureReason.ProviderFailed && account == null && kind.needsSignIn
+    data class SignIn(val account: Provider) : Recovery
+
+    /** Opens Speecher at [page], or wherever it was left when null. */
+    data class OpenApp(val page: SettingsPage?) : Recovery
+}
+
+val FailureReason.recovery: Recovery
+    get() =
+        when (this) {
+            FailureReason.MicrophoneUnavailable,
+            FailureReason.Commit,
+            FailureReason.SelectionChanged -> Recovery.Retry
+            FailureReason.MicrophoneDenied -> Recovery.OpenApp(null)
+            is FailureReason.SpokenLanguage -> Recovery.OpenApp(SettingsPage.Transcription)
+            FailureReason.SelectionNeedsCleanup -> Recovery.OpenApp(SettingsPage.Profiles)
+            is FailureReason.ProviderFailed ->
+                if (!kind.needsSignIn) Recovery.Retry
+                // A server the person chose has no sign-in; its settings hold the key.
+                else account?.let(Recovery::SignIn) ?: Recovery.OpenApp(SettingsPage.Transcription)
+        }
 
 /**
  * The order providers are listed in everywhere in the UI: alphabetical, chosen deliberately so it

@@ -81,6 +81,7 @@ import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.advice
 import app.speecher.android.dictation.cleanup
 import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.hasBatchTranscription
@@ -410,7 +411,11 @@ private fun TranscriptionSettings(
         onChange(settings.copy(spokenLanguage = it))
     }
     spokenLanguageMismatch(provider, settings.spokenLanguage)?.let {
-        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
+        Text(
+            it.advice,
+            Modifier.padding(horizontal = 16.dp),
+            color = MaterialTheme.colorScheme.error,
+        )
     }
     ListItem(
         headlineContent = { Text("Keep screen on") },

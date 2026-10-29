@@ -70,11 +70,11 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
 import app.speecher.android.dictation.PanelSize
+import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.SpeechProvider
+import app.speecher.android.dictation.advice
 import app.speecher.android.dictation.label
-import app.speecher.android.dictation.needsServerSettings
-import app.speecher.android.dictation.signInAccount
-import app.speecher.android.dictation.spokenLanguageMismatch
+import app.speecher.android.dictation.recovery
 import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.PI
 import kotlin.math.abs
@@ -397,7 +397,7 @@ private fun RowScope.PanelButtons(
         ) {
             FilledTonalButton(onInsert, button) { Text("Insert") }
         }
-        Button(onRecover, button) { Text(state.reason.recovery) }
+        Button(onRecover, button) { Text(state.reason.recovery.label) }
         return
     }
     // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout;
@@ -477,7 +477,7 @@ private val DictationState.Failed.title: String
             FailureReason.Commit -> "Couldn't insert the text"
             FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
             FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
-            FailureReason.SpokenLanguage -> "Spoken language not available"
+            is FailureReason.SpokenLanguage -> "Spoken language not available"
             FailureReason.SelectionNeedsCleanup -> "Couldn't edit the selection"
             FailureReason.SelectionChanged -> "The selection changed"
             is FailureReason.Speech -> "Transcription failed"
@@ -486,8 +486,7 @@ private val DictationState.Failed.title: String
 
 /**
  * What went wrong and what to do next, in fixed words; a provider's in the desktop's. The raw
- * detail is diagnostic and never shown, except a spoken language mismatch's, which is already those
- * words.
+ * detail is diagnostic and never shown.
  */
 private val DictationState.Failed.advice: String
     get() =
@@ -496,7 +495,7 @@ private val DictationState.Failed.advice: String
             FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
             FailureReason.MicrophoneUnavailable ->
                 "Another app may be using it. Try again when it's free."
-            FailureReason.SpokenLanguage -> detail
+            is FailureReason.SpokenLanguage -> reason.advice
             FailureReason.SelectionNeedsCleanup ->
                 "Editing a selection needs cleanup. Choose a cleanup level for this app's Writing Profile."
             FailureReason.SelectionChanged -> "Select the same text again, then tap Retry."
@@ -522,15 +521,12 @@ private fun providerAdvice(name: String, kind: ProviderFailureKind, signsIn: Boo
         ProviderFailureKind.Cancelled -> "$name returned an error. Try again."
     }
 
-private val FailureReason.recovery: String
+private val Recovery.label: String
     get() =
-        when {
-            signInAccount != null -> "Sign in"
-            this == FailureReason.MicrophoneDenied ||
-                this == FailureReason.SpokenLanguage ||
-                this == FailureReason.SelectionNeedsCleanup ||
-                needsServerSettings -> "Open Speecher"
-            else -> "Retry"
+        when (this) {
+            Recovery.Retry -> "Retry"
+            is Recovery.SignIn -> "Sign in"
+            is Recovery.OpenApp -> "Open Speecher"
         }
 
 @Composable
@@ -760,17 +756,7 @@ internal fun PanelFailedPreview(
     reason: FailureReason,
     heard: Boolean = false,
     editsSelection: Boolean = false,
-) =
-    PanelPreview(
-        DictationState.Failed(
-            reason,
-            if (reason == FailureReason.SpokenLanguage)
-                spokenLanguageMismatch(SpeechProvider.Claude, "cy").orEmpty()
-            else "",
-            if (heard) SAMPLE_TEXT else "",
-            editsSelection,
-        )
-    )
+) = PanelPreview(DictationState.Failed(reason, "", if (heard) SAMPLE_TEXT else "", editsSelection))
 
 @PreviewLightDark
 @Composable
@@ -822,4 +808,5 @@ internal fun PanelFailedNetworkLiveTextOffPreview() =
 
 @PreviewLightDark
 @Composable
-internal fun PanelFailedSpokenLanguagePreview() = PanelFailedPreview(FailureReason.SpokenLanguage)
+internal fun PanelFailedSpokenLanguagePreview() =
+    PanelFailedPreview(FailureReason.SpokenLanguage(SpeechProvider.Claude, "cy"))

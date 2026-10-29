@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.core.content.IntentCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
@@ -36,6 +37,7 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeechProvider
@@ -420,19 +422,18 @@ class MainActivity : ComponentActivity() {
             }
             return
         }
-        intent
-            .getStringExtra("settings_page")
-            ?.let { name -> SettingsPage.entries.firstOrNull { it.name == name } }
-            ?.let {
-                page = Page.Settings
-                settingsPage = it
-                return
-            }
-        val provider =
-            intent.getStringExtra("sign_in_provider")?.let { name ->
-                Provider.entries.firstOrNull { it.name == name }
-            } ?: return
-        signInFromSettings(provider)
+        when (
+            val recovery = IntentCompat.getSerializableExtra(intent, RECOVERY, Recovery::class.java)
+        ) {
+            is Recovery.SignIn -> signInFromSettings(recovery.account)
+            is Recovery.OpenApp ->
+                recovery.page?.let {
+                    page = Page.Settings
+                    settingsPage = it
+                }
+            Recovery.Retry,
+            null -> {}
+        }
     }
 
     /**
@@ -844,6 +845,9 @@ class MainActivity : ComponentActivity() {
             }
     }
 }
+
+/** The extra carrying the [Recovery] a panel failure opens Speecher for. */
+const val RECOVERY = "recovery"
 
 private const val SIGN_IN_AFTER_PROMPT = "sign-in-after-prompt"
 private const val SIGN_IN_FROM = "sign-in-from"
