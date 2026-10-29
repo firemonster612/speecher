@@ -1018,7 +1018,9 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
-        OpenAiRefiner refiner(nullptr, 50);
+        // Long enough to connect on a busy runner; the keepalives still never
+        // count as progress, so the request times out all the same.
+        OpenAiRefiner refiner(nullptr, 500);
         QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
@@ -1041,13 +1043,14 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
         QTimer keepalive;
         connect(&keepalive, &QTimer::timeout, socket, [socket] {
             socket->write(QByteArrayLiteral(": keepalive\n\n"));
         });
         keepalive.start(10);
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
@@ -1179,7 +1182,9 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
-        AnthropicApiRefiner refiner(nullptr, 50);
+        // Long enough to connect on a busy runner; the keepalives still never
+        // count as progress, so the request times out all the same.
+        AnthropicApiRefiner refiner(nullptr, 500);
         QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
@@ -1199,13 +1204,14 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
         QTimer keepalive;
         connect(&keepalive, &QTimer::timeout, socket, [socket] {
             socket->write(QByteArrayLiteral(": keepalive\n\n"));
         });
         keepalive.start(10);
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
