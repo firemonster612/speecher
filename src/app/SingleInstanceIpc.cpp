@@ -191,6 +191,11 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     if (m_statusWatchers.contains(socket)) {
                         break;
                     }
+                    // A newline sent after a request already read without one
+                    // ends that request; it is not a request of its own.
+                    if (frame.trimmed().isEmpty()) {
+                        continue;
+                    }
                     IpcResponse refusal;
                     if (const std::optional<IpcRequest> request = ipcRequestFromFrame(frame, &refusal)) {
                         emit requestReceived(*request, socket);

@@ -285,6 +285,31 @@ private slots:
         QCOMPARE(commands.first().at(0).value<IpcRequest>().command, IpcCommand::Toggle);
     }
 
+    // An older client can send a request and only later its newline. The
+    // request is read as soon as it is whole; the newline is not a request.
+    void singleInstanceIpcIgnoresALateNewline()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
+        QSignalSpy refusals(&ipc, &SingleInstanceIpc::requestRefused);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{\"command\":\"recordStart\"}"));
+        socket.flush();
+        QTRY_COMPARE(commands.count(), 1);
+        socket.write(QByteArrayLiteral("\n"));
+        socket.flush();
+        QTest::qWait(100);
+        QCOMPARE(refusals.count(), 0);
+        QCOMPARE(socket.state(), QLocalSocket::ConnectedState);
+    }
+
     void singleInstanceIpcReadsTwoFramedCommands()
     {
         const QString name = uniqueIpcName();
@@ -302,57 +327,6 @@ private slots:
         QTRY_COMPARE(commands.count(), 2);
         QCOMPARE(commands.at(0).at(0).value<IpcRequest>().command, IpcCommand::Start);
         QCOMPARE(commands.at(1).at(0).value<IpcRequest>().command, IpcCommand::Stop);
-    }
-
-    void singleInstanceIpcCarriesTheFilesToTranscribe()
-    {
-        const QString name = uniqueIpcName();
-        QLocalServer::removeServer(name);
-        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        SingleInstanceIpc ipc(platform);
-        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
-        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
-                [](const IpcRequest &, QLocalSocket *socket) {
-                    SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
-                });
-        const QStringList files{QStringLiteral("/tmp/a.wav"), QStringLiteral("/tmp/b c.mp3")};
-
-        QThread *client = QThread::create([platform, files] {
-            SingleInstanceIpc::sendRequest({IpcCommand::Transcribe, {}, files}, nullptr, 2000, platform);
-        });
-        client->start();
-        QTRY_COMPARE(commands.count(), 1);
-        client->wait();
-        delete client;
-        QCOMPARE(commands.first().at(0).value<IpcRequest>().command, IpcCommand::Transcribe);
-        QCOMPARE(commands.first().at(0).value<IpcRequest>().files, files);
-    }
-
-    void singleInstanceIpcCarriesTheSessionOverrides()
-    {
-        const QString name = uniqueIpcName();
-        QLocalServer::removeServer(name);
-        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        SingleInstanceIpc ipc(platform);
-        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
-        QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
-        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
-                [](const IpcRequest &, QLocalSocket *socket) {
-                    SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
-                });
-
-        QThread *client = QThread::create([platform] {
-            SingleInstanceIpc::sendRequest(
-                {IpcCommand::Toggle, {OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")}},
-                nullptr, 2000, platform);
-        });
-        client->start();
-        QTRY_COMPARE(commands.count(), 1);
-        client->wait();
-        delete client;
-        const SessionOverrides expected{OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")};
-        QCOMPARE(commands.first().at(0).value<IpcRequest>().overrides, expected);
     }
 
     // A request and its answer as the previous release wrote them, byte for

@@ -2689,6 +2689,9 @@ private slots:
         QTest::newRow("unknown command")
             << QByteArrayLiteral(R"({"command":"rewind"})" "\n")
             << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n");
+        QTest::newRow("unknown command with a field of another shape")
+            << QByteArrayLiteral(R"({"command":"rewind","files":"x","spokenLanguage":"xx"})" "\n")
+            << QByteArrayLiteral(R"({"message":"Unknown command","ok":false,"state":"idle"})" "\n");
         QTest::newRow("unknown output format")
             << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"rtf"})" "\n")
             << QByteArrayLiteral(R"({"message":"Unknown output format","ok":false,"state":"idle"})" "\n");

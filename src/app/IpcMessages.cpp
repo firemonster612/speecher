@@ -138,9 +138,18 @@ std::optional<IpcRequest> ipcRequestFromFrame(const QByteArray &frame, IpcRespon
     if (!object) {
         return refuse(QStringLiteral("Invalid request"));
     }
+    // The command comes first: an older instance answers a newer client's
+    // command as unknown whatever its fields hold.
+    const std::optional<IpcCommand> command = ipcCommandNamed(object->value(QStringLiteral("command")).toString());
+    if (!command) {
+        *refusal = {};
+        refusal->unknownCommand = true;
+        return std::nullopt;
+    }
     // An empty field is one the client left out: earlier releases read them
     // so.
     IpcRequest request;
+    request.command = *command;
     const QString outputFormat = object->value(QStringLiteral("outputFormat")).toString();
     if (!outputFormat.isEmpty()) {
         request.overrides.outputFormat = outputFormatFromString(outputFormat);
@@ -165,13 +174,6 @@ std::optional<IpcRequest> ipcRequestFromFrame(const QByteArray &frame, IpcRespon
     request.files = *files;
     request.terms = *terms;
     request.microphoneOnly = object->value(QStringLiteral("microphoneOnly")).toBool();
-    const std::optional<IpcCommand> command = ipcCommandNamed(object->value(QStringLiteral("command")).toString());
-    if (!command) {
-        *refusal = {};
-        refusal->unknownCommand = true;
-        return std::nullopt;
-    }
-    request.command = *command;
     return request;
 }
 
