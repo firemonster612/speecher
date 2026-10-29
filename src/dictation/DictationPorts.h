@@ -132,8 +132,8 @@ class TargetProvider : public QObject {
 
 public:
     using QObject::QObject;
-    // What the platform sees of the focused target. Its category and the
-    // other recognition decisions are core's: see classifiedTarget.
+    // What the platform sees of the focused target. Its category is core's
+    // to decide: see classifiedTarget.
     virtual Target capture() = 0;
     virtual bool stillFocused(const Target &target)
     {

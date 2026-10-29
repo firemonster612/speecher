@@ -328,6 +328,11 @@ Target WinTargetProvider::capture()
     }
 
     target.terminalHost = terminalExecutables().contains(target.applicationId);
+    // A terminal shows output, and a paste there goes in at the prompt
+    // rather than over the selection, so its text is never edited.
+    if (target.terminalHost) {
+        target.editable = false;
+    }
     return target;
 }
 

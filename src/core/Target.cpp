@@ -318,11 +318,6 @@ AppCategory classifyTarget(const Target &target,
 
 Target classifiedTarget(Target target, const QList<AppRecognitionRule> &customRules)
 {
-    // A terminal shows output, and a paste there goes in at the prompt
-    // rather than over the selection, so its text is never edited.
-    if (target.terminalHost) {
-        target.editable = false;
-    }
     target.category = classifyTarget(target, customRules);
     return target;
 }

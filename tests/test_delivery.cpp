@@ -541,16 +541,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
     void capturedTargetsGetCoreRecognitionPolicy()
     {
-        Target terminal;
-        terminal.applicationId = QStringLiteral("com.googlecode.iterm2");
-        terminal.terminalHost = true;
-        QVERIFY(!classifiedTarget(terminal).editable);
-
         Target editor;
         editor.applicationId = QStringLiteral("org.kde.kate");
-        const Target classifiedEditor = classifiedTarget(editor);
-        QVERIFY(classifiedEditor.editable);
-        QCOMPARE(classifiedEditor.category, AppCategory::CodeEditor);
+        QCOMPARE(classifiedTarget(editor).category, AppCategory::CodeEditor);
 
         QVERIFY(isAiCodingProcess(QStringLiteral("claude"), {}));
         QVERIFY(isAiCodingProcess(QStringLiteral("MainThread"), {QStringLiteral("/home/me/.local/bin/droid")}));
