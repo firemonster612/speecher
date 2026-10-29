@@ -58,7 +58,9 @@ class MainActivityRecoveryTest {
     @Test
     fun `a sign-in recovery starts that account's sign-in`() {
         open(Recovery.SignIn(Provider.ChatGpt)).use {
-            compose.onNodeWithText("Sign in to ChatGPT").assertExists()
+            compose
+                .onNodeWithText("A browser opens to ChatGPT's sign-in page", substring = true)
+                .assertExists()
         }
     }
 }

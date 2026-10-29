@@ -302,7 +302,10 @@ class DictationEngineTest {
         run.engine.start(SpeechProvider.Claude)
         run.tasks.removeFirst().run() // The microphone.
         run.tasks.removeFirst().run() // The connection.
-        assertEquals(DictationState.Failed(reason, "$reason", ""), run.engine.state)
+        assertEquals(
+            DictationState.Failed(reason, "SpokenLanguage(provider=Claude, language=cy)", ""),
+            run.engine.state,
+        )
     }
 
     @Test
