@@ -150,9 +150,11 @@ private slots:
         if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
             QSKIP("no network information backend");
         }
-        // A backend can report its first state once the event loop runs, as
-        // GLib's does; that report must not reach the refiner as a change.
-        QTest::qWait(200);
+        // The system's backend reports its first state, and any real change,
+        // when it likes: GLib's once the event loop runs, Apple's from a queue
+        // of its own. A report between the first two requests drops the kept
+        // connection, so hold them back until this test makes its own change.
+        QSignalBlocker systemReports(QNetworkInformation::instance());
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner refiner(nullptr, 5000, 5000);
@@ -175,6 +177,7 @@ private slots:
         refine();
         QTRY_COMPARE(completed.size(), 2);
         QCOMPARE(socket, first);
+        systemReports.unblock();
         emit QNetworkInformation::instance()->reachabilityChanged(QNetworkInformation::Reachability::Disconnected);
         refine();
         QTRY_COMPARE(completed.size(), 3);
