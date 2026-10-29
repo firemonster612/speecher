@@ -1063,6 +1063,9 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
         }
         qWarning().noquote() << "audio start failed message=" + audioError;
         m_transcriber->cancelAttempt(m_attemptId);
+        // A provider that failed while the microphone started may have handed
+        // over to one still preparing.
+        m_speechChain->cancel();
         clearScreenshotContext();
         m_sessionSettings.reset();
         resumePausedMedia();
@@ -1183,7 +1186,8 @@ void DictationSession::prepareRefiner()
 
 void DictationSession::finishRefinerPreparation(const StartupPreparationResult &result)
 {
-    if (result.revision != m_preparationRevision || m_state != DictationState::Refining || m_refinementGeneration != m_generation || !m_sessionSettings) {
+    if (result.revision != m_preparationRevision || m_state != DictationState::Refining
+        || m_refinementGeneration != m_generation || !m_sessionSettings) {
         qInfo() << "refinement preparation result ignored";
         return;
     }

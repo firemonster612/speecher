@@ -451,6 +451,31 @@ private slots:
         QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
     }
 
+    // The microphone refusing to start while the next provider still
+    // prepares ends the start with the microphone's error: that provider
+    // failing afterwards reports nothing more.
+    void aMicrophoneRefusedWhileTheNextProviderPreparesKeepsItsError()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 50;
+        local->prepareResult = {false, QStringLiteral("offline"), Network};
+        rig.audio.onStart = [&rig, codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
+            rig.audio.startResult = false;
+        };
+        QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
+        rig.session->startListening();
+        QTRY_COMPARE(rig.session->state(), DictationState::Error);
+        const QString microphoneError = rig.session->lastMessage();
+        const qsizetype stateChanges = states.count();
+        QTest::qWait(300);
+        QCOMPARE(states.count(), stateChanges);
+        QCOMPARE(rig.session->lastMessage(), microphoneError);
+    }
+
     // Reconnects on the same provider come first, as without fallbacks; then
     // the next provider opens a fresh attempt with the words so far kept and
     // a reconnect budget of its own.

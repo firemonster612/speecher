@@ -32,6 +32,21 @@ public:
     // id the registry does not offer.
     using Acquire = std::function<SpeechTranscriber *(const QString &providerId)>;
 
+    // How a session wants its walks run; the defaults are a Dictation
+    // Session's.
+    struct Options {
+        // Only providers that stream final text take the audio.
+        bool streamedFinalsOnly = false;
+        // ready() never comes from inside prepare(): a provider with nothing
+        // to prepare off this thread still reports from the worker, and
+        // cancel() stops it.
+        bool readyLater = false;
+        // The refiner's sign-in renews on this thread before the first
+        // speech provider that gets that far prepares, even if none then
+        // does; otherwise only once one has prepared.
+        bool renewRefinerFirst = false;
+    };
+
     SpeechChain(ProviderRegistry *providers, Acquire acquire, QObject *parent = nullptr);
 
     // Starts over at primary, with fallbacks after it, and forgets the
@@ -43,8 +58,7 @@ public:
     // Whether the next provider may make up for a failure of this kind.
     bool fallbackRemains(ProviderFailureKind kind) const;
 
-    // Only providers that stream final text take the audio.
-    void setStreamedFinalsOnly(bool streamedFinalsOnly);
+    void setOptions(const Options &options);
     // What the system says about the internet. Only providers that need it
     // are passed over while offline.
     void setReachability(Reachability reachability);
@@ -82,6 +96,7 @@ signals:
 
 private:
     void walk();
+    void renewRefiner();
     void finishPreparation(const StartupPreparationResult &result);
 
     ProviderRegistry *m_providers;
@@ -89,7 +104,7 @@ private:
     StartupPreparationRunner *m_runner;
     QStringList m_providerIds;
     int m_index = 0;
-    bool m_streamedFinalsOnly = false;
+    Options m_options;
     Reachability m_reachability = Reachability::Unknown;
     // What the walk under way prepares with.
     AppSettings m_settings;

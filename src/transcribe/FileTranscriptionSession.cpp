@@ -299,7 +299,10 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_paths = paths;
     m_options = options;
     m_batchSettings = withBatchChoices(m_settings->snapshot(), *m_providers, options);
-    m_speechChain->setStreamedFinalsOnly(options.streamedFinalsOnly);
+    // As files always have: the refiner renews first, and the provider
+    // starts once the worker reports, never inside start().
+    m_speechChain->setOptions(
+        {.streamedFinalsOnly = options.streamedFinalsOnly, .readyLater = true, .renewRefinerFirst = true});
     m_batchSettings.speech.timedSegments = true;
     if (options.streamedFinalsOnly) {
         m_batchSettings.speech.codexFinalRetranscribe = false;

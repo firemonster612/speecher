@@ -728,10 +728,27 @@ private slots:
         QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
-    // The refiner's sign-in renews once per file, not again for each speech
-    // provider tried.
+    void theRefinerRenewsOncePerFile_data()
+    {
+        QTest::addColumn<bool>("everySpeechProviderFails");
+        QTest::newRow("a fallback prepares") << false;
+        QTest::newRow("none prepares") << true;
+    }
+
+    // The refiner's sign-in renews once per file, before the speech
+    // providers prepare, not again for each one tried.
     void theRefinerRenewsOncePerFile()
     {
+        QFETCH(bool, everySpeechProviderFails);
+        if (everySpeechProviderFails) {
+            m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                               [](QObject *parent) {
+                                                   auto *speech = new FakeSpeechTranscriber(parent);
+                                                   speech->prepareResult = {false, QStringLiteral("signed out"),
+                                                                            ProviderFailureKind::Unavailable};
+                                                   return speech;
+                                               });
+        }
         FakeRefiner *refiner = nullptr;
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [&refiner](QObject *parent) {
@@ -764,6 +781,40 @@ private slots:
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
         QCOMPARE(refreshes, 1);
+        QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().failed(),
+                 everySpeechProviderFails);
+    }
+
+    // A provider that ends its first stream before any audio went to it
+    // turned the file away: the next one takes the file from its start.
+    void aStreamEndingBeforeAnyAudioHandsTheFileOver()
+    {
+        FakeSpeechTranscriber *codex = nullptr;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codex](QObject *parent) {
+                                               codex = new FakeSpeechTranscriber(parent);
+                                               codex->onStartAttempt = [speech = codex] { speech->emitCompletion(); };
+                                               return codex;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QCOMPARE(codex->startCalls, 1);
+        QVERIFY(codex->audioChunks.isEmpty());
+        QCOMPARE(m_script.attempts, 1);
+        QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
     // The last provider failing once it started is named with the others.

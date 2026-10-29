@@ -52,9 +52,9 @@ bool SpeechChain::fallbackRemains(ProviderFailureKind kind) const
     return permitsProviderFallback(kind) && m_index + 1 < m_providerIds.size();
 }
 
-void SpeechChain::setStreamedFinalsOnly(bool streamedFinalsOnly)
+void SpeechChain::setOptions(const Options &options)
 {
-    m_streamedFinalsOnly = streamedFinalsOnly;
+    m_options = options;
 }
 
 void SpeechChain::setReachability(Reachability reachability)
@@ -121,7 +121,7 @@ void SpeechChain::walk()
                              QStringLiteral("Unknown speech provider: %1").arg(providerId)});
             continue;
         }
-        if (m_streamedFinalsOnly && !transcriber->streamsFinalText(speech)) {
+        if (m_options.streamedFinalsOnly && !transcriber->streamsFinalText(speech)) {
             emit passedOver(providerId, Stage::Prepare,
                             {ProviderFailureKind::Unavailable,
                              QStringLiteral("%1 does not stream final text")
@@ -150,6 +150,10 @@ void SpeechChain::walk()
         if (speechRefreshRequired || refinerRefreshRequired) {
             emit renewingSignIn();
         }
+        const bool renewRefinerHere = !refinerJob && refinerRefreshRequired;
+        if (renewRefinerHere && m_options.renewRefinerFirst) {
+            renewRefiner();
+        }
 
         SpeechPrepareResult speechPrepared{true, {}};
         if (!speechJob) {
@@ -160,11 +164,10 @@ void SpeechChain::walk()
                 continue;
             }
         }
-        if (!refinerJob && refinerRefreshRequired) {
-            m_refiner->refresh(refinement);
-            m_refinerRefreshed = true;
+        if (renewRefinerHere && !m_options.renewRefinerFirst) {
+            renewRefiner();
         }
-        if (speechJob || refinerJob) {
+        if (speechJob || refinerJob || m_options.readyLater) {
             m_runner->start(0, std::move(speechJob), std::move(refinerJob), speechPrepared);
             return;
         }
@@ -172,6 +175,12 @@ void SpeechChain::walk()
         return;
     }
     emit exhausted();
+}
+
+void SpeechChain::renewRefiner()
+{
+    m_refiner->refresh(m_settings.refinement);
+    m_refinerRefreshed = true;
 }
 
 void SpeechChain::finishPreparation(const StartupPreparationResult &result)
