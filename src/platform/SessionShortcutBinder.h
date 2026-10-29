@@ -4,16 +4,20 @@
 
 namespace speecher {
 
+class SettingsStore;
+
 // A session shortcut (Cancel or Pause) on a backend that can take keys from
 // the desktop on demand: the keys are held only while the binder is armed and
 // not suspended, so a bare key such as C or Escape types as usual the rest of
-// the time. The binding lives in Speecher's settings. A subclass supplies
-// taking and letting go of the keys.
+// the time. The binding lives in settings. A subclass supplies taking and
+// letting go of the keys.
 class SessionShortcutBinder : public GlobalShortcutBinder {
     Q_OBJECT
 
 public:
-    using GlobalShortcutBinder::GlobalShortcutBinder;
+    // settings may be null for a binder used only through holdWhileArmed(),
+    // which stores nothing.
+    SessionShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent = nullptr);
 
     void bind() override;
     ShortcutBinding shortcut() const override;
@@ -42,6 +46,7 @@ private:
     // Returns why taking them failed.
     QString hold();
 
+    SettingsStore *m_settings;
     ShortcutBinding m_binding;
     bool m_armed = false;
     bool m_holding = false;

@@ -4,6 +4,8 @@
 
 namespace speecher {
 
+class SettingsStore;
+
 // A binder that observes one physical key itself, where no desktop shortcut
 // service is involved. Keeps the stored binding and the down/up bookkeeping;
 // a subclass supplies the observation. Combinations are not its job and are
@@ -12,7 +14,7 @@ class SingleKeyShortcutBinder : public GlobalShortcutBinder {
     Q_OBJECT
 
 public:
-    using GlobalShortcutBinder::GlobalShortcutBinder;
+    SingleKeyShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent = nullptr);
 
     QString unsupportedReason() const override;
     void bind() override;
@@ -44,6 +46,7 @@ protected:
     void keyUp(qint64 eventTimeMs = -1);
 
 private:
+    SettingsStore *m_settings;
     ShortcutBinding m_binding;
     bool m_down = false;
     qint64 m_downEventTimeMs = -1;

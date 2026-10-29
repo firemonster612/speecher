@@ -35,8 +35,9 @@ class KGlobalAccelSessionShortcutBinder final : public SessionShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit KGlobalAccelSessionShortcutBinder(GlobalShortcutAction action,
-                                               QObject *parent = nullptr);
+    KGlobalAccelSessionShortcutBinder(SettingsStore *settings,
+                                      GlobalShortcutAction action,
+                                      QObject *parent = nullptr);
 
     bool supported() const override;
     QString unsupportedReason() const override;

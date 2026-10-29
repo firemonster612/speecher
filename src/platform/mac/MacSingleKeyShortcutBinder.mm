@@ -79,8 +79,10 @@ bool postedBySpeecher(NSEvent *event)
 
 } // namespace
 
-MacSingleKeyShortcutBinder::MacSingleKeyShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : SingleKeyShortcutBinder(std::move(action), parent)
+MacSingleKeyShortcutBinder::MacSingleKeyShortcutBinder(SettingsStore *settings,
+                                                       GlobalShortcutAction action,
+                                                       QObject *parent)
+    : SingleKeyShortcutBinder(settings, std::move(action), parent)
 {
     if (AXIsProcessTrusted()) {
         return;

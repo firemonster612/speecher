@@ -1,9 +1,8 @@
 #include "platform/SessionShortcutBinder.h"
 
-#include "core/settings/SettingsKeys.h"
+#include "core/SettingsStore.h"
 
 #include <QDebug>
-#include <QSettings>
 
 #include <algorithm>
 
@@ -16,23 +15,21 @@ QString ownedElsewhereText(const ShortcutBinding &binding)
     return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
 }
 
-// defaultFormat, like the rest of the settings, so tests that point it at a
-// temporary file never touch the real app's preferences.
-QSettings speecherSettings()
-{
-    return QSettings(QSettings::defaultFormat(), QSettings::UserScope,
-                     QString::fromLatin1(SettingsKeys::Organization),
-                     SettingsKeys::application());
-}
-
 } // namespace
+
+SessionShortcutBinder::SessionShortcutBinder(SettingsStore *settings,
+                                             GlobalShortcutAction action,
+                                             QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
+    , m_settings(settings)
+{
+}
 
 // The router's single-key backend stores under the same key, so each side
 // reads and clears only its own kind.
 ShortcutBinding SessionShortcutBinder::storedShortcut() const
 {
-    const ShortcutBinding stored =
-        ShortcutBinding::fromString(speecherSettings().value(action().settingsKey).toString());
+    const ShortcutBinding stored = m_settings->globalShortcut(action().role);
     return stored.isSingleKey() ? ShortcutBinding() : stored;
 }
 
@@ -40,7 +37,7 @@ void SessionShortcutBinder::bind()
 {
     m_binding = storedShortcut();
     if (!m_binding.isEmpty()) {
-        speecherSettings().setValue(action().settingsKey, m_binding.toString());
+        m_settings->setGlobalShortcut(action().role, m_binding);
     }
     const QString error = hold();
     if (!error.isEmpty()) {
@@ -78,11 +75,10 @@ bool SessionShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString
     }
     m_binding = shortcut;
     hold();
-    QSettings settings = speecherSettings();
     if (!m_binding.isEmpty()) {
-        settings.setValue(action().settingsKey, m_binding.toString());
-    } else if (!ShortcutBinding::fromString(settings.value(action().settingsKey).toString()).isSingleKey()) {
-        settings.remove(action().settingsKey);
+        m_settings->setGlobalShortcut(action().role, m_binding);
+    } else {
+        m_settings->forgetGlobalShortcutCombination(action().role);
     }
     emit bindingChanged();
     return true;

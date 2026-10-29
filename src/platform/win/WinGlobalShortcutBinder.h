@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/GlobalShortcutBinder.h"
+#include "platform/HotKeyShortcutBinder.h"
 #include "platform/SessionShortcutBinder.h"
 
 #include <QAbstractNativeEventFilter>
@@ -15,7 +15,7 @@ namespace speecher {
 
 // The dictation shortcut: a combination RegisterHotKey takes from every app
 // for good, with its release read from raw input for push-to-talk.
-class WinGlobalShortcutBinder : public GlobalShortcutBinder,
+class WinGlobalShortcutBinder : public HotKeyShortcutBinder,
                                 public QAbstractNativeEventFilter {
     Q_OBJECT
 
@@ -26,18 +26,10 @@ public:
     };
 
     explicit WinGlobalShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
     ~WinGlobalShortcutBinder() override;
-
-    bool supported() const override;
-    QString unsupportedReason() const override;
-    void bind() override;
-    ShortcutBinding shortcut() const override;
-    bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) override;
-    void suspend() override;
-    QString resume() override;
-    bool removeRegistration(QString *error = nullptr) override;
 
     bool nativeEventFilter(const QByteArray &eventType,
                            void *message,
@@ -54,21 +46,20 @@ public:
     // a key Windows cannot register at all will not yield to a retry.
     static bool describesConflict(const QString &error);
 
+protected:
+    bool registerKeys(const QKeySequence &keys, QString *error) override;
+    void unregisterKeys() override;
+    bool registered() const override;
+
 private:
     friend class ::WinPlatformTests;
-    bool registerShortcut(const QKeySequence &shortcut, QString *error);
-    void unregisterShortcut();
     void handleRawInput(const RAWINPUT &input);
 
-    QKeySequence m_shortcut;
     // This binder's two hot-key ids are this and the next.
     int m_firstHotKeyId = 0;
     int m_hotKeyId = 0;
     quint32 m_pressedKey = 0;
     bool m_pressed = false;
-    // Setup and settings can record concurrently; only the last resume binds.
-    int m_suspensionCount = 0;
-    bool m_resumeBinding = false;
 };
 
 // A Cancel or Pause Shortcut: RegisterHotKey holds its keys only while
@@ -79,7 +70,7 @@ class WinSessionShortcutBinder final : public SessionShortcutBinder,
     Q_OBJECT
 
 public:
-    explicit WinSessionShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr);
+    WinSessionShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent = nullptr);
     ~WinSessionShortcutBinder() override;
 
     bool supported() const override;

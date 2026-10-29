@@ -1,5 +1,7 @@
 #include "platform/PortalGlobalShortcutBinder.h"
 
+#include "core/SettingsStore.h"
+
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusError>
@@ -10,7 +12,6 @@
 #include <QDBusVariant>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QSettings>
 #include <QTimer>
 #include <QUuid>
 
@@ -51,36 +52,6 @@ QString portalTrigger(const QKeySequence &sequence)
     return trigger + key;
 }
 
-// The portal keeps an app's bound shortcuts across sessions and ListShortcuts
-// hands them back whenever a session is restored, so a shortcut the person let
-// go of would return on the next launch, or after a chooser they cancelled.
-// Speecher remembers the removal and restores nothing until a newly chosen
-// shortcut is bound.
-QString clearedKey(const GlobalShortcutAction &action)
-{
-    return action.settingsKey + QStringLiteral("PortalCleared");
-}
-
-void rememberCleared(const GlobalShortcutAction &action, bool cleared)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    if (cleared) {
-        settings.setValue(clearedKey(action), true);
-    } else {
-        settings.remove(clearedKey(action));
-    }
-}
-
-bool wasCleared(const GlobalShortcutAction &action)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    return settings.value(clearedKey(action)).toBool();
-}
-
 bool isUnknownRegistryCall(const QDBusError &error)
 {
     return error.type() == QDBusError::UnknownInterface
@@ -105,8 +76,11 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, PortalShortcut &s
     return argument;
 }
 
-PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
+PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(SettingsStore *settings,
+                                                       GlobalShortcutAction action,
+                                                       QObject *parent)
     : GlobalShortcutBinder(std::move(action), parent)
+    , m_settings(settings)
     , m_requestTimer(new QTimer(this))
 {
     qDBusRegisterMetaType<PortalShortcut>();
@@ -252,7 +226,7 @@ bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
 // old combination starting dictation. Closing the session is the removal.
 bool PortalGlobalShortcutBinder::removeRegistration(QString *)
 {
-    rememberCleared(action(), true);
+    m_settings->setPortalShortcutCleared(action().role, true);
     m_bindWhenSupported = false;
     // An in-flight host-identity Register keeps its watcher, whose
     // continuation would recreate the session this removal closes. Cancel
@@ -336,7 +310,11 @@ bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
 
 void PortalGlobalShortcutBinder::createSession(bool registration)
 {
-    if (!registration && wasCleared(action())) {
+    // The portal keeps an app's bound shortcuts across sessions and
+    // ListShortcuts hands them back whenever a session is restored, so a
+    // shortcut the person let go of would return on the next launch, or
+    // after a chooser they cancelled.
+    if (!registration && m_settings->portalShortcutCleared(action().role)) {
         return;
     }
     if (!m_supported) {
@@ -504,7 +482,7 @@ void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &re
             requestFailed(QStringLiteral("Your desktop didn't say which keys it assigned."));
             return;
         }
-        rememberCleared(action(), false);
+        m_settings->setPortalShortcutCleared(action().role, false);
         activatePendingSession(trigger);
         emit registrationFinished(true, m_triggerDescription);
     }

@@ -83,7 +83,10 @@ public:
         Q_UNUSED(parent);
         return nullptr;
     }
+    // A binder that keeps its binding in Speecher's settings does so through
+    // settings, which must outlive it.
     virtual GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                             SettingsStore *settings,
                                                              QObject *parent) const = 0;
     // Takes Escape and Enter while a Dictation Session needs them, on
     // platforms that can stop them reaching the focused app; none elsewhere.

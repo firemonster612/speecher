@@ -16,6 +16,7 @@ class KeywatchShortcutBinder final : public SingleKeyShortcutBinder {
 
 public:
     explicit KeywatchShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
 

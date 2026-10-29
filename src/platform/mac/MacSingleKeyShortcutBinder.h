@@ -21,6 +21,7 @@ class MacSingleKeyShortcutBinder final : public SingleKeyShortcutBinder {
 
 public:
     explicit MacSingleKeyShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
     ~MacSingleKeyShortcutBinder() override;

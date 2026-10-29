@@ -174,9 +174,10 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
 #endif
 }
 
-KGlobalAccelSessionShortcutBinder::KGlobalAccelSessionShortcutBinder(GlobalShortcutAction action,
+KGlobalAccelSessionShortcutBinder::KGlobalAccelSessionShortcutBinder(SettingsStore *settings,
+                                                                     GlobalShortcutAction action,
                                                                      QObject *parent)
-    : SessionShortcutBinder(std::move(action), parent)
+    : SessionShortcutBinder(settings, std::move(action), parent)
 {
 }
 

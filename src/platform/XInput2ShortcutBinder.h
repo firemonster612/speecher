@@ -19,6 +19,7 @@ class XInput2ShortcutBinder final : public SingleKeyShortcutBinder {
 
 public:
     explicit XInput2ShortcutBinder(
+        SettingsStore *settings,
         GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
         QObject *parent = nullptr);
     ~XInput2ShortcutBinder() override;

@@ -238,6 +238,7 @@ WindowBackdrop *MacComposition::createWindowBackdrop(QObject *parent) const
 }
 
 GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                 SettingsStore *settings,
                                                                  QObject *parent) const
 {
     // Carbon hot keys take the combinations, the Cancel and Pause Shortcuts'
@@ -245,9 +246,9 @@ GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutR
     // which no hotkey API accepts.
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
     GlobalShortcutBinder *combination = action.sessionOnly
-        ? static_cast<GlobalShortcutBinder *>(new MacSessionShortcutBinder(action))
-        : new MacGlobalShortcutBinder(action);
-    return new RoutingShortcutBinder(combination, new MacSingleKeyShortcutBinder(action), parent);
+        ? static_cast<GlobalShortcutBinder *>(new MacSessionShortcutBinder(settings, action))
+        : new MacGlobalShortcutBinder(settings, action);
+    return new RoutingShortcutBinder(combination, new MacSingleKeyShortcutBinder(settings, action), parent);
 }
 
 SessionKeyGrab *MacComposition::createSessionKeyGrab(QObject *parent) const

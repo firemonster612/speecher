@@ -1,12 +1,10 @@
 #include "platform/win/WinGlobalShortcutBinder.h"
 
-#include "core/settings/SettingsKeys.h"
 #include "platform/win/WinRawKeyboard.h"
 
 #include <QCoreApplication>
 #include <QDebug>
 #include <QList>
-#include <QSettings>
 
 namespace speecher {
 namespace {
@@ -130,31 +128,12 @@ int qtKeyForVirtualKey(quint32 key)
     return QChar(char16_t(character & 0xFFFF)).toUpper().unicode();
 }
 
-QKeySequence savedShortcut(const GlobalShortcutAction &action)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    // The stored value can be a single key ("key:…"), which belongs to the
-    // single-key binder and must not parse as a sequence here.
-    const ShortcutBinding stored =
-        ShortcutBinding::fromString(settings.value(action.settingsKey).toString());
-    return stored.combination().isEmpty() ? action.defaultShortcut : stored.combination();
-}
-
-void storeShortcut(const QString &key, const QKeySequence &shortcut)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    settings.setValue(key, shortcut.toString());
-}
-
 } // namespace
 
-WinGlobalShortcutBinder::WinGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : GlobalShortcutBinder(std::move(action), parent)
-    , m_shortcut(savedShortcut(this->action()))
+WinGlobalShortcutBinder::WinGlobalShortcutBinder(SettingsStore *settings,
+                                                 GlobalShortcutAction action,
+                                                 QObject *parent)
+    : HotKeyShortcutBinder(settings, std::move(action), parent)
     , m_firstHotKeyId(nextHotKeyId)
 {
     nextHotKeyId += 2;
@@ -168,102 +147,7 @@ WinGlobalShortcutBinder::~WinGlobalShortcutBinder()
     if (QCoreApplication::instance()) {
         QCoreApplication::instance()->removeNativeEventFilter(this);
     }
-    unregisterShortcut();
-}
-
-bool WinGlobalShortcutBinder::supported() const
-{
-    return true;
-}
-
-QString WinGlobalShortcutBinder::unsupportedReason() const
-{
-    return {};
-}
-
-void WinGlobalShortcutBinder::bind()
-{
-    if (m_shortcut.isEmpty()) {
-        return;
-    }
-    if (m_suspensionCount > 0) {
-        m_resumeBinding = true;
-        return;
-    }
-    QString error;
-    if (!registerShortcut(m_shortcut, &error)) {
-        qWarning().noquote() << "Could not register the Global Shortcut:" << error;
-    }
-}
-
-ShortcutBinding WinGlobalShortcutBinder::shortcut() const
-{
-    return m_shortcut;
-}
-
-bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)
-{
-    const QString reason = unsupportedBindingReason(shortcut);
-    if (!reason.isEmpty()) {
-        if (error) {
-            *error = reason;
-        }
-        return false;
-    }
-    if (shortcut.isEmpty()) {
-        removeRegistration();
-        m_shortcut = {};
-        storeShortcut(action().settingsKey, m_shortcut);
-        emit bindingChanged();
-        return true;
-    }
-    if (!registerShortcut(shortcut.combination(), error)) {
-        return false;
-    }
-    if (m_suspensionCount > 0) {
-        // Validate conflicts now, but leave keys available to other recorders.
-        m_resumeBinding = true;
-        unregisterShortcut();
-    }
-    m_shortcut = shortcut.combination();
-    storeShortcut(action().settingsKey, m_shortcut);
-    emit bindingChanged();
-    return true;
-}
-
-// A RegisterHotKey chord is consumed system-wide and never arrives as an app
-// key event, so recording it (or any replacement) needs the registration gone.
-void WinGlobalShortcutBinder::suspend()
-{
-    if (m_suspensionCount++ > 0) {
-        return;
-    }
-    m_resumeBinding = m_hotKeyId != 0;
-    unregisterShortcut();
-}
-
-QString WinGlobalShortcutBinder::resume()
-{
-    if (m_suspensionCount == 0 || --m_suspensionCount > 0) {
-        return {};
-    }
-    QString error;
-    if (m_resumeBinding) {
-        m_resumeBinding = false;
-        registerShortcut(m_shortcut, &error);
-    }
-    return error;
-}
-
-// The router parks this binder while a single key holds the binding; without
-// letting go of the hot key here, the replaced combination would keep firing
-// alongside the key. Clearing m_resumeBinding keeps a recording's resume from
-// sneaking it back.
-bool WinGlobalShortcutBinder::removeRegistration(QString *)
-{
-    m_resumeBinding = false;
-    unregisterShortcut();
-    return true;
+    unregisterKeys();
 }
 
 std::optional<WinGlobalShortcutBinder::NativeHotKey>
@@ -359,9 +243,9 @@ bool WinGlobalShortcutBinder::nativeEventFilter(const QByteArray &eventType,
     return false;
 }
 
-bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QString *error)
+bool WinGlobalShortcutBinder::registerKeys(const QKeySequence &keys, QString *error)
 {
-    if (!nativeHotKey(shortcut, error)) {
+    if (!nativeHotKey(keys, error)) {
         return false;
     }
     // The release, which WM_HOTKEY never reports, arrives as raw input.
@@ -369,21 +253,21 @@ bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QSt
                                   error)) {
         return false;
     }
-    if (m_hotKeyId && shortcut == m_shortcut) {
+    if (m_hotKeyId && keys == shortcut().combination()) {
         return true;
     }
 
     const int newId = m_hotKeyId == m_firstHotKeyId ? m_firstHotKeyId + 1 : m_firstHotKeyId;
-    if (!registerHotKey(newId, shortcut, false, error)) {
+    if (!registerHotKey(newId, keys, false, error)) {
         return false;
     }
 
-    unregisterShortcut();
+    unregisterKeys();
     m_hotKeyId = newId;
     return true;
 }
 
-void WinGlobalShortcutBinder::unregisterShortcut()
+void WinGlobalShortcutBinder::unregisterKeys()
 {
     if (m_hotKeyId) {
         UnregisterHotKey(nullptr, m_hotKeyId);
@@ -391,6 +275,11 @@ void WinGlobalShortcutBinder::unregisterShortcut()
     }
     // The raw input listener stays so an outstanding press still receives
     // its release while recording a replacement shortcut.
+}
+
+bool WinGlobalShortcutBinder::registered() const
+{
+    return m_hotKeyId != 0;
 }
 
 void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)
@@ -405,8 +294,10 @@ void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)
     emit deactivated();
 }
 
-WinSessionShortcutBinder::WinSessionShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : SessionShortcutBinder(std::move(action), parent)
+WinSessionShortcutBinder::WinSessionShortcutBinder(SettingsStore *settings,
+                                                   GlobalShortcutAction action,
+                                                   QObject *parent)
+    : SessionShortcutBinder(settings, std::move(action), parent)
     , m_hotKeyId(nextHotKeyId++)
 {
     if (QCoreApplication::instance()) {

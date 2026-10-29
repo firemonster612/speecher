@@ -2,6 +2,7 @@
 #include "app/PlatformComposition.h"
 
 #include "core/OutputMethod.h"
+#include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
 #include "output/TextDelivery.h"
@@ -184,7 +185,8 @@ private slots:
         if (!interactiveWindowStation()) {
             QSKIP("Global Shortcut registration requires an interactive window station");
         }
-        WinGlobalShortcutBinder shortcut;
+        SettingsStore settings;
+        WinGlobalShortcutBinder shortcut(&settings);
         QString error;
         QVERIFY2(shortcut.setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_F23), &error),
                  qPrintable(error));
@@ -234,10 +236,11 @@ private slots:
         QFETCH(int, role);
         const QKeySequence bare(Qt::Key_F22);
         QString error;
-        WinGlobalShortcutBinder dictation;
+        SettingsStore settings;
+        WinGlobalShortcutBinder dictation(&settings);
         QVERIFY(!dictation.setShortcut(bare, &error));
 
-        WinSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole(role)));
+        WinSessionShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole(role)));
         QVERIFY2(binder.setShortcut(bare, &error), qPrintable(error));
         QVERIFY(!binder.m_registered);
         binder.setArmed(true);
@@ -281,8 +284,9 @@ private slots:
     void singleKeySessionShortcutRefusesKeysThatType()
     {
         const ShortcutBinding letter = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
+        SettingsStore settings;
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
-            WinSingleKeyShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
+            WinSingleKeyShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(role));
             QCOMPARE(binder.unsupportedBindingReason(letter),
                      QStringLiteral("Speecher can only watch %1, not take it from other apps, so it would "
                                     "still type while you dictate. Use another key or a key combination.")
@@ -293,13 +297,14 @@ private slots:
                          QString());
             }
         }
-        WinSingleKeyShortcutBinder dictation;
+        WinSingleKeyShortcutBinder dictation(&settings);
         QCOMPARE(dictation.unsupportedBindingReason(letter), QString());
     }
 
     void keyboardBreakReleasesSuspendedShortcutOnce()
     {
-        WinGlobalShortcutBinder shortcut;
+        SettingsStore settings;
+        WinGlobalShortcutBinder shortcut(&settings);
         QSignalSpy deactivated(&shortcut, &GlobalShortcutBinder::deactivated);
         shortcut.m_pressedKey = 'D';
         shortcut.m_pressed = true;
@@ -323,7 +328,8 @@ private slots:
     // break are key repeat, not a second press.
     void singleKeyBinderMatchesScancodeIdentity()
     {
-        WinSingleKeyShortcutBinder binder;
+        SettingsStore settings;
+        WinSingleKeyShortcutBinder binder(&settings);
         QString error;
         QVERIFY2(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("AltRight")), &error),
                  qPrintable(error));
@@ -360,7 +366,8 @@ private slots:
     // vocabulary's message-level spelling.
     void singleKeyBinderNormalizesThePauseNumLockQuirk()
     {
-        WinSingleKeyShortcutBinder binder;
+        SettingsStore settings;
+        WinSingleKeyShortcutBinder binder(&settings);
         QString error;
         QVERIFY2(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("NumLock")), &error),
                  qPrintable(error));
@@ -394,7 +401,8 @@ private slots:
     // untagged SendInput must keep firing the binder.
     void singleKeyBinderDropsSpeechersOwnInjection()
     {
-        WinSingleKeyShortcutBinder binder;
+        SettingsStore settings;
+        WinSingleKeyShortcutBinder binder(&settings);
         QString error;
         QVERIFY2(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("KeyV")), &error),
                  qPrintable(error));
@@ -685,7 +693,8 @@ private slots:
             QSKIP("Live Windows desktop check is opt-in");
         }
 
-        WinGlobalShortcutBinder shortcut;
+        SettingsStore settings;
+        WinGlobalShortcutBinder shortcut(&settings);
         QString error;
         QVERIFY2(shortcut.setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D), &error),
                  qPrintable(error));

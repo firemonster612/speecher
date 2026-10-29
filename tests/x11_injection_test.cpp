@@ -6,13 +6,16 @@
 // into whatever the user has focused. CMake only registers this test where
 // Xvfb is present, and it is launched through xvfb-run on a private display.
 
+#include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/X11KeyGrabShortcutBinder.h"
 #include "platform/XInput2ShortcutBinder.h"
 
 #include <QCoreApplication>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
@@ -44,11 +47,9 @@ void pressC(Display *display)
     QTest::qWait(200);
 }
 
-int checkKeyGrab()
+int checkKeyGrab(SettingsStore *settings)
 {
-    GlobalShortcutAction action = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
-    action.settingsKey = QStringLiteral("x11InjectionTest/cancel");
-    X11KeyGrabShortcutBinder binder(action);
+    X11KeyGrabShortcutBinder binder(settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
     QString error;
     if (!binder.setShortcut(ShortcutBinding(QKeySequence(Qt::Key_C)), &error)) {
         std::fprintf(stderr, "could not bind C: %s\n", qPrintable(error));
@@ -103,14 +104,10 @@ int checkKeyGrab()
 // While a grabbed key is held, X sends every key to the grabbing connection.
 // Disarming mid-hold must hand the keyboard back, and a second session
 // shortcut pressed during the hold must still act.
-int checkKeysDuringAHeldGrab()
+int checkKeysDuringAHeldGrab(SettingsStore *settings)
 {
-    GlobalShortcutAction cancelAction = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
-    cancelAction.settingsKey = QStringLiteral("x11InjectionTest/cancel");
-    GlobalShortcutAction pauseAction = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Pause);
-    pauseAction.settingsKey = QStringLiteral("x11InjectionTest/pause");
-    X11KeyGrabShortcutBinder cancel(cancelAction);
-    X11KeyGrabShortcutBinder pause(pauseAction);
+    X11KeyGrabShortcutBinder cancel(settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
+    X11KeyGrabShortcutBinder pause(settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Pause));
     if (!cancel.setShortcut(ShortcutBinding(QKeySequence(Qt::Key_C)))
         || !pause.setShortcut(ShortcutBinding(QKeySequence(Qt::Key_P)))) {
         std::fprintf(stderr, "could not bind C and P\n");
@@ -181,9 +178,18 @@ int checkKeysDuringAHeldGrab()
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    const int keyGrab = checkKeyGrab() | checkKeysDuringAHeldGrab();
+    // The binders save what they bind; keep that out of the person's own
+    // settings.
+    QTemporaryDir preferences;
+    if (!preferences.isValid()) {
+        std::fprintf(stderr, "could not create isolated preferences\n");
+        return 1;
+    }
+    QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences.path());
+    SettingsStore settings;
+    const int keyGrab = checkKeyGrab(&settings) | checkKeysDuringAHeldGrab(&settings);
 
-    XInput2ShortcutBinder binder;
+    XInput2ShortcutBinder binder(&settings);
     if (!binder.supported()) {
         std::fprintf(stderr, "XInput2 binder could not reach the X server\n");
         return 1;

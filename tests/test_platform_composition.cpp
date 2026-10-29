@@ -14,6 +14,7 @@
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
@@ -285,7 +286,9 @@ public:
         return m_delegate->createPopupPositioner(parent);
     }
 
-    GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role, QObject *parent) const override
+    GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                     SettingsStore *,
+                                                     QObject *parent) const override
     {
         auto *created = new FakeGlobalShortcutBinder(parent);
         (role == GlobalShortcutRole::Cancel ? cancelBinder
@@ -787,7 +790,8 @@ private slots:
     // them; one that cannot leaves the controller to time it.
     void singleKeyBinderReportsThePhysicalHold()
     {
-        FakeSingleKeyShortcutBinder binder;
+        SettingsStore settings;
+        FakeSingleKeyShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
         QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
 
         binder.keyDown(1000);
@@ -1236,15 +1240,16 @@ private slots:
     {
         const ShortcutBinding c = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
+        SettingsStore settings;
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
-            FakeSingleKeyShortcutBinder session(GlobalShortcutBinder::actionFor(role));
+            FakeSingleKeyShortcutBinder session(&settings, GlobalShortcutBinder::actionFor(role));
             QCOMPARE(session.unsupportedBindingReason(c),
                      QStringLiteral("Speecher can only watch %1, not take it from other apps, so it would "
                                     "still type while you dictate. Use another key or a key combination.")
                          .arg(c.displayText()));
             QVERIFY(session.unsupportedBindingReason(f13).isEmpty());
         }
-        FakeSingleKeyShortcutBinder dictation(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        FakeSingleKeyShortcutBinder dictation(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
         QVERIFY(dictation.unsupportedBindingReason(c).isEmpty());
     }
 
@@ -1252,23 +1257,21 @@ private slots:
     // dictation shortcut's, and a new binder reads it back.
     void cancelShortcutPersistsUnderItsOwnKey()
     {
-        QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                           QString::fromLatin1(SettingsKeys::Organization),
-                           SettingsKeys::application());
-        settings.remove(QStringLiteral("shortcuts/toggleDictation"));
+        SettingsStore settings;
+        settings.raw().remove(QStringLiteral("shortcuts/toggleDictation"));
         const GlobalShortcutAction cancel = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
 
-        FakeSingleKeyShortcutBinder binder(cancel);
+        FakeSingleKeyShortcutBinder binder(&settings, cancel);
         QVERIFY(binder.setShortcut(f13));
-        QCOMPARE(settings.value(QStringLiteral("shortcuts/cancelDictation")).toString(), QStringLiteral("key:F13"));
-        QVERIFY(!settings.contains(QStringLiteral("shortcuts/toggleDictation")));
+        QCOMPARE(settings.raw().value(QStringLiteral("shortcuts/cancelDictation")).toString(), QStringLiteral("key:F13"));
+        QVERIFY(!settings.raw().contains(QStringLiteral("shortcuts/toggleDictation")));
 
-        FakeSingleKeyShortcutBinder restored(cancel);
+        FakeSingleKeyShortcutBinder restored(&settings, cancel);
         restored.bind();
         QCOMPARE(restored.shortcut(), f13);
         QVERIFY(restored.setShortcut({}));
-        QVERIFY(!settings.contains(QStringLiteral("shortcuts/cancelDictation")));
+        QVERIFY(!settings.raw().contains(QStringLiteral("shortcuts/cancelDictation")));
     }
 
     // An isolated instance has settings and a socket of its own, and leaves
@@ -2527,8 +2530,9 @@ private slots:
     {
         const ShortcutBinding rightAlt = ShortcutBinding::singleKey(QStringLiteral("AltRight"));
         const ShortcutBinding combo(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
+        SettingsStore settings;
         QList<GlobalShortcutBinder *> binders{new KGlobalAccelShortcutBinder(),
-                                              new PortalGlobalShortcutBinder()};
+                                              new PortalGlobalShortcutBinder(&settings)};
         for (GlobalShortcutBinder *binder : binders) {
             const std::unique_ptr<GlobalShortcutBinder> owned(binder);
             QVERIFY(binder->unsupportedBindingReason(combo).isEmpty());

@@ -137,8 +137,10 @@ private:
     }
 };
 
-X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : SessionShortcutBinder(std::move(action), parent)
+X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(SettingsStore *settings,
+                                                   GlobalShortcutAction action,
+                                                   QObject *parent)
+    : SessionShortcutBinder(settings, std::move(action), parent)
     , m_display(Connection::instance().display)
 {
     Connection::instance().binders.append(this);

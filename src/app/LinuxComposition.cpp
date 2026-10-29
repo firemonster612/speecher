@@ -166,43 +166,43 @@ namespace {
 // The desktop shortcut service takes a combination: KGlobalAccel on Plasma,
 // otherwise the portal. Under X11 the Cancel and Pause Shortcuts grab their
 // keys themselves instead, just while dictating, which the portal cannot.
-GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action)
+GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action, SettingsStore *settings)
 {
     if (action.sessionOnly) {
-        auto *plasma = new KGlobalAccelSessionShortcutBinder(action);
+        auto *plasma = new KGlobalAccelSessionShortcutBinder(settings, action);
         if (plasma->supported()) {
             return plasma;
         }
         delete plasma;
 #ifdef SPEECHER_WITH_X11
         if (!isWaylandSession()) {
-            return new X11KeyGrabShortcutBinder(action);
+            return new X11KeyGrabShortcutBinder(settings, action);
         }
 #endif
-        return new PortalGlobalShortcutBinder(action);
+        return new PortalGlobalShortcutBinder(settings, action);
     }
     auto *plasma = new KGlobalAccelShortcutBinder(action);
     if (plasma->supported()) {
         return plasma;
     }
     delete plasma;
-    return new PortalGlobalShortcutBinder(action);
+    return new PortalGlobalShortcutBinder(settings, action);
 }
 
 // The single-key backend watches the key itself: XInput2 under X11, the
 // key-watch helper under Wayland. The session type decides which; a headless
 // or unknown session gets the X11 watcher, which reports its own unsupported
 // reason when it cannot reach a server.
-GlobalShortcutBinder *createSingleKeyBinder(const GlobalShortcutAction &action)
+GlobalShortcutBinder *createSingleKeyBinder(const GlobalShortcutAction &action, SettingsStore *settings)
 {
 #ifdef SPEECHER_WITH_X11
     if (!isWaylandSession()) {
-        return new XInput2ShortcutBinder(action);
+        return new XInput2ShortcutBinder(settings, action);
     }
 #endif
     // The key-watch daemon reads evdev, so it works on X11 too; a build
     // without the XInput2 backend (no libxi dev files) falls back to it.
-    return new KeywatchShortcutBinder(action);
+    return new KeywatchShortcutBinder(settings, action);
 }
 
 } // namespace
@@ -213,11 +213,12 @@ SessionKeyGrab *LinuxComposition::createSessionKeyGrab(QObject *parent) const
 }
 
 GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                   SettingsStore *settings,
                                                                    QObject *parent) const
 {
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    return new RoutingShortcutBinder(createCombinationBinder(action),
-                                     createSingleKeyBinder(action),
+    return new RoutingShortcutBinder(createCombinationBinder(action, settings),
+                                     createSingleKeyBinder(action, settings),
                                      parent);
 }
 

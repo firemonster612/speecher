@@ -15,7 +15,8 @@ struct TakenKey {
     SessionKeyGrab::Key key;
     QKeySequence keys;
     // Plasma lists it in the desktop's shortcut settings while it is held.
-    // Nothing is stored, so it has no settings key.
+    // It is no Global Shortcut and nothing is stored, so its role goes unused
+    // and its binder gets no settings.
     GlobalShortcutAction action;
 };
 
@@ -23,17 +24,23 @@ QList<TakenKey> takenKeys()
 {
     return {
         {SessionKeyGrab::Key::Escape, QKeySequence(Qt::Key_Escape),
-         {QString(), QStringLiteral("session-escape"), QStringLiteral("Keep the original while reviewing an edit"), {}, true}},
+         {.id = QStringLiteral("session-escape"),
+          .description = QStringLiteral("Keep the original while reviewing an edit"),
+          .sessionOnly = true}},
         {SessionKeyGrab::Key::Enter, QKeySequence(Qt::Key_Return),
-         {QString(), QStringLiteral("session-enter"), QStringLiteral("Replace the selection while reviewing an edit"), {}, true}},
+         {.id = QStringLiteral("session-enter"),
+          .description = QStringLiteral("Replace the selection while reviewing an edit"),
+          .sessionOnly = true}},
         {SessionKeyGrab::Key::Enter, QKeySequence(Qt::KeypadModifier | Qt::Key_Enter),
-         {QString(), QStringLiteral("session-keypad-enter"), QStringLiteral("Replace the selection with keypad Enter while reviewing an edit"), {}, true}},
+         {.id = QStringLiteral("session-keypad-enter"),
+          .description = QStringLiteral("Replace the selection with keypad Enter while reviewing an edit"),
+          .sessionOnly = true}},
     };
 }
 
 SessionShortcutBinder *binderFor(const GlobalShortcutAction &action, QObject *parent)
 {
-    auto *plasma = new KGlobalAccelSessionShortcutBinder(action, parent);
+    auto *plasma = new KGlobalAccelSessionShortcutBinder(nullptr, action, parent);
     if (plasma->supported()) {
         plasma->dropLeftoverRegistration();
         return plasma;
@@ -41,7 +48,7 @@ SessionShortcutBinder *binderFor(const GlobalShortcutAction &action, QObject *pa
     delete plasma;
 #ifdef SPEECHER_WITH_X11
     if (!isWaylandSession()) {
-        return new X11KeyGrabShortcutBinder(action, parent);
+        return new X11KeyGrabShortcutBinder(nullptr, action, parent);
     }
 #endif
     return nullptr;

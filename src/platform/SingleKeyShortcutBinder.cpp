@@ -1,8 +1,6 @@
 #include "platform/SingleKeyShortcutBinder.h"
 
-#include "core/settings/SettingsKeys.h"
-
-#include <QSettings>
+#include "core/SettingsStore.h"
 
 namespace speecher {
 namespace {
@@ -17,32 +15,19 @@ QString watchedKeyStillTypesText(const ShortcutBinding &binding)
         .arg(binding.displayText());
 }
 
-void storeBinding(const QString &key, const ShortcutBinding &binding)
-{
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    if (binding.isEmpty()) {
-        // Only clear what this binder owns: on macOS the combination binder
-        // stores its sequence under the same key, and a router clearing the
-        // single key right after a combination was set must not erase it.
-        const ShortcutBinding stored = ShortcutBinding::fromString(settings.value(key).toString());
-        if (stored.isSingleKey()) {
-            settings.remove(key);
-        }
-    } else {
-        settings.setValue(key, binding.toString());
-    }
-}
-
 } // namespace
+
+SingleKeyShortcutBinder::SingleKeyShortcutBinder(SettingsStore *settings,
+                                                 GlobalShortcutAction action,
+                                                 QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
+    , m_settings(settings)
+{
+}
 
 ShortcutBinding SingleKeyShortcutBinder::storedBinding() const
 {
-    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
-                       QString::fromLatin1(SettingsKeys::Organization),
-                       SettingsKeys::application());
-    return ShortcutBinding::fromString(settings.value(action().settingsKey).toString());
+    return m_settings->globalShortcut(action().role);
 }
 
 QString SingleKeyShortcutBinder::unsupportedReason() const
@@ -87,7 +72,10 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         unwatch();
         m_down = false;
         m_binding = {};
-        storeBinding(action().settingsKey, m_binding);
+        // The combination binder may store its sequence under the same key,
+        // and a router clearing the single key right after a combination was
+        // set must not erase it.
+        m_settings->forgetGlobalShortcutSingleKey(action().role);
         emit bindingChanged();
         return true;
     }
@@ -103,7 +91,7 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
     }
     m_down = false;
     m_binding = shortcut;
-    storeBinding(action().settingsKey, m_binding);
+    m_settings->setGlobalShortcut(action().role, m_binding);
     emit bindingChanged();
     return true;
 }

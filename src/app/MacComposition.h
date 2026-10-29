@@ -30,6 +30,7 @@ public:
     PopupPositioner *createPopupPositioner(QObject *parent) const override;
     WindowBackdrop *createWindowBackdrop(QObject *parent) const override;
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                     SettingsStore *settings,
                                                      QObject *parent) const override;
     SessionKeyGrab *createSessionKeyGrab(QObject *parent) const override;
     bool escapeCancelsDictation() const override { return true; }
