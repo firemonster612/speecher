@@ -8,7 +8,6 @@ import android.content.pm.PackageInstaller
 import androidx.core.content.IntentCompat
 import app.speecher.android.BuildConfig
 import app.speecher.android.MainActivity
-import app.speecher.android.dictation.ActiveDictation
 import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,6 +15,12 @@ import okhttp3.Request
 /** The MainActivity extras carrying the status Android refused an update with, and its version. */
 const val INSTALL_STATUS = "install_status"
 const val INSTALL_VERSION = "install_version"
+
+/**
+ * While Android may be replacing the app, which would end a dictation. Set and read on the main
+ * thread, so no dictation starts between the installer's check for one and its commit.
+ */
+@Volatile var installingUpdate = false
 
 /**
  * Downloads [update]'s APK to [file] once the user chooses it, reporting each whole percent when
@@ -80,7 +85,7 @@ fun stageApk(context: Context, apk: File): Int {
  */
 fun commitApk(context: Context, sessionId: Int, update: ApkUpdate) {
     val installer = context.packageManager.packageInstaller
-    ActiveDictation.installingUpdate = true
+    installingUpdate = true
     try {
         val callback =
             PendingIntent.getBroadcast(
@@ -93,7 +98,7 @@ fun commitApk(context: Context, sessionId: Int, update: ApkUpdate) {
             )
         installer.openSession(sessionId).use { it.commit(callback.intentSender) }
     } catch (error: Exception) {
-        ActiveDictation.installingUpdate = false
+        installingUpdate = false
         installer.abandonSession(sessionId)
         throw error
     }
@@ -125,13 +130,13 @@ class InstallResultReceiver : BroadcastReceiver() {
             // Android replaces the app only once the user confirms in its prompt, which a
             // dictation cannot be running behind; the chip may start them again.
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                ActiveDictation.installingUpdate = false
+                installingUpdate = false
                 val confirmation =
                     IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 confirmation?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
             }
             else -> {
-                ActiveDictation.installingUpdate = false
+                installingUpdate = false
                 context.startActivity(
                     Intent(context, MainActivity::class.java)
                         .putExtra(INSTALL_STATUS, status)

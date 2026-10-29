@@ -40,10 +40,34 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.SetupStatus
-import app.speecher.android.dictation.label
-import app.speecher.android.dictation.providerOrder
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.label
+import app.speecher.android.provider.providerOrder
+
+/**
+ * What the setup checklist needs to know. Each flag is one step; the first is done by an account or
+ * by [ownServer], a speech server of the person's own. [sessionEnded] holds the signed-in providers
+ * whose sign-in was rejected during a dictation; they still count as signed in here.
+ */
+data class SetupStatus(
+    val signedIn: Set<Provider>,
+    val microphoneGranted: Boolean,
+    val keyboardEnabled: Boolean,
+    val chipEnabled: Boolean,
+    val sessionEnded: Set<Provider> = emptySet(),
+    val ownServer: Boolean = false,
+) {
+    val complete: Boolean
+        get() =
+            (signedIn.isNotEmpty() || ownServer) &&
+                microphoneGranted &&
+                keyboardEnabled &&
+                chipEnabled
+
+    /** The signed-in providers whose sign-in still works. */
+    val working: Set<Provider>
+        get() = signedIn - sessionEnded
+}
 
 /**
  * First-run checklist: the four steps dictation needs, then Done. Each row reads one [SetupStatus]

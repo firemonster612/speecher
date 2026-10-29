@@ -1,5 +1,8 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.SpeechProvider
 import app.speecher.protocol.ProviderFailureKind
 import org.junit.Assert.assertEquals
 import org.junit.Test

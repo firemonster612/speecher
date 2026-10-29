@@ -2,6 +2,10 @@ package app.speecher.android.dictation
 
 import android.content.Context
 import android.util.Log
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.label
+import app.speecher.android.provider.speech
+import app.speecher.android.settings.SpeecherSettings
 import java.io.File
 import java.io.RandomAccessFile
 import java.text.BreakIterator

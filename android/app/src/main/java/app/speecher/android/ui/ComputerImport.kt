@@ -31,7 +31,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.transfer.Changes
 import app.speecher.android.transfer.ComputerSettings
 import app.speecher.android.transfer.ImportFailed

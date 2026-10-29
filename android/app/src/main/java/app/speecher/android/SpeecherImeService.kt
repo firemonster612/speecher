@@ -17,11 +17,11 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.Recovery
-import app.speecher.android.dictation.cleanup
 import app.speecher.android.dictation.recovery
-import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.targetApp
+import app.speecher.android.provider.cleanup
+import app.speecher.android.provider.resolveSignedIn
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
 

@@ -29,8 +29,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
-import app.speecher.android.dictation.SpeecherSettings
-import app.speecher.android.dictation.sharedHttp
+import app.speecher.android.settings.SpeecherSettings
+import app.speecher.android.sharedHttp
 import app.speecher.protocol.EndpointCheck
 import app.speecher.protocol.checkSpeechEndpoint
 import kotlinx.coroutines.Dispatchers

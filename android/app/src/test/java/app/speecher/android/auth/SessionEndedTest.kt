@@ -1,6 +1,6 @@
 package app.speecher.android.auth
 
-import app.speecher.android.dictation.Provider
+import app.speecher.android.provider.Provider
 import app.speecher.protocol.OAuthProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test

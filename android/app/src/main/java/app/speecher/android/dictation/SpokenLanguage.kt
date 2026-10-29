@@ -1,5 +1,7 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.provider.label
 import app.speecher.protocol.AUTOMATIC_LANGUAGE
 import app.speecher.protocol.claudeVoiceLanguages
 import app.speecher.protocol.codexDictationLanguages

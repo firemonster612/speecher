@@ -2,12 +2,12 @@ package app.speecher.android.ui
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import app.speecher.android.dictation.ButtonLayout
-import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
-import app.speecher.android.dictation.PanelSize
-import app.speecher.android.dictation.SpeechProvider
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.settings.ButtonLayout
+import app.speecher.android.settings.PanelSize
 import app.speecher.protocol.ProviderFailureKind
 import org.junit.Rule
 import org.junit.Test

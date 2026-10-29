@@ -4,6 +4,8 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
+import app.speecher.android.provider.label
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText

@@ -1,7 +1,7 @@
 package app.speecher.android.auth
 
 import android.content.pm.ServiceInfo
-import app.speecher.android.dictation.Provider
+import app.speecher.android.provider.Provider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

@@ -32,8 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
-import app.speecher.android.dictation.SpeecherSettings
-import app.speecher.android.dictation.profileDeletionNotice
+import app.speecher.android.settings.SpeecherSettings
+import app.speecher.android.settings.profileDeletionNotice
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel

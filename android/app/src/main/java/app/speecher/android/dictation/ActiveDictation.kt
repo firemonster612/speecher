@@ -4,6 +4,7 @@ import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.CorrectionWindow
 
 /** Both Android services share one process and one active dictation session. */
@@ -29,11 +30,6 @@ object ActiveDictation {
      * the wrong field. A password field's text is never kept.
      */
     var latest by mutableStateOf<LatestTranscript?>(null)
-    /**
-     * While Android may be replacing the app, which would end a dictation. Set and read on the main
-     * thread, so no dictation starts between the installer's check for one and its commit.
-     */
-    @Volatile var installingUpdate = false
 
     /**
      * Ends the running session: the engine closes and what the chip captured of the screen goes

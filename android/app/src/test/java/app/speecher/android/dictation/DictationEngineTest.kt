@@ -1,5 +1,8 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.provider.CleanupProvider
+import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.provider.speech
 import app.speecher.protocol.Cancellation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CodexDictationClient

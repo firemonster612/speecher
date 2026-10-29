@@ -1,6 +1,6 @@
 package app.speecher.android.ui
 
-import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone

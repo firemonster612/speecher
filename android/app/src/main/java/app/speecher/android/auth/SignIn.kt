@@ -12,11 +12,11 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.label
-import app.speecher.android.dictation.oauth
-import app.speecher.android.dictation.sharedExecutor
-import app.speecher.android.dictation.sharedHttp
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.label
+import app.speecher.android.provider.oauth
+import app.speecher.android.sharedExecutor
+import app.speecher.android.sharedHttp
 import app.speecher.protocol.OAuthAttempt
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
