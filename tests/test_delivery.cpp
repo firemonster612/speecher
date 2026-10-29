@@ -232,9 +232,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(QImage::fromData(result->png).width(), 2560);
         QVERIFY(!QFile::exists(path));
         // On the main thread the loop would stall for the whole of the work
-        // (about half a second); measured against the work, not a fixed bound,
-        // so a busy or slow runner scales both alike.
-        QVERIFY2(longestStallMs < workMs / 2,
+        // (about half a second), or a stage of it. Measured against the work,
+        // not a fixed bound, so a slower runner allows more.
+        QVERIFY2(longestStallMs < workMs / 3,
                  qPrintable(QStringLiteral("event loop stalled for %1 ms of %2 ms").arg(longestStallMs).arg(workMs)));
     }
 

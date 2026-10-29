@@ -12,7 +12,6 @@
 #include "frontend/quick/host/QuickUpdates.h"
 #include "platform/PopupPositioner.h"
 
-#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -377,25 +376,16 @@ private slots:
     // The same failure again is a fresh one: its countdown starts over.
     void theSameErrorAgainCountsDownFromTheStart()
     {
-        QuickDictation::setErrorDismissMs(300);
+        // The first countdown outlasts the test; only a fresh, short one for
+        // the repeat dismisses the error.
+        QuickDictation::setErrorDismissMs(60000);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
         const auto state = [&dictation] { return dictation.property("state").toString(); };
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
-        QTest::qWait(200);
-        QElapsedTimer sinceAgain;
-        sinceAgain.start();
-        qint64 dismissedAfterMs = -1;
-        connect(&dictation, &QuickDictation::stateChanged, &dictation, [&] {
-            if (state() == QLatin1String("idle")) {
-                dismissedAfterMs = sinceAgain.elapsed();
-            }
-        });
+        QuickDictation::setErrorDismissMs(300);
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
         QTRY_COMPARE(state(), QStringLiteral("idle"));
-        // Longer than the 100 ms the first had left, timed when it went
-        // rather than when a wait ended, which load can stretch.
-        QVERIFY2(dismissedAfterMs > 200, qPrintable(QString::number(dismissedAfterMs)));
     }
 
     void anErrorsCountdownWaitsUnderThePointerAndDismissCancels()
@@ -437,6 +427,11 @@ private slots:
         dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
         popup.show(0);
         QTRY_VERIFY(!holds.isEmpty() && holds.last().first().toBool());
+        QCOMPARE(state(), QStringLiteral("error"));
+        // Held already, a short countdown for the same error waits too.
+        QuickDictation::setErrorDismissMs(300);
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
+        QTest::qWait(600);
         QCOMPARE(state(), QStringLiteral("error"));
 
         QQuickItem *dismiss = nullptr;
