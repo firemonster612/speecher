@@ -230,8 +230,10 @@ private slots:
         QFETCH(bool, anthropic);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        OpenAiRefiner openAi(nullptr, 500, 5000);
-        AnthropicApiRefiner claude(nullptr, 500, 5000);
+        // Fed every 50 ms, a 1.5 s limit lapses only if the progress stops, not
+        // when a busy runner holds this thread back for a moment.
+        OpenAiRefiner openAi(nullptr, 1500, 5000);
+        AnthropicApiRefiner claude(nullptr, 1500, 5000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
@@ -248,11 +250,11 @@ private slots:
         QTimer activity;
         connect(&activity, &QTimer::timeout, socket, [socket, progress] { socket->write(progress); });
         activity.start(50);
-        QTest::qWait(900);
+        QTest::qWait(2000);
         QCOMPARE(failed.size(), 0);
         QCOMPARE(deltas.size(), 0);
         activity.stop();
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
     }
 

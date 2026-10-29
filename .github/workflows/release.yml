@@ -384,7 +384,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           status=0
-          ctest --test-dir build --parallel "$(sysctl -n hw.ncpu)" --output-on-failure -E speecher_echo_canceller || status=1
+          # One core short of the runner's three: suites time their event loops,
+          # and a full runner left them without the CPU for half a second.
+          ctest --test-dir build --parallel "$(( $(sysctl -n hw.ncpu) - 1 ))" --output-on-failure -E speecher_echo_canceller || status=1
           # Verbose, so the log shows the echo suite ran rather than skipped.
           ctest --test-dir build --output-on-failure -V -R speecher_echo_canceller || status=1
           exit "$status"
