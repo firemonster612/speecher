@@ -208,11 +208,13 @@ public:
 
     // The client end of the connection, for wl_display_connect_to_fd.
     int clientFd() const { return m_clientFd; }
-    // Whichever manager it offers.
+    // Whichever manager it offers. Removed rather than destroyed, as a
+    // compositor does: a bind already on its way would otherwise end the
+    // client's connection. It is destroyed with the display.
     void takeManagerAway()
     {
         ask([this] {
-            wl_global_destroy(m_manager);
+            wl_global_remove(m_manager);
             m_manager = nullptr;
         });
     }
