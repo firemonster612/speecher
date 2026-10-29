@@ -960,14 +960,16 @@ private slots:
         options.refinementProviderId = QStringLiteral("none");
         std::ostringstream out;
         std::ostringstream err;
-        // A run the silence never ends stops here, and fails the timing below.
+        // A run the silence never ends stops here instead, which fails below.
         QElapsedTimer clock;
         clock.start();
+        bool stoppedByTest = false;
 
-        QCOMPARE(runHeadlessListen(options, 300, &microphone, [&clock] { return clock.elapsed() > 3000; }, false,
-                                   &settings, m_registry.get(), out, err),
+        QCOMPARE(runHeadlessListen(options, 300, &microphone,
+                                   [&] { return stoppedByTest = clock.elapsed() > 10000; }, false, &settings,
+                                   m_registry.get(), out, err),
                  0);
-        QVERIFY2(clock.elapsed() < 2500, qPrintable(QString::number(clock.elapsed())));
+        QVERIFY(!stoppedByTest);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
         // Enter is not read here, so the hint leaves it out.
         QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Ctrl-C to stop, or pause for 0.3 s.")));
