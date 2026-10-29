@@ -52,7 +52,14 @@ speecher_add_qml_module(speecher_quick_demo Speecher.Demo "${SPEECHER_QUICK_DIR}
 speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUICK_DIR}/qml/Speecher/Wording")
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
-speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup")
+# The popup's level animation is C++, for its cost per frame.
+speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup"
+  SOURCES
+    "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.cpp"
+    "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.h"
+  LIBRARIES Qt6::Quick
+)
+target_include_directories(speecher_quick_popup PRIVATE "${SPEECHER_QUICK_DIR}/host")
 # Every area is C++ over core, and Library.qml words LibraryLists.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/qml/Speecher/Backend"
   SOURCES

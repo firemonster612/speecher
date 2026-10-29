@@ -31,6 +31,8 @@ Item {
     // A sign-in renews before the dictation goes on; the bar says so in
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
+    // The scatter ribbon shows the voice while listening and paused.
+    readonly property bool ribbonShown: (phase === "listening" || phase === "paused") && !renewing
     // The last working phase, so its label holds while the bar fades out
     // and while the text is delivered.
     property string workPhase: "transcribing"
@@ -225,26 +227,37 @@ Item {
                     height: popup.barHeight
                     anchors.bottom: parent.bottom
 
+                    // The ribbon takes the orb's place, so the orb shows nothing then.
                     VoiceOrb {
                         id: orb
                         x: popup.orbX
                         size: popup.orbSize
                         anchors.verticalCenter: parent.verticalCenter
-                        phase: popup.phase === "delivering" ? popup.workPhase : popup.phase
+                        phase: popup.ribbonShown ? "" : popup.phase === "delivering" ? popup.workPhase : popup.phase
                         level: popup.source.level
                     }
 
-                    Waveform {
-                        id: wave
-                        x: popup.contentX
-                        width: clock.x - x - 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        height: 22
-                        bars: Math.max(8, Math.floor(width / 5.5))
+                    // From the orb's place to the clock. Its figure keeps
+                    // 6 px in from its ends, so it starts 14 px into the pill.
+                    ScatterRibbon {
+                        id: ribbon
+                        x: 8
+                        width: clock.x - 6 - x
+                        height: parent.height
                         level: popup.source.level
-                        active: popup.phase === "listening"
-                        opacity: popup.recording && !popup.renewing ? 1 : 0
-                        Behavior on opacity { Ease {} }
+                        listening: popup.phase === "listening"
+                        movement: Theme.movement
+                        dark: Theme.dark
+                        color: Theme.text
+                        freedColor: Theme.accent
+                        pausedColor: Theme.textTertiary
+                        opacity: popup.ribbonShown ? 1 : 0
+                        visible: opacity > 0
+                        Behavior on opacity { Ease { duration: Theme.fast } }
+                        FrameAnimation {
+                            running: ribbon.visible && ribbon.moving
+                            onTriggered: ribbon.advance(frameTime)
+                        }
                     }
 
                     MorphText {

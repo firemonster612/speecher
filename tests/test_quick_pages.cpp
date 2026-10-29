@@ -1,6 +1,7 @@
 // The whole Quick UI as the daemon shows it, over the real Backend, in light
 // and dark: every page of Main and a few searches, every setup step and every
-// popup state load and draw without a QML warning.
+// popup state load and draw without a QML warning, and the popup's level
+// animation stays inside its bar.
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 
@@ -14,9 +15,12 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QGuiApplication>
+#include <QImage>
 #include <QJSValue>
+#include <QPainter>
 #include <QPointer>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -569,6 +573,103 @@ private slots:
                                                    PopupErrorAction{});
              }},
         });
+    }
+
+    // The popup's ribbon keeps every point finite and inside its strip, the
+    // bar, through a loud voice, a pause and reduced motion.
+    void ribbonStaysInsideTheBar()
+    {
+        RibbonFigure figure;
+        const QRectF strip(0, 0, 160, 44);
+        const struct {
+            qreal seconds;
+            bool listening;
+            qreal movement;
+        } phases[] = {{3, true, 1}, {1, false, 1}, {1, true, 0}};
+        qreal loosest = 0;
+        for (const auto &phase : phases) {
+            for (int frame = 0; frame < phase.seconds * 60; ++frame) {
+                // A level every 50 ms, a word starting every 100 ms.
+                if (frame % 3 == 0) {
+                    figure.hear(frame % 6 == 0 ? 0.95 : 0.05, phase.listening);
+                }
+                figure.step(1.0 / 60, strip.size(), phase.listening, phase.movement);
+                for (const RibbonFigure::Point &point : figure.points()) {
+                    QVERIFY2(strip.contains(point.at), qPrintable(QStringLiteral("%1, %2").arg(point.at.x()).arg(point.at.y())));
+                    loosest = std::max(loosest, point.looseness);
+                }
+            }
+        }
+        // The voice did scatter points, so the bounds were tested.
+        QVERIFY(loosest > 0.5);
+    }
+
+    // Shown again while the voice holds one level, the ribbon still hears it
+    // and frees points, drawn here in white among black.
+    void reshownRibbonHearsTheLevel()
+    {
+        // An item shows again only under a parent.
+        QQuickItem bar;
+        ScatterRibbon ribbon;
+        ribbon.setParentItem(&bar);
+        ribbon.setSize({160, 44});
+        ribbon.setProperty("color", QColor(Qt::black));
+        ribbon.setProperty("freedColor", QColor(Qt::white));
+        ribbon.setListening(true);
+        ribbon.setLevel(0.9);
+        ribbon.setVisible(false);
+        ribbon.setVisible(true);
+        for (int frame = 0; frame < 60; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        ribbon.paint(&painter);
+        painter.end();
+        int freed = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor pixel = QColor::fromRgba(qUnpremultiply(image.pixel(x, y)));
+                freed += pixel.alpha() > 64 && pixel.lightness() > 128;
+            }
+        }
+        QVERIFY(freed > 0);
+    }
+
+    // Once paused and still, the ribbon draws no more frames, yet takes a
+    // new theme's colours.
+    void stillRibbonTakesNewColours()
+    {
+        ScatterRibbon ribbon;
+        ribbon.setSize({160, 44});
+        ribbon.setProperty("pausedColor", QColor(Qt::black));
+        while (ribbon.moving()) {
+            ribbon.advance(1.0 / 60);
+        }
+        const auto drawn = [&ribbon] {
+            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            ribbon.paint(&painter);
+            return image;
+        };
+        // Its strength: the sum of its alpha.
+        const auto strength = [](const QImage &image) {
+            qint64 sum = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    sum += qAlpha(image.pixel(x, y));
+                }
+            }
+            return sum;
+        };
+        const QImage before = drawn();
+        ribbon.setProperty("pausedColor", QColor(Qt::white));
+        QVERIFY(drawn() != before);
+        // Back in the first colours it is as strong as it was.
+        ribbon.setProperty("pausedColor", QColor(Qt::black));
+        QVERIFY(std::abs(strength(drawn()) - strength(before)) < strength(before) / 20);
     }
 
 private:
