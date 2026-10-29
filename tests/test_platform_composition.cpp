@@ -2,6 +2,7 @@
 #include "common/test_doubles.h"
 #include "common/test_manifest_updater_access.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
@@ -2545,8 +2546,7 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        QSignalSpy accessibilityChanged(&controller,
-                                        &ApplicationController::accessibilityStateChanged);
+        QSignalSpy accessibilityChanged(controller.accessibility(), &AccessibilityMonitor::stateChanged);
         QVERIFY(platform->binder);
         QCOMPARE(platform->binder->bindCount, 0);
 
@@ -2554,9 +2554,9 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
 
         QCOMPARE(platform->binder->bindCount, 1);
-        QVERIFY(controller.accessibilitySupported());
-        QVERIFY(controller.accessibilityEnabled());
-        QVERIFY(!controller.accessibilityPersistent());
+        QVERIFY(controller.accessibility()->supported());
+        QVERIFY(controller.accessibility()->enabled());
+        QVERIFY(!controller.accessibility()->persistent());
 
         // The fallback timer must not run the startup a second time.
         controller.frontEndReady();
@@ -2569,19 +2569,18 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->accessibility = {true, false, false};
         ApplicationController controller(true, platform);
-        QSignalSpy accessibilityChanged(&controller,
-                                        &ApplicationController::accessibilityStateChanged);
+        QSignalSpy accessibilityChanged(controller.accessibility(), &AccessibilityMonitor::stateChanged);
 
         controller.frontEndReady();
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
-        QVERIFY(!controller.accessibilityEnabled());
+        QVERIFY(!controller.accessibility()->enabled());
         QVERIFY(platform->accessibilityRefresh);
 
         platform->accessibility = {true, true, true};
         platform->accessibilityRefresh();
 
-        QVERIFY(controller.accessibilityEnabled());
-        QVERIFY(controller.accessibilityPersistent());
+        QVERIFY(controller.accessibility()->enabled());
+        QVERIFY(controller.accessibility()->persistent());
         QCOMPARE(accessibilityChanged.count(), 2);
         QCOMPARE(accessibilityChanged.last().at(1).toBool(), true);
     }

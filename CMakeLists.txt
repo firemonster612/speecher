@@ -571,6 +571,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 )
 
 set(SPEECHER_APP_SOURCES
+  src/app/AccessibilityMonitor.cpp
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
@@ -587,7 +588,9 @@ set(SPEECHER_APP_SOURCES
   src/app/ProviderSetup.cpp
   src/app/ProvidersCommand.cpp
   src/app/ShellCompletions.cpp
+  src/app/ShortcutGesture.cpp
   src/app/SingleInstanceIpc.cpp
+  src/app/WhatsNewTracker.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
   src/recording/RecordingStatus.cpp
@@ -598,6 +601,7 @@ set(SPEECHER_APP_SOURCES
 )
 
 set(SPEECHER_APP_HEADERS
+  src/app/AccessibilityMonitor.h
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
@@ -610,6 +614,7 @@ set(SPEECHER_APP_HEADERS
   src/app/HeadlessTranscribe.h
   src/app/IpcMessages.h
   src/app/ManifestUpdater.h
+  src/app/ShortcutGesture.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
   src/app/PhoneTransfer.h
@@ -618,6 +623,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ShellCompletions.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
+  src/app/WhatsNewTracker.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
   src/recording/RecordingStatus.h

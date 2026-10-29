@@ -1,5 +1,6 @@
 #include "frontend/quick/host/QuickSystem.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "app/PhoneTransfer.h"
 #include "app/PlatformComposition.h"
@@ -67,13 +68,13 @@ QVariantMap microphoneCheck(const PlatformComposition *platform)
 
 QVariantMap accessibilityCheck(const ApplicationController *controller)
 {
-    if (!controller->accessibilitySupported()) {
+    if (!controller->accessibility()->supported()) {
         return checkEntry("desktopAccessibility", "off", "unsupported");
     }
-    if (!controller->accessibilityEnabled()) {
+    if (!controller->accessibility()->enabled()) {
         return checkEntry("desktopAccessibility", "off", "off", "enable");
     }
-    if (!controller->accessibilityPersistent()) {
+    if (!controller->accessibility()->persistent()) {
         return checkEntry("desktopAccessibility", "attention", "sessionOnly", "enable");
     }
     return checkEntry("desktopAccessibility", "ok", "on");
@@ -263,7 +264,7 @@ QuickSystem::QuickSystem(ApplicationController *controller, QObject *parent)
 #endif
 {
     g_instance = this;
-    connect(controller, &ApplicationController::accessibilityStateChanged, this, &QuickSystem::changed);
+    connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
@@ -287,7 +288,7 @@ QuickSystem::QuickSystem(ApplicationController *controller, QObject *parent)
 #ifdef Q_OS_LINUX
             m_virtualKeyboard.refresh();
 #endif
-            m_controller->refreshAccessibilityState();
+            m_controller->accessibility()->refresh();
             emit changed();
         }
     });
@@ -309,7 +310,7 @@ QuickSystem *QuickSystem::create(QQmlEngine *, QJSEngine *)
 
 bool QuickSystem::accessibility() const
 {
-    return m_controller->accessibilityEnabled();
+    return m_controller->accessibility()->enabled();
 }
 
 QVariantList QuickSystem::checks() const
@@ -458,7 +459,7 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
     }
     if (id == accessibilityId) {
         QString error;
-        if (!m_controller->enableAccessibility(&error)) {
+        if (!m_controller->accessibility()->enablePermanently(&error)) {
             m_failures[id] = {failureEntry(QStringLiteral("enable"), error)};
             emit changed();
         }

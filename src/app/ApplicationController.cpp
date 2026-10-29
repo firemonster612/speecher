@@ -1,13 +1,16 @@
 #include "app/ApplicationController.h"
 
+#include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
 #include "app/LocalSetup.h"
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
 #include "app/ProvidersCommand.h"
+#include "app/ShortcutGesture.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateController.h"
+#include "app/WhatsNewTracker.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
 #elif defined(Q_OS_WIN)
@@ -17,7 +20,6 @@
 #endif
 #include "core/InsightsLog.h"
 #include "core/ProviderTable.h"
-#include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -48,20 +50,9 @@
 namespace speecher {
 namespace {
 
-// Hybrid: a press toggles, and a hold longer than this is push-to-talk that
-// ends with the key. 400 ms suited a two-hand chord; a one-finger tap on a
-// single key lands and lifts in about 100 ms, and a deliberate hold is past
-// 250 ms before the first word is out, so this sits clear of both gestures.
-constexpr qint64 hybridHoldMs = 250;
-// Push-to-talk: a press that lifts inside this window is a brush of the key,
-// not a dictation, and must leave no trace.
-constexpr int pushToTalkMisfireMs = 200;
 // How long a quit mid-dictation waits for the asynchronous media-resume calls
 // to leave the process before the event loop stops for good.
 constexpr int mediaResumeGraceMs = 200;
-#ifdef Q_OS_MACOS
-constexpr int accessibilityPollMs = 5000;
-#endif
 // How long after launch opened files still replace the default main window.
 constexpr int defaultMainWindowGraceMs = 3000;
 
@@ -108,48 +99,22 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, this))
     , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
-    , m_pushToTalkStart(new QTimer(this))
+    , m_shortcutGesture(new ShortcutGesture(*m_settings, [this] { return sessionActive(); }, this))
+    , m_whatsNew(new WhatsNewTracker(*m_settings, this))
 {
-    const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
-    const qint64 currentBuildNumber = SPEECHER_BUILD_NUMBER;
-    const QString previousVersion = m_settings->updatesLastRunVersion();
-    const qint64 previousBuildNumber = m_settings->updatesLastRunBuildNumber();
-    if (previousVersion != currentVersion || previousBuildNumber != currentBuildNumber) {
-        const bool migratedNightlyUpgrade = previousBuildNumber < 0
-            && !previousVersion.isEmpty()
-            && previousVersion.contains(QStringLiteral("-nightly"))
-            && currentVersion.contains(QStringLiteral("-nightly"))
-            && previousVersion != currentVersion;
-        const bool upgraded = previousBuildNumber >= 0
-            ? currentBuildNumber > previousBuildNumber
-            : compareBaseVersions(currentVersion, previousVersion) > 0 || migratedNightlyUpgrade;
-        if (upgraded
-            && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
-            m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
-        }
-        m_settings->setUpdatesLastRunVersion(currentVersion);
-        m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
-    }
-    m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     // The login item is the person's, which an isolated instance leaves alone.
     if (!SettingsKeys::isolatedInstance()) {
         m_settings->setLaunchAtLoginReconciler(
             [this](bool enabled, QString *error) { return m_platform->setLaunchAtLogin(enabled, error); });
         m_settings->reconcileLaunchAtLogin();
     }
-    connect(m_shortcutBinder,
-            &GlobalShortcutBinder::activated,
-            this,
-            &ApplicationController::handleShortcutPressed);
-    connect(m_shortcutBinder,
-            &GlobalShortcutBinder::deactivated,
-            this,
-            &ApplicationController::handleShortcutReleased);
-    m_pushToTalkStart->setSingleShot(true);
-    m_pushToTalkStart->setInterval(pushToTalkMisfireMs);
-    connect(m_pushToTalkStart, &QTimer::timeout, this, &ApplicationController::startListening);
+    connect(m_shortcutBinder, &GlobalShortcutBinder::activated, m_shortcutGesture, &ShortcutGesture::press);
+    connect(m_shortcutBinder, &GlobalShortcutBinder::deactivated, m_shortcutGesture, &ShortcutGesture::release);
+    connect(m_shortcutGesture, &ShortcutGesture::toggleRequested, this, &ApplicationController::toggle);
+    connect(m_shortcutGesture, &ShortcutGesture::startRequested, this, &ApplicationController::startListening);
+    connect(m_shortcutGesture, &ShortcutGesture::stopRequested, this, &ApplicationController::stopListening);
     connect(m_shortcutBinder, &GlobalShortcutBinder::bindingChanged, this, [this] {
-        forgetShortcutGesture();
+        m_shortcutGesture->forget();
         emit globalShortcutChanged();
     });
     connect(m_shortcutBinder,
@@ -358,15 +323,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             }
         }
     });
-#ifdef Q_OS_MACOS
-    m_accessibilityPoll = new QTimer(this);
-    m_accessibilityPoll->setInterval(accessibilityPollMs);
-    connect(m_accessibilityPoll,
-            &QTimer::timeout,
-            this,
-            &ApplicationController::refreshAccessibilityState);
-#endif
-    m_platform->watchAccessibilityChanges(this, [this] { refreshAccessibilityState(); });
+    m_accessibility = new AccessibilityMonitor(*m_platform, this);
     // A process that never shows a window still has to warm up, so the wait for
     // the front end is capped rather than open-ended.
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
@@ -521,21 +478,7 @@ void ApplicationController::runDeferredStartup()
     for (const GlobalShortcutRole role : globalShortcutRoles) {
         shortcutBinder(role)->bind();
     }
-    const AccessibilityState state = m_platform->accessibilityState();
-    const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
-    m_accessibilitySupported = state.supported;
-    m_accessibilityEnabled = state.enabled || requestSucceeded;
-    m_accessibilityPersistent = state.persistent;
-#ifdef Q_OS_MACOS
-    if (m_accessibilityEnabled) {
-        m_accessibilityPoll->stop();
-    } else {
-        m_accessibilityPoll->start();
-    }
-#endif
-    emit accessibilityStateChanged(m_accessibilitySupported,
-                                   m_accessibilityEnabled,
-                                   m_accessibilityPersistent);
+    m_accessibility->checkAtStartup();
 }
 
 SettingsStore *ApplicationController::settings() const
@@ -548,19 +491,9 @@ UpdateController *ApplicationController::updates() const
     return m_updates;
 }
 
-QString ApplicationController::pendingWhatsNewVersion() const
+WhatsNewTracker *ApplicationController::whatsNew() const
 {
-    return m_pendingWhatsNewVersion;
-}
-
-void ApplicationController::clearPendingWhatsNew()
-{
-    if (m_pendingWhatsNewVersion.isEmpty()) {
-        return;
-    }
-    m_pendingWhatsNewVersion.clear();
-    m_settings->setUpdatesPendingWhatsNewVersion({});
-    emit whatsNewChanged();
+    return m_whatsNew;
 }
 
 SecretStore *ApplicationController::secretStore() const
@@ -648,26 +581,9 @@ QString ApplicationController::outputSummary() const
     return m_platform->outputSummary();
 }
 
-bool ApplicationController::accessibilitySupported() const
+AccessibilityMonitor *ApplicationController::accessibility() const
 {
-    return m_accessibilitySupported;
-}
-
-bool ApplicationController::accessibilityEnabled() const
-{
-    return m_accessibilityEnabled;
-}
-
-bool ApplicationController::accessibilityPersistent() const
-{
-    return m_accessibilityPersistent;
-}
-
-bool ApplicationController::enableAccessibility(QString *error)
-{
-    const bool enabled = m_platform->enableAccessibilityPermanently(error);
-    refreshAccessibilityState();
-    return enabled;
+    return m_accessibility;
 }
 
 GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole role) const
@@ -910,119 +826,12 @@ bool ApplicationController::sessionActive() const
 {
     const DictationState state = m_session->state();
     return state == DictationState::Starting || state == DictationState::Listening
-        || state == DictationState::Paused || m_session->startPending();
-}
-
-// One binding drives every activation mode; the mode decides what a press and
-// a release do. The auto-repeat guard below applies to all of them.
-void ApplicationController::handleShortcutPressed()
-{
-    // Key auto-repeat while held must not toggle again. A second press with no
-    // release between it and the first is ambiguous: auto-repeat of a held key
-    // (ignore) or a deliberate re-press on a desktop that never reports release
-    // (toggle). The signals are identical, so the first gesture after launch
-    // cannot satisfy both. We bias toward toggle until a release proves the
-    // platform reports them: a wrongly swallowed press on a no-release desktop
-    // could never be unstuck, whereas the mis-bias only costs the very first
-    // hold, and only on a backend that streams auto-repeat as extra presses
-    // (KGlobalAccel suppresses those at the binder; today's portal backends
-    // fire once). handleShortcutReleased latches the guard on for good.
-    if (m_shortcutDown && m_shortcutReleaseSeen) {
-        return;
-    }
-    // That same unreleased second press is what proves the backend reports no
-    // release, and with no release there is no "while held" to honour. From here
-    // on push-to-talk takes the toggle path outright, which is the degradation
-    // hybrid already gets by never reaching its release branch.
-    if (m_shortcutDown && !m_shortcutPressedWhileDown) {
-        m_shortcutPressedWhileDown = true;
-        emit globalShortcutReleaseSupportChanged();
-    }
-    m_shortcutDown = true;
-    m_shortcutPress.start();
-    m_shortcutStartedSession = !sessionActive() && !m_microphoneStartPending;
-    if (m_shortcutStartedSession && globalShortcutReportsRelease()
-        && m_settings->shortcutActivationMode() == ShortcutActivationMode::PushToTalk) {
-        // Deferred rather than started and cancelled: cancelling a Starting
-        // session still opens the microphone and shows the popup for an
-        // instant, which is a trace. The very first gesture on a desktop that
-        // never reports release still lands here; its timer fires and the next
-        // press ends the session as in every mode, so nothing wedges.
-        m_pushToTalkStart->start();
-        return;
-    }
-    toggle();
-}
-
-// Everything handleShortcutPressed learned applies to the binding and backend
-// it learned it on. A new one may report releases where the old one did not,
-// or the reverse, and a stale "held, release seen" latch would discard every
-// press the new binding makes. No gesture can be in flight across a rebind, so
-// the whole gesture state goes back to what it was at launch.
-void ApplicationController::forgetShortcutGesture()
-{
-    m_pushToTalkStart->stop();
-    m_shortcutDown = false;
-    m_shortcutStartedSession = false;
-    const bool reportedRelease = globalShortcutReportsRelease();
-    m_shortcutReleaseSeen = false;
-    m_shortcutPressedWhileDown = false;
-    if (!reportedRelease) {
-        emit globalShortcutReleaseSupportChanged();
-    }
-}
-
-bool ApplicationController::globalShortcutReportsRelease() const
-{
-    return m_shortcutReleaseSeen || !m_shortcutPressedWhileDown;
-}
-
-void ApplicationController::handleShortcutReleased(qint64 heldMs)
-{
-    m_shortcutDown = false;
-    const bool firstRelease = !m_shortcutReleaseSeen;
-    m_shortcutReleaseSeen = true;
-    // A release settles the question for good, including against an auto-repeat
-    // backend whose extra press looked like a missing one.
-    if (firstRelease && m_shortcutPressedWhileDown) {
-        emit globalShortcutReleaseSupportChanged();
-    }
-    if (!m_shortcutStartedSession) {
-        return;
-    }
-    m_shortcutStartedSession = false;
-    const bool starting = sessionActive() || m_microphoneStartPending;
-    // Whatever the mode is now, a pending deferred start must not survive the
-    // release: the mode can have changed since the press, and a session that
-    // begins after the key is already up is push-to-talk's misfire, not a tap.
-    const bool deferredStartPending = m_pushToTalkStart->isActive();
-    m_pushToTalkStart->stop();
-    switch (m_settings->shortcutActivationMode()) {
-    case ShortcutActivationMode::Toggle:
-        return;
-    case ShortcutActivationMode::PushToTalk:
-        if (!deferredStartPending && starting) {
-            stopListening();
-        }
-        return;
-    case ShortcutActivationMode::Hybrid: {
-        // The first dictation after a launch opens the microphone cold and
-        // keeps the main thread busy for a few hundred milliseconds, so a
-        // tap's release is handled well past hybridHoldMs. Timed here it read
-        // as a hold and cancelled the dictation it had just started; the
-        // binder's physical hold says what the key actually did.
-        const qint64 held = heldMs >= 0 ? heldMs : m_shortcutPress.elapsed();
-        if (starting && held > hybridHoldMs) {
-            stopListening();
-        }
-        return;
-    }
-    }
+        || state == DictationState::Paused || m_session->startPending() || m_microphoneStartPending;
 }
 
 void ApplicationController::toggle()
 {
-    if (sessionActive() || m_microphoneStartPending) {
+    if (sessionActive()) {
         stopListening();
         return;
     }
@@ -1049,7 +858,7 @@ void ApplicationController::startListeningWith(const SessionOverrides &overrides
 // must not begin after the session it belongs to was stopped or cancelled.
 void ApplicationController::dropPendingStart()
 {
-    m_pushToTalkStart->stop();
+    m_shortcutGesture->dropDeferredStart();
     ++m_microphoneStartGeneration;
     m_microphoneStartPending = false;
 }
@@ -1065,7 +874,7 @@ void ApplicationController::cancel()
     dropPendingStart();
     // The push-to-talk key that started the session may still be down; its
     // release must not act on a session that is already gone.
-    m_shortcutStartedSession = false;
+    m_shortcutGesture->forgetStartedSession();
     m_session->cancel();
 }
 
@@ -1136,7 +945,7 @@ void ApplicationController::handleIpcRequest(const IpcRequest &request, QLocalSo
             acknowledge();
             return;
         }
-        if (sessionActive() || m_microphoneStartPending) {
+        if (sessionActive()) {
             stopListening();
         } else {
             startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
@@ -1300,30 +1109,6 @@ bool ApplicationController::ensureSetupCompleted()
     }
     showSetupAssistant();
     return false;
-}
-
-void ApplicationController::refreshAccessibilityState()
-{
-    const AccessibilityState state = m_platform->accessibilityState();
-    const bool changed = m_accessibilitySupported != state.supported
-        || m_accessibilityEnabled != state.enabled
-        || m_accessibilityPersistent != state.persistent;
-    m_accessibilitySupported = state.supported;
-    m_accessibilityEnabled = state.enabled;
-    m_accessibilityPersistent = state.persistent;
-#ifdef Q_OS_MACOS
-    if (m_accessibilityEnabled) {
-        m_accessibilityPoll->stop();
-    } else if (!m_accessibilityPoll->isActive()) {
-        m_accessibilityPoll->start();
-    }
-#endif
-    if (!changed) {
-        return;
-    }
-    emit accessibilityStateChanged(m_accessibilitySupported,
-                                   m_accessibilityEnabled,
-                                   m_accessibilityPersistent);
 }
 
 } // namespace speecher
