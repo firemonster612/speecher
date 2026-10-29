@@ -253,7 +253,7 @@ private slots:
                  QVERIFY(QMetaObject::invokeMethod(picker, "click"));
              }},
             {QStringLiteral("type a language's own name"), [&] {
-                 QVERIFY(popover->property("opened").toBool());
+                 QTRY_VERIFY(popover->property("opened").toBool());
                  search = popover->findChild<QObject *>(QStringLiteral("languageSearch"));
                  rows = popover->findChild<QObject *>(QStringLiteral("languageRows"));
                  QVERIFY(search && rows);
@@ -270,12 +270,12 @@ private slots:
                  QTest::keyClick(main, Qt::Key_Escape);
              }},
             {QStringLiteral("reopen after Escape"), [&] {
-                 QVERIFY(!popover->property("opened").toBool());
+                 QTRY_VERIFY(!popover->property("opened").toBool());
                  QCOMPARE(language(), QStringLiteral("en"));
                  QVERIFY(QMetaObject::invokeMethod(picker, "click"));
              }},
             {QStringLiteral("choose with the keys"), [&] {
-                 QVERIFY(popover->property("opened").toBool());
+                 QTRY_VERIFY(popover->property("opened").toBool());
                  QCOMPARE(search->property("text").toString(), QString());
                  // From English, two down is Faroese.
                  QTest::keyClick(main, Qt::Key_Down);
@@ -283,7 +283,7 @@ private slots:
                  QTest::keyClick(main, Qt::Key_Return);
              }},
             {QStringLiteral("click ChatGPT's count of languages"), [&] {
-                 QVERIFY(!popover->property("opened").toBool());
+                 QTRY_VERIFY(!popover->property("opened").toBool());
                  QCOMPARE(language(), QStringLiteral("fo"));
                  QCOMPARE(picker->property("currentId").toString(), QStringLiteral("fo"));
 
@@ -304,7 +304,7 @@ private slots:
                  QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier, codexHelp->mapToScene(QPointF(x + 4, y)).toPoint());
              }},
             {QStringLiteral("make the cards again"), [&] {
-                 QVERIFY(serviceLanguages->property("opened").toBool());
+                 QTRY_VERIFY(serviceLanguages->property("opened").toBool());
                  QVERIFY(service() != QStringLiteral("codex"));
                  auto *codexRows = serviceLanguages->findChild<QObject *>(QStringLiteral("languageRows"));
                  QVERIFY(codexRows);
@@ -314,7 +314,7 @@ private slots:
                  QuickSettings(&controller).set(QStringLiteral("spokenLanguage"), QStringLiteral("en"));
              }},
             {QStringLiteral("press another card"), [&] {
-                 QVERIFY(!codexHelp);
+                 QTRY_VERIFY(!codexHelp);
                  QVERIFY(serviceLanguages->property("opened").toBool());
                  QQuickItem *claudeHelp = findItem(main->contentItem(), QStringLiteral("help_claude"));
                  QVERIFY(claudeHelp);
@@ -323,11 +323,11 @@ private slots:
                                    claudeCard->mapToScene(QPointF(claudeCard->width() - 12, claudeCard->height() - 12)).toPoint());
              }},
             {QStringLiteral("rest the pointer on a row of the picker"), [&] {
-                 QVERIFY(!serviceLanguages->property("opened").toBool());
+                 QTRY_VERIFY(!serviceLanguages->property("opened").toBool());
                  QVERIFY(QMetaObject::invokeMethod(picker, "click"));
              }},
             {QStringLiteral("arrow down under the still pointer"), [&] {
-                 QVERIFY(popover->property("opened").toBool());
+                 QTRY_VERIFY(popover->property("opened").toBool());
                  // The first row wholly in view, found from the rows rather
                  // than a point, which can fall between two rows.
                  int top = -1;
@@ -365,7 +365,7 @@ private slots:
                  QTest::keyClick(main, Qt::Key_Return);
              }},
             {QStringLiteral("Return takes the row twelve below the pointer's"), [&] {
-                 QVERIFY(!popover->property("opened").toBool());
+                 QTRY_VERIFY(!popover->property("opened").toBool());
                  const QString expected =
                      picker->property("options").value<QJSValue>().property(hovered + 12).property("id").toString();
                  QCOMPARE(picker->property("currentId").toString(), expected);
