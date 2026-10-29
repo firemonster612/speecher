@@ -93,7 +93,6 @@ dependencies {
     implementation(libs.okhttp.brotli)
     implementation(libs.lifecycle)
     implementation(libs.lifecycle.compose)
-    implementation(libs.lifecycle.process)
     implementation(libs.savedstate)
     implementation(libs.serialization.json)
     implementation(libs.code.scanner)

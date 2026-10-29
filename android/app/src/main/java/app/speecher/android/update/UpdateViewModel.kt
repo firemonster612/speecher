@@ -10,8 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import app.speecher.android.BuildConfig
 import app.speecher.android.dictation.ActiveDictation
@@ -38,6 +36,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     // The offer Home no longer shows, until a newer version comes along.
     private var dismissedVersion by mutableStateOf(preferences.getString(DISMISSED_VERSION, null))
+
+    /**
+     * Whether MainActivity is started, which it sets itself. The install waits for it; the process
+     * lifecycle would report a stop 700 ms late.
+     */
+    var onScreen = false
 
     /** The version an upgrade came from, until Home's What's New card is opened or dismissed. */
     var whatsNewPending by mutableStateOf<String?>(null)
@@ -256,16 +260,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 state = installFailure(release, PackageInstaller.STATUS_FAILURE)
                 return@launch
             }
-            val app = ProcessLifecycleOwner.get().lifecycle
             var committed = false
             try {
                 // Replacing the app ends its process, and a dictation with it; and Android only
                 // shows its prompt, or the failure, over an app on screen. Nothing suspends between
                 // this check and the commit, and the chip starts dictations on this same thread.
-                while (
-                    ActiveDictation.engine != null ||
-                        !app.currentState.isAtLeast(Lifecycle.State.STARTED)
-                ) {
+                while (ActiveDictation.engine != null || !onScreen) {
                     if (ActiveDictation.engine != null) {
                         state = UpdateState.WaitingForDictation(release)
                     }

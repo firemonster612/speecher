@@ -40,7 +40,6 @@ mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = 
 browser = { module = "androidx.browser:browser", version.ref = "browser" }
 lifecycle = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "lifecycle" }
 lifecycle-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "lifecycle" }
 savedstate = { module = "androidx.savedstate:savedstate", version.ref = "savedstate" }
 code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
 fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }

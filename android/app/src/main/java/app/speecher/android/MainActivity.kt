@@ -339,6 +339,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        updates.onScreen = true
+    }
+
+    override fun onStop() {
+        updates.onScreen = false
+        super.onStop()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(SIGN_IN_AFTER_PROMPT, signInAfterPrompt?.name)
