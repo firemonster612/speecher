@@ -316,12 +316,6 @@ AppCategory classifyTarget(const Target &target,
     return target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
 }
 
-Target classifiedTarget(Target target, const QList<AppRecognitionRule> &customRules)
-{
-    target.category = classifyTarget(target, customRules);
-    return target;
-}
-
 // The commands AI coding tools run as in a terminal. The built-in AI coding
 // recognition rules hold their product names, which short commands such as
 // "q" or "pi" can't safely be matched as.

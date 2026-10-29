@@ -375,7 +375,8 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     if (generation != m_generation) {
         return;
     }
-    m_target = classifiedTarget(std::move(target), rules);
+    m_target = std::move(target);
+    m_target.category = classifyTarget(m_target, rules);
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_followingUp ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId

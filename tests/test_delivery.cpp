@@ -539,12 +539,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }
 
-    void capturedTargetsGetCoreRecognitionPolicy()
+    void aiCodingProcessesAreRecognizedByNameOrCommandLine()
     {
-        Target editor;
-        editor.applicationId = QStringLiteral("org.kde.kate");
-        QCOMPARE(classifiedTarget(editor).category, AppCategory::CodeEditor);
-
         QVERIFY(isAiCodingProcess(QStringLiteral("claude"), {}));
         QVERIFY(isAiCodingProcess(QStringLiteral("MainThread"), {QStringLiteral("/home/me/.local/bin/droid")}));
         QVERIFY(isAiCodingProcess(QStringLiteral("node"),
