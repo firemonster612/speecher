@@ -24,7 +24,6 @@ import app.speecher.protocol.Cancellation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
-import app.speecher.protocol.CorrectionWindow
 import app.speecher.protocol.EndpointSpeechClient
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
@@ -61,14 +60,11 @@ private data class Endpoints(
 
 /**
  * Android wiring for [session]'s engine, reading its field and captures as they change; call
- * [DictationEngine.start] on the chip tap before the IME appears. [watchCorrections] watches the
- * field an insertion went into for the person's correction, given the inserted words and the target
- * app's package.
+ * [DictationEngine.start] on the chip tap before the IME appears.
  */
 fun createDictationEngine(
     context: Context,
     session: DictationSession,
-    watchCorrections: (CorrectionWindow, String) -> Unit,
     onState: (DictationState) -> Unit,
     onInserted: () -> Unit,
 ): DictationEngine {
@@ -278,12 +274,20 @@ fun createDictationEngine(
             // Read before the commit: the text on each side pins the words for an edit after it.
             val window =
                 connection
-                    ?.takeIf { settings.correctionLearningEnabled && target?.secure == false }
+                    ?.takeIf {
+                        settings.correctionLearningEnabled &&
+                            target?.secure == false &&
+                            ActiveDictation.watchCorrections != null
+                    }
                     ?.let { correctionWindow(it, text) }
             val committed = connection?.commitText(text, 1) == true
             if (committed) {
                 SettingsStore(context).recordVocabularyUsage(text)
-                if (window != null && target != null) watchCorrections(window, target.packageName)
+                // Read when it runs: the chip service may have gone in the meantime.
+                if (window != null && target != null)
+                    main.post {
+                        ActiveDictation.watchCorrections?.invoke(window, target.packageName)
+                    }
                 main.post(onInserted)
             }
             committed

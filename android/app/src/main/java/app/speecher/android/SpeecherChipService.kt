@@ -81,6 +81,8 @@ class SpeecherChipService : AccessibilityService() {
             swap.previousId?.let { softKeyboardController.switchToInputMethod(it) }
             swap.clear()
         }
+        // The keyboard is gone by the time the person edits what it inserted; this service is not.
+        ActiveDictation.watchCorrections = corrections::observe
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -339,11 +341,7 @@ class SpeecherChipService : AccessibilityService() {
             findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.let {
                 targetApp(it.toString(), packageManager, passwordFocused)
             }
-        // The keyboard is gone by the time the person edits what it inserted; this service is not.
-        val session =
-            ActiveDictation.start(this, target) { window, app ->
-                handler.post { corrections.observe(window, app) }
-            }
+        val session = ActiveDictation.start(this, target)
         // Only now, before the swap, does the focused field still belong to the app being dictated
         // into.
         captureScreen(session)
@@ -441,6 +439,7 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        ActiveDictation.watchCorrections = null
         corrections.cancel()
         handler.removeCallbacks(refresh)
         removeChip()
