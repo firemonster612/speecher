@@ -1,5 +1,6 @@
 #include "core/SettingsStore.h"
 #include "core/OutputMethod.h"
+#include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
@@ -168,25 +169,26 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
                                             const QString &providerId)
 {
     using Secret = SecretStore::Secret;
-    const QString endpoint = QStringLiteral("endpoint");
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    const bool endpoint = provider == ProviderId::Endpoint;
     const QString cliproxy = QStringLiteral("cliproxy");
     QList<ProviderSecret> secrets;
     // Speech uses local OAuth account files, never the remote proxy API key.
-    if (role == ProviderRole::Speech && providerId == endpoint) {
+    if (role == ProviderRole::Speech && endpoint) {
         secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.endpoint.apiKey; }});
     }
     const RefinementSettings &refinement = settings.refinement;
     const bool refines = role == ProviderRole::Refinement;
-    if (refines && providerId == endpoint && refinement.endpoint.preset.isEmpty()
+    if (refines && endpoint && refinement.endpoint.preset.isEmpty()
         && !refinement.endpoint.useCliproxyKey) {
         secrets.append(
             {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
     }
-    const bool proxyPreset = providerId == endpoint
+    const bool proxyPreset = endpoint
         && (refinement.endpoint.preset == cliproxy || refinement.endpoint.useCliproxyKey);
     const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
-        && ((providerId == QStringLiteral("openai") && refinement.openAiAuthMode == cliproxy)
-            || (providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == cliproxy));
+        && ((provider == ProviderId::OpenAi && refinement.openAiAuthMode == cliproxy)
+            || (provider == ProviderId::Anthropic && refinement.anthropicAuthMode == cliproxy));
     if (refines && (proxyPreset || remoteProxy)) {
         secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
     }

@@ -4,6 +4,7 @@
 #include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
 #include "core/ProviderRatings.h"
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/LocalModelStore.h"
@@ -401,12 +402,12 @@ void QuickModels::refreshDownloads()
 
 QVariantList QuickModels::openAiModels() const
 {
-    return namedModels(QStringLiteral("openai"));
+    return namedModels(providerKey(ProviderId::OpenAi));
 }
 
 QVariantList QuickModels::anthropicModels() const
 {
-    return namedModels(QStringLiteral("anthropic"));
+    return namedModels(providerKey(ProviderId::Anthropic));
 }
 
 QVariantMap QuickModels::pull() const
@@ -477,7 +478,7 @@ void QuickModels::use(const QString &id)
     // The store drops Local Model from the fallbacks once it is the primary.
     SettingsStore *store = m_controller->settings();
     AppSettings draft = store->dictationSnapshot();
-    draft.speech.providerId = QStringLiteral("local");
+    draft.speech.providerId = providerKey(ProviderId::Local);
     store->applySnapshot(draft);
     m_controller->localSetup()->chooseSpeechModel(id);
 }

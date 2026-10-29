@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/ProviderAvailability.h"
+#include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderProbe.h"
@@ -24,11 +25,11 @@ const struct ServiceRow {
     const char *name;
     SignInService service;
     // The refinement provider whose sign-in this is, if any.
-    const char *provider;
+    std::optional<ProviderId> provider;
 } serviceRows[] = {
-    {"openai", "ChatGPT", SignInService::OpenAi, "openai"},
-    {"anthropic", "Claude", SignInService::Anthropic, "anthropic"},
-    {"cliproxy", "CLI Proxy API", SignInService::CliProxy, nullptr},
+    {"openai", "ChatGPT", SignInService::OpenAi, ProviderId::OpenAi},
+    {"anthropic", "Claude", SignInService::Anthropic, ProviderId::Anthropic},
+    {"cliproxy", "CLI Proxy API", SignInService::CliProxy, std::nullopt},
 };
 
 // The schema's secret rows, each one SecretStore entry.
@@ -130,12 +131,12 @@ bool storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString
 // Tells the daemon what a check found of a provider's sign-in, for fallbacks
 // and `speecher providers`. Only a definite answer counts: an expired token
 // dictation may still renew, or a keyring that did not answer, says nothing.
-void noteSignIn(ApplicationController *controller, const char *providerId, const SignInCheck &check)
+void noteSignIn(ApplicationController *controller, std::optional<ProviderId> provider, const SignInCheck &check)
 {
-    if (!providerId || (check.state != SignInState::SignedIn && check.state != SignInState::Missing)) {
+    if (!provider || (check.state != SignInState::SignedIn && check.state != SignInState::Missing)) {
         return;
     }
-    controller->providerAvailability()->noteSignIn(QLatin1String(providerId), check.state == SignInState::SignedIn);
+    controller->providerAvailability()->noteSignIn(providerKey(*provider), check.state == SignInState::SignedIn);
 }
 
 // The settings a sign-in check reads, other than secrets.

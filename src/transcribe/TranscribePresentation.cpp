@@ -90,37 +90,21 @@ QString transcriptSaveError(const QString &path, const QString &reason)
 
 QString refinementModel(const QString &providerId, const RefinementSettings &settings)
 {
-    if (providerId == QStringLiteral("openai")) {
-        return settings.openAiModel;
-    }
-    if (providerId == QStringLiteral("anthropic")) {
-        return settings.anthropicModel;
-    }
-    if (providerId == QStringLiteral("local")) {
-        return settings.localRunner.model;
-    }
-    if (providerId == QStringLiteral("endpoint")) {
-        return settings.endpoint.model;
-    }
-    return {};
+    const QString *model = refinementModelSetting(settings, providerId);
+    return model ? *model : QString();
 }
 
 QString speechModel(const SpeechSettings &speech)
 {
-    if (speech.providerId == QStringLiteral("local")) {
-        return speech.local.modelId;
-    }
-    if (speech.providerId == QStringLiteral("endpoint")) {
-        return speech.endpoint.model;
-    }
-    return {};
+    const QString *model = speechModelSetting(speech, speech.providerId);
+    return model ? *model : QString();
 }
 
 bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings)
 {
     const WritingProfileSettings profile =
         writingProfileSettingsFor(settings.writingProfiles, writingProfileFromName(options.writingProfile));
-    return options.refinementProviderId != QStringLiteral("none")
+    return options.refinementProviderId != kNoRefinementProvider
         && refinedCleanupLevel(options.cleanupStrength, profile.outputLanguage) != QStringLiteral("none");
 }
 

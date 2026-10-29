@@ -1,5 +1,7 @@
 #include "providers/EndpointTranscriptRefiner.h"
 
+#include "core/ProviderTable.h"
+
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
@@ -24,7 +26,7 @@ EndpointTranscriptRefiner::EndpointTranscriptRefiner(QObject *parent)
 
 QString EndpointTranscriptRefiner::id() const
 {
-    return QStringLiteral("endpoint");
+    return providerKey(ProviderId::Endpoint);
 }
 
 QString EndpointTranscriptRefiner::label() const

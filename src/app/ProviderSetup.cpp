@@ -1,5 +1,7 @@
 #include "app/ProviderSetup.h"
 
+#include "core/ProviderTable.h"
+
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexSpeechTranscriber.h"
@@ -32,18 +34,18 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     }
 #endif
     registry.registerSpeechProvider(
-        {QStringLiteral("claude"), QStringLiteral("Claude")},
+        {providerKey(ProviderId::Claude), QStringLiteral("Claude")},
         [](QObject *parent) {
             return new ClaudeSpeechTranscriber(parent);
         });
     registry.registerSpeechProvider(
-        {QStringLiteral("codex"), QStringLiteral("ChatGPT")},
+        {providerKey(ProviderId::Codex), QStringLiteral("ChatGPT")},
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     registry.registerSpeechProvider(
-        {QStringLiteral("local"), QStringLiteral("Local Model")},
+        {providerKey(ProviderId::Local), QStringLiteral("Local Model")},
         [localModels](QObject *parent) {
             return new LocalSpeechTranscriber(*localModels, parent);
         });
@@ -51,19 +53,19 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     Q_UNUSED(localModels);
 #endif
     registry.registerRefinementProvider(
-        {QStringLiteral("openai"), QStringLiteral("ChatGPT"), true},
+        {providerKey(ProviderId::OpenAi), QStringLiteral("ChatGPT"), true},
         [secrets](QObject *parent) { return new OpenAiTranscriptRefiner(secrets, parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("anthropic"), QStringLiteral("Claude"), true},
+        {providerKey(ProviderId::Anthropic), QStringLiteral("Claude"), true},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
     registry.registerSpeechProvider(
-        {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
+        {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
+        {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
         [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("local"), QStringLiteral("Local Runner")},
+        {providerKey(ProviderId::Local), QStringLiteral("Local Runner")},
         [](QObject *parent) { return new LocalRunnerRefiner(parent); });
 }
 

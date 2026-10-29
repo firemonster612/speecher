@@ -1,5 +1,7 @@
 #include "providers/ClaudeSpeechTranscriber.h"
 
+#include "core/ProviderTable.h"
+
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
 #include "providers/CliProxyCredentials.h"
@@ -43,7 +45,7 @@ ClaudeSpeechTranscriber::ClaudeSpeechTranscriber(QObject *parent)
 
 QString ClaudeSpeechTranscriber::id() const
 {
-    return QStringLiteral("claude");
+    return providerKey(ProviderId::Claude);
 }
 
 QString ClaudeSpeechTranscriber::label() const

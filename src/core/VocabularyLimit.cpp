@@ -1,5 +1,6 @@
 #include "core/VocabularyLimit.h"
 
+#include "core/ProviderTable.h"
 #include <QRegularExpression>
 #include <QSet>
 
@@ -70,15 +71,17 @@ QStringList claudeVoiceKeyterms(const QStringList &terms)
 
 bool takesKeyterms(const QString &speechProviderId)
 {
-    return speechProviderId == QStringLiteral("claude") || speechProviderId == QStringLiteral("endpoint");
+    const std::optional<ProviderId> provider = parseProviderId(speechProviderId);
+    return provider == ProviderId::Claude || provider == ProviderId::Endpoint;
 }
 
 QStringList speechKeyterms(const QStringList &terms, const QString &speechProviderId)
 {
-    if (speechProviderId == QStringLiteral("claude")) {
+    const std::optional<ProviderId> provider = parseProviderId(speechProviderId);
+    if (provider == ProviderId::Claude) {
         return claudeVoiceKeyterms(limited(terms));
     }
-    if (speechProviderId == QStringLiteral("endpoint")) {
+    if (provider == ProviderId::Endpoint) {
         return limited(terms);
     }
     return {};

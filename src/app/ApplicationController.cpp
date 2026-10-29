@@ -16,6 +16,7 @@
 #include "app/AppImageUpdater.h"
 #endif
 #include "core/InsightsLog.h"
+#include "core/ProviderTable.h"
 #include "core/ReleaseNotes.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -595,7 +596,7 @@ void ApplicationController::notifyModelReady(const QString &modelId)
     if (!m_frontEnd || !model) {
         return;
     }
-    const bool inUse = m_settings->speechProvider() == QStringLiteral("local")
+    const bool inUse = parseProviderId(m_settings->speechProvider()) == ProviderId::Local
         && m_settings->localSpeechSettings().modelId == modelId;
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),

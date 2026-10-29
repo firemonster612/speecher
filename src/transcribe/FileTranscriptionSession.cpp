@@ -172,12 +172,9 @@ AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &provi
     }
     settings.speech.providerId = options.speechProviderId;
     settings.refinement.providerId = options.refinementProviderId;
-    if (!options.speechModel.isEmpty()) {
-        if (settings.speech.providerId == QStringLiteral("local")) {
-            settings.speech.local.modelId = options.speechModel;
-        } else if (settings.speech.providerId == QStringLiteral("endpoint")) {
-            settings.speech.endpoint.model = options.speechModel;
-        }
+    QString *speechModel = speechModelSetting(settings.speech, settings.speech.providerId);
+    if (speechModel && !options.speechModel.isEmpty()) {
+        *speechModel = options.speechModel;
     }
     if (!options.refinementModel.isEmpty()) {
         setRefinementModel(settings.refinement, options.refinementModel);
@@ -433,7 +430,7 @@ void FileTranscriptionSession::startMicrophone()
 
 void FileTranscriptionSession::prepareProviders()
 {
-    if (m_options.refinementProviderId != QStringLiteral("none")) {
+    if (m_options.refinementProviderId != kNoRefinementProvider) {
         m_refiner = m_providers->createRefinementProvider(m_options.refinementProviderId, this);
     }
     m_speechIndex = 0;

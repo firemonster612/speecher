@@ -1,6 +1,7 @@
 #include "providers/SignInCheck.h"
 
 #include "core/AppSettings.h"
+#include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/AnthropicTranscriptRefiner.h"
@@ -41,9 +42,11 @@ QString readSecrets(SignInService service, AppSettings &settings, SecretStore *s
 {
     switch (service) {
     case SignInService::OpenAi:
-        return SettingsStore::resolveProviderSecrets(settings, ProviderRole::Refinement, QStringLiteral("openai"));
+        return SettingsStore::resolveProviderSecrets(settings, ProviderRole::Refinement,
+                                                     providerKey(ProviderId::OpenAi));
     case SignInService::Anthropic:
-        return SettingsStore::resolveProviderSecrets(settings, ProviderRole::Refinement, QStringLiteral("anthropic"));
+        return SettingsStore::resolveProviderSecrets(settings, ProviderRole::Refinement,
+                                                     providerKey(ProviderId::Anthropic));
     case SignInService::CliProxy:
         return readServerKey(settings, secrets);
     }

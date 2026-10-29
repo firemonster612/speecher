@@ -124,8 +124,13 @@ QVariant readField(ApplicationController &controller, const QString &name)
     unruled.applicationId = QStringLiteral("org.fixture.unruled");
     const std::map<QString, std::function<QVariant()>> fields{
         {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.openAiSpeed; }},
+        {QStringLiteral("speechProvider"), [&] { return settings.speech.providerId; }},
+        {QStringLiteral("savedSpeechProvider"), [&] { return store.raw().value(SettingsKeys::SpeechProvider); }},
+        {QStringLiteral("speechFallbacks"), [&] { return settings.speech.fallbackProviderIds.join(QLatin1Char(',')); }},
         {QStringLiteral("refinementProvider"), [&] { return settings.refinement.providerId; }},
         {QStringLiteral("savedRefinementProvider"), [&] { return store.raw().value(SettingsKeys::RefinementProvider); }},
+        {QStringLiteral("refinementFallbacks"),
+         [&] { return settings.refinement.fallbackProviderIds.join(QLatin1Char(',')); }},
         {QStringLiteral("outputMethod"), [&] { return settings.output.method; }},
         {QStringLiteral("terminalDelivery"), [&] { return delivery(terminal); }},
         {QStringLiteral("kateDelivery"), [&] { return delivery(kate); }},
@@ -212,12 +217,25 @@ private slots:
         QTest::newRow("fast mode without a speed")
             << QVariantMap{{QStringLiteral("openai/fastMode"), true}}
             << QVariantMap{{QStringLiteral("openAiSpeed"), QStringLiteral("fast")}};
-        for (const char *provider : {"none", "openai"}) {
+        // Every provider a file names keeps its key. Local, endpoint and the
+        // fallbacks came after 0.2.0, in builds that saved the same keys.
+        for (const char *provider : {"claude", "codex", "local", "endpoint"}) {
+            QTest::addRow("speech provider %s", provider)
+                << QVariantMap{{QStringLiteral("stt/provider"), provider}}
+                << QVariantMap{{QStringLiteral("speechProvider"), provider},
+                               {QStringLiteral("savedSpeechProvider"), provider}};
+        }
+        for (const char *provider : {"none", "openai", "anthropic", "local", "endpoint"}) {
             QTest::addRow("refinement provider %s", provider)
                 << QVariantMap{{QStringLiteral("refinement/provider"), provider}}
                 << QVariantMap{{QStringLiteral("refinementProvider"), provider},
                                {QStringLiteral("savedRefinementProvider"), provider}};
         }
+        QTest::newRow("fallback providers")
+            << QVariantMap{{QStringLiteral("stt/fallbackProviders"), QStringList{"local", "endpoint"}},
+                           {QStringLiteral("refinement/fallbackProviders"), QStringList{"endpoint", "local"}}}
+            << QVariantMap{{QStringLiteral("speechFallbacks"), QStringLiteral("local,endpoint")},
+                           {QStringLiteral("refinementFallbacks"), QStringLiteral("endpoint,local")}};
         // Pasting rules insert or copy only, as they did under the old method.
         QTest::newRow("direct insertion")
             << method("direct_insert")

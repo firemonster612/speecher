@@ -106,13 +106,14 @@ const LocalModel &ratedLocalModel(const HardwareProfile &hardware, const SpeechS
 std::optional<ProviderRating> speechRating(const QString &providerId, const HardwareProfile &hardware,
                                            const SpeechSettings &speech)
 {
-    if (providerId == QStringLiteral("codex")) {
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::Codex) {
         return ProviderRating{speechServiceBars(codexWordErrorRate, codexWaitSeconds), {}};
     }
-    if (providerId == QStringLiteral("claude")) {
+    if (provider == ProviderId::Claude) {
         return ProviderRating{speechServiceBars(claudeWordErrorRate, claudeWaitSeconds), {}};
     }
-    if (providerId == QStringLiteral("local") && hardwareKnown(hardware)) {
+    if (provider == ProviderId::Local && hardwareKnown(hardware)) {
         const LocalModel &model = ratedLocalModel(hardware, speech);
         return ProviderRating{localModelRating(model, hardware, speech.local), model.name};
     }
@@ -123,10 +124,11 @@ std::optional<ProviderRating> speechRating(const QString &providerId, const Hard
 // provider that is not a service.
 std::optional<QString> refinementServiceModel(const QString &providerId, const RefinementSettings &refinement)
 {
-    if (providerId == QStringLiteral("openai")) {
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::OpenAi) {
         return refinement.openAiModel;
     }
-    if (providerId == QStringLiteral("anthropic")) {
+    if (provider == ProviderId::Anthropic) {
         return refinement.anthropicModel;
     }
     return std::nullopt;
@@ -145,7 +147,7 @@ std::optional<ProviderRating> refinementRating(const QString &providerId, const 
         }
         return ProviderRating{refinementBars(measured->checksPassed, measured->waitSeconds), {}};
     }
-    if (providerId != QStringLiteral("local") || !hardwareKnown(hardware)) {
+    if (parseProviderId(providerId) != ProviderId::Local || !hardwareKnown(hardware)) {
         return std::nullopt;
     }
     const CleanupHardware cleanupHardware = cleanupHardwareFor(hardware);
@@ -218,10 +220,11 @@ const QList<RefinementModel> &refinementServiceModels(const QString &providerId)
         {QStringLiteral("claude-haiku-5-5"), QStringLiteral("Claude Haiku 5.5")},
     };
     static const QList<RefinementModel> none;
-    if (providerId == QStringLiteral("openai")) {
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::OpenAi) {
         return openAi;
     }
-    return providerId == QStringLiteral("anthropic") ? anthropic : none;
+    return provider == ProviderId::Anthropic ? anthropic : none;
 }
 
 } // namespace speecher

@@ -1,6 +1,7 @@
 #include "core/WritingProfileProviders.h"
 
 #include "core/ProviderChain.h"
+#include "core/ProviderTable.h"
 #include "core/settings/SpokenLanguages.h"
 
 namespace speecher {
@@ -19,19 +20,13 @@ QStringList pageChainAfter(const QString &profileProvider, QStringList pageChain
 
 bool profilePicksSpeechModel(const QString &providerId)
 {
-    return providerId == QStringLiteral("local");
+    return parseProviderId(providerId) == ProviderId::Local;
 }
 
 void setRefinementModel(RefinementSettings &refinement, const QString &model)
 {
-    if (refinement.providerId == QStringLiteral("openai")) {
-        refinement.openAiModel = model;
-    } else if (refinement.providerId == QStringLiteral("anthropic")) {
-        refinement.anthropicModel = model;
-    } else if (refinement.providerId == QStringLiteral("local")) {
-        refinement.localRunner.model = model;
-    } else if (refinement.providerId == QStringLiteral("endpoint")) {
-        refinement.endpoint.model = model;
+    if (QString *setting = refinementModelSetting(refinement, refinement.providerId)) {
+        *setting = model;
     }
 }
 

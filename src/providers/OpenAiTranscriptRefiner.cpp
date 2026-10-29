@@ -1,5 +1,6 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "providers/OpenAiRefiner.h"
 
@@ -22,7 +23,7 @@ OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObje
 
 QString OpenAiTranscriptRefiner::id() const
 {
-    return QStringLiteral("openai");
+    return providerKey(ProviderId::OpenAi);
 }
 
 QString OpenAiTranscriptRefiner::label() const

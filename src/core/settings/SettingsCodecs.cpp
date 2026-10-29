@@ -48,9 +48,8 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
 
 bool isRefinementProviderId(const QString &id)
 {
-    return id == QStringLiteral("none") || id == QStringLiteral("anthropic")
-        || id == QStringLiteral("openai") || id == QStringLiteral("endpoint")
-        || id == QStringLiteral("local");
+    const std::optional<ProviderId> provider = parseProviderId(id);
+    return id == kNoRefinementProvider || (provider && providerServes(*provider, ProviderRole::Refinement));
 }
 
 QString normalizedEndpointPath(const QString &path)
@@ -65,12 +64,12 @@ QString normalizedEndpointPath(const QString &path)
 QString defaultRefinementProvider()
 {
     if (CliToolDiscovery::isCodexInstalled()) {
-        return QStringLiteral("openai");
+        return providerKey(ProviderId::OpenAi);
     }
     if (CliToolDiscovery::isClaudeCodeInstalled()) {
-        return QStringLiteral("anthropic");
+        return providerKey(ProviderId::Anthropic);
     }
-    return QStringLiteral("openai");
+    return providerKey(ProviderId::OpenAi);
 }
 
 QString profileKey(ProviderRole role, const char *field)
@@ -97,7 +96,7 @@ void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &
         return;
     }
     model = object.value(profileKey(role, "Model")).toString().trimmed();
-    if (provider == QStringLiteral("anthropic")) {
+    if (parseProviderId(provider) == ProviderId::Anthropic) {
         model = replacedAnthropicModel(model);
     }
 }
@@ -285,14 +284,15 @@ void SettingsCodecs::setSoundsEnabled(bool value)
 
 QString SettingsCodecs::speechProvider() const
 {
-    const QString provider = value(SettingsKeys::SpeechProvider, QStringLiteral("claude")).toString();
-    return provider.isEmpty() ? QStringLiteral("claude") : provider;
+    const QString fallback = providerKey(ProviderId::Claude);
+    const QString provider = value(SettingsKeys::SpeechProvider, fallback).toString();
+    return provider.isEmpty() ? fallback : provider;
 }
 
 void SettingsCodecs::setSpeechProvider(const QString &value)
 {
     const QStringList fallbacks = speechFallbackProviders();
-    m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
+    m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? providerKey(ProviderId::Claude) : value);
     // A new primary leaves the fallbacks.
     setSpeechFallbackProviders(fallbacks);
 }
@@ -708,7 +708,7 @@ void SettingsCodecs::removeLearnedCorrection(const QString &id)
 QString SettingsCodecs::refinementProvider() const
 {
     const QString key = SettingsKeys::RefinementProvider;
-    const QString provider = m_settings.contains(key) ? value(key, QStringLiteral("openai")).toString()
+    const QString provider = m_settings.contains(key) ? value(key, providerKey(ProviderId::OpenAi)).toString()
                                                       : defaultRefinementProvider();
     if (isRefinementProviderId(provider)) {
         return provider;
@@ -721,7 +721,7 @@ QString SettingsCodecs::refinementProvider() const
         return provider;
     }
 #endif
-    return QStringLiteral("openai");
+    return providerKey(ProviderId::OpenAi);
 }
 
 bool SettingsCodecs::refinementProviderChosen() const
@@ -731,7 +731,7 @@ bool SettingsCodecs::refinementProviderChosen() const
 
 void SettingsCodecs::setRefinementProvider(const QString &value)
 {
-    const QString provider = isRefinementProviderId(value) ? value : QStringLiteral("openai");
+    const QString provider = isRefinementProviderId(value) ? value : providerKey(ProviderId::OpenAi);
     // Saving a snapshot that still holds the default leaves it a default,
     // which the setup assistant may replace; only a different provider is a
     // choice.

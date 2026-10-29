@@ -1,16 +1,13 @@
 #pragma once
 
+#include "core/ProviderTable.h"
+
 #include <QString>
 #include <QStringList>
 
 #include <functional>
 
 namespace speecher {
-
-enum class ProviderRole {
-    Speech,
-    Refinement,
-};
 
 // A provider's registry label, by role and id.
 using ProviderLabels = std::function<QString(ProviderRole role, const QString &providerId)>;

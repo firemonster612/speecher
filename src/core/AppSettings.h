@@ -3,6 +3,7 @@
 #include "core/OutputFormat.h"
 #include "core/PasteRules.h"
 #include "core/LearnedCorrection.h"
+#include "core/ProviderTable.h"
 #include "core/Target.h"
 
 #include <QString>
@@ -200,7 +201,7 @@ struct SpeechEndpointSettings {
 inline constexpr auto kAutomaticSpokenLanguage = "auto";
 
 struct SpeechSettings {
-    QString providerId = QStringLiteral("claude");
+    QString providerId = providerKey(ProviderId::Claude);
     // Up to two providers tried in order when providerId is unavailable;
     // never providerId itself. See ProviderChain.h.
     QStringList fallbackProviderIds;
@@ -296,7 +297,7 @@ inline QString localRunnerName(const QString &runnerId)
 }
 
 struct RefinementSettings {
-    QString providerId = QStringLiteral("openai");
+    QString providerId = providerKey(ProviderId::OpenAi);
     // As SpeechSettings::fallbackProviderIds; empty while providerId is "none".
     QStringList fallbackProviderIds;
     QString style = QStringLiteral("balanced");

@@ -1,6 +1,7 @@
 #include "dictation/PopupPresentation.h"
 
 #include "core/ProviderReadiness.h"
+#include "core/ProviderTable.h"
 
 #include <QList>
 
@@ -50,7 +51,7 @@ QString shortfall(const ProviderAttemptIssue &issue)
     case ProviderFailureKind::Authentication:
         return QStringLiteral("turned down its key");
     case ProviderFailureKind::Unavailable:
-        if (issue.role == ProviderRole::Speech && issue.providerId == QStringLiteral("local")) {
+        if (issue.role == ProviderRole::Speech && parseProviderId(issue.providerId) == ProviderId::Local) {
             return issue.stage == Stage::Prepare ? QStringLiteral("has no model downloaded")
                                                  : QStringLiteral("couldn't load its model");
         }
@@ -261,10 +262,11 @@ QString noSpeechServiceText(const QList<ProviderAttemptIssue> &issues, const Pro
 
 PopupErrorAction speechSetupAction(const QString &providerId)
 {
-    if (providerId == QStringLiteral("local")) {
+    const std::optional<ProviderId> provider = parseProviderId(providerId);
+    if (provider == ProviderId::Local) {
         return {ErrorFix::SettingsPage, QStringLiteral("models")};
     }
-    if (providerId == QStringLiteral("endpoint")) {
+    if (provider == ProviderId::Endpoint) {
         return {ErrorFix::SettingsPage, QStringLiteral("speech")};
     }
     return {ErrorFix::SettingsPage, QStringLiteral("accounts")};

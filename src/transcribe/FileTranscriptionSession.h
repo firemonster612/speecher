@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/ProviderTable.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
 #include "transcribe/Subtitles.h"
@@ -41,7 +42,7 @@ struct TranscribeOptions {
     // Terms added to the custom vocabulary for this batch, even without
     // applyVocabulary.
     QStringList addedVocabulary;
-    QString refinementProviderId = QStringLiteral("none");
+    QString refinementProviderId = kNoRefinementProvider;
     QString cleanupStrength = QStringLiteral("none");
     QString tone = QStringLiteral("none");
     QString writingProfile = WritingProfile::Other;

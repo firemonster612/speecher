@@ -1,6 +1,7 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointRequest.h"
 
+#include "core/ProviderTable.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/PcmWav.h"
@@ -160,7 +161,7 @@ EndpointSpeechTranscriber::EndpointSpeechTranscriber(QObject *parent,
 
 QString EndpointSpeechTranscriber::id() const
 {
-    return QStringLiteral("endpoint");
+    return providerKey(ProviderId::Endpoint);
 }
 
 QString EndpointSpeechTranscriber::label() const
