@@ -20,9 +20,7 @@ constexpr qreal kInset = 6;
 // Each loop's span (px): the figure's room in the 280 capsule's strip, so
 // it keeps that size in the 460 capsule's.
 constexpr qreal kSpan = 148;
-// How much wider the strip is in the 460 capsule (px), and how far the two
-// loops overlap where they link.
-constexpr qreal kWiden = 460 - 280;
+// How far the two loops overlap where they link (px).
 constexpr qreal kLink = 5;
 // Ring depth (px) before the tilt.
 constexpr qreal kDepth = 12;
@@ -178,15 +176,15 @@ void RibbonFigure::step(qreal dt, QSizeF strip, bool listening, qreal movement)
     const qreal share = std::min(0.95, (shareOf(loud) + 0.1 * m_burst * (0.3 + loud)) * movement);
     const qreal driftX = 5 + 13 * loud, driftY = 2 + 4 * loud;
 
-    // Where the loops sit. The unfurl runs 0 to 1 as the strip widens from
-    // the 280 capsule's to the 460's; it follows more calmly than the
-    // capsule's spring, and never ahead of the room the strip has. The pair
-    // needs extra more than one loop and stays centred; the second loop's
-    // arms unfurl from the link only as far as the unfurl allows.
-    const qreal room = std::clamp((right - left - span) / kWiden, 0.0, 1.0);
-    m_unfurl = m_unfurl < 0 ? room : std::min(room, follow(m_unfurl, room, 600 * movement, dt));
+    // Where the loops sit. The pair is `extra` wider than one loop. The
+    // unfurl runs 0 to 1 as the strip makes room for that; it follows more
+    // calmly than the capsule's spring, and never ahead of the room the
+    // strip has. What shows stays centred, and the second loop's arms
+    // unfurl from the link only as far as the unfurl allows.
     const qreal extra = 2 * radius - kLink;
-    const qreal centre = left + m_unfurl * (kWiden - extra) / 2 + 3 + radius, secondCentre = centre + extra;
+    const qreal room = std::clamp((right - left - span) / extra, 0.0, 1.0);
+    m_unfurl = m_unfurl < 0 ? room : std::min(room, follow(m_unfurl, room, 600 * movement, dt));
+    const qreal centre = left + (right - left - span - m_unfurl * extra) / 2 + 3 + radius, secondCentre = centre + extra;
     const qreal reach = std::acos(1 - std::min(2.0, (kLink + m_unfurl * extra) / radius));
     const qreal secondShown = std::clamp(m_unfurl * extra / 10, 0.0, 1.0);
 

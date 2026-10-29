@@ -64,6 +64,9 @@ public:
     qreal rest() const;
     // 0 while listening, easing to 1 once paused.
     qreal dim() const { return m_dim; }
+    // Paused and done changing: dimmed, the voice let go and the last
+    // pulse gone, so further steps draw the same figure.
+    bool settled() const { return m_dim > 0.995 && m_loudness < 0.002 && m_pulses.isEmpty(); }
 
 private:
     // A syllable's pulse: when it set off (on the figure's clock) and how bright it is.
@@ -102,7 +105,7 @@ class ScatterRibbon : public QQuickPaintedItem {
     Q_PROPERTY(qreal level READ level WRITE setLevel NOTIFY levelChanged)
     // False while paused.
     Q_PROPERTY(bool listening READ listening WRITE setListening NOTIFY listeningChanged)
-    // Theme.movement: at 0 only the brightness follows the voice.
+    // Theme.movement: at 0 only the brightness and colour follow the voice.
     Q_PROPERTY(qreal movement MEMBER m_movement)
     // Theme.dark: the dots and glow are a little stronger on a dark sheet.
     Q_PROPERTY(bool dark MEMBER m_dark NOTIFY paletteChanged)
@@ -120,7 +123,7 @@ public:
     void setLevel(qreal level);
     bool listening() const { return m_listening; }
     void setListening(bool listening);
-    bool moving() const { return m_listening || m_figure.dim() < kSettled; }
+    bool moving() const { return m_listening || !m_figure.settled(); }
 
     // Moves the figure on by seconds and draws the next frame.
     Q_INVOKABLE void advance(qreal seconds);
@@ -136,9 +139,6 @@ signals:
     void paletteChanged();
 
 private:
-    // How dim the paused figure gets before it counts as still.
-    static constexpr qreal kSettled = 0.995;
-
     void drawTrail(qreal dt);
 
     RibbonFigure m_figure;

@@ -624,9 +624,10 @@ private slots:
             }
             return std::pair{high[0] - low[0], high[1] - low[1]};
         };
-        // The strip widens from 160 to 340 px over half a second, as the capsule does.
+        // The strip widens from 160 to 332 px over half a second, as the
+        // capsule does once the clock reads 10:00 and takes a digit's room.
         for (int frame = 0; frame < 120; ++frame) {
-            figure.step(1.0 / 60, {160 + 180 * std::min(1.0, frame / 30.0), 44}, true, 1);
+            figure.step(1.0 / 60, {160 + 172 * std::min(1.0, frame / 30.0), 44}, true, 1);
             const auto [first, second] = widths();
             QVERIFY2(first < 150 && second < 150, qPrintable(QStringLiteral("%1, %2").arg(first).arg(second)));
         }
@@ -670,6 +671,45 @@ private slots:
 
     // Once paused and still, the ribbon draws no more frames, yet takes a
     // new theme's colours.
+    // Paused after a loud voice, the ribbon goes on until it rests: further
+    // frames would draw it no stronger or fainter than where it stopped.
+    void pausedRibbonStopsAtRest()
+    {
+        ScatterRibbon ribbon;
+        ribbon.setSize({160, 44});
+        ribbon.setListening(true);
+        ribbon.setLevel(1);
+        for (int frame = 0; frame < 60; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        ribbon.setListening(false);
+        while (ribbon.moving()) {
+            ribbon.advance(1.0 / 60);
+        }
+        const auto drawn = [&ribbon] {
+            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            ribbon.paint(&painter);
+            return image;
+        };
+        // Its strength: the sum of its alpha.
+        const auto strength = [](const QImage &image) {
+            qint64 sum = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    sum += qAlpha(image.pixel(x, y));
+                }
+            }
+            return sum;
+        };
+        const qint64 stopped = strength(drawn());
+        for (int frame = 0; frame < 120; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        QVERIFY2(std::abs(strength(drawn()) - stopped) < stopped / 50, qPrintable(QStringLiteral("%1 then %2").arg(stopped).arg(strength(drawn()))));
+    }
+
     void stillRibbonTakesNewColours()
     {
         ScatterRibbon ribbon;
