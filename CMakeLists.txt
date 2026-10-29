@@ -1579,9 +1579,9 @@ if(SPEECHER_BUILD_TESTS)
   # The live checks play through the sound server and switch its default
   # output, and use the session's clipboard and accessibility bus.
   set_tests_properties(speecher_platform_live PROPERTIES RUN_SERIAL TRUE)
-  # These show work leaves the main thread by timing the event loop to within
+  # It shows work leaves the main thread by timing the event loop to within
   # 100 ms, which only a computer with nothing else running keeps to.
-  set_tests_properties(speecher_delivery speecher_custom_endpoints PROPERTIES RUN_SERIAL TRUE)
+  set_tests_properties(speecher_custom_endpoints PROPERTIES RUN_SERIAL TRUE)
   if(APPLE OR WIN32)
     # A dictation through the real platform takes Escape and Enter, and
     # Windows' own suite more keys, as hot keys only one process at a time
