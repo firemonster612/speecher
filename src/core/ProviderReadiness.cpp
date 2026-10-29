@@ -239,9 +239,13 @@ bool providerSignsIn(const QString &providerId)
 
 QString signInName(const QString &providerId, const QString &label)
 {
+    // A speech provider is named for the account it signs in to; a refinement
+    // provider keeps the label its registry gives it.
     const std::optional<ProviderId> provider = parseProviderId(providerId);
-    const QString account = provider ? providerAccountName(*provider) : QString();
-    return account.isEmpty() ? label : account;
+    if (provider == ProviderId::Claude || provider == ProviderId::Codex) {
+        return providerAccountName(*provider);
+    }
+    return label;
 }
 
 } // namespace speecher

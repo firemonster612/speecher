@@ -7,7 +7,7 @@
 // The built-in speech and refinement providers and the facts the app keys off
 // each one. Settings files, the registry, the CLI and the UI name a provider by
 // its key, the string a settings file stores; code that branches on a provider
-// reads the key into a ProviderId and switches on that.
+// reads the key into a ProviderId and compares that.
 
 namespace speecher {
 
