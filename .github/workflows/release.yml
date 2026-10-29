@@ -151,7 +151,8 @@ jobs:
           fi
           if [ "$GITHUB_EVENT_NAME" = push ]; then
             docker tag speecher-appimage:forky "$image"
-            docker push --quiet "$image"
+            # Only pull requests use the published image, so a release goes on without it.
+            docker push --quiet "$image" || echo "::warning::Could not publish $image; pull requests will build it."
           fi
 
       - name: Configure
