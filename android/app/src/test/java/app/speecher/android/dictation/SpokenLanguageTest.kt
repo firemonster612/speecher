@@ -39,7 +39,7 @@ class SpokenLanguageTest {
     fun `a language the service can't listen for is named, not replaced`() {
         assertEquals(
             "Claude can't listen for Welsh. Choose another spoken language.",
-            spokenLanguageMismatch(SpeechProvider.Claude, "cy"),
+            spokenLanguageMismatch(SpeechProvider.Claude, "cy")?.advice,
         )
         assertNull(spokenLanguageMismatch(SpeechProvider.ChatGpt, "cy"))
     }

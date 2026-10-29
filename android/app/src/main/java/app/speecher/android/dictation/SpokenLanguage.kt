@@ -31,11 +31,18 @@ fun spokenLanguageLabel(code: String): String {
 private fun locale(code: String): Locale = Locale.forLanguageTag(if (code == "jw") "jv" else code)
 
 /**
- * Why [provider] can't take the saved [language], as Settings and the panel show it, or null when
- * it can. The saved language stays as it is; dictation never falls back to English.
+ * The failure dictating with [provider] in the saved [language] meets, or null when the provider
+ * listens for it. The saved language stays as it is; dictation never falls back to English.
  */
-fun spokenLanguageMismatch(provider: SpeechProvider, language: String): String? =
+fun spokenLanguageMismatch(
+    provider: SpeechProvider,
+    language: String,
+): FailureReason.SpokenLanguage? =
     if (language in provider.spokenLanguages) null
-    else
+    else FailureReason.SpokenLanguage(provider, language)
+
+/** What went wrong and what to do, as Settings and the panel show it. */
+val FailureReason.SpokenLanguage.advice: String
+    get() =
         "${provider.label} can't listen for ${spokenLanguageName(language)}. " +
             "Choose another spoken language."

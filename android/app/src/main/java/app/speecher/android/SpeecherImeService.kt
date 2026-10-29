@@ -16,15 +16,13 @@ import androidx.core.view.WindowCompat
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
-import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.cleanup
-import app.speecher.android.dictation.needsServerSettings
+import app.speecher.android.dictation.recovery
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
-import app.speecher.android.dictation.signInAccount
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
-import app.speecher.android.ui.SettingsPage
 import app.speecher.android.ui.SpeecherTheme
 
 /** The id Android uses for this keyboard: the short `package/.Class` form of its component. */
@@ -188,31 +186,19 @@ class SpeecherImeService : InputMethodService() {
         else panel.clearFlags(flag)
     }
 
-    /**
-     * A denied microphone, an ended sign-in, a server's settings, an unsupported spoken language
-     * and an edit with no cleanup need the app; the other failures retry in place.
-     */
+    /** Retries the failure in place, or switches back and hands its recovery to the app. */
     private fun recover() {
-        val reason = (panelState.value as? DictationState.Failed)?.reason ?: return
-        val signIn = reason.signInAccount
-        val transcriptionSettings =
-            reason == FailureReason.SpokenLanguage || reason.needsServerSettings
-        if (
-            signIn == null &&
-                reason != FailureReason.MicrophoneDenied &&
-                reason != FailureReason.SelectionNeedsCleanup &&
-                !transcriptionSettings
-        ) {
+        val recovery = (panelState.value as? DictationState.Failed)?.reason?.recovery ?: return
+        if (recovery == Recovery.Retry) {
             if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
         switchBack()
-        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (signIn != null) intent.putExtra("sign_in_provider", signIn.name)
-        if (transcriptionSettings) intent.putExtra("settings_page", SettingsPage.Transcription.name)
-        if (reason == FailureReason.SelectionNeedsCleanup)
-            intent.putExtra("settings_page", SettingsPage.Profiles.name)
-        startActivity(intent)
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(RECOVERY, recovery)
+        )
     }
 
     private fun switchBack() {

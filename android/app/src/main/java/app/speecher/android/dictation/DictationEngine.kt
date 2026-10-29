@@ -240,7 +240,7 @@ class DictationEngine(
                     } else opened.cancel()
                 }
             } catch (e: SpokenLanguageUnsupported) {
-                fail(current, FailureReason.SpokenLanguage, e.message.orEmpty())
+                fail(current, e.reason, e.message.orEmpty())
             } catch (e: Exception) {
                 synchronized(this) {
                     if (!isCurrent(current, opening)) return@synchronized
@@ -731,8 +731,8 @@ private const val PCM_BYTES_PER_MILLI = 16 * 2
  */
 private const val MAX_RETRANSCRIBE_BYTES = 80_000 * PCM_BYTES_PER_MILLI
 
-/** The provider can't listen for the saved spoken language; [message] says so for the panel. */
-class SpokenLanguageUnsupported(message: String) : Exception(message)
+/** The provider can't listen for the saved spoken language, as [reason] says. */
+class SpokenLanguageUnsupported(val reason: FailureReason.SpokenLanguage) : Exception("$reason")
 
 /** Android wiring; call [DictationEngine.start] on the chip tap before the IME appears. */
 fun createDictationEngine(
