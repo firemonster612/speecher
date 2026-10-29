@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <QStringList>
 
 namespace speecher {
@@ -47,7 +48,31 @@ public:
     static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
 
 private:
+    // The paste method deliver starts from, and whether it pastes blindly into
+    // whatever has focus because the Target cannot be tracked.
+    struct PasteChoice {
+        PasteMethod method = PasteMethod::ClipboardOnly;
+        bool currentFocusFallback = false;
+    };
+    class PreviousClipboard;
+
     void useDefaultBackendFactory();
+    // The Paste Rule's method when the Target can be told apart from whatever
+    // else is in front, or when a global rule pastes blindly into the current
+    // focus; only the clipboard otherwise, and always for a secure field.
+    static PasteChoice choosePasteMethod(const OutputSettings &settings, const Target &target);
+    // Checks that the Target still has focus and readies it for the paste.
+    // Returns why the paste keys must not go out, or nothing when they may.
+    QString preparePasteInFocus(const Target &target);
+    // Tries each backend for the paste method in turn. Nothing when none
+    // delivered, with the first failure in firstError; the words are already
+    // on the clipboard.
+    std::optional<DeliveryResult> pasteThroughBackends(const OutputSettings &settings,
+                                                       const DeliveryContent &content,
+                                                       const Target &target,
+                                                       const PasteChoice &choice,
+                                                       PreviousClipboard &previousClipboard,
+                                                       QString *firstError);
 
     ClipboardDelivery m_clipboardDelivery;
     BackendFactory m_backendFactory;
