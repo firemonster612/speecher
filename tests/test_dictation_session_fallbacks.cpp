@@ -4,6 +4,7 @@
 #include "core/settings/SettingsKeys.h"
 
 #include <QScopeGuard>
+#include <QSemaphore>
 
 #include <map>
 
@@ -460,10 +461,20 @@ private slots:
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         local->backgroundPrepare = true;
-        local->backgroundPrepareDelayMs = 50;
         local->prepareResult = {false, QStringLiteral("offline"), Network};
-        rig.audio.onStart = [&rig, codex] {
+        // The fallback's preparation is under way when the microphone
+        // refuses, and only ends once the start has failed.
+        QSemaphore preparing;
+        // A check failing midway must not leave the worker waiting.
+        const auto unblock = qScopeGuard([&preparing] { preparing.release(); });
+        std::atomic_bool prepareStarted = false;
+        local->duringBackgroundPrepare = [&preparing, &prepareStarted] {
+            prepareStarted = true;
+            preparing.acquire();
+        };
+        rig.audio.onStart = [&rig, codex, &prepareStarted] {
             codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
+            QTRY_VERIFY(prepareStarted.load());
             rig.audio.startResult = false;
         };
         QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
@@ -471,7 +482,12 @@ private slots:
         QTRY_COMPARE(rig.session->state(), DictationState::Error);
         const QString microphoneError = rig.session->lastMessage();
         const qsizetype stateChanges = states.count();
-        QTest::qWait(300);
+        preparing.release();
+        // Its result would reach the session as the worker's thread ends,
+        // just after the job.
+        QTRY_COMPARE(local->backgroundPreparesFinished.load(), 1);
+        QTest::qWait(100);
+        QCOMPARE(local->prepareCalls, 0);
         QCOMPARE(states.count(), stateChanges);
         QCOMPARE(rig.session->lastMessage(), microphoneError);
     }

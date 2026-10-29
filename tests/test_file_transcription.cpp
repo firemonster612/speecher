@@ -789,11 +789,17 @@ private slots:
     // turned the file away: the next one takes the file from its start.
     void aStreamEndingBeforeAnyAudioHandsTheFileOver()
     {
-        FakeSpeechTranscriber *codex = nullptr;
+        // Read as the file lets the provider go: it is deleted after.
+        int codexStarts = -1;
+        qsizetype codexChunks = -1;
         m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
-                                           [&codex](QObject *parent) {
-                                               codex = new FakeSpeechTranscriber(parent);
-                                               codex->onStartAttempt = [speech = codex] { speech->emitCompletion(); };
+                                           [&codexStarts, &codexChunks](QObject *parent) {
+                                               auto *codex = new FakeSpeechTranscriber(parent);
+                                               codex->onStartAttempt = [codex] { codex->emitCompletion(); };
+                                               codex->onCancelAttempt = [codex, &codexStarts, &codexChunks](quint64) {
+                                                   codexStarts = codex->startCalls;
+                                                   codexChunks = codex->audioChunks.size();
+                                               };
                                                return codex;
                                            });
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
@@ -811,8 +817,8 @@ private slots:
 
         const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
         QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
-        QCOMPARE(codex->startCalls, 1);
-        QVERIFY(codex->audioChunks.isEmpty());
+        QCOMPARE(codexStarts, 1);
+        QCOMPARE(codexChunks, 0);
         QCOMPARE(m_script.attempts, 1);
         QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
@@ -877,7 +883,10 @@ private slots:
 
         QVERIFY(session.startListening(&microphone, options));
         QVERIFY(microphone.active);
-        QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
+        // The provider starts once the worker reports, never inside the call.
+        QVERIFY(codex);
+        QCOMPARE(codex->startCalls, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!codex->audioChunks.isEmpty(), 10000);
         microphone.pushAudio(microphoneChunk(8000));
         codex->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect, ProviderFailureKind::Network);
         microphone.pushAudio(microphoneChunk(8000));
