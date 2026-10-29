@@ -552,10 +552,10 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         rig.listen();
-        const int stableMs = DictationSession::stableAttemptMs();
-        DictationSession::setStableAttemptMs(0);
+        const int stableMs = SpeechAttemptPolicy::stableAttemptMs();
+        SpeechAttemptPolicy::setStableAttemptMs(0);
         codex->emitCompletion();
-        DictationSession::setStableAttemptMs(stableMs);
+        SpeechAttemptPolicy::setStableAttemptMs(stableMs);
         QCOMPARE(codex->startCalls, 2);
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 0);
         for (int end = 0; end < 3; ++end) {

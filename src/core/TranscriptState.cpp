@@ -30,6 +30,7 @@ void TranscriptState::clear()
 {
     m_finals.clear();
     m_partial.clear();
+    m_attemptBase.clear();
     emit changed(text());
 }
 
@@ -61,6 +62,16 @@ void TranscriptState::replaceFinals(const QString &text)
     m_finals = {cleaned};
     m_partial.clear();
     emit changed(this->text());
+}
+
+void TranscriptState::startAttempt()
+{
+    m_attemptBase = text();
+}
+
+void TranscriptState::replaceAttemptFinals(const QString &attemptText)
+{
+    replaceFinals(m_attemptBase.isEmpty() ? attemptText : m_attemptBase + QLatin1Char(' ') + attemptText);
 }
 
 } // namespace speecher

@@ -7,6 +7,7 @@
 
 #include "core/AppSettings.h"
 #include "core/ProviderChain.h"
+#include "core/ProviderFailure.h"
 
 #include <QHash>
 #include <QList>
@@ -142,6 +143,8 @@ bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &pr
 // Whether a provider needs the internet to work: one that signs in, or a
 // Custom Endpoint whose server isn't on this computer or its network.
 bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings);
+// Why a provider that needs the internet is passed over while offline.
+ProviderFailure noInternetFailure();
 
 // Whether a provider works through an account the person signs in to (Claude
 // Voice, ChatGPT Codex, OpenAI, Anthropic), rather than a key or this computer.

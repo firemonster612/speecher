@@ -395,12 +395,12 @@ private slots:
                     .arg(server.serverPort()).toUtf8());
         qputenv("SPEECHER_CODEX_TRANSCRIBE_URL",
                 QStringLiteral("http://127.0.0.1:%1/transcribe").arg(http.serverPort()).toUtf8());
-        const int stableAttemptMs = DictationSession::stableAttemptMs();
-        DictationSession::setStableAttemptMs(0);
+        const int stableAttemptMs = SpeechAttemptPolicy::stableAttemptMs();
+        SpeechAttemptPolicy::setStableAttemptMs(0);
         const auto restore = qScopeGuard([stableAttemptMs] {
             qunsetenv("SPEECHER_CODEX_DICTATION_URL");
             qunsetenv("SPEECHER_CODEX_TRANSCRIBE_URL");
-            DictationSession::setStableAttemptMs(stableAttemptMs);
+            SpeechAttemptPolicy::setStableAttemptMs(stableAttemptMs);
         });
 
         QList<QWebSocket *> peers;

@@ -21,6 +21,11 @@ public slots:
     void setPartial(const QString &partial);
     void commitFinal(const QString &finalText);
     void replaceFinals(const QString &text);
+    // Text from here on comes from a new speech attempt: the text so far
+    // stays when the attempt sends its whole transcript.
+    void startAttempt();
+    // The current attempt's whole transcript, in place of what it sent before.
+    void replaceAttemptFinals(const QString &attemptText);
 
 signals:
     void changed(const QString &text);
@@ -28,6 +33,8 @@ signals:
 private:
     QStringList m_finals;
     QString m_partial;
+    // The text from before the current attempt.
+    QString m_attemptBase;
 };
 
 } // namespace speecher

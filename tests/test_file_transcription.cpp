@@ -471,8 +471,8 @@ private slots:
 
     void rollsOverAStreamThatEndsMidFile()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         m_script.expireFirstStream = true;
         const QString audio = m_dir.filePath(QStringLiteral("long.wav"));
         writeWav(audio);
@@ -494,8 +494,8 @@ private slots:
     // audio starts 100 ms into the file.
     void timesUsableSegmentsFromTheStartOfTheFile()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         m_script.expireFirstStream = true;
         m_script.segments = {{0, 200, QStringLiteral("heard")},
                              {300, 300, QStringLiteral("no length")},
@@ -987,8 +987,8 @@ private slots:
     // stopping writes the last one.
     void aRecordingAppendsFinalsInOrderThroughARollover()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
         settings.setSpeechProvider(QStringLiteral("codex"));
@@ -1589,8 +1589,8 @@ private slots:
     // turns down unforeseen renews once before the stream counts as stopped.
     void aRecordingRenewsItsSignInBeforeTheNextStream()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
         settings.setSpeechProvider(QStringLiteral("codex"));
