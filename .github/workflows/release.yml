@@ -78,46 +78,13 @@ jobs:
               - 'THIRD_PARTY_NOTICES.md'
               - '.github/workflows/release.yml'
 
-  # The Linux job's Debian build image, published to GHCR under its folder's hash.
-  # Only pushes (master and tags) publish it, so a release never runs in an image
-  # a pull request built; a pull request's Linux job may only read packages.
-  linux-image:
-    if: github.event_name == 'push'
+  linux:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.image.outputs.image }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Publish Debian forky image
-        id: image
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository }}/appimage-builder:${{ hashFiles('packaging/appimage/**') }}
-        run: |
-          # The runner's user ID is a build argument; the Linux job runs on the same image.
-          image="${IMAGE,,}-uid$(id -u)"
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          if ! docker manifest inspect "$image" > /dev/null 2>&1; then
-            docker build --build-arg USER_ID="$(id -u)" --tag "$image" packaging/appimage
-            docker push --quiet "$image"
-          fi
-
-  linux:
-    needs:
-      - changes
-      - linux-image
-    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.linux-image.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      packages: read
     env:
       PACKAGE: ${{ github.event_name != 'pull_request' || needs.changes.outputs.packaging == 'true' }}
     steps:
@@ -166,21 +133,25 @@ jobs:
           restore-keys: |
             linux-ccache-v1-${{ hashFiles('packaging/appimage/Dockerfile') }}-
 
-      # A pull request builds the image itself until master has published it.
+      # Master and tags build the image fresh and publish it to GHCR for pull requests,
+      # which pull it rather than build it. A pull request runs its own copy of this
+      # workflow and so could push any image, which is why a release never pulls one.
       - name: Get Debian forky image
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository }}/appimage-builder:${{ hashFiles('packaging/appimage/**') }}
+          IMAGE: ghcr.io/${{ github.repository }}/appimage-builder:${{ hashFiles('packaging/appimage/Dockerfile') }}
         run: |
           image="${IMAGE,,}-uid$(id -u)"
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          if docker pull --quiet "$image"; then
+          # A pull request whose login or pull fails builds the image itself.
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && docker pull --quiet "$image"; then
             docker tag "$image" speecher-appimage:forky
-          elif [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            docker build --build-arg USER_ID="$(id -u)" --tag speecher-appimage:forky packaging/appimage
           else
-            echo "linux-image did not publish $image." >&2
-            exit 1
+            docker build --build-arg USER_ID="$(id -u)" --tag speecher-appimage:forky packaging/appimage
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            docker tag speecher-appimage:forky "$image"
+            docker push --quiet "$image"
           fi
 
       - name: Configure
@@ -609,7 +580,6 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          # Only release bundles; the Docker build-record artifact is not wanted here.
           pattern: "*-release"
           path: artifacts
 
