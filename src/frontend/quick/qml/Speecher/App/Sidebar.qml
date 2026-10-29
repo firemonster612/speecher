@@ -56,8 +56,8 @@ Item {
         id: brand
         width: parent.width
         title: Words.shell.appName
-        detail: Words.shortVersion(Status.version)
-        detailTip: Words.version(Status.version)
+        detail: Words.shortVersion(Updates.version)
+        detailTip: Words.version(Updates.version)
     }
 
     // Search --------------------------------------------------------------

@@ -9,7 +9,6 @@
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "frontend/quick/host/QuickTranscription.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -76,7 +75,6 @@ private:
     QuickSettings m_settings;
     QuickAppearance m_appearance;
     QuickAudio m_audio;
-    QuickStatus m_status;
     QuickDictation m_dictation;
     QuickUpdates m_updates;
     QuickTranscription m_transcription;

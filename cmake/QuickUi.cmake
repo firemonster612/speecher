@@ -79,8 +79,6 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QuickLibrary.h"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.h"
-    "${SPEECHER_QUICK_DIR}/host/QuickStatus.cpp"
-    "${SPEECHER_QUICK_DIR}/host/QuickStatus.h"
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.h"
     "${SPEECHER_QUICK_DIR}/host/QuickTranscription.cpp"

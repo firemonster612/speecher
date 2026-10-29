@@ -17,6 +17,8 @@ class QuickUpdates final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Updates)
     QML_SINGLETON
+    // The running version, as the updater compares it (currentVersion).
+    Q_PROPERTY(QString version READ version CONSTANT)
     // idle, checking, checkFailed, upToDate, available, downloading, ready,
     // restartPending (waiting for a dictation or recording to end),
     // restarting or error (a download or install failed).
@@ -61,6 +63,7 @@ public:
     // The engine's instance: the one the host made before loading any QML.
     static QuickUpdates *create(QQmlEngine *, QJSEngine *);
 
+    QString version() const;
     QString state() const;
     QString availableVersion() const;
     qreal progress() const;

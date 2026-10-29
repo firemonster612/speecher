@@ -11,7 +11,7 @@ Page {
     title: Schema.page("dictation").title
     subtitle: Schema.page("dictation").subtitle
 
-    readonly property var keys: Status.shortcutKeys
+    readonly property var keys: Settings.values.globalShortcut || []
     readonly property var t: ({
         startsDictation: keys => keys.join("+") + " starts a dictation",
         noShortcut: "No dictation shortcut yet",

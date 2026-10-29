@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Status`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -30,7 +30,7 @@ qmldir names its singletons.
 Pages import `Speecher.Backend` and read only its singletons for data. The
 Backend is the C++ types in `host/` plus `Library.qml`.
 
-- Wired: `Settings` (`host/QuickSettings`), `Status` (`host/QuickStatus`),
+- Wired: `Settings` (`host/QuickSettings`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Models` (`host/QuickModels`), `Insights`
@@ -112,8 +112,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
   take the file the page's FileDialog chose. Library.qml words the lists.
 - `Settings.act(id)` runs an action row (`runSetup`).
-- `Status` has the version and the shortcut's keys.
-- `Updates` is the updater as `QuickUpdates.h` documents it: its state
+- `Updates` is the updater as `QuickUpdates.h` documents it: the running
+  `version`, its state
   (checking through restarting, with check and install failures apart), the
   offered version, progress, why a step failed, and what a restart waits
   for. `attention` says the update needs the person, which the popup's

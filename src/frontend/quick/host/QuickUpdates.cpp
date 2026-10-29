@@ -76,6 +76,11 @@ QuickUpdates *QuickUpdates::create(QQmlEngine *, QJSEngine *)
     return g_instance;
 }
 
+QString QuickUpdates::version() const
+{
+    return m_updates->currentVersion();
+}
+
 QString QuickUpdates::state() const
 {
     switch (m_updates->state()) {

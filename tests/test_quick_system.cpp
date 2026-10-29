@@ -12,7 +12,6 @@
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickUpdates.h"
 
@@ -477,7 +476,6 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QuickDictation dictation(&controller);
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);

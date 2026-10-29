@@ -8,7 +8,6 @@
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickStatus.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "platform/PopupPositioner.h"
 
@@ -347,8 +346,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -387,8 +385,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -515,8 +512,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         auto *positioner = new RecordingPositioner;
@@ -539,8 +535,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -566,8 +561,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -596,8 +590,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -641,8 +634,7 @@ private slots:
         QCOMPARE(idle.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{replaceKey});
         QCOMPARE(idle.value(QStringLiteral("followUpKeys")).toStringList(), shortcutKeys(controller.globalShortcutDisplay()));
 
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         auto *positioner = new RecordingPositioner;
@@ -680,8 +672,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
@@ -737,8 +728,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
-        // The popup's offers read Status and Updates, as the host always has them.
-        QuickStatus status(&controller);
+        // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);

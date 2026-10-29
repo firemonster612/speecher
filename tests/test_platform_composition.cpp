@@ -34,7 +34,6 @@
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
-#include "frontend/quick/host/QuickStatus.h"
 
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -1158,14 +1157,13 @@ private slots:
     }
 
     // Where the desktop picks the keys itself (the portal), the binding is a
-    // stand-in: the rows and Status show the keys the desktop says it
+    // stand-in: the rows show the keys the desktop says it
     // assigned, and follow when it assigns others.
     void theUiShowsTheKeysTheDesktopAssigned()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
-        QuickStatus status(&controller);
         QVERIFY(controller.setGlobalShortcut(GlobalShortcutBinder::defaultShortcut()));
         const auto shown = [&] {
             return settings.values().value(QStringLiteral("globalShortcut")).toStringList();
@@ -1173,7 +1171,6 @@ private slots:
 
         platform->binder->publishAssignedKeys(QStringLiteral("Ctrl+Space"));
         QCOMPARE(shown(), (QStringList{QStringLiteral("Ctrl"), QStringLiteral("Space")}));
-        QCOMPARE(status.shortcutKeys(), shown());
 
         QSignalSpy changed(&settings, &QuickSettings::valuesChanged);
         platform->binder->publishAssignedKeys(QStringLiteral("Ctrl+Alt+K"));
