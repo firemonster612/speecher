@@ -1359,10 +1359,10 @@ private slots:
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
-        const int stableAttemptMs = DictationSession::stableAttemptMs();
-        DictationSession::setStableAttemptMs(0);
+        const int stableAttemptMs = SpeechAttemptPolicy::stableAttemptMs();
+        SpeechAttemptPolicy::setStableAttemptMs(0);
         const auto restore = qScopeGuard([stableAttemptMs] {
-            DictationSession::setStableAttemptMs(stableAttemptMs);
+            SpeechAttemptPolicy::setStableAttemptMs(stableAttemptMs);
         });
 
         session.startListening();

@@ -8,6 +8,7 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
+#include "providers/SpeechChain.h"
 
 #include <QElapsedTimer>
 #include <QMetaObject>
@@ -100,10 +101,6 @@ public slots:
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
     static void setPopupPaintFallbackMs(int ms);
-    // How long a speech attempt must stream before its end counts as a
-    // routine rollover rather than a failure. Tests lower it.
-    static int stableAttemptMs();
-    static void setStableAttemptMs(int ms);
 
 signals:
     void stateChanged(DictationState state);
@@ -146,19 +143,16 @@ signals:
 
 private:
     static int s_popupPaintFallbackMs;
-    static int s_stableAttemptMs;
 
     void setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
     using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
     bool selectProviders();
     void prepareSpeechProvider();
-    void finishStartupPreparation(const StartupPreparationResult &result);
-    void finishSpeechPreparation(const StartupPreparationResult &result);
+    TranscriptRefiner *refinerToRenew() const;
     void speechProviderReady();
     void speechChainExhausted();
     void holdPendingAudio(const QByteArray &pcm);
-    bool speechFallbackRemains(const SpeechFailure &failure) const;
     void switchSpeechProvider(const SpeechFailure &failure);
     void noteSpeechFailure(const SpeechFailure &failure);
     void retireSpeechAttempt();
@@ -206,8 +200,6 @@ private:
     void setMicrophoneOpen(bool open);
     void updateMicrophoneHeld();
     void updateListening();
-    void refillReconnectsIfAttemptWasStable();
-    bool attemptWasStable() const;
     // note follows the receipt, such as why an edit went to the clipboard.
     // spokenWords is what Insights records for a reviewed edit, whose
     // instructions are the words spoken; otherwise the text's own.
@@ -231,9 +223,11 @@ private:
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
-    StartupPreparationRunner *m_startupRunner = nullptr;
-    // Numbers each preparation the runner is asked for; only the latest's
-    // result counts.
+    SpeechChain *m_speechChain = nullptr;
+    SpeechAttemptPolicy m_attempts;
+    StartupPreparationRunner *m_refinerPreparation = nullptr;
+    // Numbers each refiner preparation the runner is asked for; only the
+    // latest's result counts.
     quint64 m_preparationRevision = 0;
     QTimer *m_completionTimer = nullptr;
     // The registry owns these and may be destroyed first; never call a dead one.
@@ -278,14 +272,9 @@ private:
     quint64 m_refinementGeneration = 0;
     QString m_refinementStream;
     bool m_heardSpeech = false;
-    int m_speechReconnectsLeft = 0;
-    QElapsedTimer m_attemptClock;
     // From Listening to Stopping: the audio a Dictation Session transcribed.
     QElapsedTimer m_listeningClock;
     int m_listeningMs = 0;
-    // Committed text carried over from before the current speech attempt; a
-    // whole-attempt transcript replaces only what followed it.
-    QString m_attemptBaseText;
     // The current attempt is finishing because of a pause. Its end is not a
     // rollover, and the next attempt may only open once it has come.
     bool m_finishingPausedAttempt = false;
@@ -294,10 +283,6 @@ private:
     // after the last attempt ended during the stop. The next attempt gets
     // it, once.
     QList<QByteArray> m_pendingAudio;
-    // The speech providers this session may use, primary first, and the
-    // one it is on. It walks forward only.
-    QStringList m_speechChain;
-    int m_speechIndex = 0;
     // No provider is ready for the next attempt: the session is starting,
     // or the next provider prepares after one failed.
     bool m_awaitingSpeechProvider = false;
@@ -312,11 +297,7 @@ private:
     // The raw transcript is delivered in place of a refinement that was
     // asked for.
     bool m_usedRawTranscript = false;
-    // The refiner's sign-in renewed while starting: once a session, not for
-    // each speech provider tried.
-    bool m_refinerRefreshed = false;
     ProviderHistory m_providerHistory;
-    Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;

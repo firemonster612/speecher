@@ -4,6 +4,7 @@
 #include "core/settings/SettingsKeys.h"
 
 #include <QScopeGuard>
+#include <QSemaphore>
 
 #include <map>
 
@@ -451,6 +452,47 @@ private slots:
         QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
     }
 
+    // The microphone refusing to start while the next provider still
+    // prepares ends the start with the microphone's error: that provider
+    // failing afterwards reports nothing more.
+    void aMicrophoneRefusedWhileTheNextProviderPreparesKeepsItsError()
+    {
+        // The fallback's preparation is under way when the microphone
+        // refuses, and only ends once the start has failed. Declared before
+        // the rig, so they outlive the worker the rig waits for.
+        QSemaphore preparing;
+        std::atomic_bool prepareStarted = false;
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        // A check failing midway must not leave the worker waiting.
+        const auto unblock = qScopeGuard([&preparing] { preparing.release(); });
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->prepareResult = {false, QStringLiteral("offline"), Network};
+        local->duringBackgroundPrepare = [&preparing, &prepareStarted] {
+            prepareStarted = true;
+            preparing.acquire();
+        };
+        rig.audio.onStart = [&rig, codex, &prepareStarted] {
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
+            QTRY_VERIFY(prepareStarted.load());
+            rig.audio.startResult = false;
+        };
+        QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
+        rig.session->startListening();
+        QTRY_COMPARE(rig.session->state(), DictationState::Error);
+        const QString microphoneError = rig.session->lastMessage();
+        const qsizetype stateChanges = states.count();
+        preparing.release();
+        // Its result would reach the session as the worker's thread ends,
+        // just after the job.
+        QTRY_COMPARE(local->backgroundPreparesFinished.load(), 1);
+        QTest::qWait(100);
+        QCOMPARE(local->prepareCalls, 0);
+        QCOMPARE(states.count(), stateChanges);
+        QCOMPARE(rig.session->lastMessage(), microphoneError);
+    }
+
     // Reconnects on the same provider come first, as without fallbacks; then
     // the next provider opens a fresh attempt with the words so far kept and
     // a reconnect budget of its own.
@@ -552,10 +594,10 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         rig.listen();
-        const int stableMs = DictationSession::stableAttemptMs();
-        DictationSession::setStableAttemptMs(0);
+        const int stableMs = SpeechAttemptPolicy::stableAttemptMs();
+        SpeechAttemptPolicy::setStableAttemptMs(0);
         codex->emitCompletion();
-        DictationSession::setStableAttemptMs(stableMs);
+        SpeechAttemptPolicy::setStableAttemptMs(stableMs);
         QCOMPARE(codex->startCalls, 2);
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 0);
         for (int end = 0; end < 3; ++end) {

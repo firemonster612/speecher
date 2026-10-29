@@ -196,6 +196,11 @@ bool needsInternet(ProviderRole role, const QString &providerId, const AppSettin
     return providerSignsIn(providerId);
 }
 
+ProviderFailure noInternetFailure()
+{
+    return {ProviderFailureKind::Network, QStringLiteral("No internet connection")};
+}
+
 QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFacts &facts,
                                       const QStringList &speechProviders,
                                       const QStringList &refinementProviders, const ProviderLabels &labels)

@@ -5,6 +5,7 @@
 #include <QThread>
 #include <QtEndian>
 
+#include <atomic>
 #include <functional>
 #include <optional>
 
@@ -247,9 +248,13 @@ public:
         job.showRefreshIndicator = refreshRequired;
         job.run = [this] {
             ++backgroundPrepareCalls;
+            if (duringBackgroundPrepare) {
+                duringBackgroundPrepare();
+            }
             if (backgroundPrepareDelayMs > 0) {
                 QThread::msleep(backgroundPrepareDelayMs);
             }
+            ++backgroundPreparesFinished;
             return prepareResult;
         };
         job.apply = [this](const SpeechPrepareResult &) {
@@ -358,6 +363,8 @@ public:
     SpeechPrepareResult prepareResult{true, {}};
     bool streamsFinals = false;
     std::optional<int> utteranceAnswerTimeout;
+    // Runs inside a background prepare job, on the worker.
+    std::function<void()> duringBackgroundPrepare;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
@@ -365,6 +372,8 @@ public:
     // Runs inside endUtterance(), as a provider that finalizes when asked.
     std::function<void()> onEndUtterance;
     int backgroundPrepareCalls = 0;
+    // Background prepare jobs that ran to the end, counted on the worker.
+    std::atomic_int backgroundPreparesFinished = 0;
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;

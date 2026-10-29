@@ -4,8 +4,6 @@
 #include "core/TranscriptState.h"
 #include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
-#include "dictation/DictationSession.h"
-#include "dictation/StartupPreparationRunner.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/TranscribePresentation.h"
@@ -38,9 +36,6 @@ constexpr qsizetype kChunkBytes = kBytesPerSecond / 10;
 // its socket connects at 4 MB; at this rate even its 10 s connection timeout
 // queues only about 83 s of audio (2.7 MB), so the cap is never reached.
 constexpr int kSendIntervalMs = 12;
-// Dropped streams reopened per file before it counts as failed; a stream that
-// ran for a while refills the budget, as it does for dictation.
-constexpr int kReconnectsPerFile = 2;
 // The pauses before each reconnect of a recording's dropped stream; the last
 // repeats for as long as the microphone runs.
 constexpr int kRecordingReconnectDelaysMs[] = {1000, 2000, 5000, 10000, 30000};
@@ -188,7 +183,8 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     : QObject(parent)
     , m_settings(settings)
     , m_providers(providers)
-    , m_preparation(new StartupPreparationRunner(this))
+    , m_speechChain(new SpeechChain(
+          providers, [this](const QString &providerId) { return acquireTranscriber(providerId); }, this))
     , m_transcript(new TranscriptState(this))
 {
     qRegisterMetaType<TranscribeFileResult>();
@@ -197,25 +193,16 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     connect(&m_sendTimer, &QTimer::timeout, this, &FileTranscriptionSession::sendNextChunk);
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &FileTranscriptionSession::reconnect);
-    connect(m_preparation, &StartupPreparationRunner::completed, this,
-            [this](const StartupPreparationResult &result) {
-                if (result.revision != m_preparationRevision) {
-                    return;
-                }
-                if (std::exchange(m_renewingSignIn, false)) {
-                    handleSignInRenewed(result.speech);
-                    return;
-                }
-                m_refinerRefreshed |= result.refinerRefreshAttempted;
-                if (!result.speech.ok) {
-                    m_speechIssues.append({ProviderRole::Speech, m_speechChain.at(m_speechIndex), Stage::Prepare,
-                                           result.speech.kind, result.speech.message});
-                    ++m_speechIndex;
-                    prepareSpeechProvider();
-                    return;
-                }
-                beginStreaming();
+    connect(m_speechChain, &SpeechChain::passedOver, this,
+            [this](const QString &providerId, Stage stage, const ProviderFailure &failure) {
+                m_speechIssues.append({ProviderRole::Speech, providerId, stage, failure.kind, failure.message});
             });
+    connect(m_speechChain, &SpeechChain::secretsResolved, this,
+            [this](const AppSettings &settings) { m_batchSettings = settings; });
+    connect(m_speechChain, &SpeechChain::ready, this, &FileTranscriptionSession::beginStreaming);
+    connect(m_speechChain, &SpeechChain::exhausted, this,
+            [this] { failFile(speechFailureText(m_speechIssues.value(0).message)); });
+    connect(m_speechChain, &SpeechChain::signInRenewed, this, &FileTranscriptionSession::handleSignInRenewed);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
         if (m_running) {
             emit filePartialText(m_index, text);
@@ -312,8 +299,10 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_paths = paths;
     m_options = options;
     m_batchSettings = withBatchChoices(m_settings->snapshot(), *m_providers, options);
-    m_speechChain = providerChain(ProviderRole::Speech, options.speechProviderId,
-                                  m_batchSettings.speech.fallbackProviderIds);
+    // As files always have: the refiner renews first, and the provider
+    // starts once the worker reports, never inside start().
+    m_speechChain->setOptions(
+        {.streamedFinalsOnly = options.streamedFinalsOnly, .readyLater = true, .renewRefinerFirst = true});
     m_batchSettings.speech.timedSegments = true;
     if (options.streamedFinalsOnly) {
         m_batchSettings.speech.codexFinalRetranscribe = false;
@@ -428,83 +417,43 @@ void FileTranscriptionSession::startMicrophone()
     prepareProviders();
 }
 
+// Each file walks the speech chain from the page's provider, as a
+// dictation starts: the first that prepares takes the file. Once audio has
+// gone to one, the file stays with it.
 void FileTranscriptionSession::prepareProviders()
 {
     if (m_options.refinementProviderId != kNoRefinementProvider) {
         m_refiner = m_providers->createRefinementProvider(m_options.refinementProviderId, this);
     }
-    m_speechIndex = 0;
     m_speechIssues.clear();
-    m_refinerRefreshed = false;
-    prepareSpeechProvider();
-}
-
-// Each file walks the speech chain from the page's provider, as a
-// dictation starts: the first that prepares takes the file. Once audio has
-// gone to one, the file stays with it.
-void FileTranscriptionSession::prepareSpeechProvider()
-{
-    for (; m_speechIndex < m_speechChain.size(); ++m_speechIndex) {
-        const QString providerId = m_speechChain.at(m_speechIndex);
-        SpeechSettings speech = m_batchSettings.speech;
-        speech.providerId = providerId;
-        if (const QString problem = spokenLanguageProblem(speech, m_providers->speechProviderLabel(providerId));
-            !problem.isEmpty()) {
-            // The page's own provider fails the file, as before.
-            if (m_speechIndex == 0) {
-                failFile(problem);
-                return;
-            }
-            m_speechIssues.append(
-                {ProviderRole::Speech, providerId, Stage::LanguageSkipped, ProviderFailureKind::Unavailable, problem});
-            continue;
-        }
-        releaseTranscriber();
-        m_transcriber = m_providers->createSpeechProvider(providerId, this);
-        if (!m_transcriber) {
-            m_speechIssues.append({ProviderRole::Speech, providerId, Stage::Prepare, ProviderFailureKind::Unavailable,
-                                   QStringLiteral("Unknown speech provider: %1").arg(providerId)});
-            continue;
-        }
-        if (m_options.streamedFinalsOnly && !m_transcriber->streamsFinalText(speech)) {
-            m_speechIssues.append({ProviderRole::Speech, providerId, Stage::Prepare, ProviderFailureKind::Unavailable,
-                                   QStringLiteral("%1 does not stream final text")
-                                       .arg(m_providers->speechProviderLabel(providerId))});
-            continue;
-        }
-        connectTranscriber();
-
-        std::optional<RefinementRefreshJob> refreshJob;
-        if (m_refiner && !m_refinerRefreshed) {
-            refreshJob = m_refiner->createRefreshJob(m_batchSettings.refinement);
-            if (!refreshJob && m_refiner->requiresRefresh(m_batchSettings.refinement)) {
-                m_refiner->refresh(m_batchSettings.refinement);
-                m_refinerRefreshed = true;
-            }
-        }
-        // Credentials load off the UI thread when the provider offers a job
-        // for it, exactly as a dictation starts.
-        std::optional<SpeechPrepareJob> speechJob = m_transcriber->createPrepareJob(speech);
-        SpeechPrepareResult prepared{true, {}};
-        if (!speechJob) {
-            prepared = m_transcriber->prepare(speech);
-            if (!prepared.ok) {
-                m_speechIssues.append(
-                    {ProviderRole::Speech, providerId, Stage::Prepare, prepared.kind, prepared.message});
-                continue;
-            }
-        }
-        m_preparation->start(++m_preparationRevision, std::move(speechJob), std::move(refreshJob), prepared);
+    m_speechChain->begin(m_options.speechProviderId, m_batchSettings.speech.fallbackProviderIds);
+    // The page's own provider fails the file, as before.
+    if (const QString problem =
+            spokenLanguageProblem(currentSpeechSettings(), m_providers->speechProviderLabel(m_speechChain->currentId()));
+        !problem.isEmpty()) {
+        failFile(problem);
         return;
     }
-    failFile(speechFailureText(m_speechIssues.value(0).message));
+    m_speechChain->prepare(m_batchSettings, m_refiner);
+}
+
+// A fresh transcriber for each provider the file tries, never live
+// dictation's.
+SpeechTranscriber *FileTranscriptionSession::acquireTranscriber(const QString &providerId)
+{
+    releaseTranscriber();
+    m_transcriber = m_providers->createSpeechProvider(providerId, this);
+    if (m_transcriber) {
+        connectTranscriber();
+    }
+    return m_transcriber;
 }
 
 // Why no speech provider could transcribe the file: with fallbacks, each one
 // tried and why; otherwise the provider's own reason.
 QString FileTranscriptionSession::speechFailureText(const QString &providerMessage) const
 {
-    if (m_speechChain.size() == 1) {
+    if (m_speechChain->providerIds().size() == 1) {
         return providerMessage;
     }
     return noSpeechServiceText(m_speechIssues, [this](ProviderRole, const QString &id) {
@@ -536,9 +485,7 @@ void FileTranscriptionSession::connectTranscriber()
     connect(m_transcriber, &SpeechTranscriber::attemptTranscript, this,
             [this](quint64 attemptId, const QString &text) {
                 if (attemptId == m_attemptId) {
-                    m_transcript->replaceFinals(m_attemptBaseText.isEmpty()
-                                                    ? text
-                                                    : m_attemptBaseText + QLatin1Char(' ') + text);
+                    m_transcript->replaceAttemptFinals(text);
                 }
             });
     connect(m_transcriber, &SpeechTranscriber::attemptSegments, this,
@@ -579,10 +526,9 @@ void FileTranscriptionSession::beginStreaming()
     m_providerConnected = false;
     m_reconnectDelayIndex = 0;
     m_inputFinished = false;
-    m_reconnectsLeft = kReconnectsPerFile;
-    m_attemptBaseText.clear();
+    m_attempts.refill();
     m_attemptStartMs = 0;
-    m_attemptClock.start();
+    m_attempts.attemptStarted();
     const quint64 attemptId = ++m_attemptId;
     m_transcriber->startAttempt(attemptId, currentSpeechSettings());
     // A provider failing inside startAttempt() has made way for the next, or
@@ -699,11 +645,11 @@ void FileTranscriptionSession::markAttemptConnected()
 void FileTranscriptionSession::startNextAttempt()
 {
     commitPartial();
-    m_attemptBaseText = m_transcript->text();
+    m_transcript->startAttempt();
     m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
     m_attemptSentFrom = m_sent;
     m_attemptConnected = false;
-    m_attemptClock.start();
+    m_attempts.attemptStarted();
     m_transcriber->startAttempt(++m_attemptId, currentSpeechSettings());
 }
 
@@ -721,7 +667,7 @@ void FileTranscriptionSession::waitToReconnect(const QString &reason)
     if (!m_attemptConnected) {
         rewindTo(m_attemptSentFrom);
     }
-    if (m_attemptConnected && attemptWasStable()) {
+    if (m_attemptConnected && m_attempts.attemptWasStable()) {
         m_reconnectDelayIndex = 0;
     }
     const int delayMs = kRecordingReconnectDelaysMs[m_reconnectDelayIndex];
@@ -752,11 +698,7 @@ bool FileTranscriptionSession::renewSignIn()
         return false;
     }
     qInfo() << "recording renews its speech sign-in";
-    // Off the UI thread when the provider offers a job for it, as at the start.
-    std::optional<SpeechPrepareJob> job = m_transcriber->createPrepareJob(speech);
-    const SpeechPrepareResult prepared = job ? SpeechPrepareResult{true, {}} : m_transcriber->prepare(speech);
-    m_renewingSignIn = true;
-    m_preparation->start(++m_preparationRevision, std::move(job), std::nullopt, prepared);
+    m_speechChain->renewSignIn(m_transcriber, speech);
     return true;
 }
 
@@ -785,7 +727,7 @@ void FileTranscriptionSession::resumeStreaming()
 SpeechSettings FileTranscriptionSession::currentSpeechSettings() const
 {
     SpeechSettings speech = m_batchSettings.speech;
-    speech.providerId = m_speechChain.at(m_speechIndex);
+    speech.providerId = m_speechChain->currentId();
     return speech;
 }
 
@@ -799,14 +741,11 @@ void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
         return;
     }
     // The provider ended a stream before the file did (a clean server close).
-    if (!attemptWasStable()) {
-        handleSpeechFailure({attemptId,
-                             QStringLiteral("The speech stream ended within seconds of starting"),
-                             true,
-                             SpeechPhase::Streaming});
+    if (!m_attempts.attemptWasStable()) {
+        handleSpeechFailure(SpeechAttemptPolicy::endedTooSoon(attemptId));
         return;
     }
-    m_reconnectsLeft = kReconnectsPerFile;
+    m_attempts.refill();
     qInfo() << "file transcription stream ended by the provider; rolling over";
     if (m_options.streamedFinalsOnly) {
         reconnect();
@@ -838,24 +777,20 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     // sent again.
     const bool nothingReachedAService = m_attemptStartMs == 0 && !m_providerConnected
         && (m_sent == 0 || failure.phase == SpeechPhase::Connect);
-    const ProviderAttemptIssue issue{ProviderRole::Speech, m_speechChain.at(m_speechIndex),
+    const ProviderAttemptIssue issue{ProviderRole::Speech, m_speechChain->currentId(),
                                      nothingReachedAService ? Stage::Connect : Stage::Interrupted, failure.kind,
                                      failure.message};
-    if (nothingReachedAService && permitsProviderFallback(failure.kind) && m_speechIndex + 1 < m_speechChain.size()) {
+    if (nothingReachedAService && m_speechChain->fallbackRemains(failure.kind)) {
         m_sendTimer.stop();
         m_speechIssues.append(issue);
         releaseTranscriber();
-        ++m_speechIndex;
-        prepareSpeechProvider();
+        m_speechChain->prepareNext(m_batchSettings, m_refiner);
         return;
     }
-    if (attemptWasStable()) {
-        m_reconnectsLeft = kReconnectsPerFile;
-    }
+    m_attempts.refillIfAttemptWasStable();
     const bool reconnectable = !m_inputFinished && failure.retryable
         && failure.phase == SpeechPhase::Streaming;
-    if (reconnectable && m_reconnectsLeft > 0) {
-        --m_reconnectsLeft;
+    if (reconnectable && m_attempts.takeReconnect()) {
         qInfo().noquote() << "file transcription stream dropped, reconnecting: " + failure.message;
         startNextAttempt();
         return;
@@ -863,11 +798,6 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     m_speechIssues.append(issue);
     // As a dictation: words the provider did return are the file's result.
     failFile(m_transcript->isEmpty() ? speechFailureText(failure.message) : failure.message);
-}
-
-bool FileTranscriptionSession::attemptWasStable() const
-{
-    return m_attemptClock.isValid() && m_attemptClock.elapsed() >= DictationSession::stableAttemptMs();
 }
 
 void FileTranscriptionSession::finishTranscription()
@@ -992,9 +922,7 @@ void FileTranscriptionSession::releaseFileResources()
 {
     m_sendTimer.stop();
     m_reconnectTimer.stop();
-    m_preparation->cancel();
-    ++m_preparationRevision;
-    m_renewingSignIn = false;
+    m_speechChain->cancel();
     m_signInRefused = false;
     // Signals from a retired provider must not reach the next file.
     if (m_decoder) {

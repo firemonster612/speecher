@@ -322,6 +322,7 @@ set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/StartupPreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
   src/providers/ProviderRegistry.cpp
+  src/providers/SpeechChain.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
@@ -330,6 +331,7 @@ set(SPEECHER_WORKFLOW_HEADERS
   src/dictation/StartupPreparationRunner.h
   src/dictation/TranscriptPipeline.h
   src/providers/ProviderRegistry.h
+  src/providers/SpeechChain.h
 )
 
 set(SPEECHER_PROVIDER_SOURCES

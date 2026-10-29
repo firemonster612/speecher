@@ -4,10 +4,10 @@
 #include "core/ProviderTable.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
+#include "providers/SpeechChain.h"
 #include "transcribe/Subtitles.h"
 
 #include <QByteArray>
-#include <QElapsedTimer>
 #include <QList>
 #include <QMetaType>
 #include <QObject>
@@ -25,7 +25,6 @@ namespace speecher {
 
 class ProviderRegistry;
 class SettingsStore;
-class StartupPreparationRunner;
 class TranscriptState;
 
 enum class TranscriptDestination {
@@ -187,7 +186,7 @@ private:
     void startFile();
     void startMicrophone();
     void prepareProviders();
-    void prepareSpeechProvider();
+    SpeechTranscriber *acquireTranscriber(const QString &providerId);
     void connectTranscriber();
     void releaseTranscriber();
     void beginStreaming();
@@ -196,7 +195,6 @@ private:
     void handleAttemptCompleted(quint64 attemptId);
     void handleSpeechFailure(const SpeechFailure &failure);
     QString speechFailureText(const QString &providerMessage) const;
-    bool attemptWasStable() const;
     void finishTranscription();
     void refine(const QString &raw);
     void completeFile(const QString &text);
@@ -219,7 +217,10 @@ private:
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
-    StartupPreparationRunner *m_preparation;
+    // The page's speech provider, then the saved fallbacks; each file walks
+    // it from the start.
+    SpeechChain *m_speechChain;
+    SpeechAttemptPolicy m_attempts;
     TranscriptState *m_transcript;
     QTimer m_sendTimer;
     // Runs while a recording waits to reconnect a dropped stream.
@@ -267,31 +268,17 @@ private:
     bool m_attemptConnected = false;
     // A stream of the current provider has connected.
     bool m_providerConnected = false;
-    // The preparation running renews a recording's sign-in.
-    bool m_renewingSignIn = false;
     // The service turned the sign-in down since a stream last connected.
     bool m_signInRefused = false;
     bool m_inputFinished = false;
     // An attempt is open for the audio; false while a provider prepares.
     bool m_streaming = false;
     quint64 m_attemptId = 0;
-    quint64 m_preparationRevision = 0;
-    int m_reconnectsLeft = 0;
-    QElapsedTimer m_attemptClock;
     // Where in the file the current attempt's audio starts.
     qint64 m_attemptStartMs = 0;
-    // Text committed before the current attempt; a whole-attempt transcript
-    // replaces only what followed it.
-    QString m_attemptBaseText;
     TranscriptPipelineResult m_pipeline;
-    // The page's speech provider, then the saved fallbacks; each file walks
-    // it from the start, and says why each one it passed could not help.
-    QStringList m_speechChain;
-    int m_speechIndex = 0;
+    // Why each speech provider the file passed could not help.
     QList<ProviderAttemptIssue> m_speechIssues;
-    // The refiner's sign-in renewed for this file: once, not for each
-    // speech provider tried.
-    bool m_refinerRefreshed = false;
 };
 
 } // namespace speecher

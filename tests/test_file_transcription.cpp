@@ -471,8 +471,8 @@ private slots:
 
     void rollsOverAStreamThatEndsMidFile()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         m_script.expireFirstStream = true;
         const QString audio = m_dir.filePath(QStringLiteral("long.wav"));
         writeWav(audio);
@@ -494,8 +494,8 @@ private slots:
     // audio starts 100 ms into the file.
     void timesUsableSegmentsFromTheStartOfTheFile()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         m_script.expireFirstStream = true;
         m_script.segments = {{0, 200, QStringLiteral("heard")},
                              {300, 300, QStringLiteral("no length")},
@@ -728,10 +728,27 @@ private slots:
         QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
-    // The refiner's sign-in renews once per file, not again for each speech
-    // provider tried.
+    void theRefinerRenewsOncePerFile_data()
+    {
+        QTest::addColumn<bool>("everySpeechProviderFails");
+        QTest::newRow("a fallback prepares") << false;
+        QTest::newRow("none prepares") << true;
+    }
+
+    // The refiner's sign-in renews once per file, before the speech
+    // providers prepare, not again for each one tried.
     void theRefinerRenewsOncePerFile()
     {
+        QFETCH(bool, everySpeechProviderFails);
+        if (everySpeechProviderFails) {
+            m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                               [](QObject *parent) {
+                                                   auto *speech = new FakeSpeechTranscriber(parent);
+                                                   speech->prepareResult = {false, QStringLiteral("signed out"),
+                                                                            ProviderFailureKind::Unavailable};
+                                                   return speech;
+                                               });
+        }
         FakeRefiner *refiner = nullptr;
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [&refiner](QObject *parent) {
@@ -764,6 +781,46 @@ private slots:
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
         QCOMPARE(refreshes, 1);
+        QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().failed(),
+                 everySpeechProviderFails);
+    }
+
+    // A provider that ends its first stream before any audio went to it
+    // turned the file away: the next one takes the file from its start.
+    void aStreamEndingBeforeAnyAudioHandsTheFileOver()
+    {
+        // Read as the file lets the provider go: it is deleted after.
+        int codexStarts = -1;
+        qsizetype codexChunks = -1;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codexStarts, &codexChunks](QObject *parent) {
+                                               auto *codex = new FakeSpeechTranscriber(parent);
+                                               codex->onStartAttempt = [codex] { codex->emitCompletion(); };
+                                               codex->onCancelAttempt = [codex, &codexStarts, &codexChunks](quint64) {
+                                                   codexStarts = codex->startCalls;
+                                                   codexChunks = codex->audioChunks.size();
+                                               };
+                                               return codex;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QCOMPARE(codexStarts, 1);
+        QCOMPARE(codexChunks, 0);
+        QCOMPARE(m_script.attempts, 1);
+        QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
     // The last provider failing once it started is named with the others.
@@ -826,7 +883,10 @@ private slots:
 
         QVERIFY(session.startListening(&microphone, options));
         QVERIFY(microphone.active);
-        QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
+        // The provider starts once the worker reports, never inside the call.
+        QVERIFY(codex);
+        QCOMPARE(codex->startCalls, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!codex->audioChunks.isEmpty(), 10000);
         microphone.pushAudio(microphoneChunk(8000));
         codex->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect, ProviderFailureKind::Network);
         microphone.pushAudio(microphoneChunk(8000));
@@ -987,8 +1047,8 @@ private slots:
     // stopping writes the last one.
     void aRecordingAppendsFinalsInOrderThroughARollover()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
         settings.setSpeechProvider(QStringLiteral("codex"));
@@ -1589,8 +1649,8 @@ private slots:
     // turns down unforeseen renews once before the stream counts as stopped.
     void aRecordingRenewsItsSignInBeforeTheNextStream()
     {
-        DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        SpeechAttemptPolicy::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
         settings.setSpeechProvider(QStringLiteral("codex"));

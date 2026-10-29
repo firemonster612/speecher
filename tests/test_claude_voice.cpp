@@ -218,10 +218,10 @@ private slots:
                                      QDateTime::currentDateTimeUtc().addSecs(3600)));
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        const int stableAttemptMs = DictationSession::stableAttemptMs();
-        DictationSession::setStableAttemptMs(0);
+        const int stableAttemptMs = SpeechAttemptPolicy::stableAttemptMs();
+        SpeechAttemptPolicy::setStableAttemptMs(0);
         const auto restore = qScopeGuard([stableAttemptMs] {
-            DictationSession::setStableAttemptMs(stableAttemptMs);
+            SpeechAttemptPolicy::setStableAttemptMs(stableAttemptMs);
         });
 
         QList<QWebSocket *> peers;
