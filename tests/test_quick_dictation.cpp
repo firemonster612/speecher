@@ -384,10 +384,11 @@ private slots:
         const auto state = [&dictation] { return dictation.property("state").toString(); };
         QSignalSpy changed(&dictation, &QuickDictation::errorChanged);
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
+        // Exactly the same error again is shown again, not passed over.
+        dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
+        QCOMPARE(changed.count(), 2);
         QuickDictation::setErrorDismissMs(300);
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
-        // Shown again, not passed over as unchanged.
-        QCOMPARE(changed.count(), 2);
         QTRY_COMPARE(state(), QStringLiteral("idle"));
     }
 

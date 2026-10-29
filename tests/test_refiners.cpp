@@ -117,9 +117,10 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         // Fed every 50 ms, a 1.5 s limit lapses only if the progress stops, not
-        // when a busy runner holds this thread back for a moment.
-        OpenAiRefiner openAi(nullptr, 1500, 5000);
-        AnthropicApiRefiner claude(nullptr, 1500, 5000);
+        // when a busy runner holds this thread back for a moment. The overall
+        // deadline, which fails with the same message, stays out of the way.
+        OpenAiRefiner openAi(nullptr, 1500, 60000);
+        AnthropicApiRefiner claude(nullptr, 1500, 60000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
