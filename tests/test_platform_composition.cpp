@@ -2890,7 +2890,7 @@ private slots:
         startClient.connectToServer(server.fullServerName());
         QVERIFY(server.waitForNewConnection(2000));
         controller.ipcCommands()->handle({IpcCommand::RecordStart, {}, {dir.filePath(QStringLiteral("call.md"))}},
-                                    server.nextPendingConnection());
+                                         server.nextPendingConnection());
         platform->microphoneAnswer(true);
         QTRY_VERIFY(controller.isRecording());
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::Recording);

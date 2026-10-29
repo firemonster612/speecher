@@ -7,11 +7,11 @@
 #include <QDate>
 #include <QObject>
 
-#include "app/SingleInstanceIpc.h"
+#include "app/PlatformComposition.h"
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
+#include "dictation/DictationTypes.h"
 #include "platform/GlobalShortcutBinder.h"
-
 
 namespace speecher {
 

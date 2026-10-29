@@ -889,9 +889,7 @@ ApplicationController::~ApplicationController()
     disconnect(m_recording, nullptr, m_ipcCommands, nullptr);
     // The gesture asks the session whether one is active; no binder may reach
     // it once the session is gone.
-    for (const GlobalShortcutRole role : globalShortcutRoles) {
-        disconnect(shortcutBinder(role), nullptr, m_shortcutGesture, nullptr);
-    }
+    disconnect(m_shortcutBinder, nullptr, m_shortcutGesture, nullptr);
     delete m_updates;
     m_updates = nullptr;
     delete m_recording;
