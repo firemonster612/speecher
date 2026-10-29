@@ -33,6 +33,8 @@ class QuickSystem final : public QObject {
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
+    Q_PROPERTY(QString pasteNeed READ pasteNeed NOTIFY changed)
+    Q_PROPERTY(bool wordsStayCopied READ wordsStayCopied NOTIFY changed)
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
     Q_PROPERTY(bool canRemove READ canRemove CONSTANT)
@@ -76,6 +78,13 @@ public:
     // The steps the default paste takes with Paste with, in the order core's
     // delivery tries them: insert, press, copy (TextDelivery::pasteRoute).
     QStringList pasteRoute() const;
+    // What that paste needs of the computer to get past the clipboard:
+    // accessibility, keyboard, either, or empty for nothing
+    // (TextDelivery::pasteNeed).
+    QString pasteNeed() const;
+    // Whether dictated words only reach the clipboard, since what the paste
+    // needs is missing. Accessibility on for the session counts.
+    bool wordsStayCopied() const;
     // Whether this computer has the virtual keyboard: its check, its setup
     // and pasting with it alone (OutputMethod::hasVirtualKeyboard).
     bool hasVirtualKeyboard() const;

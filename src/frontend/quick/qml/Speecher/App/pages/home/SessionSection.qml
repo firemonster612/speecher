@@ -32,8 +32,7 @@ Section {
     // Where words can neither be inserted (no accessibility) nor pasted
     // with keys (no virtual keyboard), they only reach the clipboard;
     // unless that is what was chosen, Home says so without blocking.
-    readonly property bool clipboardOnly: Health.wordsStayCopied(System.accessibility, Health.find(System.checks, "virtualKeyboardHealth"),
-                                                                 Settings.values.globalPasteRule, Settings.values.outputMethod)
+    readonly property bool clipboardOnly: System.wordsStayCopied
     readonly property var blockers: [
         access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
         Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },

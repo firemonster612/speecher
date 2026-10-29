@@ -53,7 +53,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   setup assistant). The virtual keyboard turns on only after its typing test
   (`VirtualKeyboardTest`) puts core's test text in the field.
   `System.pasteRoute` is the steps core's delivery takes (insert, press,
-  copy). The phone code lives from `startPhoneTransfer()` to
+  copy), `pasteNeed` what they need of the computer and `wordsStayCopied`
+  whether that is missing, so words only reach the clipboard. The phone code lives from `startPhoneTransfer()` to
   `stopPhoneTransfer()`, and `QrCode` draws it through the host's
   `image://qr` provider. `uninstall` reports in `System.removal` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in

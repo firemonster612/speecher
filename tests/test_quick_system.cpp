@@ -4,6 +4,7 @@
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
+#include "core/PasteRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
@@ -313,6 +314,31 @@ private slots:
         QCOMPARE(afterSetUp(false, true), ydotool);
         QCOMPARE(afterSetUp(true, true), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(afterSetUp(true, false), ydotool);
+    }
+
+    // Words stay on the clipboard while neither accessibility nor a ready
+    // virtual keyboard gets them in, unless copying was the choice.
+    void wordsStayCopiedUntilTheKeyboardIsReady()
+    {
+        ApplicationController controller(true);
+        QVERIFY(!controller.accessibilityEnabled());
+        FakeKeyboard missing;
+        QuickSystem without(&controller, missing.system(), quietRemoval());
+        QCOMPARE(without.pasteNeed(), QStringLiteral("either"));
+        QVERIFY(without.wordsStayCopied());
+
+        controller.settings()->setYdotoolEnabled(true);
+        FakeKeyboard ready;
+        ready.installed = YdotoolSetupState::Ready;
+        QuickSystem with(&controller, ready.system(), quietRemoval());
+        QVERIFY(!with.wordsStayCopied());
+
+        controller.settings()->edit([](AppSettings &settings) {
+            setPasteRule(settings.output.pasteRules, PasteRuleScope::Global, {}, PasteMethod::ClipboardOnly);
+            return true;
+        });
+        QCOMPARE(without.pasteNeed(), QString());
+        QVERIFY(!without.wordsStayCopied());
     }
 
     // Removal goes on past a failed step and reports each one.
@@ -753,45 +779,6 @@ private slots:
         }
         QCOMPARE(stepIds.contains(QStringLiteral("delivery")), onLinux);
         QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
-    }
-
-    // Home warns that words stay on the clipboard only when what delivery
-    // needs is missing and that wasn't the choice: direct insertion needs
-    // accessibility (on for the session counts), the virtual keyboard only
-    // its keys, and otherwise either does.
-    void wordsStayCopiedOnlyWithNoWayIn()
-    {
-        QQmlEngine engine;
-        const std::unique_ptr<QObject> probe = createQml(engine, R"(
-            import QtQuick
-            import Speecher.App
-            QtObject {
-                readonly property var off: ({ id: "virtualKeyboardHealth", state: "attention" })
-                readonly property var on: ({ id: "virtualKeyboardHealth", state: "ok" })
-                readonly property bool sessionOnly: Health.wordsStayCopied(true, off, "standard_paste", "automatic")
-                readonly property bool noWayIn: Health.wordsStayCopied(false, off, "standard_paste", "automatic")
-                readonly property bool chosen: Health.wordsStayCopied(false, off, "clipboard_only", "automatic")
-                readonly property bool keysOn: Health.wordsStayCopied(false, on, "standard_paste", "automatic")
-                readonly property bool noKeyboardCheck: Health.wordsStayCopied(false, {}, "standard_paste", "automatic")
-                readonly property bool insertOnly: Health.wordsStayCopied(false, on, "direct_insert", "automatic")
-                readonly property bool keysOnly: Health.wordsStayCopied(true, off, "standard_paste", "ydotool")
-            }
-        )");
-        QVERIFY(probe);
-        QVERIFY(!probe->property("sessionOnly").toBool());
-        QVERIFY(probe->property("noWayIn").toBool());
-        QVERIFY(!probe->property("chosen").toBool());
-        // macOS presses ⌘V only with accessibility, so there keys alone don't
-        // get words in.
-#ifdef Q_OS_MACOS
-        const bool needsAccessibility = true;
-#else
-        const bool needsAccessibility = false;
-#endif
-        QCOMPARE(probe->property("keysOn").toBool(), needsAccessibility);
-        QCOMPARE(probe->property("noKeyboardCheck").toBool(), needsAccessibility);
-        QVERIFY(probe->property("insertOnly").toBool());
-        QCOMPARE(probe->property("keysOnly").toBool(), !needsAccessibility);
     }
 
     // The App rules page's app type rows need accessibility to know the app.

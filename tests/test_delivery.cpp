@@ -381,6 +381,37 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 #endif
     }
 
+    // Words stay on the clipboard only when what delivery needs is missing
+    // and that wasn't the choice: direct insertion needs accessibility (on
+    // for the session counts), the virtual keyboard only its keys, and
+    // otherwise either does.
+    void wordsStayCopiedOnlyWithNoWayIn()
+    {
+        const auto staysCopied = [](const char *outputMethod, PasteMethod pasteMethod, bool accessibility,
+                                    bool keyboard) {
+            OutputSettings settings;
+            settings.method = QString::fromLatin1(outputMethod);
+            return TextDelivery::wordsStayCopied(TextDelivery::pasteNeed(settings, pasteMethod), accessibility,
+                                                 keyboard);
+        };
+        const char *automatic = OutputMethod::Automatic;
+        QVERIFY(!staysCopied(automatic, PasteMethod::ClipboardOnly, false, false));
+        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, true, false));
+        QVERIFY(staysCopied(automatic, PasteMethod::DirectInsert, false, true));
+#ifdef Q_OS_MACOS
+        // macOS presses ⌘V only with accessibility, so keys alone don't get
+        // words in.
+        QVERIFY(staysCopied(automatic, PasteMethod::StandardPaste, false, true));
+#elif defined(Q_OS_WIN)
+        // Windows presses Ctrl+V itself.
+        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, false, false));
+#else
+        QVERIFY(staysCopied(automatic, PasteMethod::StandardPaste, false, false));
+        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, false, true));
+        QVERIFY(staysCopied(OutputMethod::Ydotool, PasteMethod::StandardPaste, true, false));
+#endif
+    }
+
     void pasteRulesPreferApplicationThenCategoryThenGlobal()
     {
         const QList<PasteRule> rules{
