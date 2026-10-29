@@ -34,16 +34,16 @@ QString EndpointTranscriptRefiner::label() const
     return QStringLiteral("Custom Endpoint");
 }
 
-bool EndpointTranscriptRefiner::requiresRefresh(const RefinementSettings &) const
+bool EndpointTranscriptRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const
 {
     return false;
 }
 
-void EndpointTranscriptRefiner::refresh(const RefinementSettings &)
+void EndpointTranscriptRefiner::refresh(const RefinementSettings &, const AccountSettings &)
 {
 }
 
-RefinementPrepareResult EndpointTranscriptRefiner::prepare(const RefinementSettings &settings)
+RefinementPrepareResult EndpointTranscriptRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
 {
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
     if (endpoint.apiBase.isEmpty()) {
@@ -62,9 +62,10 @@ RefinementPrepareResult EndpointTranscriptRefiner::prepare(const RefinementSetti
 void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
                                        const QStringList &vocabulary,
                                        const RefinementContext &context,
-                                       const RefinementSettings &settings)
+                                       const RefinementSettings &settings,
+                                       const AccountSettings &accounts)
 {
-    const RefinementPrepareResult prepared = prepare(settings);
+    const RefinementPrepareResult prepared = prepare(settings, accounts);
     if (!prepared.ok) {
         emit failed({prepared.kind, prepared.message});
         return;

@@ -694,11 +694,11 @@ void FileTranscriptionSession::reconnect()
 bool FileTranscriptionSession::renewSignIn()
 {
     const SpeechSettings speech = currentSpeechSettings();
-    if (!m_signInRefused && !m_transcriber->requiresRefresh(speech)) {
+    if (!m_signInRefused && !m_transcriber->requiresRefresh(speech, m_batchSettings.accounts)) {
         return false;
     }
     qInfo() << "recording renews its speech sign-in";
-    m_speechChain->renewSignIn(m_transcriber, speech);
+    m_speechChain->renewSignIn(m_transcriber, speech, m_batchSettings.accounts);
     return true;
 }
 
@@ -841,7 +841,7 @@ void FileTranscriptionSession::refine(const QString &raw)
         completeFile(m_pipeline.deliveryFallback);
         return;
     }
-    const RefinementPrepareResult prepared = m_refiner->prepare(refinement);
+    const RefinementPrepareResult prepared = m_refiner->prepare(refinement, m_batchSettings.accounts);
     if (!prepared.ok) {
         m_current.error = prepared.message;
         completeFile(m_pipeline.deliveryFallback);
@@ -859,7 +859,8 @@ void FileTranscriptionSession::refine(const QString &raw)
     m_refiner->refine(m_pipeline.refinementInput,
                       m_pipeline.refinementVocabulary,
                       m_pipeline.refinementContext,
-                      refinement);
+                      refinement,
+                      m_batchSettings.accounts);
 }
 
 void FileTranscriptionSession::completeFile(const QString &text)

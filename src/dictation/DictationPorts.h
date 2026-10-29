@@ -221,13 +221,17 @@ public:
     using QObject::QObject;
     virtual QString id() const = 0;
     virtual QString label() const = 0;
-    virtual bool requiresRefresh(const SpeechSettings &settings) const = 0;
-    virtual std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings)
+    // The sign-in methods take the accounts a provider that signs in reads
+    // its credentials from.
+    virtual bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const = 0;
+    virtual std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings,
+                                                             const AccountSettings &accounts)
     {
         Q_UNUSED(settings);
+        Q_UNUSED(accounts);
         return std::nullopt;
     }
-    virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
+    virtual SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) = 0;
     // Whether prepare() renews a sign-in that expires, so one the service
     // turned down may be taken once it has run again. A key from Settings
     // is not renewed.
@@ -283,14 +287,18 @@ public:
     using QObject::QObject;
     virtual QString id() const = 0;
     virtual QString label() const = 0;
-    virtual bool requiresRefresh(const RefinementSettings &settings) const = 0;
-    virtual std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings)
+    // As SpeechTranscriber's, these and refine() take the accounts a provider
+    // that signs in reads its credentials from.
+    virtual bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const = 0;
+    virtual std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings,
+                                                                 const AccountSettings &accounts)
     {
         Q_UNUSED(settings);
+        Q_UNUSED(accounts);
         return std::nullopt;
     }
-    virtual void refresh(const RefinementSettings &settings) = 0;
-    virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
+    virtual void refresh(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
+    virtual RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
     virtual bool supportsScreenshotContext(const RefinementSettings &settings) const
     {
         Q_UNUSED(settings);
@@ -299,7 +307,8 @@ public:
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
                         const RefinementContext &context,
-                        const RefinementSettings &settings) = 0;
+                        const RefinementSettings &settings,
+                        const AccountSettings &accounts) = 0;
     virtual void cancel() = 0;
 
 signals:

@@ -75,7 +75,7 @@ public:
     void prepareNext(const AppSettings &settings, TranscriptRefiner *refiner = nullptr);
     // Renews the sign-in of the provider the session is on, for its next
     // stream; ends in signInRenewed().
-    void renewSignIn(SpeechTranscriber *transcriber, const SpeechSettings &speech);
+    void renewSignIn(SpeechTranscriber *transcriber, const SpeechSettings &speech, const AccountSettings &accounts);
     // Nothing running reports back.
     void cancel();
 

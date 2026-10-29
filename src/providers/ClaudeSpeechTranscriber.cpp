@@ -2,9 +2,9 @@
 
 #include "core/ProviderTable.h"
 
+#include "providers/AnthropicAuthProvider.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
-#include "providers/CliProxyCredentials.h"
 
 #include <memory>
 
@@ -12,28 +12,16 @@ namespace speecher {
 
 namespace {
 
-SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QString *accessToken)
+SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QString *accessToken)
 {
-    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
-        const CliProxyCredentialResult credentials = CliProxyCredentials::loadWithRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.claudeCliproxyAccount);
-        if (accessToken) {
-            *accessToken = credentials.ok ? credentials.accessToken : QString();
-        }
-        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
+    const AnthropicAuth auth = AnthropicAuthProvider::forSpeech(accounts).resolve(true);
+    // Warms the version cache the voice client reads as it connects, for
+    // Claude Code's own sign-in only.
+    if (accounts.anthropicAuthMode != QStringLiteral("cliproxy")) {
+        ClaudeCredentials::installedVersion();
     }
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
-    ClaudeCredentials::installedVersion();
-    if (!credentials.ok) {
-        if (accessToken) {
-            accessToken->clear();
-        }
-        return {false, credentials.error, credentials.kind, credentials.httpStatus};
-    }
-    if (accessToken) {
-        *accessToken = credentials.accessToken;
-    }
-    return {true, QString()};
+    *accessToken = auth.accessToken;
+    return {auth.ok, auth.error, auth.kind, auth.httpStatus};
 }
 
 } // namespace
@@ -53,22 +41,19 @@ QString ClaudeSpeechTranscriber::label() const
     return QStringLiteral("Claude");
 }
 
-bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
+bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const
 {
-    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
-        return CliProxyCredentials::accountNeedsRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.claudeCliproxyAccount);
-    }
-    return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
+    return AnthropicAuthProvider::forSpeech(accounts).requiresRefresh();
 }
 
-std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings)
+std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings,
+                                                                          const AccountSettings &accounts)
 {
     auto accessToken = std::make_shared<QString>();
     SpeechPrepareJob job;
-    job.showRefreshIndicator = requiresRefresh(settings);
-    job.run = [settings, accessToken] {
-        return loadClaudeAccessToken(settings, accessToken.get());
+    job.showRefreshIndicator = requiresRefresh(settings, accounts);
+    job.run = [accounts, accessToken] {
+        return loadClaudeAccessToken(accounts, accessToken.get());
     };
     job.apply = [this, accessToken](const SpeechPrepareResult &result) {
         if (result.ok) {
@@ -80,9 +65,9 @@ std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const 
     return job;
 }
 
-SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &settings)
+SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &, const AccountSettings &accounts)
 {
-    return loadClaudeAccessToken(settings, &m_accessToken);
+    return loadClaudeAccessToken(accounts, &m_accessToken);
 }
 
 void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)

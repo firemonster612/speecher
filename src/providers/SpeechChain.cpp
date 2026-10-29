@@ -80,10 +80,11 @@ void SpeechChain::prepareNext(const AppSettings &settings, TranscriptRefiner *re
     prepare(settings, refiner);
 }
 
-void SpeechChain::renewSignIn(SpeechTranscriber *transcriber, const SpeechSettings &speech)
+void SpeechChain::renewSignIn(SpeechTranscriber *transcriber, const SpeechSettings &speech,
+                              const AccountSettings &accounts)
 {
-    std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(speech);
-    const SpeechPrepareResult prepared = job ? SpeechPrepareResult{true, {}} : transcriber->prepare(speech);
+    std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(speech, accounts);
+    const SpeechPrepareResult prepared = job ? SpeechPrepareResult{true, {}} : transcriber->prepare(speech, accounts);
     m_runner->start(0, std::move(job), std::nullopt, prepared);
     m_renewing = true;
 }
@@ -133,9 +134,10 @@ void SpeechChain::walk()
             return;
         }
 
-        std::optional<SpeechPrepareJob> speechJob = transcriber->createPrepareJob(speech);
+        const AccountSettings &accounts = m_settings.accounts;
+        std::optional<SpeechPrepareJob> speechJob = transcriber->createPrepareJob(speech, accounts);
         const bool speechRefreshRequired =
-            speechJob ? speechJob->showRefreshIndicator : transcriber->requiresRefresh(speech);
+            speechJob ? speechJob->showRefreshIndicator : transcriber->requiresRefresh(speech, accounts);
         // The refiner's sign-in renews alongside, so refinement need not wait
         // for it later; offline, refinement passes it over.
         std::optional<RefinementRefreshJob> refinerJob;
@@ -143,9 +145,9 @@ void SpeechChain::walk()
         const RefinementSettings &refinement = m_settings.refinement;
         if (m_refiner && !m_refinerRefreshed
             && !offlineFor(ProviderRole::Refinement, refinement.providerId, m_settings)) {
-            refinerJob = m_refiner->createRefreshJob(refinement);
+            refinerJob = m_refiner->createRefreshJob(refinement, accounts);
             refinerRefreshRequired =
-                refinerJob ? refinerJob->showRefreshIndicator : m_refiner->requiresRefresh(refinement);
+                refinerJob ? refinerJob->showRefreshIndicator : m_refiner->requiresRefresh(refinement, accounts);
         }
         if (speechRefreshRequired || refinerRefreshRequired) {
             emit renewingSignIn();
@@ -157,7 +159,7 @@ void SpeechChain::walk()
 
         SpeechPrepareResult speechPrepared{true, {}};
         if (!speechJob) {
-            speechPrepared = transcriber->prepare(speech);
+            speechPrepared = transcriber->prepare(speech, accounts);
             if (!speechPrepared.ok) {
                 emit passedOver(providerId, Stage::Prepare,
                                 {speechPrepared.kind, speechPrepared.message, speechPrepared.httpStatus});
@@ -179,7 +181,7 @@ void SpeechChain::walk()
 
 void SpeechChain::renewRefiner()
 {
-    m_refiner->refresh(m_settings.refinement);
+    m_refiner->refresh(m_settings.refinement, m_settings.accounts);
     m_refinerRefreshed = true;
 }
 

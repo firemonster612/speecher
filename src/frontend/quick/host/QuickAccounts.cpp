@@ -140,11 +140,12 @@ void noteSignIn(ApplicationController *controller, std::optional<ProviderId> pro
 }
 
 // The settings a sign-in check reads, other than secrets.
-QStringList signInSettings(const RefinementSettings &settings)
+QStringList signInSettings(const AppSettings &settings)
 {
-    return {settings.openAiAuthMode,   settings.openAiCliproxyAccount, settings.anthropicAuthMode,
-            settings.anthropicCliproxyAccount, settings.cliproxyOauthDir, settings.cliproxyBaseUrl,
-            settings.claudeCredentialsPath};
+    const AccountSettings &accounts = settings.accounts;
+    return {accounts.openAiAuthMode,   accounts.openAiCliproxyAccount, accounts.anthropicAuthMode,
+            accounts.anthropicCliproxyAccount, accounts.cliproxyOauthDir, settings.refinement.cliproxyBaseUrl,
+            accounts.claudeCredentialsPath};
 }
 
 } // namespace
@@ -179,7 +180,7 @@ void QuickAccounts::start()
     if (std::exchange(m_started, true)) {
         return;
     }
-    m_signInSettings = signInSettings(m_controller->settings()->dictationSnapshot().refinement);
+    m_signInSettings = signInSettings(m_controller->settings()->dictationSnapshot());
     readSavedSecrets();
     recheckAll();
 }
@@ -308,7 +309,7 @@ void QuickAccounts::recheckAll()
 void QuickAccounts::checkSpeechSignIns()
 {
     m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
-                                                             m_controller->settings()->dictationSnapshot().speech);
+                                                             m_controller->settings()->dictationSnapshot());
 }
 
 void QuickAccounts::readSavedSecrets()
@@ -422,7 +423,7 @@ void QuickAccounts::settingsSaved()
     if (!m_started) {
         return;
     }
-    const QStringList settings = signInSettings(m_controller->settings()->dictationSnapshot().refinement);
+    const QStringList settings = signInSettings(m_controller->settings()->dictationSnapshot());
     if (settings == m_signInSettings) {
         return;
     }

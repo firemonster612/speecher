@@ -187,8 +187,8 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
     const bool proxyPreset = endpoint
         && (refinement.endpoint.preset == cliproxy || refinement.endpoint.useCliproxyKey);
     const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
-        && ((provider == ProviderId::OpenAi && refinement.openAiAuthMode == cliproxy)
-            || (provider == ProviderId::Anthropic && refinement.anthropicAuthMode == cliproxy));
+        && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == cliproxy)
+            || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == cliproxy));
     if (refines && (proxyPreset || remoteProxy)) {
         secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
     }
@@ -292,14 +292,14 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
     setOpenAiSpeed(draft.refinement.openAiSpeed);
-    setOpenAiAuthMode(draft.refinement.openAiAuthMode);
-    setOpenAiCliproxyAccount(draft.refinement.openAiCliproxyAccount);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
     setAnthropicFastMode(draft.refinement.anthropicFastMode);
-    setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
-    setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
-    setCliproxyOauthDir(draft.refinement.cliproxyOauthDirConfigured);
+    setOpenAiAuthMode(draft.accounts.openAiAuthMode);
+    setOpenAiCliproxyAccount(draft.accounts.openAiCliproxyAccount);
+    setAnthropicAuthMode(draft.accounts.anthropicAuthMode);
+    setAnthropicCliproxyAccount(draft.accounts.anthropicCliproxyAccount);
+    setCliproxyOauthDir(draft.accounts.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
     save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
     setRefinementEndpointSettings(draft.refinement.endpoint);

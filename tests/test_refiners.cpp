@@ -22,24 +22,25 @@ static QString liveRefine(const QString &rawTranscript,
                           QString *error)
 {
     RefinementSettings settings;
-    settings.anthropicAuthMode = QStringLiteral("cliproxy");
+    AccountSettings accounts;
+    accounts.anthropicAuthMode = QStringLiteral("cliproxy");
     const QStringList oauthDirCandidates{
         QDir::homePath() + QStringLiteral("/.cli-proxy-api"),
         QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth"),
     };
-    settings.cliproxyOauthDir = oauthDirCandidates.first();
+    accounts.cliproxyOauthDir = oauthDirCandidates.first();
     for (const QString &candidate : oauthDirCandidates) {
         if (!QDir(candidate).entryList({QStringLiteral("claude-*.json")}, QDir::Files).isEmpty()) {
-            settings.cliproxyOauthDir = candidate;
+            accounts.cliproxyOauthDir = candidate;
             break;
         }
     }
     RefinementContext context;
     AnthropicTranscriptRefiner refiner;
-    refiner.refresh(settings);
+    refiner.refresh(settings, accounts);
     QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
     QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-    refiner.refine(rawTranscript, vocabulary, context, settings);
+    refiner.refine(rawTranscript, vocabulary, context, settings, accounts);
     const bool finished = QTest::qWaitFor(
         [&] { return !completed.isEmpty() || !failed.isEmpty(); }, 60000);
     if (!finished) {
@@ -1711,24 +1712,25 @@ private slots:
         settings.cliproxyBaseUrl = baseUrl;
         settings.cliproxyApiKey = apiKey;
         RefinementContext context;
+        AccountSettings accounts;
 
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
         AnthropicTranscriptRefiner anthropic;
         QSignalSpy anthropicCompleted(&anthropic, &TranscriptRefiner::completed);
         QSignalSpy anthropicFailed(&anthropic, &TranscriptRefiner::failed);
-        anthropic.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        anthropic.refine(QStringLiteral("hello world this is a test"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(!anthropicCompleted.isEmpty() || !anthropicFailed.isEmpty(), 60000);
         QVERIFY2(anthropicFailed.isEmpty(),
                  qPrintable(anthropicFailed.isEmpty() ? QString() : anthropicFailed.first().first().value<ProviderFailure>().message));
         QVERIFY(!anthropicCompleted.first().first().toString().trimmed().isEmpty());
 
-        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
         settings.openAiModel = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_OPENAI_MODEL",
                                                     QStringLiteral("gpt-5.6-luna"));
         OpenAiTranscriptRefiner openAi(nullptr);
         QSignalSpy openAiCompleted(&openAi, &TranscriptRefiner::completed);
         QSignalSpy openAiFailed(&openAi, &TranscriptRefiner::failed);
-        openAi.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        openAi.refine(QStringLiteral("hello world this is a test"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(!openAiCompleted.isEmpty() || !openAiFailed.isEmpty(), 60000);
         QVERIFY2(openAiFailed.isEmpty(),
                  qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().value<ProviderFailure>().message));
@@ -1911,11 +1913,12 @@ private slots:
         RefinementContext context;
 
         // No local account files anywhere near these paths: remote mode must not need them.
-        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/cliproxy/oauth");
+        AccountSettings accounts;
+        accounts.cliproxyOauthDir = QStringLiteral("/nonexistent/cliproxy/oauth");
 
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
         AnthropicTranscriptRefiner anthropic;
-        anthropic.refine(QStringLiteral("hello there"), {}, context, settings);
+        anthropic.refine(QStringLiteral("hello there"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(claudeServer.hasPendingConnections(), 1000);
         QTcpSocket *claudeSocket = claudeServer.nextPendingConnection();
         QVERIFY(claudeSocket);
@@ -1926,9 +1929,9 @@ private slots:
         claudeSocket->close();
 
         settings.cliproxyBaseUrl = baseUrl(codexServer);
-        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
         OpenAiTranscriptRefiner openAi(nullptr);
-        openAi.refine(QStringLiteral("hello there"), {}, context, settings);
+        openAi.refine(QStringLiteral("hello there"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(codexServer.hasPendingConnections(), 1000);
         QTcpSocket *codexSocket = codexServer.nextPendingConnection();
         QVERIFY(codexSocket);
@@ -1966,12 +1969,12 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-other@example.com.json"),
                                      QStringLiteral("codex"), QStringLiteral("other-token"), valid));
 
-        RefinementSettings settings;
-        settings.openAiAuthMode = QStringLiteral("cliproxy");
-        settings.openAiCliproxyAccount = QStringLiteral("codex-selected@example.com.json");
-        settings.cliproxyOauthDir = dir.path();
+        AccountSettings accounts;
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiCliproxyAccount = QStringLiteral("codex-selected@example.com.json");
+        accounts.cliproxyOauthDir = dir.path();
         OpenAiTranscriptRefiner refiner(nullptr);
-        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings);
+        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob({}, accounts);
         QVERIFY(job.has_value());
 
         const RefinementRefreshResult result = job->run();
@@ -2023,16 +2026,17 @@ private slots:
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
-        RefinementSettings settings;
+        const RefinementSettings settings;
+        const AccountSettings accounts;
         OpenAiTranscriptRefiner refiner(nullptr);
-        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings);
+        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings, accounts);
         QVERIFY(job.has_value());
         const RefinementRefreshResult result = job->run();
         QVERIFY2(result.ok, qPrintable(result.message));
         job->apply(result);
         QCOMPARE(tokenRequests, 1);
 
-        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        const RefinementPrepareResult prepared = refiner.prepare(settings, accounts);
         QVERIFY2(prepared.ok, qPrintable(prepared.message));
         QCOMPARE(tokenRequests, 1);
     }
@@ -2040,13 +2044,14 @@ private slots:
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
         settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:1");
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
         RefinementContext context;
 
         AnthropicTranscriptRefiner refiner;
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-        refiner.refine(QStringLiteral("hello"), {}, context, settings);
+        refiner.refine(QStringLiteral("hello"), {}, context, settings, accounts);
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("cliproxy/apiKey")));
     }
@@ -2062,12 +2067,13 @@ private slots:
 
         AnthropicTranscriptRefiner refiner;
         RefinementSettings settings;
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
-        settings.cliproxyOauthDir = dir.path();
         settings.anthropicEndpointBase = QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort());
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
         RefinementContext context;
 
-        refiner.refine(QStringLiteral("hello there"), {}, context, settings);
+        refiner.refine(QStringLiteral("hello there"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *first = server.nextPendingConnection();
         QVERIFY(first);
@@ -2077,7 +2083,7 @@ private slots:
 
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
                                      QStringLiteral("token-two"), valid));
-        refiner.refine(QStringLiteral("hello again"), {}, context, settings);
+        refiner.refine(QStringLiteral("hello again"), {}, context, settings, accounts);
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *second = server.nextPendingConnection();
         QVERIFY(second);
@@ -2106,12 +2112,12 @@ private slots:
                           .toJson());
         account.close();
 
-        RefinementSettings settings;
-        settings.anthropicAuthMode = QStringLiteral("cliproxy");
-        settings.cliproxyOauthDir = dir.path();
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
 
         AnthropicTranscriptRefiner refiner;
-        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        const RefinementPrepareResult prepared = refiner.prepare({}, accounts);
         QVERIFY(!prepared.ok);
         QVERIFY2(prepared.message.contains(QStringLiteral("no refresh token")),
                  qPrintable(prepared.message));

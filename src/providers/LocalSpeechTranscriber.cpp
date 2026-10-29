@@ -72,12 +72,12 @@ QString LocalSpeechTranscriber::label() const
     return QStringLiteral("Local Model");
 }
 
-bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &) const
+bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &) const
 {
     return false;
 }
 
-SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settings)
+SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
 {
     QString error;
     const bool ready = !downloadedModelPath(settings.local.modelId, &error).isEmpty();

@@ -258,14 +258,14 @@ const SettingRow settingRows[] = {
      },
      [](const QVariant &v) { return validatePasteRules(applicationPasteRules(v)).join(QLatin1Char(' ')); }},
 
-    FIELD_ROW("openAiAuthMode", refinement.openAiAuthMode),
-    FIELD_ROW("anthropicAuthMode", refinement.anthropicAuthMode),
+    FIELD_ROW("openAiAuthMode", accounts.openAiAuthMode),
+    FIELD_ROW("anthropicAuthMode", accounts.anthropicAuthMode),
     // A file name from Accounts.cliproxyAccounts.
-    FIELD_ROW("openAiCliproxyAccount", refinement.openAiCliproxyAccount),
-    FIELD_ROW("anthropicCliproxyAccount", refinement.anthropicCliproxyAccount),
+    FIELD_ROW("openAiCliproxyAccount", accounts.openAiCliproxyAccount),
+    FIELD_ROW("anthropicCliproxyAccount", accounts.anthropicCliproxyAccount),
     // What was typed, not the directory detected from it.
-    {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyOauthDirConfigured); },
-     [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyOauthDirConfigured = v.toString().trimmed(); }},
+    {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.accounts.cliproxyOauthDirConfigured); },
+     [](AppSettings &s, const QVariant &v) { s.accounts.cliproxyOauthDirConfigured = v.toString().trimmed(); }},
     {"cliproxyBaseUrl", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyBaseUrl); },
      [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyBaseUrl = endpointServerBase(v.toString()); }},
 

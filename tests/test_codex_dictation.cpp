@@ -511,21 +511,22 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
                                      QStringLiteral("claude"), QStringLiteral("claude-token"), valid));
 
-        SpeechSettings settings;
-        settings.claudeAuthMode = QStringLiteral("cliproxy");
-        settings.codexAuthMode = QStringLiteral("cliproxy");
-        settings.cliproxyOauthDir = dir.path();
+        const SpeechSettings speech;
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
 
         CodexSpeechTranscriber codex;
-        QVERIFY(codex.prepare(settings).ok);
-        QVERIFY(!codex.requiresRefresh(settings));
+        QVERIFY(codex.prepare(speech, accounts).ok);
+        QVERIFY(!codex.requiresRefresh(speech, accounts));
 
         ClaudeSpeechTranscriber claude;
-        QVERIFY(claude.prepare(settings).ok);
-        QVERIFY(!claude.requiresRefresh(settings));
+        QVERIFY(claude.prepare(speech, accounts).ok);
+        QVERIFY(!claude.requiresRefresh(speech, accounts));
 
-        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/oauth");
-        const SpeechPrepareResult missing = codex.prepare(settings);
+        accounts.cliproxyOauthDir = QStringLiteral("/nonexistent/oauth");
+        const SpeechPrepareResult missing = codex.prepare(speech, accounts);
         QVERIFY(!missing.ok);
         QVERIFY(missing.message.contains(QStringLiteral("No CLI Proxy API codex accounts")));
     }
@@ -756,8 +757,9 @@ private slots:
                  "Live Codex PCM must be mono 16 kHz signed 16-bit raw audio");
 
         CodexSpeechTranscriber transcriber;
-        SpeechSettings settings = SettingsStore().snapshot().speech;
-        const SpeechPrepareResult prepared = transcriber.prepare(settings);
+        const AppSettings saved = SettingsStore().snapshot();
+        SpeechSettings settings = saved.speech;
+        const SpeechPrepareResult prepared = transcriber.prepare(settings, saved.accounts);
         QVERIFY2(prepared.ok, qPrintable(prepared.message));
 
         QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);

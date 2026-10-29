@@ -1554,14 +1554,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
     settings.speech.language = spokenLanguage();
     settings.speech.local = localSpeechSettings();
-    settings.speech.claudeAuthMode = anthropicAuthMode();
-    settings.speech.codexAuthMode = openAiAuthMode();
-    settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
-    settings.speech.cliproxyOauthDir = cliproxyOauthDir();
-    settings.speech.claudeCliproxyAccount = anthropicCliproxyAccount();
-    settings.speech.codexCliproxyAccount = openAiCliproxyAccount();
     settings.speech.endpoint = speechEndpointSettings();
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
@@ -1579,22 +1573,15 @@ AppSettings SettingsCodecs::snapshot() const
         value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
     settings.refinement.style = refinementStyle();
     settings.refinement.openAiModel = openAiModel();
-    settings.refinement.openAiAuthMode = openAiAuthMode();
     settings.refinement.openAiEffort = openAiEffort();
     settings.refinement.openAiSpeed = openAiSpeed();
-    settings.refinement.openAiCliproxyAccount = openAiCliproxyAccount();
     settings.refinement.anthropicModel = anthropicModel();
-    settings.refinement.anthropicAuthMode = anthropicAuthMode();
     settings.refinement.anthropicEffort = anthropicEffort();
     settings.refinement.anthropicFastMode = anthropicFastMode();
-    settings.refinement.anthropicCliproxyAccount = anthropicCliproxyAccount();
-    settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
-    settings.refinement.cliproxyOauthDirConfigured = configuredCliproxyOauthDir();
     settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();
     settings.refinement.endpoint = refinementEndpointSettings();
     settings.refinement.localRunner = localRunnerSettings();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();
     settings.refinement.writingProfiles = writingProfileSettings();
     settings.refinement.writingProfileOverrides = writingProfileOverrides();
@@ -1605,6 +1592,14 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.customSystemPrompt = customSystemPrompt();
     settings.refinement.customTones = customTones();
     settings.refinement.customCleanupLevels = customCleanupLevels();
+
+    settings.accounts.openAiAuthMode = openAiAuthMode();
+    settings.accounts.anthropicAuthMode = anthropicAuthMode();
+    settings.accounts.openAiCliproxyAccount = openAiCliproxyAccount();
+    settings.accounts.anthropicCliproxyAccount = anthropicCliproxyAccount();
+    settings.accounts.cliproxyOauthDir = cliproxyOauthDir();
+    settings.accounts.cliproxyOauthDirConfigured = configuredCliproxyOauthDir();
+    settings.accounts.claudeCredentialsPath = claudeCredentialsPath();
 
     settings.output.method = outputMethod();
     settings.output.format = outputFormat();

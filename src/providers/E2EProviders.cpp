@@ -16,8 +16,8 @@ public:
 
     QString id() const override { return QStringLiteral("e2e-stub"); }
     QString label() const override { return QStringLiteral("E2E stub"); }
-    bool requiresRefresh(const SpeechSettings &) const override { return false; }
-    SpeechPrepareResult prepare(const SpeechSettings &) override { return {true, {}}; }
+    bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override { return false; }
+    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override { return {true, {}}; }
 
     // A couple of words every 200 ms, so the live preview visibly grows.
     void startAttempt(quint64 attemptId, const SpeechSettings &) override
@@ -71,9 +71,9 @@ public:
 
     QString id() const override { return QStringLiteral("e2e-stub"); }
     QString label() const override { return QStringLiteral("E2E stub"); }
-    bool requiresRefresh(const RefinementSettings &) const override { return false; }
-    void refresh(const RefinementSettings &) override {}
-    RefinementPrepareResult prepare(const RefinementSettings &) override { return {true, {}}; }
+    bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override { return false; }
+    void refresh(const RefinementSettings &, const AccountSettings &) override {}
+    RefinementPrepareResult prepare(const RefinementSettings &, const AccountSettings &) override { return {true, {}}; }
     bool supportsScreenshotContext(const RefinementSettings &) const override { return true; }
 
     // A word every 100 ms after a pause long enough for the Refining… shimmer
@@ -81,7 +81,8 @@ public:
     void refine(const QString &,
                 const QStringList &,
                 const RefinementContext &,
-                const RefinementSettings &) override
+                const RefinementSettings &,
+                const AccountSettings &) override
     {
         const quint64 generation = ++m_generation;
         const QStringList words = kRefinedSentence.split(QLatin1Char(' '));

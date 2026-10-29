@@ -3,70 +3,14 @@
 #include "core/EndpointUrl.h"
 #include "core/ProviderTable.h"
 #include "providers/AnthropicApiRefiner.h"
+#include "providers/AnthropicAuthProvider.h"
 #include "providers/ClaudeCredentials.h"
-#include "providers/CliProxyCredentials.h"
 
 #include <QDebug>
 
 #include <memory>
 
 namespace speecher {
-
-RefinementPrepareResult loadAnthropicAccessToken(const RefinementSettings &settings,
-                                                 QString *accessToken,
-                                                 bool refreshExpired)
-{
-    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
-        // Remote proxy: authenticate with the CLI Proxy API server key; the
-        // server picks the account and refreshes its own oauth tokens.
-        if (!settings.cliproxyBaseUrl.isEmpty()) {
-            if (settings.cliproxyApiKey.isEmpty()) {
-                if (accessToken) {
-                    accessToken->clear();
-                }
-                return {false, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), ProviderFailureKind::Unavailable};
-            }
-            if (accessToken) {
-                *accessToken = settings.cliproxyApiKey;
-            }
-            return {true, QString()};
-        }
-        const CliProxyCredentialResult credentials = refreshExpired
-            ? CliProxyCredentials::loadWithRefresh(settings.cliproxyOauthDir, QStringLiteral("claude"),
-                                                   settings.anthropicCliproxyAccount)
-            : CliProxyCredentials::load(settings.cliproxyOauthDir, QStringLiteral("claude"),
-                                        settings.anthropicCliproxyAccount);
-        if (accessToken) {
-            *accessToken = credentials.ok ? credentials.accessToken : QString();
-        }
-        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
-    }
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(
-        settings.claudeCredentialsPath,
-        refreshExpired);
-    if (!credentials.ok) {
-        if (accessToken) {
-            accessToken->clear();
-        }
-        return {false, credentials.error, credentials.kind, credentials.httpStatus};
-    }
-    if (accessToken) {
-        *accessToken = credentials.accessToken;
-    }
-    return {true, QString()};
-}
-
-bool anthropicSignInNeedsRefresh(const RefinementSettings &settings)
-{
-    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
-        if (!settings.cliproxyBaseUrl.isEmpty()) {
-            return false; // the server owns and refreshes its accounts
-        }
-        return CliProxyCredentials::accountNeedsRefresh(
-            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
-    }
-    return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
-}
 
 AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
     : TranscriptRefiner(parent)
@@ -87,9 +31,10 @@ QString AnthropicTranscriptRefiner::label() const
     return QStringLiteral("Claude");
 }
 
-bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
+bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
+                                                 const AccountSettings &accounts) const
 {
-    return anthropicSignInNeedsRefresh(settings);
+    return AnthropicAuthProvider::forRefinement(accounts, settings).requiresRefresh();
 }
 
 bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
@@ -97,15 +42,18 @@ bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSetti
     return !settings.anthropicModel.trimmed().isEmpty();
 }
 
-std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
+std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
+                                                                                 const AccountSettings &accounts)
 {
+    const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts, settings);
     auto accessToken = std::make_shared<QString>();
     RefinementRefreshJob job;
-    job.showRefreshIndicator = requiresRefresh(settings);
-    job.run = [settings, accessToken] {
-        const RefinementPrepareResult result = loadAnthropicAccessToken(settings, accessToken.get(), true);
+    job.showRefreshIndicator = signIn.requiresRefresh();
+    job.run = [signIn, accessToken] {
+        const AnthropicAuth auth = signIn.resolve(true);
         ClaudeCredentials::installedVersion();
-        return RefinementRefreshResult{result.ok, result.message, result.kind, result.httpStatus};
+        *accessToken = auth.accessToken;
+        return RefinementRefreshResult{auth.ok, auth.error, auth.kind, auth.httpStatus};
     };
     job.apply = [this, accessToken](const RefinementRefreshResult &result) {
         if (result.ok) {
@@ -117,35 +65,39 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
     return job;
 }
 
-void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings)
+void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings, const AccountSettings &accounts)
 {
-    loadAnthropicAccessToken(settings, &m_accessToken, true);
+    prepare(settings, accounts);
 }
 
-RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings)
+RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings,
+                                                           const AccountSettings &accounts)
 {
     // Refresh an expired token here rather than reporting it expired: a token
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. The refresh
     // helpers take the same one-second account lock the speech path uses.
-    return loadAnthropicAccessToken(settings, &m_accessToken, true);
+    const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(true);
+    m_accessToken = auth.accessToken;
+    return {auth.ok, auth.error, auth.kind, auth.httpStatus};
 }
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         const QStringList &vocabulary,
                                         const RefinementContext &context,
-                                        const RefinementSettings &settings)
+                                        const RefinementSettings &settings,
+                                        const AccountSettings &accounts)
 {
-    qInfo().noquote() << "anthropic refinement mode=" + settings.anthropicAuthMode + " model=" + settings.anthropicModel;
-    if (m_accessToken.isEmpty() || settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
-        const RefinementPrepareResult prepared = prepare(settings);
+    qInfo().noquote() << "anthropic refinement mode=" + accounts.anthropicAuthMode + " model=" + settings.anthropicModel;
+    const bool cliproxy = accounts.anthropicAuthMode == QStringLiteral("cliproxy");
+    if (m_accessToken.isEmpty() || cliproxy) {
+        const RefinementPrepareResult prepared = prepare(settings, accounts);
         if (!prepared.ok) {
             emit failed({prepared.kind, prepared.message, prepared.httpStatus});
             return;
         }
     }
-    const bool remoteCliproxy = settings.anthropicAuthMode == QStringLiteral("cliproxy")
-        && !settings.cliproxyBaseUrl.isEmpty();
+    const bool remoteCliproxy = cliproxy && !settings.cliproxyBaseUrl.isEmpty();
     m_apiRefiner->refine(rawTranscript,
                          vocabulary,
                          settings.bindingVocabulary,

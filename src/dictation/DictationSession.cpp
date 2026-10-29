@@ -327,7 +327,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_providerHistory = {};
     m_listeningMs = 0;
     setState(DictationState::Starting);
-    qInfo().noquote() << "startListening credentialsPath=" + settings.speech.claudeCredentialsPath
+    qInfo().noquote() << "startListening credentialsPath=" + settings.accounts.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_speechWarning.clear();
     m_lastTranscript.clear();
@@ -1175,7 +1175,8 @@ void DictationSession::prepareRefiner()
                                              *m_sessionSettings);
         return;
     }
-    if (std::optional<RefinementRefreshJob> refresh = m_refiner->createRefreshJob(refinerSettings())) {
+    if (std::optional<RefinementRefreshJob> refresh =
+            m_refiner->createRefreshJob(refinerSettings(), m_sessionSettings->accounts)) {
         enterRefining();
         m_refinerPreparation->start(++m_preparationRevision, std::nullopt, std::move(refresh), {true, {}},
                                     ProviderRole::Refinement);
@@ -1208,7 +1209,7 @@ void DictationSession::finishRefinerPreparation(const StartupPreparationResult &
 void DictationSession::startRefiner()
 {
     const RefinementSettings refinement = refinerSettings();
-    const RefinementPrepareResult prepared = m_refiner->prepare(refinement);
+    const RefinementPrepareResult prepared = m_refiner->prepare(refinement, m_sessionSettings->accounts);
     if (!prepared.ok) {
         handleRefinementFailure({prepared.kind, prepared.message, prepared.httpStatus}, Stage::Prepare);
         return;
@@ -1236,7 +1237,8 @@ void DictationSession::startRefiner()
     m_refiner->refine(pipeline.refinementInput,
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,
-                      refinement);
+                      refinement,
+                      m_sessionSettings->accounts);
 }
 
 void DictationSession::enterRefining()

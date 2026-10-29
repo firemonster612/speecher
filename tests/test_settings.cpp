@@ -556,12 +556,12 @@ private slots:
         QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
         settings.setAnthropicCliproxyAccount(QStringLiteral("claude-user@example.com.json"));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
-        QCOMPARE(settings.snapshot().refinement.openAiCliproxyAccount, QStringLiteral("codex-user@example.com.json"));
-        QCOMPARE(settings.snapshot().refinement.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
+        QCOMPARE(settings.snapshot().accounts.openAiCliproxyAccount, QStringLiteral("codex-user@example.com.json"));
+        QCOMPARE(settings.snapshot().accounts.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
         // The default is autodetected from the machine: whichever CLI Proxy API
         // auth dir holds accounts, or the stock ~/.cli-proxy-api on a machine
         // with neither.
-        const QString oauthDir = settings.snapshot().refinement.cliproxyOauthDir;
+        const QString oauthDir = settings.snapshot().accounts.cliproxyOauthDir;
         QVERIFY(oauthDir.endsWith(QStringLiteral("cliproxy-api/oauth"))
                 || oauthDir.endsWith(QStringLiteral(".cli-proxy-api")));
         settings.setAnthropicEffort(QStringLiteral("high"));
@@ -723,8 +723,8 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        draft.refinement.openAiCliproxyAccount = QStringLiteral("codex-user@example.com.json");
-        draft.refinement.anthropicCliproxyAccount = QStringLiteral("claude-user@example.com.json");
+        draft.accounts.openAiCliproxyAccount = QStringLiteral("codex-user@example.com.json");
+        draft.accounts.anthropicCliproxyAccount = QStringLiteral("claude-user@example.com.json");
 
         settings.applySnapshot(draft);
 
@@ -980,14 +980,14 @@ private slots:
         QCOMPARE(settings.configuredCliproxyOauthDir(), QString());
 
         AppSettings draft = settings.snapshot();
-        draft.refinement.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
+        draft.accounts.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
         settings.applySnapshot(draft);
         QCOMPARE(settings.configuredCliproxyOauthDir(), QStringLiteral("/custom/cliproxy"));
         QCOMPARE(settings.cliproxyOauthDir(), QStringLiteral("/custom/cliproxy"));
 
         // Clearing the field returns to automatic detection.
         draft = settings.snapshot();
-        draft.refinement.cliproxyOauthDirConfigured.clear();
+        draft.accounts.cliproxyOauthDirConfigured.clear();
         settings.applySnapshot(draft);
         QCOMPARE(settings.configuredCliproxyOauthDir(), QString());
     }
@@ -1304,14 +1304,14 @@ private slots:
                  QStringLiteral("formal"));
         QCOMPARE(snapshot.refinement.useTargetContext, false);
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
-        QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
+        QCOMPARE(snapshot.accounts.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
         QCOMPARE(snapshot.refinement.openAiSpeed, QStringLiteral("standard"));
         QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-5"));
-        QCOMPARE(snapshot.refinement.anthropicAuthMode, QStringLiteral("oauth"));
+        QCOMPARE(snapshot.accounts.anthropicAuthMode, QStringLiteral("oauth"));
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
         QCOMPARE(snapshot.refinement.anthropicFastMode, false);
-        QVERIFY(snapshot.refinement.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
+        QVERIFY(snapshot.accounts.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);

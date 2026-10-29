@@ -800,7 +800,7 @@ private slots:
         // Local models get no key terms. Given to Whisper as a prompt, terms
         // like these replaced whole clips with other text.
         settings.vocabulary = {QStringLiteral("Speecher"), QStringLiteral("Kirigami")};
-        QVERIFY(transcriber.prepare(settings).ok);
+        QVERIFY(transcriber.prepare(settings, {}).ok);
         QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
         QVERIFY(clip.open(QIODevice::ReadOnly));
         const QByteArray pcm = clip.readAll();
@@ -976,7 +976,7 @@ private slots:
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
 
-        const SpeechPrepareResult prepared = transcriber.prepare(settings);
+        const SpeechPrepareResult prepared = transcriber.prepare(settings, {});
         QVERIFY(!prepared.ok);
         QCOMPARE(prepared.kind, ProviderFailureKind::Unavailable);
         transcriber.startAttempt(7, settings);

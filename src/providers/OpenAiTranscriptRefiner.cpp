@@ -31,9 +31,10 @@ QString OpenAiTranscriptRefiner::label() const
     return QStringLiteral("ChatGPT");
 }
 
-bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
+bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
+                                              const AccountSettings &accounts) const
 {
-    return OpenAiAuthProvider::forRefinement(m_secretStore, settings).requiresCodexOauthRefresh();
+    return OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).requiresCodexOauthRefresh();
 }
 
 bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
@@ -41,9 +42,10 @@ bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings
     return !settings.openAiModel.trimmed().isEmpty();
 }
 
-std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
+std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
+                                                                              const AccountSettings &accounts)
 {
-    if (!requiresRefresh(settings)) {
+    if (!requiresRefresh(settings, accounts)) {
         return std::nullopt;
     }
 
@@ -53,9 +55,9 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     // Every source the mode allows, as prepare() resolves them, so a sign-in
     // that can't renew still leaves an API key to use. The worker reads the
     // keyring through a SecretStore of its own, never the GUI thread's.
-    job.run = [settings, resolved] {
+    job.run = [settings, accounts, resolved] {
         SettingsStore source;
-        *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), settings).resolve();
+        *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts, settings).resolve();
         return RefinementRefreshResult{resolved->ok, resolved->status, resolved->kind, resolved->httpStatus};
     };
     job.apply = [this, resolved](const RefinementRefreshResult &result) {
@@ -67,15 +69,17 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     return job;
 }
 
-void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
+void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings, const AccountSettings &accounts)
 {
-    const OpenAiAuth refreshed = OpenAiAuthProvider::forRefinement(m_secretStore, settings).refreshCodexOauth();
+    const OpenAiAuth refreshed =
+        OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).refreshCodexOauth();
     if (!refreshed.ok) {
         qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
     }
 }
 
-RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
+RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings,
+                                                        const AccountSettings &accounts)
 {
     if (std::exchange(m_authResolvedByJob, false)) {
         return {true, m_auth.status};
@@ -84,19 +88,20 @@ RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSetting
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. resolve()
     // takes the same one-second credential lock the speech path uses.
-    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, settings).resolve();
+    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).resolve();
     return {m_auth.ok, m_auth.status, m_auth.kind, m_auth.httpStatus};
 }
 
 void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                                      const QStringList &vocabulary,
                                      const RefinementContext &context,
-                                     const RefinementSettings &settings)
+                                     const RefinementSettings &settings,
+                                     const AccountSettings &accounts)
 {
     // CLI Proxy API rewrites its token files as it refreshes them, so a cached
     // token can go stale while the file stays valid; reload on every request.
-    if (!m_auth.ok || settings.openAiAuthMode == QStringLiteral("cliproxy")) {
-        const RefinementPrepareResult prepared = prepare(settings);
+    if (!m_auth.ok || accounts.openAiAuthMode == QStringLiteral("cliproxy")) {
+        const RefinementPrepareResult prepared = prepare(settings, accounts);
         if (!prepared.ok) {
             emit failed({prepared.kind, prepared.message, prepared.httpStatus});
             return;

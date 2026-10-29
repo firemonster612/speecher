@@ -37,16 +37,27 @@ OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
 {
 }
 
-OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore, const RefinementSettings &settings)
+OpenAiAuthProvider OpenAiAuthProvider::forSpeech(const AccountSettings &accounts)
+{
+    const QString cliproxy = QStringLiteral("cliproxy");
+    return OpenAiAuthProvider(nullptr,
+                              accounts.openAiAuthMode == cliproxy ? cliproxy : QStringLiteral("codex_oauth"),
+                              accounts.openAiCliproxyAccount,
+                              accounts.cliproxyOauthDir);
+}
+
+OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore,
+                                                     const AccountSettings &accounts,
+                                                     const RefinementSettings &refinement)
 {
     return OpenAiAuthProvider(secretStore,
-                              settings.openAiAuthMode,
-                              settings.openAiCliproxyAccount,
-                              settings.cliproxyOauthDir,
+                              accounts.openAiAuthMode,
+                              accounts.openAiCliproxyAccount,
+                              accounts.cliproxyOauthDir,
                               {},
                               {},
-                              settings.cliproxyBaseUrl,
-                              settings.cliproxyApiKey);
+                              refinement.cliproxyBaseUrl,
+                              refinement.cliproxyApiKey);
 }
 
 struct ApiKeyCandidate {
