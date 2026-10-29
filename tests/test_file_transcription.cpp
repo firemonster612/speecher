@@ -1218,7 +1218,8 @@ private slots:
         for (int i = 0; i < 320; ++i) {
             microphone->pushAudio(piece);
         }
-        QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 10000);
+        // As fast as the CPU allows: about 10 s on a busy macOS runner.
+        QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 30000);
     }
 
     // The Custom Endpoint records too: the pause after each utterance, or
@@ -1288,7 +1289,8 @@ private slots:
             microphone->pushAudio(microphoneChunk(0));
         }
         microphone->pushAudio(microphoneChunk(8000));
-        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Yes.")}, 5000);
+        // As fast as the CPU allows: a few seconds on a busy macOS runner.
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Yes.")}, 20000);
         QCOMPARE(server.requests.size(), 1);
         QCOMPARE(uploadedAudioBytes(server.requests.first()), 9600 + microphoneChunk(8000).size());
     }
