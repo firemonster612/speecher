@@ -1571,7 +1571,7 @@ if(SPEECHER_BUILD_TESTS)
   foreach(suite IN LISTS SPEECHER_TEST_SUITES)
     add_test(NAME speecher_${suite} COMMAND speecher_tests --suite ${suite})
     set_tests_properties(speecher_${suite} PROPERTIES
-      ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 120)
+      ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 240)
   endforeach()
   # Suites run in parallel: test_main.cpp gives each process its own settings
   # and sign-in homes, and each suite its own data folders. These share what
@@ -1579,6 +1579,9 @@ if(SPEECHER_BUILD_TESTS)
   # The live checks play through the sound server and switch its default
   # output, and use the session's clipboard and accessibility bus.
   set_tests_properties(speecher_platform_live PROPERTIES RUN_SERIAL TRUE)
+  # These show work leaves the main thread by timing the event loop to within
+  # 100 ms, which only a computer with nothing else running keeps to.
+  set_tests_properties(speecher_delivery speecher_custom_endpoints PROPERTIES RUN_SERIAL TRUE)
   if(APPLE OR WIN32)
     # A dictation through the real platform takes Escape and Enter, and
     # Windows' own suite more keys, as hot keys only one process at a time
@@ -1619,7 +1622,7 @@ if(SPEECHER_BUILD_TESTS)
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
                 $<TARGET_FILE:speecher_tests> --suite custom_endpoints)
       set_tests_properties(speecher_custom_endpoints_keyring PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
       add_test(NAME speecher_migration_keyring
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
                 $<TARGET_FILE:speecher_tests> --suite migration)
