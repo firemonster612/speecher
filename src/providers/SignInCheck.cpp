@@ -204,8 +204,8 @@ bool signInInUse(SignInService service, const AppSettings &settings)
 {
     const RefinementSettings &refinement = settings.refinement;
     if (service == SignInService::CliProxy) {
-        return refinement.openAiAuthMode == QLatin1String("cliproxy")
-            || refinement.anthropicAuthMode == QLatin1String("cliproxy") || !refinement.cliproxyBaseUrl.isEmpty();
+        return refinement.openAiAuthMode == cliproxyMode || refinement.anthropicAuthMode == cliproxyMode
+            || !refinement.cliproxyBaseUrl.isEmpty();
     }
     QStringList speech = QStringList{settings.speech.providerId} + settings.speech.fallbackProviderIds;
     QStringList refiners = QStringList{refinement.providerId} + refinement.fallbackProviderIds;

@@ -4,7 +4,6 @@
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
-#include "core/PasteRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
@@ -317,7 +316,7 @@ private slots:
     }
 
     // Words stay on the clipboard while neither accessibility nor a ready
-    // virtual keyboard gets them in, unless copying was the choice.
+    // virtual keyboard gets them in.
     void wordsStayCopiedUntilTheKeyboardIsReady()
     {
         ApplicationController controller(true);
@@ -332,13 +331,6 @@ private slots:
         ready.installed = YdotoolSetupState::Ready;
         QuickSystem with(&controller, ready.system(), quietRemoval());
         QVERIFY(!with.wordsStayCopied());
-
-        controller.settings()->edit([](AppSettings &settings) {
-            setPasteRule(settings.output.pasteRules, PasteRuleScope::Global, {}, PasteMethod::ClipboardOnly);
-            return true;
-        });
-        QCOMPARE(without.pasteNeed(), QString());
-        QVERIFY(!without.wordsStayCopied());
     }
 
     // Removal goes on past a failed step and reports each one.

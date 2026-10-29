@@ -356,7 +356,6 @@ QString shortcutRowId(GlobalShortcutRole role)
     return {};
 }
 
-// The row of either table with this id, or nullptr.
 } // namespace
 
 QStringList shortcutKeys(const QString &display)

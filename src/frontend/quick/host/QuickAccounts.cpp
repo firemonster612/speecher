@@ -1,6 +1,7 @@
 #include "frontend/quick/host/QuickAccounts.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -146,6 +147,9 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
 {
     g_instance = this;
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickAccounts::settingsSaved);
+    // Setup's fallback offer saves providers without a snapshot, so which
+    // sign-ins are in use may change with it.
+    connect(controller->localSetup(), &LocalSetup::changed, this, &QuickAccounts::servicesChanged);
 }
 
 QuickAccounts::~QuickAccounts()

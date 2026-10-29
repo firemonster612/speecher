@@ -31,7 +31,8 @@ class QuickAccounts final : public QObject {
     // check's state, which the rest describe: detail is core's line, server
     // the CLI Proxy API server the sign-in goes through, directory the account
     // directory it reads, each possibly empty; they stay until the next check
-    // answers. inUse says the settings sign in through it (signInInUse). The speech providers' sign-ins (Codex, Claude Voice) are
+    // answers. inUse says the settings sign in through it (signInInUse).
+    // The speech providers' sign-ins (Codex, Claude Voice) are
     // ProviderAvailability's, which Models shows; renewing a service checks
     // those again.
     Q_PROPERTY(QVariantList services READ services NOTIFY servicesChanged)

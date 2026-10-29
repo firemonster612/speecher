@@ -1,9 +1,11 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
 #include "common/test_auth.h"
 #include "common/test_http.h"
+#include "common/test_local_setup.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -284,9 +286,10 @@ private slots:
         QCOMPARE(card->property("detail").toString(), codexFix);
     }
 
-    // A card's state is toned only while something signs in through it, a
-    // writing profile's own service included.
-    void aServiceCardTonesOnlyWhatIsUsed()
+    // A service is in use while the settings sign in through it, a writing
+    // profile's own service included, and Accounts says when that changes.
+    // The card's lookup starts Accounts, which then follows saves.
+    void aServiceIsInUseWhileTheSettingsSignInThroughIt()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
@@ -312,6 +315,32 @@ private slots:
         QVERIFY(!snapshot.refinement.writingProfiles.isEmpty());
         snapshot.refinement.writingProfiles.first().speechProvider = QStringLiteral("claude");
         controller.settings()->applySnapshot(snapshot);
+        QVERIFY(changed.count() > 0);
+        QVERIFY(inUse());
+    }
+
+    // Setup's fallback offer saves a provider without a snapshot; Accounts
+    // still says the sign-in it uses is now in use.
+    void aSetupFallbackOfferChangesWhatIsInUse()
+    {
+        ApplicationController controller(true);
+        SettingsStore *store = controller.settings();
+        store->setSpeechProvider(QStringLiteral("local"));
+        store->setSpeechFallbackProviders({});
+        store->setRefinementProvider(QStringLiteral("none"));
+        store->setRefinementFallbackProviders({});
+        QuickAccounts accounts(&controller);
+        const auto inUse = [&accounts] {
+            return service(accounts, QStringLiteral("anthropic")).value(QStringLiteral("inUse")).toBool();
+        };
+        QVERIFY(!inUse());
+        LocalSetupTestAccess::setRunners(*controller.localSetup(),
+                                         {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
+                                           QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
+
+        QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
+        controller.localSetup()->acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("anthropic"));
+        QCOMPARE(store->refinementProvider(), QStringLiteral("anthropic"));
         QVERIFY(changed.count() > 0);
         QVERIFY(inUse());
     }

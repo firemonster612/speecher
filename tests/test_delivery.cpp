@@ -412,6 +412,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 #endif
     }
 
+    // The default paste is the first global rule that is on, as delivery
+    // resolves it.
+    void theDefaultPasteIsTheFirstGlobalRuleThatIsOn()
+    {
+        const QList<PasteRule> rules{
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, false},
+            {PasteRuleScope::Global, QString(), PasteMethod::DirectInsert, true},
+        };
+        QCOMPARE(globalPasteMethod(rules), PasteMethod::DirectInsert);
+        QCOMPARE(resolvePasteRule(rules, Target{}).method, PasteMethod::DirectInsert);
+    }
+
     void pasteRulesPreferApplicationThenCategoryThenGlobal()
     {
         const QList<PasteRule> rules{
