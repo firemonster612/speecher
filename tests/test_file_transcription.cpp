@@ -1752,10 +1752,12 @@ private slots:
         recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Two utterances go to Codex while it connects, each ended by the
-        // pause after it.
+        // pause after it before the next starts.
+        int codexEnds = 0;
+        m_codex->onEndUtterance = [&codexEnds] { ++codexEnds; };
         for (int utterance = 0; utterance < 2; ++utterance) {
             microphone->pushAudio(microphoneChunk(8000));
-            QTest::qWait(1000);
+            QTRY_COMPARE_WITH_TIMEOUT(codexEnds, utterance + 1, 5000);
         }
         QCOMPARE(m_codex->audioChunks.size(), 2);
         m_codex->emitFailure(QStringLiteral("Timed out"), true, SpeechPhase::Connect,
