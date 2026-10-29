@@ -604,6 +604,39 @@ private slots:
         QVERIFY(loosest > 0.5);
     }
 
+    // Shown again while the voice holds one level, the ribbon still hears it
+    // and frees points, drawn here in white among black.
+    void reshownRibbonHearsTheLevel()
+    {
+        // An item shows again only under a parent.
+        QQuickItem bar;
+        ScatterRibbon ribbon;
+        ribbon.setParentItem(&bar);
+        ribbon.setSize({160, 44});
+        ribbon.setProperty("color", QColor(Qt::black));
+        ribbon.setProperty("freedColor", QColor(Qt::white));
+        ribbon.setListening(true);
+        ribbon.setLevel(0.9);
+        ribbon.setVisible(false);
+        ribbon.setVisible(true);
+        for (int frame = 0; frame < 60; ++frame) {
+            ribbon.advance(1.0 / 60);
+        }
+        QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        ribbon.paint(&painter);
+        painter.end();
+        int freed = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor pixel = QColor::fromRgba(qUnpremultiply(image.pixel(x, y)));
+                freed += pixel.alpha() > 64 && pixel.lightness() > 128;
+            }
+        }
+        QVERIFY(freed > 0);
+    }
+
     // Once paused and still, the ribbon draws no more frames, yet takes a
     // new theme's colours.
     void stillRibbonTakesNewColours()

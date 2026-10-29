@@ -192,6 +192,8 @@ void ScatterRibbon::itemChange(ItemChange change, const ItemChangeData &data)
     if (change == ItemVisibleHasChanged && data.boolValue) {
         const bool wasMoving = moving();
         m_figure = RibbonFigure();
+        // Keeps hearing the level it has, which may not change again soon.
+        m_figure.hear(m_level, false);
         m_trail = QImage();
         if (moving() != wasMoving) {
             emit movingChanged();
