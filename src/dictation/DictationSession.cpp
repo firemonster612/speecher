@@ -28,7 +28,7 @@ constexpr int kDefaultStableAttemptMs = 10000;
 constexpr qsizetype kMaxPendingAudioBytes = 10 * 16000 * 2;
 QString partMissingWarning(const SpeechFailure &failure)
 {
-    return failure.phase == QStringLiteral("finalize")
+    return failure.phase == SpeechPhase::Finalize
         ? QStringLiteral("Part of the dictation may be missing. ") + failure.message
         : QStringLiteral("Part of the dictation may be missing. The connection dropped.");
 }
@@ -191,9 +191,14 @@ DictationState DictationSession::state() const
     return m_state;
 }
 
+DictationState DictationSession::reportedState() const
+{
+    return m_pendingStart ? DictationState::Starting : m_state;
+}
+
 QString DictationSession::stateName() const
 {
-    return m_pendingStart ? dictationStateName(DictationState::Starting) : dictationStateName(m_state);
+    return dictationStateName(reportedState());
 }
 
 bool DictationSession::startPending() const
@@ -647,7 +652,7 @@ void DictationSession::switchSpeechProvider(const SpeechFailure &failure)
 // any other dropped.
 void DictationSession::noteSpeechFailure(const SpeechFailure &failure)
 {
-    const bool connecting = failure.phase == QStringLiteral("connect") || m_state == DictationState::Starting;
+    const bool connecting = failure.phase == SpeechPhase::Connect || m_state == DictationState::Starting;
     noteProviderIssue(ProviderRole::Speech, m_speechChain.at(m_speechIndex),
                       connecting ? Stage::Connect : Stage::Interrupted,
                       {failure.kind, failure.message, failure.httpStatus});
@@ -1109,7 +1114,7 @@ void DictationSession::setState(DictationState state, const QString &message, co
     }
     qInfo().noquote() << "state changed state=" + stateName()
                       << "messagePresent=" + QString::number(!message.isEmpty());
-    emit stateChanged(stateName());
+    emit stateChanged(reportedState());
     emit statusChanged(label);
     updateMicrophoneHeld();
     updateListening();
@@ -1639,7 +1644,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     if (failure.kind == ProviderFailureKind::Authentication) {
         noteSignIn(m_speechChain.at(m_speechIndex), false);
     }
-    const bool droppedStream = failure.retryable && failure.phase == QStringLiteral("streaming");
+    const bool droppedStream = failure.retryable && failure.phase == SpeechPhase::Streaming;
     // A paused attempt that fails to finish (a stream closed during a long
     // pause) has still ended: resume opens a fresh one.
     if (std::exchange(m_finishingPausedAttempt, false)) {
@@ -1755,7 +1760,7 @@ void DictationSession::rollOverSpeechAttempt()
         handleSpeechFailure({m_attemptId,
                              QStringLiteral("The speech stream ended within seconds of starting"),
                              true,
-                             QStringLiteral("streaming"),
+                             SpeechPhase::Streaming,
                              ProviderFailureKind::Network});
         return;
     }

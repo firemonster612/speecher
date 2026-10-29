@@ -138,21 +138,21 @@ private slots:
 
     void phasesFollowTheSession_data()
     {
-        QTest::addColumn<QString>("sessionState");
+        QTest::addColumn<DictationState>("sessionState");
         QTest::addColumn<QString>("phase");
-        QTest::newRow("starting") << "starting" << "starting";
-        QTest::newRow("listening") << "listening" << "listening";
-        QTest::newRow("paused") << "paused" << "paused";
-        QTest::newRow("stopping") << "stopping" << "transcribing";
-        QTest::newRow("refining") << "refining" << "refining";
-        QTest::newRow("delivering") << "delivering" << "delivering";
-        QTest::newRow("reviewing") << "reviewing" << "review";
-        QTest::newRow("error") << "error" << "error";
+        QTest::newRow("starting") << DictationState::Starting << "starting";
+        QTest::newRow("listening") << DictationState::Listening << "listening";
+        QTest::newRow("paused") << DictationState::Paused << "paused";
+        QTest::newRow("stopping") << DictationState::Stopping << "transcribing";
+        QTest::newRow("refining") << DictationState::Refining << "refining";
+        QTest::newRow("delivering") << DictationState::Delivering << "delivering";
+        QTest::newRow("reviewing") << DictationState::Reviewing << "review";
+        QTest::newRow("error") << DictationState::Error << "error";
     }
 
     void phasesFollowTheSession()
     {
-        QFETCH(QString, sessionState);
+        QFETCH(DictationState, sessionState);
         QFETCH(QString, phase);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
@@ -170,7 +170,7 @@ private slots:
         QuickDictation dictation(&controller);
         DictationSession *session = controller.session();
 
-        emit session->stateChanged(QStringLiteral("listening"));
+        emit session->stateChanged(DictationState::Listening);
         emit session->audioLevelChanged(0.5f);
         emit session->previewDisplayChanged(QStringLiteral("brown fox jumps"));
         emit session->popupRefinementPreviewChanged(QStringLiteral("Brown fox"));
@@ -182,7 +182,7 @@ private slots:
         // a hidden popup hears nothing.
         emit session->popupHideRequested();
         QCOMPARE(dictation.property("level").toReal(), 0.0);
-        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(DictationState::Starting);
         QCOMPARE(dictation.property("refined").toString(), QString());
     }
 
@@ -215,7 +215,7 @@ private slots:
         DictationSession *session = controller.session();
         const PopupErrorAction fix = fixPage.isEmpty() ? PopupErrorAction{} : PopupErrorAction{ErrorFix::SettingsPage, fixPage};
 
-        emit session->stateChanged(QStringLiteral("delivering"));
+        emit session->stateChanged(DictationState::Delivering);
         emit session->popupMessageRequested(message, PopupOutcome(outcome), fix);
 
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("delivered"));
@@ -234,14 +234,14 @@ private slots:
         QuickDictation dictation(&controller);
         DictationSession *session = controller.session();
 
-        emit session->stateChanged(QStringLiteral("listening"));
-        emit session->stateChanged(QStringLiteral("idle"));
+        emit session->stateChanged(DictationState::Listening);
+        emit session->stateChanged(DictationState::Idle);
         emit session->popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("delivered"));
         QCOMPARE(dictation.property("receipt").toMap().value(QStringLiteral("outcome")).toString(),
                  QStringLiteral("cancelled"));
 
-        emit session->stateChanged(QStringLiteral("idle"));
+        emit session->stateChanged(DictationState::Idle);
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("delivered"));
         emit session->popupHideRequested();
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
@@ -330,8 +330,8 @@ private slots:
         dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("accounts")});
         emit dictation.cancelRequested();
 
-        emit session->stateChanged(QStringLiteral("starting"));
-        emit session->stateChanged(QStringLiteral("error"));
+        emit session->stateChanged(DictationState::Starting);
+        emit session->stateChanged(DictationState::Error);
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("error"));
         const QVariantMap error = dictation.property("error").toMap();
         QCOMPARE(error.value(QStringLiteral("title")).toString(), QString());
@@ -438,7 +438,7 @@ private slots:
         const QString original = QStringLiteral("Can you send me the deck when you get a chance?");
         const QString revised = QStringLiteral("Can you send me the slides when you can?");
 
-        emit session->stateChanged(QStringLiteral("reviewing"));
+        emit session->stateChanged(DictationState::Reviewing);
         emit session->popupSelectionEditReviewRequested(selectionEditReview(
             original, revised, {QStringLiteral("make it shorter")},
             reviewKeysFor(true, true, QString(), QStringLiteral("Ctrl+Space"))));
@@ -524,7 +524,7 @@ private slots:
         QSignalSpy presented(&popup, &QuickPopupWindow::presented);
         QCOMPARE(positioner->configured, 1);
 
-        emit controller.session()->stateChanged(QStringLiteral("starting"));
+        emit controller.session()->stateChanged(DictationState::Starting);
         popup.show(1);
         popup.show(2);
         QTRY_COMPARE(presented.count(), 1);
@@ -546,7 +546,7 @@ private slots:
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         QSignalSpy presented(&popup, &QuickPopupWindow::presented);
 
-        emit controller.session()->stateChanged(QStringLiteral("starting"));
+        emit controller.session()->stateChanged(DictationState::Starting);
         popup.show(3);
         popup.hide();
         QTest::qWait(200);
@@ -574,7 +574,7 @@ private slots:
         QQuickWindow *window = popupWindow();
         QVERIFY(window);
         QSignalSpy presented(&popup, &QuickPopupWindow::presented);
-        emit controller.session()->stateChanged(QStringLiteral("starting"));
+        emit controller.session()->stateChanged(DictationState::Starting);
 
         popup.show(1);
         emit window->afterSynchronizing();
@@ -604,7 +604,7 @@ private slots:
         QQuickWindow *window = popupWindow();
         QVERIFY(window);
         QSignalSpy presented(&popup, &QuickPopupWindow::presented);
-        emit controller.session()->stateChanged(QStringLiteral("starting"));
+        emit controller.session()->stateChanged(DictationState::Starting);
         popup.show(1);
         QTRY_COMPARE(presented.count(), 1);
 
@@ -651,13 +651,13 @@ private slots:
         QVERIFY(window);
         DictationSession *session = controller.session();
         const auto review = [session, &controller](bool escapeHeld, const QString &cancelShortcut) {
-            emit session->stateChanged(QStringLiteral("reviewing"));
+            emit session->stateChanged(DictationState::Reviewing);
             emit session->popupSelectionEditReviewRequested(selectionEditReview(
                 QStringLiteral("the deck"), QStringLiteral("the slides"), {QStringLiteral("say slides")},
                 reviewKeysFor(escapeHeld, true, cancelShortcut, controller.globalShortcutDisplay())));
         };
 
-        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(DictationState::Starting);
         const QSize shown = window->size();
         popup.show(1);
         QTRY_VERIFY(window->isExposed());
@@ -686,7 +686,7 @@ private slots:
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         DictationSession *session = controller.session();
-        emit session->stateChanged(QStringLiteral("listening"));
+        emit session->stateChanged(DictationState::Listening);
         popup.show(1);
         QQuickWindow *window = popupWindow();
         QVERIFY(window);
@@ -743,7 +743,7 @@ private slots:
         QQmlEngine engine;
         QuickPopupWindow popup(&engine, new RecordingPositioner);
         DictationSession *session = controller.session();
-        emit session->stateChanged(QStringLiteral("listening"));
+        emit session->stateChanged(DictationState::Listening);
         popup.show(1);
         QQuickWindow *window = popupWindow();
         QVERIFY(window);

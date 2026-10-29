@@ -15,16 +15,24 @@ QuickDictation *g_instance = nullptr;
 constexpr int msPerSecond = 1000;
 int g_errorDismissMs = 0;
 
-// The popup's phase for a session state name.
-QString phaseFor(const QString &stateName)
+// The popup's phase for a session state.
+QString phaseFor(DictationState state)
 {
-    if (stateName == QLatin1String("stopping")) {
+    switch (state) {
+    case DictationState::Stopping:
         return QStringLiteral("transcribing");
-    }
-    if (stateName == QLatin1String("reviewing")) {
+    case DictationState::Reviewing:
         return QStringLiteral("review");
+    case DictationState::Idle:
+    case DictationState::Starting:
+    case DictationState::Listening:
+    case DictationState::Paused:
+    case DictationState::Refining:
+    case DictationState::Delivering:
+    case DictationState::Error:
+        break;
     }
-    return stateName;
+    return dictationStateName(state);
 }
 
 QString outcomeName(PopupOutcome outcome)
@@ -188,20 +196,19 @@ void QuickDictation::setErrorDismissMs(int ms)
     g_errorDismissMs = ms;
 }
 
-void QuickDictation::followSession(const QString &stateName)
+void QuickDictation::followSession(DictationState state)
 {
-    const QString phase = phaseFor(stateName);
-    if (phase == QLatin1String("starting")) {
+    if (state == DictationState::Starting) {
         // The last dictation's refinement and error are not this one's.
         update(m_refined, QString(), &QuickDictationState::refinedChanged);
         update(m_error, errorMessage({}, {}), &QuickDictationState::errorChanged);
     }
     // A cancel's receipt follows the session going idle, and a receipt or an
     // error stays up until the session hides the popup.
-    if (phase == QLatin1String("idle") && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
+    if (state == DictationState::Idle && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
         return;
     }
-    setState(phase);
+    setState(phaseFor(state));
 }
 
 void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, const PopupErrorAction &fix)

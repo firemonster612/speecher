@@ -100,7 +100,7 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
     connect(controller, &ApplicationController::stateChanged,
             this, &TrayIcon::applyState);
     connect(controller, &ApplicationController::recordingChanged, this,
-            [this, controller] { applyState(controller->stateName()); });
+            [this, controller] { applyState(controller->dictationState()); });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
                 // On macOS the click that opens the menu says Trigger too.
@@ -119,18 +119,18 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
         }
     });
 #ifdef Q_OS_WIN
-    win::onThemeChanged(this, [this, controller] { applyState(controller->stateName()); });
+    win::onThemeChanged(this, [this, controller] { applyState(controller->dictationState()); });
 #endif
 
-    applyState(controller->stateName());
+    applyState(controller->dictationState());
     m_tray->show();
 }
 
-void TrayIcon::applyState(const QString &stateName)
+void TrayIcon::applyState(DictationState state)
 {
-    const bool listening = dictationListeningPresentation(stateName);
+    const bool listening = dictationListeningPresentation(state);
     const bool recording = m_controller->isRecording();
-    const DictationToggleAction toggle = dictationToggleAction(stateName);
+    const DictationToggleAction toggle = dictationToggleAction(state);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
     m_tray->setToolTip(trayToolTip(listening, recording));

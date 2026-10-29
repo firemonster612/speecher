@@ -333,7 +333,7 @@ private slots:
         openai->refreshRequired = true;
         openai->backgroundRefresh = true;
         codex->onStartAttempt = [codex] {
-            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         };
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
@@ -411,7 +411,7 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
-        codex->onStartAttempt = [codex] { codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network); };
+        codex->onStartAttempt = [codex] { codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network); };
         rig.audio.onStart = [&rig, local] {
             QCOMPARE(local->startCalls, 1);
             ++rig.microphoneStarts;
@@ -437,7 +437,7 @@ private slots:
                 return;
             }
             rig.audio.pushAudio("a");
-            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
             rig.audio.pushAudio("b");
             QTRY_COMPARE(local->startCalls, 1);
             rig.audio.pushAudio("c");
@@ -462,11 +462,11 @@ private slots:
         rig.listen();
         codex->emitFinalText(QStringLiteral("first words"));
         for (int drop = 0; drop < 3; ++drop) {
-            codex->emitFailure(QStringLiteral("dropped"), true, QStringLiteral("streaming"), Network);
+            codex->emitFailure(QStringLiteral("dropped"), true, SpeechPhase::Streaming, Network);
         }
         QCOMPARE(codex->startCalls, 3);
         QCOMPARE(local->startCalls, 1);
-        local->emitFailure(QStringLiteral("dropped"), true, QStringLiteral("streaming"), Network);
+        local->emitFailure(QStringLiteral("dropped"), true, SpeechPhase::Streaming, Network);
         QCOMPARE(local->startCalls, 2);
         local->emitFinalText(QStringLiteral("more words"));
         rig.session->stopListening();
@@ -520,7 +520,7 @@ private slots:
         rig.session->resume();
         rig.audio.pushAudio("x");
         rig.session->setReachability(Reachability::Offline);
-        codex->emitFailure(QStringLiteral("closed"), true, QStringLiteral("streaming"), Network);
+        codex->emitFailure(QStringLiteral("closed"), true, SpeechPhase::Streaming, Network);
         QCOMPARE(codex->startCalls, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"x"});
     }
@@ -535,7 +535,7 @@ private slots:
         rig.listen();
         codex->emitFinalText(QStringLiteral("first words"));
         rig.session->setReachability(Reachability::Offline);
-        codex->emitFailure(QStringLiteral("dropped"), true, QStringLiteral("streaming"), Network);
+        codex->emitFailure(QStringLiteral("dropped"), true, SpeechPhase::Streaming, Network);
         QCOMPARE(codex->startCalls, 1);
         QCOMPARE(local->startCalls, 1);
         local->emitFinalText(QStringLiteral("more words"));
@@ -576,7 +576,7 @@ private slots:
         local->backgroundPrepareDelayMs = 100;
         rig.listen();
         rig.audio.pushAudio("a");
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         rig.audio.pushAudio("b");
         rig.audio.pushAudio("c");
         QCOMPARE(local->startCalls, 0);
@@ -599,7 +599,7 @@ private slots:
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         codex->emitFinalText(QStringLiteral("said"));
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         const QByteArray second(16000 * 2, '\0');
         for (int seconds = 0; seconds < 10; ++seconds) {
             rig.audio.pushAudio(second);
@@ -628,9 +628,9 @@ private slots:
         codex->onCancelAttempt = [codex](quint64) { codex->emitFinalText(QStringLiteral("ghost")); };
         rig.listen();
         codex->emitPartialText(QStringLiteral("half"));
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Streaming, Network);
         codex->emitAttemptText(QStringLiteral("overwrite"));
-        codex->emitFailure(QStringLiteral("late"), false, QStringLiteral("streaming"), Network);
+        codex->emitFailure(QStringLiteral("late"), false, SpeechPhase::Streaming, Network);
         QCOMPARE(rig.session->state(), DictationState::Listening);
         local->emitFinalText(QStringLiteral("rest"));
         local->emitAttemptText(QStringLiteral("rest corrected"));
@@ -655,7 +655,7 @@ private slots:
         rig.audio.pushAudio("before pause");
         codex->emitFinalText(QStringLiteral("before"));
         rig.session->pause();
-        codex->emitFailure(QStringLiteral("expired"), false, QStringLiteral("finalize"),
+        codex->emitFailure(QStringLiteral("expired"), false, SpeechPhase::Finalize,
                            ProviderFailureKind::Authentication);
         QCOMPARE(rig.session->state(), DictationState::Paused);
         QCOMPARE(local->startCalls, 0);
@@ -685,7 +685,7 @@ private slots:
         rig.session->pause();
         rig.session->resume();
         rig.audio.pushAudio("x");
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("finalize"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Finalize, Network);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"x"});
         QVERIFY(codex->audioChunks.isEmpty());
         QCOMPARE(codex->stopCalls, 1);
@@ -703,7 +703,7 @@ private slots:
         rig.listen();
         endpoint->emitFinalText(QStringLiteral("kept"));
         rig.session->stopListening();
-        endpoint->emitFailure(QStringLiteral("upload failed"), false, QStringLiteral("finalize"),
+        endpoint->emitFailure(QStringLiteral("upload failed"), false, SpeechPhase::Finalize,
                               ProviderFailureKind::Server);
         QTRY_COMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("kept"));
@@ -723,7 +723,7 @@ private slots:
         local->backgroundPrepareDelayMs = 100;
         local->autoCompleteOnFinish = false;
         rig.listen();
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         rig.audio.pushAudio("w");
         rig.session->pause();
         QCOMPARE(rig.session->state(), DictationState::Paused);
@@ -750,7 +750,7 @@ private slots:
         rig.audio.onStop = [&rig, codex] {
             rig.audio.onStop = nullptr;
             rig.audio.pushAudio("tail one");
-            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Streaming, Network);
             rig.audio.pushAudio("tail two");
         };
         rig.session->pause();
@@ -777,7 +777,7 @@ private slots:
         rig.session->stopListening();
         QCOMPARE(rig.session->state(), DictationState::Stopping);
         local->onStartAttempt = [local] { local->emitFinalText(QStringLiteral("resumed words")); };
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("finalize"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Finalize, Network);
         QTRY_COMPARE(rig.delivery.calls, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"y"});
         QCOMPARE(local->stopCalls, 1);
@@ -808,7 +808,7 @@ private slots:
         local->backgroundPrepareDelayMs = 150;
         rig.listen();
         codex->emitFinalText(QStringLiteral("said"));
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         rig.audio.pushAudio("z");
         if (cancel) {
             rig.session->cancel();
@@ -1087,7 +1087,7 @@ private slots:
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("first"));
         for (int drop = 0; drop < 3; ++drop) {
             rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("dropped"), true,
-                                                            QStringLiteral("streaming"), Network);
+                                                            SpeechPhase::Streaming, Network);
         }
         rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("second"));
         rig.session->stopListening();
@@ -1107,10 +1107,10 @@ private slots:
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         codex->onStartAttempt = [codex] {
-            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         };
         local->onStartAttempt = [local] {
-            local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+            local->emitFailure(QStringLiteral("model failed to load"), false, SpeechPhase::Load, ProviderFailureKind::Unavailable);
         };
         QSignalSpy errors(rig.session.get(), &DictationSession::popupErrorRequested);
         rig.session->startListening();
@@ -1128,9 +1128,9 @@ private slots:
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         codex->emitFinalText(QStringLiteral("said"));
-        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+        codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Streaming, Network);
         QCOMPARE(local->startCalls, 1);
-        local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+        local->emitFailure(QStringLiteral("model failed to load"), false, SpeechPhase::Load, ProviderFailureKind::Unavailable);
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(outcome.first().at(0).toString(),
@@ -1146,7 +1146,7 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
-        rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"),
+        rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect,
                                                          Network);
         rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();

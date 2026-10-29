@@ -302,7 +302,7 @@ private slots:
         const SpeechFailure failure = failed.first().first().value<SpeechFailure>();
         QVERIFY2(failure.message.contains(message), qPrintable(failure.message));
         QCOMPARE(failure.kind, kind);
-        QCOMPARE(failure.phase, QStringLiteral("finalize"));
+        QCOMPARE(failure.phase, SpeechPhase::Finalize);
         QVERIFY(!failure.retryable);
         QCOMPARE(transcript.size(), kept.isEmpty() ? 0 : 1);
         if (!kept.isEmpty()) QCOMPARE(transcript.first().at(1).toString(), kept);
@@ -340,7 +340,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
         QCOMPARE(completed.size(), 0);
         const auto failure = failed.first().first().value<SpeechFailure>();
-        QCOMPARE(failure.phase, QStringLiteral("finalize"));
+        QCOMPARE(failure.phase, SpeechPhase::Finalize);
         QVERIFY(failure.message.contains(QStringLiteral("sent nothing")));
         QCOMPARE(failure.kind, ProviderFailureKind::Timeout);
         QVERIFY(!failure.retryable);

@@ -24,14 +24,14 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller,
                                InputFactory createInput)
     : QObject(parent)
     , m_createInput(std::move(createInput))
-    , m_dictationListening(dictationListeningPresentation(controller.stateName()))
+    , m_dictationListening(dictationListeningPresentation(controller.dictationState()))
 {
     if (!m_createInput) {
         m_createInput = [&controller](QObject *owner) {
             return controller.platform()->createAudioInput(controller.settings(), owner);
         };
     }
-    connect(&controller, &ApplicationController::stateChanged, this, [this](const QString &state) {
+    connect(&controller, &ApplicationController::stateChanged, this, [this](DictationState state) {
         m_dictationListening = dictationListeningPresentation(state);
         if (m_dictationListening) {
             stop();

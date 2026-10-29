@@ -298,6 +298,11 @@ public:
         return accessibility;
     }
 
+    std::optional<float> inputVolume() const override
+    {
+        return volume;
+    }
+
     void watchAccessibilityChanges(QObject *, std::function<void()> refresh) const override
     {
         accessibilityRefresh = std::move(refresh);
@@ -327,6 +332,7 @@ public:
         return false;
     }
 
+    std::optional<float> volume;
     mutable QString launchAtLoginError;
     mutable int launchAtLoginRequests = 0;
     // Set, the app listens here instead of where the running Speecher does.
@@ -636,6 +642,27 @@ private slots:
         controller.cancel();
         QCOMPARE(session->state(), DictationState::Idle);
     }
+
+#ifdef Q_OS_MACOS
+    // Each dictation logs the macOS default input volume once it listens.
+    void listeningLogsTheInputVolume()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new FakeAudioInput(parent); };
+        platform->volume = 0.4f;
+        ApplicationController controller(true, platform);
+        SettingsStore *settings = controller.settings();
+        const bool setupCompleted = settings->setupCompleted();
+        const auto restore = qScopeGuard([&] { settings->setSetupCompleted(setupCompleted); });
+        settings->setSetupCompleted(true);
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(*controller.providerRegistry(), &speech);
+        QTest::ignoreMessage(QtInfoMsg, "macOS default input volume=40%");
+        controller.session()->startListening();
+        QTRY_COMPARE(controller.session()->state(), DictationState::Listening);
+        controller.cancel();
+    }
+#endif
 
     void dictationAndFileTranscriptionExcludeEachOther()
     {
@@ -2737,7 +2764,7 @@ private slots:
 
         // The stream drops and does not come back.
         codex->onStartAttempt = nullptr;
-        codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+        codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                            ProviderFailureKind::Network);
         const QList<QJsonObject> dropped = linesWritten(watcher);
         QCOMPARE(dropped.size(), 1);

@@ -126,7 +126,7 @@ signals:
     void pageRequested(const QString &pageId);
 
 private:
-    void followSession(const QString &stateName);
+    void followSession(DictationState state);
     void showReceipt(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix);
     void setReview(const SelectionEditReview &review);
     void showConfiguredReviewKeys();

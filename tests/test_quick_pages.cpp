@@ -529,7 +529,7 @@ private slots:
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         DictationSession *session = controller.session();
-        emit session->stateChanged(QStringLiteral("starting"));
+        emit session->stateChanged(DictationState::Starting);
         emit session->popupShowRequested(1);
         QQuickWindow *popup = openWindow("PopupWindow");
         QVERIFY(popup);
@@ -542,7 +542,7 @@ private slots:
                 QStringLiteral("Can you send me the slides when you can?"), {QStringLiteral("make it shorter")},
                 reviewKeysFor(true, true, QString(), QStringLiteral("Ctrl+Space")));
             edit.following = following;
-            emit session->stateChanged(QStringLiteral("reviewing"));
+            emit session->stateChanged(DictationState::Reviewing);
             emit session->popupSelectionEditReviewRequested(edit);
         };
         runSteps({
@@ -550,25 +550,25 @@ private slots:
             {QStringLiteral("renewing"), [session] { emit session->popupOAuthRefreshRequested(); }},
             {QStringLiteral("listening"),
              [session] {
-                 emit session->stateChanged(QStringLiteral("listening"));
+                 emit session->stateChanged(DictationState::Listening);
                  emit session->audioLevelChanged(0.6f);
                  emit session->previewDisplayChanged(QStringLiteral("Quick update on the launch"));
              }},
-            {QStringLiteral("paused"), [session] { emit session->stateChanged(QStringLiteral("paused")); }},
-            {QStringLiteral("transcribing"), [session] { emit session->stateChanged(QStringLiteral("stopping")); }},
+            {QStringLiteral("paused"), [session] { emit session->stateChanged(DictationState::Paused); }},
+            {QStringLiteral("transcribing"), [session] { emit session->stateChanged(DictationState::Stopping); }},
             {QStringLiteral("refining"),
              [session] {
-                 emit session->stateChanged(QStringLiteral("refining"));
+                 emit session->stateChanged(DictationState::Refining);
                  emit session->popupRefinementPreviewChanged(QStringLiteral("Quick update on the launch."));
              }},
-            {QStringLiteral("delivering"), [session] { emit session->stateChanged(QStringLiteral("delivering")); }},
+            {QStringLiteral("delivering"), [session] { emit session->stateChanged(DictationState::Delivering); }},
             {QStringLiteral("delivered"),
              [session] { emit session->popupMessageRequested(QStringLiteral("Sent to the app"), PopupOutcome::Inserted); }},
             {QStringLiteral("review"), [review] { review(false); }},
             {QStringLiteral("following"), [review] { review(true); }},
             {QStringLiteral("error"),
              [session] {
-                 emit session->stateChanged(QStringLiteral("error"));
+                 emit session->stateChanged(DictationState::Error);
                  emit session->popupErrorRequested(QStringLiteral("Couldn't reach Claude • Check your connection."),
                                                    PopupErrorAction{});
              }},

@@ -772,7 +772,7 @@ void FileTranscriptionSession::handleSignInRenewed(const SpeechPrepareResult &re
         return;
     }
     handleSpeechFailure(
-        {m_attemptId, result.message, isTransientFailure(result.kind), QStringLiteral("connect"), result.kind});
+        {m_attemptId, result.message, isTransientFailure(result.kind), SpeechPhase::Connect, result.kind});
 }
 
 void FileTranscriptionSession::resumeStreaming()
@@ -806,7 +806,7 @@ void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
         handleSpeechFailure({attemptId,
                              QStringLiteral("The speech stream ended within seconds of starting"),
                              true,
-                             QStringLiteral("streaming")});
+                             SpeechPhase::Streaming});
         return;
     }
     m_reconnectsLeft = kReconnectsPerFile;
@@ -840,7 +840,7 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     // its start, as the audio is on disk; after, never: what was sent is not
     // sent again.
     const bool nothingReachedAService = m_attemptStartMs == 0 && !m_providerConnected
-        && (m_sent == 0 || failure.phase == QStringLiteral("connect"));
+        && (m_sent == 0 || failure.phase == SpeechPhase::Connect);
     const ProviderAttemptIssue issue{ProviderRole::Speech, m_speechChain.at(m_speechIndex),
                                      nothingReachedAService ? Stage::Connect : Stage::Interrupted, failure.kind,
                                      failure.message};
@@ -856,7 +856,7 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
         m_reconnectsLeft = kReconnectsPerFile;
     }
     const bool reconnectable = !m_inputFinished && failure.retryable
-        && failure.phase == QStringLiteral("streaming");
+        && failure.phase == SpeechPhase::Streaming;
     if (reconnectable && m_reconnectsLeft > 0) {
         --m_reconnectsLeft;
         qInfo().noquote() << "file transcription stream dropped, reconnecting: " + failure.message;

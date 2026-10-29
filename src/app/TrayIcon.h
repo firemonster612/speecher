@@ -11,6 +11,7 @@ class QSystemTrayIcon;
 namespace speecher {
 
 class ApplicationController;
+enum class DictationState;
 
 // The daemon's visible presence: a status icon in the system tray on Linux
 // and Windows, and in the menu bar on macOS, for as long as the process runs.
@@ -30,7 +31,7 @@ public:
     void showMessage(const QString &title, const QString &message, std::function<void()> clicked);
 
 private:
-    void applyState(const QString &stateName);
+    void applyState(DictationState state);
 
     ApplicationController *m_controller;
     QMenu m_menu;

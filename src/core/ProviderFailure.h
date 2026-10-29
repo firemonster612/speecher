@@ -28,6 +28,24 @@ enum class ProviderFailureKind {
     Cancelled,
 };
 
+// Where a speech provider was in an attempt when it failed. The phase decides
+// whether a dropped stream is reopened and whether the provider counts as
+// never reached.
+enum class SpeechPhase {
+    // Loading a local model, before the attempt could take audio.
+    Load,
+    // Opening the stream, before the service confirmed it.
+    Connect,
+    // Sending audio over an open stream.
+    Streaming,
+    // Waiting for the final transcript after the last audio.
+    Finalize,
+    // The service turned the sign-in away, at any point.
+    Authentication,
+    // The service sent something that could not be read, at any point.
+    Protocol,
+};
+
 struct ProviderFailure {
     ProviderFailureKind kind = ProviderFailureKind::Other;
     QString message;

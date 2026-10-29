@@ -160,7 +160,7 @@ private slots:
         QCOMPARE(failed.count(), 0);
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("finalize"));
+        QCOMPARE(failed.first().at(2).value<SpeechPhase>(), SpeechPhase::Finalize);
     }
 
     // The service drops a session once session_ttl_ms passes with no audio and
@@ -264,11 +264,11 @@ private slots:
         QTest::addColumn<bool>("sessionStarted");
         QTest::addColumn<bool>("dropped");
         QTest::addColumn<bool>("finishing");
-        QTest::addColumn<QString>("failedPhase");
-        QTest::newRow("clean close while streaming") << true << false << false << QString();
-        QTest::newRow("dropped while streaming") << true << true << false << QString();
-        QTest::newRow("dropped while finalizing") << true << true << true << QStringLiteral("finalize");
-        QTest::newRow("dropped before session.started") << false << true << false << QStringLiteral("connect");
+        QTest::addColumn<std::optional<SpeechPhase>>("failedPhase");
+        QTest::newRow("clean close while streaming") << true << false << false << std::optional<SpeechPhase>();
+        QTest::newRow("dropped while streaming") << true << true << false << std::optional<SpeechPhase>();
+        QTest::newRow("dropped while finalizing") << true << true << true << std::optional(SpeechPhase::Finalize);
+        QTest::newRow("dropped before session.started") << false << true << false << std::optional(SpeechPhase::Connect);
     }
 
     // Qt cannot tell a service's clean close from a drop, so any end of a live
@@ -279,7 +279,7 @@ private slots:
         QFETCH(bool, sessionStarted);
         QFETCH(bool, dropped);
         QFETCH(bool, finishing);
-        QFETCH(QString, failedPhase);
+        QFETCH(std::optional<SpeechPhase>, failedPhase);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -313,36 +313,36 @@ private slots:
             peer->close();
         }
         QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
-        if (failedPhase.isEmpty()) {
+        if (!failedPhase) {
             QCOMPARE(completed.count(), 1);
             QCOMPARE(failed.count(), 0);
         } else {
             QCOMPARE(completed.count(), 0);
             QCOMPARE(failed.count(), 1);
             QCOMPARE(failed.first().at(1).toBool(), true);
-            QCOMPARE(failed.first().at(2).toString(), failedPhase);
+            QCOMPARE(failed.first().at(2).value<SpeechPhase>(), *failedPhase);
         }
     }
 
     void codexDictationClientClassifiesARefusedConnection_data()
     {
         QTest::addColumn<QByteArray>("statusLine");
-        QTest::addColumn<QString>("phase");
+        QTest::addColumn<SpeechPhase>("phase");
         QTest::addColumn<ProviderFailureKind>("kind");
-        QTest::newRow("403") << QByteArray("403 Forbidden") << QStringLiteral("authentication")
+        QTest::newRow("403") << QByteArray("403 Forbidden") << SpeechPhase::Authentication
                              << ProviderFailureKind::Authentication;
-        QTest::newRow("429") << QByteArray("429 Too Many Requests") << QStringLiteral("connect")
+        QTest::newRow("429") << QByteArray("429 Too Many Requests") << SpeechPhase::Connect
                              << ProviderFailureKind::RateLimited;
-        QTest::newRow("503") << QByteArray("503 Service Unavailable") << QStringLiteral("connect")
+        QTest::newRow("503") << QByteArray("503 Service Unavailable") << SpeechPhase::Connect
                              << ProviderFailureKind::Server;
-        QTest::newRow("no server") << QByteArray() << QStringLiteral("connect") << ProviderFailureKind::Network;
+        QTest::newRow("no server") << QByteArray() << SpeechPhase::Connect << ProviderFailureKind::Network;
     }
 
     // The upgrade is refused with statusLine, or nothing listens without one.
     void codexDictationClientClassifiesARefusedConnection()
     {
         QFETCH(QByteArray, statusLine);
-        QFETCH(QString, phase);
+        QFETCH(SpeechPhase, phase);
         QFETCH(ProviderFailureKind, kind);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -365,7 +365,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QCOMPARE(failed.first().at(1).toBool(), kind != ProviderFailureKind::Authentication);
-        QCOMPARE(failed.first().at(2).toString(), phase);
+        QCOMPARE(failed.first().at(2).value<SpeechPhase>(), phase);
         QCOMPARE(failed.first().at(3).value<ProviderFailureKind>(), kind);
     }
 

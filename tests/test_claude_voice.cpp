@@ -112,7 +112,7 @@ private slots:
             QStringLiteral("en"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTRY_COMPARE_WITH_TIMEOUT(deadlineFailure.count(), 1, 1000);
-        QCOMPARE(deadlineFailure.first().at(2).toString(), QStringLiteral("connect"));
+        QCOMPARE(deadlineFailure.first().at(2).value<SpeechPhase>(), SpeechPhase::Connect);
         QCOMPARE(deadlineFailure.first().at(3).value<ProviderFailureKind>(), ProviderFailureKind::Timeout);
 
         ClaudeVoiceClient bufferedClient(nullptr, 1000);
@@ -124,17 +124,17 @@ private slots:
             QStringLiteral("en"));
         bufferedClient.sendAudio(QByteArray(4 * 1024 * 1024 + 1, '\0'));
         QCOMPARE(bufferFailure.count(), 1);
-        QCOMPARE(bufferFailure.first().at(2).toString(), QStringLiteral("connect"));
+        QCOMPARE(bufferFailure.first().at(2).value<SpeechPhase>(), SpeechPhase::Connect);
     }
 
     void claudeVoiceClientEndsALiveStreamOnAnyServerEnd_data()
     {
         QTest::addColumn<bool>("dropped");
         QTest::addColumn<bool>("finishing");
-        QTest::addColumn<QString>("failedPhase");
-        QTest::newRow("clean close while streaming") << false << false << QString();
-        QTest::newRow("dropped while streaming") << true << false << QString();
-        QTest::newRow("dropped while finalizing") << true << true << QStringLiteral("finalize");
+        QTest::addColumn<std::optional<SpeechPhase>>("failedPhase");
+        QTest::newRow("clean close while streaming") << false << false << std::optional<SpeechPhase>();
+        QTest::newRow("dropped while streaming") << true << false << std::optional<SpeechPhase>();
+        QTest::newRow("dropped while finalizing") << true << true << std::optional(SpeechPhase::Finalize);
     }
 
     // Qt cannot tell a server's clean close from a drop, so any end of a live
@@ -144,7 +144,7 @@ private slots:
     {
         QFETCH(bool, dropped);
         QFETCH(bool, finishing);
-        QFETCH(QString, failedPhase);
+        QFETCH(std::optional<SpeechPhase>, failedPhase);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
@@ -174,14 +174,14 @@ private slots:
             socket->close();
         }
         QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
-        if (failedPhase.isEmpty()) {
+        if (!failedPhase) {
             QCOMPARE(completed.count(), 1);
             QCOMPARE(failed.count(), 0);
         } else {
             QCOMPARE(completed.count(), 0);
             QCOMPARE(failed.count(), 1);
             QCOMPARE(failed.first().at(1).toBool(), true);
-            QCOMPARE(failed.first().at(2).toString(), failedPhase);
+            QCOMPARE(failed.first().at(2).value<SpeechPhase>(), *failedPhase);
         }
     }
 
@@ -204,7 +204,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QCOMPARE(failed.first().at(1).toBool(), true);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("connect"));
+        QCOMPARE(failed.first().at(2).value<SpeechPhase>(), SpeechPhase::Connect);
         QCOMPARE(completed.count(), 0);
     }
 
@@ -376,9 +376,6 @@ private slots:
                     &ClaudeVoiceClient::stop);
             client.start(voiceUrl, credentials.accessToken, speech.vocabulary, speech.language);
             QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 8000);
-            if (!failed.isEmpty()) {
-                QVERIFY(!failed.first().at(2).toString().isEmpty());
-            }
         }
     }
 
@@ -450,7 +447,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QCOMPARE(failed.first().at(1).toBool(), false);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("authentication"));
+        QCOMPARE(failed.first().at(2).value<SpeechPhase>(), SpeechPhase::Authentication);
         QCOMPARE(failed.first().at(3).value<ProviderFailureKind>(), ProviderFailureKind::Authentication);
     }
 

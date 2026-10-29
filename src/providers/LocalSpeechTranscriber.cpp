@@ -96,7 +96,7 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
     const QString modelPath = downloadedModelPath(settings.local.modelId, &error);
     if (modelPath.isEmpty()) {
         reportEnd(attemptId, [this, attemptId, error] {
-            emit failed({attemptId, error, false, QStringLiteral("load"), ProviderFailureKind::Unavailable});
+            emit failed({attemptId, error, false, SpeechPhase::Load, ProviderFailureKind::Unavailable});
         });
         return;
     }
@@ -239,7 +239,7 @@ bool LocalSpeechTranscriber::attemptRunning(quint64 attemptId) const
         && attemptId == m_liveAttempt.load();
 }
 
-void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &message, const QString &phase,
+void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &message, SpeechPhase phase,
                                          ProviderFailureKind kind)
 {
     m_workerAttemptFailed = true;
@@ -266,7 +266,7 @@ void LocalSpeechTranscriber::begin(quint64 attemptId,
     QString error;
     if (!ensureLoaded(modelPath, runsOn, &error)
         || (m_engine.streams() && !m_engine.beginStream(spokenLanguage, &error))) {
-        failAttempt(attemptId, error, QStringLiteral("load"), ProviderFailureKind::Unavailable);
+        failAttempt(attemptId, error, SpeechPhase::Load, ProviderFailureKind::Unavailable);
         return;
     }
     feedPending();
@@ -298,7 +298,7 @@ void LocalSpeechTranscriber::feedPending()
     QString error;
     if (!m_engine.feed(pcm, &text, &error)) {
         if (!error.isEmpty()) {
-            failAttempt(attemptId, error, QStringLiteral("streaming"), ProviderFailureKind::Other);
+            failAttempt(attemptId, error, SpeechPhase::Streaming, ProviderFailureKind::Other);
         }
         return;
     }
@@ -335,7 +335,7 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
     m_batchPcm.clear();
     if (!transcript) {
         if (!error.isEmpty()) {
-            failAttempt(attemptId, error, QStringLiteral("finalize"), ProviderFailureKind::Other);
+            failAttempt(attemptId, error, SpeechPhase::Finalize, ProviderFailureKind::Other);
         }
         return;
     }

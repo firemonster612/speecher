@@ -88,7 +88,7 @@ QString spacedSegment(const QString &text, const QString &segment)
 
 SpeechFailure finalizeFailure(quint64 attemptId, const ProviderFailure &failure)
 {
-    return {attemptId, failure.message, false, QStringLiteral("finalize"), failure.kind, failure.httpStatus};
+    return {attemptId, failure.message, false, SpeechPhase::Finalize, failure.kind, failure.httpStatus};
 }
 
 // The last promptTailChars of text, from the start of a word where it has

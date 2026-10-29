@@ -62,7 +62,7 @@ signals:
     void completed();
     void connected();
     void closed();
-    void failed(const QString &message, bool retryable, const QString &phase,
+    void failed(const QString &message, bool retryable, speecher::SpeechPhase phase,
                 speecher::ProviderFailureKind kind);
 
 private:
@@ -73,7 +73,7 @@ private:
     void requestFinalization();
     void extendCloseWait();
     void handleTextMessage(const QString &message);
-    void fail(const QString &message, bool retryable, const QString &phase, ProviderFailureKind kind);
+    void fail(const QString &message, bool retryable, SpeechPhase phase, ProviderFailureKind kind);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QWebSocket m_socket;
