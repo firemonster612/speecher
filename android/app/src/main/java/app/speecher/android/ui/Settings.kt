@@ -4,69 +4,39 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import app.speecher.android.dictation.advice
-import app.speecher.android.dictation.spokenLanguageLabel
-import app.speecher.android.dictation.spokenLanguageMismatch
-import app.speecher.android.dictation.spokenLanguageName
-import app.speecher.android.dictation.spokenLanguages
-import app.speecher.android.provider.OpenAiSpeed
 import app.speecher.android.provider.Provider
-import app.speecher.android.provider.RefinementChoice
 import app.speecher.android.provider.SpeechProvider
-import app.speecher.android.provider.cleanup
-import app.speecher.android.provider.defaultRefinement
-import app.speecher.android.provider.hasBatchTranscription
 import app.speecher.android.provider.label
 import app.speecher.android.provider.providerOrder
-import app.speecher.android.provider.refinementEfforts
 import app.speecher.android.provider.refinementModels
 import app.speecher.android.provider.resolveSignedIn
-import app.speecher.android.provider.resolveSpeech
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.update.UpdateState
-import app.speecher.protocol.AUTOMATIC_LANGUAGE
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
-import app.speecher.protocol.modelSupportsFastMode
-import app.speecher.protocol.modelSupportsUltrafast
 
 /** The pages the Settings list opens, each under its own top bar with a back arrow. */
 enum class SettingsPage(val title: String) {
@@ -273,7 +243,7 @@ private fun correctionsSummary(settings: SpeecherSettings): String {
 }
 
 /** The provider dictation will use, as the pickers show it, or null with no account. */
-private fun shownProvider(preferred: Provider, signedIn: Set<Provider>): Provider? =
+internal fun shownProvider(preferred: Provider, signedIn: Set<Provider>): Provider? =
     resolveSignedIn(preferred, signedIn).takeIf { it in signedIn }
 
 /** The provider's name, marked when its session ended, for the summaries that name an account. */
@@ -326,161 +296,6 @@ private fun PageRow(page: SettingsPage, summary: String, onOpen: (SettingsPage) 
         modifier = Modifier.clickable { onOpen(page) },
         colors = rowColors(),
     )
-}
-
-@Composable
-private fun TranscriptionSettings(
-    settings: SpeecherSettings,
-    signedIn: Set<Provider>,
-    onChange: (SpeecherSettings) -> Unit,
-    onSignIn: (Provider) -> Unit,
-) {
-    // An account you aren't signed into isn't offered, since dictation would fall back to another.
-    val provider = resolveSpeech(settings.transcriptionProvider, signedIn)
-    val usable = SpeechProvider.entries.filter { it.account == null || it.account in signedIn }
-    DropdownRow(
-        "Provider",
-        usable.associateWith { it.label },
-        provider,
-        selectedLabel = if (provider in usable) provider.label else "Not signed in",
-    ) {
-        onChange(settings.copy(transcriptionProvider = it))
-    }
-    SignInLinks(signedIn, onSignIn, Modifier.padding(horizontal = 16.dp))
-    DropdownRow(
-        "Spoken language",
-        spokenLanguageChoices(provider),
-        settings.spokenLanguage,
-        description = "The language you dictate in.",
-        selectedLabel = spokenLanguageLabel(settings.spokenLanguage),
-    ) {
-        onChange(settings.copy(spokenLanguage = it))
-    }
-    spokenLanguageMismatch(provider, settings.spokenLanguage)?.let {
-        Text(
-            it.advice,
-            Modifier.padding(horizontal = 16.dp),
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    ListItem(
-        headlineContent = { Text("Keep screen on") },
-        supportingContent = { Text("Stops the screen turning off while you dictate.") },
-        trailingContent = {
-            Switch(settings.keepScreenOn, { onChange(settings.copy(keepScreenOn = it)) })
-        },
-        colors = rowColors(),
-    )
-    if (provider.hasBatchTranscription) {
-        ListItem(
-            headlineContent = { Text("Extra transcription pass") },
-            supportingContent = {
-                Text(
-                    "Transcribes the whole recording again before inserting. More accurate, slower."
-                )
-            },
-            trailingContent = {
-                Switch(
-                    settings.transcribePassEnabled,
-                    { onChange(settings.copy(transcribePassEnabled = it)) },
-                )
-            },
-            colors = rowColors(),
-        )
-    }
-    if (provider == SpeechProvider.Endpoint) SpeechEndpointSettings(settings, onChange)
-    Section("Microphone")
-    MicrophoneTestRow()
-}
-
-@Composable
-private fun RefinementSettings(
-    settings: SpeecherSettings,
-    signedIn: Set<Provider>,
-    onChange: (SpeecherSettings) -> Unit,
-    onSignIn: (Provider) -> Unit,
-) {
-    ListItem(
-        headlineContent = { Text("Offer Insert refined") },
-        supportingContent = { Text("Cleans up filler words and punctuation before inserting.") },
-        trailingContent = {
-            Switch(settings.refinementEnabled, { onChange(settings.copy(refinementEnabled = it)) })
-        },
-        colors = rowColors(),
-    )
-    if (!settings.refinementEnabled) return
-    ProviderPicker("Provider", settings.refinementProvider.account, signedIn, onSignIn) {
-        onChange(settings.copy(refinementProvider = it.cleanup))
-    }
-    val provider = resolveSignedIn(settings.refinementProvider.account, signedIn)
-    val choice = settings.refinement(provider)
-    key(provider) {
-        ModelField(provider.refinementModels, choice.model, provider.defaultRefinement.model) {
-            onChange(settings.withRefinement(provider, choice.copy(model = it)))
-        }
-    }
-    DropdownRow(
-        "Thinking",
-        provider.refinementEfforts,
-        choice.effort,
-        description = "More thinking follows instructions more closely but takes longer.",
-    ) {
-        onChange(settings.withRefinement(provider, choice.copy(effort = it)))
-    }
-    if (provider == Provider.ChatGpt) {
-        val ultrafast = modelSupportsUltrafast(choice.model)
-        val speeds = OpenAiSpeed.entries.filter { ultrafast || it != OpenAiSpeed.Ultrafast }
-        DropdownRow(
-            "Speed",
-            speeds.associateWith { it.label },
-            settings.chatGptSpeed,
-            description =
-                if (ultrafast) "Faster tiers use more of your plan."
-                else
-                    "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra or GPT-6.1 Sol.",
-        ) {
-            onChange(settings.copy(chatGptSpeed = it))
-        }
-        // Other plans take an Ultrafast request at Standard without complaint.
-        if (ultrafast && settings.chatGptSpeed == OpenAiSpeed.Ultrafast) {
-            Text(
-                "Ultrafast only works on ChatGPT Pro \$500 and eligible Enterprise and Edu plans. " +
-                    "Other plans run it at Standard, which is slower than Fast.",
-                Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-    } else {
-        ListItem(
-            headlineContent = { Text("Fast mode") },
-            supportingContent = {
-                Text(
-                    if (modelSupportsFastMode(choice.model))
-                        "Faster refinement for a little more usage."
-                    else "Only works with Opus models."
-                )
-            },
-            trailingContent = {
-                Switch(settings.claudeFastMode, { onChange(settings.copy(claudeFastMode = it)) })
-            },
-            colors = rowColors(),
-        )
-    }
-    DropdownRow(
-        "Fallback profile",
-        profileChoices(settings),
-        settings.defaultWritingProfile,
-        description = "Used when the app doesn't suggest a profile.",
-    ) {
-        onChange(settings.copy(defaultWritingProfile = it))
-    }
-    InstructionsField(
-        "Additional instructions",
-        "Added to every refinement, before each profile's own instructions.",
-        settings.additionalInstructions,
-    ) {
-        onChange(settings.copy(additionalInstructions = it))
-    }
 }
 
 @Composable
@@ -579,153 +394,6 @@ private fun DictationPanelSettings(
     }
 }
 
-@Composable
-private fun SwitchRow(
-    title: String,
-    checked: Boolean,
-    description: String? = null,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = description?.let { { Text(it) } },
-        trailingContent = { Switch(checked, onCheckedChange) },
-        colors = rowColors(),
-    )
-}
-
-/**
- * The two providers as segments under [title]. One you aren't signed into can't be used, since
- * dictation would silently fall back to the other account, so it is disabled with a sign-in link
- * under it, and the check sits on the provider dictation will actually use.
- */
-@Composable
-private fun ProviderPicker(
-    title: String,
-    selected: Provider,
-    signedIn: Set<Provider>,
-    onSignIn: (Provider) -> Unit,
-    onSelect: (Provider) -> Unit,
-) {
-    val shown = shownProvider(selected, signedIn)
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            providerOrder.forEachIndexed { index, provider ->
-                SegmentedButton(
-                    selected = provider == shown,
-                    onClick = { onSelect(provider) },
-                    enabled = provider in signedIn,
-                    shape = SegmentedButtonDefaults.itemShape(index, providerOrder.size),
-                ) {
-                    Text(provider.label, maxLines = 1)
-                }
-            }
-        }
-        SignInLinks(signedIn, onSignIn)
-    }
-}
-
-/** A link to sign in to each account that isn't, so a provider picker can offer it. */
-@Composable
-private fun SignInLinks(
-    signedIn: Set<Provider>,
-    onSignIn: (Provider) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier) {
-        providerOrder
-            .filter { it !in signedIn }
-            .forEach { provider ->
-                TextButton({ onSignIn(provider) }, Modifier.offset(x = (-12).dp)) {
-                    Text("Sign in to ${provider.label} to use it")
-                }
-            }
-    }
-}
-
-/**
- * The refinement model as free text whose menu suggests [models], as the desktop's editable combo
- * does: a suggested model shows by name and saves as its id, any other id as typed. A cleared field
- * saves [default], since every request needs a model, and shows it once the field is left.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ModelField(
-    models: Map<String, String>,
-    model: String,
-    default: String,
-    onChange: (String) -> Unit,
-) {
-    val saved = models[model] ?: model
-    var text by rememberSaveable { mutableStateOf(saved) }
-    var expanded by remember { mutableStateOf(false) }
-    val focus = LocalFocusManager.current
-    fun edit(value: String) {
-        text = value
-        val typed = value.trim()
-        onChange(
-            if (typed.isEmpty()) default
-            else models.entries.firstOrNull { it.value == typed }?.key ?: typed
-        )
-    }
-    ExposedDropdownMenuBox(
-        expanded,
-        { expanded = it },
-        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        OutlinedTextField(
-            text,
-            ::edit,
-            Modifier.fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
-                .onFocusChanged { if (!it.isFocused) text = saved },
-            label = { Text("Model") },
-            supportingText = { Text("Select a model or type another model ID.") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions =
-                KeyboardActions(
-                    onDone = {
-                        expanded = false
-                        focus.clearFocus()
-                    }
-                ),
-            singleLine = true,
-        )
-        ExposedDropdownMenu(expanded, { expanded = false }) {
-            models.values.forEach { label ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        expanded = false
-                        edit(label)
-                    },
-                )
-            }
-        }
-    }
-}
-
-/** Several lines of instructions for the refiner, under a title and what they are for. */
-@Composable
-private fun InstructionsField(
-    title: String,
-    description: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(value, onValueChange, Modifier.fillMaxWidth(), minLines = 3)
-    }
-}
-
 /**
  * Shown the whole time a sign-in waits, so anyone back from a browser that didn't return them finds
  * the fallback without looking for it.
@@ -756,12 +424,6 @@ internal fun PasteCode(
         }
     }
 }
-
-/** The provider's spoken languages as code to label: Automatic, then by English name. */
-private fun spokenLanguageChoices(provider: SpeechProvider): Map<String, String> =
-    provider.spokenLanguages
-        .sortedWith(compareBy({ it != AUTOMATIC_LANGUAGE }, ::spokenLanguageName))
-        .associateWith(::spokenLanguageLabel)
 
 @Composable
 private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>) = SpeecherTheme {
@@ -801,65 +463,6 @@ internal val previewServerSettings =
 @PreviewLightDark
 @Composable
 internal fun SettingsServerPreview() = SettingsPreview(previewServerSettings, emptySet())
-
-@PreviewLightDark
-@Composable
-internal fun SettingsTranscriptionServerPreview() = SpeecherTheme {
-    var settings by remember { mutableStateOf(previewServerSettings) }
-    SpeecherScreen(SettingsPage.Transcription.title, onBack = {}) {
-        SettingsPageContent(
-            SettingsPage.Transcription,
-            settings,
-            emptySet(),
-            { settings = it },
-            {},
-            {},
-            chipEnabled = true,
-            onTurnOnChip = {},
-        )
-    }
-}
-
-@PreviewLightDark
-@Composable
-internal fun SettingsRefinementPreview() = SpeecherTheme {
-    Surface {
-        Column {
-            SettingsPageContent(
-                SettingsPage.Refinement,
-                SpeecherSettings(),
-                setOf(Provider.ChatGpt),
-                {},
-                {},
-                {},
-                chipEnabled = true,
-                onTurnOnChip = {},
-            )
-        }
-    }
-}
-
-@PreviewLightDark
-@Composable
-internal fun SettingsRefinementUltrafastPreview() = SpeecherTheme {
-    Surface {
-        Column {
-            SettingsPageContent(
-                SettingsPage.Refinement,
-                SpeecherSettings(
-                    chatGptRefinement = RefinementChoice("gpt-6.1-sol", "low"),
-                    chatGptSpeed = OpenAiSpeed.Ultrafast,
-                ),
-                setOf(Provider.ChatGpt),
-                {},
-                {},
-                {},
-                chipEnabled = true,
-                onTurnOnChip = {},
-            )
-        }
-    }
-}
 
 @PreviewLightDark
 @Composable
