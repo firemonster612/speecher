@@ -550,7 +550,14 @@ private slots:
         QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
         QQuickItem *instructions = nullptr;
         QTRY_VERIFY((instructions = findItem(main->contentItem(), QStringLiteral("profileInstructions"))));
-        QTest::qWait(kSettleMs);
+        // The page stack drops presses while the page is still coming in,
+        // which takes longer than any fixed wait on a slow runner.
+        QQuickItem *stack = instructions;
+        while (stack && !stack->inherits("QQuickStackView")) {
+            stack = stack->parentItem();
+        }
+        QVERIFY(stack);
+        QTRY_VERIFY(!stack->property("busy").toBool());
         const auto profileRow = [main](const QString &id) -> QQuickItem * {
             QList<QQuickItem *> items{main->contentItem()};
             while (!items.isEmpty()) {
