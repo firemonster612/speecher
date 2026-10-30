@@ -2,6 +2,7 @@
 
 #include "core/TranscriptState.h"
 #include "core/settings/SpokenLanguages.h"
+#include "dictation/PopupPresentation.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/SpeechAudio.h"
 

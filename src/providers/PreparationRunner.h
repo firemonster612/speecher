@@ -1,6 +1,7 @@
 #pragma once
 
-#include "dictation/DictationPorts.h"
+#include "core/AppSettings.h"
+#include "providers/PreparationJob.h"
 
 #include <QList>
 #include <QObject>

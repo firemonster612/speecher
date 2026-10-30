@@ -2,7 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
-#include "dictation/PreparationRunner.h"
+#include "providers/PreparationRunner.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>

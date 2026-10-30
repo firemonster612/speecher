@@ -1,7 +1,7 @@
 #include "providers/RefinementChain.h"
 
 #include "core/SettingsStore.h"
-#include "dictation/PreparationRunner.h"
+#include "providers/PreparationRunner.h"
 
 #include <utility>
 

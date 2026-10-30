@@ -1,6 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "dictation/PreparationRunner.h"
+#include "providers/PreparationRunner.h"
 
 #include <QSemaphore>
 #include <QElapsedTimer>

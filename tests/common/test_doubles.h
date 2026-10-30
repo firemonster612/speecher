@@ -2,6 +2,8 @@
 
 #include "dictation/DictationPorts.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/SpeechTranscriber.h"
+#include "providers/TranscriptRefiner.h"
 #include <QThread>
 #include <QtEndian>
 

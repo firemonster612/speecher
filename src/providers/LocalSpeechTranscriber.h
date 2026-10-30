@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dictation/DictationPorts.h"
 #include "providers/LocalSpeechEngine.h"
+#include "providers/SpeechTranscriber.h"
 
 #include <QMutex>
 #include <QThread>

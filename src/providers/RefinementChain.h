@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/ProviderAttemptIssue.h"
 #include "core/ProviderReadiness.h"
-#include "dictation/DictationPorts.h"
-#include "dictation/DictationTypes.h"
+#include "providers/TranscriptRefiner.h"
 
 #include <QPointer>
 #include <QStringList>
