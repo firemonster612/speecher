@@ -50,6 +50,10 @@ KeywatchShortcutBinder::KeywatchShortcutBinder(SettingsStore *settings,
             [this] { reconnectLater(reconnectDelayMs); });
     connect(m_socket, &QLocalSocket::errorOccurred, this,
             [this] { reconnectLater(reconnectDelayMs); });
+    // supported() answers from the helper's last reply, which arrives after
+    // the probe that asked for it, so each reply may change the answer.
+    connect(KeywatchSetup::daemonAnswer(), &KeywatchDaemonAnswer::changed,
+            this, &GlobalShortcutBinder::supportChanged);
 }
 
 bool KeywatchShortcutBinder::supported() const
