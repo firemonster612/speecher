@@ -217,16 +217,21 @@ private slots:
     void selectionEditReviewFollowsTheLiveSetting_data()
     {
         QTest::addColumn<bool>("followUp");
-        QTest::newRow("first instruction") << false;
-        QTest::newRow("follow-up") << true;
+        QTest::addColumn<QString>("whileReadingTheTarget");
+        QTest::newRow("first instruction") << false << QString();
+        QTest::newRow("follow-up") << true << QString();
+        QTest::newRow("follow-up, stopped while Replace reads the Target") << true << QStringLiteral("stop");
+        QTest::newRow("follow-up, cancelled while Replace reads the Target") << true << QStringLiteral("cancel");
     }
 
     // Like the other UI settings, turning the review off applies to a
     // selection edit already under way. A follow-up's edit then ends the
-    // review as Replace would, counting every instruction.
+    // review as Replace would, counting every instruction, and a stop or
+    // cancel while it reads the Target acts as it does on a manual Replace.
     void selectionEditReviewFollowsTheLiveSetting()
     {
         QFETCH(bool, followUp);
+        QFETCH(QString, whileReadingTheTarget);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
@@ -237,6 +242,7 @@ private slots:
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
         target.target.selectedText = QStringLiteral("the release is tomorrow");
         target.target.selectionStart = 0;
         target.target.selectionEnd = 23;
@@ -248,6 +254,7 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        bool acted = false;
         const auto turnReviewOff = [&settings] {
             settings.edit([](AppSettings &draft) {
                 draft.ui.selectionEditReviewEnabled = false;
@@ -272,9 +279,30 @@ private slots:
             session.stopListening();
             QTRY_COMPARE(refiner->refineCalls, 2);
             turnReviewOff();
+            if (!whileReadingTheTarget.isEmpty()) {
+                target.onCapture = [&] {
+                    if (std::exchange(acted, true)) {
+                        return;
+                    }
+                    if (whileReadingTheTarget == QStringLiteral("stop")) {
+                        session.stopListening();
+                    } else {
+                        session.cancel();
+                    }
+                };
+            }
             refiner->emitCompletedText(QStringLiteral("THE RELEASE IS TOMORROW!"));
         }
 
+        QCOMPARE(acted, !whileReadingTheTarget.isEmpty());
+        QVERIFY(!session.reviewUp());
+        if (whileReadingTheTarget == QStringLiteral("cancel")) {
+            // Keep original, as a cancel during a manual Replace.
+            QCOMPARE(session.state(), DictationState::Idle);
+            QCOMPARE(delivery.calls, 0);
+            QCOMPARE(recorded.count(), 0);
+            return;
+        }
         QTRY_COMPARE(delivery.calls, 1);
         QCOMPARE(delivery.lastText, followUp ? QStringLiteral("THE RELEASE IS TOMORROW!")
                                              : QStringLiteral("THE RELEASE IS TOMORROW"));

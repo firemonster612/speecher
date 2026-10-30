@@ -16,8 +16,8 @@
 
 namespace speecher {
 namespace {
-// The audio held for a speech provider still preparing: the connect budget's
-// worth, 10 seconds of 16 kHz mono 16-bit PCM.
+// The most audio held between attempts: the connect budget's worth, 10
+// seconds of 16 kHz mono 16-bit PCM.
 constexpr qsizetype kMaxPendingAudioBytes = 10 * 16000 * 2;
 QString partMissingWarning(const SpeechFailure &failure)
 {
@@ -532,18 +532,26 @@ void DictationSession::speechChainExhausted()
     failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
-// A provider still preparing gets no more than the connect budget's worth of
-// audio: past it, it is passed over and the speech ends with what was heard.
+// No more than the connect budget's worth of audio is held, whether the next
+// provider is still preparing or the paused attempt is still finishing: past
+// it, the provider is passed over and the speech ends with what was heard.
 void DictationSession::holdPendingAudio(const QByteArray &pcm)
 {
     m_between.hold(pcm);
-    if (!m_between.awaitingProvider || m_between.heldBytes() <= kMaxPendingAudioBytes) {
+    if (m_between.heldBytes() <= kMaxPendingAudioBytes) {
         return;
     }
-    qWarning() << "speech provider still preparing past the connect budget";
+    const bool preparing = m_between.awaitingProvider;
+    qWarning() << "speech audio held past the connect budget preparing=" << preparing;
     m_speech->chain()->cancel();
-    noteProviderIssue(ProviderRole::Speech, m_speech->chain()->currentId(), Stage::Prepare,
-                      {ProviderFailureKind::Timeout, QStringLiteral("It took too long to start")});
+    const QString reason = preparing ? QStringLiteral("It took too long to start")
+                                     : QStringLiteral("It took too long to finish");
+    noteProviderIssue(ProviderRole::Speech, m_speech->chain()->currentId(),
+                      preparing ? Stage::Prepare : Stage::Interrupted, {ProviderFailureKind::Timeout, reason});
+    if (!preparing) {
+        // No switch named why the speech ends: this does.
+        m_switchFailure = {.message = reason, .phase = SpeechPhase::Finalize, .kind = ProviderFailureKind::Timeout};
+    }
     speechChainExhausted();
 }
 
@@ -1639,7 +1647,11 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         } else if (refined && m_review.followingUp()) {
             // The review was turned off during a follow-up: the follow-up's
             // edit ends the review as Replace would, every instruction counted.
+            // Reviewing first, so a stop or cancel while Replace reads the
+            // Target acts on the review as it does during a manual Replace.
             reviseSelectionEdit(*refined);
+            m_refinementGeneration = 0;
+            setState(DictationState::Reviewing);
             replaceWithRevision();
         } else if (refined) {
             deliverFinal(*refined);

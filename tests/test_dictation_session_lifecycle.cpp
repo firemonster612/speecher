@@ -1322,6 +1322,43 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("first second third"));
     }
 
+    // Audio heard after a resume while the paused attempt still finishes is
+    // held no longer than the connect budget's worth, ten seconds: past it
+    // the speech ends with what was heard, and the provider is passed over.
+    void aPausedAttemptFinishingPastTheConnectBudgetEndsTheSpeech()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy outcome(&session, &DictationSession::popupMessageRequested);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("said"));
+        speech->autoCompleteOnFinish = false;
+        session.pause();
+        session.resume();
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            audio->pushAudio(second);
+        }
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        audio->pushAudio(second);
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("said"));
+        QCOMPARE(speech->startCalls, 1);
+        QTRY_COMPARE(outcome.size(), 1);
+        QVERIFY2(outcome.first().at(0).toString().contains(QStringLiteral("It took too long to finish")),
+                 qPrintable(outcome.first().at(0).toString()));
+    }
+
     // Stop while paused delivers what was said, once the paused attempt's
     // words are in; the time spent paused is not counted as dictation.
     void stopWhilePausedDeliversTheWordsSoFar()
