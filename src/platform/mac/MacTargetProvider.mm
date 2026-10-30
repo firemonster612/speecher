@@ -2,9 +2,7 @@
 
 #include "platform/mac/MacCorrectionObserver.h"
 
-#include <QEventLoop>
 #include <QSet>
-#include <QTimer>
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -138,6 +136,17 @@ std::optional<std::pair<int, int>> selectedTextSpan(AXUIElementRef element)
                                static_cast<int>(range->location + range->length));
 }
 
+// The control's value and the selection a write will replace, or nothing when
+// the value can't be read.
+std::optional<InsertionBaseline> baselineOf(AXUIElementRef element, std::pair<int, int> span)
+{
+    const std::optional<QString> value = readStringAttribute(element, kAXValueAttribute);
+    if (!value) {
+        return std::nullopt;
+    }
+    return InsertionBaseline::forSelection(*value, span.first, span.second);
+}
+
 // Window numbers remain available without Accessibility permission, but their
 // stacking order cannot identify keyboard focus when the app owns several.
 CGWindowID singleOwnedWindow(pid_t processId)
@@ -175,22 +184,6 @@ QString focusedWindowTitle(pid_t processId)
     }
     CFRelease(application);
     return title;
-}
-
-// Most Cocoa controls apply an AX write synchronously, but some only publish
-// the new value on their next run-loop turn.
-constexpr int insertionVerificationAttempts = 5;
-constexpr int insertionVerificationPauseMs = 30;
-constexpr int targetContextCharacters = 240;
-
-// Sleeping here would freeze Speecher's own event loop, including the dictation
-// popup. Spinning it instead keeps the UI alive; user input stays excluded so a
-// stray keystroke cannot reach Speecher while the target still has focus.
-void spinEventLoop(int milliseconds)
-{
-    QEventLoop wait;
-    QTimer::singleShot(milliseconds, &wait, &QEventLoop::quit);
-    wait.exec(QEventLoop::ExcludeUserInputEvents);
 }
 
 // Whether the attribute can be set; nothing when the element can't say.
@@ -240,9 +233,7 @@ void MacTargetProvider::releaseFocusedElement()
         m_correctionObserver->cancel();
     }
     m_windowId = 0;
-    m_valueBeforeInsertion.reset();
-    m_insertionOffset.reset();
-    m_replacedSelectionEnd.reset();
+    m_insertionBaseline.reset();
     if (m_focusedElement) {
         CFRelease(static_cast<AXUIElementRef>(m_focusedElement));
         m_focusedElement = nullptr;
@@ -302,8 +293,8 @@ Target MacTargetProvider::capture()
 
                 const QString value = stringAttribute(focused, kAXValueAttribute);
                 if (start <= value.size() && length <= value.size() - start) {
-                    target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
-                    target.nearbyTextAfter = value.mid(start, targetContextCharacters);
+                    target.nearbyTextBefore = value.left(start).right(nearbyTextChars);
+                    target.nearbyTextAfter = value.mid(start, nearbyTextChars);
                 }
             }
         }
@@ -347,25 +338,22 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
         return false;
     }
 
-    // Captured before the write so verifyInsertion can tell a real insertion
-    // from a control that already happened to contain the text.
-    m_valueBeforeInsertion = readStringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
-                                             kAXValueAttribute);
-    const auto span = selectedTextSpan(static_cast<AXUIElementRef>(m_focusedElement));
+    const auto element = static_cast<AXUIElementRef>(m_focusedElement);
+    const auto span = selectedTextSpan(element);
     if (!span) {
         if (error) {
             *error = QStringLiteral("The focused control did not report its insertion point");
         }
         return false;
     }
-    m_insertionOffset = span->first;
-    m_replacedSelectionEnd = span->second;
+    // Captured before the write so verifyInsertion can tell a real insertion
+    // from a control that already happened to contain the text.
+    m_insertionBaseline = baselineOf(element, *span);
 
     // Setting the selected text replaces the selection, or inserts at the caret
     // when there is none.
     CFStringRef value = plainText.toCFString();
-    const AXError result = AXUIElementSetAttributeValue(
-        static_cast<AXUIElementRef>(m_focusedElement), kAXSelectedTextAttribute, value);
+    const AXError result = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute, value);
     CFRelease(value);
     if (result != kAXErrorSuccess) {
         if (error) {
@@ -378,75 +366,47 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
 
 bool MacTargetProvider::preparePaste(const Target &target)
 {
-    m_valueBeforeInsertion.reset();
-    m_insertionOffset.reset();
-    m_replacedSelectionEnd.reset();
+    m_insertionBaseline.reset();
     if (target.secure || IsSecureEventInputEnabled()) return false;
     // Shared delivery permits a global paste rule without an identified target.
     // Keep that fallback, but never claim verification without a baseline.
     if (!target.hasIdentity()) return true;
     if (!stillFocused(target)) return false;
     const auto element = static_cast<AXUIElementRef>(m_focusedElement);
-    m_valueBeforeInsertion = readStringAttribute(element, kAXValueAttribute);
     if (const auto span = selectedTextSpan(element)) {
-        m_insertionOffset = span->first;
-        m_replacedSelectionEnd = span->second;
+        m_insertionBaseline = baselineOf(element, *span);
     }
     return true;
 }
 
 bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_focusedElement || !m_valueBeforeInsertion || !m_insertionOffset
-        || !m_replacedSelectionEnd || plainText.isEmpty() || target.secure
-        || !stillFocused(target)) {
+    if (!m_focusedElement || !m_insertionBaseline || target.secure || !stillFocused(target)) {
         return false;
     }
-    // The insertion replaces the saved selection with the text; anything else
-    // that changed the control (a background edit, an ignored paste) must not
-    // verify, so require the exact transformation, surrounding text included.
-    const QString expected = m_valueBeforeInsertion->left(*m_insertionOffset)
-        + plainText + m_valueBeforeInsertion->mid(*m_replacedSelectionEnd);
-    if (expected == *m_valueBeforeInsertion) {
-        // Replacing a selection with identical text has no observable
-        // change; value comparison cannot verify it.
+    // A copy, because a capture during verify's nested event loop resets the member.
+    const InsertionBaseline baseline = *m_insertionBaseline;
+    if (!baseline.verify(plainText, [this]() -> std::optional<QString> {
+            return stringAttribute(static_cast<AXUIElementRef>(m_focusedElement), kAXValueAttribute);
+        })) {
         return false;
     }
-    for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
-        if (attempt > 0) {
-            spinEventLoop(insertionVerificationPauseMs);
-        }
-        const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
-                                              kAXValueAttribute);
-        if (value != expected) {
-            continue;
-        }
-        observeCorrections(target, expected, *m_insertionOffset, plainText);
-        return true;
+    if (const auto window = baseline.correctionWindow(target, plainText)) {
+        observeCorrections(*window);
     }
-    return false;
+    return true;
 }
 
-void MacTargetProvider::observeCorrections(const Target &target,
-                                           const QString &value,
-                                           int insertedAt,
-                                           const QString &plainText)
+void MacTargetProvider::observeCorrections(const CorrectionWindow &window)
 {
-    const QString prefix = value.left(insertedAt).right(correctionContextChars);
-    const QString suffix = value.mid(insertedAt + plainText.size()).left(correctionContextChars);
-    // With too little context on either side the span cannot be found again once
-    // the user has edited it, and learning from the wrong span is worse than not
-    // learning at all.
-    if (!m_correctionObservationEnabled
-        || prefix.size() < correctionMinContextChars
-        || suffix.size() < correctionMinContextChars) {
+    if (!m_correctionObservationEnabled) {
         return;
     }
     if (!m_correctionObserver) {
         m_correctionObserver = std::make_unique<mac::CorrectionObserver>();
     }
     m_correctionObserver->observe(
-        m_focusedElement, target.processId, {target, plainText, prefix, suffix},
+        m_focusedElement, window.target.processId, window,
         [this](const QString &original, const QString &corrected,
                const QString &applicationId, double confidence) {
             emit correctionObserved(original, corrected, applicationId, confidence);

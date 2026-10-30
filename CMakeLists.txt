@@ -408,6 +408,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
   src/platform/CorrectionDiff.cpp
+  src/platform/InsertionBaseline.cpp
   src/platform/HotKeyShortcutBinder.cpp
   src/platform/RoutingShortcutBinder.cpp
   src/platform/SessionShortcutBinder.cpp
@@ -431,6 +432,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/MicrophoneAccess.h
   src/platform/SessionKeyGrab.h
   src/platform/CorrectionDiff.h
+  src/platform/InsertionBaseline.h
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/HotKeyShortcutBinder.h

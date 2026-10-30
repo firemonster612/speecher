@@ -43,7 +43,6 @@ namespace speecher::atspi {
 #ifdef SPEECHER_WITH_ATSPI
 namespace {
 
-constexpr int contextCharacters = 240;
 constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
 constexpr int maximumDescendantProcesses = 64;
@@ -724,8 +723,8 @@ void populateText(Target *target, AtspiAccessible *object)
         return;
     }
     target->caretOffset = caret;
-    const int start = qMax(0, caret - contextCharacters);
-    const int end = qMin(count, caret + contextCharacters);
+    const int start = qMax(0, caret - nearbyTextChars);
+    const int end = qMin(count, caret + nearbyTextChars);
     target->nearbyTextBefore = takeString(atspi_text_get_text(text, start, caret, &error));
     clearError(&error);
     target->nearbyTextAfter = takeString(atspi_text_get_text(text, caret, end, &error));
