@@ -1587,16 +1587,17 @@ private slots:
         settings.raw().clear();
     }
 
-    // A run's own field, or one a snapshot derives, would be dropped on save.
+    // A field a snapshot derives, or one only its owner writes, would be
+    // dropped on save.
     void anEditOfAFieldThatIsNeverStoredSavesNothing()
     {
         SettingsStore settings;
         settings.raw().clear();
         QTest::ignoreMessage(QtCriticalMsg,
-                             "Settings: not saved, since the edit changed sessionVocabulary, which is never stored");
+                             "Settings: not saved, since the edit changed speech.vocabulary, which is never stored");
         QVERIFY(!settings.edit([](AppSettings &s) {
             s.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
-            s.sessionVocabulary = {QStringLiteral("Speecher")};
+            s.speech.vocabulary = {QStringLiteral("Speecher")};
             return true;
         }));
         QTest::ignoreMessage(QtCriticalMsg,

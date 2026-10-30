@@ -21,6 +21,7 @@ public:
         QStringList instructions;
         Target target;
         AppSettings settings;
+        RunChoices choices;
         TranscriptPipelineResult pipeline;
         // What the receipt reports for this revision.
         QString speechWarning;

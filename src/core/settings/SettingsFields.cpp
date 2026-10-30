@@ -19,8 +19,8 @@ struct SettingsCodecs::Field {
     // Its path in AppSettings, for the message when an edit changes a field
     // that isn't stored.
     const char *name;
-    // Fills the field of a snapshot from the file. Empty for a field one run
-    // sets on its own copy, which a snapshot leaves at its default.
+    // Fills the field of a snapshot from the file. Empty for the test hook,
+    // which a snapshot leaves at its default.
     std::function<void(const SettingsCodecs &, AppSettings &)> read;
     // Saves the field of a draft. Empty for a field Speecher never stores.
     std::function<void(SettingsCodecs &, const AppSettings &)> write;
@@ -84,8 +84,8 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
     const auto readOnly = [](const char *name, auto member, auto get) {
         return Field{name, reader(member, get), {}, sameValue(member)};
     };
-    // Set by a dictation or a transcription on its own copy of the settings.
-    const auto perRun = [](const char *name, auto member) { return Field{name, {}, {}, sameValue(member)}; };
+    // Neither read nor saved: tests set it on their own copy.
+    const auto testHook = [](const char *name, auto member) { return Field{name, {}, {}, sameValue(member)}; };
 
     static const std::vector<Field> table{
         stored("setupCompleted", member(&A::setupCompleted), &C::setupCompleted, &C::setSetupCompleted),
@@ -178,10 +178,8 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         // The cleanup level saved before Writing Profiles, which seeds them
         // until they are saved. Each run takes its own from its profile.
         readOnly("refinement.style", member(&A::refinement, &RefinementSettings::style), &C::refinementStyle),
-        perRun("refinement.sessionWritingProfile", member(&A::refinement, &RefinementSettings::sessionWritingProfile)),
-        // A test hook, not a choice a run makes: tests point their own copy at
-        // a server of their own. Like a per-run field, never read or saved.
-        perRun("refinement.anthropicEndpointBase", member(&A::refinement, &RefinementSettings::anthropicEndpointBase)),
+        // Tests point their own copy at a server of their own.
+        testHook("refinement.anthropicEndpointBase", member(&A::refinement, &RefinementSettings::anthropicEndpointBase)),
 
         stored("accounts.openAiAuthMode", member(&A::accounts, &AccountSettings::openAiAuthMode), &C::openAiAuthMode,
                &C::setOpenAiAuthMode),
@@ -235,7 +233,6 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                  [](const C &, const A &settings) {
                      return speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
                  }),
-        perRun("sessionVocabulary", member(&A::sessionVocabulary)),
         stored("correctionLearningEnabled", member(&A::correctionLearningEnabled), &C::correctionLearningEnabled,
                &C::setCorrectionLearningEnabled),
         stored("insightsEnabled", member(&A::insightsEnabled), &C::insightsEnabled, &C::setInsightsEnabled),

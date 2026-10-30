@@ -242,6 +242,8 @@ private:
     quint64 m_audioGeneration = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
+    // What the session chose for itself: a forced Writing Profile.
+    RunChoices m_runChoices;
     Target m_target;
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;

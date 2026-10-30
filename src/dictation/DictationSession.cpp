@@ -305,11 +305,12 @@ void DictationSession::startSession(const SessionOverrides &overrides)
 
     // A follow-up keeps the settings the edit was made with.
     AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
+    RunChoices choices = followUp ? m_review.revision().choices : RunChoices{};
     if (overrides.outputFormat) {
         settings.output.format = *overrides.outputFormat;
     }
     if (overrides.writingProfile) {
-        settings.refinement.sessionWritingProfile = *overrides.writingProfile;
+        choices.writingProfile = *overrides.writingProfile;
     }
     if (overrides.spokenLanguage) {
         settings.speech.language = *overrides.spokenLanguage;
@@ -320,6 +321,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_speech->forgetAttempt();
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
+    m_runChoices = choices;
     m_heardSpeech = false;
     m_target = {};
     m_between = {.awaitingProvider = true};
@@ -392,10 +394,10 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         return;
     }
     m_sessionSettings->speech.vocabulary =
-        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_target);
+        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_runChoices, m_target);
     const AppSettings settings = *m_sessionSettings;
     const RefinementSettings effectiveRefinement =
-        TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
+        TranscriptPipeline::effectiveRefinementSettings(settings, m_runChoices, m_target);
     // Once, for whichever refiner in the chain reads it.
     const QStringList &refiners = m_refinementChain->providerIds();
     const bool chainReadsScreenshots = std::any_of(refiners.cbegin(), refiners.cend(), [this](const QString &id) {
@@ -423,7 +425,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 bool DictationSession::selectProviders()
 {
     m_sessionSettings = m_providers->withProfileProviders(
-        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_target));
+        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_runChoices, m_target));
     const AppSettings &settings = *m_sessionSettings;
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "refinementProvider=" + settings.refinement.providerId;
@@ -1107,7 +1109,7 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review.revision().edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target,
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, m_runChoices, target,
                                                         m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
@@ -1233,7 +1235,7 @@ void DictationSession::failSelectionEdit(const QString &message)
 void DictationSession::reviewSelectionEdit(const QString &revised)
 {
     const QString spoken = m_transcript->text();
-    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_transcriptPipeline, m_speechWarning,
+    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
     m_refinementGeneration = 0;
     enterReview();
@@ -1256,6 +1258,7 @@ void DictationSession::returnToReview()
     const EditReview::Revision &revision = m_review.revision();
     m_target = revision.target;
     m_sessionSettings = revision.settings;
+    m_runChoices = revision.choices;
     m_transcriptPipeline = revision.pipeline;
     // Nothing the follow-up met belongs in the receipt of the revision kept.
     m_usedRawTranscript = false;

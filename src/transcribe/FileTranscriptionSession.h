@@ -181,6 +181,7 @@ private:
     TranscribeOptions m_options;
     // The user's settings with this batch's choices applied.
     AppSettings m_batchSettings;
+    RunChoices m_runChoices;
     QList<TranscribeFileResult> m_results;
     TranscribeFileResult m_current;
     bool m_running = false;

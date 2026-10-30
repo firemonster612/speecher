@@ -40,9 +40,8 @@ AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistr
     if (profiled.speech.providerId == settings.speech.providerId) {
         recording.speech = profiled.speech;
     }
-    recording.refinement.sessionWritingProfile = WritingProfile::Other;
-    recording.sessionVocabulary = vocabulary;
-    recording.speech.vocabulary = TranscriptPipeline::speechVocabulary(recording, Target{});
+    recording.speech.vocabulary = TranscriptPipeline::speechVocabulary(recording, {WritingProfile::Other, vocabulary},
+                                                                        Target{});
     return recording;
 }
 

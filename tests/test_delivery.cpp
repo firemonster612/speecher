@@ -646,7 +646,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const QString instructions = QStringLiteral("Make this more confident and add a greeting");
         const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
             instructions,
-            settings,
+            settings, {},
             target,
             settings.speech.language);
 
@@ -714,7 +714,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
 
         const QStringList refinement =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language).refinementVocabulary;
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
         // Read from the stored list in priority order, not from the capped speech
         // request, and cut at the refinement ceiling.
         // Corrections lead, so a full list cannot push them out.
@@ -743,12 +743,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
 
         const TranscriptPipelineResult work =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language);
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(work.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Kubernetes"), QStringLiteral("Speecher")}));
         QCOMPARE(work.refinementContext.vocabularyContext,
                  (QHash<QString, QString>{{QStringLiteral("Kubernetes"), QStringLiteral("The container platform.")}}));
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, Target{}),
+        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, {}, Target{}),
                  (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
 
         // A correction that writes a term limited elsewhere stays out with it,
@@ -759,11 +759,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.vocabulary.append(pr);
         settings.learnedCorrections.append(
             {QStringLiteral("1"), QStringLiteral("pee are"), QStringLiteral("pr"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language)
+        QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                      .refinementVocabulary.contains(QStringLiteral("pr")));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, Target{}).contains(QStringLiteral("pr")));
-        settings.refinement.sessionWritingProfile = WritingProfile::AiCoding;
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language)
+        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("pr")));
+        const RunChoices aiCoding{WritingProfile::AiCoding};
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
                      .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
                  QStringLiteral("Pull request."));
         settings.vocabulary.removeLast();
@@ -774,20 +774,20 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.vocabulary[2].keyTerm = false;
         settings.learnedCorrections.append(
             {QStringLiteral("2"), QStringLiteral("speaker"), QStringLiteral("speecher"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language)
+        QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                     .refinementVocabulary.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, Target{}).contains(QStringLiteral("Speecher"),
+        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
                                                                                    Qt::CaseInsensitive));
         settings.vocabulary[2].keyTerm = true;
         settings.learnedCorrections.removeLast();
 
-        settings.refinement.sessionWritingProfile = WritingProfile::Personal;
+        const RunChoices personalProfile{WritingProfile::Personal};
         const TranscriptPipelineResult personal =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language);
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, personalProfile, Target{}, settings.speech.language);
         QCOMPARE(personal.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Lúcia"), QStringLiteral("Speecher")}));
         QVERIFY(personal.refinementContext.vocabularyContext.isEmpty());
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, Target{}),
+        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, personalProfile, Target{}),
                  (QStringList{QStringLiteral("Lúcia"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
@@ -803,7 +803,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.zulip.Zulip");
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, target, settings.speech.language);
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, target, settings.speech.language);
         QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
@@ -825,7 +825,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             {WritingProfile::Other, notes.id, terse.id},
         };
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language);
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
         QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
@@ -835,7 +835,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         AppSettings settings;
         settings.speech.language = QStringLiteral("de");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hallo"), settings, Target{}, settings.speech.language).refinementContext.spokenLanguage,
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hallo"), settings, {}, Target{}, settings.speech.language).refinementContext.spokenLanguage,
                  QStringLiteral("de"));
     }
 
@@ -849,7 +849,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
              QStringLiteral("Spanish")},
         };
         const TranscriptPipelineResult dictation =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}, settings.speech.language);
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(dictation.refinementContext.outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(dictation.refinementSettings.style, QStringLiteral("light_cleanup"));
 
@@ -857,7 +857,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         selection.selectedText = QStringLiteral("hola");
         selection.selectionStart = 0;
         selection.selectionEnd = 4;
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, selection, settings.speech.language).refinementSettings.style,
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, {}, selection, settings.speech.language).refinementSettings.style,
                  QStringLiteral("light_cleanup"));
     }
 
@@ -881,7 +881,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target kate;
         kate.applicationId = QStringLiteral("ORG.KDE.KATE");
         const TranscriptPipelineResult inKate = TranscriptPipeline::prepare(
-            QStringLiteral("cute uses post grass and open ai"), settings, kate, settings.speech.language);
+            QStringLiteral("cute uses post grass and open ai"), settings, {}, kate, settings.speech.language);
         QCOMPARE(inKate.bindingResult.boundText,
                  QStringLiteral("user choice uses Postgres and OpenAI"));
         QVERIFY(inKate.refinementVocabulary.contains(QStringLiteral("Qt")));
@@ -891,7 +891,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target firefox;
         firefox.applicationId = QStringLiteral("org.mozilla.firefox");
         const TranscriptPipelineResult inFirefox = TranscriptPipeline::prepare(
-            QStringLiteral("cute uses post grass and open ai"), settings, firefox, settings.speech.language);
+            QStringLiteral("cute uses post grass and open ai"), settings, {}, firefox, settings.speech.language);
         QCOMPARE(inFirefox.bindingResult.boundText,
                  QStringLiteral("user choice uses global choice and OpenAI"));
     }
@@ -910,7 +910,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
         const QString before = expansionAt(QDateTime::currentDateTime());
         const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
-            QStringLiteral("thanks sign off"), settings, Target{}, settings.speech.language);
+            QStringLiteral("thanks sign off"), settings, {}, Target{}, settings.speech.language);
         const QString after = expansionAt(QDateTime::currentDateTime());
         const QString bound = pipeline.bindingResult.boundText;
         QVERIFY2(bound == QStringLiteral("thanks ") + before
@@ -932,7 +932,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
              QString(), 1, 0.98, true, 1, 1},
         };
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, Target{}, settings.speech.language)
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("{date}"));
     }
@@ -943,11 +943,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email}};
         Target kate;
         kate.applicationId = QStringLiteral("org.kde.kate");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Email);
 
-        settings.refinement.sessionWritingProfile = WritingProfile::Personal;
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Personal);
     }
 
