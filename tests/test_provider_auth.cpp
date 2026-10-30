@@ -356,6 +356,10 @@ private slots:
         const auto result = ClaudeCredentials::load(keychain.path());
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.accessToken, QStringLiteral("dummy-keychain-token"));
+        // A ~/.claude path stored before the default followed
+        // CLAUDE_CONFIG_DIR still names this sign-in.
+        QCOMPARE(ClaudeCredentials::load(QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).accessToken,
+                 QStringLiteral("dummy-keychain-token"));
         QTemporaryDir directory;
         const QString explicitPath = directory.filePath(QStringLiteral("credentials.json"));
         QVERIFY(writeJsonCredentials(explicitPath, QStringLiteral("explicit-file-token"),
