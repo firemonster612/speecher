@@ -1,6 +1,7 @@
 #include "common/test_prelude.h"
 #include "common/test_http.h"
 #include "common/test_doubles.h"
+#include "core/EndpointSettings.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
@@ -970,6 +971,36 @@ private slots:
 
         settings.raw().setValue(SettingsKeys::RefinementEndpointFormat, QStringLiteral("bogus"));
         QCOMPARE(settings.snapshot().refinement.endpoint.format, QStringLiteral("openai"));
+    }
+
+    // Changing a Custom endpoint's server leaves the CLI Proxy key behind,
+    // whether the endpoint uses it unread or holds the copy leaving the
+    // preset made.
+    void anotherServerDoesNotGetTheProxyKey_data()
+    {
+        QTest::addColumn<bool>("unread");
+        QTest::newRow("read") << false;
+        QTest::newRow("unread") << true;
+    }
+
+    void anotherServerDoesNotGetTheProxyKey()
+    {
+        QFETCH(bool, unread);
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        if (unread) {
+            settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        } else {
+            settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        }
+        editRefinementEndpoint(settings, {.preset = QString()});
+
+        editRefinementEndpoint(settings, {.baseUrl = QStringLiteral("http://other.example/v1")});
+
+        // As a request reads it, the proxy key read by then.
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
     }
 
     // Keys land in the keyring when one works, and in the settings file

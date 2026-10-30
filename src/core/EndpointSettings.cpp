@@ -43,6 +43,15 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
         endpoint.useCliproxyKey = sameServer && unread;
         settings.unreadSecretKeys.removeAll(endpointKey);
     }
+    // Nor does it follow a Custom endpoint to another server, whether the
+    // endpoint uses it unread or holds the copy leaving the preset made.
+    const bool holdsProxyKey = endpoint.useCliproxyKey
+        || (!endpoint.apiKey.isEmpty() && endpoint.apiKey == settings.refinement.cliproxyApiKey);
+    if (serverChanged && !edit.apiKey && holdsProxyKey) {
+        endpoint.apiKey.clear();
+        endpoint.useCliproxyKey = false;
+        settings.unreadSecretKeys.removeAll(endpointKey);
+    }
     // Stored as typed: a field that is re-read while someone types must not
     // lose the "/" they just entered. Saving and requests drop trailing slashes.
     if (urlEdited) endpoint.baseUrl = edit.baseUrl->trimmed();
