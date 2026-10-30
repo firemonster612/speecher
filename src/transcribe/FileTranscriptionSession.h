@@ -25,6 +25,7 @@ namespace speecher {
 
 class ProviderRegistry;
 class SettingsStore;
+class StartupPreparationRunner;
 class TranscriptState;
 
 enum class TranscriptDestination {
@@ -197,6 +198,7 @@ private:
     QString speechFailureText(const QString &providerMessage) const;
     void finishTranscription();
     void refine(const QString &raw);
+    void startRefiner();
     void completeFile(const QString &text);
     void failFile(const QString &message);
     void finishFile();
@@ -242,6 +244,8 @@ private:
     Microphone m_microphone = Microphone::Off;
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
+    // Renews m_refiner's sign-in on a worker before the file refines.
+    StartupPreparationRunner *m_refinerPreparation;
     QByteArray m_pcm;
     // Microphone audio dropped from the front of m_pcm once a connected stream
     // took it, or once too much waited, so a long recording does not keep

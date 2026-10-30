@@ -4,6 +4,7 @@
 #include "core/TranscriptState.h"
 #include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
+#include "dictation/StartupPreparationRunner.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/TranscribePresentation.h"
@@ -186,6 +187,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     , m_speechChain(new SpeechChain(
           providers, [this](const QString &providerId) { return acquireTranscriber(providerId); }, this))
     , m_transcript(new TranscriptState(this))
+    , m_refinerPreparation(new StartupPreparationRunner(this))
 {
     qRegisterMetaType<TranscribeFileResult>();
     m_sendTimer.setInterval(kSendIntervalMs);
@@ -203,6 +205,15 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     connect(m_speechChain, &SpeechChain::exhausted, this,
             [this] { failFile(speechFailureText(m_speechIssues.value(0).message)); });
     connect(m_speechChain, &SpeechChain::signInRenewed, this, &FileTranscriptionSession::handleSignInRenewed);
+    connect(m_refinerPreparation, &StartupPreparationRunner::completed, this,
+            [this](const StartupPreparationResult &result) {
+                if (!result.refinerRefresh.ok) {
+                    m_current.error = result.refinerRefresh.message;
+                    completeFile(m_pipeline.deliveryFallback);
+                    return;
+                }
+                startRefiner();
+            });
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
         if (m_running) {
             emit filePartialText(m_index, text);
@@ -840,6 +851,20 @@ void FileTranscriptionSession::refine(const QString &raw)
         completeFile(m_pipeline.deliveryFallback);
         return;
     }
+    // An expired sign-in renews on the worker, as for a dictation: never on
+    // this thread, where prepare() would wait on the network and a cancel
+    // could run meanwhile. A cancel drops the renewal unanswered.
+    if (std::optional<RefinementRefreshJob> refresh =
+            m_refiner->createRefreshJob(refinement, m_batchSettings.accounts)) {
+        m_refinerPreparation->start(0, std::nullopt, std::move(refresh), {true, {}}, ProviderRole::Refinement);
+        return;
+    }
+    startRefiner();
+}
+
+void FileTranscriptionSession::startRefiner()
+{
+    const RefinementSettings &refinement = m_pipeline.refinementSettings;
     const RefinementPrepareResult prepared = m_refiner->prepare(refinement, m_batchSettings.accounts);
     if (!prepared.ok) {
         m_current.error = prepared.message;
@@ -923,6 +948,7 @@ void FileTranscriptionSession::releaseFileResources()
     m_sendTimer.stop();
     m_reconnectTimer.stop();
     m_speechChain->cancel();
+    m_refinerPreparation->cancel();
     m_signInRefused = false;
     // Signals from a retired provider must not reach the next file.
     if (m_decoder) {

@@ -30,6 +30,9 @@ public:
 private:
     AnthropicApiRefiner *m_apiRefiner = nullptr;
     QString m_accessToken;
+    // The refresh job resolved m_accessToken on the worker, renewing what had
+    // expired; the next prepare() uses it rather than renew on this thread.
+    bool m_authResolvedByJob = false;
 };
 
 } // namespace speecher

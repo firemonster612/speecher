@@ -300,8 +300,9 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
     }
 
     QLockFile lock(storage.lockPath());
-    if (!lock.tryLock(1000)) {
+    if (!lock.tryLock(refreshLockTimeoutMs(refreshTimeoutMs))) {
         result.error = QStringLiteral("Could not lock Claude credentials for refresh");
+        result.kind = ProviderFailureKind::Timeout;
         return result;
     }
 
