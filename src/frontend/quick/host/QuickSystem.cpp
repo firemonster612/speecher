@@ -11,7 +11,6 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QDesktopServices>
-#include <QDir>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QSysInfo>
@@ -402,12 +401,10 @@ void QuickSystem::copy(const QString &text)
 void QuickSystem::open(const QString &target)
 {
     // Release notes come from the network, so a link in them must not reach
-    // a file share or another app's scheme.
-    const bool path = QDir::isAbsolutePath(target);
-    const QUrl url = path ? QUrl::fromLocalFile(target) : QUrl(target, QUrl::StrictMode);
-    const bool webLink = url.isValid() && (url.scheme() == u"https" || url.scheme() == u"http") && !url.host().isEmpty();
-    if (!path && !webLink) {
-        qWarning().noquote() << "System.open: not a web link or an absolute path:" << target;
+    // a file, a file share (//server/share) or another app's scheme.
+    const QUrl url(target, QUrl::StrictMode);
+    if (!url.isValid() || (url.scheme() != u"https" && url.scheme() != u"http") || url.host().isEmpty()) {
+        qWarning().noquote() << "System.open: not a web link:" << target;
         return;
     }
     if (!QDesktopServices::openUrl(url)) {

@@ -744,15 +744,15 @@ private slots:
     }
 #endif
 
-    // Only a web link or an absolute path reaches the desktop: release notes
-    // come from the network.
-    void openTakesWebLinksAndPathsOnly()
+    // Only a web link reaches the desktop, never a path, a file share or
+    // another scheme: release notes come from the network.
+    void openTakesWebLinksOnly()
     {
         ApplicationController controller(true);
         SystemSingletons onThisComputer(&controller);
         OpenedLinks opened;
         const QStringList schemes{QStringLiteral("https"), QStringLiteral("file"), QStringLiteral("smb"),
-                                  QStringLiteral("speecher-test")};
+                                  QStringLiteral("c"), QStringLiteral("speecher-test")};
         for (const QString &scheme : schemes) {
             QDesktopServices::setUrlHandler(scheme, &opened, "open");
         }
@@ -764,15 +764,15 @@ private slots:
         const QString path = QDir::homePath() + QStringLiteral("/notes.txt");
 
         onThisComputer.system.open(QStringLiteral("https://example.com/notes"));
-        onThisComputer.system.open(path);
-        for (const char *refused : {"smb://host/share", "file:///etc/hosts", "speecher-test:run", "https:no-host"}) {
-            QTest::ignoreMessage(QtWarningMsg,
-                                 qPrintable(QStringLiteral("System.open: not a web link or an absolute path: ")
-                                            + QLatin1String(refused)));
-            onThisComputer.system.open(QLatin1String(refused));
+        for (const QString &refused : {path, QStringLiteral("//server/share/payload"),
+                                       QStringLiteral("C:/Windows/System32/cmd.exe"), QStringLiteral("smb://host/share"),
+                                       QStringLiteral("file:///etc/hosts"), QStringLiteral("speecher-test:run"),
+                                       QStringLiteral("https:no-host")}) {
+            QTest::ignoreMessage(QtWarningMsg, qPrintable(QStringLiteral("System.open: not a web link: ") + refused));
+            onThisComputer.system.open(refused);
         }
 
-        QCOMPARE(opened.urls, (QList<QUrl>{QUrl(QStringLiteral("https://example.com/notes")), QUrl::fromLocalFile(path)}));
+        QCOMPARE(opened.urls, QList<QUrl>{QUrl(QStringLiteral("https://example.com/notes"))});
     }
 
     // What this computer lacks, the virtual keyboard and removal off Linux,
