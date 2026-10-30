@@ -249,7 +249,7 @@ bool WinGlobalShortcutBinder::registerKeys(const QKeySequence &keys, QString *er
         return false;
     }
     // The release, which WM_HOTKEY never reports, arrives as raw input.
-    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input) { handleRawInput(input); },
+    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input, qint64) { handleRawInput(input); },
                                   error)) {
         return false;
     }

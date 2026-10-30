@@ -32,8 +32,10 @@ QString WinSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
 QString WinSingleKeyShortcutBinder::watch(const PhysicalKey &key)
 {
     QString error;
-    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input) { handleRawInput(input); },
-                                  &error)) {
+    const auto deliver = [this](const RAWINPUT &input, qint64 messageTimeMs) {
+        handleRawInput(input, messageTimeMs);
+    };
+    if (!win::listenToRawKeyboard(this, deliver, &error)) {
         return error;
     }
     m_scancode = key.win;
@@ -46,7 +48,7 @@ void WinSingleKeyShortcutBinder::unwatch()
     m_scancode = 0;
 }
 
-void WinSingleKeyShortcutBinder::handleRawInput(const RAWINPUT &input)
+void WinSingleKeyShortcutBinder::handleRawInput(const RAWINPUT &input, qint64 messageTimeMs)
 {
     if (input.header.dwType != RIM_TYPEKEYBOARD || m_scancode == 0) {
         return;
@@ -83,10 +85,12 @@ void WinSingleKeyShortcutBinder::handleRawInput(const RAWINPUT &input)
     // Key repeat (repeated makes without a break) collapses in the base
     // class; on AltGr layouts the synthetic left-Ctrl make preceding right
     // Alt never reaches here for an AltRight binding, since 0x1D != 0xE038.
+    // The message times, not when Qt got round to dispatching them, time the
+    // physical hold.
     if (keyboard.Flags & RI_KEY_BREAK) {
-        keyUp();
+        keyUp(messageTimeMs);
     } else {
-        keyDown();
+        keyDown(messageTimeMs);
     }
 }
 
