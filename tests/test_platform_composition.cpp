@@ -13,6 +13,7 @@
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
+#include "app/TrayIcon.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -35,6 +36,7 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
@@ -713,6 +715,33 @@ private slots:
         controller.cancel();
     }
 #endif
+
+    // A dictation goes on once the popup's first frame is on screen: the
+    // front end hands the session's show to the popup and its answer back.
+    void thePopupsFirstFrameLetsADictationListen()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        SettingsStore *settings = controller.settings();
+        const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            settings->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+            DictationSession::setPopupPaintFallbackMs(50);
+        });
+        settings->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(*controller.providerRegistry(), &speech);
+        // Without the popup's answer, startup would only go on after this.
+        DictationSession::setPopupPaintFallbackMs(60000);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+
+        controller.session()->startListening();
+
+        QTRY_COMPARE(controller.session()->state(), DictationState::Listening);
+        controller.cancel();
+    }
 
     void dictationAndFileTranscriptionExcludeEachOther()
     {
