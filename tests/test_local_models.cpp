@@ -356,10 +356,10 @@ private slots:
         auto local = settings.dictationSnapshot().speech.local;
         local.speedTestSeconds.insert(localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}}), 0.8);
         settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
-        QCOMPARE(setup.measuredSeconds(model.id, settings.dictationSnapshot()), std::nullopt);
+        QCOMPARE(measuredSpeedTestSeconds(settings.dictationSnapshot().speech.local, model.id), std::nullopt);
         local.runsOn = {QStringLiteral("cpu"), {}};
         settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
-        QCOMPARE(setup.measuredSeconds(model.id, settings.dictationSnapshot()), std::optional(0.8));
+        QCOMPARE(measuredSpeedTestSeconds(settings.dictationSnapshot().speech.local, model.id), std::optional(0.8));
         {
             QFile file(models.modelPath(model));
             QVERIFY(file.open(QIODevice::WriteOnly));
@@ -400,7 +400,7 @@ private slots:
         // A card saved before backends could be chosen is still that card.
         QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {QStringLiteral("auto"), card.id})), ModelFit::TooLarge);
 
-        // LocalSetup answers for the Runs on choice in the settings it is given.
+        // LocalSetup fits against the Runs on choice it is given.
         QTemporaryDir directory;
         SettingsStore settings;
         settings.raw().clear();
@@ -408,11 +408,10 @@ private slots:
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
         LocalSetup setup(settings, providers, models);
         LocalSetupTestAccess::setHardware(setup, hardware);
-        QCOMPARE(setup.fit(qwen, settings.dictationSnapshot()), std::optional(ModelFit::TooLarge));
-        LocalSpeechSettings local = settings.dictationSnapshot().speech.local;
+        LocalSpeechSettings local;
+        QCOMPARE(setup.fit(qwen, local), std::optional(ModelFit::TooLarge));
         local.runsOn = {QStringLiteral("cpu"), {}};
-        settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
-        QCOMPARE(setup.fit(qwen, settings.dictationSnapshot()), std::optional(ModelFit::Fits));
+        QCOMPARE(setup.fit(qwen, local), std::optional(ModelFit::Fits));
     }
 
     // Acceleration offers Automatic, the CPU and each backend a card here
