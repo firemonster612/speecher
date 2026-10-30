@@ -214,6 +214,45 @@ private slots:
                  QStringLiteral("Please send efox@example.com to Alex."));
     }
 
+    // Like the other UI settings, turning the review off applies to a
+    // selection edit already under way.
+    void selectionEditReviewFollowsTheLiveSetting()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("openai");
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        target->target.selectedText = QStringLiteral("the release is tomorrow");
+        target->target.selectionStart = 0;
+        target->target.selectionEnd = 23;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), target.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        settings.edit([](AppSettings &draft) {
+            draft.ui.selectionEditReviewEnabled = false;
+            return true;
+        });
+        speech->emitFinalText(QStringLiteral("Make it louder"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("THE RELEASE IS TOMORROW!");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QVERIFY(session.state() != DictationState::Reviewing);
+    }
+
     void dictationSessionEditsSelectedTextFromSpokenInstructions()
     {
         SettingsStore settings;

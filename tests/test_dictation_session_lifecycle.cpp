@@ -1717,8 +1717,16 @@ private slots:
                                 "The connection dropped."));
     }
 
-    void dictationSessionNeverCapturesScreenshotForSecureTarget()
+    void dictationSessionNeverCapturesScreenshotTheRefinementDrops_data()
     {
+        QTest::addColumn<bool>("secure");
+        QTest::newRow("secure target") << true;
+        QTest::newRow("selection edit") << false;
+    }
+
+    void dictationSessionNeverCapturesScreenshotTheRefinementDrops()
+    {
+        QFETCH(bool, secure);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
@@ -1730,9 +1738,14 @@ private slots:
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto targetProvider = std::make_unique<FakeTargetProvider>();
-        targetProvider->target.applicationId = QStringLiteral("secure-fixture");
+        targetProvider->target.applicationId = QStringLiteral("fixture");
         targetProvider->target.accessible = true;
-        targetProvider->target.secure = true;
+        targetProvider->target.secure = secure;
+        if (!secure) {
+            targetProvider->target.selectedText = QStringLiteral("the release is tomorrow");
+            targetProvider->target.selectionStart = 0;
+            targetProvider->target.selectionEnd = 23;
+        }
         auto screenshots = std::make_unique<FakeScreenshotContextProvider>();
         auto delivery = std::make_unique<FakeDelivery>();
         ProviderRegistry registry;

@@ -13,6 +13,7 @@
 #include "providers/TranscriptRefiner.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QMetaObject>
 #include <QPointer>
 #include <QVector>
@@ -216,7 +217,7 @@ private:
     void startSession(const SessionOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     // The live UI settings, which apply the moment a save changes them,
-    // mid-session too; the defaults without a store. Kept here so previews
+    // mid-session too. Kept here so previews
     // and streamed refinement never read a whole snapshot per word.
     UiSettings m_ui;
     AudioInput *m_audio = nullptr;
@@ -251,6 +252,8 @@ private:
     quint64 m_screenshotCaptureGeneration = 0;
     quint64 m_refinementGeneration = 0;
     QString m_refinementStream;
+    // The pipeline's bound values by placeholder, for the refinement preview.
+    QHash<QString, QString> m_previewReplacements;
     bool m_heardSpeech = false;
     // From Listening to Stopping: the audio a Dictation Session transcribed.
     QElapsedTimer m_listeningClock;
