@@ -23,6 +23,11 @@
 
 #include <optional>
 
+#ifndef Q_OS_WIN
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 using namespace speecher::test;
 
 namespace {
@@ -1092,27 +1097,89 @@ private slots:
     }
 
 #ifndef Q_OS_WIN
-    // The settings file and its folder are the owner's alone: a key no
-    // keyring takes is kept in the file.
+    // The settings file and its folder are the owner's alone before a key no
+    // keyring takes goes in, under a umask that opens new files to everyone,
+    // and stay so when the store writes its last changes as it closes.
     void theSettingsFileHoldingAKeyIsTheOwnersAlone()
     {
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        const mode_t umaskBefore = umask(0);
+        const auto restoreUmask = qScopeGuard([umaskBefore] { umask(umaskBefore); });
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
-        SettingsStore settings;
-        settings.raw().clear();
-        const QString file = settings.raw().fileName();
-        const QString folder = QFileInfo(file).absolutePath();
-        QVERIFY(QDir().mkpath(folder));
-        for (const QString &path : {folder, file}) {
-            QFile::setPermissions(path, QFile::permissions(path) | QFile::ReadOther | QFile::ExeOther);
+        QString file;
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            file = settings.raw().fileName();
+            QFile::remove(file);
+            QFile::setPermissions(QFileInfo(file).absolutePath(), openToOthers | QFile::ReadOwner
+                                      | QFile::WriteOwner | QFile::ExeOwner);
+
+            QCOMPARE(settings.secrets()->saveSecret(proxy, QStringLiteral("file-key")), SaveResult::Stored);
+
+            QVERIFY(settings.raw().contains(SecretStore::settingsKey(proxy)));
+            settings.raw().setValue(QStringLiteral("test/closing"), true);
         }
-
-        QCOMPARE(settings.secrets()->saveSecret(proxy, QStringLiteral("file-key")), SaveResult::Stored);
-
-        QVERIFY(settings.raw().contains(SecretStore::settingsKey(proxy)));
+        QVERIFY(QSettings(file, QSettings::IniFormat).value(QStringLiteral("test/closing")).toBool());
         QCOMPARE((QFile::permissions(file) & openToOthers).toInt(), 0);
-        QCOMPARE((QFile::permissions(folder) & openToOthers).toInt(), 0);
+        QCOMPARE((QFile::permissions(QFileInfo(file).absolutePath()) & openToOthers).toInt(), 0);
+    }
+
+    // Migration copies the older settings' keys only into settings of the
+    // owner's alone, under a umask that opens new files to everyone, and
+    // closes the older file the keys came from too.
+    void migratedKeysLandInSettingsOfTheOwnersAlone()
+    {
+        const mode_t umaskBefore = umask(0);
+        const auto restoreUmask = qScopeGuard([umaskBefore] { umask(umaskBefore); });
+        const QString key = SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey);
+        QString file;
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            file = settings.raw().fileName();
+        }
+        QFile::remove(file);
+        const QString folder = QFileInfo(file).absolutePath();
+        QFile::setPermissions(folder, openToOthers | QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QString olderFile;
+        {
+            QSettings older(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("local.speecher"),
+                            SettingsKeys::application());
+            older.setValue(key, QStringLiteral("older-key"));
+            older.sync();
+            olderFile = older.fileName();
+        }
+        const auto removeOlder = qScopeGuard([olderFile] {
+            QFile::remove(olderFile);
+            QDir().rmdir(QFileInfo(olderFile).absolutePath());
+        });
+
+        migrateSavedSettings();
+
+        QCOMPARE(QSettings(file, QSettings::IniFormat).value(key).toString(), QStringLiteral("older-key"));
+        for (const QString &path : {file, folder, olderFile, QFileInfo(olderFile).absolutePath()}) {
+            QCOMPARE((QFile::permissions(path) & openToOthers).toInt(), 0);
+        }
+    }
+#endif
+
+#ifdef Q_OS_LINUX
+    // Settings in a folder another user owns can't be made the owner's
+    // alone, so nothing is made there for a key to go in.
+    void settingsInAnotherUsersFolderAreNotMadePrivate()
+    {
+        if (getuid() == 0) {
+            QSKIP("Root can change any folder");
+        }
+        const QSettings settings(QStringLiteral("/speecher-test.ini"), QSettings::IniFormat);
+        QString error;
+
+        QVERIFY(!makeSettingsPrivate(settings, &error));
+
+        QVERIFY2(error.contains(QStringLiteral("can't be kept from other users")), qPrintable(error));
+        QVERIFY(!QFile::exists(settings.fileName()));
     }
 #endif
 

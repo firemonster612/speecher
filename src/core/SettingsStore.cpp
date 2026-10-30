@@ -163,7 +163,18 @@ void migrateSavedSettings()
     QSettings newSettings(QSettings::defaultFormat(), QSettings::UserScope,
                           QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     QString error;
-    if (!migrateSettingsIdentity(newSettings, *olderSettings(), &error)) {
+    // Before anything is written: the identity migration copies in the keys
+    // the older settings kept.
+    if (!makeSettingsPrivate(newSettings, &error)) {
+        qWarning().noquote() << "Settings: not migrated, since" << error;
+        return;
+    }
+    const std::unique_ptr<QSettings> older = olderSettings();
+    // An older Speecher left its file, keys and all, open to others.
+    if (QFile::exists(older->fileName()) && !makeSettingsPrivate(*older, &error)) {
+        qWarning().noquote() << "Settings: the older settings stay readable, since" << error;
+    }
+    if (!migrateSettingsIdentity(newSettings, *older, &error)) {
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);

@@ -489,6 +489,10 @@ bool SecretStore::write(Secret secret, const Request &request)
         m_settings->raw().sync();
         cacheValue(secret, {});
         kept = false;
+    } else if (QString unsafe; m_settings && request.fallBack && !makeSettingsPrivate(m_settings->raw(), &unsafe)) {
+        // Other users could read the key there.
+        m_lastError = QStringLiteral("No keyring took it (%1), and %2").arg(m_lastError, unsafe);
+        kept = false;
     } else if (m_settings && request.fallBack) {
         m_settings->raw().remove(pendingDeletionKey(secret));
         qWarning().noquote() << "keyring unavailable, keeping" << keyringEntry(secret)

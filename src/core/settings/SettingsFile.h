@@ -9,12 +9,20 @@ namespace speecher {
 // on changes stay in memory, so the running app reads what it set, and
 // neither sync nor the save QSettings makes on its own after a change brings
 // the file back. QSettings made after it keep their files in a throwaway
-// folder, so a new reader can't save its unsaved changes either. The file and
-// its folder are the owner's alone, as they can hold the keys SecretStore
-// keeps there when no keyring takes them.
+// folder, so a new reader can't save its unsaved changes either. Each save
+// keeps the file and its folder from other users as far as it can
+// (makeSettingsPrivate).
 // Only the running app's store deletes its file: another SettingsFile's
 // deleteFile, and its destructor's, would also erase what that store saved
 // afterwards.
+// Makes the settings' file 0600 and its folder 0700, making them when
+// missing, so a key can go in with no other user able to read it: once the
+// file is private, QSettings keeps it so whenever it rewrites it. False, with
+// why in error, when the permissions won't change or don't read back as
+// this user's alone, as for a folder another user owns. True with nothing to
+// do outside Unix and for a macOS preferences domain.
+bool makeSettingsPrivate(const QSettings &settings, QString *error);
+
 class SettingsFile final : public QSettings {
 public:
     SettingsFile(const QString &organization, const QString &application);

@@ -9,32 +9,39 @@
 
 #include <memory>
 
+#ifdef Q_OS_UNIX
+#include <unistd.h>
+#endif
+
 namespace speecher {
 
 namespace {
+
+// Whether the settings live in a macOS preferences domain, which the
+// preferences daemon writes, rather than in a file of their own.
+bool inPreferencesDomain(const QSettings &settings)
+{
+#ifdef Q_OS_MACOS
+    return settings.format() == QSettings::NativeFormat;
+#else
+    Q_UNUSED(settings);
+    return false;
+#endif
+}
 
 #ifdef Q_OS_UNIX
 constexpr QFile::Permissions groupAndOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
     | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
 
-// Takes every permission from the group and other users.
-void keepToOwner(const QString &path)
+// Takes every permission from the group and other users, and says whether
+// path is then this user's alone.
+bool keepToOwner(const QString &path)
 {
     QFile::setPermissions(path, QFile::permissions(path) & ~groupAndOthers);
+    const QFileInfo now(path);
+    return now.exists() && now.ownerId() == getuid() && !(now.permissions() & groupAndOthers);
 }
 #endif
-
-// A folder removed only as it was made: through a symlink put in its place,
-// removing it would empty the folder the link points at.
-class ThrowawayFolder final : public QTemporaryDir {
-public:
-    using QTemporaryDir::QTemporaryDir;
-    ~ThrowawayFolder()
-    {
-        const QFileInfo folder(path());
-        setAutoRemove(folder.isDir() && !folder.isSymLink());
-    }
-};
 
 // Where QSettings made after a deletion keep their files: a reader made then
 // (a provider check's SettingsStore) would otherwise share the deleted
@@ -44,7 +51,7 @@ public:
 // write there, and would make a removed folder again, open to others.
 QString throwawaySettingsHome()
 {
-    static const ThrowawayFolder home(QDir::temp().filePath(QStringLiteral("speecher-removed-XXXXXX")));
+    static const QTemporaryDir home(QDir::temp().filePath(QStringLiteral("speecher-removed-XXXXXX")));
     if (!home.isValid()) {
         qWarning().noquote() << "Could not make a folder for settings opened after the deletion:"
                              << home.errorString();
@@ -53,6 +60,36 @@ QString throwawaySettingsHome()
 }
 
 } // namespace
+
+bool makeSettingsPrivate(const QSettings &settings, QString *error)
+{
+#ifdef Q_OS_UNIX
+    if (inPreferencesDomain(settings)) {
+        return true;
+    }
+    const QString file = settings.fileName();
+    const QString folder = QFileInfo(file).absolutePath();
+    QString refusal;
+    if (!QDir().mkpath(folder) || !keepToOwner(folder)) {
+        refusal = QStringLiteral("the folder %1 can't be kept from other users").arg(folder);
+    } else {
+        // Made now if missing: QSettings keeps a file's permissions when it
+        // rewrites it, but gives a file it makes the umask's.
+        QFile made(file);
+        if ((!made.exists() && !made.open(QIODevice::WriteOnly | QIODevice::Append)) || !keepToOwner(file)) {
+            refusal = QStringLiteral("the settings file %1 can't be kept from other users").arg(file);
+        }
+    }
+    if (!refusal.isEmpty() && error) {
+        *error = refusal;
+    }
+    return refusal.isEmpty();
+#else
+    Q_UNUSED(settings);
+    Q_UNUSED(error);
+    return true;
+#endif
+}
 
 SettingsFile::SettingsFile(const QString &organization, const QString &application)
     : QSettings(QSettings::defaultFormat(), QSettings::UserScope, organization, application)
@@ -89,30 +126,16 @@ bool SettingsFile::save()
     // throwaway folder. macOS keeps native settings in a preferences domain,
     // which deleteFile never moves and a file name would open as a bare
     // plist, around the preferences daemon.
-#ifdef Q_OS_MACOS
-    const bool domain = format() == NativeFormat;
-#else
-    const bool domain = false;
-#endif
-    const auto saving = domain ? std::make_unique<QSettings>(format(), scope(), organizationName(), applicationName())
-                               : std::make_unique<QSettings>(fileName(), format());
-#ifdef Q_OS_UNIX
-    // The folder first: a file QSettings makes takes the umask's
-    // permissions, open to others until they are taken below.
-    const QString folder = QFileInfo(fileName()).absolutePath();
-    if (!domain && QDir().mkpath(folder)) {
-        keepToOwner(folder);
-    }
-#endif
+    const auto saving = inPreferencesDomain(*this)
+        ? std::make_unique<QSettings>(format(), scope(), organizationName(), applicationName())
+        : std::make_unique<QSettings>(fileName(), format());
+    // As private as it can be made. Settings that can't be still save: a key
+    // goes in only once makeSettingsPrivate succeeds (SecretStore).
+    makeSettingsPrivate(*this, nullptr);
     saving->sync();
     if (saving->status() != QSettings::NoError) {
         return false;
     }
-#ifdef Q_OS_UNIX
-    if (!domain) {
-        keepToOwner(fileName());
-    }
-#endif
     ++m_saves;
     return true;
 }
