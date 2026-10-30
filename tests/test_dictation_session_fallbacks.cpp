@@ -405,6 +405,25 @@ private slots:
         QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
     }
 
+    // When the chain runs out after a fallback kept words, refinement is
+    // still told the language that fallback heard them in.
+    void refinementGetsTheKeptWordsLanguageOnceTheChainRunsOut()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")},
+                     {QStringLiteral("openai")});
+        rig.settings.setSpokenLanguage(QStringLiteral("de"));
+        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("endpoint")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
+        rig.speech[QStringLiteral("claude")]->emitFailure(QStringLiteral("gone"), false, SpeechPhase::Streaming, Network);
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastRawTranscript, QStringLiteral("bonjour"));
+        QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
+    }
+
     // The session and fallbackProblem() decide a language skip the same way,
     // from the provider's own language list: Claude Voice can't listen for
     // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
