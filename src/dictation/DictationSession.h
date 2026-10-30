@@ -164,6 +164,7 @@ private:
     ProviderLabels providerLabels() const;
     void continueStartupAfterPreparation(quint64 generation);
     void failStartup(const QString &message, const PopupErrorAction &fix);
+    void failSession(const QString &message, const PopupErrorAction &fix = {});
     void beginRefinement(quint64 generation);
     void startRefiner();
     void enterRefining();

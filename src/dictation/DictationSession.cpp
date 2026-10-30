@@ -140,10 +140,7 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
         // The next provider may be preparing.
         m_speechChain->cancel();
-        clearScreenshotContext();
-        m_sessionSettings.reset();
-        resumePausedMedia();
-        setState(DictationState::Error, message);
+        failSession(message);
         stopAudio();
     });
 }
@@ -1063,10 +1060,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
         // A provider that failed while the microphone started may have handed
         // over to one still preparing.
         m_speechChain->cancel();
-        clearScreenshotContext();
-        m_sessionSettings.reset();
-        resumePausedMedia();
-        setState(DictationState::Error, audioError);
+        failSession(audioError);
         return;
     }
     if (generation != m_generation
@@ -1086,6 +1080,13 @@ void DictationSession::failStartup(const QString &message, const PopupErrorActio
 {
     qWarning().noquote() << "speech unavailable message=" + message;
     emit previewDisplayChanged({});
+    failSession(message, fix);
+}
+
+// Ends the session in Error; a follow-up goes back to its review instead
+// (setState). Paused media plays again.
+void DictationSession::failSession(const QString &message, const PopupErrorAction &fix)
+{
     clearScreenshotContext();
     m_sessionSettings.reset();
     resumePausedMedia();
@@ -1100,19 +1101,14 @@ void DictationSession::beginRefinement(quint64 generation)
     }
     if (m_transcript->isEmpty()) {
         qWarning() << "beginRefinement no transcript captured";
-        clearScreenshotContext();
-        m_sessionSettings.reset();
-        setState(DictationState::Error,
-                 m_heardSpeech
-                     ? QStringLiteral("No transcript was returned. Try again or check the speech connection.")
-                     : QStringLiteral("No speech was detected. Check the selected microphone and input level, then try again."));
+        failSession(m_heardSpeech
+                        ? QStringLiteral("No transcript was returned. Try again or check the speech connection.")
+                        : QStringLiteral("No speech was detected. Check the selected microphone and input level, then try again."));
         return;
     }
 
     if (!m_sessionSettings) {
-        setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
-        clearScreenshotContext();
-        m_sessionSettings.reset();
+        failSession(QStringLiteral("Dictation session options are unavailable"));
         return;
     }
     const AppSettings &settings = *m_sessionSettings;
@@ -1237,11 +1233,9 @@ void DictationSession::deliverWithoutRefinement()
 void DictationSession::failSelectionEdit(const QString &message)
 {
     m_refinementGeneration = 0;
-    clearScreenshotContext();
-    m_sessionSettings.reset();
     m_target = {};
     m_transcriptPipeline = {};
-    setState(DictationState::Error, message);
+    failSession(message);
 }
 
 // The edit waits for the person to read it against the selection; Replace
@@ -1344,9 +1338,7 @@ bool DictationSession::selectionUnchanged()
 void DictationSession::deliverFinal(const QString &text, const QString &note, std::optional<int> spokenWords)
 {
     if (!m_sessionSettings) {
-        setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
-        clearScreenshotContext();
-        m_sessionSettings.reset();
+        failSession(QStringLiteral("Dictation session options are unavailable"));
         return;
     }
     const AppSettings settings = *m_sessionSettings;
@@ -1539,16 +1531,13 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     }
 
     m_transcriber->cancelAttempt(m_attemptId);
-    clearScreenshotContext();
     // With fallbacks, every provider tried says why it could not take over.
     const bool chainTried = m_speechChain->providerIds().size() > 1 && !m_providerHistory.issues.isEmpty();
     const QString message = chainTried ? noSpeechServiceText(m_providerHistory.issues, providerLabels())
                                        : failure.message;
     const PopupErrorAction fix =
         chainTried ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")} : PopupErrorAction{};
-    m_sessionSettings.reset();
-    resumePausedMedia();
-    setState(DictationState::Error, message, fix);
+    failSession(message, fix);
     stopAudio();
 }
 
