@@ -1442,6 +1442,21 @@ private slots:
         QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
     }
 
+    // So does an account turned away before any renewal, here a disabled one.
+    void aCliproxyAccountThatFailsValidationKeepsTheSignInDue()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("stale-token"), QDateTime::currentDateTimeUtc().addSecs(-60), true));
+
+        AnthropicTranscriptRefiner refiner;
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
+        QVERIFY(refiner.createRefreshJob({}, accounts)->run());
+        QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
+    }
+
     // A picker keeps showing the account chosen even after its file is gone,
     // so the choice doesn't silently become "Choose…".
     void providerSignInKeepsAChosenAccountWhoseFileIsGone()

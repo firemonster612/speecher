@@ -286,7 +286,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
     QJsonObject account = readAccountObject(directory, resolved);
     const QString initialError = accountValidationError(directory, type, resolved, account);
     if (!initialError.isEmpty()) {
-        return {false, {}, {}, initialError};
+        return {false, {}, {}, initialError, ProviderFailureKind::Unavailable, 0, accountExpiry(account)};
     }
     if (!accountExpired(account)) {
         return accountToken(account);
@@ -300,7 +300,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
     account = readAccountObject(directory, resolved);
     const QString lockedError = accountValidationError(directory, type, resolved, account);
     if (!lockedError.isEmpty()) {
-        return {false, {}, {}, lockedError};
+        return {false, {}, {}, lockedError, ProviderFailureKind::Unavailable, 0, accountExpiry(account)};
     }
     if (!accountExpired(account)) {
         return accountToken(account);
@@ -344,7 +344,7 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
     const QJsonObject account = readAccountObject(directory, resolvedFileName);
     const QString validationError = accountValidationError(directory, type, resolvedFileName, account);
     if (!validationError.isEmpty()) {
-        return {false, {}, {}, validationError};
+        return {false, {}, {}, validationError, ProviderFailureKind::Unavailable, 0, accountExpiry(account)};
     }
     // CLI Proxy API and Speecher may both refresh these rotating tokens. The
     // refresh path serializes its read-network-write sequence with the account lock.
