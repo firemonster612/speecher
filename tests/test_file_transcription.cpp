@@ -890,7 +890,7 @@ private slots:
         // done. A file no speech provider took never makes one.
         int refreshes = -1;
         connect(&session, &FileTranscriptionSession::fileFinished, this,
-                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns : 0; });
+                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns() : 0; });
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -923,7 +923,7 @@ private slots:
         options.cleanupStrength = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
-        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns : 0, 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns() : 0, 1, 10000);
         session.cancel();
         QTest::qWait(400);
 

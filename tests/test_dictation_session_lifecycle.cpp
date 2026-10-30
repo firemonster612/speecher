@@ -1885,7 +1885,7 @@ private slots:
 
         QTRY_COMPARE(refreshSpy.count(), 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
-        QCOMPARE(refiner->refreshRuns, 1);
+        QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->refreshCalls, 1);
         QCOMPARE(speech->startCalls, 1);
         QVERIFY(audio->started);

@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <optional>
 
 namespace speecher::test {
@@ -391,12 +392,12 @@ public:
 
         PreparationJob job;
         job.showRefreshIndicator = true;
-        job.run = [this] {
-            ++refreshRuns;
-            if (refreshDelayMs > 0) {
-                QThread::msleep(refreshDelayMs);
-            }
-            return refreshFailure;
+        // The worker may outlive the refiner, which a cancel deletes, so it
+        // takes copies and counts on state the two share.
+        job.run = [runs = m_refreshRuns, delayMs = refreshDelayMs, failure = refreshFailure] {
+            ++*runs;
+            QThread::msleep(delayMs);
+            return failure;
         };
         job.apply = [this](const std::optional<ProviderFailure> &) {
             ++refreshCalls;
@@ -460,10 +461,13 @@ public:
     QString autoCompleteText;
     std::optional<ProviderFailure> refreshFailure;
     std::optional<ProviderFailure> prepareFailure;
-    // Runs inside prepare(), as the event loop a sign-in renewed there spins.
+    // Runs inside prepare(), as the event loop a keyring wait there spins.
     std::function<void()> onPrepare;
     // Refresh jobs run on the worker, and applied back on this thread.
-    int refreshRuns = 0;
+    int refreshRuns() const
+    {
+        return *m_refreshRuns;
+    }
     int refreshCalls = 0;
     int prepareCalls = 0;
     int refineCalls = 0;
@@ -475,6 +479,9 @@ public:
     QString lastStyle;
     QString lastTone;
     QString lastAnthropicModel;
+
+private:
+    std::shared_ptr<std::atomic_int> m_refreshRuns = std::make_shared<std::atomic_int>(0);
 };
 
 class FakeDelivery final : public TextDeliveryAdapter {
