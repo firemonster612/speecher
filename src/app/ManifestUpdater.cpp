@@ -58,8 +58,8 @@ ManifestUpdater::ManifestUpdater(SettingsStore *settings,
     , m_platformKey(std::move(platformKey))
     , m_downloadKey(std::move(downloadKey))
     , m_downloadDescription(std::move(downloadDescription))
-    , m_checkChannel(settings->updateChannel())
-    , m_selectedChannel(settings->updateChannel())
+    , m_checkChannel(updateSettings().channel)
+    , m_selectedChannel(m_checkChannel)
 {
     m_network->setTransferTimeout(30000);
     m_checkTimer->setSingleShot(true);
@@ -80,16 +80,18 @@ void ManifestUpdater::start()
 {
     connect(m_checkTimer, &QTimer::timeout, this, [this] {
         // A failed automatic check is retried on its backoff, due or not.
-        if (m_settings->autoCheckUpdates() && (m_automaticCheckFailures > 0 || automaticCheckDue())) {
-            beginCheck(m_settings->updateChannel(), true);
+        const UpdateSettings updates = updateSettings();
+        if (updates.autoCheck && (m_automaticCheckFailures > 0 || automaticCheckDue())) {
+            beginCheck(updates.channel, true);
         }
         scheduleAutomaticCheck();
     });
     scheduleAutomaticCheck();
 
     QTimer::singleShot(0, this, [this] {
-        if (m_settings->autoCheckUpdates() && automaticCheckDue()) {
-            beginCheck(m_settings->updateChannel(), true);
+        const UpdateSettings updates = updateSettings();
+        if (updates.autoCheck && automaticCheckDue()) {
+            beginCheck(updates.channel, true);
         }
     });
 }
@@ -97,7 +99,7 @@ void ManifestUpdater::start()
 bool ManifestUpdater::automaticCheckDue() const
 {
     return speecher::automaticCheckDue(m_settings->updatesLastCheckTime(),
-                                       m_settings->updateCheckIntervalMinutes(),
+                                       updateSettings().checkIntervalMinutes,
                                        QDateTime::currentMSecsSinceEpoch());
 }
 
@@ -105,11 +107,12 @@ void ManifestUpdater::scheduleAutomaticCheck()
 {
     // Turning automatic checks back on emits updateSettingsChanged, which
     // arms the timer again, retry or not.
-    if (!m_settings->autoCheckUpdates()) {
+    const UpdateSettings updates = updateSettings();
+    if (!updates.autoCheck) {
         m_checkTimer->stop();
         return;
     }
-    const int intervalMinutes = m_settings->updateCheckIntervalMinutes();
+    const int intervalMinutes = updates.checkIntervalMinutes;
     // Backoff never retries slower than the interval itself.
     m_checkTimer->start(m_automaticCheckFailures > 0
                             ? int(qMin<qint64>(automaticRetryInterval(m_automaticCheckFailures),
@@ -324,7 +327,7 @@ void ManifestUpdater::updateNow()
             emit openReleasePageRequested();
             return;
         }
-        checkForUpdates(m_settings->updateChannel());
+        checkForUpdates(updateSettings().channel);
         return;
     }
     if (m_state != State::UpdateAvailable) {
@@ -506,7 +509,7 @@ void ManifestUpdater::decideCheck(const std::optional<UpdateManifest> &candidate
 
     m_manifest = *candidate;
     setState(State::UpdateAvailable);
-    if (m_settings->autoInstallUpdates()
+    if (updateSettings().autoInstall
         && supportsAutomaticDownloads()
         && !stableReplacementAvailable()) {
         beginDownload(false);
@@ -522,15 +525,20 @@ void ManifestUpdater::recordAutomaticCheckFailure()
     scheduleAutomaticCheck();
 }
 
+UpdateSettings ManifestUpdater::updateSettings() const
+{
+    return m_settings->dictationSnapshot().updates;
+}
+
 void ManifestUpdater::updateSettingsChanged()
 {
     // A pending retry keeps its backoff through other setting changes; turning
     // automatic checks off stops it, and turning them on again starts one.
     const bool retryPending = m_automaticCheckFailures > 0 && m_checkTimer->isActive();
-    if (!retryPending || !m_settings->autoCheckUpdates()) {
+    if (!retryPending || !updateSettings().autoCheck) {
         scheduleAutomaticCheck();
     }
-    const UpdateChannel channel = m_settings->updateChannel();
+    const UpdateChannel channel = updateSettings().channel;
     if (channel == m_selectedChannel) {
         return;
     }

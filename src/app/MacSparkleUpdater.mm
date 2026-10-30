@@ -282,7 +282,7 @@ MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings,
                                                     userDriver:m_native->userDriver
                                                       delegate:m_native->delegate];
     m_dismissedVersion = m_settings->updatesDismissedVersion();
-    m_selectedNightly = m_settings->updateChannel() == UpdateChannel::Nightly;
+    m_selectedNightly = updateSettings().channel == UpdateChannel::Nightly;
     m_checkTimer = new QTimer(this);
     m_checkTimer->setSingleShot(true);
     connect(m_checkTimer, &QTimer::timeout, this, &MacSparkleUpdater::checkIfDue);
@@ -321,9 +321,10 @@ void MacSparkleUpdater::start()
 
 void MacSparkleUpdater::checkIfDue()
 {
-    if (m_settings->autoCheckUpdates()
+    const UpdateSettings updates = updateSettings();
+    if (updates.autoCheck
         && automaticCheckDue(m_settings->updatesLastCheckTime(),
-                             m_settings->updateCheckIntervalMinutes(),
+                             updates.checkIntervalMinutes,
                              QDateTime::currentMSecsSinceEpoch())) {
         beginBackgroundCheck();
     }
@@ -332,12 +333,13 @@ void MacSparkleUpdater::checkIfDue()
 
 void MacSparkleUpdater::scheduleAutomaticCheck()
 {
-    if (!m_settings->autoCheckUpdates()) {
+    const UpdateSettings updates = updateSettings();
+    if (!updates.autoCheck) {
         m_checkTimer->stop();
         return;
     }
     m_checkTimer->start(automaticCheckDelayMs(m_settings->updatesLastCheckTime(),
-                                              m_settings->updateCheckIntervalMinutes(),
+                                              updates.checkIntervalMinutes,
                                               QDateTime::currentMSecsSinceEpoch()));
 }
 
@@ -420,10 +422,11 @@ void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
 
 void MacSparkleUpdater::beginBackgroundCheck()
 {
-    if (!m_settings->autoCheckUpdates() || sessionActive()) {
+    const UpdateSettings updates = updateSettings();
+    if (!updates.autoCheck || sessionActive()) {
         return;
     }
-    const bool nightly = m_settings->updateChannel() == UpdateChannel::Nightly;
+    const bool nightly = updates.channel == UpdateChannel::Nightly;
     m_nightlyChannel = nightly;
     // A scheduled check never offers the one-off stable-for-nightly swap; that
     // stays a manual choice, exactly as ManifestUpdater's automatic check. A
@@ -484,7 +487,7 @@ void MacSparkleUpdater::updateNow()
         return;
     }
     if (m_state == State::Error || m_state == State::CheckFailed) {
-        checkForUpdates(m_settings->updateChannel());
+        checkForUpdates(updateSettings().channel);
     }
 }
 
@@ -661,26 +664,32 @@ void MacSparkleUpdater::driverSessionEnded()
 
 bool MacSparkleUpdater::driverWantsAutomaticChecks() const
 {
-    return m_settings->autoCheckUpdates();
+    return updateSettings().autoCheck;
 }
 
 void MacSparkleUpdater::applySettings()
 {
-    m_nightlyChannel = m_settings->updateChannel() == UpdateChannel::Nightly;
+    const UpdateSettings updates = updateSettings();
+    m_nightlyChannel = updates.channel == UpdateChannel::Nightly;
     [m_native->delegate setNightly:m_nightlyChannel allowStableReplacement:NO];
     SPUUpdater *updater = m_native->updater;
     // The schedule is ours (Sparkle clamps its own to an hour); Sparkle keeps
     // the download and install mechanics. Its own scheduler stays off so the
     // two do not both fire.
     updater.automaticallyChecksForUpdates = NO;
-    updater.automaticallyDownloadsUpdates = m_settings->autoInstallUpdates();
+    updater.automaticallyDownloadsUpdates = updates.autoInstall;
     scheduleAutomaticCheck();
+}
+
+UpdateSettings MacSparkleUpdater::updateSettings() const
+{
+    return m_settings->dictationSnapshot().updates;
 }
 
 void MacSparkleUpdater::updateSettingsChanged()
 {
     applySettings();
-    const bool nightly = m_settings->updateChannel() == UpdateChannel::Nightly;
+    const bool nightly = updateSettings().channel == UpdateChannel::Nightly;
     if (nightly == m_selectedNightly) {
         return;
     }

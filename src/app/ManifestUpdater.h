@@ -93,6 +93,8 @@ private:
         std::optional<UpdateManifest> stable);
     void beginCheck(UpdateChannel channel, bool automaticCheck);
     void decideCheck(const std::optional<UpdateManifest> &candidate);
+    // The saved update settings, read without waiting for the keyring.
+    UpdateSettings updateSettings() const;
     void updateSettingsChanged();
     bool automaticCheckDue() const;
     // Arms the timer for the next automatic check, or the retry of a failed one.

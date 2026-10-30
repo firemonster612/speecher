@@ -174,7 +174,7 @@ QVariantMap QuickUpdates::whatsNew() const
 
 void QuickUpdates::check()
 {
-    m_updates->checkForUpdates(m_controller->settings()->updateChannel());
+    m_updates->checkForUpdates(m_controller->settings()->dictationSnapshot().updates.channel);
 }
 
 void QuickUpdates::updateNow()
