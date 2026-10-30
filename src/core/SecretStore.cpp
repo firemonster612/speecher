@@ -277,10 +277,16 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
     if (entry.known && cleaned == entry.value && settingsFallback(secret).isEmpty() && !deletionPending(secret)) {
         return true;
     }
+    const unsigned save = ++entry.saves;
     // Clearing a key that was never written to the keyring needs no keyring.
     const bool ok = cleaned.isEmpty()
         ? !mayBeInKeyring(secret) || deleteKeyringSecret(secret)
         : writeKeyringSecret(secret, cleaned);
+    // A save made while the keyring answered reached it after this one and
+    // has already recorded its value, which is the newer.
+    if (entry.saves != save) {
+        return true;
+    }
     if (!ok) {
         return false;
     }
@@ -299,6 +305,20 @@ bool SecretStore::saveSecret(Secret secret, const QString &value)
         return true;
     }
     return storeSecret(secret, cleaned);
+}
+
+void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
+{
+    QList<unsigned> savesBefore;
+    for (const auto &value : values) {
+        savesBefore.append(cached(value.first).saves);
+    }
+    for (qsizetype i = 0; i < values.size(); ++i) {
+        const auto &[secret, value] = values.at(i);
+        if (cached(secret).saves == savesBefore.at(i)) {
+            saveSecret(secret, value);
+        }
+    }
 }
 
 bool SecretStore::clearSecret(Secret secret)

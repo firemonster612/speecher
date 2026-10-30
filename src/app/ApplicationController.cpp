@@ -32,6 +32,7 @@
 #include "platform/SessionKeyGrab.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribeQueue.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -221,8 +222,9 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_updates = new AppImageUpdater(m_settings, this);
 #endif
     // A restart for an update waits out a dictation, a recording and a file
-    // transcription. A recording still starting does not hold it back: a start
-    // that fails emits no stop to resume the restart on.
+    // transcription, with the transcripts it made that are only on screen. A
+    // recording still starting does not hold it back: a start that fails
+    // emits no stop to resume the restart on.
     m_updates->setRestartBlockerProvider([this] {
         using RestartBlocker = UpdateController::RestartBlocker;
         const DictationState state = m_session->state();
@@ -232,7 +234,9 @@ ApplicationController::ApplicationController(bool popupOnly,
         if (m_recording->isRecording()) {
             return RestartBlocker::Recording;
         }
-        return m_fileTranscription->isRunning() ? RestartBlocker::FileTranscription : RestartBlocker::None;
+        const bool unsaved = m_transcribeQueue && m_transcribeQueue->holdsUnsavedResults();
+        return m_fileTranscription->isRunning() || unsaved ? RestartBlocker::FileTranscription
+                                                           : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
     connect(m_fileTranscription, &FileTranscriptionSession::batchFinished, m_updates,
@@ -329,6 +333,20 @@ DictationSession *ApplicationController::session() const
 FileTranscriptionSession *ApplicationController::fileTranscription() const
 {
     return m_fileTranscription;
+}
+
+// Made on first use rather than at startup: seeding its choices reads the
+// keyring, which a launch that hands its command to the running instance
+// never needs.
+TranscribeQueue *ApplicationController::transcribeQueue()
+{
+    if (!m_transcribeQueue) {
+        m_transcribeQueue = new TranscribeQueue(m_settings, m_providers, m_fileTranscription,
+                                                [this] { return fileTranscriptionRefusal(); }, this);
+        connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, m_updates,
+                &UpdateController::resumePendingRestart);
+    }
+    return m_transcribeQueue;
 }
 
 QString ApplicationController::fileTranscriptionRefusal() const

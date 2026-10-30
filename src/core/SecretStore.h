@@ -1,10 +1,12 @@
 #pragma once
 
 #include <QElapsedTimer>
+#include <QList>
 #include <QObject>
 #include <QString>
 
 #include <array>
+#include <utility>
 
 namespace speecher {
 
@@ -48,6 +50,10 @@ public:
     // skipped or failed read, not from the person. Failed deletions leave a
     // persisted marker that suppresses reads until deletion succeeds.
     bool saveSecret(Secret secret, const QString &value);
+    // saveSecret for each, in order. A save that waits for the keyring runs
+    // the event loop, where an edit can save one of these secrets too; that
+    // save is newer, so this one leaves that secret alone.
+    void saveSecrets(const QList<std::pair<Secret, QString>> &values);
     // Removes a secret whether or not it was read, the way saveSecret clears
     // one it has read. False when the keyring refused: the marker then hides
     // the key until a later deletion succeeds, and lastError() says why.
@@ -73,6 +79,9 @@ private:
         QString value;
         bool known = false;
         QElapsedTimer retryTimer;
+        // Counts the saves that reached for the keyring, so one that waited
+        // can tell whether a newer one ran meanwhile.
+        unsigned saves = 0;
     };
 
     CachedSecret &cached(Secret secret) const;

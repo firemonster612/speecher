@@ -111,6 +111,7 @@ TranscribeQueue::TranscribeQueue(SettingsStore *settings,
                     }
                     m_retrying = -1;
                     emit resultsChanged();
+                    emit unsavedResultsChanged();
                     return;
                 }
                 if (m_step != Step::Transcribe) {
@@ -230,6 +231,7 @@ bool TranscribeQueue::start()
     m_batchLabels = speecher::batchLabels(m_options, *m_providers, settings.refinement);
     m_batchRefines = refinesTranscripts(m_options, settings.refinement);
     m_results.clear();
+    m_exported.clear();
     m_cancelled = false;
     m_current = -1;
     resetFile();
@@ -372,6 +374,30 @@ void TranscribeQueue::setProblem(const QString &problem)
     }
 }
 
+void TranscribeQueue::markExported(int index)
+{
+    m_exported.insert(index);
+    emit unsavedResultsChanged();
+}
+
+bool TranscribeQueue::holdsUnsavedResults() const
+{
+    if (m_retrying >= 0) {
+        return true;
+    }
+    // Back at setup, the results were dismissed.
+    if (m_step == Step::Configure) {
+        return false;
+    }
+    for (qsizetype i = 0; i < m_results.size(); ++i) {
+        const TranscribeFileResult &result = m_results.at(i);
+        if (!result.failed() && result.savedPath.isEmpty() && !m_exported.contains(int(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void TranscribeQueue::seedOptions()
 {
     const AppSettings settings = m_settings->dictationSnapshot();
@@ -412,6 +438,7 @@ void TranscribeQueue::setStep(Step step)
     if (step != m_step) {
         m_step = step;
         emit stepChanged();
+        emit unsavedResultsChanged();
     }
 }
 

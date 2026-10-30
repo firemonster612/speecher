@@ -94,10 +94,7 @@ int wordCount(const QString &text)
 QuickTranscription::QuickTranscription(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
-    , m_queue(controller->settings(),
-              controller->providerRegistry(),
-              controller->fileTranscription(),
-              [controller] { return controller->fileTranscriptionRefusal(); })
+    , m_queue(*controller->transcribeQueue())
 {
     m_progressClock.setInterval(kProgressTickMs);
     const auto followProgress = [this] {
@@ -428,6 +425,7 @@ void QuickTranscription::exportResult(int index, const QString &format, const QU
         writeTranscript(file.toLocalFile(), exportedTranscript(m_queue.results().at(index), *chosen, m_showRaw));
     m_queue.setProblem(error);
     if (error.isEmpty()) {
+        m_queue.markExported(index);
         emit exported(index);
     }
 }
@@ -440,7 +438,8 @@ void QuickTranscription::exportAll(const QString &format, const QUrl &folder)
         return;
     }
     QStringList errors;
-    for (const TranscribeFileResult &result : m_queue.results()) {
+    for (int index = 0; index < m_queue.results().size(); ++index) {
+        const TranscribeFileResult &result = m_queue.results().at(index);
         if (!canExportAs(result, *chosen)) {
             continue;
         }
@@ -448,6 +447,8 @@ void QuickTranscription::exportAll(const QString &format, const QUrl &folder)
         const QString text = exportedTranscript(result, *chosen, m_showRaw);
         if (saveTranscript(result.path, folder.toLocalFile(), text, *chosen, &error).isEmpty()) {
             errors << error;
+        } else {
+            m_queue.markExported(index);
         }
     }
     m_queue.setProblem(errors.join(QLatin1Char('\n')));

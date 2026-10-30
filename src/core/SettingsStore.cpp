@@ -253,21 +253,21 @@ bool SettingsStore::edit(const std::function<bool(AppSettings &)> &change)
         qCritical().noquote() << "Settings: not saved, since the edit changed " + field + ", which is never stored";
         return false;
     }
-    applySnapshot(draft);
+    applySnapshot(draft, before);
     return true;
 }
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    applySnapshot(draft, dictationSnapshot());
+}
+
+void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &previous)
+{
     if (m_settings.deleted()) {
         qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
         return;
     }
-    const AppSettings previous = dictationSnapshot();
-    const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
-        if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
-        m_secrets->saveSecret(secret, value);
-    };
     writeSnapshot(draft);
     reconcileLaunchAtLogin();
     const AppSettings saved = SettingsCodecs::snapshot();
@@ -283,9 +283,19 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     // Last, since the keyring answers through an event loop, which can run an
     // edit of its own: one made then must find this draft's settings already
     // written, or the rest of this one would overwrite it.
-    save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
-    save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
-    save(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
+    using Secret = SecretStore::Secret;
+    QList<std::pair<Secret, QString>> secrets{
+        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey},
+        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey},
+        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey},
+    };
+    // An empty key the draft never read came from a skipped read, not from
+    // the person.
+    secrets.removeIf([&draft](const std::pair<Secret, QString> &secret) {
+        return secret.second.trimmed().isEmpty()
+            && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret.first));
+    });
+    m_secrets->saveSecrets(secrets);
     emit snapshotApplied(previous);
 }
 

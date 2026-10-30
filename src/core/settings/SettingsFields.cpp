@@ -183,7 +183,8 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         perRun("refinement.tone", member(&A::refinement, &RefinementSettings::tone)),
         perRun("refinement.sessionWritingProfile", member(&A::refinement, &RefinementSettings::sessionWritingProfile)),
         perRun("refinement.bindingVocabulary", member(&A::refinement, &RefinementSettings::bindingVocabulary)),
-        // Tests point it at a server of their own.
+        // A test hook, not a choice a run makes: tests point their own copy at
+        // a server of their own. Like a per-run field, never read or saved.
         perRun("refinement.anthropicEndpointBase", member(&A::refinement, &RefinementSettings::anthropicEndpointBase)),
 
         stored("accounts.openAiAuthMode", member(&A::accounts, &AccountSettings::openAiAuthMode), &C::openAiAuthMode,

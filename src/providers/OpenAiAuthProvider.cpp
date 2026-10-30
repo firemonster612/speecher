@@ -257,11 +257,10 @@ static ApiKeyCandidate readCodexApiKeyCandidate(const CodexCredentialStorage &st
     return {};
 }
 
-static OpenAiAuth authFromCandidate(const ApiKeyCandidate &candidate, const QString &source, const QString &status)
+static OpenAiAuth authFromCandidate(const ApiKeyCandidate &candidate, const QString &status)
 {
     return {true,
             candidate.key,
-            source,
             status,
             candidate.organization,
             candidate.project,
@@ -290,21 +289,21 @@ static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool ref
     QString error;
     const QByteArray bytes = storage.read(&error);
     if (!error.isEmpty()) {
-        return {false, {}, QStringLiteral("codex_oauth"), error, {}, {}, {}, {}, true};
+        return {false, {}, error, {}, {}, {}, {}, true};
     }
     const QJsonObject tokens = QJsonDocument::fromJson(bytes).object().value(QStringLiteral("tokens")).toObject();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     SignInExpiry::record(codexSignIn, jwtExpiry(accessToken));
     if (accessToken.isEmpty()) {
-        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
+        return {false, {}, QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
     }
     if (jwtExpired(accessToken)) {
         if (!refreshExpired) {
-            return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("Codex OAuth token expired"), {}, {}, {}, {}, true};
+            return {false, {}, QStringLiteral("Codex OAuth token expired"), {}, {}, {}, {}, true};
         }
 
         if (const std::optional<ProviderFailure> failure = refreshCodexAuth(storage)) {
-            return {false, {}, QStringLiteral("codex_oauth"), failure->message, {}, {}, {}, {}, true,
+            return {false, {}, failure->message, {}, {}, {}, {}, true,
                     failure->kind, failure->httpStatus};
         }
         return readCodexOauth(storage, false);
@@ -312,7 +311,6 @@ static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool ref
     const QString accountId = tokens.value(QStringLiteral("account_id")).toString().trimmed();
     return {true,
             accessToken,
-            QStringLiteral("codex_oauth"),
             QStringLiteral("Signed in with the Codex app"),
             {},
             {},
@@ -328,9 +326,9 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         const CodexCredentialStorage storage;
         const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
         if (!codexKey.key.isEmpty()) {
-            return authFromCandidate(codexKey, QStringLiteral("codex_api_key"), status);
+            return authFromCandidate(codexKey, status);
         }
-        return {false, {}, QStringLiteral("codex_api_key"), status, {}, {}, {}, {}, false};
+        return {false, {}, status, {}, {}, {}, {}, false};
     }
     if (m_mode == OpenAiAuthMode::CodexOauth) {
         return readCodexOauth(CodexCredentialStorage{}, refreshExpired);
@@ -338,23 +336,22 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     if (m_mode == OpenAiAuthMode::Env) {
         const ApiKeyCandidate envKey = readEnvApiKey();
         if (envKey.key.startsWith(QStringLiteral("sk-"))) {
-            OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY found"));
+            OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("OPENAI_API_KEY found"));
             auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
             return auth;
         }
-        return {false, {}, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY not found"), {}, {}, {}, {}, false};
+        return {false, {}, QStringLiteral("OPENAI_API_KEY not found"), {}, {}, {}, {}, false};
     }
     if (m_mode == OpenAiAuthMode::Cliproxy) {
         // Remote proxy: authenticate with the CLI Proxy API server key; the
         // server picks the account and refreshes its own oauth tokens.
         if (!m_cliproxyBaseUrl.isEmpty()) {
             if (m_cliproxyApiKey.isEmpty()) {
-                return {false, {}, QStringLiteral("cliproxy"),
-                        QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), {}, {}, {}, {}, false};
+                return {false, {}, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), {}, {}, {}, {},
+                        false};
             }
             return {true,
                     m_cliproxyApiKey,
-                    QStringLiteral("cliproxy"),
                     QStringLiteral("Using CLI Proxy API at %1").arg(m_cliproxyBaseUrl),
                     {},
                     {},
@@ -370,12 +367,11 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
             : CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         SignInExpiry::record(cliproxySignIn(m_cliproxyDir, m_cliproxyAccount), credentials.expiresAt);
         if (!credentials.ok) {
-            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
+            return {false, {}, credentials.error, {}, {}, {}, {}, true,
                     credentials.kind, credentials.httpStatus};
         }
         return {true,
                 credentials.accessToken,
-                QStringLiteral("cliproxy"),
                 QStringLiteral("CLI Proxy API Codex token found"),
                 {},
                 {},
@@ -388,7 +384,6 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         if (apiKey.startsWith(QStringLiteral("sk-"))) {
             return {true,
                     apiKey,
-                    QStringLiteral("settings"),
                     m_secretStore ? m_secretStore->status() : m_settingsStatus,
                     {},
                     {},
@@ -396,12 +391,12 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                     {},
                     false};
         }
-        return {false, {}, QStringLiteral("settings"), QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
+        return {false, {}, QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
     }
 
     // A refresh that failed says more than a missing credential, so it is
     // the answer when no other source has one.
-    OpenAiAuth unresolved{false, {}, {}, QStringLiteral("No ChatGPT credential found"), {}, {}, {}, {}, false};
+    OpenAiAuth unresolved{false, {}, QStringLiteral("No ChatGPT credential found"), {}, {}, {}, {}, false};
     const auto keepRefreshFailure = [&unresolved](const OpenAiAuth &oauth) {
         if (oauth.kind == ProviderFailureKind::Unavailable) return;
         unresolved.status = oauth.status;
@@ -420,7 +415,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
 
     const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
     if (!codexKey.key.isEmpty()) {
-        OpenAiAuth auth = authFromCandidate(codexKey, QStringLiteral("codex_api_key"), status);
+        OpenAiAuth auth = authFromCandidate(codexKey, status);
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
         return auth;
     }
@@ -433,7 +428,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     }
     const ApiKeyCandidate envKey = readEnvApiKey();
     if (envKey.key.startsWith(QStringLiteral("sk-"))) {
-        OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY found"));
+        OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("OPENAI_API_KEY found"));
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
         return auth;
     }
@@ -441,7 +436,6 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     if (settingsApiKey.startsWith(QStringLiteral("sk-"))) {
         return {true,
                 settingsApiKey,
-                QStringLiteral("settings"),
                 m_secretStore ? m_secretStore->status() : m_settingsStatus,
                 {},
                 {},
@@ -502,12 +496,11 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
             CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         SignInExpiry::record(cliproxySignIn(m_cliproxyDir, m_cliproxyAccount), credentials.expiresAt);
         if (!credentials.ok) {
-            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
+            return {false, {}, credentials.error, {}, {}, {}, {}, true,
                     credentials.kind, credentials.httpStatus};
         }
         return {true,
                 credentials.accessToken,
-                QStringLiteral("cliproxy"),
                 QStringLiteral("Signed in through CLI Proxy API"),
                 {},
                 {},

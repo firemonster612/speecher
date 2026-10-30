@@ -1093,7 +1093,8 @@ private slots:
     }
 
     // Saving a key waits for the keyring in an event loop, which runs other
-    // work. An edit made then outlives the save that was waiting.
+    // work. An edit made then outlives the save that was waiting, whether it
+    // saves the key being written or one still to come.
     void anEditDuringAKeyringWaitIsNotOverwritten()
     {
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
@@ -1102,9 +1103,12 @@ private slots:
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
         draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
+        draft.refinement.endpoint.apiKey = QStringLiteral("refinement-key");
         QTimer::singleShot(0, &settings, [&settings] {
             settings.edit([](AppSettings &nested) {
                 nested.refinement.openAiModel = QStringLiteral("nested-model");
+                nested.speech.endpoint.apiKey = QStringLiteral("nested-speech-key");
+                nested.refinement.cliproxyApiKey = QStringLiteral("nested-proxy-key");
                 return true;
             });
         });
@@ -1112,7 +1116,11 @@ private slots:
         settings.applySnapshot(draft);
 
         QCOMPARE(SettingsStore().openAiModel(), QStringLiteral("nested-model"));
-        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
+        const AppSettings saved = SettingsStore().snapshot();
+        QCOMPARE(saved.speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
+        QCOMPARE(saved.refinement.cliproxyApiKey, QStringLiteral("nested-proxy-key"));
+        QCOMPARE(saved.refinement.endpoint.apiKey, QStringLiteral("refinement-key"));
+        QCOMPARE(settings.snapshot().speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
         settings.raw().clear();
     }
 
@@ -1336,33 +1344,58 @@ private slots:
         QVERIFY(settings.edit([&edited](AppSettings &s) {
             s.setupCompleted = true;
             s.launchAtLogin = !s.launchAtLogin;
-            s.ui = {12, false, false, false, QStringLiteral("dark"), QStringLiteral("installed:Breeze"), false,
-                    QStringLiteral("split"), false, false, true};
+            s.ui = {.previewWords = 12,
+                    .transcriptionPreviewEnabled = false,
+                    .refinementPreviewEnabled = false,
+                    .selectionEditReviewEnabled = false,
+                    .theme = QStringLiteral("dark"),
+                    .colorScheme = QStringLiteral("installed:Breeze"),
+                    .translucency = false,
+                    .windowLayout = QStringLiteral("split"),
+                    .roundedCorners = false,
+                    .pauseMediaDuringTranscription = false,
+                    .soundsEnabled = true};
             s.speech.providerId = QStringLiteral("codex");
             s.speech.fallbackProviderIds = {QStringLiteral("local")};
             s.speech.codexFinalRetranscribe = false;
             s.speech.language = QStringLiteral("de");
-            s.speech.local = {QStringLiteral("whisper-small"), {QStringLiteral("cpu"), QString()}, 0,
-                              {{QStringLiteral("whisper-small/cpu"), 2.5}}, true};
-            s.speech.endpoint = {QStringLiteral("http://localhost:8080"), QStringLiteral("/inference"),
-                                 QStringLiteral("whisper"), QString()};
-            s.audio = {QStringLiteral("device-1"), QStringLiteral("warm"), true, 300, 250, 700, 4};
+            s.speech.local = {.modelId = QStringLiteral("whisper-small"),
+                              .runsOn = {.backend = QStringLiteral("cpu")},
+                              .idleUnloadMinutes = 0,
+                              .speedTestSeconds = {{QStringLiteral("whisper-small/cpu"), 2.5}},
+                              .modelChosen = true};
+            s.speech.endpoint = {.baseUrl = QStringLiteral("http://localhost:8080"),
+                                 .path = QStringLiteral("/inference"),
+                                 .model = QStringLiteral("whisper")};
+            s.audio = {.deviceId = QStringLiteral("device-1"),
+                       .mode = QStringLiteral("warm"),
+                       .vadEnabled = true,
+                       .preRollMs = 300,
+                       .postRollMs = 250,
+                       .readinessTimeoutMs = 700,
+                       .vadThresholdPercent = 4};
             s.refinement.providerId = QStringLiteral("anthropic");
             s.refinement.fallbackProviderIds = {QStringLiteral("local")};
-            s.refinement.customTones = {{QStringLiteral("custom_pirate"), QStringLiteral("Pirate"),
-                                         QStringLiteral("Talk like a pirate.")}};
-            s.refinement.customCleanupLevels = {{QStringLiteral("custom_tight"), QStringLiteral("Tight"),
-                                                 QStringLiteral("balanced"), QStringLiteral("Cut filler.")}};
+            s.refinement.customTones = {{.id = QStringLiteral("custom_pirate"),
+                                         .name = QStringLiteral("Pirate"),
+                                         .instruction = QStringLiteral("Talk like a pirate.")}};
+            s.refinement.customCleanupLevels = {{.id = QStringLiteral("custom_tight"),
+                                                 .name = QStringLiteral("Tight"),
+                                                 .base = QStringLiteral("balanced"),
+                                                 .instructions = QStringLiteral("Cut filler.")}};
             for (WritingProfileSettings &profile : s.refinement.writingProfiles) {
                 if (profile.profile == WritingProfile::Work) {
                     profile.cleanupStrength = QStringLiteral("custom_tight");
                     profile.tone = QStringLiteral("custom_pirate");
                 }
             }
-            s.appRecognitionRules = {{QStringLiteral("org.example.Notes"), AppCategory::Office, WritingProfile::Work}};
+            s.appRecognitionRules = {{.match = QStringLiteral("org.example.Notes"),
+                                      .category = AppCategory::Office,
+                                      .writingProfile = WritingProfile::Work}};
             s.refinement.defaultWritingProfile = WritingProfile::Work;
-            s.refinement.writingProfileOverrides = {
-                {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, false}};
+            s.refinement.writingProfileOverrides = {{.applicationId = QStringLiteral("org.mozilla.firefox"),
+                                                     .profile = WritingProfile::Personal,
+                                                     .enabled = false}};
             s.refinement.useTargetContext = false;
             s.refinement.includeScreenshotContext = true;
             s.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
@@ -1375,9 +1408,11 @@ private slots:
             s.refinement.anthropicEffort = QStringLiteral("max");
             s.refinement.anthropicFastMode = false;
             s.refinement.cliproxyBaseUrl = QStringLiteral("http://localhost:8317");
-            s.refinement.endpoint = {QString(), QStringLiteral("anthropic"), QStringLiteral("http://localhost:11434/v1"),
-                                     QStringLiteral("llama"), QString(), true};
-            s.refinement.localRunner = {QStringLiteral("lmstudio"), QStringLiteral("qwen")};
+            s.refinement.endpoint = {.format = QStringLiteral("anthropic"),
+                                     .baseUrl = QStringLiteral("http://localhost:11434/v1"),
+                                     .model = QStringLiteral("llama"),
+                                     .useCliproxyKey = true};
+            s.refinement.localRunner = {.runner = QStringLiteral("lmstudio"), .model = QStringLiteral("qwen")};
             s.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
             s.accounts.openAiCliproxyAccount = QStringLiteral("codex-a.json");
             s.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
@@ -1385,86 +1420,55 @@ private slots:
             s.accounts.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
             s.output.method = QString::fromLatin1(OutputMethod::DirectInsert);
             s.output.format = OutputFormat::Html;
-            s.output.pasteRules = {{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true}};
+            s.output.pasteRules = {{.scope = PasteRuleScope::Global,
+                                    .method = PasteMethod::ClipboardOnly,
+                                    .enabled = true}};
             s.output.restoreClipboardAfterTyping = true;
             s.output.completionStatusDurationMs = 2000;
             s.shortcutActivationMode = ShortcutActivationMode::Toggle;
-            s.updates.channel = UpdateChannel::Nightly;
-            s.updates.autoCheck = false;
-            s.updates.autoInstall = true;
-            s.updates.checkIntervalMinutes = 480;
-            s.updates.checkIntervalUnit = QStringLiteral("hours");
-            s.vocabulary = {{QStringLiteral("Speecher"), QStringLiteral("manual"), false, 0, 0,
-                             QStringLiteral("The app.")}};
-            s.learnedCorrections = {{QStringLiteral("c1"), QStringLiteral("teh"), QStringLiteral("the"), QString(),
-                                     1000, 0.95, true, 3, 2000}};
+            s.updates = {.channel = UpdateChannel::Nightly,
+                         .autoCheck = false,
+                         .autoInstall = true,
+                         .checkIntervalMinutes = 480,
+                         .checkIntervalUnit = QStringLiteral("hours")};
+            s.vocabulary = {{.term = QStringLiteral("Speecher"),
+                             .source = QStringLiteral("manual"),
+                             .context = QStringLiteral("The app.")}};
+            s.learnedCorrections = {{.id = QStringLiteral("c1"),
+                                     .original = QStringLiteral("teh"),
+                                     .corrected = QStringLiteral("the"),
+                                     .createdAtMs = 1000,
+                                     .confidence = 0.95,
+                                     .enabled = true,
+                                     .evidenceCount = 3,
+                                     .lastObservedAtMs = 2000}};
             s.correctionLearningEnabled = false;
             s.insightsEnabled = false;
-            s.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            s.bindings = {{.phrase = QStringLiteral("my email"), .replacement = QStringLiteral("efox@example.com")}};
             edited = s;
             return true;
         }));
 
         const AppSettings saved = SettingsStore().snapshot();
+        // Derived from stored fields when read, so they follow the edit.
+        edited.speech.vocabulary = saved.speech.vocabulary;
+        edited.accounts.cliproxyOauthDir = saved.accounts.cliproxyOauthDir;
         QCOMPARE(saved.setupCompleted, edited.setupCompleted);
         QCOMPARE(saved.launchAtLogin, edited.launchAtLogin);
-        QCOMPARE(saved.ui.previewWords, edited.ui.previewWords);
-        QCOMPARE(saved.ui.transcriptionPreviewEnabled, edited.ui.transcriptionPreviewEnabled);
-        QCOMPARE(saved.ui.refinementPreviewEnabled, edited.ui.refinementPreviewEnabled);
-        QCOMPARE(saved.ui.selectionEditReviewEnabled, edited.ui.selectionEditReviewEnabled);
-        QCOMPARE(saved.ui.theme, edited.ui.theme);
-        QCOMPARE(saved.ui.colorScheme, edited.ui.colorScheme);
-        QCOMPARE(saved.ui.translucency, edited.ui.translucency);
-        QCOMPARE(saved.ui.windowLayout, edited.ui.windowLayout);
-        QCOMPARE(saved.ui.roundedCorners, edited.ui.roundedCorners);
-        QCOMPARE(saved.ui.pauseMediaDuringTranscription, edited.ui.pauseMediaDuringTranscription);
-        QCOMPARE(saved.ui.soundsEnabled, edited.ui.soundsEnabled);
-        QCOMPARE(saved.speech.providerId, edited.speech.providerId);
-        QCOMPARE(saved.speech.fallbackProviderIds, edited.speech.fallbackProviderIds);
-        QCOMPARE(saved.speech.codexFinalRetranscribe, edited.speech.codexFinalRetranscribe);
-        QCOMPARE(saved.speech.language, edited.speech.language);
-        QCOMPARE(saved.speech.local, edited.speech.local);
-        QCOMPARE(saved.speech.endpoint, edited.speech.endpoint);
+        QCOMPARE(saved.ui, edited.ui);
+        QCOMPARE(saved.speech, edited.speech);
         QCOMPARE(saved.audio, edited.audio);
-        QCOMPARE(saved.refinement.providerId, edited.refinement.providerId);
-        QCOMPARE(saved.refinement.fallbackProviderIds, edited.refinement.fallbackProviderIds);
-        QCOMPARE(saved.refinement.customTones, edited.refinement.customTones);
-        QCOMPARE(saved.refinement.customCleanupLevels, edited.refinement.customCleanupLevels);
-        QCOMPARE(saved.refinement.writingProfiles, edited.refinement.writingProfiles);
         QCOMPARE(saved.appRecognitionRules, edited.appRecognitionRules);
-        QCOMPARE(saved.refinement.defaultWritingProfile, edited.refinement.defaultWritingProfile);
-        QCOMPARE(saved.refinement.writingProfileOverrides, edited.refinement.writingProfileOverrides);
-        QCOMPARE(saved.refinement.useTargetContext, edited.refinement.useTargetContext);
-        QCOMPARE(saved.refinement.includeScreenshotContext, edited.refinement.includeScreenshotContext);
-        QCOMPARE(saved.refinement.additionalInstructions, edited.refinement.additionalInstructions);
-        QCOMPARE(saved.refinement.customSystemPromptEnabled, edited.refinement.customSystemPromptEnabled);
-        QCOMPARE(saved.refinement.customSystemPrompt, edited.refinement.customSystemPrompt);
-        QCOMPARE(saved.refinement.openAiModel, edited.refinement.openAiModel);
-        QCOMPARE(saved.refinement.openAiEffort, edited.refinement.openAiEffort);
-        QCOMPARE(saved.refinement.openAiSpeed, edited.refinement.openAiSpeed);
-        QCOMPARE(saved.refinement.anthropicModel, edited.refinement.anthropicModel);
-        QCOMPARE(saved.refinement.anthropicEffort, edited.refinement.anthropicEffort);
-        QCOMPARE(saved.refinement.anthropicFastMode, edited.refinement.anthropicFastMode);
-        QCOMPARE(saved.refinement.cliproxyBaseUrl, edited.refinement.cliproxyBaseUrl);
-        QCOMPARE(saved.refinement.endpoint, edited.refinement.endpoint);
-        QCOMPARE(saved.refinement.localRunner, edited.refinement.localRunner);
-        QCOMPARE(saved.accounts.openAiAuthMode, edited.accounts.openAiAuthMode);
-        QCOMPARE(saved.accounts.openAiCliproxyAccount, edited.accounts.openAiCliproxyAccount);
-        QCOMPARE(saved.accounts.anthropicAuthMode, edited.accounts.anthropicAuthMode);
-        QCOMPARE(saved.accounts.anthropicCliproxyAccount, edited.accounts.anthropicCliproxyAccount);
-        QCOMPARE(saved.accounts.cliproxyOauthDirConfigured, edited.accounts.cliproxyOauthDirConfigured);
-        QCOMPARE(saved.output.method, edited.output.method);
-        QCOMPARE(saved.output.format, edited.output.format);
-        QCOMPARE(saved.output.pasteRules, edited.output.pasteRules);
-        QCOMPARE(saved.output.restoreClipboardAfterTyping, edited.output.restoreClipboardAfterTyping);
-        QCOMPARE(saved.output.completionStatusDurationMs, edited.output.completionStatusDurationMs);
-        QCOMPARE(saved.shortcutActivationMode, edited.shortcutActivationMode);
+        QCOMPARE(saved.refinement, edited.refinement);
+        QCOMPARE(saved.accounts, edited.accounts);
+        QCOMPARE(saved.output, edited.output);
         QCOMPARE(saved.updates, edited.updates);
+        QCOMPARE(saved.shortcutActivationMode, edited.shortcutActivationMode);
+        QCOMPARE(saved.bindings, edited.bindings);
         QCOMPARE(saved.vocabulary, edited.vocabulary);
         QCOMPARE(saved.learnedCorrections, edited.learnedCorrections);
         QCOMPARE(saved.correctionLearningEnabled, edited.correctionLearningEnabled);
         QCOMPARE(saved.insightsEnabled, edited.insightsEnabled);
-        QCOMPARE(saved.bindings, edited.bindings);
         settings.raw().clear();
     }
 

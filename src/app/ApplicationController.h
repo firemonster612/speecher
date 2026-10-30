@@ -22,6 +22,7 @@ class DictationSession;
 enum class DictationState;
 class FileTranscriptionSession;
 class Accounts;
+class TranscribeQueue;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
@@ -57,6 +58,9 @@ public:
     // dictation exclude each other: a batch will not start while a dictation
     // is under way, and dictation will not start while a batch runs.
     FileTranscriptionSession *fileTranscription() const;
+    // The Transcribe page's files, choices and results, made on first use
+    // and kept here so an update restart can wait for its results.
+    TranscribeQueue *transcribeQueue();
     // Why a batch cannot start now, or empty when it can.
     QString fileTranscriptionRefusal() const;
     // A recording, which `speecher record` starts and stops, runs beside
@@ -235,6 +239,7 @@ private:
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
+    TranscribeQueue *m_transcribeQueue = nullptr;
     RecordingSession *m_recording = nullptr;
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
