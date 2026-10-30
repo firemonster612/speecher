@@ -121,9 +121,11 @@ QtObject {
         downloading: v => "Downloading Speecher " + v,
         ready: "Restart to finish updating",
         restart: ({ "": "Restart now", dictation: "Restart after this dictation", recording: "Restart after this recording",
-                    transcription: "Restart after this transcription" }),
+                    transcription: "Restart after this transcription",
+                    unsavedTranscripts: "Restart once transcripts are saved" }),
         restarting: ({ "": "Restarting…", dictation: "Restarting after this dictation…", recording: "Restarting after this recording…",
-                       transcription: "Restarting after this transcription…" }),
+                       transcription: "Restarting after this transcription…",
+                       unsavedTranscripts: "Restarting once you save, export or dismiss your transcripts…" }),
         later: "Later",
         checkFailed: "Update check failed",
         tryAgain: "Try again"

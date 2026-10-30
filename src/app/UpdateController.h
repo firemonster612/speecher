@@ -96,9 +96,11 @@ public:
         m_reopenMainWindowProvider = std::move(provider);
     }
 
-    // What a restart now would cut short. A restart asked for meanwhile waits
-    // in RestartPending until resumePendingRestart() finds nothing in the way.
-    enum class RestartBlocker { None, Dictation, Recording, FileTranscription };
+    // What a restart now would cut short or lose: UnsavedTranscripts are a
+    // finished batch's transcripts that are only on screen. A restart asked
+    // for meanwhile waits in RestartPending until resumePendingRestart() finds
+    // nothing in the way.
+    enum class RestartBlocker { None, Dictation, Recording, FileTranscription, UnsavedTranscripts };
 
     void setRestartBlockerProvider(std::function<RestartBlocker()> provider)
     {

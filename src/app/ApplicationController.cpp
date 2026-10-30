@@ -234,9 +234,11 @@ ApplicationController::ApplicationController(bool popupOnly,
         if (m_recording->isRecording()) {
             return RestartBlocker::Recording;
         }
-        const bool unsaved = m_transcribeQueue && m_transcribeQueue->holdsUnsavedResults();
-        return m_fileTranscription->isRunning() || unsaved ? RestartBlocker::FileTranscription
-                                                           : RestartBlocker::None;
+        if (m_fileTranscription->isRunning()) {
+            return RestartBlocker::FileTranscription;
+        }
+        return m_transcribeQueue && m_transcribeQueue->holdsUnsavedResults() ? RestartBlocker::UnsavedTranscripts
+                                                                             : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
     connect(m_fileTranscription, &FileTranscriptionSession::batchFinished, m_updates,

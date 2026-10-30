@@ -940,6 +940,60 @@ private slots:
         QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
     }
 
+    // Saving a key waits for the keyring in an event loop, where the same key
+    // can be saved again. The save asked for last is the one kept, by this
+    // store and by a fresh one, whatever the cache held then. With a keyring,
+    // the saves wait on a real write; without one, on a refused write that
+    // falls back to the settings file.
+    void theLastSaveOfAKeyWins_data()
+    {
+        QTest::addColumn<QString>("before");
+        QTest::addColumn<QString>("nested");
+        QTest::addColumn<bool>("nestedRefused");
+        QTest::newRow("newer-key") << QStringLiteral("old-key") << QStringLiteral("nested-key") << false;
+        QTest::newRow("back-to-the-cached-key") << QStringLiteral("old-key") << QStringLiteral("old-key") << false;
+        QTest::newRow("cleared-first-key") << QString() << QString() << false;
+        // With a keyring, the first save reaches it and the nested one is kept
+        // in the settings file.
+        QTest::newRow("nested-refused") << QString() << QStringLiteral("nested-key") << true;
+    }
+
+    void theLastSaveOfAKeyWins()
+    {
+        QFETCH(QString, before);
+        QFETCH(QString, nested);
+        QFETCH(bool, nestedRefused);
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, proxy] {
+            qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
+            secrets->clearSecret(proxy);
+        });
+        if (before.isEmpty()) {
+            QCOMPARE(secrets->secret(proxy), QString());
+        } else {
+            QVERIFY(secrets->saveSecret(proxy, before));
+        }
+        bool nestedSaved = false;
+        QTimer::singleShot(0, secrets, [&] {
+            if (nestedRefused) {
+                qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+            }
+            nestedSaved = nested.isEmpty() ? secrets->clearSecret(proxy) : secrets->saveSecret(proxy, nested);
+        });
+
+        QVERIFY(secrets->saveSecret(proxy, QStringLiteral("outer-key")));
+
+        QVERIFY(nestedSaved);
+        QCOMPARE(secrets->secret(proxy), nested);
+        QCOMPARE(SettingsStore().secrets()->secret(proxy), nested);
+        SettingsStore prefetched;
+        prefetched.secrets()->prefetch();
+        QTRY_COMPARE(prefetched.secrets()->cachedSecret(proxy), nested);
+    }
+
     void unreadDraftSurvivesPrefetchCompletion()
     {
         if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") != 1)

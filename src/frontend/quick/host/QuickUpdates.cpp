@@ -135,6 +135,8 @@ QString QuickUpdates::restartBlocker() const
         return QStringLiteral("recording");
     case UpdateController::RestartBlocker::FileTranscription:
         return QStringLiteral("transcription");
+    case UpdateController::RestartBlocker::UnsavedTranscripts:
+        return QStringLiteral("unsavedTranscripts");
     }
     return {};
 }
