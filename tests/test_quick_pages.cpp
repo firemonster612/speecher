@@ -196,6 +196,40 @@ private slots:
         runSteps(steps);
     }
 
+    // A fallback's picker offers "Same as main language" first and checks it
+    // while the fallback has no language chosen, its button showing the
+    // language the fallback listens for; choosing it drops the choice.
+    void aFallbackLanguageCanFollowTheMainOneAgain()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
+        settings.set(QStringLiteral("spokenLanguage"), QStringLiteral("de"));
+        settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("claude")});
+        settings.set(QStringLiteral("speechFallbackLanguages"), QVariantMap{{QStringLiteral("claude"), QStringLiteral("fr")}});
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        navigation->setProperty("current", QStringLiteral("speech"));
+        QQuickItem *picker = nullptr;
+        QTRY_VERIFY((picker = findItem(main->contentItem(), QStringLiteral("fallbackLanguage_claude"))));
+        const QVariantMap first =
+            picker->property("options").value<QJSValue>().toVariant().toList().value(0).toMap();
+        QCOMPARE(first.value(QStringLiteral("id")).toString(), QString());
+        QCOMPARE(first.value(QStringLiteral("label")).toString(), QStringLiteral("Same as main language"));
+        QCOMPARE(picker->property("currentId").toString(), QStringLiteral("fr"));
+        QCOMPARE(picker->property("shownId").toString(), QStringLiteral("fr"));
+
+        QVERIFY(QMetaObject::invokeMethod(picker, "chosen", Q_ARG(QString, QString())));
+        QTRY_VERIFY(!controller.settings()->snapshot().speech.fallbackLanguages.contains(QStringLiteral("claude")));
+        QTRY_COMPARE(picker->property("currentId").toString(), QString());
+        QCOMPARE(picker->property("shownId").toString(), QStringLiteral("de"));
+    }
+
     // The Spoken language's picker opens with every language, narrows as you
     // type by English name, own name or code, closes on Escape and chooses
     // with the arrows and Return. A service card's count of languages opens

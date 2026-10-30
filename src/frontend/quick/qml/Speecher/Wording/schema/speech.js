@@ -16,6 +16,8 @@ var rows = [
       keywords: "backup failover offline unavailable order chain second" },
     { id: "speechFallbackLanguages", page: "speech", section: "Fallbacks", kind: "custom",
       label: "Fallback languages", help: "The language each fallback listens for, chosen beside it.",
+      // The picker's first entry, which drops the fallback's own choice.
+      sameAsMain: "Same as main language",
       keywords: "fallback backup spoken language english automatic detect" },
 
     // Every language core knows (knownSpokenLanguages), named in English
