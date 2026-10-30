@@ -57,7 +57,7 @@ bool RecordingStream::isRunning() const
 // A running stream always has its speech provider.
 int RecordingStream::utteranceAnswerTimeoutMs() const
 {
-    return m_stream->attempts()->transcriber()->utteranceAnswerTimeoutMs();
+    return m_stream->transcriber()->utteranceAnswerTimeoutMs();
 }
 
 // The input fills the stream from before the providers prepare.
@@ -151,7 +151,7 @@ bool RecordingStream::reconnectLater(const SpeechFailure &failure)
     // reconnects once with it renewed before that stops it. A provider with
     // nothing to renew would be turned down again.
     const bool firstRefusal = failure.kind == ProviderFailureKind::Authentication
-        && m_stream->attempts()->transcriber()->renewsSignIn() && !std::exchange(m_signInRefused, true);
+        && m_stream->transcriber()->renewsSignIn() && !std::exchange(m_signInRefused, true);
     if (!failure.retryable && !firstRefusal) {
         return false;
     }
@@ -190,14 +190,12 @@ void RecordingStream::reconnect()
 // Returns whether it is renewing.
 bool RecordingStream::renewSignIn()
 {
-    const SpeechSettings speech = m_stream->speechSettings();
-    const AccountSettings &accounts = m_stream->settings().accounts;
-    SpeechTranscriber *transcriber = m_stream->attempts()->transcriber();
-    if (!m_signInRefused && !transcriber->requiresRefresh(speech, accounts)) {
+    if (!m_signInRefused
+        && !m_stream->transcriber()->requiresRefresh(m_stream->speechSettings(), m_stream->settings().accounts)) {
         return false;
     }
     qInfo() << "recording renews its speech sign-in";
-    m_stream->attempts()->chain()->renewSignIn(transcriber, speech, accounts);
+    m_stream->renewSignIn();
     return true;
 }
 

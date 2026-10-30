@@ -35,6 +35,11 @@ public:
     SpeechStream(ProviderRegistry *providers, TranscriptState *transcript, QObject *parent = nullptr);
 
     SpeechAttempts *attempts() const;
+    // The transcriber of the provider the stream is on, or null.
+    SpeechTranscriber *transcriber() const;
+    // Renews that provider's sign-in, with the stream's settings, for its
+    // next attempt; ends in the chain's signInRenewed().
+    void renewSignIn();
     void setRecovery(Recovery recovery);
     // How the stream goes on once a provider ends a healthy attempt before
     // the input ended; by default the next attempt opens at once.
