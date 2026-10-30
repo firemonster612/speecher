@@ -1,9 +1,11 @@
 #include "core/settings/SettingsFile.h"
 
-#include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 
 #include <memory>
 
@@ -11,12 +13,43 @@ namespace speecher {
 
 namespace {
 
-// Where QSettings made from now on keep their files: a reader made after the
-// deletion (a provider check's SettingsStore) would otherwise share this
-// file's unsaved changes and save them, bringing the file back.
-QString deletedSettingsHome()
+#ifdef Q_OS_UNIX
+constexpr QFile::Permissions groupAndOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
+    | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
+
+// Takes every permission from the group and other users.
+void keepToOwner(const QString &path)
 {
-    return QDir::temp().filePath(QStringLiteral("speecher-removed-%1").arg(QCoreApplication::applicationPid()));
+    QFile::setPermissions(path, QFile::permissions(path) & ~groupAndOthers);
+}
+#endif
+
+// A folder removed only as it was made: through a symlink put in its place,
+// removing it would empty the folder the link points at.
+class ThrowawayFolder final : public QTemporaryDir {
+public:
+    using QTemporaryDir::QTemporaryDir;
+    ~ThrowawayFolder()
+    {
+        const QFileInfo folder(path());
+        setAutoRemove(folder.isDir() && !folder.isSymLink());
+    }
+};
+
+// Where QSettings made after a deletion keep their files: a reader made then
+// (a provider check's SettingsStore) would otherwise share the deleted
+// file's unsaved changes and save them, bringing the file back. Private and
+// under a random name, so no other user can have put a link or a file there
+// first. It lasts as long as the process: QSettings made at any later point
+// write there, and would make a removed folder again, open to others.
+QString throwawaySettingsHome()
+{
+    static const ThrowawayFolder home(QDir::temp().filePath(QStringLiteral("speecher-removed-XXXXXX")));
+    if (!home.isValid()) {
+        qWarning().noquote() << "Could not make a folder for settings opened after the deletion:"
+                             << home.errorString();
+    }
+    return home.path();
 }
 
 } // namespace
@@ -32,7 +65,6 @@ SettingsFile::~SettingsFile()
     // it nothing to save.
     if (m_deleted) {
         deleteFile();
-        QDir(deletedSettingsHome()).removeRecursively();
     }
 }
 
@@ -64,10 +96,23 @@ bool SettingsFile::save()
 #endif
     const auto saving = domain ? std::make_unique<QSettings>(format(), scope(), organizationName(), applicationName())
                                : std::make_unique<QSettings>(fileName(), format());
+#ifdef Q_OS_UNIX
+    // The folder first: a file QSettings makes takes the umask's
+    // permissions, open to others until they are taken below.
+    const QString folder = QFileInfo(fileName()).absolutePath();
+    if (!domain && QDir().mkpath(folder)) {
+        keepToOwner(folder);
+    }
+#endif
     saving->sync();
     if (saving->status() != QSettings::NoError) {
         return false;
     }
+#ifdef Q_OS_UNIX
+    if (!domain) {
+        keepToOwner(fileName());
+    }
+#endif
     ++m_saves;
     return true;
 }
@@ -77,8 +122,9 @@ bool SettingsFile::deleteFile()
     if (!m_deleted) {
         // Both scopes: a reader also opens the system scope's file as a
         // fallback, and saves whatever changed in any file it opened.
-        QSettings::setPath(format(), QSettings::UserScope, deletedSettingsHome());
-        QSettings::setPath(format(), QSettings::SystemScope, deletedSettingsHome() + QStringLiteral("/system"));
+        const QString home = throwawaySettingsHome();
+        QSettings::setPath(format(), QSettings::UserScope, home);
+        QSettings::setPath(format(), QSettings::SystemScope, home + QStringLiteral("/system"));
     }
     m_deleted = true;
     clear();

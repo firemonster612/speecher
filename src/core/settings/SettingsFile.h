@@ -9,7 +9,9 @@ namespace speecher {
 // on changes stay in memory, so the running app reads what it set, and
 // neither sync nor the save QSettings makes on its own after a change brings
 // the file back. QSettings made after it keep their files in a throwaway
-// folder, so a new reader can't save its unsaved changes either.
+// folder, so a new reader can't save its unsaved changes either. The file and
+// its folder are the owner's alone, as they can hold the keys SecretStore
+// keeps there when no keyring takes them.
 // Only the running app's store deletes its file: another SettingsFile's
 // deleteFile, and its destructor's, would also erase what that store saved
 // afterwards.

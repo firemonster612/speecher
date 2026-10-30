@@ -83,6 +83,12 @@ QString preferencesPath(SettingsStore &settings)
     return preferences.path();
 }
 
+#ifndef Q_OS_WIN
+// The permissions that let anyone but the owner in.
+constexpr QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
+    | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
+#endif
+
 // Deleting the settings moves every QSettings made afterwards to a throwaway
 // folder; the guard puts them back here for the tests that come after.
 auto keepSettingsHere(SettingsStore &settings)
@@ -1042,6 +1048,31 @@ private slots:
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
+#ifndef Q_OS_WIN
+    // The settings file and its folder are the owner's alone: a key no
+    // keyring takes is kept in the file.
+    void theSettingsFileHoldingAKeyIsTheOwnersAlone()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const QString file = settings.raw().fileName();
+        const QString folder = QFileInfo(file).absolutePath();
+        QVERIFY(QDir().mkpath(folder));
+        for (const QString &path : {folder, file}) {
+            QFile::setPermissions(path, QFile::permissions(path) | QFile::ReadOther | QFile::ExeOther);
+        }
+
+        QCOMPARE(settings.secrets()->saveSecret(proxy, QStringLiteral("file-key")), SaveResult::Stored);
+
+        QVERIFY(settings.raw().contains(SecretStore::settingsKey(proxy)));
+        QCOMPARE((QFile::permissions(file) & openToOthers).toInt(), 0);
+        QCOMPARE((QFile::permissions(folder) & openToOthers).toInt(), 0);
+    }
+#endif
+
     // Saving an empty key clears it, whether or not this store read it.
     void anEmptySaveClearsAKeyNeverRead()
     {
@@ -1724,6 +1755,40 @@ private slots:
         comparePeerRead(settings, proxy, QString());
         comparePeerRead(settings, openAi, QString());
     }
+
+#ifndef Q_OS_WIN
+    // Readers made after a deletion keep their files in a private folder of
+    // the process's own. A link another user left at the name the folder once
+    // had, in the shared temporary folder, is neither written through nor
+    // emptied.
+    void readersAfterADeletionUseAPrivateFolderOfTheirOwn()
+    {
+        QTemporaryDir linked;
+        QFile linkedFile(linked.filePath(QStringLiteral("kept")));
+        QVERIFY(linkedFile.open(QIODevice::WriteOnly));
+        linkedFile.close();
+        const QString oldName =
+            QDir::temp().filePath(QStringLiteral("speecher-removed-%1").arg(QCoreApplication::applicationPid()));
+        QVERIFY(QFile::link(linked.path(), oldName));
+        const auto unlink = qScopeGuard([oldName] { QFile::remove(oldName); });
+        {
+            SettingsStore settings;
+            const auto kept = keepSettingsHere(settings);
+            QVERIFY(settings.deleteAll(nullptr));
+
+            QDir home = QFileInfo(QSettings(QSettings::defaultFormat(), QSettings::UserScope,
+                                            QString::fromLatin1(SettingsKeys::Organization),
+                                            SettingsKeys::application())
+                                      .fileName())
+                            .absoluteDir();
+            QVERIFY(home.cdUp());
+            QVERIFY(!QFileInfo(home.path()).isSymLink());
+            QCOMPARE((QFile::permissions(home.path()) & openToOthers).toInt(), 0);
+        }
+
+        QVERIFY(QFile::exists(linkedFile.fileName()));
+    }
+#endif
 
     // A save is stored once the settings file saved what it changed, judged
     // by that save alone: not while the file won't save, however often the
