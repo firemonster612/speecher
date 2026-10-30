@@ -173,6 +173,8 @@ struct UiSettings {
     bool roundedCorners = true;
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;
+
+    bool operator==(const UiSettings &other) const = default;
 };
 
 // The backends Runs on can name: "auto", then transcribe.cpp's device kinds,
@@ -288,6 +290,8 @@ struct SpeechSettings {
     // begins and ends (see SpeechTranscriber::beginUtterance), and the audio
     // outside them is quiet.
     bool cutIntoUtterances = false;
+
+    bool operator==(const SpeechSettings &other) const = default;
 };
 
 struct AudioCaptureSettings {
@@ -394,6 +398,8 @@ struct RefinementSettings {
     // Offered after the built-in tones and cleanup levels.
     QList<CustomTone> customTones;
     QList<CustomCleanupLevel> customCleanupLevels;
+
+    bool operator==(const RefinementSettings &other) const = default;
 };
 
 // How Speecher signs in to each provider family: the Anthropic auth mode
@@ -415,6 +421,8 @@ struct AccountSettings {
     // settings surface edits this one.
     QString cliproxyOauthDirConfigured;
     QString claudeCredentialsPath;
+
+    bool operator==(const AccountSettings &other) const = default;
 };
 
 struct OutputSettings {
@@ -424,6 +432,8 @@ struct OutputSettings {
     bool restoreClipboardAfterTyping = false;
     int completionStatusDurationMs = 500;
     QList<PasteRule> pasteRules = defaultPasteRules();
+
+    bool operator==(const OutputSettings &other) const = default;
 };
 
 struct UpdateSettings {
