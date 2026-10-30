@@ -1694,6 +1694,30 @@ private slots:
         QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
     }
 
+    // Every usage mistake prints its message, then --help, and exits 2. An
+    // option given last, without its value, says so the same way everywhere.
+    void usageMistakesPrintTheMessageThenHelp()
+    {
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        const QList<std::pair<QStringList, QString>> mistakes{
+            {{QStringLiteral("start"), QStringLiteral("--format")}, QStringLiteral("--format requires a value")},
+            {{QStringLiteral("listen"), QStringLiteral("--tone")}, QStringLiteral("--tone requires a value")},
+            {{QStringLiteral("transcribe"), QStringLiteral("--output")}, QStringLiteral("--output requires a value")},
+            {{QStringLiteral("record"), QStringLiteral("start"), QStringLiteral("--to")},
+             QStringLiteral("--to requires a value")},
+            {{QStringLiteral("status"), QStringLiteral("--format"), QStringLiteral("html")},
+             QStringLiteral("--format can only be used with toggle or start")},
+        };
+        for (const auto &[arguments, message] : mistakes) {
+            usage.str({});
+            QCOMPARE(parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {}).exitCode, 2);
+            QVERIFY2(QString::fromStdString(usage.str()).startsWith(message + QStringLiteral("\n\nUsage: speecher")),
+                     usage.str().c_str());
+        }
+    }
+
     // Each shell's script offers every command and subcommand --help
     // documents where it is typed, and each command's options after it.
     void completionsCoverEveryCommandInHelp()

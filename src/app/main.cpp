@@ -3,6 +3,7 @@
 #include "app/AppImageUpdater.h"
 #endif
 #include "app/UpdateController.h"
+#include "app/CliClient.h"
 #include "app/CommandLine.h"
 #include "app/IpcCommandHandler.h"
 #include "app/PlatformComposition.h"

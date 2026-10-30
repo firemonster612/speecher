@@ -297,8 +297,6 @@ private slots:
             LocalSetup setup(settings, providers, models);
             setup.download(model);
             QVERIFY(models.isDownloading(model.id));
-            QVERIFY(setup.modelState(model).downloading);
-            QVERIFY(!setup.modelState(model).downloaded);
         }
         {
             LocalModelStore models(directory.path(), origin);
@@ -348,8 +346,7 @@ private slots:
         QCOMPARE(setup.speechModelChoice().id, QString("cohere"));
         const auto &model = *findLocalModel("cohere");
         auto speech = settings.snapshot().speech;
-        auto state = setup.modelState(model, speech);
-        QVERIFY(!state.downloaded && !state.downloading && !state.inUse);
+        QVERIFY(!setup.modelState(model, speech).inUse);
         // A result belongs to where it ran, so switching Runs on leaves the
         // model unmeasured until it is tested there.
         auto local = settings.localSpeechSettings();
@@ -358,15 +355,14 @@ private slots:
         QCOMPARE(setup.measuredSeconds(model.id), std::nullopt);
         local.runsOn = {QStringLiteral("cpu"), {}};
         settings.setLocalSpeechSettings(local);
-        QCOMPARE(setup.modelState(model, speech).speedText, speechSecondsText(0.8));
+        QCOMPARE(setup.measuredSeconds(model.id), std::optional(0.8));
         {
             QFile file(models.modelPath(model));
             QVERIFY(file.open(QIODevice::WriteOnly));
             QVERIFY(file.resize(model.sizeBytes));
         }
         speech.providerId = "local";
-        state = setup.modelState(model, speech);
-        QVERIFY(state.downloaded && state.inUse);
+        QVERIFY(setup.modelState(model, speech).inUse);
         speech.providerId = "claude";
         QVERIFY(!setup.modelState(model, speech).inUse);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
@@ -376,39 +372,6 @@ private slots:
 #endif
         emit models.downloadFailed(model.id, "download problem");
         QCOMPARE(setup.modelState(model, speech).problem, QString("download problem"));
-    }
-
-    void modelStateDescribesTheCardAndTableRow()
-    {
-        QTemporaryDir directory;
-        SettingsStore settings;
-        settings.raw().clear();
-        ProviderRegistry providers;
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup setup(settings, providers, models);
-        const LocalModel &moonshine = *findLocalModel("moonshine-small");
-        const LocalModel &parakeet = *findLocalModel("parakeet");
-        const LocalModel &voxtral = *findLocalModel("voxtral-small");
-
-        auto state = setup.modelState(moonshine);
-        QVERIFY(!state.suggested);
-        QVERIFY(!state.tooLarge);
-        QCOMPARE(state.tableCells, QStringList({"Moonshine Small", "199 MB", "2.54% / 8.55%", "Not measured",
-                                                "As you speak", "Checking…"}));
-
-        LocalSetupTestAccess::setHardware(setup, laptop4750u());
-        state = setup.modelState(parakeet);
-        QVERIFY(state.suggested);
-        QVERIFY(!state.tooLarge);
-        QCOMPARE(state.cardFacts, QString("Words appear as you speak\n"
-                                          "About 0.4 s per 10 s (measured on the same chip)\n"
-                                          "1.6% of words wrong on clear speech, 3.99% on everyday speech"));
-        QCOMPARE(state.tableCells, QStringList({"Parakeet 0.6B (suggested)", "731 MB", "1.6% / 3.99%",
-                                                "~0.4 s (estimated)", "As you speak", "Fits"}));
-        QVERIFY(!setup.modelState(moonshine).suggested);
-        state = setup.modelState(voxtral);
-        QVERIFY(state.tooLarge);
-        QCOMPARE(state.tableCells.last(), QString("Too large"));
     }
 
     void fitFollowsWhereModelsRun()
@@ -441,12 +404,11 @@ private slots:
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
         LocalSetup setup(settings, providers, models);
         LocalSetupTestAccess::setHardware(setup, hardware);
-        QVERIFY(setup.modelState(qwen).tooLarge);
+        QCOMPARE(setup.fit(qwen), std::optional(ModelFit::TooLarge));
         LocalSpeechSettings local = settings.localSpeechSettings();
         local.runsOn = {QStringLiteral("cpu"), {}};
         settings.setLocalSpeechSettings(local);
-        QVERIFY(!setup.modelState(qwen).tooLarge);
-        QCOMPARE(setup.fitLabel(qwen), QStringLiteral("Fits"));
+        QCOMPARE(setup.fit(qwen), std::optional(ModelFit::Fits));
     }
 
     // Acceleration offers Automatic, the CPU and each backend a card here

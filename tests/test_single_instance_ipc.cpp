@@ -1,5 +1,5 @@
 #include "common/test_suites.h"
-#include "app/CommandLine.h"
+#include "app/CliClient.h"
 #include "app/ProvidersCommand.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"

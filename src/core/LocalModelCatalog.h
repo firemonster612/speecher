@@ -112,20 +112,7 @@ QString localModelLanguageHint(const QString &spokenLanguage, const QStringList 
 // listens for the Spoken Language, when any does.
 const LocalModel &suggestedLocalModel(const HardwareProfile &hardware, const QString &spokenLanguage);
 
-// The words every front end shows for these facts, so the setup assistants
-// and Local models pages agree.
-QString modelFitLabel(ModelFit fit);
 // "731 MB", "2.4 GB": decimal units, as download sizes are quoted.
 QString downloadSizeText(qint64 bytes);
-// "0.3 s", never below 0.1 s.
-QString speechSecondsText(double seconds);
-// "As you speak" for a streaming model, else "After you stop".
-QString textShowsValue(bool streams);
-
-// How long 10 s of speech takes here: the Speed Test's measurement when there
-// is one, else the catalog's estimate for this kind of machine.
-QString localModelSpeedLine(const LocalModel &model,
-                            const HardwareProfile &hardware,
-                            std::optional<double> measuredSeconds);
 
 } // namespace speecher
