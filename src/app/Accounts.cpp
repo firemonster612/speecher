@@ -237,28 +237,36 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    if (!m_saving.contains(secret)) {
-        m_saving.append(secret);
-    }
-    storeSecret(m_settings.secrets(), secret, value);
+    SecretStore *secrets = m_settings.secrets();
+    m_saving.insert(secret, secrets->nextRequest(secret));
+    storeSecret(secrets, secret, value);
 }
 
-// The keyring's wait runs the event loop, where the UI can save the same
-// secret again. The store writes the one asked for last next and answers only
-// once it settles, so a field that asked for an earlier value meanwhile lets
-// go of what it holds only once the value asked for last is kept.
-void Accounts::secretSaveFinished(SecretStore::Secret secret, bool cleared, bool stored)
+// The keyring's wait runs the event loop, where the UI or another caller can
+// save the same secret again. The store writes the one asked for last next
+// and answers only once it settles, so a field lets go of its key only once
+// the save it asked for last is kept. One a newer save from elsewhere
+// replaced was never written: the field stops waiting, keeps its key and
+// shows nothing.
+void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
+                                  const QString &error)
 {
-    if (!m_saving.removeOne(secret)) {
+    const auto waiting = m_saving.constFind(secret);
+    if (waiting == m_saving.cend()) {
         return;
     }
-    finishWrite(secret, stored, !cleared);
+    const bool own = *waiting == request;
+    m_saving.erase(waiting);
+    if (!own) {
+        return;
+    }
+    finishWrite(secret, stored, !cleared, error);
     if (stored && !cleared) {
         emit secretSaved(secret);
     }
 }
 
-void Accounts::finishWrite(SecretStore::Secret secret, bool done, bool saved)
+void Accounts::finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error)
 {
     m_secretsWritten.append(secret);
     SecretStore *secrets = m_settings.secrets();
@@ -267,7 +275,7 @@ void Accounts::finishWrite(SecretStore::Secret secret, bool done, bool saved)
         m_savedSecrets.insert(secret, saved);
         m_writeFailures.remove(secret);
     } else {
-        m_writeFailures.insert(secret, {!saved, secrets->lastError()});
+        m_writeFailures.insert(secret, {!saved, error});
     }
     emit secretsChanged();
     if (done && m_started) {
