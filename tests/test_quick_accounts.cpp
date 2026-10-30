@@ -242,7 +242,7 @@ private slots:
     void theDaemonChecksSignInsWithoutTheUi()
     {
         ApplicationController controller(true);
-        controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
         Accounts *accounts = controller.accounts();
         accounts->start();
         QTRY_VERIFY(accounts->signIn(SignInService::OpenAi));

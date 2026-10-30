@@ -514,9 +514,9 @@ private slots:
         ui.showMainWindow();
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->setProperty("current", QStringLiteral("accounts"));
+        navigation->go(QStringLiteral("accounts"));
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("openAiApiKeyRow"))));
         QVERIFY(!row->property("shown").toBool());

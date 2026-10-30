@@ -81,7 +81,7 @@ bool AnthropicAuthProvider::expiredAsLastRead() const
 // Empty for a CLI Proxy API server, which renews its own accounts.
 QString AnthropicAuthProvider::signInKey() const
 {
-    if (m_accounts.anthropicAuthMode != cliproxyMode) {
+    if (m_accounts.anthropicAuthMode != AnthropicAuthMode::Cliproxy) {
         return QStringLiteral("claude:") + m_accounts.claudeCredentialsPath;
     }
     if (!m_serverBase.isEmpty()) {

@@ -481,9 +481,8 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
 
 bool OpenAiAuthProvider::mayUseCodexOauth() const
 {
-    const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
-    return mode == QStringLiteral("auto") || mode == QStringLiteral("codex_oauth")
-        || (mode == QStringLiteral("cliproxy") && m_cliproxyBaseUrl.isEmpty());
+    return m_mode == OpenAiAuthMode::Auto || m_mode == OpenAiAuthMode::CodexOauth
+        || (m_mode == OpenAiAuthMode::Cliproxy && m_cliproxyBaseUrl.isEmpty());
 }
 
 bool OpenAiAuthProvider::codexOauthExpiredAsLastRead() const
@@ -491,8 +490,8 @@ bool OpenAiAuthProvider::codexOauthExpiredAsLastRead() const
     if (!mayUseCodexOauth()) {
         return false;
     }
-    return SignInExpiry::lapsed(m_mode == QStringLiteral("cliproxy") ? cliproxySignIn(m_cliproxyDir, m_cliproxyAccount)
-                                                                     : codexSignIn);
+    return SignInExpiry::lapsed(m_mode == OpenAiAuthMode::Cliproxy ? cliproxySignIn(m_cliproxyDir, m_cliproxyAccount)
+                                                                   : codexSignIn);
 }
 
 OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
