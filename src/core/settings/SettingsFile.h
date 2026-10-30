@@ -18,6 +18,11 @@ public:
     // QSettings::sync, unless deleteFile ran. Hides it, so code holding a
     // SettingsFile can't save around the gate.
     void sync();
+    // Saves what changed now and says whether it saved: false once deleteFile
+    // ran, or when the file won't save. status() can't say: it keeps the
+    // first error QSettings meets, a malformed line it read included, for as
+    // long as this object lives.
+    bool save();
     // Clears every setting, deletes the file and closes the gate. Returns
     // false when the file won't go. The destructor deletes it again, for
     // whatever another QSettings wrote meanwhile.

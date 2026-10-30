@@ -35,9 +35,11 @@ public:
         // Storage holds what this call asked for, where a new process reads
         // it too.
         Stored,
-        // Storage refused what this call asked for, or Speecher's secrets are
-        // being removed (deleteKeyringSecrets), and lastError() says why. A
-        // refused clear still hides the key (deletionPending).
+        // Storage refused what this call asked for, the settings file didn't
+        // save it, Speecher's secrets are being removed
+        // (deleteKeyringSecrets), or its settings were deleted
+        // (SettingsStore::deleteAll), and lastError() says why. A refused
+        // clear still hides the key (deletionPending).
         Refused,
         // This call didn't settle its request: it came while another call
         // waited on the keyring for the same secret, which writes it next, a
@@ -90,8 +92,10 @@ public:
     // Removes every Speecher entry from the keychain, once any write the
     // keychain is taking lands. Every save asked for and not yet settled is
     // dropped, refused for that reason in saveFinished, and none is written
-    // afterwards; a save asked for meanwhile is refused. The settings file's
-    // copies stay: SettingsStore::deleteAll removes them.
+    // afterwards; a save asked for meanwhile is refused, also during a
+    // removal started while this one waits. The settings file's copies
+    // stay: SettingsStore::deleteAll removes them, after which every save
+    // is refused.
     bool deleteKeyringSecrets();
 
     QString apiKey() const;
@@ -134,6 +138,9 @@ private:
         quint64 requests = 0;
         // Whether a keyring write of the secret is under way.
         bool writing = false;
+        // Whether the settings file may not have saved a change of what it
+        // says about the secret: nothing of it counts as stored until it does.
+        bool unsaved = false;
     };
 
     SecretState &state(Secret secret) const;
@@ -145,9 +152,11 @@ private:
     QString keyringSecret(Secret secret) const;
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
+    QString writeRefusal() const;
     quint64 ask(Secret secret, const Request &request);
     SaveResult save(Secret secret, const Request &request);
     SaveResult settle(Secret secret, quint64 own);
+    void refuse(Secret secret, quint64 request, bool cleared, const QString &error);
     bool holds(Secret secret, const Request &request) const;
     bool write(Secret secret, const Request &request);
     bool saveSettingsFile() const;
@@ -155,7 +164,8 @@ private:
 
     SettingsStore *m_settings;
     mutable QString m_lastError;
-    // Whether deleteKeyringSecrets runs, refusing every save.
+    // Whether deleteKeyringSecrets runs, refusing every save, until the
+    // outermost one returns.
     bool m_removing = false;
     // Counts the removals, so a write that waited on the keyring can tell
     // whether one ran meanwhile.
