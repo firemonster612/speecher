@@ -81,8 +81,8 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
     player->setSource(QUrl::fromLocalFile(path));
 }
 
-// Opened NewOnly, so an existing file is never overwritten even if one appears
-// between the check and the write. QSaveFile would be atomic, but its commit
+// Opened NewOnly, so an existing file is never overwritten, and a name taken
+// by the time it opens moves on to the next. QSaveFile would be atomic, but its commit
 // renames over whatever took the name meanwhile. A write that fails part way
 // removes the file instead, so no truncated transcript is left to mistake for
 // a whole one.
@@ -99,10 +99,10 @@ QString saveTranscript(const QString &audioPath,
         const QString name = copy == 1 ? QStringLiteral("%1.%2").arg(stem, extension)
                                        : QStringLiteral("%1 (%2).%3").arg(stem).arg(copy).arg(extension);
         QFile file(dir.filePath(name));
-        if (file.exists()) {
-            continue;
-        }
         if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+            if (file.exists()) {
+                continue;
+            }
             *error = transcriptSaveError(file.fileName(), file.errorString());
             return {};
         }

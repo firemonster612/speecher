@@ -53,9 +53,9 @@ QString defaultRecordingPath(const QString &dataFolder, const QDateTime &started
         QStringLiteral("recordings/%1.md").arg(startedAt.toString(QStringLiteral("yyyy-MM-dd-HHmm"))));
 }
 
-// Opened NewOnly, so an existing file is never written to even if one appears
-// between the check and the open, and Unbuffered, so a line that could not
-// be written is not written after all with the next.
+// Opened NewOnly, so an existing file is never written to, and a name taken
+// by the time it opens moves on to the next. Unbuffered, so a line that could
+// not be written is not written after all with the next.
 bool RecordingTranscript::create(const QString &path, QString *error)
 {
     const QFileInfo requested(path);
@@ -68,14 +68,13 @@ bool RecordingTranscript::create(const QString &path, QString *error)
     for (int copy = 1;; ++copy) {
         const QString name = copy == 1 ? requested.fileName() : QStringLiteral("%1-%2%3").arg(stem).arg(copy).arg(suffix);
         m_file.setFileName(requested.dir().filePath(name));
-        if (m_file.exists()) {
-            continue;
+        if (m_file.open(QIODevice::WriteOnly | QIODevice::NewOnly | QIODevice::Unbuffered)) {
+            return true;
         }
-        if (!m_file.open(QIODevice::WriteOnly | QIODevice::NewOnly | QIODevice::Unbuffered)) {
+        if (!m_file.exists()) {
             *error = recordingFileError(m_file.fileName(), m_file.errorString());
             return false;
         }
-        return true;
     }
 }
 
@@ -86,10 +85,20 @@ QString RecordingTranscript::path() const
 
 bool RecordingTranscript::append(qint64 elapsedMs, const QString &speaker, const QString &text, QString *error)
 {
+    if (!m_file.isOpen()) {
+        *error = recordingFileError(m_file.fileName(), QStringLiteral("part of an earlier line could not be removed"));
+        return false;
+    }
     const QByteArray line =
         QStringLiteral("[%1] %2: %3\n").arg(recordingClock(elapsedMs), speaker, text.simplified()).toUtf8();
+    const qint64 end = m_file.pos();
     if (m_file.write(line) != line.size() || !m_file.flush()) {
         *error = recordingFileError(m_file.fileName(), m_file.errorString());
+        // What part of the line went in is cut off, so the next line does not
+        // run on from it; a file that cannot be cut takes no more lines.
+        if (!m_file.resize(end)) {
+            m_file.close();
+        }
         return false;
     }
     return true;
