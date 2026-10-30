@@ -216,11 +216,14 @@ bool removeSelinuxPolicy(std::string &error)
 }
 
 // Whether systemd still runs the unit, or listens on it for a socket; nullopt,
-// with why in error, when systemd could not be asked. False without
-// systemctl, where nothing can be running under systemd either.
+// with why in error, when systemd could not be asked. False where systemd is
+// not managing the machine (no systemctl, or a container, WSL or chroot
+// without /run/systemd/system): nothing runs under it there, and is-active
+// would only fail.
 std::optional<bool> unitActive(std::string_view unit, std::string &error)
 {
-    if (!findExecutable("systemctl")) {
+    std::error_code ignored;
+    if (!findExecutable("systemctl") || !std::filesystem::is_directory("/run/systemd/system", ignored)) {
         return false;
     }
     // is-active exits 3 for a unit that is not running and 4 for one systemd
