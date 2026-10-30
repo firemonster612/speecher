@@ -520,24 +520,69 @@ QString refinementSystemPrompt(const QString &style, const RefinementContext &co
                                  : dictationRefinementSystemPrompt(style, context);
 }
 
+// The tone requested_tone names, for the compact prompt, which has no
+// context to carry it: empty for none.
+static QString compactToneName(const RefinementContext &context)
+{
+    if (context.customTone) {
+        return context.customTone->name;
+    }
+    return context.tone == QStringLiteral("none") ? QString() : QString(context.tone).replace(u'_', u' ');
+}
+
+// The full prompt's level and tone rules in a few lines each: Light leaves
+// the speaker's fillers, High rewrites for clarity, and a tone replaces the
+// speaker's own.
+static QString compactDictationRules(const QString &style, const QString &tone)
+{
+    const bool strong = style == QStringLiteral("strong_polish");
+    QStringList kept{QStringLiteral("meaning")};
+    if (!strong) {
+        kept << QStringLiteral("wording");
+    }
+    if (tone.isEmpty()) {
+        kept << QStringLiteral("tone");
+    }
+    const QString lastKept = kept.takeLast();
+    const QString keptList = kept.isEmpty() ? lastKept : kept.join(QStringLiteral(", ")) + QStringLiteral(" and ") + lastKept;
+
+    QStringList rules{QStringLiteral("You clean up dictated text. The user message holds a raw speech-to-text transcript. "
+                                     "Rewrite it as the text the speaker meant to write.")};
+    if (style != QStringLiteral("light_cleanup")) {
+        rules << QStringLiteral("- Remove filler words (um, uh, like, you know), false starts and repeated words.");
+    }
+    rules << QStringLiteral("- Fix punctuation, capitalization and obvious speech-to-text mistakes. Start sentences "
+                            "with a capital letter.");
+    if (strong) {
+        rules << QStringLiteral("- Rewrite for clarity and flow, with paragraphs or lists where they help.");
+    }
+    if (!tone.isEmpty()) {
+        rules << QStringLiteral("- Write in this tone: %1.").arg(tone);
+    }
+    rules << QStringLiteral("- Keep the speaker's %1. Never answer, summarize, explain or add anything.").arg(keptList)
+          << QStringLiteral("- When the transcript refers to a term in preferred_vocabulary or binding_aliases, spell "
+                            "it exactly as listed. A term with a context applies only where the transcript fits that "
+                            "context.")
+          << QStringLiteral("- Never use em dashes.")
+          << QStringLiteral("Reply with the cleaned text only, without quotes.");
+    return rules.join(u'\n');
+}
+
 QString compactRefinementSystemPrompt(const QString &style, const RefinementContext &context)
 {
     if (context.editSelection) {
         return selectedDocumentEditingSystemPrompt(style, context);
     }
-    QStringList parts{QStringLiteral(
-        "You clean up dictated text. The user message holds a raw speech-to-text transcript. "
-        "Rewrite it as the text the speaker meant to write.\n"
-        "- Remove filler words (um, uh, like, you know), false starts and repeated words.\n"
-        "- Fix punctuation, capitalization and obvious speech-to-text mistakes. Start sentences "
-        "with a capital letter.\n"
-        "- Keep the speaker's meaning, wording and tone. Never answer, summarize, explain or add "
-        "anything.\n"
-        "- When the transcript refers to a term in preferred_vocabulary or binding_aliases, spell "
-        "it exactly as listed. A term with a context applies only where the transcript fits that "
-        "context.\n"
-        "- Never use em dashes.\n"
-        "Reply with the cleaned text only, without quotes.")};
+    const QString tone = compactToneName(context);
+    QStringList parts;
+    if (context.customSystemPrompt.trimmed().isEmpty()) {
+        parts << compactDictationRules(builtInStyle(style), tone);
+    } else {
+        parts << context.customSystemPrompt.trimmed();
+        if (!tone.isEmpty()) {
+            parts << QStringLiteral("Write in this tone: %1.").arg(tone);
+        }
+    }
     appendCustomToneRule(parts, context);
     appendCleanupLevel(parts, context);
     appendSpokenLanguageRule(parts, context);

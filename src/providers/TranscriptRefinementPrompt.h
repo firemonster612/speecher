@@ -21,8 +21,9 @@ QString selectedDocumentEditingSystemPrompt(const QString &style,
 QString refinementSystemPrompt(const QString &style, const RefinementContext &context);
 // About a hundred words of the same cleanup rules, for the small models a
 // Local Runner serves: under the full prompt a 1B model loses the transcript
-// and answers with one of the prompt's own examples. Selection editing keeps
-// its full prompt.
+// and answers with one of the prompt's own examples. It follows the cleanup
+// level and tone as the full prompt does, and a custom system prompt
+// replaces its rules the same way. Selection editing keeps its full prompt.
 QString compactRefinementSystemPrompt(const QString &style, const RefinementContext &context);
 QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                         const QStringList &vocabulary,
