@@ -65,7 +65,8 @@
 ;; watched with inotify for hot-plug; the event nodes are opened read-only.
 ;; ioctl is limited to the three queries openKeyboard() makes, EVIOCGID
 ;; (0x4502) and EVIOCGBIT for the event types and the key bits (0x4520,
-;; 0x4521); EVIOCGRAB and every write ioctl stay out of reach.
+;; 0x4521), and EVIOCGKEY (0x4518), which reads the keys held down after
+;; the kernel drops events; EVIOCGRAB and every write ioctl stay out of reach.
 (allow speecher_keywatchd_t device_t (dir (watch)))
 (allow speecher_keywatchd_t event_device_t (chr_file (open read ioctl)))
-(allowx speecher_keywatchd_t event_device_t (ioctl chr_file (0x4502 0x4520 0x4521)))
+(allowx speecher_keywatchd_t event_device_t (ioctl chr_file (0x4502 0x4518 0x4520 0x4521)))
