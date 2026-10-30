@@ -608,6 +608,7 @@ set(SPEECHER_APP_SOURCES
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
   src/app/ProviderAvailability.cpp
+  src/app/CliClient.cpp
   src/app/CommandLine.cpp
   src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
@@ -645,6 +646,7 @@ set(SPEECHER_APP_HEADERS
   src/app/NetworkReachability.h
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
+  src/app/CliClient.h
   src/app/CommandLine.h
   src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h

@@ -7,12 +7,9 @@
 #include <QString>
 #include <QStringList>
 
-#include <memory>
 #include <optional>
 
 namespace speecher {
-
-class SingleInstancePlatform;
 
 enum class LaunchMode {
     // Nothing left to do; the exit code says how it went.
@@ -83,10 +80,5 @@ bool quitOnLastWindowClosed(LaunchMode mode);
 // when setup is pending, except for --daemon, which shows no window until a
 // command (start, toggle, the tray) needs setup and opens it then.
 bool opensSetupAtLaunch(const CommandLineDecision &decision, bool setupPending);
-
-// Sends the decision's command to a running instance, or starts one detached
-// when there is none. Needs a running QCoreApplication for the socket.
-int runCliCommand(const CommandLineDecision &decision,
-                  const std::shared_ptr<const SingleInstancePlatform> &platform);
 
 } // namespace speecher
