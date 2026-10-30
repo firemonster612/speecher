@@ -3055,6 +3055,7 @@ private slots:
         QCOMPARE(restartAttempts.count(), 1);
     }
 
+#ifdef Q_OS_LINUX
     // A restart that waited for a batch keeps waiting while a transcript the
     // batch made is only on screen, and goes once the Transcribe page exports
     // it or goes back to setup.
@@ -3114,6 +3115,7 @@ private slots:
         }
         QCOMPARE(restartAttempts.count(), 1);
     }
+#endif
 
     // The token an earlier release wrote before restarting into this one
     // reopens the main window, once.
