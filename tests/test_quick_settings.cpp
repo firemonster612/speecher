@@ -511,6 +511,22 @@ private slots:
         QTRY_COMPARE(view->property("contentY").toReal(), 500 + notch);
     }
 
+    // A quote in a link's address stays inside its href.
+    void aQuoteInALinkStaysInItsHref()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\n"
+                          "import Speecher.Controls\n"
+                          "QtObject { readonly property string html: "
+                          "RichText.inlineMarkdown('[notes](https://x.example/a\\\"b)', 'Mono', 'blue') }",
+                          QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        QVERIFY2(created, qPrintable(component.errorString()));
+        QCOMPARE(created->property("html").toString(),
+                 QStringLiteral("<a href=\"https://x.example/a&quot;b\" style=\"color: blue\">notes</a>"));
+    }
+
     void aServiceCardsStatusStaysInItsCard_data()
     {
         QTest::addColumn<int>("width");
