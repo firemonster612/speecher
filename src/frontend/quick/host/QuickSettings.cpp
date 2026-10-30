@@ -493,7 +493,7 @@ void QuickSettings::stopRecordingShortcut(const QString &id)
     }
     m_recordingShortcut.clear();
     QCoreApplication::instance()->removeEventFilter(this);
-    m_pressedKeyCode.clear();
+    m_lastKeyCode.clear();
     GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
     const QString error = m_controller->resumeGlobalShortcut(&failedRole);
     if (!error.isEmpty()) {
@@ -501,19 +501,19 @@ void QuickSettings::stopRecordingShortcut(const QString &id)
     }
 }
 
-QStringList QuickSettings::pressedKeyAlone() const
+QStringList QuickSettings::lastKeyAlone() const
 {
-    const ShortcutBinding key = ShortcutBinding::singleKey(m_pressedKeyCode);
+    const ShortcutBinding key = ShortcutBinding::singleKey(m_lastKeyCode);
     return key.isEmpty() ? QStringList() : QStringList{key.toString()};
 }
 
-// Sees each key press before the field does, with the native codes QML
-// leaves out.
+// Sees each key press and release before the field does, with the native
+// codes QML leaves out.
 bool QuickSettings::eventFilter(QObject *watched, QEvent *event)
 {
-    if (event->type() == QEvent::KeyPress) {
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
         const PhysicalKey *key = physicalKeyOf(*static_cast<QKeyEvent *>(event));
-        m_pressedKeyCode = key ? QString::fromLatin1(key->code) : QString();
+        m_lastKeyCode = key ? QString::fromLatin1(key->code) : QString();
     }
     return QObject::eventFilter(watched, event);
 }

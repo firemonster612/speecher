@@ -14,6 +14,7 @@
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/TrayIcon.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -36,7 +37,6 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
-#include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
@@ -1272,7 +1272,9 @@ private slots:
     }
 
     // A modifier pressed and let go on its own records its physical key,
-    // Right Alt rather than Alt, as one key on its own.
+    // Right Alt rather than Alt, as one key on its own. Only that physical
+    // key's release records it: Left Shift let go while Right Shift, pressed
+    // last, is held records nothing.
     void aModifierLetGoAloneRecordsItsPhysicalKey()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -1284,20 +1286,30 @@ private slots:
         QVERIFY(window);
         QQuickItem *field = findItem(window.get(), "ShortcutField");
         QVERIFY(field);
-        // As X11 and Wayland report Right Alt: evdev 100 as XKB keycode 108,
-        // which most layouts make AltGr.
-        const auto rightAlt = [&window](QEvent::Type type) {
-            QKeyEvent event(type, Qt::Key_AltGr, Qt::NoModifier, 108, 0, 0);
+        // As X11 and Wayland report keys: by XKB keycode, evdev + 8. Most
+        // layouts make Right Alt AltGr.
+        const auto send = [&window](QEvent::Type type, Qt::Key key, quint32 xkbKeycode) {
+            QKeyEvent event(type, key, Qt::NoModifier, xkbKeycode, 0, 0);
             QGuiApplication::sendEvent(window.get(), &event);
         };
+        constexpr quint32 rightAlt = 100 + 8, leftShift = 42 + 8, rightShift = 54 + 8;
 
         startListening(window.get(), field);
-        rightAlt(QEvent::KeyPress);
+        send(QEvent::KeyPress, Qt::Key_AltGr, rightAlt);
         QVERIFY(field->property("listening").toBool());
-        rightAlt(QEvent::KeyRelease);
-
+        send(QEvent::KeyRelease, Qt::Key_AltGr, rightAlt);
         QVERIFY(!field->property("listening").toBool());
         QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("AltRight")));
+
+        startListening(window.get(), field);
+        send(QEvent::KeyPress, Qt::Key_Shift, leftShift);
+        send(QEvent::KeyPress, Qt::Key_Shift, rightShift);
+        send(QEvent::KeyRelease, Qt::Key_Shift, leftShift);
+        QVERIFY(field->property("listening").toBool());
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("AltRight")));
+        send(QEvent::KeyRelease, Qt::Key_Shift, rightShift);
+        QVERIFY(!field->property("listening").toBool());
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("ShiftRight")));
     }
 
     // Where the desktop picks the keys itself (the portal), the binding is a

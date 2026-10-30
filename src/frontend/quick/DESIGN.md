@@ -100,9 +100,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   shortcut rows go to the controller, which binds and keeps them, and show
   the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
-  the bound shortcuts let go of their keys, and `Settings.pressedKeyAlone()`
-  names the physical key just pressed (Right Alt, not Alt), which a
-  modifier let go on its own records. Where the desktop picks the keys
+  the bound shortcuts let go of their keys, and `Settings.lastKeyAlone()`
+  names the physical key just pressed or let go (Right Alt, not Alt), which
+  a modifier let go on its own records. Where the desktop picks the keys
   (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
   `Settings.act(id)` opens the desktop's chooser.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
