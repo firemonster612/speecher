@@ -151,7 +151,11 @@ class SettingsStore(private val context: Context) {
     fun insightsEnabled(): Boolean = preferences.getBoolean("insightsEnabled", true)
 
     fun save(settings: SpeecherSettings) {
+        val deletedProfiles = customProfileIds() - settings.writingProfiles.keys
         preferences.edit(commit = true) {
+            deletedProfiles.forEach { profile ->
+                profileFields.forEach { field -> remove("${profile.key}$field") }
+            }
             putString("transcription", settings.transcriptionProvider.name)
             putBoolean("refinement", settings.refinementEnabled)
             putString("refinementProvider", settings.refinementProvider.name)
@@ -343,6 +347,17 @@ class SettingsStore(private val context: Context) {
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
         const val VERSION = 2
+        /** What each Writing Profile stores, each under its key prefix. */
+        val profileFields =
+            listOf(
+                "Cleanup",
+                "Tone",
+                "Instructions",
+                "CustomCleanup",
+                "CustomTone",
+                "Name",
+                "OutputLanguage",
+            )
 
         /**
          * Every key stays in what is stored, so an earlier release reads it back. Keys it doesn't
