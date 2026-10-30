@@ -1,8 +1,6 @@
 package app.speecher.protocol
 
 import java.util.Base64
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,17 +27,18 @@ class CodexDictationClient(
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://chatgpt.com/backend-api/dictation/stream",
 ) : WebSocketTransport.Listener, SpeechClient {
-    private val lock = Any()
-    private val pending = mutableListOf<ByteArray>()
+    private val stream =
+        StreamLifecycle(
+            transport,
+            events,
+            ::sendAudioMessage,
+            {
+                transport.sendText("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
+                transport.sendText("{\"type\":\"session.close\"}")
+            },
+            closeTimeoutSeconds = 8,
+        )
     private val finalIds = mutableSetOf<String>()
-    @Volatile private var started = false
-    @Volatile private var stopped = false
-    @Volatile private var cancelled = false
-    @Volatile private var completed = false
-    @Volatile private var failed = false
-    private val deadline = Executors.newSingleThreadScheduledExecutor { task ->
-        Thread(task, "codex-dictation-deadline").apply { isDaemon = true }
-    }
 
     init {
         transport.open(
@@ -48,18 +47,11 @@ class CodexDictationClient(
             "chatgpt-dictation, openai-bearer.$token",
             this,
         )
-        deadline.schedule(
-            {
-                if (!started)
-                    fail(ProviderFailureKind.Timeout, "no session.start in 10s", retryable = true)
-            },
-            10,
-            TimeUnit.SECONDS,
-        )
+        stream.failUnlessLiveWithin(10, "no session.start in 10s", retryable = true)
     }
 
     override fun onOpen() {
-        if (cancelled || failed) return
+        if (stream.ended) return
         val vad = buildJsonObject {
             put("type", JsonPrimitive("server_vad"))
             put("threshold", JsonPrimitive(0.5))
@@ -88,25 +80,16 @@ class CodexDictationClient(
     }
 
     override fun onText(text: String) {
-        if (cancelled || completed || failed) return
+        if (stream.ended) return
         val event = runCatching {
             Json.parseToJsonElement(text) as JsonObject
         }
             .getOrElse {
-                fail(ProviderFailureKind.Other, "bad event payload")
+                stream.fail(ProviderFailureKind.Other, "bad event payload")
                 return
             }
         when (event.string("type")) {
-            "session.started" -> {
-                if (started) return
-                // Flushed under the lock so audio captured meanwhile queues behind it, not ahead.
-                synchronized(lock) {
-                    started = true
-                    pending.forEach(::sendAudioMessage)
-                    pending.clear()
-                }
-                if (stopped) closeSession() else events(SpeechEvent.Connected)
-            }
+            "session.started" -> stream.goLive()
             "transcript.segment",
             "transcript.final" -> {
                 val id = event.string("utterance_id")
@@ -121,7 +104,7 @@ class CodexDictationClient(
             }
             "session.updated" ->
                 if ((event["session"] as? JsonObject)?.string("status") == "closed") {
-                    complete()
+                    stream.complete()
                     transport.close(1000, null)
                 }
             "transcript.failed" -> failWith(event)
@@ -129,25 +112,9 @@ class CodexDictationClient(
         }
     }
 
-    override fun onFailure(error: Throwable, statusCode: Int?) {
-        val code = statusCode
-        val detail =
-            listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
-                .joinToString(": ")
-                .ifEmpty { "connect failed" }
-        val kind = transportFailureKind(error, code)
-        fail(kind, detail, retryable = kind != ProviderFailureKind.Authentication)
-    }
+    override fun onFailure(error: Throwable, statusCode: Int?) = stream.onFailure(error, statusCode)
 
-    override fun onClosed(code: Int, reason: String) {
-        if (started && !stopped && endsSession(code)) complete()
-        else
-            fail(
-                ProviderFailureKind.Network,
-                "closed $code ${reason.take(80)}".trim(),
-                retryable = true,
-            )
-    }
+    override fun onClosed(code: Int, reason: String) = stream.onClosed(code, reason)
 
     /**
      * A provider error is retryable unless it is about sign-in or says `"retryable": false`. Its
@@ -159,7 +126,7 @@ class CodexDictationClient(
             if (event.authenticationError()) ProviderFailureKind.Authentication
             else streamedErrorKind(error)
         val retryable = error["retryable"]?.jsonPrimitive?.content
-        fail(
+        stream.fail(
             kind,
             event.errorDetail(),
             kind != ProviderFailureKind.Authentication && retryable != "false",
@@ -171,10 +138,7 @@ class CodexDictationClient(
         return "${error.string("code")} ${error.string("message")}".trim().take(120)
     }
 
-    override fun sendAudio(pcm: ByteArray) {
-        if (stopped || cancelled || failed || pcm.isEmpty()) return
-        synchronized(lock) { if (started) sendAudioMessage(pcm) else pending.add(pcm) }
-    }
+    override fun sendAudio(pcm: ByteArray) = stream.sendAudio(pcm)
 
     private fun sendAudioMessage(pcm: ByteArray) {
         transport.sendText(
@@ -187,56 +151,10 @@ class CodexDictationClient(
     }
 
     override fun stop() {
-        if (stopped || cancelled) return
-        stopped = true
-        if (started) closeSession()
+        stream.stop()
     }
 
-    private fun closeSession() {
-        transport.sendText("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
-        transport.sendText("{\"type\":\"session.close\"}")
-        deadline.schedule(
-            { if (!completed) fail(ProviderFailureKind.Timeout, "no close in 8s") },
-            8,
-            TimeUnit.SECONDS,
-        )
-    }
-
-    override fun cancel() {
-        cancelled = true
-        deadline.shutdownNow()
-        synchronized(lock) { pending.clear() }
-        transport.cancel()
-    }
-
-    private fun complete() {
-        val first =
-            synchronized(lock) {
-                if (cancelled || completed || failed) false
-                else {
-                    completed = true
-                    true
-                }
-            }
-        if (!first) return
-        deadline.shutdownNow()
-        events(SpeechEvent.Completed)
-    }
-
-    private fun fail(kind: ProviderFailureKind, detail: String, retryable: Boolean = false) {
-        val first =
-            synchronized(lock) {
-                if (cancelled || completed || failed) false
-                else {
-                    failed = true
-                    true
-                }
-            }
-        if (!first) return
-        deadline.shutdownNow()
-        events(SpeechEvent.Failed(kind, detail, retryable))
-        transport.cancel()
-    }
+    override fun cancel() = stream.cancel()
 }
 
 private fun JsonObject.string(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()

@@ -61,6 +61,21 @@ class SpeechClientsTest {
     }
 
     @Test
+    fun `stopping a stream the provider already ended sends nothing`() {
+        val transport = FakeTransport()
+        val events = mutableListOf<SpeechEvent>()
+        val client = CodexDictationClient(transport, "token", "en", events::add)
+        transport.server.onText("""{"type":"session.started"}""")
+        transport.server.onText("""{"type":"session.updated","session":{"status":"closed"}}""")
+
+        client.stop()
+
+        assertEquals(listOf(SpeechEvent.Connected, SpeechEvent.Completed), events)
+        assertEquals(emptyList<String>(), transport.sent)
+        client.cancel()
+    }
+
+    @Test
     fun `a Codex quota error is a rate limit, and not retried when it says so`() {
         val transport = FakeTransport()
         val events = mutableListOf<SpeechEvent>()

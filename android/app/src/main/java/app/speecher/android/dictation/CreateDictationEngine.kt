@@ -16,7 +16,6 @@ import app.speecher.android.provider.CleanupProvider
 import app.speecher.android.provider.OpenAiSpeed
 import app.speecher.android.provider.Provider
 import app.speecher.android.provider.SpeechProvider
-import app.speecher.android.provider.label
 import app.speecher.android.provider.oauth
 import app.speecher.android.provider.speech
 import app.speecher.android.settings.SettingsStore
@@ -272,31 +271,7 @@ fun createDictationEngine(
                 )
             }
         else null,
-        { text ->
-            // Kept before the commit, as the desktop does, so words that fail to go in stay too.
-            val target = session.target
-            if (target?.secure != true) latestTranscript = LatestTranscript(text, target?.label)
-            val connection = session.connection
-            // Read before the commit: the text on each side pins the words for an edit after it.
-            val window =
-                connection
-                    ?.takeIf {
-                        settings.correctionLearningEnabled &&
-                            target?.secure == false &&
-                            ActiveDictation.watchCorrections != null
-                    }
-                    ?.let { correctionWindow(it, text) }
-            val committed = connection?.commitText(text, 1) == true
-            if (committed) {
-                SettingsStore(context).recordVocabularyUsage(text)
-                // Read when it runs: the chip service may have gone in the meantime.
-                if (window != null && target != null)
-                    main.post {
-                        ActiveDictation.watchCorrections?.invoke(window, target.packageName)
-                    }
-            }
-            committed
-        },
+        { text -> commitToField(context, session, text) },
         sharedExecutor,
         { next ->
             main.post {
