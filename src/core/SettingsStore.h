@@ -60,17 +60,21 @@ public:
     // key it didn't read. A change to a field that is never stored saves
     // nothing and logs the field.
     bool edit(const std::function<bool(AppSettings &)> &change);
-    // Clears every setting and deletes the settings file, as removing
-    // Speecher with its settings does. Afterwards nothing the store holds is
-    // saved: not a snapshot, a setter, a codec's write or a sync of raw()
-    // (SettingsFile), so an edit made before Speecher quits can't bring the
-    // file back. A file that won't go puts its path in path.
+    // Clears every setting and deletes the settings file, and the settings
+    // an older Speecher left under its old app id, as removing Speecher with
+    // its settings does. Afterwards nothing the store holds is saved: not a
+    // snapshot, a setter, a codec's write or a sync of raw() (SettingsFile),
+    // so an edit made before Speecher quits can't bring the file back. A file
+    // that won't go puts its path in path; when the older settings won't, it
+    // keeps what deleteAllButDeletionMarkers keeps instead, so the next start
+    // doesn't import them again. Only the running app's store calls it
+    // (SettingsFile).
     bool deleteAll(QString *path);
     // Clears every setting but SecretStore's deletion markers, which hide
-    // keys the keyring kept, and saves that: what removing Speecher with its
-    // settings does when deleting the file would show such a key. Changes
-    // made afterwards are saved. A file that won't save puts its path in
-    // path.
+    // keys the keyring kept, saves that, and deletes the older settings
+    // deleteAll does: what removing Speecher with its settings does when
+    // deleting the file would show such a key. Changes made afterwards are
+    // saved. A file that won't save or go puts its path in path.
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
@@ -265,6 +269,10 @@ private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
     AppSettings snapshotReading(bool waitForKeyring) const;
+    // Clears every setting but the deletion markers, marks the identity
+    // migration done and saves that. A file that won't save puts its path in
+    // path.
+    bool keepOnlyDeletionMarkers(QString *path);
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
     SecretStore *m_secrets = nullptr;

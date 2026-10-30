@@ -10,6 +10,9 @@ namespace speecher {
 // neither sync nor the save QSettings makes on its own after a change brings
 // the file back. QSettings made after it keep their files in a throwaway
 // folder, so a new reader can't save its unsaved changes either.
+// Only the running app's store deletes its file: another SettingsFile's
+// deleteFile, and its destructor's, would also erase what that store saved
+// afterwards.
 class SettingsFile final : public QSettings {
 public:
     SettingsFile(const QString &organization, const QString &application);

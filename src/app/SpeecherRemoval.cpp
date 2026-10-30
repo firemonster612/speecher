@@ -29,15 +29,14 @@ namespace {
 using Part = RemovalStep::Part;
 using Outcome = RemovalStep::Outcome;
 
-// Runs a step that says why it failed, records how it went, done when it
-// went through, and returns whether it did.
-bool record(QList<RemovalStep> &steps, Part part, const std::function<bool(QString *error)> &run,
+// Runs a step that says why it failed and records how it went, done when it
+// went through.
+void record(QList<RemovalStep> &steps, Part part, const std::function<bool(QString *error)> &run,
             Outcome done = Outcome::Removed)
 {
     QString error;
     const bool ran = run(&error);
     steps.append({part, ran ? done : Outcome::Failed, ran ? QString() : error});
-    return ran;
 }
 
 } // namespace
@@ -123,12 +122,15 @@ void SpeecherRemoval::finish(RemovalReport report, bool deleteSettings)
 {
     if (!deleteSettings) {
         report.steps.append({Part::Settings, Outcome::Kept, QString()});
-    } else if (record(report.steps, Part::Keyring, m_steps.deleteSecrets) || !m_steps.settingsHideKeys()) {
-        record(report.steps, Part::Settings, m_steps.deleteSettings);
     } else {
+        record(report.steps, Part::Keyring, m_steps.deleteSecrets);
         // A key whose deletion the keyring refused stays hidden only while
         // its deletion marker does.
-        record(report.steps, Part::Settings, m_steps.deleteSettingsButMarkers, Outcome::KeptHidingKeys);
+        if (m_steps.settingsHideKeys()) {
+            record(report.steps, Part::Settings, m_steps.deleteSettingsButMarkers, Outcome::KeptHidingKeys);
+        } else {
+            record(report.steps, Part::Settings, m_steps.deleteSettings);
+        }
     }
     m_running = false;
     emit finished(report);

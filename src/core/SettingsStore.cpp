@@ -6,18 +6,52 @@
 #include "core/settings/SettingsKeys.h"
 
 #include <QDebug>
+#include <QFile>
 
+#include <memory>
 #include <utility>
 
 namespace speecher {
 
+namespace {
+
+constexpr int identityMigrationVersion = 1;
+
+// The settings Speecher kept before its app id changed (ADR 0002), which the
+// identity migration imports. Opened in the format SettingsFile opens, which
+// tests point at a folder of their own; QSettings(organization, application)
+// would always open the person's file.
+std::unique_ptr<QSettings> olderSettings()
+{
+    return std::make_unique<QSettings>(QSettings::defaultFormat(), QSettings::UserScope,
+                                       QStringLiteral("local.speecher"), SettingsKeys::application());
+}
+
+// Deletes those settings, which a start that finds no settings of its own
+// imports again, keys and all. Returns false, with their file in path, when
+// they won't go.
+bool deleteOlderSettings(QString *path)
+{
+    const std::unique_ptr<QSettings> older = olderSettings();
+    older->clear();
+    older->sync();
+    const QString file = older->fileName();
+    if (older->status() == QSettings::NoError && (!QFile::exists(file) || QFile::remove(file))) {
+        return true;
+    }
+    if (path) {
+        *path = file;
+    }
+    return false;
+}
+
+} // namespace
+
 bool migrateSettingsIdentity(QSettings &newSettings, QSettings &oldSettings, QString *error)
 {
-    constexpr int currentMigrationVersion = 1;
     newSettings.setFallbacksEnabled(false);
     oldSettings.setFallbacksEnabled(false);
-    if (newSettings.value(SettingsKeys::IdentityMigrationVersion).toInt()
-        >= currentMigrationVersion) {
+    if (newSettings.value(SettingsKeys::IdentityMigrationVersion).toInt() >= identityMigrationVersion) {
         return true;
     }
 
@@ -39,7 +73,7 @@ bool migrateSettingsIdentity(QSettings &newSettings, QSettings &oldSettings, QSt
         return false;
     }
 
-    newSettings.setValue(SettingsKeys::IdentityMigrationVersion, currentMigrationVersion);
+    newSettings.setValue(SettingsKeys::IdentityMigrationVersion, identityMigrationVersion);
     newSettings.sync();
     if (newSettings.status() != QSettings::NoError) {
         if (error) {
@@ -102,16 +136,11 @@ void migrateOutputMethod(QSettings &settings)
 
 void migrateSavedSettings()
 {
-    constexpr auto oldOrganization = "local.speecher";
-    // The format SettingsFile opens, which tests point at a folder of their
-    // own; QSettings(organization, application) would always open the
-    // person's file.
+    // The format SettingsFile opens, as olderSettings does.
     QSettings newSettings(QSettings::defaultFormat(), QSettings::UserScope,
                           QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
-    QSettings oldSettings(QSettings::defaultFormat(), QSettings::UserScope,
-                          QString::fromLatin1(oldOrganization), SettingsKeys::application());
     QString error;
-    if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
+    if (!migrateSettingsIdentity(newSettings, *olderSettings(), &error)) {
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
@@ -127,6 +156,12 @@ SettingsStore::SettingsStore(QObject *parent)
 
 bool SettingsStore::deleteAll(QString *path)
 {
+    // Before deleteFile, which points every QSettings made afterwards at a
+    // throwaway folder.
+    if (!deleteOlderSettings(path)) {
+        keepOnlyDeletionMarkers(nullptr);
+        return false;
+    }
     if (m_settings.deleteFile()) {
         return true;
     }
@@ -138,15 +173,21 @@ bool SettingsStore::deleteAll(QString *path)
 
 bool SettingsStore::deleteAllButDeletionMarkers(QString *path)
 {
-    // The identity migration's version stays too, so the next start doesn't
-    // take the markers for settings an older Speecher left.
-    QStringList kept = m_secrets->deletionMarkers();
-    kept.append(SettingsKeys::IdentityMigrationVersion);
+    const bool olderDeleted = deleteOlderSettings(path);
+    return keepOnlyDeletionMarkers(path) && olderDeleted;
+}
+
+bool SettingsStore::keepOnlyDeletionMarkers(QString *path)
+{
+    const QStringList markers = m_secrets->deletionMarkers();
     for (const QString &key : m_settings.allKeys()) {
-        if (!kept.contains(key)) {
+        if (!markers.contains(key)) {
             m_settings.remove(key);
         }
     }
+    // So the next start takes neither the markers nor older settings that
+    // wouldn't go for settings to import.
+    m_settings.setValue(SettingsKeys::IdentityMigrationVersion, identityMigrationVersion);
     if (m_settings.save()) {
         return true;
     }

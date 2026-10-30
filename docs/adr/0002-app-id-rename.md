@@ -25,7 +25,8 @@ log) and deliberately leaves the old file in place. On Plasma a key set under th
 
 - The old settings file at `~/.config/local.speecher/speecher.conf` survives
   indefinitely and can contain API keys; a user purging secrets must delete
-  it too.
+  it too. Removing Speecher with its settings deletes it, since the next
+  start would otherwise import it again.
 - An active KGlobalAccel shortcut under the `local.speecher` component moves
   to the renamed component on the next Plasma run, then the old component is
   cleaned up. If the old component has no active shortcut, the renamed
