@@ -176,6 +176,7 @@ QStringList QuickTranscription::extensions() const
     return transcribableExtensions();
 }
 
+// The page binds to this on the GUI thread, so it never waits for the keyring.
 QVariantMap QuickTranscription::options() const
 {
     const TranscribeOptions &options = m_queue.options();
@@ -187,7 +188,7 @@ QVariantMap QuickTranscription::options() const
         {QStringLiteral("profile"), options.writingProfile},
         {QStringLiteral("tone"), options.tone},
         {QStringLiteral("language"),
-         options.spokenLanguage.value_or(m_controller->settings()->snapshot().speech.language)},
+         options.spokenLanguage.value_or(m_controller->settings()->dictationSnapshot().speech.language)},
         {QStringLiteral("destination"), idOf(kDestinations, options.destination)},
         {QStringLiteral("folder"), QDir::toNativeSeparators(options.folder)},
         {QStringLiteral("folderUrl"), options.folder.isEmpty() ? QUrl() : QUrl::fromLocalFile(options.folder)},

@@ -2,7 +2,9 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickTranscription.h"
 #include "providers/ProviderRegistry.h"
 
@@ -13,6 +15,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 #include <cmath>
@@ -58,7 +61,7 @@ private slots:
 
         QCOMPARE(option("destination").toString(), QStringLiteral("beside"));
         QCOMPARE(option("vocabulary").toBool(), true);
-        QCOMPARE(option("language").toString(), controller.settings()->snapshot().speech.language);
+        QCOMPARE(option("language").toString(), controller.settings()->dictationSnapshot().speech.language);
 
         transcription.setOption(QStringLiteral("destination"), QStringLiteral("none"));
         transcription.setOption(QStringLiteral("language"), QStringLiteral("fr"));
@@ -69,6 +72,21 @@ private slots:
         QCOMPARE(option("destination").toString(), QStringLiteral("none"));
         QCOMPARE(option("language").toString(), QStringLiteral("fr"));
         QCOMPARE(option("tone").toString(), QStringLiteral("casual"));
+    }
+
+    // The page reads the options on the GUI thread, so they leave a key only
+    // the keyring holds unread.
+    void optionsNeverWaitForTheKeyring()
+    {
+        SettingsStore().raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("speech-endpoint-key")});
+        qputenv("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD"); });
+        ApplicationController controller(true);
+        QuickTranscription transcription(&controller);
+
+        transcription.options();
+
+        QCOMPARE(controller.settings()->secrets()->readFailure(SecretStore::Secret::SpeechEndpointKey), QString());
     }
 
     // A model chosen for the batch is the one its service runs, until another
