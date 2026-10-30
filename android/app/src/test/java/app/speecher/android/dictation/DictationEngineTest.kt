@@ -542,10 +542,12 @@ class DictationEngineTest {
     }
 
     @Test
-    fun `a server that transcribes after the stop takes Insert before any words, and nothing heard is not cleaned up`() {
+    fun `a server that transcribes after the stop takes Insert before any words, and nothing heard leaves the field alone`() {
         val client = Client()
         val commits = mutableListOf<String>()
         val refined = mutableListOf<String>()
+        val done = mutableListOf<String>()
+        var selection: String? = null
         lateinit var speech: (SpeechEvent) -> Unit
         val engine =
             DictationEngine(
@@ -563,6 +565,8 @@ class DictationEngineTest {
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
+                onCommitted = { done.add(it.text) },
+                selection = { selection },
             )
         engine.start(SpeechProvider.Endpoint)
         assertEquals(DictationState.Listening(textAfterStop = true), engine.state)
@@ -572,10 +576,13 @@ class DictationEngineTest {
         speech(SpeechEvent.Completed)
         assertEquals(listOf("HELLO THERE"), commits)
 
+        // Committing no text would delete the selection, so the dictation ends with nothing.
+        selection = "keep this"
         engine.start(SpeechProvider.Endpoint)
         engine.insertRefined(CleanupProvider.Claude)
         speech(SpeechEvent.Completed)
-        assertEquals(listOf("HELLO THERE", ""), commits)
+        assertEquals(listOf("HELLO THERE"), commits)
+        assertEquals(listOf("HELLO THERE", ""), done)
         assertEquals(listOf("hello there"), refined)
     }
 

@@ -52,6 +52,7 @@ class DictationEngine(
      * aborts it; null skips that pass.
      */
     private val transcribe: ((ByteArray, Cancellation) -> String)?,
+    /** Puts non-blank text into the field; false when it could not. */
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
@@ -66,6 +67,7 @@ class DictationEngine(
     private val resumeMedia: () -> Unit = {},
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
+    /** The dictation is done: its words went in, or there were none to put in. */
     private val onCommitted: (Inserted) -> Unit = {},
     /**
      * The field's selected text, null when nothing is selected or the field is a password field.
@@ -611,7 +613,8 @@ class DictationEngine(
             fail(session, FailureReason.SelectionChanged, "The selection changed", text)
             return
         }
-        if (commit(text)) {
+        // Nothing heard leaves the field as it was: committing no text would delete a selection.
+        if (text.isBlank() || commit(text)) {
             inserted = true
             failedCommit = null
             onCommitted(

@@ -288,7 +288,6 @@ fun createDictationEngine(
                     main.post {
                         ActiveDictation.watchCorrections?.invoke(window, target.packageName)
                     }
-                main.post(onInserted)
             }
             committed
         },
@@ -320,6 +319,7 @@ fun createDictationEngine(
                     dictationRecord(inserted, settings, session.target),
                 )
             }
+            main.post(onInserted)
         },
         selection = {
             // A password field's text never leaves the device, selected or not.
