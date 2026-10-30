@@ -27,6 +27,7 @@ import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.EndpointSpeechClient
+import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
@@ -42,6 +43,7 @@ import app.speecher.protocol.webSocketTransport
 import app.speecher.protocol.withLearnedCorrections
 import app.speecher.protocol.withVariablesFilled
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -128,9 +130,12 @@ fun createDictationEngine(
             session.target?.packageName.orEmpty(),
         )
     }
+    // The sign-in each account's latest request went out with, the one a rejection ends.
+    val usedSignIns = ConcurrentHashMap<Provider, OAuthTokens>()
     fun token(account: Provider) =
-        store.validTokens(account.oauth, http)
-            ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
+        (store.validTokens(account.oauth, http)
+                ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in"))
+            .also { usedSignIns[account] = it }
     fun refineWithAccount(
         account: Provider,
         raw: String,
@@ -275,19 +280,23 @@ fun createDictationEngine(
             }
         else null,
         { text -> commitToField(context, session, text) },
+        session::bindField,
         sharedExecutor,
         { next ->
-            main.post {
-                // A rejected sign-in ends the account's session, the opposite of the
-                // clearSessionEnded calls above.
-                val reason = (next as? DictationState.Failed)?.reason
-                if (
-                    reason is FailureReason.ProviderFailed &&
-                        reason.kind == ProviderFailureKind.Authentication
-                )
-                    reason.account?.let { store.endSession(it.oauth) }
-                onState(next)
-            }
+            // A rejected sign-in ends the account's session, the opposite of the
+            // clearSessionEnded calls above. A turned-down refresh sent no request, and validTokens
+            // ended its session already. On a worker, since checking the sign-in decrypts it.
+            val reason = (next as? DictationState.Failed)?.reason
+            if (
+                reason is FailureReason.ProviderFailed &&
+                    reason.kind == ProviderFailureKind.Authentication
+            )
+                reason.account?.let { account ->
+                    usedSignIns[account]?.let { rejected ->
+                        sharedExecutor.execute { store.endSession(account.oauth, rejected) }
+                    }
+                }
+            main.post { onState(next) }
         },
         // A refused request, as during a phone call, needs nothing: the media plays on, the
         // dictation goes ahead, and abandoning focus never granted does nothing.

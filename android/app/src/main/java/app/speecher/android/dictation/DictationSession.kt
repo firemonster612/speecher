@@ -32,8 +32,45 @@ class DictationSession(
     val speech = resolveSpeech(settings.transcriptionProvider, signedIn)
     /** What Insert refined cleans up with. */
     val cleanup = resolveSignedIn(settings.refinementProvider.account, signedIn).cleanup
+
+    /**
+     * The field's connection while the IME has one, and the number of the field it belongs to,
+     * which counts the fields the IME started input in. Published together, so a commit never sees
+     * a new field's connection with the old field's number. Words go only into the field Insert or
+     * Retry was tapped in: when the person moves to another while they are on their way, they fail
+     * to go in and stay in the panel, rather than land in the field the person moved to.
+     */
+    private class Input(val connection: InputConnection?, val field: Int)
+
+    @Volatile private var input = Input(null, 0)
+    @Volatile private var insertField = 0
+
     /** The field's connection while the IME has one. */
-    @Volatile var connection: InputConnection? = null
+    val connection: InputConnection?
+        get() = input.connection
+
+    /**
+     * The IME started input through [connection]: in a new field, unless it is [restarting] in the
+     * same one. Call on the main thread.
+     */
+    fun startInput(connection: InputConnection?, restarting: Boolean) {
+        input = Input(connection, if (restarting) input.field else input.field + 1)
+    }
+
+    /** The IME's input in the field ended. Call on the main thread. */
+    fun finishInput() {
+        input = Input(null, input.field)
+    }
+
+    /** Binds the words of the tapped Insert or Retry to the field focused now. */
+    fun bindField() {
+        insertField = input.field
+    }
+
+    /** The [connection], unless the person moved to another field since tapping Insert or Retry. */
+    val insertConnection: InputConnection?
+        get() = input.takeIf { it.field == insertField }?.connection
+
     /**
      * What the chip read of the target window at tap, if the user opted in and it arrived. Dropped
      * when it arrives after the session ended.

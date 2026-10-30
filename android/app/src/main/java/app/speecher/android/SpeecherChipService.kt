@@ -75,12 +75,17 @@ class SpeecherChipService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         // Recover a swap a dead process never undid: our keyboard is default with nothing
-        // dictating.
+        // dictating. The keyboard to return to is forgotten only once the switch worked, so the
+        // panel's Cancel can still return to it.
         val swap = ImeSwap(this)
-        if (swap.stranded()) {
-            swap.previousId?.let { softKeyboardController.switchToInputMethod(it) }
+        val previous = swap.previousId
+        if (
+            swap.stranded() &&
+                previous != null &&
+                runCatching { softKeyboardController.switchToInputMethod(previous) }
+                    .getOrDefault(false)
+        )
             swap.clear()
-        }
         // The keyboard is gone by the time the person edits what it inserted; this service is not.
         ActiveDictation.watchCorrections = corrections::observe
     }

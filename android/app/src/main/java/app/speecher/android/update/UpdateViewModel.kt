@@ -247,6 +247,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 return@launch
             }
+            val downgrade = withContext(Dispatchers.IO) { downgradeFailure(context, release, apk) }
+            if (downgrade != null) {
+                apk.delete()
+                state = downgrade
+                return@launch
+            }
             val staged = runCatching {
                 withContext(Dispatchers.IO) {
                     try {

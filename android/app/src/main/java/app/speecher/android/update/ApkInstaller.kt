@@ -52,6 +52,17 @@ fun downloadApk(http: OkHttpClient, update: ApkUpdate, file: File, onProgress: (
 }
 
 /**
+ * What Home says when a downloaded [apk] for [update] carries a lower version code than this app,
+ * as a Stable Release older than a Nightly Build can: Android installs it only after an uninstall,
+ * and refuses it with a failure that Try again would only repeat. Null when it doesn't. Call on a
+ * worker thread.
+ */
+fun downgradeFailure(context: Context, update: ApkUpdate, apk: File): UpdateState.InstallFailed? {
+    val archive = context.packageManager.getPackageArchiveInfo(apk.path, 0) ?: return null
+    return if (archive.longVersionCode < BuildConfig.VERSION_CODE) reinstallNeeded(update) else null
+}
+
+/**
  * Copies a downloaded APK into a new installer session, ready to commit. Call on a worker thread.
  */
 fun stageApk(context: Context, apk: File): Int {
@@ -112,15 +123,17 @@ fun installFailure(update: ApkUpdate, status: Int): UpdateState.InstallFailed =
         PackageInstaller.STATUS_FAILURE_STORAGE ->
             UpdateState.InstallFailed(update, "Not enough storage to install the update.")
         // Usually a build signed with another key, which Android only installs after an uninstall.
-        PackageInstaller.STATUS_FAILURE_CONFLICT ->
-            UpdateState.InstallFailed(
-                update,
-                "This update can't replace the installed app. Uninstall Speecher, then install " +
-                    "it from the release page.",
-                manualInstall = true,
-            )
+        PackageInstaller.STATUS_FAILURE_CONFLICT -> reinstallNeeded(update)
         else -> UpdateState.InstallFailed(update, "Couldn't install the update.")
     }
+
+private fun reinstallNeeded(update: ApkUpdate) =
+    UpdateState.InstallFailed(
+        update,
+        "This update can't replace the installed app. Uninstall Speecher, then install it from " +
+            "the release page.",
+        manualInstall = true,
+    )
 
 class InstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

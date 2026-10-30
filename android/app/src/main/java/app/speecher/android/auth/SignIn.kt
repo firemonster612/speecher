@@ -28,18 +28,30 @@ import app.speecher.protocol.restoredAttempt
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
+import okhttp3.OkHttpClient
 
 /**
  * Owns one browser sign-in attempt, persisted so a pasted callback survives the app being killed.
+ * Its tokens are exchanged over [http] and saved in [tokenStore]; [accepted] runs on the listener's
+ * thread each time it accepts a connection from this device.
  */
-class SignIn(context: Context) : AutoCloseable {
-    private val tokenStore = TokenStore(context)
+class SignIn(
+    context: Context,
+    private val http: OkHttpClient = sharedHttp,
+    private val tokenStore: TokenStore = TokenStore(context),
+    private val accepted: () -> Unit = {},
+) : AutoCloseable {
     private val pending = context.getSharedPreferences("pending-signin", Context.MODE_PRIVATE)
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var listener: ServerSocket? = null
     private var listenerClosed: CountDownLatch? = null
-    private var attempt: OAuthAttempt? = restoredPending()
+    @Volatile private var attempt: OAuthAttempt? = restoredPending()
     private var provider: OAuthProvider? = restoredProvider()
+    /**
+     * The attempt whose code is being exchanged, from the browser's redirect or a paste: a code
+     * works once, so each attempt exchanges once.
+     */
+    private var exchanging: OAuthAttempt? = null
     @Volatile private var sequence = 0
 
     /** The provider of a sign-in still waiting for its code, restored after the app was killed. */
@@ -52,11 +64,10 @@ class SignIn(context: Context) : AutoCloseable {
         label: String,
         result: (Result<OAuthTokens>) -> Unit,
     ): OAuthAttempt {
-        closeListener()
+        val id = replaceAttempt()
         val previous = listenerClosed
         val closed = CountDownLatch(1)
         listenerClosed = closed
-        val id = ++sequence
         val current = oauthAttempt(provider)
         this.provider = provider
         attempt = current
@@ -73,8 +84,7 @@ class SignIn(context: Context) : AutoCloseable {
                     val port = if (provider == OAuthProvider.Claude) 54545 else 1455
                     val deadline = System.currentTimeMillis() + 180_000
                     // Wildcard bind so the browser reaches us on either 127.0.0.1 or ::1; the
-                    // accept
-                    // loop rejects anything that is not from this device's loopback.
+                    // accept loop rejects anything that is not from this device's loopback.
                     ServerSocket(port, 1).use { socket ->
                         synchronized(this) {
                             if (id != sequence) {
@@ -96,6 +106,7 @@ class SignIn(context: Context) : AutoCloseable {
                                 }
                             client.use {
                                 if (!it.inetAddress.isLoopbackAddress) return@use
+                                accepted()
                                 it.soTimeout = 2_000
                                 val requestLine =
                                     try {
@@ -118,7 +129,13 @@ class SignIn(context: Context) : AutoCloseable {
                                     respond(it, label, false)
                                     continue
                                 }
-                                val exchange = runCatching { exchange(provider, current, code) }
+                                // A pasted code got there first, or a newer attempt replaced this
+                                // one.
+                                if (!claimExchange(current)) {
+                                    respond(it, label, false)
+                                    error("Sign-in attempt was replaced")
+                                }
+                                val exchange = runCatching { exchange(id, provider, current, code) }
                                 respond(it, label, exchange.isSuccess)
                                 return@runCatching exchange.getOrThrow()
                             }
@@ -139,16 +156,21 @@ class SignIn(context: Context) : AutoCloseable {
         return current
     }
 
+    /**
+     * Finishes the attempt with the code the person pasted. A paste while the attempt's code is
+     * being exchanged, pasted or from the browser, does nothing, and a newer attempt replaces this
+     * one's result.
+     */
     fun completePastedCode(pasted: String, result: (Result<OAuthTokens>) -> Unit) {
         val current = requireNotNull(attempt) { "No sign-in in progress. Tap Sign in first." }
         val forProvider = requireNotNull(provider) { "No sign-in in progress. Tap Sign in first." }
-        ++sequence
-        closeListener()
+        if (!claimExchange(current)) return
+        val id = replaceAttempt()
         sharedExecutor.execute {
             val outcome = runCatching {
-                exchange(forProvider, current, pastedCode(current, pasted))
+                exchange(id, forProvider, current, pastedCode(current, pasted))
             }
-            main.post { result(outcome) }
+            main.post { if (id == sequence) result(outcome) }
         }
     }
 
@@ -170,14 +192,22 @@ class SignIn(context: Context) : AutoCloseable {
             OAuthProvider.entries.firstOrNull { it.name == name }
         }
 
+    /**
+     * Exchanges [code] for attempt [id]'s tokens and saves them, unless a newer attempt replaced it
+     * meanwhile: that one's sign-in and pending state stay as they are.
+     */
     private fun exchange(
+        id: Int,
         provider: OAuthProvider,
         attempt: OAuthAttempt,
         code: String,
     ): OAuthTokens {
-        val saved = exchangeTokens(sharedHttp, provider, attempt, code)
-        tokenStore.save(provider, saved)
-        pending.edit(commit = true) { clear() }
+        val saved = exchangeTokens(http, provider, attempt, code)
+        synchronized(this) {
+            check(id == sequence) { "Sign-in attempt was replaced" }
+            tokenStore.save(provider, saved)
+            pending.edit(commit = true) { clear() }
+        }
         return saved
     }
 
@@ -192,15 +222,30 @@ class SignIn(context: Context) : AutoCloseable {
             )
     }
 
+    /**
+     * Claims [attempt]'s one exchange; false when it was claimed already, or a newer attempt
+     * replaced it, as when a stale browser callback arrives.
+     */
     @Synchronized
-    private fun closeListener() {
+    private fun claimExchange(attempt: OAuthAttempt): Boolean {
+        if (attempt !== this.attempt || exchanging === attempt) return false
+        exchanging = attempt
+        return true
+    }
+
+    /**
+     * Ends the current attempt's listener and returns the id of the attempt that replaces it. Under
+     * the lock that binding a listener and saving an exchange's result check the id under.
+     */
+    @Synchronized
+    private fun replaceAttempt(): Int {
         listener?.close()
         listener = null
+        return ++sequence
     }
 
     override fun close() {
-        ++sequence
-        closeListener()
+        replaceAttempt()
     }
 }
 

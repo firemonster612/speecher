@@ -131,13 +131,19 @@ class WebSocketWireTest {
     }
 
     @Test
-    fun `server close delivers exactly one onClosed and no failure`() {
+    fun `server close is answered and delivers exactly one onClosed and no failure`() {
         withPeer { _, peer, events ->
             val input = java.io.DataInputStream(peer.getInputStream())
             acceptUpgrade(input, peer.getOutputStream())
             assertEquals("open", events.poll(3, TimeUnit.SECONDS))
             peer.getOutputStream().write(byteArrayOf(0x88.toByte(), 2, 3, -24))
             peer.getOutputStream().flush()
+            // The reply echoes the code, masked.
+            assertEquals(0x88, input.readUnsignedByte())
+            assertEquals(0x82, input.readUnsignedByte())
+            val mask = ByteArray(4).also(input::readFully)
+            assertEquals(3, input.readUnsignedByte() xor (mask[0].toInt() and 255))
+            assertEquals(232, input.readUnsignedByte() xor (mask[1].toInt() and 255))
             assertEquals("closed:1000", events.poll(3, TimeUnit.SECONDS))
             assertEquals(null, events.poll(300, TimeUnit.MILLISECONDS))
         }

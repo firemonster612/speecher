@@ -8,6 +8,8 @@ import app.speecher.protocol.CorrectionWindow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -44,7 +46,7 @@ class CommitToFieldTest {
                 {},
             )
             .apply {
-                connection =
+                startInput(
                     object : BaseInputConnection(View(context), true) {
                         override fun getSurroundingText(
                             beforeLength: Int,
@@ -54,7 +56,10 @@ class CommitToFieldTest {
 
                         override fun commitText(text: CharSequence?, newCursorPosition: Int) =
                             accepts
-                    }
+                    },
+                    restarting = false,
+                )
+                bindField()
             }
 
     @Test
@@ -73,6 +78,23 @@ class CommitToFieldTest {
     fun `words the field refuses are kept but not watched`() {
         val session = session(accepts = false)
 
+        assertFalse(commitToField(context, session, "hello"))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(LatestTranscript("hello", "Example"), latestTranscript)
+        assertEquals(emptyList<Pair<CorrectionWindow, String>>(), watched)
+        session.end()
+    }
+
+    @Test
+    fun `words for a field the person left since tapping Insert are kept but not inserted`() {
+        val session = session()
+        val other = BaseInputConnection(View(context), true)
+        session.startInput(other, restarting = false)
+
+        // The new field's connection is never seen with the old field's binding.
+        assertSame(other, session.connection)
+        assertNull(session.insertConnection)
         assertFalse(commitToField(context, session, "hello"))
         shadowOf(Looper.getMainLooper()).idle()
 

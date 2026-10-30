@@ -1,5 +1,6 @@
 package app.speecher.android.settings
 
+import android.content.Context
 import app.speecher.android.provider.CleanupProvider
 import app.speecher.android.provider.OpenAiSpeed
 import app.speecher.android.provider.RefinementChoice
@@ -126,5 +127,14 @@ class SettingsStoreTest {
         assertEquals(saved, store.load())
         store.save(SpeecherSettings())
         assertEquals(SpeecherSettings(), store.load())
+        // The deleted profile's settings go with it.
+        assertEquals(
+            emptyList<String>(),
+            RuntimeEnvironment.getApplication()
+                .getSharedPreferences("speecher-settings", Context.MODE_PRIVATE)
+                .all
+                .keys
+                .filter { it.startsWith(standup.id) },
+        )
     }
 }

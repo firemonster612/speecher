@@ -39,7 +39,6 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        ImeSwap(this).let { if (it.stranded()) it.switchBack(this) }
         ActiveDictation.session?.let { show(it, it.engine.state) }
         ActiveDictation.observe = ::show
         ActiveDictation.onInserted = ::switchBack
@@ -121,14 +120,14 @@ class SpeecherImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         ActiveDictation.session?.let { session ->
-            session.connection = currentInputConnection
             session.target = attribute?.let { targetApp(it, packageManager) }
+            session.startInput(currentInputConnection, restarting)
         }
     }
 
     override fun onFinishInput() {
         ActiveDictation.session?.let { session ->
-            session.connection = null
+            session.finishInput()
             session.target = null
         }
         super.onFinishInput()

@@ -384,9 +384,11 @@ class DictationEngineTest {
         t.speak(SpeechEvent.Connected)
         t.speak(SpeechEvent.Partial("hello"))
         assertEquals(DictationState.Listening("", "hello", 0f), t.engine.state)
-        // Only the tap that stops the listening reports it, for the stop vibration.
+        // Only the tap that stops the listening reports it, for the stop vibration, and binds the
+        // words to the field focused then.
         assertTrue(t.engine.insert())
         assertFalse(t.engine.insert())
+        assertEquals(1, t.fieldsBound)
         t.speak(SpeechEvent.Final("world"))
         t.speak(SpeechEvent.Completed)
         assertEquals(listOf("world"), t.commits)
