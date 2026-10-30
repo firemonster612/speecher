@@ -56,19 +56,22 @@ int main(int argc, char **argv)
 #endif
 #ifndef Q_OS_WIN
     // Test mode shares one settings directory across Linux test processes and
-    // does not redirect macOS CFPreferences. Give each process its own store.
+    // does not redirect macOS CFPreferences. Give each process its own store,
+    // unless a test started this one to read the test's own.
     QTemporaryDir preferences;
     if (!preferences.isValid()) {
         qCritical() << "Could not create isolated test preferences";
         return 1;
     }
+    const QString testsPreferences = qEnvironmentVariable("SPEECHER_TEST_PREFERENCES_DIR");
+    const QString preferencesPath = testsPreferences.isEmpty() ? preferences.path() : testsPreferences;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     // NativeFormat too, as a safety net: Speecher opens its settings in the
     // default format, but QSettings(organization, application) uses
     // NativeFormat, which on Linux is a file under the person's ~/.config.
     for (const auto format : {QSettings::IniFormat, QSettings::NativeFormat}) {
-        QSettings::setPath(format, QSettings::UserScope, preferences.path());
-        QSettings::setPath(format, QSettings::SystemScope, preferences.path());
+        QSettings::setPath(format, QSettings::UserScope, preferencesPath);
+        QSettings::setPath(format, QSettings::SystemScope, preferencesPath);
     }
 #endif
 #ifdef Q_OS_WIN

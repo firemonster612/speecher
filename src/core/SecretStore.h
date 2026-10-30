@@ -25,6 +25,26 @@ public:
         SpeechEndpointKey,
         RefinementEndpointKey, // Last: sizes the cache.
     };
+    Q_ENUM(Secret)
+
+    // What a save or clear tells its caller. The keyring's wait runs the
+    // event loop, where the same secret can be saved again; the request asked
+    // for last is the one kept, and only the call that settles a request
+    // knows how it went.
+    enum class SaveResult {
+        // Storage holds what this call asked for.
+        Stored,
+        // Storage refused what this call asked for, and lastError() says
+        // why. A refused clear still hides the key (deletionPending).
+        Refused,
+        // This call didn't settle its request: it came while another call
+        // waited on the keyring for the same secret, which writes it next, or
+        // a newer request came during this call's wait and this call wrote
+        // that one instead. saveFinished says how the newest went, possibly
+        // before this call returns.
+        Pending,
+    };
+    Q_ENUM(SaveResult)
 
     explicit SecretStore(SettingsStore *settings, QObject *parent = nullptr);
 
@@ -35,46 +55,37 @@ public:
     // without waiting, so a dictation that starts later finds them in
     // memory. The OpenAI key keeps its deferred read (apiKey()).
     void prefetch();
-    // Blocks on the keyring (1.5 s at most) unless the value is cached. A
+    // Blocks on the keyring (1.5 s at most) unless the value is in memory. A
     // failed read returns an empty string but is never cached as "not set".
+    // Every read, this and the ones below, returns a save's value from the
+    // moment it is asked for, and a keyring answer that arrives after a
+    // newer save is dropped.
     QString secret(Secret secret) const;
-    // Never blocks: the cached value, or the settings-file copy of a secret
-    // not in the keyring, else an empty string.
+    // Never blocks: the value in memory, or the settings-file copy of a
+    // secret not in the keyring, else an empty string.
     QString cachedSecret(Secret secret) const;
     bool isSecretKnown(Secret secret) const;
     // Whether a deletion the keyring refused waits to be retried; the secret
     // reads as empty meanwhile.
     bool deletionPending(Secret secret) const;
-    // Saves to the keychain, or to the settings file when no keychain works,
-    // so a custom endpoint keeps working without one. A key kept in the
-    // settings file is what every read finds until a keyring takes it. An
-    // empty value for a secret that was never read leaves the stored one
-    // alone: it came from a skipped or failed read, not from the person.
-    // Failed deletions leave a persisted marker that suppresses reads until
-    // deletion succeeds.
-    //
-    // A save that waits for the keyring runs the event loop, where the same
-    // secret can be saved again. That save waits for the one in flight and
-    // then applies, so the value asked for last is the one kept; it returns
-    // true at once, and the save in flight returns how the last one went.
-    // Meanwhile every read returns the value asked for last, and a save of
-    // that same value asks for nothing new. The same holds for clearSecret
-    // and saveApiKey.
-    bool saveSecret(Secret secret, const QString &value);
-    // saveSecret for each, in order. A save that waits for the keyring runs
-    // the event loop, where an edit can save one of these secrets too; that
-    // save is newer, so this one leaves that secret alone.
+    // Asks for the secret to hold value, trimmed. An empty value clears it,
+    // whether or not this store read it. The keychain takes it, or the
+    // settings file when no keychain works, so a custom endpoint keeps
+    // working without one. A key kept in the settings file is what every
+    // reader finds until a keyring takes it. A deletion the keyring refuses
+    // leaves a marker in the settings file that hides the key until a
+    // deletion goes through.
+    SaveResult saveSecret(Secret secret, const QString &value);
+    // saveSecret for each, all asked for before the first keyring wait, so a
+    // save made during one is newer and stands. A key the keyring refused is
+    // logged with why.
     void saveSecrets(const QList<std::pair<Secret, QString>> &values);
-    // Removes a secret whether or not it was read, the way saveSecret clears
-    // one it has read. False when the keyring refused: the marker then hides
-    // the key until a later deletion succeeds, and lastError() says why.
-    bool clearSecret(Secret secret);
     // Removes every Speecher entry from the keychain.
     bool deleteKeyringSecrets() const;
 
     QString apiKey() const;
     // Unlike saveSecret, refuses to fall back to the settings file.
-    bool saveApiKey(const QString &apiKey);
+    SaveResult saveApiKey(const QString &apiKey);
     QString status() const;
     QString lastError() const;
     // Why the last read of the secret failed, naming the secret, or nothing
@@ -82,51 +93,55 @@ public:
     QString readFailure(Secret secret) const;
     bool usesInsecureSettingsFallback() const;
 
+signals:
+    // A save or clear of the secret settled: storage holds the one asked for
+    // last, or refused it. cleared says it was a clear.
+    void saveFinished(SecretStore::Secret secret, bool cleared, bool stored);
+
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
     friend class ApplicationController;
 
-    struct SaveRequest {
+    // A save, or a clear when value is empty.
+    struct Request {
         QString value;
         // Whether the settings file keeps the value when the keyring refuses it.
         bool fallBack = true;
     };
 
-    struct CachedSecret {
-        QString value;
-        bool known = false;
+    struct SecretState {
+        // What storage holds, as this store last read or wrote it.
+        std::optional<QString> stored;
+        // Started by a failed keyring read, which isn't retried until it expires.
         QElapsedTimer retryTimer;
-        // Counts the saves that asked for a new value, so saveSecrets can tell
-        // whether one came meanwhile.
-        unsigned saves = 0;
-        // While a save is in flight: the value it writes, and the latest save
-        // asked for meanwhile, which goes next.
-        std::optional<QString> writing;
-        std::optional<SaveRequest> queued;
-
-        // The value asked for last, while a save is in flight.
-        std::optional<QString> asked() const
-        {
-            return queued ? queued->value : writing;
-        }
+        // The save asked for last, until it settles. Reads return it.
+        std::optional<Request> requested;
+        // Counts the saves asked for, so a write or read that waited on the
+        // keyring can tell whether one came meanwhile.
+        quint64 requests = 0;
+        // Whether a keyring write of the secret is under way.
+        bool writing = false;
     };
 
-    CachedSecret &cached(Secret secret) const;
+    SecretState &state(Secret secret) const;
     void cacheValue(Secret secret, const QString &value) const;
+    std::optional<QString> readWithoutKeyring(Secret secret) const;
     QString settingsFallback(Secret secret) const;
     bool mayBeInKeyring(Secret secret) const;
     void recordKeyringEntry(Secret secret, bool present) const;
     QString keyringSecret(Secret secret) const;
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
-    bool save(Secret secret, const SaveRequest &request);
-    bool saveToKeyring(Secret secret, const QString &cleaned);
-    bool storeSecret(Secret secret, const QString &cleaned);
+    quint64 ask(Secret secret, const Request &request);
+    SaveResult save(Secret secret, const Request &request);
+    SaveResult settle(Secret secret, quint64 own);
+    bool holds(Secret secret, const Request &request) const;
+    bool write(Secret secret, const Request &request);
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;
     mutable QString m_lastError;
-    mutable std::array<CachedSecret, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
+    mutable std::array<SecretState, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
 };
 
 } // namespace speecher

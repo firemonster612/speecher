@@ -189,7 +189,8 @@ private slots:
     void masterSettingsSurviveTheUpdate()
     {
         if (keyringExpected()) {
-            QVERIFY(SettingsStore().secrets()->saveSecret(SecretStore::Secret::OpenAiApiKey, openAiKey));
+            QCOMPARE(SettingsStore().secrets()->saveSecret(SecretStore::Secret::OpenAiApiKey, openAiKey),
+                     SecretStore::SaveResult::Stored);
         }
         loadSettingsFile(QStringLiteral("master-0.2.0.conf"));
         if (!keyringExpected()) {

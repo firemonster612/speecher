@@ -50,7 +50,9 @@ public:
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
     // Saves the draft's stored fields, unless deleteAll ran. The rest are
-    // ignored; edit refuses a change to one.
+    // ignored; edit refuses a change to one. Its keys go through
+    // SecretStore::saveSecrets: one the keyring refuses is only logged, and
+    // one asked for while a write of it waits on the keyring is saved after it.
     void applySnapshot(const AppSettings &draft);
     // Saves what change makes of a dictation snapshot, unless it returns
     // false; returns whether it saved. The snapshot leaves unread keyring
