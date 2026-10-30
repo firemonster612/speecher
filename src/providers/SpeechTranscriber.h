@@ -40,6 +40,8 @@ public:
     using QObject::QObject;
     // The sign-in methods take the accounts a provider that signs in reads
     // its credentials from.
+    // Whether the sign-in is due to renew. Asked on the GUI thread, so it
+    // reads no credentials: it answers from what a preparation last read.
     virtual bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const = 0;
     virtual std::optional<PreparationJob> createPrepareJob(const SpeechSettings &settings,
                                                            const AccountSettings &accounts)

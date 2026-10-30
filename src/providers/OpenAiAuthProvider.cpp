@@ -7,6 +7,7 @@
 #include "providers/CliProxyCredentials.h"
 #include "providers/CodexCredentialStorage.h"
 #include "providers/OauthTokenRequest.h"
+#include "providers/SignInExpiry.h"
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -120,10 +121,24 @@ static qint64 jwtExpirySecs(const QString &jwt)
     return static_cast<qint64>(payload.object().value(QStringLiteral("exp")).toDouble());
 }
 
-static bool jwtExpired(const QString &jwt)
+static QDateTime jwtExpiry(const QString &jwt)
 {
     const qint64 expires = jwtExpirySecs(jwt);
-    return expires > 0 && QDateTime::fromSecsSinceEpoch(expires, QTimeZone::UTC) <= QDateTime::currentDateTimeUtc();
+    return expires > 0 ? QDateTime::fromSecsSinceEpoch(expires, QTimeZone::UTC) : QDateTime();
+}
+
+static bool jwtExpired(const QString &jwt)
+{
+    const QDateTime expiry = jwtExpiry(jwt);
+    return expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc();
+}
+
+// The Codex app's sign-in, of which there is one wherever its storage is.
+static const QString codexSignIn = QStringLiteral("codex");
+
+static QString cliproxySignIn(const QString &directory, const QString &account)
+{
+    return QStringLiteral("cliproxy:codex:%1/%2").arg(directory, account);
 }
 
 static int codexRefreshTimeoutMs()
@@ -279,6 +294,7 @@ static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool ref
     }
     const QJsonObject tokens = QJsonDocument::fromJson(bytes).object().value(QStringLiteral("tokens")).toObject();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
+    SignInExpiry::record(codexSignIn, jwtExpiry(accessToken));
     if (accessToken.isEmpty()) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
     }
@@ -353,6 +369,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
             ? CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"),
                                                    m_cliproxyAccount)
             : CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+        SignInExpiry::record(cliproxySignIn(m_cliproxyDir, m_cliproxyAccount), credentials.expiresAt);
         if (!credentials.ok) {
             return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
                     credentials.kind, credentials.httpStatus};
@@ -464,6 +481,22 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
     return readCodexOauth(storage, false).status == QStringLiteral("Codex OAuth token expired");
 }
 
+bool OpenAiAuthProvider::mayUseCodexOauth() const
+{
+    const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
+    return mode == QStringLiteral("auto") || mode == QStringLiteral("codex_oauth")
+        || (mode == QStringLiteral("cliproxy") && m_cliproxyBaseUrl.isEmpty());
+}
+
+bool OpenAiAuthProvider::codexOauthExpiredAsLastRead() const
+{
+    if (!mayUseCodexOauth()) {
+        return false;
+    }
+    return SignInExpiry::lapsed(m_mode == QStringLiteral("cliproxy") ? cliproxySignIn(m_cliproxyDir, m_cliproxyAccount)
+                                                                     : codexSignIn);
+}
+
 OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 {
     Q_UNUSED(m_secretStore)
@@ -471,6 +504,7 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
         && m_cliproxyBaseUrl.isEmpty()) {
         const CliProxyCredentialResult credentials =
             CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+        SignInExpiry::record(cliproxySignIn(m_cliproxyDir, m_cliproxyAccount), credentials.expiresAt);
         if (!credentials.ok) {
             return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
                     credentials.kind, credentials.httpStatus};

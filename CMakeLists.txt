@@ -357,6 +357,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/NativeCredentialStorage.cpp
   src/providers/ClaudeCredentialStorage.cpp
   src/providers/ClaudeCredentials.cpp
+  src/providers/SignInExpiry.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
   src/providers/ClaudeVoiceProtocol.cpp

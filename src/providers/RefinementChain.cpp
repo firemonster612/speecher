@@ -106,8 +106,9 @@ void RefinementChain::walk()
 }
 
 // What is left of the current refiner's preparation once its keys and
-// sign-in are in. A refiner that renews its sign-in here waits in an event
-// loop, where a cancel can run; the walk it ended then reports nothing.
+// sign-in are in. A refiner that reads a key here may wait for the keyring in
+// an event loop, where a cancel can run; the walk it ended then reports
+// nothing.
 void RefinementChain::prepareCurrent()
 {
     const quint64 walk = m_walk;
