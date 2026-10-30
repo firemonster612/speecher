@@ -246,6 +246,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
+  src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
   src/core/ReleaseNotes.cpp
@@ -290,6 +291,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/ProviderAttemptIssue.h
+  src/core/ProviderAttemptIssueText.h
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ReleaseNotes.h

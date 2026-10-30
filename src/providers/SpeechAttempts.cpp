@@ -1,7 +1,7 @@
 #include "providers/SpeechAttempts.h"
 
+#include "core/ProviderAttemptIssueText.h"
 #include "core/TranscriptState.h"
-#include "dictation/PopupPresentation.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>

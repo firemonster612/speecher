@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "core/ProviderAttemptIssueText.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
 
