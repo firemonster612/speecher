@@ -544,7 +544,7 @@ private slots:
         preparing.release();
         // Its result would reach the session as the worker's thread ends,
         // just after the job.
-        QTRY_COMPARE(local->backgroundPreparesFinished.load(), 1);
+        QTRY_COMPARE(local->backgroundPreparesFinished(), 1);
         QTest::qWait(100);
         QCOMPARE(local->prepareCalls, 0);
         QCOMPARE(states.count(), stateChanges);

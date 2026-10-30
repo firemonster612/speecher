@@ -236,16 +236,18 @@ public:
 
         PreparationJob job;
         job.showRefreshIndicator = refreshRequired;
-        job.run = [this] {
-            ++backgroundPrepareCalls;
-            if (duringBackgroundPrepare) {
-                duringBackgroundPrepare();
+        // The worker may outlive the transcriber, which letting go of the
+        // provider deletes, so it takes copies and counts on state the two
+        // share.
+        job.run = [prepares = m_backgroundPrepares, during = duringBackgroundPrepare,
+                   delayMs = backgroundPrepareDelayMs, failure = prepareFailure] {
+            ++prepares->started;
+            if (during) {
+                during();
             }
-            if (backgroundPrepareDelayMs > 0) {
-                QThread::msleep(backgroundPrepareDelayMs);
-            }
-            ++backgroundPreparesFinished;
-            return prepareFailure;
+            QThread::msleep(delayMs);
+            ++prepares->finished;
+            return failure;
         };
         job.apply = [this](const std::optional<ProviderFailure> &) {
             ++prepareCalls;
@@ -361,9 +363,15 @@ public:
     std::function<void(quint64)> onCancelAttempt;
     // Runs inside endUtterance(), as a provider that finalizes when asked.
     std::function<void()> onEndUtterance;
-    int backgroundPrepareCalls = 0;
-    // Background prepare jobs that ran to the end, counted on the worker.
-    std::atomic_int backgroundPreparesFinished = 0;
+    // Background prepare jobs started, and run to the end, on the worker.
+    int backgroundPrepareCalls() const
+    {
+        return m_backgroundPrepares->started;
+    }
+    int backgroundPreparesFinished() const
+    {
+        return m_backgroundPrepares->finished;
+    }
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;
@@ -375,6 +383,13 @@ public:
     QStringList lastVocabulary;
     QString lastLanguage;
     QString lastLocalModel;
+
+private:
+    struct BackgroundPrepares {
+        std::atomic_int started = 0;
+        std::atomic_int finished = 0;
+    };
+    std::shared_ptr<BackgroundPrepares> m_backgroundPrepares = std::make_shared<BackgroundPrepares>();
 };
 
 class FakeRefiner final : public TranscriptRefiner {
