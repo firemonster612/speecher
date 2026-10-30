@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QVector>
 
@@ -107,6 +108,12 @@ public:
     // Why the last start, retry or export did not happen; empty once one does.
     const QString &problem() const;
     void setProblem(const QString &problem);
+    // The front end wrote this result to a file of the person's choosing.
+    void markExported(int index);
+    // Whether a transcript is only here: a finished file's that was neither
+    // saved, exported nor dismissed with backToSetup, or a retry's still on
+    // its way.
+    bool holdsUnsavedResults() const;
 
 signals:
     void filesChanged();
@@ -116,6 +123,8 @@ signals:
     void fileChanged();
     void resultsChanged();
     void problemChanged();
+    // holdsUnsavedResults may have changed.
+    void unsavedResultsChanged();
 
 private:
     void seedOptions();
@@ -152,6 +161,8 @@ private:
     QString m_partial;
 
     QList<TranscribeFileResult> m_results;
+    // Indexes of the results markExported was told of.
+    QSet<int> m_exported;
     bool m_cancelled = false;
     int m_retrying = -1;
     QString m_problem;

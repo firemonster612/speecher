@@ -3054,6 +3054,47 @@ private slots:
         QCOMPARE(restartAttempts.count(), 1);
     }
 
+    // A restart that waited for a batch keeps waiting while a transcript the
+    // batch made is only on screen, and goes once it is exported.
+    void anUpdateRestartWaitsForAnUnsavedTranscript()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        auto *updater = restartWatchableUpdater(controller);
+        if (!updater) {
+            QSKIP("Only the AppImage updater's restart can be watched without quitting");
+        }
+        controller.settings()->setSetupCompleted(true);
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude")}, [](QObject *parent) {
+                auto *claude = new test::FakeSpeechTranscriber(parent);
+                claude->onStartAttempt = [claude] { claude->emitFinalText(QStringLiteral("hello")); };
+                return claude;
+            });
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("silence.wav"));
+        QVERIFY(writeSilentWav(audio));
+        TranscribeQueue &queue = *controller.transcribeQueue();
+        queue.addFiles({audio});
+        TranscribeOptions options = queue.options();
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        options.destination = TranscriptDestination::None;
+        queue.setOptions(options);
+        QVERIFY(queue.start());
+
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QTRY_COMPARE(queue.step(), TranscribeQueue::Step::Export);
+        QVERIFY(!queue.results().first().failed());
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+        QVERIFY(restartAttempts.isEmpty());
+
+        queue.markExported(0);
+        QCOMPARE(restartAttempts.count(), 1);
+    }
+
     // The token an earlier release wrote before restarting into this one
     // reopens the main window, once.
     void anUpdateRelaunchReopensTheMainWindowOnce()

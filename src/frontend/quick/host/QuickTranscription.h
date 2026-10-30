@@ -129,7 +129,7 @@ signals:
 
 private:
     ApplicationController *m_controller;
-    TranscribeQueue m_queue;
+    TranscribeQueue &m_queue;
     bool m_showRaw = false;
     // Moves progress on through the waits while a batch runs.
     QTimer m_progressClock;
