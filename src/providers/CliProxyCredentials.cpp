@@ -295,7 +295,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
     QLockFile lock(QDir(directory).filePath(resolved) + QStringLiteral(".lock"));
     if (!lock.tryLock(refreshLockTimeoutMs(accountRefreshTimeoutMs))) {
         return {false, {}, {}, QStringLiteral("Could not lock CLI Proxy API account %1 for refresh").arg(resolved),
-                ProviderFailureKind::Timeout};
+                ProviderFailureKind::Timeout, 0, accountExpiry(account)};
     }
     account = readAccountObject(directory, resolved);
     const QString lockedError = accountValidationError(directory, type, resolved, account);
@@ -306,7 +306,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
         return accountToken(account);
     }
     if (const std::optional<ProviderFailure> failure = refreshAccountFile(directory, type, resolved, account)) {
-        return {false, {}, {}, failure->message, failure->kind, failure->httpStatus};
+        return {false, {}, {}, failure->message, failure->kind, failure->httpStatus, accountExpiry(account)};
     }
     return load(directory, type, resolved);
 }
