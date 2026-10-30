@@ -1067,7 +1067,7 @@ private slots:
         QVERIFY(screenshots->cancelCalls >= 2);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
 
-        refiner->screenshotCapable = false;
+        registerFakeRefiner(registry, &refiner, QStringLiteral("openai"), QStringLiteral("Fake Refiner"), false);
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(screenshots->captureCalls, 1);

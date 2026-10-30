@@ -1,7 +1,6 @@
 #include "providers/AnthropicTranscriptRefiner.h"
 
 #include "core/EndpointUrl.h"
-#include "core/ProviderTable.h"
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/AnthropicAuthProvider.h"
 #include "providers/ClaudeCredentials.h"
@@ -22,25 +21,10 @@ AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
     connect(m_apiRefiner, &AnthropicApiRefiner::failed, this, &AnthropicTranscriptRefiner::failed);
 }
 
-QString AnthropicTranscriptRefiner::id() const
-{
-    return providerKey(ProviderId::Anthropic);
-}
-
-QString AnthropicTranscriptRefiner::label() const
-{
-    return QStringLiteral("Claude");
-}
-
 bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
                                                  const AccountSettings &accounts) const
 {
     return AnthropicAuthProvider::forRefinement(accounts, settings).requiresRefresh();
-}
-
-bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
-{
-    return !settings.anthropicModel.trimmed().isEmpty();
 }
 
 std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,

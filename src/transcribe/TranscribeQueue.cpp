@@ -1,6 +1,5 @@
 #include "transcribe/TranscribeQueue.h"
 
-#include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"
 
@@ -8,6 +7,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <utility>
 
 namespace speecher {
 
@@ -35,19 +35,25 @@ QString profileCleanupLevel(const WritingProfileSettings &profile, const QList<C
 
 } // namespace
 
-TranscribeQueue::TranscribeQueue(ApplicationController *controller, QObject *parent)
+TranscribeQueue::TranscribeQueue(SettingsStore *settings,
+                                 ProviderRegistry *providers,
+                                 FileTranscriptionSession *session,
+                                 Refusal refusal,
+                                 QObject *parent)
     : QObject(parent)
-    , m_controller(controller)
+    , m_settings(settings)
+    , m_providers(providers)
+    , m_session(session)
+    , m_refusal(std::move(refusal))
 {
     seedOptions();
-    connect(controller->settings(), &SettingsStore::snapshotApplied, this, [this] {
+    connect(settings, &SettingsStore::snapshotApplied, this, [this] {
         if (m_optionsChosen) {
             dropWithdrawnChoices();
         } else {
             seedOptions();
         }
     });
-    FileTranscriptionSession *session = controller->fileTranscription();
     connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index) {
         if (!followsBatch()) {
             return;
@@ -173,10 +179,10 @@ void TranscribeQueue::setOptions(const TranscribeOptions &options)
 
 void TranscribeQueue::chooseProfile(const QString &profile)
 {
-    const AppSettings settings = m_controller->settings()->snapshot();
+    const AppSettings settings = m_settings->snapshot();
     const WritingProfileSettings chosen =
         writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFromName(profile));
-    const AppSettings resolved = m_controller->providerRegistry()->withProfileProviders(settings, chosen);
+    const AppSettings resolved = m_providers->withProfileProviders(settings, chosen);
     m_options.writingProfile = profile;
     m_options.speechProviderId = resolved.speech.providerId;
     m_options.refinementProviderId = resolved.refinement.providerId;
@@ -188,16 +194,16 @@ void TranscribeQueue::chooseProfile(const QString &profile)
     emit optionsChanged();
 }
 
+// The page reads these on the GUI thread as its bindings change, so they never
+// wait for the keyring: a model name is no secret.
 QString TranscribeQueue::speechModel() const
 {
-    return speecher::speechModel(
-        withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options).speech);
+    return speecher::speechModel(withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options).speech);
 }
 
 QString TranscribeQueue::refinementModel() const
 {
-    const AppSettings settings =
-        withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options);
+    const AppSettings settings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options);
     return speecher::refinementModel(m_options.refinementProviderId, settings.refinement);
 }
 
@@ -208,19 +214,18 @@ bool TranscribeQueue::start()
     if (m_files.isEmpty()) {
         return false;
     }
-    const QString refusal = m_controller->fileTranscriptionRefusal();
+    const QString refusal = m_refusal();
     if (!refusal.isEmpty()) {
         setProblem(refusal);
         return false;
     }
-    const AppSettings settings =
-        withBatchChoices(m_controller->settings()->snapshot(), *m_controller->providerRegistry(), m_options);
+    const AppSettings settings = withBatchChoices(m_settings->snapshot(), *m_providers, m_options);
     m_batch = m_files;
     m_batchOptions = m_options;
     // Pinned, so a retry hears in this batch's language after the setting
     // changes.
     m_batchOptions.spokenLanguage = settings.speech.language;
-    m_batchLabels = speecher::batchLabels(m_options, *m_controller->providerRegistry(), settings.refinement);
+    m_batchLabels = speecher::batchLabels(m_options, *m_providers, settings.refinement);
     m_batchRefines = refinesTranscripts(m_options, settings.refinement);
     m_results.clear();
     m_cancelled = false;
@@ -231,9 +236,7 @@ bool TranscribeQueue::start()
     // Before the session starts: a batch whose files all fail at once
     // finishes inside it.
     setStep(Step::Transcribe);
-    QString error;
-    if (!m_controller->startFileTranscription(m_batch, m_batchOptions, &error)) {
-        setProblem(error);
+    if (!m_session->start(m_batch, m_batchOptions)) {
         setStep(Step::Configure);
         return false;
     }
@@ -242,7 +245,7 @@ bool TranscribeQueue::start()
 
 void TranscribeQueue::cancel()
 {
-    m_controller->fileTranscription()->cancel();
+    m_session->cancel();
 }
 
 // The finished files leave the list; files added meanwhile, and any a
@@ -335,10 +338,10 @@ void TranscribeQueue::retry(int index)
         return;
     }
     m_retrying = index;
-    QString error;
-    if (!m_controller->startFileTranscription({m_results.at(index).path}, m_batchOptions, &error)) {
+    const QString refusal = m_refusal();
+    if (!refusal.isEmpty() || !m_session->start({m_results.at(index).path}, m_batchOptions)) {
         m_retrying = -1;
-        setProblem(error);
+        setProblem(refusal);
         return;
     }
     setProblem({});
@@ -365,7 +368,7 @@ void TranscribeQueue::setProblem(const QString &problem)
 
 void TranscribeQueue::seedOptions()
 {
-    const AppSettings settings = m_controller->settings()->snapshot();
+    const AppSettings settings = m_settings->snapshot();
     const QString folder = m_options.folder;
     m_options = {};
     m_options.folder = folder;
@@ -377,7 +380,7 @@ void TranscribeQueue::seedOptions()
 // the profile's own, as it would for dictation.
 void TranscribeQueue::dropWithdrawnChoices()
 {
-    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    const RefinementSettings refinement = m_settings->snapshot().refinement;
     const QString profile = offeredWritingProfile(m_options.writingProfile, refinement.writingProfiles);
     if (profile != m_options.writingProfile) {
         chooseProfile(profile);

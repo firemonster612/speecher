@@ -1,7 +1,5 @@
 #include "providers/EndpointTranscriptRefiner.h"
 
-#include "core/ProviderTable.h"
-
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
@@ -9,10 +7,10 @@
 
 namespace speecher {
 
-EndpointTranscriptRefiner::EndpointTranscriptRefiner(QObject *parent)
+EndpointTranscriptRefiner::EndpointTranscriptRefiner(const QString &label, QObject *parent)
     : TranscriptRefiner(parent)
-    , m_chat(new ChatCompletionsRefiner(label(), ChatCompletionsRefiner::Audience::Server, this))
-    , m_messages(new AnthropicApiRefiner(this, 60000, 120000, label()))
+    , m_chat(new ChatCompletionsRefiner(label, ChatCompletionsRefiner::Audience::Server, this))
+    , m_messages(new AnthropicApiRefiner(this, 60000, 120000, label))
 {
     connect(m_chat, &ChatCompletionsRefiner::delta, this, &TranscriptRefiner::delta);
     connect(m_chat, &ChatCompletionsRefiner::completed, this, &TranscriptRefiner::completed);
@@ -22,16 +20,6 @@ EndpointTranscriptRefiner::EndpointTranscriptRefiner(QObject *parent)
     connect(m_messages, &AnthropicApiRefiner::failed, this, [this](const ProviderFailure &failure) {
         emit failed(selfHostedFailure(failure));
     });
-}
-
-QString EndpointTranscriptRefiner::id() const
-{
-    return providerKey(ProviderId::Endpoint);
-}
-
-QString EndpointTranscriptRefiner::label() const
-{
-    return QStringLiteral("Custom Endpoint");
 }
 
 bool EndpointTranscriptRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const

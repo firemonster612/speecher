@@ -76,6 +76,12 @@ QString ProviderRegistry::refinementProviderLabel(const QString &id) const
     return entry == m_refinement.cend() ? id : entry->descriptor.label;
 }
 
+bool ProviderRegistry::refinementProviderReadsScreenshots(const QString &id) const
+{
+    const auto entry = m_refinement.constFind(id);
+    return entry != m_refinement.cend() && entry->descriptor.supportsScreenshotContext;
+}
+
 ProviderLabels ProviderRegistry::labels() const
 {
     return [this](ProviderRole role, const QString &id) {

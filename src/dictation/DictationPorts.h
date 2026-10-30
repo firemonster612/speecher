@@ -229,8 +229,6 @@ class SpeechTranscriber : public QObject {
 
 public:
     using QObject::QObject;
-    virtual QString id() const = 0;
-    virtual QString label() const = 0;
     // The sign-in methods take the accounts a provider that signs in reads
     // its credentials from.
     virtual bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const = 0;
@@ -295,8 +293,6 @@ class TranscriptRefiner : public QObject {
 
 public:
     using QObject::QObject;
-    virtual QString id() const = 0;
-    virtual QString label() const = 0;
     // As SpeechTranscriber's, these and refine() take the accounts a provider
     // that signs in reads its credentials from.
     virtual bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const = 0;
@@ -309,11 +305,6 @@ public:
     }
     virtual void refresh(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
-    virtual bool supportsScreenshotContext(const RefinementSettings &settings) const
-    {
-        Q_UNUSED(settings);
-        return false;
-    }
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
                         const RefinementContext &context,

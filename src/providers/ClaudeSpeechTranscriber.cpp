@@ -1,7 +1,5 @@
 #include "providers/ClaudeSpeechTranscriber.h"
 
-#include "core/ProviderTable.h"
-
 #include "providers/AnthropicAuthProvider.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
@@ -29,16 +27,6 @@ SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QStri
 ClaudeSpeechTranscriber::ClaudeSpeechTranscriber(QObject *parent)
     : SpeechTranscriber(parent)
 {
-}
-
-QString ClaudeSpeechTranscriber::id() const
-{
-    return providerKey(ProviderId::Claude);
-}
-
-QString ClaudeSpeechTranscriber::label() const
-{
-    return QStringLiteral("Claude");
 }
 
 bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const

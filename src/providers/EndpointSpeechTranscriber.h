@@ -47,8 +47,6 @@ public:
                                        int inactivityTimeoutMs = 60000,
                                        int deadlineMs = 300000);
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
     SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool streamsFinalText(const SpeechSettings &settings) const override;

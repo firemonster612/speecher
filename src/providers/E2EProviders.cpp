@@ -14,8 +14,6 @@ class E2ESpeechTranscriber final : public SpeechTranscriber {
 public:
     using SpeechTranscriber::SpeechTranscriber;
 
-    QString id() const override { return QStringLiteral("e2e-stub"); }
-    QString label() const override { return QStringLiteral("E2E stub"); }
     bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override { return false; }
     SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override { return {true, {}}; }
 
@@ -69,12 +67,9 @@ class E2ETranscriptRefiner final : public TranscriptRefiner {
 public:
     using TranscriptRefiner::TranscriptRefiner;
 
-    QString id() const override { return QStringLiteral("e2e-stub"); }
-    QString label() const override { return QStringLiteral("E2E stub"); }
     bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override { return false; }
     void refresh(const RefinementSettings &, const AccountSettings &) override {}
     RefinementPrepareResult prepare(const RefinementSettings &, const AccountSettings &) override { return {true, {}}; }
-    bool supportsScreenshotContext(const RefinementSettings &) const override { return true; }
 
     // A word every 100 ms after a pause long enough for the Refining… shimmer
     // to be seen, then the completed sentence.
