@@ -26,6 +26,9 @@ int main(int argc, char **argv)
     // log to stderr, which it decides without a console only from this
     // variable. Qt reads it once, at the first log message, so set it first.
     qputenv("QT_FORCE_STDERR_LOGGING", "1");
+    // Suites run side by side, and a controller binds the Global Shortcut
+    // once it starts up; only one process could hold Ctrl+Alt+D.
+    qputenv("SPEECHER_TEST_UNREGISTERED_GLOBAL_SHORTCUT", "1");
 #endif
 #ifdef SPEECHER_WITH_WAYLAND
     // Exercise the background Wayland clipboard path without Qt's offscreen

@@ -31,6 +31,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <memory>
 
 using namespace speecher;
 
@@ -299,6 +300,30 @@ private slots:
         }
         WinSingleKeyShortcutBinder dictation(&settings);
         QCOMPARE(dictation.unsupportedBindingReason(letter), QString());
+    }
+
+    // Test processes run side by side, so the Global Shortcut the platform
+    // binds for them leaves the keys to the desktop.
+    void testRunsLeaveTheGlobalShortcutKeysFree()
+    {
+        if (!interactiveWindowStation()) {
+            QSKIP("Global Shortcut registration requires an interactive window station");
+        }
+        const auto keysFree = [] {
+            constexpr int probeId = 0x5ee9;
+            const bool free = RegisterHotKey(nullptr, probeId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'D');
+            UnregisterHotKey(nullptr, probeId);
+            return free;
+        };
+        if (!keysFree()) {
+            QSKIP("Another app holds Ctrl+Alt+D");
+        }
+        SettingsStore settings;
+        const std::unique_ptr<GlobalShortcutBinder> binder(
+            platformComposition()->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, &settings, nullptr));
+        binder->bind();
+        QCOMPARE(binder->shortcut().combination(), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D));
+        QVERIFY(keysFree());
     }
 
     void keyboardBreakReleasesSuspendedShortcutOnce()
