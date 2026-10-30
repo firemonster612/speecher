@@ -91,9 +91,6 @@ public:
     // Against the memory of where Runs on puts models. Empty until the
     // hardware probe answers: nothing is too large before anyone knows.
     std::optional<ModelFit> fit(const LocalModel &model) const;
-    // What a list shows for fit: "Fits", "Tight fit", "Too large", or
-    // "Checking…" before the probe answers.
-    QString fitLabel(const LocalModel &model) const;
 
     // Downloads go through here so the failure a person has not seen yet can be
     // shown by whichever window opens next.
@@ -119,22 +116,12 @@ public:
     void initializeRunner();
     RunnerChoice runnerChoice() const;
 
-    // What every front end shows for a model on the Local card and in the
-    // comparison table.
+    // What the Local models page reads about a model beyond the catalog.
     struct ModelState {
-        bool downloaded = false;
-        bool downloading = false;
+        // Downloaded and the speech model dictation uses.
         bool inUse = false;
-        // Only once the hardware is known.
-        bool suggested = false;
-        bool tooLarge = false;
+        // The model's last download or Speed Test failure, or empty.
         QString problem;
-        QString speedText;
-        QString speedDetail;
-        // The card's three lines: when text shows, speed, word errors.
-        QString cardFacts;
-        // Model, Download, Word errors, 10 s of speech, Text shows, Memory.
-        QStringList tableCells;
     };
     ModelState modelState(const LocalModel &model, std::optional<SpeechSettings> speech = std::nullopt) const;
 

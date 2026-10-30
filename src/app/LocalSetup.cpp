@@ -330,12 +330,6 @@ std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
     return modelFit(model, runsOnProfile(m_hardware, m_settings.localSpeechSettings().runsOn));
 }
 
-QString LocalSetup::fitLabel(const LocalModel &model) const
-{
-    const std::optional<ModelFit> known = fit(model);
-    return known ? modelFitLabel(*known) : QStringLiteral("Checking…");
-}
-
 void LocalSetup::setDownloadPending(const QString &id, bool pending)
 {
     auto ids = m_settings.raw().value(SettingsKeys::LocalPendingDownloads).toStringList();
@@ -476,35 +470,9 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
     speech.local = m_settings.localSpeechSettings();
     if (draft) speech = *draft;
     ModelState state;
-    state.downloading = m_models.isDownloading(model.id);
-    state.downloaded = !state.downloading && m_models.isDownloaded(model);
-    state.inUse = state.downloaded && parseProviderId(speech.providerId) == ProviderId::Local
-        && speech.local.modelId == model.id;
+    state.inUse = !m_models.isDownloading(model.id) && m_models.isDownloaded(model)
+        && parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == model.id;
     state.problem = m_downloadErrors.value(model.id, m_speedTestErrors.value(model.id));
-    const auto measured = measuredSeconds(model.id);
-    const auto estimate = m_hardwareKnown ? estimatedSpeed(model, m_hardware.profile) : std::nullopt;
-    state.speedText = measured ? speechSecondsText(*measured)
-        : estimate ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech) + QStringLiteral(" (estimated)")
-                   : QStringLiteral("Not measured");
-    state.speedDetail = speedTestRunning(model.id) ? QStringLiteral("Testing…")
-        : measured || estimate ? localModelSpeedLine(model, m_hardware.profile, measured)
-                               : QStringLiteral("Not measured");
-    state.suggested = m_hardwareKnown && model.id == suggestedModel().id;
-    state.tooLarge = fit(model) == ModelFit::TooLarge;
-    state.cardFacts = QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
-                          .arg(model.streams ? QStringLiteral("Words appear as you speak")
-                                             : QStringLiteral("Text appears after you stop speaking"),
-                               state.speedDetail)
-                          .arg(model.librispeechCleanWer)
-                          .arg(model.fleursEnglishWer);
-    state.tableCells = {
-        state.suggested ? model.name + QStringLiteral(" (suggested)") : model.name,
-        downloadSizeText(model.sizeBytes),
-        QStringLiteral("%1% / %2%").arg(model.librispeechCleanWer).arg(model.fleursEnglishWer),
-        state.speedText,
-        textShowsValue(model.streams),
-        fitLabel(model),
-    };
     return state;
 }
 
