@@ -457,12 +457,7 @@ void QuickModels::use(const QString &id)
         qWarning().noquote() << "Models.use:" << id << "is not a Local Model";
         return;
     }
-    // The store drops Local Model from the fallbacks once it is the primary.
-    m_controller->settings()->edit([](AppSettings &draft) {
-        draft.speech.providerId = providerKey(ProviderId::Local);
-        return true;
-    });
-    m_controller->localSetup()->chooseSpeechModel(id);
+    m_controller->localSetup()->useSpeechModel(id);
 }
 
 void QuickModels::testSpeed(const QString &id)
@@ -507,8 +502,12 @@ void QuickModels::cancelPull()
 
 void QuickModels::acceptFallbackOffer(const QString &role, const QString &primary)
 {
+    if (role != u"speech" && role != u"refinement") {
+        qWarning().noquote() << "Models.acceptFallbackOffer: no role" << role;
+        return;
+    }
     m_controller->localSetup()->acceptSetupFallbackOffer(
-        role == QLatin1String("refinement") ? ProviderRole::Refinement : ProviderRole::Speech, primary);
+        role == u"refinement" ? ProviderRole::Refinement : ProviderRole::Speech, primary);
 }
 
 } // namespace speecher

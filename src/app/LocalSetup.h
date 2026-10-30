@@ -114,6 +114,9 @@ public:
     // The hardware probe settles deferred initialization for every front end.
     void initializeSpeechModel();
     void chooseSpeechModel(const QString &id);
+    // Makes Local Model the speech service, running this model, in one save,
+    // so no reader sees Local Model with the model it had before.
+    void useSpeechModel(const QString &id);
     const LocalModel &speechModelChoice(const AppSettings &settings) const;
     void initializeRunner();
     RunnerChoice runnerChoice(const AppSettings &settings) const;

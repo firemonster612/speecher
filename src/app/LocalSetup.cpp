@@ -452,6 +452,19 @@ void LocalSetup::chooseSpeechModel(const QString &id)
     emit changed();
 }
 
+void LocalSetup::useSpeechModel(const QString &id)
+{
+    if (!findLocalModel(id)) return;
+    // The store drops Local Model from the fallbacks once it is the primary.
+    m_settings.edit([&id](AppSettings &settings) {
+        settings.speech.providerId = providerKey(ProviderId::Local);
+        settings.speech.local.modelId = id;
+        settings.speech.local.modelChosen = true;
+        return true;
+    });
+    emit changed();
+}
+
 RunnerChoice LocalSetup::runnerChoice(const AppSettings &settings) const
 {
     return resolveRunnerChoice(settings.refinement.localRunner, m_runners, suggestedCleanupModel());

@@ -44,9 +44,9 @@ Page {
 
     Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
-    // A new primary leaves the fallbacks, and None clears them.
+    // The row takes a new primary out of the fallbacks, and None clears
+    // them, in one save.
     function choose(id) {
-        Settings.set("refinementFallbacks", id === "none" ? [] : fallbacks.filter(f => f !== id))
         Settings.set("refinementProvider", id)
         providerTab = id
     }

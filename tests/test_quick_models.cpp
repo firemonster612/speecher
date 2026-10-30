@@ -233,20 +233,22 @@ private slots:
         QCOMPARE(changed.count(), 1);
     }
 
-    // Use makes Local Model the service with that model chosen, as the
-    // Settings singleton then reads it; a name that is no model changes
-    // nothing.
+    // Use makes Local Model the service with that model chosen, in one save,
+    // as the Settings singleton then reads it; a name that is no model
+    // changes nothing.
     void useChoosesTheModelAndTheService()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller);
 
+        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
         models.use(QStringLiteral("whisper-turbo"));
-        const AppSettings saved = SettingsStore().dictationSnapshot();
-        QCOMPARE(saved.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(saved.speech.local.modelId, QStringLiteral("whisper-turbo"));
-        QVERIFY(saved.speech.local.modelChosen);
+        QCOMPARE(saved.count(), 1);
+        const AppSettings stored = SettingsStore().dictationSnapshot();
+        QCOMPARE(stored.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(stored.speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QVERIFY(stored.speech.local.modelChosen);
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
         QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
         // Not downloaded, so dictation has no model to use yet.
@@ -255,6 +257,19 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, "Models.use: made-up is not a Local Model");
         models.use(QStringLiteral("made-up"));
         QCOMPARE(SettingsStore().dictationSnapshot().speech.local.modelId, QStringLiteral("whisper-turbo"));
+    }
+
+    // A role setup doesn't offer a fallback for changes nothing.
+    void anUnknownFallbackRoleIsRefused()
+    {
+        ApplicationController controller(true);
+        QuickModels models(&controller);
+        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+
+        QTest::ignoreMessage(QtWarningMsg, "Models.acceptFallbackOffer: no role transcription");
+        models.acceptFallbackOffer(QStringLiteral("transcription"), QStringLiteral("openai"));
+
+        QCOMPARE(saved.count(), 0);
     }
 
     // A failed download is the model's problem until the next try, and a
@@ -587,19 +602,28 @@ private slots:
     }
 
     // The pages and setup steps that read Models load over the C++ one
-    // without a warning, so every property they read exists.
+    // without a warning, so every property they read exists. On a page that
+    // chooses a provider, choosing its fallback is one save, which takes it
+    // out of the fallbacks.
     void thePagesLoadOverIt_data()
     {
         QTest::addColumn<QString>("page");
-        for (const char *page : {"pages/SpeechPage", "pages/ModelsPage", "pages/RefinementPage",
-                                 "setup/TranscriptionStep", "setup/RefinementStep"}) {
-            QTest::newRow(page) << QString::fromLatin1(page);
+        QTest::addColumn<QString>("fallback");
+        QTest::addColumn<QString>("fallbacksRow");
+        QTest::newRow("pages/SpeechPage") << QStringLiteral("pages/SpeechPage") << QStringLiteral("endpoint")
+                                          << QStringLiteral("speechFallbackList");
+        QTest::newRow("pages/RefinementPage") << QStringLiteral("pages/RefinementPage") << QStringLiteral("local")
+                                              << QStringLiteral("refinementFallbacks");
+        for (const char *page : {"pages/ModelsPage", "setup/TranscriptionStep", "setup/RefinementStep"}) {
+            QTest::newRow(page) << QString::fromLatin1(page) << QString() << QString();
         }
     }
 
     void thePagesLoadOverIt()
     {
         QFETCH(QString, page);
+        QFETCH(QString, fallback);
+        QFETCH(QString, fallbacksRow);
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
@@ -632,6 +656,14 @@ private slots:
             loaded->setProperty("choices", QVariant::fromValue(choices.get()));
         }
         component.completeCreate();
+        if (fallback.isEmpty()) {
+            return;
+        }
+
+        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+        QVERIFY(QMetaObject::invokeMethod(loaded.get(), "choose", Q_ARG(QVariant, fallback)));
+        QCOMPARE(saved.count(), 1);
+        QCOMPARE(settings.values().value(fallbacksRow).toStringList(), QStringList());
     }
 
 private:

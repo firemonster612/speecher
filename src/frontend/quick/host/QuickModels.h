@@ -192,7 +192,8 @@ public:
     Q_INVOKABLE void pullCleanupModel();
     Q_INVOKABLE void cancelPull();
     // Adds the local fallback offered for a role, speech or refinement,
-    // behind primary, setup's choice for it, which is saved with it.
+    // behind primary, setup's choice for it, which is saved with it. Another
+    // role changes nothing and is logged.
     Q_INVOKABLE void acceptFallbackOffer(const QString &role, const QString &primary);
 
 signals:
