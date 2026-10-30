@@ -205,6 +205,10 @@ struct SpeechSettings {
     // Up to two providers tried in order when providerId is unavailable;
     // never providerId itself. See ProviderChain.h.
     QStringList fallbackProviderIds;
+    // The Spoken Language a person chose for a speech fallback, by provider
+    // id; chainSpeechSettings() picks one for a fallback missing here. Kept
+    // while a provider is out of the fallbacks, for when it comes back.
+    QHash<QString, QString> fallbackLanguages;
     bool codexFinalRetranscribe = true;
     // The Spoken Language: a language code, or kAutomaticSpokenLanguage.
     QString language = QStringLiteral("en");

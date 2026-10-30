@@ -29,6 +29,13 @@ bool listensForSpokenLanguage(const SpeechSettings &speech);
 // Speecher never switches the language itself.
 QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel);
 
+// speech as providerId takes it in the chain speech.providerId leads: the
+// primary keeps the Spoken Language, and a fallback gets its own. A fallback
+// with none chosen listens for the Spoken Language where it can, otherwise,
+// while that is Automatic, for English where it can; otherwise it keeps the
+// Spoken Language, which listensForSpokenLanguage() then turns down.
+SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &providerId);
+
 // Every code some service or Local Model offers, and kAutomaticSpokenLanguage,
 // sorted: what `--language` accepts.
 QStringList knownSpokenLanguages();

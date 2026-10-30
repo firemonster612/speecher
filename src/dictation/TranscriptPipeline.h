@@ -34,9 +34,12 @@ public:
     static WritingProfileSettings writingProfile(const AppSettings &settings, const Target &target);
     static RefinementSettings effectiveRefinementSettings(const AppSettings &settings,
                                                           const Target &target);
+    // spokenLanguage is the language rawTranscript was heard in, which
+    // refinement is told.
     static TranscriptPipelineResult prepare(const QString &rawTranscript,
                                             const AppSettings &settings,
-                                            const Target &target);
+                                            const Target &target,
+                                            const QString &spokenLanguage);
     // The user's instructions, the profile's output language and the custom
     // system prompt for a refinement run with this profile.
     static void fillUserInstructions(RefinementContext &context,

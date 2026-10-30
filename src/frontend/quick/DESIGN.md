@@ -523,7 +523,7 @@ Choosing:
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
 - `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
-- `FallbackList { ids; options; statusOf; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from.
+- `FallbackList { ids; options; statusOf; rowControl; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control on each row, such as a speech fallback's Spoken language.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:

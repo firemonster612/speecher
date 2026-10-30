@@ -26,11 +26,19 @@ bool TranscriptState::isEmpty() const
     return text().trimmed().isEmpty();
 }
 
+QString TranscriptState::heardLanguage() const
+{
+    // A partial still showing was heard by this attempt; one taken back wasn't.
+    return m_partial.trimmed().isEmpty() ? m_heardLanguage : m_attemptLanguage;
+}
+
 void TranscriptState::clear()
 {
     m_finals.clear();
     m_partial.clear();
     m_attemptBase.clear();
+    m_attemptLanguage.clear();
+    m_heardLanguage.clear();
     emit changed(text());
 }
 
@@ -48,6 +56,7 @@ void TranscriptState::commitFinal(const QString &finalText)
     const QString cleaned = finalText.simplified();
     if (!cleaned.isEmpty()) {
         m_finals << cleaned;
+        m_heardLanguage = m_attemptLanguage;
     }
     m_partial.clear();
     emit changed(text());
@@ -64,13 +73,17 @@ void TranscriptState::replaceFinals(const QString &text)
     emit changed(this->text());
 }
 
-void TranscriptState::startAttempt()
+void TranscriptState::startAttempt(const QString &spokenLanguage)
 {
     m_attemptBase = text();
+    m_attemptLanguage = spokenLanguage;
 }
 
 void TranscriptState::replaceAttemptFinals(const QString &attemptText)
 {
+    if (!attemptText.trimmed().isEmpty()) {
+        m_heardLanguage = m_attemptLanguage;
+    }
     replaceFinals(m_attemptBase.isEmpty() ? attemptText : m_attemptBase + QLatin1Char(' ') + attemptText);
 }
 

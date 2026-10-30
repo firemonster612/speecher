@@ -582,13 +582,6 @@ void DictationSession::retireSpeechAttempt()
     m_transcriber->cancelAttempt(retired);
 }
 
-SpeechSettings DictationSession::speechSettingsFor(const QString &providerId) const
-{
-    SpeechSettings speech = m_sessionSettings->speech;
-    speech.providerId = providerId;
-    return speech;
-}
-
 void DictationSession::noteProviderIssue(ProviderRole role,
                                          const QString &providerId,
                                          Stage stage,
@@ -1033,12 +1026,13 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
         return;
     }
 
-    m_transcript->startAttempt();
+    const QString providerId = m_speechChain->currentId();
+    const SpeechSettings speech = chainSpeechSettings(m_sessionSettings->speech, providerId);
+    m_transcript->startAttempt(speech.language);
     m_attempts.attemptStarted();
     const quint64 attemptId = m_attemptId;
-    const QString providerId = m_speechChain->currentId();
     noteRan(ProviderRole::Speech, providerId);
-    m_transcriber->startAttempt(attemptId, speechSettingsFor(providerId));
+    m_transcriber->startAttempt(attemptId, speech);
     sendPendingAudio();
     // A provider can fail inside startAttempt(): the session has moved on to
     // the next one, or ended, and must not open the microphone for this one.
@@ -1124,7 +1118,8 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review->edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target);
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target,
+                                                        m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
     if (settings.refinement.providerId == kNoRefinementProvider
@@ -1672,11 +1667,12 @@ void DictationSession::startNextAttempt()
     if (!partial.isEmpty()) {
         m_transcript->commitFinal(partial);
     }
-    m_transcript->startAttempt();
-    m_attempts.attemptStarted();
     const QString providerId = m_speechChain->currentId();
+    const SpeechSettings speech = chainSpeechSettings(m_sessionSettings->speech, providerId);
+    m_transcript->startAttempt(speech.language);
+    m_attempts.attemptStarted();
     noteRan(ProviderRole::Speech, providerId);
-    m_transcriber->startAttempt(m_attemptId, speechSettingsFor(providerId));
+    m_transcriber->startAttempt(m_attemptId, speech);
 }
 
 bool DictationSession::selectSpeechTranscriber(const QString &providerId, QString *error)

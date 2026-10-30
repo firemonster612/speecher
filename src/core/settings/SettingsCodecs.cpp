@@ -309,6 +309,29 @@ void SettingsCodecs::setSpeechFallbackProviders(const QStringList &value)
                         normalizedFallbackProviders(ProviderRole::Speech, speechProvider(), value));
 }
 
+QHash<QString, QString> SettingsCodecs::speechFallbackLanguages() const
+{
+    // Settings saved before fallbacks had their own language have none.
+    QHash<QString, QString> languages;
+    const QString prefix = SettingsKeys::SpeechFallbackLanguages + QLatin1Char('/');
+    for (const QString &key : m_settings.allKeys()) {
+        if (key.startsWith(prefix)) {
+            languages.insert(key.mid(prefix.size()), m_settings.value(key).toString());
+        }
+    }
+    return languages;
+}
+
+void SettingsCodecs::setSpeechFallbackLanguages(const QHash<QString, QString> &value)
+{
+    m_settings.remove(SettingsKeys::SpeechFallbackLanguages);
+    m_settings.beginGroup(SettingsKeys::SpeechFallbackLanguages);
+    for (auto it = value.cbegin(); it != value.cend(); ++it) {
+        m_settings.setValue(it.key(), it.value());
+    }
+    m_settings.endGroup();
+}
+
 bool SettingsCodecs::codexFinalRetranscribe() const
 {
     return value(SettingsKeys::CodexFinalRetranscribe, true).toBool();
@@ -1611,6 +1634,7 @@ AppSettings SettingsCodecs::snapshot() const
 
     settings.speech.providerId = speechProvider();
     settings.speech.fallbackProviderIds = speechFallbackProviders();
+    settings.speech.fallbackLanguages = speechFallbackLanguages();
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
     settings.speech.language = spokenLanguage();
     settings.speech.local = localSpeechSettings();

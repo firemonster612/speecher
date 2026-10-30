@@ -146,6 +146,23 @@ const SettingRow settingRows[] = {
          s.speech.fallbackProviderIds =
              normalizedFallbackProviders(ProviderRole::Speech, s.speech.providerId, v.toStringList());
      }},
+    // The Spoken Languages a person chose for speech fallbacks, by provider
+    // id: { local: "en" }. Models' speech services say what each runs with.
+    {"speechFallbackLanguages",
+     [](const AppSettings &s) {
+         QVariantMap languages;
+         for (auto it = s.speech.fallbackLanguages.cbegin(); it != s.speech.fallbackLanguages.cend(); ++it) {
+             languages.insert(it.key(), it.value());
+         }
+         return QVariant(languages);
+     },
+     [](AppSettings &s, const QVariant &v) {
+         const QVariantMap languages = v.toMap();
+         s.speech.fallbackLanguages.clear();
+         for (auto it = languages.cbegin(); it != languages.cend(); ++it) {
+             s.speech.fallbackLanguages.insert(it.key(), it.value().toString());
+         }
+     }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
     // Choosing a model marks it chosen, so the hardware default stops

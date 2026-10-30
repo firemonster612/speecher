@@ -31,7 +31,10 @@ class QuickModels final : public QObject {
     // signInCheckFailure, setup's sign-in check apart from the state: whether
     // it runs, and why the last one couldn't reach the service, and
     // languages, the codes core says it listens for (spokenLanguages, without
-    // Automatic; a Local Model's are the chosen model's).
+    // Automatic; a Local Model's are the chosen model's), detects, whether it
+    // offers Automatic, and spokenLanguage, the one it listens for in the
+    // chain: the Spoken Language as the primary, its own as a fallback
+    // (chainSpeechSettings).
     Q_PROPERTY(QVariantList speechServices READ speechServices NOTIFY changed)
     // As speechServices, each with readsScreenshots.
     Q_PROPERTY(QVariantList refinementProviders READ refinementProviders NOTIFY changed)

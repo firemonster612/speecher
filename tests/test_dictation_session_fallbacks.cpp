@@ -369,6 +369,61 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
     }
 
+    // Behind ChatGPT Codex on Automatic, an English-only Local Model with no
+    // language chosen is ready, and runs listening for English.
+    void anEnglishOnlyFallbackBehindAutomaticListensForEnglish()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.settings.setSpokenLanguage(QStringLiteral("auto"));
+        LocalSpeechSettings local = rig.settings.localSpeechSettings();
+        local.modelId = QStringLiteral("parakeet");
+        rig.settings.setLocalSpeechSettings(local);
+        LiveFacts facts;
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), rig.settings.dictationSnapshot(), facts),
+                 FallbackProblem::None);
+
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->lastLanguage, QStringLiteral("en"));
+    }
+
+    // Refinement is told the language the fallback that heard the words
+    // listened for, not the Spoken Language.
+    void refinementGetsTheLanguageTheFallbackHeard()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
+        rig.settings.setSpokenLanguage(QStringLiteral("de"));
+        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
+        rig.session->stopListening();
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
+    }
+
+    // When the chain runs out after a fallback kept words, refinement is
+    // still told the language that fallback heard them in.
+    void refinementGetsTheKeptWordsLanguageOnceTheChainRunsOut()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")},
+                     {QStringLiteral("openai")});
+        rig.settings.setSpokenLanguage(QStringLiteral("de"));
+        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("endpoint")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
+        rig.speech[QStringLiteral("claude")]->emitFailure(QStringLiteral("gone"), false, SpeechPhase::Streaming, Network);
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastRawTranscript, QStringLiteral("bonjour"));
+        QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
+    }
+
     // The session and fallbackProblem() decide a language skip the same way,
     // from the provider's own language list: Claude Voice can't listen for
     // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.

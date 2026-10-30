@@ -156,7 +156,6 @@ private:
     void switchSpeechProvider(const SpeechFailure &failure);
     void noteSpeechFailure(const SpeechFailure &failure);
     void retireSpeechAttempt();
-    SpeechSettings speechSettingsFor(const QString &providerId) const;
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
     bool offlineFor(ProviderRole role, const QString &providerId) const;
     void noteSignIn(const QString &providerId, bool signedIn);

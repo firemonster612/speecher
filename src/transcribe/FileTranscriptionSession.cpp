@@ -645,12 +645,13 @@ void FileTranscriptionSession::markAttemptConnected()
 void FileTranscriptionSession::startNextAttempt()
 {
     commitPartial();
-    m_transcript->startAttempt();
+    const SpeechSettings speech = currentSpeechSettings();
+    m_transcript->startAttempt(speech.language);
     m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
     m_attemptSentFrom = m_sent;
     m_attemptConnected = false;
     m_attempts.attemptStarted();
-    m_transcriber->startAttempt(++m_attemptId, currentSpeechSettings());
+    m_transcriber->startAttempt(++m_attemptId, speech);
 }
 
 // A recording's dropped stream waits a pause, growing while it keeps failing,
@@ -726,9 +727,7 @@ void FileTranscriptionSession::resumeStreaming()
 
 SpeechSettings FileTranscriptionSession::currentSpeechSettings() const
 {
-    SpeechSettings speech = m_batchSettings.speech;
-    speech.providerId = m_speechChain->currentId();
-    return speech;
+    return chainSpeechSettings(m_batchSettings.speech, m_speechChain->currentId());
 }
 
 void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
@@ -820,7 +819,7 @@ void FileTranscriptionSession::finishTranscription()
 
 void FileTranscriptionSession::refine(const QString &raw)
 {
-    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{});
+    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{}, currentSpeechSettings().language);
     // The page's choices stand in for what a target app would have implied.
     m_pipeline.refinementSettings.style = m_options.cleanupStrength;
     m_pipeline.refinementSettings.tone = m_options.tone;

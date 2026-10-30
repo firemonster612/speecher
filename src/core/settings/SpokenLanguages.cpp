@@ -101,6 +101,27 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
         .arg(service, englishName(speech.language));
 }
 
+SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &providerId)
+{
+    SpeechSettings candidate = speech;
+    candidate.providerId = providerId;
+    if (providerId == speech.providerId) {
+        return candidate;
+    }
+    if (const auto chosen = speech.fallbackLanguages.constFind(providerId); chosen != speech.fallbackLanguages.cend()) {
+        candidate.language = *chosen;
+        return candidate;
+    }
+    // Only Automatic falls back to English: a language the person named
+    // that the fallback lacks skips it rather than mishearing them.
+    if (listensForSpokenLanguage(candidate) || speech.language != QLatin1String(kAutomaticSpokenLanguage)) {
+        return candidate;
+    }
+    SpeechSettings english = candidate;
+    english.language = QStringLiteral("en");
+    return listensForSpokenLanguage(english) ? english : candidate;
+}
+
 QStringList knownSpokenLanguages()
 {
     QStringList languages = withAutomatic(claudeVoiceLanguages + codexLanguages);
