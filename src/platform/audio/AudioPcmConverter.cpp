@@ -4,11 +4,41 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 
 namespace speecher {
 namespace {
 
 constexpr int kOutputSampleRate = 16000;
+
+// A windowed-sinc low-pass for audio about to be resampled down to 16 kHz:
+// interpolation alone folds everything above 8 kHz (sibilants, a monitor's
+// whine) back into the speech band. Blackman-windowed, it is flat to about
+// 6 kHz and down more than 70 dB from 8 kHz; the taps grow with the rate to
+// keep that transition the same width in hertz. Unity gain at DC.
+QVector<float> lowPassTaps(int sampleRate)
+{
+    constexpr double cutoffHz = 7000.0;
+    const int half = int(std::lround(24.0 * sampleRate / kOutputSampleRate));
+    const int count = 2 * half + 1;
+    const double cutoff = cutoffHz / sampleRate;
+    QVector<float> taps(count);
+    double sum = 0.0;
+    for (int i = 0; i < count; ++i) {
+        const int offset = i - half;
+        const double sinc = offset == 0
+            ? 2.0 * cutoff
+            : std::sin(2.0 * std::numbers::pi * cutoff * offset) / (std::numbers::pi * offset);
+        const double phase = 2.0 * std::numbers::pi * i / (count - 1);
+        const double window = 0.42 - 0.5 * std::cos(phase) + 0.08 * std::cos(2.0 * phase);
+        taps[i] = float(sinc * window);
+        sum += taps[i];
+    }
+    for (float &tap : taps) {
+        tap = float(tap / sum);
+    }
+    return taps;
+}
 
 bool usableFormat(const QAudioFormat &format)
 {
@@ -126,6 +156,9 @@ void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
     m_pendingInput.clear();
     m_resampleBuffer.clear();
     m_nextInputPosition = 0.0;
+    m_lowPassTaps = sourceFormat.sampleRate() > kOutputSampleRate ? lowPassTaps(sourceFormat.sampleRate())
+                                                                  : QVector<float>();
+    m_lowPassHistory.clear();
 }
 
 AudioPcmConversion AudioPcmConverter::convert(const QByteArray &chunk)
@@ -164,7 +197,7 @@ QByteArray AudioPcmConverter::encodeOutputSamples(const QVector<float> &samples)
         return pcm;
     }
 
-    m_resampleBuffer += samples;
+    m_resampleBuffer += m_lowPassTaps.isEmpty() ? samples : lowPassed(samples);
     if (m_resampleBuffer.size() < 2) {
         return {};
     }
@@ -186,6 +219,32 @@ QByteArray AudioPcmConverter::encodeOutputSamples(const QVector<float> &samples)
         m_nextInputPosition -= removable;
     }
     return pcm;
+}
+
+// One filtered sample per input sample, each from the taps' width of input
+// ending at it, the samples before this chunk carried over in the history.
+QVector<float> AudioPcmConverter::lowPassed(const QVector<float> &samples)
+{
+    const qsizetype count = m_lowPassTaps.size();
+    // The stream is taken to have held its first sample before it began, so
+    // a level it starts at passes from the first sample instead of rising
+    // from silence.
+    if (m_lowPassHistory.isEmpty()) {
+        m_lowPassHistory.fill(samples.first(), count - 1);
+    }
+    const QVector<float> input = m_lowPassHistory + samples;
+    const float *taps = m_lowPassTaps.constData();
+    QVector<float> output(samples.size());
+    for (qsizetype i = 0; i < samples.size(); ++i) {
+        const float *window = input.constData() + i;
+        double sum = 0.0;
+        for (qsizetype tap = 0; tap < count; ++tap) {
+            sum += double(taps[tap]) * window[tap];
+        }
+        output[i] = float(sum);
+    }
+    m_lowPassHistory = input.last(count - 1);
+    return output;
 }
 
 } // namespace speecher
