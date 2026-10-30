@@ -184,13 +184,10 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
                                                                    const Target &target)
 {
     RefinementSettings refinement = settings.refinement;
-    refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(
-        activeBindings(settings, target));
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
         writingProfileFor(settings, target));
     refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
-    refinement.tone = profileSettings.tone;
     return refinement;
 }
 
@@ -221,10 +218,11 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementVocabulary = refinementVocabulary(settings,
                                                        result.refinementContext.writingProfile,
                                                        result.refinementContext.vocabularyContext);
-    result.refinementContext.tone = result.refinementSettings.tone;
-    fillUserInstructions(result.refinementContext, result.refinementSettings,
-                         writingProfileSettingsFor(result.refinementSettings.writingProfiles,
-                                                   result.refinementContext.writingProfile));
+    const WritingProfileSettings profile = writingProfileSettingsFor(result.refinementSettings.writingProfiles,
+                                                                     result.refinementContext.writingProfile);
+    result.refinementContext.tone = profile.tone;
+    result.refinementContext.bindingVocabulary = BindingProcessor::refinementVocabulary(bindings);
+    fillUserInstructions(result.refinementContext, result.refinementSettings, profile);
     resolveCustomChoices(result);
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;

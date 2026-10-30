@@ -180,9 +180,7 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         // The cleanup level saved before Writing Profiles, which seeds them
         // until they are saved. Each run takes its own from its profile.
         readOnly("refinement.style", member(&A::refinement, &RefinementSettings::style), &C::refinementStyle),
-        perRun("refinement.tone", member(&A::refinement, &RefinementSettings::tone)),
         perRun("refinement.sessionWritingProfile", member(&A::refinement, &RefinementSettings::sessionWritingProfile)),
-        perRun("refinement.bindingVocabulary", member(&A::refinement, &RefinementSettings::bindingVocabulary)),
         // A test hook, not a choice a run makes: tests point their own copy at
         // a server of their own. Like a per-run field, never read or saved.
         perRun("refinement.anthropicEndpointBase", member(&A::refinement, &RefinementSettings::anthropicEndpointBase)),

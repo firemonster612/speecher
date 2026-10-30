@@ -81,7 +81,7 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
     const bool remoteCliproxy = cliproxy && !settings.cliproxyBaseUrl.isEmpty();
     m_apiRefiner->refine(rawTranscript,
                          vocabulary,
-                         settings.bindingVocabulary,
+                         context.bindingVocabulary,
                          m_accessToken,
                          remoteCliproxy ? endpointApiBase(settings.cliproxyBaseUrl)
                                         : settings.anthropicEndpointBase,

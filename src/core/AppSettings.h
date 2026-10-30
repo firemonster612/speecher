@@ -380,14 +380,12 @@ struct RefinementSettings {
     RefinementEndpointSettings endpoint;
     LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    QStringList bindingVocabulary;
     QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
     QList<WritingProfileOverride> writingProfileOverrides;
     // The profile `toggle --profile` or `start --profile` forces for one
     // Dictation Session, ahead of every other rule; empty otherwise. Never saved.
     QString sessionWritingProfile;
-    QString tone = QStringLiteral("none");
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
     // Added to every refinement prompt.

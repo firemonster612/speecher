@@ -375,7 +375,6 @@ void FileTranscriptionSession::refine(const QString &raw)
     m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{}, m_stream->speechSettings().language);
     // The page's choices stand in for what a target app would have implied.
     m_pipeline.refinementSettings.style = m_options.cleanupStrength;
-    m_pipeline.refinementSettings.tone = m_options.tone;
     m_pipeline.refinementContext.tone = m_options.tone;
     m_pipeline.refinementContext.writingProfile = writingProfileFromName(m_options.writingProfile);
     TranscriptPipeline::fillUserInstructions(
