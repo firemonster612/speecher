@@ -1079,6 +1079,30 @@ private slots:
         QCOMPARE(reconciled, std::optional<bool>(draft.launchAtLogin));
     }
 
+    // Saving a key waits for the keyring in an event loop, which runs other
+    // work. An edit made then outlives the save that was waiting.
+    void anEditDuringAKeyringWaitIsNotOverwritten()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
+        QTimer::singleShot(0, &settings, [&settings] {
+            settings.edit([](AppSettings &nested) {
+                nested.refinement.openAiModel = QStringLiteral("nested-model");
+                return true;
+            });
+        });
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(SettingsStore().openAiModel(), QStringLiteral("nested-model"));
+        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
+        settings.raw().clear();
+    }
+
     void settingsBindingRulesRoundTrip()
     {
         SettingsStore settings;

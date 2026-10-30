@@ -283,7 +283,6 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSpokenLanguage(draft.speech.language);
     setLocalSpeechSettings(draft.speech.local);
     setSpeechEndpointSettings(draft.speech.endpoint);
-    save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
     setRefinementProvider(draft.refinement.providerId);
     setRefinementFallbackProviders(draft.refinement.fallbackProviderIds);
@@ -312,9 +311,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAnthropicCliproxyAccount(draft.accounts.anthropicCliproxyAccount);
     setCliproxyOauthDir(draft.accounts.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
-    save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
     setRefinementEndpointSettings(draft.refinement.endpoint);
-    save(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
     setLocalRunnerSettings(draft.refinement.localRunner);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
@@ -337,6 +334,12 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     if (!setBindingRules(draft.bindings, &replacementError)) {
         qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
     }
+    // Last, since the keyring answers through an event loop, which can run an
+    // edit of its own: one made then must find this draft's settings already
+    // written, or the rest of this one would overwrite it.
+    save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
+    save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
+    save(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
     emit snapshotApplied(previous);
 }
 
