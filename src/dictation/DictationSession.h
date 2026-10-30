@@ -6,7 +6,7 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
-#include "dictation/StartupPreparationRunner.h"
+#include "dictation/PreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 #include "providers/SpeechChain.h"
 
@@ -165,7 +165,9 @@ private:
     void failStartup(const QString &message, const PopupErrorAction &fix);
     void beginRefinement(quint64 generation);
     void prepareRefiner();
-    void finishRefinerPreparation(const StartupPreparationResult &result);
+    bool refinerPreparationStale() const;
+    void finishRefinerPreparation(const std::optional<ProviderFailure> &failure);
+    void useRefinerSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings);
     void startRefiner();
     void enterRefining();
     RefinementSettings refinerSettings() const;
@@ -224,10 +226,7 @@ private:
     TranscriptState *m_transcript = nullptr;
     SpeechChain *m_speechChain = nullptr;
     SpeechAttemptPolicy m_attempts;
-    StartupPreparationRunner *m_refinerPreparation = nullptr;
-    // Numbers each refiner preparation the runner is asked for; only the
-    // latest's result counts.
-    quint64 m_preparationRevision = 0;
+    PreparationRunner *m_refinerPreparation = nullptr;
     QTimer *m_completionTimer = nullptr;
     // The registry owns these and may be destroyed first; never call a dead one.
     QPointer<SpeechTranscriber> m_transcriber;

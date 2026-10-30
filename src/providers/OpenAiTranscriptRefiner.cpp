@@ -20,21 +20,15 @@ OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObje
     connect(m_refiner, &OpenAiRefiner::failed, this, &OpenAiTranscriptRefiner::failed);
 }
 
-bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
-                                              const AccountSettings &accounts) const
+std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
+                                                                        const AccountSettings &accounts)
 {
-    return OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).requiresCodexOauthRefresh();
-}
-
-std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
-                                                                              const AccountSettings &accounts)
-{
-    if (!requiresRefresh(settings, accounts)) {
+    if (!OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).requiresCodexOauthRefresh()) {
         return std::nullopt;
     }
 
     auto resolved = std::make_shared<OpenAiAuth>();
-    RefinementRefreshJob job;
+    PreparationJob job;
     job.showRefreshIndicator = true;
     // Every source the mode allows, as prepare() resolves them, so a sign-in
     // that can't renew still leaves an API key to use. The worker reads the
@@ -42,10 +36,10 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     job.run = [settings, accounts, resolved] {
         SettingsStore source;
         *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts, settings).resolve();
-        return RefinementRefreshResult{resolved->ok, resolved->status, resolved->kind, resolved->httpStatus};
+        return resolved->failure();
     };
-    job.apply = [this, resolved](const RefinementRefreshResult &result) {
-        if (result.ok) {
+    job.apply = [this, resolved](const std::optional<ProviderFailure> &failure) {
+        if (!failure) {
             m_auth = *resolved;
             m_authResolvedByJob = true;
         }
@@ -53,27 +47,18 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     return job;
 }
 
-void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings, const AccountSettings &accounts)
-{
-    const OpenAiAuth refreshed =
-        OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).refreshCodexOauth();
-    if (!refreshed.ok) {
-        qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
-    }
-}
-
-RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings,
-                                                        const AccountSettings &accounts)
+std::optional<ProviderFailure> OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings,
+                                                               const AccountSettings &accounts)
 {
     if (std::exchange(m_authResolvedByJob, false)) {
-        return {true, m_auth.status};
+        return std::nullopt;
     }
     // Refresh an expired token here rather than reporting it expired: a token
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. resolve()
     // takes the same one-second credential lock the speech path uses.
     m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).resolve();
-    return {m_auth.ok, m_auth.status, m_auth.kind, m_auth.httpStatus};
+    return m_auth.failure();
 }
 
 void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
@@ -85,9 +70,8 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
     // CLI Proxy API rewrites its token files as it refreshes them, so a cached
     // token can go stale while the file stays valid; reload on every request.
     if (!m_auth.ok || accounts.openAiAuthMode == QStringLiteral("cliproxy")) {
-        const RefinementPrepareResult prepared = prepare(settings, accounts);
-        if (!prepared.ok) {
-            emit failed({prepared.kind, prepared.message, prepared.httpStatus});
+        if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
+            emit failed(*failure);
             return;
         }
     }

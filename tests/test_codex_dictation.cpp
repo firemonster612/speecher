@@ -518,17 +518,17 @@ private slots:
         accounts.cliproxyOauthDir = dir.path();
 
         CodexSpeechTranscriber codex;
-        QVERIFY(codex.prepare(speech, accounts).ok);
+        QVERIFY(!codex.prepare(speech, accounts));
         QVERIFY(!codex.requiresRefresh(speech, accounts));
 
         ClaudeSpeechTranscriber claude;
-        QVERIFY(claude.prepare(speech, accounts).ok);
+        QVERIFY(!claude.prepare(speech, accounts));
         QVERIFY(!claude.requiresRefresh(speech, accounts));
 
         accounts.cliproxyOauthDir = QStringLiteral("/nonexistent/oauth");
-        const SpeechPrepareResult missing = codex.prepare(speech, accounts);
-        QVERIFY(!missing.ok);
-        QVERIFY(missing.message.contains(QStringLiteral("No CLI Proxy API codex accounts")));
+        const std::optional<ProviderFailure> missing = codex.prepare(speech, accounts);
+        QVERIFY(missing);
+        QVERIFY(missing->message.contains(QStringLiteral("No CLI Proxy API codex accounts")));
     }
 
     void finalRetranscribeReplacesTranscriptFromBatchEndpoint()
@@ -759,8 +759,8 @@ private slots:
         CodexSpeechTranscriber transcriber;
         const AppSettings saved = SettingsStore().snapshot();
         SpeechSettings settings = saved.speech;
-        const SpeechPrepareResult prepared = transcriber.prepare(settings, saved.accounts);
-        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+        const std::optional<ProviderFailure> prepared = transcriber.prepare(settings, saved.accounts);
+        QVERIFY2(!prepared, qPrintable(prepared ? prepared->message : QString()));
 
         QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);
         QSignalSpy final(&transcriber, &SpeechTranscriber::finalTranscript);

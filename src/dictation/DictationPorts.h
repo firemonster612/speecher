@@ -37,39 +37,13 @@ struct DeliveryResult {
     QString message;
 };
 
-// A failed preparation sends a Dictation Session on to the next provider
-// whatever its kind, so an unclassified one counts as Unavailable.
-struct SpeechPrepareResult {
-    bool ok = false;
-    QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
-    int httpStatus = 0;
-};
-
-struct RefinementPrepareResult {
-    bool ok = false;
-    QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
-    int httpStatus = 0;
-};
-
-struct SpeechPrepareJob {
+// Readies a provider off the GUI thread: run() on a worker, then apply() back
+// on the GUI thread with what run() returned. A preparation reports the
+// failure that stopped it, or nothing once the provider is ready.
+struct PreparationJob {
     bool showRefreshIndicator = false;
-    std::function<SpeechPrepareResult()> run;
-    std::function<void(const SpeechPrepareResult &)> apply;
-};
-
-struct RefinementRefreshResult {
-    bool ok = true;
-    QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
-    int httpStatus = 0;
-};
-
-struct RefinementRefreshJob {
-    bool showRefreshIndicator = false;
-    std::function<RefinementRefreshResult()> run;
-    std::function<void(const RefinementRefreshResult &)> apply;
+    std::function<std::optional<ProviderFailure>()> run;
+    std::function<void(const std::optional<ProviderFailure> &)> apply;
 };
 
 struct AudioInputDeviceInfo {
@@ -232,14 +206,17 @@ public:
     // The sign-in methods take the accounts a provider that signs in reads
     // its credentials from.
     virtual bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const = 0;
-    virtual std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings,
-                                                             const AccountSettings &accounts)
+    virtual std::optional<PreparationJob> createPrepareJob(const SpeechSettings &settings,
+                                                           const AccountSettings &accounts)
     {
         Q_UNUSED(settings);
         Q_UNUSED(accounts);
         return std::nullopt;
     }
-    virtual SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) = 0;
+    // A failure sends a Dictation Session on to the next provider whatever its
+    // kind, so one the provider cannot classify is Unavailable.
+    virtual std::optional<ProviderFailure> prepare(const SpeechSettings &settings,
+                                                   const AccountSettings &accounts) = 0;
     // Whether prepare() renews a sign-in that expires, so one the service
     // turned down may be taken once it has run again. A key from Settings
     // is not renewed.
@@ -294,17 +271,17 @@ class TranscriptRefiner : public QObject {
 public:
     using QObject::QObject;
     // As SpeechTranscriber's, these and refine() take the accounts a provider
-    // that signs in reads its credentials from.
-    virtual bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const = 0;
-    virtual std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings,
-                                                                 const AccountSettings &accounts)
+    // that signs in reads its credentials from. A sign-in that expires renews
+    // in the refresh job, whose showRefreshIndicator says it is due.
+    virtual std::optional<PreparationJob> createRefreshJob(const RefinementSettings &settings,
+                                                           const AccountSettings &accounts)
     {
         Q_UNUSED(settings);
         Q_UNUSED(accounts);
         return std::nullopt;
     }
-    virtual void refresh(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
-    virtual RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) = 0;
+    virtual std::optional<ProviderFailure> prepare(const RefinementSettings &settings,
+                                                   const AccountSettings &accounts) = 0;
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
                         const RefinementContext &context,

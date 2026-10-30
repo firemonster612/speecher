@@ -48,7 +48,7 @@ public:
                                        int deadlineMs = 300000);
 
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
-    SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
+    std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool streamsFinalText(const SpeechSettings &settings) const override;
     int utteranceAnswerTimeoutMs() const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;

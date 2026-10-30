@@ -22,29 +22,21 @@ EndpointTranscriptRefiner::EndpointTranscriptRefiner(const QString &label, QObje
     });
 }
 
-bool EndpointTranscriptRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const
-{
-    return false;
-}
-
-void EndpointTranscriptRefiner::refresh(const RefinementSettings &, const AccountSettings &)
-{
-}
-
-RefinementPrepareResult EndpointTranscriptRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
+std::optional<ProviderFailure> EndpointTranscriptRefiner::prepare(const RefinementSettings &settings,
+                                                                  const AccountSettings &)
 {
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
     if (endpoint.apiBase.isEmpty()) {
-        return {false,
-                settings.endpoint.preset == QStringLiteral("cliproxy")
-                    ? QStringLiteral("Set the CLI Proxy API server URL for the custom endpoint.")
-                    : QStringLiteral("Set the custom endpoint's server URL."),
-                ProviderFailureKind::Unavailable};
+        return ProviderFailure{ProviderFailureKind::Unavailable,
+                               settings.endpoint.preset == QStringLiteral("cliproxy")
+                                   ? QStringLiteral("Set the CLI Proxy API server URL for the custom endpoint.")
+                                   : QStringLiteral("Set the custom endpoint's server URL.")};
     }
     if (endpoint.model.isEmpty()) {
-        return {false, QStringLiteral("Choose a model for the custom endpoint."), ProviderFailureKind::Unavailable};
+        return ProviderFailure{ProviderFailureKind::Unavailable,
+                               QStringLiteral("Choose a model for the custom endpoint.")};
     }
-    return {true, {}};
+    return std::nullopt;
 }
 
 void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
@@ -53,9 +45,8 @@ void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
                                        const RefinementSettings &settings,
                                        const AccountSettings &accounts)
 {
-    const RefinementPrepareResult prepared = prepare(settings, accounts);
-    if (!prepared.ok) {
-        emit failed({prepared.kind, prepared.message});
+    if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
+        emit failed(*failure);
         return;
     }
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);

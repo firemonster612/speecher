@@ -18,9 +18,9 @@ public:
     explicit CodexSpeechTranscriber(QObject *parent = nullptr);
 
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
-    std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings,
+    std::optional<PreparationJob> createPrepareJob(const SpeechSettings &settings,
                                                      const AccountSettings &accounts) override;
-    SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
+    std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool renewsSignIn() const override { return true; }
     bool streamsFinalText(const SpeechSettings &) const override { return true; }
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;

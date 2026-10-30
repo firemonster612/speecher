@@ -10,7 +10,7 @@ namespace speecher {
 
 namespace {
 
-SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QString *accessToken)
+std::optional<ProviderFailure> loadClaudeAccessToken(const AccountSettings &accounts, QString *accessToken)
 {
     const AnthropicAuth auth = AnthropicAuthProvider::forSpeech(accounts).resolve(true);
     // Warms the version cache the voice client reads as it connects, for
@@ -19,7 +19,7 @@ SpeechPrepareResult loadClaudeAccessToken(const AccountSettings &accounts, QStri
         ClaudeCredentials::installedVersion();
     }
     *accessToken = auth.accessToken;
-    return {auth.ok, auth.error, auth.kind, auth.httpStatus};
+    return auth.failure();
 }
 
 } // namespace
@@ -34,17 +34,17 @@ bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Acco
     return AnthropicAuthProvider::forSpeech(accounts).requiresRefresh();
 }
 
-std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings,
-                                                                          const AccountSettings &accounts)
+std::optional<PreparationJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings,
+                                                                        const AccountSettings &accounts)
 {
     auto accessToken = std::make_shared<QString>();
-    SpeechPrepareJob job;
+    PreparationJob job;
     job.showRefreshIndicator = requiresRefresh(settings, accounts);
     job.run = [accounts, accessToken] {
         return loadClaudeAccessToken(accounts, accessToken.get());
     };
-    job.apply = [this, accessToken](const SpeechPrepareResult &result) {
-        if (result.ok) {
+    job.apply = [this, accessToken](const std::optional<ProviderFailure> &failure) {
+        if (!failure) {
             m_accessToken = *accessToken;
         } else {
             m_accessToken.clear();
@@ -53,7 +53,8 @@ std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const 
     return job;
 }
 
-SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &, const AccountSettings &accounts)
+std::optional<ProviderFailure> ClaudeSpeechTranscriber::prepare(const SpeechSettings &,
+                                                                const AccountSettings &accounts)
 {
     return loadClaudeAccessToken(accounts, &m_accessToken);
 }

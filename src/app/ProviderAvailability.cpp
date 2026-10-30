@@ -33,24 +33,24 @@ void ProviderAvailability::checkSpeechSignIns(ProviderRegistry &registry, const 
         emit changed();
         // An instance of its own, so the check never touches dictation's.
         SpeechTranscriber *provider = registry.createSpeechProvider(descriptor.id, &registry);
-        const auto note = [this, id = descriptor.id, provider](const SpeechPrepareResult &result) {
+        const auto note = [this, id = descriptor.id, provider](const std::optional<ProviderFailure> &failure) {
             provider->deleteLater();
             m_checkingSignIns.remove(id);
-            const bool unreached =
-                result.kind == ProviderFailureKind::Network || result.kind == ProviderFailureKind::Timeout;
-            if (!result.ok && unreached) {
-                m_signInCheckFailures.insert(id, result.message);
+            const bool unreached = failure
+                && (failure->kind == ProviderFailureKind::Network || failure->kind == ProviderFailureKind::Timeout);
+            if (unreached) {
+                m_signInCheckFailures.insert(id, failure->message);
             } else {
-                noteSignIn(id, result.ok);
+                noteSignIn(id, !failure);
             }
             emit changed();
         };
-        std::optional<SpeechPrepareJob> job = provider->createPrepareJob(settings.speech, settings.accounts);
+        std::optional<PreparationJob> job = provider->createPrepareJob(settings.speech, settings.accounts);
         if (!job || !job->run) {
             note(provider->prepare(settings.speech, settings.accounts));
             continue;
         }
-        runProviderProbe<SpeechPrepareResult>(&registry, this, std::move(job->run), note);
+        runProviderProbe<std::optional<ProviderFailure>>(&registry, this, std::move(job->run), note);
     }
 }
 

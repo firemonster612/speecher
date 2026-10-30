@@ -21,27 +21,21 @@ AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
     connect(m_apiRefiner, &AnthropicApiRefiner::failed, this, &AnthropicTranscriptRefiner::failed);
 }
 
-bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
-                                                 const AccountSettings &accounts) const
-{
-    return AnthropicAuthProvider::forRefinement(accounts, settings).requiresRefresh();
-}
-
-std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
-                                                                                 const AccountSettings &accounts)
+std::optional<PreparationJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
+                                                                           const AccountSettings &accounts)
 {
     const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts, settings);
     auto accessToken = std::make_shared<QString>();
-    RefinementRefreshJob job;
+    PreparationJob job;
     job.showRefreshIndicator = signIn.requiresRefresh();
     job.run = [signIn, accessToken] {
         const AnthropicAuth auth = signIn.resolve(true);
         ClaudeCredentials::installedVersion();
         *accessToken = auth.accessToken;
-        return RefinementRefreshResult{auth.ok, auth.error, auth.kind, auth.httpStatus};
+        return auth.failure();
     };
-    job.apply = [this, accessToken](const RefinementRefreshResult &result) {
-        if (result.ok) {
+    job.apply = [this, accessToken](const std::optional<ProviderFailure> &failure) {
+        if (!failure) {
             m_accessToken = *accessToken;
             m_authResolvedByJob = true;
         } else {
@@ -51,23 +45,18 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
     return job;
 }
 
-void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings, const AccountSettings &accounts)
-{
-    m_accessToken = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(true).accessToken;
-}
-
 // Renewing an expired token is the refresh job's, on the worker: a renewal
 // here would block this thread on the network and the keychain. Without a
 // job's token, prepare() reads the sign-in as it stands.
-RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings,
-                                                           const AccountSettings &accounts)
+std::optional<ProviderFailure> AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings,
+                                                                  const AccountSettings &accounts)
 {
     if (std::exchange(m_authResolvedByJob, false)) {
-        return {true, {}};
+        return std::nullopt;
     }
     const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(false);
     m_accessToken = auth.accessToken;
-    return {auth.ok, auth.error, auth.kind, auth.httpStatus};
+    return auth.failure();
 }
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
@@ -79,9 +68,8 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
     qInfo().noquote() << "anthropic refinement mode=" + accounts.anthropicAuthMode + " model=" + settings.anthropicModel;
     const bool cliproxy = accounts.anthropicAuthMode == QStringLiteral("cliproxy");
     if (m_accessToken.isEmpty() || cliproxy) {
-        const RefinementPrepareResult prepared = prepare(settings, accounts);
-        if (!prepared.ok) {
-            emit failed({prepared.kind, prepared.message, prepared.httpStatus});
+        if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
+            emit failed(*failure);
             return;
         }
     }

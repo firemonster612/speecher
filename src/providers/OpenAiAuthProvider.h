@@ -4,6 +4,8 @@
 
 #include <QString>
 
+#include <optional>
+
 namespace speecher {
 
 class SecretStore;
@@ -24,6 +26,11 @@ struct OpenAiAuth {
     // a refresh said otherwise.
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
+
+    std::optional<ProviderFailure> failure() const
+    {
+        return ok ? std::nullopt : std::optional(ProviderFailure{kind, status, httpStatus});
+    }
 };
 
 // What the Accounts page says about the sign-in, and whether it can be used.

@@ -79,7 +79,10 @@ public:
     }
 
     bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override { return false; }
-    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override { return {true, {}}; }
+    std::optional<ProviderFailure> prepare(const SpeechSettings &, const AccountSettings &) override
+    {
+        return std::nullopt;
+    }
 
     void startAttempt(quint64, const SpeechSettings &settings) override
     {
@@ -647,8 +650,9 @@ private slots:
                                                                            ProviderFailureKind::Network);
                                                    };
                                                } else {
-                                                   speech->prepareResult = {false, QStringLiteral("offline"),
-                                                                            ProviderFailureKind::Network};
+                                                   speech->prepareFailure =
+                                                       ProviderFailure{ProviderFailureKind::Network,
+                                                                       QStringLiteral("offline")};
                                                }
                                                codex.append(speech);
                                                return speech;
@@ -765,8 +769,9 @@ private slots:
         m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
                                            [](QObject *parent) {
                                                auto *speech = new FakeSpeechTranscriber(parent);
-                                               speech->prepareResult = {false, QStringLiteral("offline"),
-                                                                        ProviderFailureKind::Network};
+                                               speech->prepareFailure =
+                                                   ProviderFailure{ProviderFailureKind::Network,
+                                                                   QStringLiteral("offline")};
                                                return speech;
                                            });
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
@@ -794,24 +799,25 @@ private slots:
         QCOMPARE(m_refinedLanguage, expected);
     }
 
-    void theRefinerRenewsOncePerFile_data()
+    void theRefinerRenewsOnlyToRefine_data()
     {
         QTest::addColumn<bool>("everySpeechProviderFails");
         QTest::newRow("a fallback prepares") << false;
         QTest::newRow("none prepares") << true;
     }
 
-    // The refiner's sign-in renews once per file, before the speech
-    // providers prepare, not again for each one tried.
-    void theRefinerRenewsOncePerFile()
+    // The refiner's sign-in renews once, when the transcript is refined,
+    // never while the speech providers prepare.
+    void theRefinerRenewsOnlyToRefine()
     {
         QFETCH(bool, everySpeechProviderFails);
         if (everySpeechProviderFails) {
             m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
                                                [](QObject *parent) {
                                                    auto *speech = new FakeSpeechTranscriber(parent);
-                                                   speech->prepareResult = {false, QStringLiteral("signed out"),
-                                                                            ProviderFailureKind::Unavailable};
+                                                   speech->prepareFailure =
+                                                       ProviderFailure{ProviderFailureKind::Unavailable,
+                                                                       QStringLiteral("signed out")};
                                                    return speech;
                                                });
         }
@@ -820,13 +826,15 @@ private slots:
                                                [&refiner](QObject *parent) {
                                                    refiner = new FakeRefiner(parent);
                                                    refiner->refreshRequired = true;
+                                                   refiner->autoComplete = true;
                                                    return refiner;
                                                });
         m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
                                            [](QObject *parent) {
                                                auto *speech = new FakeSpeechTranscriber(parent);
-                                               speech->prepareResult = {false, QStringLiteral("offline"),
-                                                                        ProviderFailureKind::Network};
+                                               speech->prepareFailure =
+                                                   ProviderFailure{ProviderFailureKind::Network,
+                                                                   QStringLiteral("offline")};
                                                return speech;
                                            });
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
@@ -839,14 +847,15 @@ private slots:
         TranscribeOptions options;
         options.speechProviderId = QStringLiteral("codex");
         options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
         // Read while the file's refiner still exists: it goes once the file is done.
         int refreshes = -1;
         connect(&session, &FileTranscriptionSession::fileFinished, this,
-                [&refiner, &refreshes] { refreshes = refiner->refreshCalls; });
+                [&refiner, &refreshes] { refreshes = refiner->refreshRuns; });
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
-        QCOMPARE(refreshes, 1);
+        QCOMPARE(refreshes, everySpeechProviderFails ? 0 : 1);
         QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().failed(),
                  everySpeechProviderFails);
     }
@@ -860,8 +869,7 @@ private slots:
                                                [&refiner](QObject *parent) {
                                                    refiner = new FakeRefiner(parent);
                                                    refiner->refreshRequired = true;
-                                                   refiner->backgroundRefresh = true;
-                                                   refiner->backgroundRefreshDelayMs = 200;
+                                                   refiner->refreshDelayMs = 200;
                                                    refiner->autoComplete = true;
                                                    return refiner;
                                                });
@@ -876,9 +884,7 @@ private slots:
         options.cleanupStrength = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
-        // The first renewal goes with the speech provider's preparation; the
-        // second waits on the transcript's refinement.
-        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->backgroundRefreshCalls : 0, 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns : 0, 1, 10000);
         session.cancel();
         QTest::qWait(400);
 

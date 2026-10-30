@@ -319,7 +319,7 @@ set(SPEECHER_DOMAIN_HEADERS
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
   src/dictation/DictationPorts.cpp
-  src/dictation/StartupPreparationRunner.cpp
+  src/dictation/PreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
   src/providers/ProviderRegistry.cpp
   src/providers/SpeechChain.cpp
@@ -328,7 +328,7 @@ set(SPEECHER_WORKFLOW_SOURCES
 set(SPEECHER_WORKFLOW_HEADERS
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
-  src/dictation/StartupPreparationRunner.h
+  src/dictation/PreparationRunner.h
   src/dictation/TranscriptPipeline.h
   src/providers/ProviderRegistry.h
   src/providers/SpeechChain.h

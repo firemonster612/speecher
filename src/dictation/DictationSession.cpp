@@ -60,7 +60,7 @@ DictationSession::DictationSession(SettingsStore *settings,
                                                                                             : nullptr;
                                     },
                                     this))
-    , m_refinerPreparation(new StartupPreparationRunner(this))
+    , m_refinerPreparation(new PreparationRunner(this))
     , m_completionTimer(new QTimer(this))
 {
     m_completionTimer->setSingleShot(true);
@@ -72,10 +72,9 @@ DictationSession::DictationSession(SettingsStore *settings,
         emit popupHideRequested();
         setState(DictationState::Idle);
     });
-    connect(m_refinerPreparation,
-            &StartupPreparationRunner::completed,
-            this,
+    connect(m_refinerPreparation, &PreparationRunner::refinerPrepared, this,
             &DictationSession::finishRefinerPreparation);
+    connect(m_refinerPreparation, &PreparationRunner::secretsResolved, this, &DictationSession::useRefinerSecrets);
     connect(m_speechChain, &SpeechChain::passedOver, this,
             [this](const QString &providerId, Stage stage, const ProviderFailure &failure) {
                 noteProviderIssue(ProviderRole::Speech, providerId, stage, failure);
@@ -1163,47 +1162,57 @@ void DictationSession::prepareRefiner()
     }
     if (SettingsStore::hasUnreadProviderSecrets(*m_sessionSettings, ProviderRole::Refinement, providerId)) {
         enterRefining();
-        m_refinerPreparation->resolveSecrets(++m_preparationRevision, ProviderRole::Refinement, providerId,
-                                             *m_sessionSettings);
+        m_refinerPreparation->resolveSecrets(ProviderRole::Refinement, providerId, *m_sessionSettings);
         return;
     }
-    if (std::optional<RefinementRefreshJob> refresh =
+    if (std::optional<PreparationJob> refresh =
             m_refiner->createRefreshJob(refinerSettings(), m_sessionSettings->accounts)) {
         enterRefining();
-        m_refinerPreparation->start(++m_preparationRevision, std::nullopt, std::move(refresh), {true, {}},
-                                    ProviderRole::Refinement);
+        m_refinerPreparation->prepareRefiner(std::move(*refresh));
         return;
     }
     startRefiner();
 }
 
-void DictationSession::finishRefinerPreparation(const StartupPreparationResult &result)
+bool DictationSession::refinerPreparationStale() const
 {
-    if (result.revision != m_preparationRevision || m_state != DictationState::Refining
-        || m_refinementGeneration != m_generation || !m_sessionSettings) {
+    if (m_state != DictationState::Refining || m_refinementGeneration != m_generation || !m_sessionSettings) {
         qInfo() << "refinement preparation result ignored";
+        return true;
+    }
+    return false;
+}
+
+void DictationSession::finishRefinerPreparation(const std::optional<ProviderFailure> &failure)
+{
+    if (refinerPreparationStale()) {
         return;
     }
-    if (result.refinerRefreshAttempted && !result.refinerRefresh.ok) {
-        handleRefinementFailure(
-            {result.refinerRefresh.kind, result.refinerRefresh.message, result.refinerRefresh.httpStatus},
-            Stage::Prepare);
-        return;
-    }
-    if (result.resolvedSettings) {
-        m_sessionSettings = *result.resolvedSettings;
-        prepareRefiner();
+    if (failure) {
+        handleRefinementFailure(*failure, Stage::Prepare);
         return;
     }
     startRefiner();
+}
+
+void DictationSession::useRefinerSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings)
+{
+    if (refinerPreparationStale()) {
+        return;
+    }
+    if (failure) {
+        handleRefinementFailure(*failure, Stage::Prepare);
+        return;
+    }
+    m_sessionSettings = settings;
+    prepareRefiner();
 }
 
 void DictationSession::startRefiner()
 {
     const RefinementSettings refinement = refinerSettings();
-    const RefinementPrepareResult prepared = m_refiner->prepare(refinement, m_sessionSettings->accounts);
-    if (!prepared.ok) {
-        handleRefinementFailure({prepared.kind, prepared.message, prepared.httpStatus}, Stage::Prepare);
+    if (const std::optional<ProviderFailure> failure = m_refiner->prepare(refinement, m_sessionSettings->accounts)) {
+        handleRefinementFailure(*failure, Stage::Prepare);
         return;
     }
     noteSignIn(refinement.providerId, true);
