@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.serialization.Serializable
 
 // Learned Corrections, ported from src/core/LearnedCorrection.cpp, src/platform/CorrectionDiff.cpp
 // and src/core/settings/CorrectionSettingsCodec.cpp.
@@ -11,6 +12,7 @@ import kotlin.math.min
  * inserted as [original] and the person's [corrected] spelling, learned in the app with
  * [applicationId], or in every app when that is empty.
  */
+@Serializable
 data class LearnedCorrection(
     val id: String,
     val original: String,
@@ -27,6 +29,7 @@ data class LearnedCorrection(
 data class CorrectionEvidence(val original: String, val corrected: String, val confidence: Double)
 
 /** An edit seen too few times to learn yet. It never leaves the device and is never shown. */
+@Serializable
 data class PendingCorrection(
     val original: String,
     val corrected: String,

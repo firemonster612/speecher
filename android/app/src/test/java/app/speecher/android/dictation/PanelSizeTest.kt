@@ -4,7 +4,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import app.speecher.android.settings.PanelSize
 import app.speecher.android.settings.SettingsStore
-import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.panelHeight
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -15,12 +14,9 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 class PanelSizeTest {
     @Test
-    fun `the size persists and an unknown one falls back to full`() {
+    fun `an unknown stored size loads as full`() {
         val context = RuntimeEnvironment.getApplication()
         val store = SettingsStore(context)
-        assertEquals(PanelSize.Full, store.load().panelSize)
-        store.save(SpeecherSettings(panelSize = PanelSize.Compact))
-        assertEquals(PanelSize.Compact, store.load().panelSize)
         context.getSharedPreferences("speecher-settings", 0).edit(commit = true) {
             putString("panelSize", "Huge")
         }

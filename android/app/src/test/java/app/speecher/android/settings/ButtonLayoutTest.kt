@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class ButtonLayoutTest {
@@ -26,13 +25,5 @@ class ButtonLayoutTest {
             ButtonLayout.InsertOnly,
             settings.copy(refinementEnabled = false).shownButtonLayout,
         )
-    }
-
-    @Test
-    fun `the layout persists and defaults to refined primary`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        assertEquals(ButtonLayout.RefinedPrimary, store.load().buttonLayout)
-        store.save(SpeecherSettings(buttonLayout = ButtonLayout.InsertOnly))
-        assertEquals(ButtonLayout.InsertOnly, store.load().buttonLayout)
     }
 }

@@ -1,5 +1,6 @@
 package app.speecher.protocol
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,7 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 // steps of its TranscriptPipeline.
 
 /** A spoken [phrase] and the exact [text], a word or a multi-line Snippet, put in its place. */
-data class Replacement(val phrase: String, val text: String)
+@Serializable data class Replacement(val phrase: String, val text: String)
 
 /** One word of a text, case-folded, and the span it covers there. */
 private data class Word(val text: String, val start: Int, val end: Int)

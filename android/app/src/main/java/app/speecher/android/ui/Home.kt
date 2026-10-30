@@ -6,25 +6,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,57 +36,6 @@ import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.update.UpdateState
 import app.speecher.android.update.installFailure
 import java.text.NumberFormat
-
-/**
- * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
- * back arrow; root pages ([onBack] null) have none, because their body starts with its own title.
- * [verticalArrangement] places a body shorter than the page.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SpeecherScreen(
-    title: String,
-    onBack: (() -> Unit)?,
-    actions: @Composable () -> Unit = {},
-    bottomBar: @Composable () -> Unit = {},
-    snackbarHost: @Composable () -> Unit = {},
-    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
-    content: @Composable () -> Unit,
-) {
-    Scaffold(
-        bottomBar = bottomBar,
-        snackbarHost = snackbarHost,
-        topBar = {
-            if (onBack != null) {
-                TopAppBar(
-                    title = { Text(title) },
-                    navigationIcon = {
-                        IconButton(onBack) {
-                            Icon(
-                                painterResource(R.drawable.ic_arrow_back),
-                                contentDescription = "Back",
-                            )
-                        }
-                    },
-                    actions = { actions() },
-                )
-            }
-        },
-    ) { padding ->
-        Column(
-            // The keyboard shrinks the page rather than panning the window under the status bar.
-            Modifier.fillMaxSize()
-                .padding(padding)
-                .consumeWindowInsets(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 24.dp),
-            verticalArrangement,
-        ) {
-            content()
-        }
-    }
-}
 
 /**
  * The launcher's landing page: whether dictation is ready, a status row per thing it needs, any
@@ -331,11 +271,6 @@ private fun ColumnScope.CardActions(action: String, onAction: () -> Unit, onDism
         TextButton(onDismiss) { Text("Dismiss") }
         Button(onAction) { Text(action) }
     }
-}
-
-@Composable
-internal fun Chevron() {
-    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null)
 }
 
 @Composable

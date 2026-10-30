@@ -368,18 +368,6 @@ internal fun ScreenTitle(title: String, subtitle: String? = null) {
 }
 
 @Composable
-internal fun Section(title: String) {
-    Text(
-        title,
-        Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp).semantics {
-            heading()
-        },
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-@Composable
 private fun OnboardingPreview(status: SetupStatus) = SpeecherTheme {
     Surface { Onboarding(status, {}, {}, {}, {}, {}, {}) }
 }
