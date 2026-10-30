@@ -219,9 +219,9 @@ public:
     using SettingsCodecs::updateCheckIntervalMinutes;
     using SettingsCodecs::updateCheckIntervalUnit;
     using SettingsCodecs::setUpdateCheckIntervalUnit;
-    using SettingsCodecs::updatesRestoreState;
-    using SettingsCodecs::updatesRestoreStateTime;
-    using SettingsCodecs::setUpdatesRestoreState;
+    using SettingsCodecs::updatesReopenMainWindow;
+    using SettingsCodecs::updatesReopenMainWindowTime;
+    using SettingsCodecs::setUpdatesReopenMainWindow;
     using SettingsCodecs::updatesDismissedVersion;
     using SettingsCodecs::updatesLastRunVersion;
     using SettingsCodecs::updatesLastRunBuildNumber;

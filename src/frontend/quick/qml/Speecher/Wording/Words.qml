@@ -120,8 +120,10 @@ QtObject {
         openReleasePage: "Open release page",
         downloading: v => "Downloading Speecher " + v,
         ready: "Restart to finish updating",
-        restart: ({ "": "Restart now", dictation: "Restart after this dictation", recording: "Restart after this recording" }),
-        restarting: ({ "": "Restarting…", dictation: "Restarting after this dictation…", recording: "Restarting after this recording…" }),
+        restart: ({ "": "Restart now", dictation: "Restart after this dictation", recording: "Restart after this recording",
+                    transcription: "Restart after this transcription" }),
+        restarting: ({ "": "Restarting…", dictation: "Restarting after this dictation…", recording: "Restarting after this recording…",
+                       transcription: "Restarting after this transcription…" }),
         later: "Later",
         checkFailed: "Update check failed",
         tryAgain: "Try again"

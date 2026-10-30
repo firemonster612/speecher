@@ -90,7 +90,7 @@ private:
     QString m_dismissedVersion;
     // Captured at the moment of the restart request: a restart deferred to the
     // end of a dictation still restores what the user was doing when they asked.
-    QString m_pendingRestoreState;
+    bool m_pendingReopenMainWindow = false;
     ReplyHandler m_updateReply;
     ReplyHandler m_installReply;
     // Sparkle's own cancellation hooks for the two stages that have no reply of

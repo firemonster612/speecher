@@ -114,8 +114,10 @@ public:
     bool autoInstallUpdates() const; void setAutoInstallUpdates(bool value);
     int updateCheckIntervalMinutes() const; void setUpdateCheckIntervalMinutes(int value);
     QString updateCheckIntervalUnit() const; void setUpdateCheckIntervalUnit(const QString &value);
-    QString updatesRestoreState() const; void setUpdatesRestoreState(const QString &value);
-    qint64 updatesRestoreStateTime() const;
+    // Whether an update restart left the main window to reopen, and when it
+    // was set (0 when not).
+    bool updatesReopenMainWindow() const; void setUpdatesReopenMainWindow(bool value);
+    qint64 updatesReopenMainWindowTime() const;
     qint64 updatesLastCheckTime() const; void setUpdatesLastCheckTime(qint64 value);
     QString updatesDismissedVersion() const; void setUpdatesDismissedVersion(const QString &value);
     QString updatesLastRunVersion() const; void setUpdatesLastRunVersion(const QString &value);

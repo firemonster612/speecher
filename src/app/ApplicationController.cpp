@@ -34,6 +34,7 @@
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QStandardPaths>
 #include <QTimer>
@@ -52,6 +53,9 @@ namespace {
 constexpr int mediaResumeGraceMs = 200;
 // How long after launch opened files still replace the default main window.
 constexpr int defaultMainWindowGraceMs = 3000;
+// How long an update restart may take to relaunch. A request to reopen the
+// main window older than this was left by a restart that never relaunched.
+constexpr qint64 updateRelaunchMaxAgeMs = 120000;
 
 QString microphoneAccessOffText()
 {
@@ -216,18 +220,23 @@ ApplicationController::ApplicationController(bool popupOnly,
 #else
     m_updates = new AppImageUpdater(m_settings, this);
 #endif
-    // A restart for an update waits out a dictation and a recording. A
-    // recording still starting does not hold it back: a start that fails emits
-    // no stop to resume the restart on.
+    // A restart for an update waits out a dictation, a recording and a file
+    // transcription. A recording still starting does not hold it back: a start
+    // that fails emits no stop to resume the restart on.
     m_updates->setRestartBlockerProvider([this] {
         using RestartBlocker = UpdateController::RestartBlocker;
         const DictationState state = m_session->state();
         if (state != DictationState::Idle && state != DictationState::Error) {
             return RestartBlocker::Dictation;
         }
-        return m_recording->isRecording() ? RestartBlocker::Recording : RestartBlocker::None;
+        if (m_recording->isRecording()) {
+            return RestartBlocker::Recording;
+        }
+        return m_fileTranscription->isRunning() ? RestartBlocker::FileTranscription : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
+    connect(m_fileTranscription, &FileTranscriptionSession::batchFinished, m_updates,
+            &UpdateController::resumePendingRestart);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -667,6 +676,16 @@ void ApplicationController::showDefaultMainWindow()
     // Finder's open event lands within moments of launch; after this long a
     // file opened is a new request, and the window someone may be using stays.
     QTimer::singleShot(defaultMainWindowGraceMs, this, [this] { m_mainWindowByDefault = false; });
+}
+
+void ApplicationController::reopenMainWindowAfterUpdate()
+{
+    const bool reopen = m_settings->updatesReopenMainWindow();
+    const qint64 age = QDateTime::currentMSecsSinceEpoch() - m_settings->updatesReopenMainWindowTime();
+    m_settings->setUpdatesReopenMainWindow(false);
+    if (reopen && age >= 0 && age < updateRelaunchMaxAgeMs) {
+        QTimer::singleShot(0, this, &ApplicationController::showMain);
+    }
 }
 
 void ApplicationController::showSettingsWindow()

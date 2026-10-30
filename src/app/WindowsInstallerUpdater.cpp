@@ -93,7 +93,7 @@ void WindowsInstallerUpdater::restartApplication()
         QStringLiteral("/LOG=%1").arg(QDir::toNativeSeparators(logPath)),
     };
     const QStringList restartArguments =
-        argumentsWithoutStartupActions(QCoreApplication::arguments().mid(1));
+        updateRelaunchArguments(QCoreApplication::arguments().mid(1));
     arguments.append(QStringLiteral("/RESTARTARGCOUNT=%1").arg(restartArguments.size()));
     for (qsizetype index = 0; index < restartArguments.size(); ++index) {
         arguments.append(QStringLiteral("/RESTARTARG%1=%2")

@@ -1188,8 +1188,16 @@ private slots:
                                 "`speecher quit` and run the command again.\n"));
     }
 
+    void singleInstanceIpcExpiresIncompleteRequests_data()
+    {
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::newRow("partial request") << QByteArrayLiteral("{");
+        QTest::newRow("blank line") << QByteArrayLiteral("\n");
+    }
+
     void singleInstanceIpcExpiresIncompleteRequests()
     {
+        QFETCH(QByteArray, bytes);
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
@@ -1200,7 +1208,7 @@ private slots:
         QLocalSocket socket;
         socket.connectToServer(name);
         QVERIFY(socket.waitForConnected(500));
-        socket.write(QByteArrayLiteral("{"));
+        socket.write(bytes);
         socket.flush();
 
         // The server holds the incomplete request briefly, then expires the

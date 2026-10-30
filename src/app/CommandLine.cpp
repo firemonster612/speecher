@@ -1240,25 +1240,10 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     return decision;
 }
 
-QStringList argumentsWithoutStartupActions(const QStringList &arguments)
+QStringList updateRelaunchArguments(const QStringList &arguments)
 {
-    static const QStringList startupActions{QStringLiteral("--start-listening"),
-                                            QStringLiteral("--show-settings"),
-                                            QStringLiteral("--show-setup")};
-    // The session overrides only go with --start-listening, and a deleted
-    // profile would make the relaunch refuse to start.
-    static const QStringList startupOptions{QStringLiteral("--format"), QStringLiteral("--profile"),
-                                            QStringLiteral("--language")};
-    QStringList kept;
-    kept.reserve(arguments.size());
-    for (qsizetype index = 0; index < arguments.size(); ++index) {
-        if (startupOptions.contains(arguments.at(index))) {
-            ++index;
-        } else if (!startupActions.contains(arguments.at(index))) {
-            kept << arguments.at(index);
-        }
-    }
-    return kept;
+    const QString daemon = QStringLiteral("--daemon");
+    return arguments.contains(daemon) ? QStringList{daemon} : QStringList{};
 }
 
 bool opensSetupAtLaunch(const CommandLineDecision &decision, bool setupPending)

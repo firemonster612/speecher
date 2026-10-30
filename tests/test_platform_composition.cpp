@@ -47,6 +47,7 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -84,6 +85,18 @@ using namespace speecher;
 using namespace speecher::test;
 
 namespace {
+
+// One second of 16 kHz mono s16 silence.
+bool writeSilentWav(const QString &path)
+{
+    const QByteArray data(32000, '\0');
+    const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
+    const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly)
+        && file.write("RIFF" + le32(36 + data.size()) + "WAVEfmt " + le32(16) + le16(1) + le16(1)
+                      + le32(16000) + le32(32000) + le16(2) + le16(16) + "data" + le32(data.size()) + data) > 0;
+}
 
 class FakeGlobalShortcutBinder final : public GlobalShortcutBinder {
 public:
@@ -698,16 +711,7 @@ private slots:
         controller.settings()->setSetupCompleted(true);
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
-        {
-            // One second of 16 kHz mono s16 silence.
-            const QByteArray data(32000, '\0');
-            const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
-            const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
-            QFile file(audio);
-            QVERIFY(file.open(QIODevice::WriteOnly));
-            file.write("RIFF" + le32(36 + data.size()) + "WAVEfmt " + le32(16) + le16(1) + le16(1)
-                       + le32(16000) + le32(32000) + le16(2) + le16(16) + "data" + le32(data.size()) + data);
-        }
+        QVERIFY(writeSilentWav(audio));
         TranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
         TranscribeQueue queue(controller.settings(), controller.providerRegistry(), controller.fileTranscription(),
@@ -1362,17 +1366,20 @@ private slots:
 
     void anUpdateRelaunchDropsStartupActions()
     {
-        QCOMPARE(argumentsWithoutStartupActions({QStringLiteral("--daemon"),
-                                                 QStringLiteral("--start-listening"),
-                                                 QStringLiteral("--format"),
-                                                 QStringLiteral("plain"),
-                                                 QStringLiteral("--profile"),
-                                                 QStringLiteral("custom_deleted"),
-                                                 QStringLiteral("--language"),
-                                                 QStringLiteral("de"),
-                                                 QStringLiteral("--show-settings"),
-                                                 QStringLiteral("--show-setup")}),
+        QCOMPARE(updateRelaunchArguments({QStringLiteral("--daemon"),
+                                          QStringLiteral("--start-listening"),
+                                          QStringLiteral("--format"),
+                                          QStringLiteral("plain"),
+                                          QStringLiteral("--profile"),
+                                          QStringLiteral("custom_deleted"),
+                                          QStringLiteral("--language"),
+                                          QStringLiteral("de"),
+                                          QStringLiteral("--show-settings"),
+                                          QStringLiteral("--show-setup")}),
                  QStringList({QStringLiteral("--daemon")}));
+        QCOMPARE(updateRelaunchArguments({QStringLiteral("transcribe"), QStringLiteral("memo.wav")}),
+                 QStringList());
+        QCOMPARE(updateRelaunchArguments({QStringLiteral("memo.wav")}), QStringList());
     }
 
     void audioFileArgumentsOpenTheTranscribePage()
@@ -2992,6 +2999,55 @@ private slots:
         emit audio->failed(QStringLiteral("Test microphone disconnected"));
         QCOMPARE(controller.session()->state(), DictationState::Error);
         QCOMPARE(restartAttempts.count(), 1);
+    }
+
+    // An update restart asked for while files are transcribed waits for the
+    // batch to finish.
+    void anUpdateRestartWaitsForAFileTranscription()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        auto *updater = restartWatchableUpdater(controller);
+        if (!updater) {
+            QSKIP("Only the AppImage updater's restart can be watched without quitting");
+        }
+        controller.settings()->setSetupCompleted(true);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("silence.wav"));
+        QVERIFY(writeSilentWav(audio));
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        QVERIFY(controller.fileTranscription()->start({audio}, options));
+        QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::FileTranscription);
+
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+        QVERIFY(restartAttempts.isEmpty());
+
+        controller.fileTranscription()->cancel();
+        QCOMPARE(restartAttempts.count(), 1);
+    }
+
+    // The token an earlier release wrote before restarting into this one
+    // reopens the main window, once.
+    void anUpdateRelaunchReopensTheMainWindowOnce()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->raw().setValue(SettingsKeys::UpdatesRestoreState, QStringLiteral("listening,settings"));
+        controller.settings()->raw().setValue(SettingsKeys::UpdatesRestoreStateTime,
+                                              QDateTime::currentMSecsSinceEpoch());
+
+        controller.reopenMainWindowAfterUpdate();
+        controller.reopenMainWindowAfterUpdate();
+        QTRY_COMPARE(frontEnd.calls, QStringList({QStringLiteral("showMainWindow")}));
+        QCoreApplication::processEvents();
+        QCOMPARE(frontEnd.calls.size(), 1);
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()
