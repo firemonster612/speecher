@@ -208,11 +208,13 @@ public:
 
     // The client end of the connection, for wl_display_connect_to_fd.
     int clientFd() const { return m_clientFd; }
-    // Whichever manager it offers.
+    // Whichever manager it offers. Removed rather than destroyed, as a
+    // compositor does: a bind already on its way would otherwise end the
+    // client's connection. It is destroyed with the display.
     void takeManagerAway()
     {
         ask([this] {
-            wl_global_destroy(m_manager);
+            wl_global_remove(m_manager);
             m_manager = nullptr;
         });
     }
@@ -315,7 +317,10 @@ private slots:
     void init()
     {
         SettingsStore().raw().clear();
-        QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).removeRecursively();
+        // Only the schemes this suite writes: the rest of the shared data
+        // folder holds the other suites' own, which may be running alongside.
+        QDir(colorSchemesFolder(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)))
+            .removeRecursively();
         QFile::remove(kdeglobals());
     }
 

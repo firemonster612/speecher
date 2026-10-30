@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 // The UI's QML modules are linked into the tests by QuickFrontEnd.cpp, which
@@ -308,13 +309,20 @@ private slots:
         QuickDictation dictation(&controller);
         DictationSession *session = controller.session();
         QSignalSpy hidden(session, &DictationSession::popupHideRequested);
+        // Taken as the error shows, which is up for only 50 ms: polling can
+        // miss it on a busy machine.
+        std::optional<DictationState> sessionWhenShown;
+        connect(&dictation, &QuickDictation::stateChanged, &dictation, [&] {
+            if (dictation.property("state").toString() == QLatin1String("error")) {
+                sessionWhenShown = session->state();
+            }
+        });
 
         // Straight to the session: the controller on macOS first asks for
         // the microphone, which a bare test binary can't be given.
         session->startListening();
-        QTRY_COMPARE(dictation.property("state").toString(), QStringLiteral("error"));
-        QCOMPARE(session->state(), DictationState::Error);
         QTRY_COMPARE(hidden.count(), 1);
+        QVERIFY(sessionWhenShown == DictationState::Error);
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
@@ -366,15 +374,19 @@ private slots:
     // The same failure again is a fresh one: its countdown starts over.
     void theSameErrorAgainCountsDownFromTheStart()
     {
-        QuickDictation::setErrorDismissMs(300);
+        // The first countdown outlasts the test; only a fresh, short one for
+        // the repeat dismisses the error.
+        QuickDictation::setErrorDismissMs(60000);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
         const auto state = [&dictation] { return dictation.property("state").toString(); };
+        QSignalSpy changed(&dictation, &QuickDictation::errorChanged);
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
-        QTest::qWait(200);
+        // Exactly the same error again is shown again, not passed over.
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
-        QTest::qWait(150);
-        QCOMPARE(state(), QStringLiteral("error"));
+        QCOMPARE(changed.count(), 2);
+        QuickDictation::setErrorDismissMs(300);
+        dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
         QTRY_COMPARE(state(), QStringLiteral("idle"));
     }
 
@@ -407,10 +419,19 @@ private slots:
         QTest::mouseMove(window, QPoint(1, 1));
         QTRY_COMPARE(state(), QStringLiteral("idle"));
 
-        // The pointer is already there when the next one shows.
+        // The pointer is already there when the next one shows, and holds
+        // it. Long, so the hold, however late the popup's first frame, is
+        // what this waits for rather than a race with the countdown.
+        QuickDictation::setErrorDismissMs(60000);
+        QSignalSpy holds(&dictation, &QuickDictation::errorHoldRequested);
         QTest::mouseMove(window, centreOf(capsule));
         dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
         popup.show(0);
+        QTRY_VERIFY(!holds.isEmpty() && holds.last().first().toBool());
+        QCOMPARE(state(), QStringLiteral("error"));
+        // Held already, a short countdown for the same error waits too.
+        QuickDictation::setErrorDismissMs(300);
+        dictation.showError(QStringLiteral("OpenAI couldn't be reached."));
         QTest::qWait(600);
         QCOMPARE(state(), QStringLiteral("error"));
 

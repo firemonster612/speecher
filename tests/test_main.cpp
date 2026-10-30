@@ -101,6 +101,12 @@ int main(int argc, char **argv)
             break;
         }
     }
+    // Test mode gives every test process one data, cache and config root
+    // (~/.qttest, or qttest under AppData). A folder of its own under it lets
+    // suites run in parallel without sharing models, Insights logs or caches.
+    if (!selectedSuite.isEmpty()) {
+        QCoreApplication::setApplicationName(QCoreApplication::applicationName() + QLatin1Char('-') + selectedSuite);
+    }
     setTestArguments(argc, argv);
 
     if (qEnvironmentVariable("SPEECHER_TEST_ONLY_PLATFORM_LIVE") == QStringLiteral("1")) {

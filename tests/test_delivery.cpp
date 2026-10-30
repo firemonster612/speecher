@@ -216,6 +216,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         // Destroyed before result, so a late callback after a failed wait
         // cannot write to this stack frame.
         QObject receiver;
+        QElapsedTimer work;
+        work.start();
         sinceTick.start();
         tick.start(10);
         normalizeScreenshotFile(path, &receiver, [&](const ScreenshotResult &normalized) {
@@ -224,12 +226,16 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(!result.has_value());
 
         QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 15000);
+        const qint64 workMs = work.elapsed();
         longestStallMs = std::max(longestStallMs, sinceTick.elapsed());
         QVERIFY2(result->error.isEmpty(), qPrintable(result->error));
         QCOMPARE(QImage::fromData(result->png).width(), 2560);
         QVERIFY(!QFile::exists(path));
-        QVERIFY2(longestStallMs < 100,
-                 qPrintable(QStringLiteral("event loop stalled for %1 ms").arg(longestStallMs)));
+        // On the main thread the loop would stall for the whole of the work
+        // (about half a second), or a stage of it. Measured against the work,
+        // not a fixed bound, so a slower runner allows more.
+        QVERIFY2(longestStallMs < workMs / 3,
+                 qPrintable(QStringLiteral("event loop stalled for %1 ms of %2 ms").arg(longestStallMs).arg(workMs)));
     }
 
     void ydotoolSetupFailureReportsCompletedChanges()

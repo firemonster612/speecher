@@ -36,6 +36,7 @@ jobs:
       pull-requests: read
     outputs:
       desktop: ${{ steps.filter.outputs.desktop }}
+      packaging: ${{ steps.packaging.outputs.packaging }}
     steps:
       - uses: dorny/paths-filter@v4
         id: filter
@@ -47,14 +48,45 @@ jobs:
               - '!android/**'
               - '!docs/android/**'
               - '!tools/oauth-proof/**'
+              - '!tools/refinement-benchmark/**'
               - '!AGENTS.md'
+              - '!CLAUDE.md'
+              - '!CONTEXT.md'
+              - '!README.md'
+              - '!RESIDUALS.md'
+              - '!src/frontend/quick/DESIGN.md'
+              # docs/releases stays: the app builds its release notes from it.
+              - '!docs/adr/**'
+              - '!docs/agents/**'
+              - '!docs/img/**'
+              - '!docs/research/**'
+              - '!docs/macos.md'
+              - '!docs/windows.md'
               - '!.github/workflows/android.yml'
               - '!.github/workflows/android-release.yml'
+
+      # Pull requests package only when they touch what the packages are made
+      # from; master and tags always package, so the nightly catches the rest.
+      - uses: dorny/paths-filter@v4
+        id: packaging
+        with:
+          filters: |
+            packaging:
+              - 'packaging/**'
+              - 'CMakeLists.txt'
+              - 'cmake/**'
+              - 'THIRD_PARTY_NOTICES.md'
+              - '.github/workflows/release.yml'
 
   linux:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PACKAGE: ${{ github.event_name != 'pull_request' || needs.changes.outputs.packaging == 'true' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,6 +98,18 @@ jobs:
 
       - name: Test the version a tag builds as
         run: bash tests/release/test-git-version.sh
+
+      # Pull requests that only change QML skip packaging, and each package carries
+      # only the Qt QML modules this list names.
+      - name: Check the packages carry every Qt QML module the UI imports
+        run: |
+          missing="$(grep -rhoE '^\s*\.?import Qt[A-Za-z0-9.]*' src/frontend/quick | awk '{print $2}' | tr . / | sort -u \
+            | grep -vxF -f <(grep -v '^#' packaging/qt-qml-modules.txt | grep .) || true)"
+          if [ -n "$missing" ]; then
+            echo "Add these to packaging/qt-qml-modules.txt:" >&2
+            printf '%s\n' "$missing" >&2
+            exit 1
+          fi
 
       - name: Validate stable tag identity
         if: startsWith(github.ref, 'refs/tags/v')
@@ -79,34 +123,37 @@ jobs:
             exit 1
           fi
 
-      - name: Cache Linux compiler outputs
-        uses: actions/cache@v4
+      # Pull requests restore the cache but never save one: their entries only serve
+      # the same pull request and push master's out of the repository's 10 GB.
+      - name: Restore Linux compiler outputs
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: linux-ccache-v1-${{ hashFiles('packaging/appimage/Dockerfile') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             linux-ccache-v1-${{ hashFiles('packaging/appimage/Dockerfile') }}-
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Read runner user ID
-        id: runner-user
-        run: echo "id=$(id -u)" >> "$GITHUB_OUTPUT"
-
-      - name: Build Debian forky image
-        uses: docker/build-push-action@v6
+      # Master and tags build the image fresh and publish it to GHCR for pull requests,
+      # which pull it rather than build it. A pull request runs its own copy of this
+      # workflow and so could push any image, which is why a release never pulls one.
+      - name: Get Debian forky image
         env:
-          # No build summary or build-record artifact; the publish job must see only release bundles.
-          DOCKER_BUILD_SUMMARY: "false"
-          DOCKER_BUILD_RECORD_UPLOAD: "false"
-        with:
-          context: packaging/appimage
-          file: packaging/appimage/Dockerfile
-          load: true
-          tags: speecher-appimage:forky
-          build-args: USER_ID=${{ steps.runner-user.outputs.id }}
-          cache-from: type=gha,scope=speecher-appimage-forky
-          cache-to: type=gha,mode=max,scope=speecher-appimage-forky
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}/appimage-builder:${{ hashFiles('packaging/appimage/Dockerfile') }}
+        run: |
+          image="${IMAGE,,}-uid$(id -u)"
+          # A pull request whose login or pull fails builds the image itself.
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && docker pull --quiet "$image"; then
+            docker tag "$image" speecher-appimage:forky
+          else
+            docker build --build-arg USER_ID="$(id -u)" --tag speecher-appimage:forky packaging/appimage
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            docker tag speecher-appimage:forky "$image"
+            # Only pull requests use the published image, so a release goes on without it.
+            docker push --quiet "$image" || echo "::warning::Could not publish $image; pull requests will build it."
+          fi
 
       - name: Configure
         run: |
@@ -147,7 +194,7 @@ jobs:
                 exit 1
               fi
               status=0
-              QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure -E speecher_platform_live || status=1
+              QT_QPA_PLATFORM=offscreen ctest --test-dir build --parallel "$(nproc)" --output-on-failure -E speecher_platform_live || status=1
               QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure -V -R speecher_platform_live || status=1
               exit $status
             '
@@ -161,6 +208,7 @@ jobs:
             packaging/run-linux-protocol-tests.sh build
 
       - name: Package AppImage
+        if: env.PACKAGE == 'true'
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             updinfo='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
@@ -176,6 +224,7 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
       - name: Verify packaged AppImage
+        if: env.PACKAGE == 'true'
         run: |
           expected_version=
           if [ "${GITHUB_REF_NAME}" != master ] && [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
@@ -225,7 +274,15 @@ jobs:
           docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" \
             speecher-appimage:forky ccache --show-stats
 
+      - name: Save Linux compiler outputs
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: linux-ccache-v1-${{ hashFiles('packaging/appimage/Dockerfile') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Upload Linux release artifacts
+        if: env.PACKAGE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: linux-release
@@ -241,6 +298,7 @@ jobs:
     if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
     runs-on: macos-26
     env:
+      PACKAGE: ${{ github.event_name != 'pull_request' || needs.changes.outputs.packaging == 'true' }}
       # Speecher's minimum macOS, for both webrtc-audio-processing and the app;
       # CMakeLists.txt defaults to the same for local builds.
       MACOS_DEPLOYMENT_TARGET: "15.0"
@@ -266,6 +324,7 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: macos-26-release
+          save: ${{ github.event_name != 'pull_request' }}
 
       - name: Remove obsolete AGL references
         run: |
@@ -325,7 +384,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           status=0
-          ctest --test-dir build --output-on-failure -E speecher_echo_canceller || status=1
+          # One core short of the runner's three: suites time their event loops,
+          # and a full runner left them without the CPU for half a second.
+          ctest --test-dir build --parallel "$(( $(sysctl -n hw.ncpu) - 1 ))" --output-on-failure -E speecher_echo_canceller || status=1
           # Verbose, so the log shows the echo suite ran rather than skipped.
           ctest --test-dir build --output-on-failure -V -R speecher_echo_canceller || status=1
           exit "$status"
@@ -355,6 +416,7 @@ jobs:
           rm "$certificate_path"
 
       - name: Package DMG
+        if: env.PACKAGE == 'true'
         env:
           # Pull requests build an ad-hoc-signed DMG; releases require the stable identity.
           SPEECHER_SIGN_IDENTITY: ${{ github.event_name == 'pull_request' && '-' || secrets.MACOS_SIGNING_IDENTITY }}
@@ -371,6 +433,7 @@ jobs:
           fi
 
       - name: Verify DMG
+        if: env.PACKAGE == 'true'
         run: bash packaging/macos/verify-dmg.sh build/speecher.dmg
 
       - name: Sign DMG for Sparkle
@@ -394,6 +457,7 @@ jobs:
           printf 'sparkle:edSignature=%s\nlength=%s\n' "$signature" "$signed_length" > build/sparkle-signature.txt
 
       - name: Upload macOS release artifacts
+        if: env.PACKAGE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: macos-release
@@ -409,6 +473,7 @@ jobs:
     if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' && github.event_name != 'workflow_dispatch' }}
     runs-on: windows-2025
     env:
+      PACKAGE: ${{ github.event_name != 'pull_request' || needs.changes.outputs.packaging == 'true' }}
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -434,6 +499,7 @@ jobs:
         with:
           variant: sccache
           key: windows-2025-release
+          save: ${{ github.event_name != 'pull_request' }}
 
       # glslc for transcribe.cpp's Vulkan backend; the installer ships it.
       - name: Install Vulkan SDK
@@ -443,13 +509,24 @@ jobs:
           cache: true
 
       # The SDK does not ship a SPIRV-HeadersConfig.cmake that find_package
-      # sees, so the header-only package comes from vcpkg.
+      # sees, so the header-only package is installed from Khronos' source.
+      # Not through vcpkg: it fetches msys2's pkgconf for a .pc file nothing
+      # reads, and a slow msys2 mirror stalled this step for 14 minutes.
       - name: Install SPIRV-Headers
         shell: pwsh
         run: |
-          vcpkg install spirv-headers:x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
-          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          $version = 'vulkan-sdk-1.4.357.0'
+          $archive = "$env:RUNNER_TEMP/spirv-headers.tar.gz"
+          Invoke-WebRequest "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/$version.tar.gz" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4d703067a7e06331ccb37bdfed3f9b7879cc61969a2689ae95c95db34a47ff07') {
+            throw "SPIRV-Headers $version does not match its pinned hash"
+          }
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          $prefix = "$env:RUNNER_TEMP/spirv-headers" -replace '\\','/'
+          cmake -S "$env:RUNNER_TEMP/SPIRV-Headers-$version" -B "$env:RUNNER_TEMP/spirv-headers-build" -G Ninja -DSPIRV_HEADERS_ENABLE_TESTS=OFF "-DCMAKE_INSTALL_PREFIX=$prefix"
+          if ($LASTEXITCODE -ne 0) { throw "Configuring SPIRV-Headers failed" }
+          cmake --install "$env:RUNNER_TEMP/spirv-headers-build"
+          if ($LASTEXITCODE -ne 0) { throw "Installing SPIRV-Headers failed" }
           Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
 
       - name: Configure
@@ -464,17 +541,20 @@ jobs:
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --parallel $env:NUMBER_OF_PROCESSORS --output-on-failure
 
       - name: Package installer
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: packaging/windows/build-installer.ps1 -BuildDir build
 
       - name: Verify installer
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: packaging/windows/verify-installer.ps1 -InstallerPath dist/Speecher-Setup-x64.exe
 
       - name: Upload Windows release artifacts
+        if: env.PACKAGE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: windows-release
@@ -514,7 +594,6 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          # Only release bundles; the Docker build-record artifact is not wanted here.
           pattern: "*-release"
           path: artifacts
 

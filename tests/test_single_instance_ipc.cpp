@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QMutex>
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -93,14 +94,47 @@ static QString uniqueIpcName(const QString &suffix = {})
     return name;
 }
 
+// What a command line prints, readable from another thread while it runs,
+// as a std::ostringstream is not.
+class SharedOutput final : public std::streambuf {
+public:
+    QString text() const
+    {
+        const QMutexLocker lock(&m_mutex);
+        return QString::fromStdString(m_text);
+    }
+
+protected:
+    // With no buffer of its own, every write comes through these two.
+    int_type overflow(int_type character) override
+    {
+        if (!traits_type::eq_int_type(character, traits_type::eof())) {
+            const QMutexLocker lock(&m_mutex);
+            m_text.push_back(traits_type::to_char_type(character));
+        }
+        return traits_type::not_eof(character);
+    }
+
+    std::streamsize xsputn(const char *text, std::streamsize count) override
+    {
+        const QMutexLocker lock(&m_mutex);
+        m_text.append(text, count);
+        return count;
+    }
+
+private:
+    mutable QMutex m_mutex;
+    std::string m_text;
+};
+
 // Runs decision as the command line does, on a thread of its own as a
 // separate process would, so this thread can answer for the instance. What
-// it prints lands in out and err, read once it finishes, and its exit
-// status in exitCode.
+// it prints lands in out and err, read once it finishes unless they write to
+// a SharedOutput, and its exit status in exitCode.
 static std::unique_ptr<QThread> startCommandLine(const CommandLineDecision &decision,
                                                  const std::shared_ptr<const SingleInstancePlatform> &platform,
-                                                 std::ostringstream &out,
-                                                 std::ostringstream &err,
+                                                 std::ostream &out,
+                                                 std::ostream &err,
                                                  int &exitCode)
 {
     std::unique_ptr<QThread> thread(QThread::create([decision, platform, &out, &err, &exitCode] {
@@ -977,13 +1011,17 @@ private slots:
         const QString name = uniqueIpcName();
         QLocalServer::removeServer(name);
         const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        std::ostringstream out;
+        SharedOutput output;
+        std::ostream out(&output);
         std::ostringstream err;
         int exitCode = -1;
         std::unique_ptr<QThread> cli =
             startCommandLine(statusDecision(IpcCommand::WatchStatus, json), platform, out, err, exitCode);
-        // Past the first look for an app, which finds none.
-        QTest::qWait(300);
+        // Past the first look for an app, which finds none and prints idle.
+        // Waits without failing here: the watch runs until Speecher quits, so
+        // the checks come once it has.
+        const bool idleBeforeSpeecher =
+            QTest::qWaitFor([&] { return output.text() == printed.left(printed.indexOf(QLatin1Char('\n')) + 1); }, 5000);
 
         auto ipc = std::make_unique<SingleInstanceIpc>(platform);
         QCOMPARE(ipc->listen(), IpcListenResult::Listening);
@@ -1001,12 +1039,15 @@ private slots:
         ipc->publishStatus(recording);
         recording.state = QStringLiteral("listening");
         ipc->publishStatus(recording);
-        QCoreApplication::processEvents();
+        // Quit only once the watch has printed both: Windows drops what the
+        // watch has not read yet when Speecher's end of the pipe closes.
+        (void)QTest::qWaitFor([&] { return output.text() == printed; }, 5000);
         ipc.reset();
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QVERIFY(idleBeforeSpeecher);
         QCOMPARE(exitCode, 0);
-        QCOMPARE(QString::fromStdString(out.str()), printed);
+        QCOMPARE(output.text(), printed);
         QCOMPARE(QString::fromStdString(err.str()), QString());
     }
 
@@ -1028,19 +1069,22 @@ private slots:
                         ipc->addStatusWatcher(socket, {true, QStringLiteral("listening"), {}});
                     }
                 });
-        std::ostringstream out;
+        SharedOutput output;
+        std::ostream out(&output);
         std::ostringstream err;
         int exitCode = -1;
         std::unique_ptr<QThread> cli =
             startCommandLine(statusDecision(IpcCommand::WatchStatus, false), platform, out, err, exitCode);
-        QTRY_COMPARE_WITH_TIMEOUT(watches, 2, 5000);
-        QCoreApplication::processEvents();
+        // Running, it is not idle. Speecher quits only once the watch has
+        // printed that, as Windows drops what it has not read; the checks
+        // come once the watch has ended with it.
+        (void)QTest::qWaitFor([&] { return output.text() == QStringLiteral("listening\n"); }, 10000);
         ipc.reset();
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QCOMPARE(watches, 2);
         QCOMPARE(exitCode, 0);
-        // Running, it is not idle.
-        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("listening\n"));
+        QCOMPARE(output.text(), QStringLiteral("listening\n"));
         QCOMPARE(QString::fromStdString(err.str()), QString());
     }
 

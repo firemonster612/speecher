@@ -949,25 +949,33 @@ private slots:
     {
         SettingsStore settings;
         FakeAudioInput microphone;
-        microphone.onStart = [&microphone] {
+        QElapsedTimer sinceSpeech;
+        microphone.onStart = [&microphone, &sinceSpeech] {
             for (int i = 0; i < 5; ++i) {
                 QTimer::singleShot(i * 100, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(0)); });
             }
-            QTimer::singleShot(500, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(8000)); });
+            QTimer::singleShot(500, &microphone, [&microphone, &sinceSpeech] {
+                microphone.pushAudio(microphoneChunk(8000));
+                sinceSpeech.start();
+            });
         };
         HeadlessTranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
         options.refinementProviderId = QStringLiteral("none");
         std::ostringstream out;
         std::ostringstream err;
-        // A run the silence never ends stops here, and fails the timing below.
+        // A run the 0.3 s pause does not end stops here instead, which fails
+        // below: well past the pause after speech, or 10 s in all.
         QElapsedTimer clock;
         clock.start();
+        bool stoppedByTest = false;
+        const auto stop = [&] {
+            stoppedByTest = (sinceSpeech.isValid() && sinceSpeech.elapsed() > 1500) || clock.elapsed() > 10000;
+            return stoppedByTest;
+        };
 
-        QCOMPARE(runHeadlessListen(options, 300, &microphone, [&clock] { return clock.elapsed() > 3000; }, false,
-                                   &settings, m_registry.get(), out, err),
-                 0);
-        QVERIFY2(clock.elapsed() < 2500, qPrintable(QString::number(clock.elapsed())));
+        QCOMPARE(runHeadlessListen(options, 300, &microphone, stop, false, &settings, m_registry.get(), out, err), 0);
+        QVERIFY(!stoppedByTest);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
         // Enter is not read here, so the hint leaves it out.
         QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Ctrl-C to stop, or pause for 0.3 s.")));
@@ -1178,8 +1186,10 @@ private slots:
         for (int i = 0; i < 300; ++i) {
             microphone->pushAudio(microphoneChunk(8000));
         }
+        // The recording works through all 30 s as fast as the CPU allows: about
+        // 10 s on a macOS runner shared with the other suites.
         QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList({QStringLiteral("Part 1."), QStringLiteral("Part 2.")}),
-                                  10000);
+                                  30000);
         QCOMPARE(heardAtEnds, QList<qsizetype>({25, 30}));
     }
 
@@ -1208,7 +1218,8 @@ private slots:
         for (int i = 0; i < 320; ++i) {
             microphone->pushAudio(piece);
         }
-        QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 10000);
+        // As fast as the CPU allows: about 10 s on a busy macOS runner.
+        QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 30000);
     }
 
     // The Custom Endpoint records too: the pause after each utterance, or
@@ -1278,7 +1289,8 @@ private slots:
             microphone->pushAudio(microphoneChunk(0));
         }
         microphone->pushAudio(microphoneChunk(8000));
-        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Yes.")}, 5000);
+        // As fast as the CPU allows: a few seconds on a busy macOS runner.
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Yes.")}, 20000);
         QCOMPARE(server.requests.size(), 1);
         QCOMPARE(uploadedAudioBytes(server.requests.first()), 9600 + microphoneChunk(8000).size());
     }
@@ -1748,10 +1760,12 @@ private slots:
         recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Two utterances go to Codex while it connects, each ended by the
-        // pause after it.
+        // pause after it before the next starts.
+        int codexEnds = 0;
+        m_codex->onEndUtterance = [&codexEnds] { ++codexEnds; };
         for (int utterance = 0; utterance < 2; ++utterance) {
             microphone->pushAudio(microphoneChunk(8000));
-            QTest::qWait(1000);
+            QTRY_COMPARE_WITH_TIMEOUT(codexEnds, utterance + 1, 5000);
         }
         QCOMPARE(m_codex->audioChunks.size(), 2);
         m_codex->emitFailure(QStringLiteral("Timed out"), true, SpeechPhase::Connect,

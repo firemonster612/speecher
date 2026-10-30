@@ -230,8 +230,11 @@ private slots:
         QFETCH(bool, anthropic);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        OpenAiRefiner openAi(nullptr, 500, 5000);
-        AnthropicApiRefiner claude(nullptr, 500, 5000);
+        // Fed every 50 ms, a 1.5 s limit lapses only if the progress stops, not
+        // when a busy runner holds this thread back for a moment. The overall
+        // deadline, which fails with the same message, stays out of the way.
+        OpenAiRefiner openAi(nullptr, 1500, 60000);
+        AnthropicApiRefiner claude(nullptr, 1500, 60000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
@@ -248,11 +251,11 @@ private slots:
         QTimer activity;
         connect(&activity, &QTimer::timeout, socket, [socket, progress] { socket->write(progress); });
         activity.start(50);
-        QTest::qWait(900);
+        QTest::qWait(2000);
         QCOMPARE(failed.size(), 0);
         QCOMPARE(deltas.size(), 0);
         activity.stop();
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
     }
 
@@ -264,9 +267,11 @@ private slots:
         if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
             QSKIP("no network information backend");
         }
-        // A backend can report its first state once the event loop runs, as
-        // GLib's does; that report must not reach the refiner as a change.
-        QTest::qWait(200);
+        // The system's backend reports its first state, and any real change,
+        // when it likes: GLib's once the event loop runs, Apple's from a queue
+        // of its own. A report between the first two requests drops the kept
+        // connection, so hold them back until this test makes its own change.
+        QSignalBlocker systemReports(QNetworkInformation::instance());
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner refiner(nullptr, 5000, 5000);
@@ -289,6 +294,7 @@ private slots:
         refine();
         QTRY_COMPARE(completed.size(), 2);
         QCOMPARE(socket, first);
+        systemReports.unblock();
         emit QNetworkInformation::instance()->reachabilityChanged(QNetworkInformation::Reachability::Disconnected);
         refine();
         QTRY_COMPARE(completed.size(), 3);
@@ -1015,7 +1021,9 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
-        OpenAiRefiner refiner(nullptr, 50);
+        // Long enough to connect on a busy runner; the keepalives still never
+        // count as progress, so the request times out all the same.
+        OpenAiRefiner refiner(nullptr, 500);
         QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
@@ -1038,13 +1046,14 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
         QTimer keepalive;
         connect(&keepalive, &QTimer::timeout, socket, [socket] {
             socket->write(QByteArrayLiteral(": keepalive\n\n"));
         });
         keepalive.start(10);
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
@@ -1176,7 +1185,9 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
-        AnthropicApiRefiner refiner(nullptr, 50);
+        // Long enough to connect on a busy runner; the keepalives still never
+        // count as progress, so the request times out all the same.
+        AnthropicApiRefiner refiner(nullptr, 500);
         QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
@@ -1196,13 +1207,14 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
         QTimer keepalive;
         connect(&keepalive, &QTimer::timeout, socket, [socket] {
             socket->write(QByteArrayLiteral(": keepalive\n\n"));
         });
         keepalive.start(10);
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
         QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
