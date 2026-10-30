@@ -22,7 +22,8 @@ struct RemovalStep {
     enum class Outcome {
         Removed,
         Failed,
-        // Settings the person chose to keep.
+        // Settings the person chose to keep, or that removal kept because
+        // the keyring's deletions failed.
         Kept,
     };
     enum class Part {
@@ -54,8 +55,9 @@ struct RemovalReport {
 // item by item: the desktop integration, the Global Shortcut registration,
 // the system helpers it installed (each through pkexec, off the calling
 // thread), and, when asked, the keyring secrets and the settings. Those go
-// last, so no later step writes them again. A step that fails does not stop
-// the rest.
+// last, so no later step writes them again, and the settings only once the
+// keyring's secrets are gone. Any other step that fails does not stop the
+// rest.
 class SpeecherRemoval final : public QObject {
     Q_OBJECT
 

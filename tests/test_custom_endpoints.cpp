@@ -7,6 +7,9 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointTranscriptRefiner.h"
 #include "providers/LocalRunner.h"
+#ifdef Q_OS_LINUX
+#include "app/SpeecherRemoval.h"
+#endif
 
 #include <QDir>
 #include <QFileInfo>
@@ -1393,6 +1396,41 @@ private slots:
         QCOMPARE(secrets->secret(openAi), QString());
         comparePeerRead(settings, openAi, QString());
     }
+
+#ifdef Q_OS_LINUX
+    // Removal keeps the settings while the keyring keeps a key they hide, so
+    // a clear the keyring refused stays hidden, for another process too.
+    void removalKeepsTheSettingsThatHideAKey()
+    {
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, openAi] {
+            qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
+            secrets->saveSecret(openAi, {});
+        });
+        QCOMPARE(secrets->saveSecret(openAi, QStringLiteral("hidden-key")), SaveResult::Stored);
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        QCOMPARE(secrets->saveSecret(openAi, {}), SaveResult::Refused);
+        SpeecherRemoval::Steps steps;
+        steps.removeDesktopIntegration = [] { return DesktopIntegrationRemoval{}; };
+        steps.removeShortcutRegistration = [](QString *) { return true; };
+        steps.virtualKeyboardInstalled = [] { return false; };
+        steps.keyHelperInstalled = [] { return false; };
+        steps.deleteSecrets = [secrets](QString *) { return secrets->deleteKeyringSecrets(); };
+        steps.deleteSettings = [&settings](QString *path) { return settings.deleteAll(path); };
+        SpeecherRemoval removal(steps);
+        QSignalSpy finished(&removal, &SpeecherRemoval::finished);
+
+        removal.start(true);
+
+        QTRY_COMPARE(finished.count(), 1);
+        QVERIFY(!finished.first().first().value<RemovalReport>().settingsDeleted());
+        QCOMPARE(SettingsStore().secrets()->secret(openAi), QString());
+        comparePeerRead(settings, openAi, QString());
+    }
+#endif
 
     // Once Speecher's settings are deleted, a save is refused before it
     // reaches the keyring or the settings file, so no key comes back.

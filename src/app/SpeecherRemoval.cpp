@@ -116,6 +116,10 @@ void SpeecherRemoval::finish(RemovalReport report, bool deleteSettings)
 {
     if (deleteSettings) {
         record(report.steps, Part::Keyring, m_steps.deleteSecrets);
+    }
+    // A key whose deletion the keyring refused is hidden by a marker in the
+    // settings, so they go only once the keyring's deletions went through.
+    if (deleteSettings && report.steps.last().outcome == Outcome::Removed) {
         record(report.steps, Part::Settings, m_steps.deleteSettings);
     } else {
         report.steps.append({Part::Settings, Outcome::Kept, QString()});
