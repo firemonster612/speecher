@@ -15,15 +15,14 @@
 
 namespace speecher {
 
+struct AppSettings;
 class AudioInput;
 class EchoCanceller;
-class FileTranscriptionSession;
 class ProviderRegistry;
 class RecordingMicrophone;
+class RecordingStream;
 class RecordingSystemAudio;
 class SettingsStore;
-struct TranscribeFileResult;
-struct TranscribeOptions;
 
 // Where a recording goes when the command names no file:
 // <dataFolder>/recordings/<yyyy-mm-dd-hhmm>.md.
@@ -125,7 +124,7 @@ private:
 
     // One input, its speech stream and the utterances the recording cuts.
     struct Stream {
-        FileTranscriptionSession *transcription = nullptr;
+        RecordingStream *transcription = nullptr;
         RecordingStreamStatus status;
         // From the start until the stream first connects or fails.
         bool connecting = false;
@@ -137,7 +136,7 @@ private:
     };
 
     void connectStream(Stream &stream);
-    void startStream(Stream &stream, AudioInput *input, const TranscribeOptions &options);
+    void startStream(Stream &stream, AudioInput *input, const AppSettings &settings);
     void handleStreamConnected(Stream &stream);
     void finishStartOnceSettled();
     void finishListening(Stream &stream);
@@ -147,7 +146,7 @@ private:
     void forgetUtterance(Stream &stream);
     void extendStop();
     void writeLine(const QString &speaker, const QString &text);
-    void handleTranscriptionFinished(Stream &stream, const QList<TranscribeFileResult> &results);
+    void handleTranscriptionFinished(Stream &stream, const QString &error);
     void handleSystemAudioFailed();
     void stopCancellingEcho();
     // The state a live stream shows: the microphone's pauses for a dictation.
