@@ -5,8 +5,7 @@
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
 #include "providers/RefinementChain.h"
-#include "providers/SpeechChain.h"
-#include "providers/SpeechTranscriber.h"
+#include "providers/SpeechStream.h"
 #include "providers/TranscriptRefiner.h"
 #include "transcribe/Subtitles.h"
 
@@ -16,7 +15,6 @@
 #include <QObject>
 #include <QPointer>
 #include <QStringList>
-#include <QTimer>
 #include <QVector>
 
 #include <functional>
@@ -156,16 +154,6 @@ private:
     void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
     void startMicrophone();
-    void prepareProviders();
-    SpeechTranscriber *acquireTranscriber(const QString &providerId);
-    void connectTranscriber();
-    void releaseTranscriber();
-    void beginStreaming();
-    void sendNextChunk();
-    void startNextAttempt();
-    void handleAttemptCompleted(quint64 attemptId);
-    void handleSpeechFailure(const SpeechFailure &failure);
-    QString speechFailureText(const QString &providerMessage) const;
     void finishTranscription();
     void refine(const QString &raw);
     TranscriptRefiner *acquireRefiner(const QString &providerId);
@@ -177,20 +165,17 @@ private:
     void failFile(const QString &message);
     void finishFile();
     void releaseFileResources();
-    void commitPartial();
-    SpeechSettings currentSpeechSettings() const;
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
-    // The page's speech provider, then the saved fallbacks; each file walks
-    // it from the start.
-    SpeechChain *m_speechChain;
-    SpeechAttemptPolicy m_attempts;
+    TranscriptState *m_transcript;
+    // The file's audio, to the page's speech provider, then the saved
+    // fallbacks; each file walks them from the start, as a dictation starts,
+    // and stays with the first that its audio reached.
+    SpeechStream *m_stream;
     // The page's refiner, then the saved fallbacks; each file walks it from
     // the start.
     RefinementChain *m_refinementChain;
-    TranscriptState *m_transcript;
-    QTimer m_sendTimer;
     QStringList m_paths;
     TranscribeOptions m_options;
     // The user's settings with this batch's choices applied.
@@ -204,28 +189,12 @@ private:
     // The microphone a startListening() batch reads instead of a file.
     QPointer<AudioInput> m_input;
     Microphone m_microphone = Microphone::Off;
-    QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
     // Why the last refiner the file tried could not refine it.
     QString m_refinementFailure;
-    QByteArray m_pcm;
-    // Microphone audio dropped from the front of m_pcm once a connected
-    // stream took it, so a long listen does not keep all it heard.
-    qsizetype m_pcmDropped = 0;
-    // Bytes sent, counted from the start of the input.
-    qsizetype m_sent = 0;
-    // A stream of the current provider connected or sent text, so the audio
-    // before m_sent reached the service.
-    bool m_providerConnected = false;
-    bool m_inputFinished = false;
-    // An attempt is open for the audio; false while a provider prepares.
-    bool m_streaming = false;
-    quint64 m_attemptId = 0;
-    // Where in the file the current attempt's audio starts.
-    qint64 m_attemptStartMs = 0;
+    // The file as it decodes, until it goes to the stream whole.
+    QByteArray m_decoded;
     TranscriptPipelineResult m_pipeline;
-    // Why each speech provider the file passed could not help.
-    QList<ProviderAttemptIssue> m_speechIssues;
 };
 
 } // namespace speecher
