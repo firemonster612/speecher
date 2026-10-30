@@ -3017,7 +3017,7 @@ private slots:
         QVERIFY(writeSilentWav(audio));
         TranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
-        QVERIFY(controller.startFileTranscription({audio}, options));
+        QVERIFY(controller.fileTranscription()->start({audio}, options));
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::FileTranscription);
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
