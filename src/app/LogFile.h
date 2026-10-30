@@ -21,6 +21,9 @@ private:
     void cutIfFull();
 
     QMutex m_mutex;
+    // Kept apart from m_file, which forgets its name once opened from a
+    // Windows handle.
+    const QString m_path;
     QFile m_file;
     const qint64 m_maxBytes;
 };
