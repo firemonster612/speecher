@@ -252,6 +252,8 @@ signals:
     void vocabularyUsageRecorded();
 
 private:
+    // previous is what dictationSnapshot read before the draft was made.
+    void applySnapshot(const AppSettings &draft, const AppSettings &previous);
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
     AppSettings snapshotReading(bool waitForKeyring) const;
