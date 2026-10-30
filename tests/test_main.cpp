@@ -169,6 +169,7 @@ int main(int argc, char **argv)
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);
     if (selected("audio_pcm_converter")) result |= runAudioPcmConverterTests(argc, argv);
     if (selected("silence_gate")) result |= runSilenceGateTests(argc, argv);
+    if (selected("insertion_baseline")) result |= runInsertionBaselineTests(argc, argv);
     if (selected("echo_canceller")) result |= runEchoCancellerTests(argc, argv);
     if (selected("local_models")) result |= runLocalModelsTests(argc, argv);
     if (selected("custom_endpoints")) result |= runCustomEndpointsTests(argc, argv);
