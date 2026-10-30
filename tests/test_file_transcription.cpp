@@ -1309,6 +1309,37 @@ private slots:
         QCOMPARE(settings.vocabularyEntries(), saved);
     }
 
+    // The Other profile's speech model applies where that profile keeps the
+    // recording's provider, as in a Transcribe batch.
+    void aRecordingUsesTheOtherProfilesModel()
+    {
+        QPointer<FakeSpeechTranscriber> local;
+        m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
+                                           [&local](QObject *parent) {
+                                               local = new FakeSpeechTranscriber(parent);
+                                               local->streamsFinals = true;
+                                               local->onStartAttempt = [&local] { local->emitConnected(); };
+                                               return local.data();
+                                           });
+        SettingsStore settings;
+        AppSettings draft = settings.snapshot();
+        draft.speech.providerId = QStringLiteral("local");
+        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+            if (profile.profile == WritingProfile::Other) {
+                profile.speechProvider = QStringLiteral("local");
+                profile.speechModel = QStringLiteral("moonshine-small");
+            }
+        }
+        settings.applySnapshot(draft);
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        QCOMPARE(local->startCalls, 1);
+        QCOMPARE(local->lastLocalModel, QStringLiteral("moonshine-small"));
+    }
+
     // A provider that finalizes only when asked, as Codex does, still writes
     // each utterance while the recording runs: a pause after speech ends it,
     // once, and quiet audio does not start another.
