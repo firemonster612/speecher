@@ -158,7 +158,6 @@ void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
     m_nextInputPosition = 0.0;
     m_lowPassTaps = sourceFormat.sampleRate() > kOutputSampleRate ? lowPassTaps(sourceFormat.sampleRate())
                                                                   : QVector<float>();
-    m_lowPassHistory.clear();
 }
 
 AudioPcmConversion AudioPcmConverter::convert(const QByteArray &chunk)
@@ -197,54 +196,50 @@ QByteArray AudioPcmConverter::encodeOutputSamples(const QVector<float> &samples)
         return pcm;
     }
 
-    m_resampleBuffer += m_lowPassTaps.isEmpty() ? samples : lowPassed(samples);
-    if (m_resampleBuffer.size() < 2) {
+    // With the low-pass, the buffer opens with the taps' width less one of
+    // samples before the first one the interpolation reads, and only the
+    // samples it reads are filtered: two per output sample, where filtering
+    // every input sample costs three at 48 kHz and six at 96 kHz. Before the
+    // first chunk, the stream
+    // is taken to have held its first sample, so a level it starts at passes
+    // from the first sample instead of rising from silence.
+    const qsizetype lead = m_lowPassTaps.isEmpty() ? 0 : m_lowPassTaps.size() - 1;
+    if (lead > 0 && m_resampleBuffer.isEmpty()) {
+        m_resampleBuffer.fill(samples.first(), lead);
+    }
+    m_resampleBuffer += samples;
+    const qsizetype readable = m_resampleBuffer.size() - lead;
+    if (readable < 2) {
         return {};
     }
 
+    const auto sampleAt = [this, lead](qsizetype index) {
+        if (lead == 0) {
+            return double(m_resampleBuffer.at(index));
+        }
+        const float *window = m_resampleBuffer.constData() + index;
+        const float *taps = m_lowPassTaps.constData();
+        double sum = 0.0;
+        for (qsizetype tap = 0; tap <= lead; ++tap) {
+            sum += double(taps[tap]) * window[tap];
+        }
+        return sum;
+    };
     const double inputStep = double(m_sourceFormat.sampleRate()) / double(kOutputSampleRate);
     QByteArray pcm;
-    while (m_nextInputPosition + 1.0 < double(m_resampleBuffer.size())) {
+    while (m_nextInputPosition + 1.0 < double(readable)) {
         const int index = int(std::floor(m_nextInputPosition));
         const double fraction = m_nextInputPosition - double(index);
-        const float sample = float(double(m_resampleBuffer.at(index)) * (1.0 - fraction)
-                                   + double(m_resampleBuffer.at(index + 1)) * fraction);
-        appendInt16(pcm, sample);
+        appendInt16(pcm, float(sampleAt(index) * (1.0 - fraction) + sampleAt(index + 1) * fraction));
         m_nextInputPosition += inputStep;
     }
 
-    const int removable = std::min(int(std::floor(m_nextInputPosition)), int(m_resampleBuffer.size()) - 1);
+    const int removable = std::min(int(std::floor(m_nextInputPosition)), int(readable) - 1);
     if (removable > 0) {
         m_resampleBuffer.remove(0, removable);
         m_nextInputPosition -= removable;
     }
     return pcm;
-}
-
-// One filtered sample per input sample, each from the taps' width of input
-// ending at it, the samples before this chunk carried over in the history.
-QVector<float> AudioPcmConverter::lowPassed(const QVector<float> &samples)
-{
-    const qsizetype count = m_lowPassTaps.size();
-    // The stream is taken to have held its first sample before it began, so
-    // a level it starts at passes from the first sample instead of rising
-    // from silence.
-    if (m_lowPassHistory.isEmpty()) {
-        m_lowPassHistory.fill(samples.first(), count - 1);
-    }
-    const QVector<float> input = m_lowPassHistory + samples;
-    const float *taps = m_lowPassTaps.constData();
-    QVector<float> output(samples.size());
-    for (qsizetype i = 0; i < samples.size(); ++i) {
-        const float *window = input.constData() + i;
-        double sum = 0.0;
-        for (qsizetype tap = 0; tap < count; ++tap) {
-            sum += double(taps[tap]) * window[tap];
-        }
-        output[i] = float(sum);
-    }
-    m_lowPassHistory = input.last(count - 1);
-    return output;
 }
 
 } // namespace speecher

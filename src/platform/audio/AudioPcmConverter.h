@@ -28,7 +28,6 @@ public:
 
 private:
     QByteArray encodeOutputSamples(const QVector<float> &samples);
-    QVector<float> lowPassed(const QVector<float> &samples);
 
     QAudioFormat m_sourceFormat;
     QByteArray m_pendingInput;
@@ -36,8 +35,6 @@ private:
     double m_nextInputPosition = 0.0;
     // Empty unless the source rate is above 16 kHz.
     QVector<float> m_lowPassTaps;
-    // The last taps-minus-one input samples; empty until the first chunk.
-    QVector<float> m_lowPassHistory;
 };
 
 } // namespace speecher
