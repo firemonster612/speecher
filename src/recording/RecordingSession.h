@@ -124,7 +124,7 @@ private:
 
     // One input, its speech stream and the utterances the recording cuts.
     struct Stream {
-        RecordingStream *transcription = nullptr;
+        RecordingStream *speech = nullptr;
         RecordingStreamStatus status;
         // From the start until the stream first connects or fails.
         bool connecting = false;
@@ -146,7 +146,7 @@ private:
     void forgetUtterance(Stream &stream);
     void extendStop();
     void writeLine(const QString &speaker, const QString &text);
-    void handleTranscriptionFinished(Stream &stream, const QString &error);
+    void handleStreamFinished(Stream &stream, const QString &error);
     void handleSystemAudioFailed();
     void stopCancellingEcho();
     // The state a live stream shows: the microphone's pauses for a dictation.

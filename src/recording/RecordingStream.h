@@ -2,10 +2,8 @@
 
 #include "core/AppSettings.h"
 #include "dictation/DictationPorts.h"
-#include "providers/SpeechChain.h"
+#include "providers/SpeechStream.h"
 
-#include <QByteArray>
-#include <QList>
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
@@ -77,85 +75,29 @@ signals:
 private:
     enum class Input { Off, Listening, Stopping };
 
-    SpeechTranscriber *acquireTranscriber(const QString &providerId);
-    void connectTranscriber();
-    void releaseTranscriber();
-    void beginStreaming();
-    void sendNextChunk();
-    void startNextAttempt();
-    void handleAttemptCompleted(quint64 attemptId);
-    void handleSpeechFailure(const SpeechFailure &failure);
-    QString speechFailureText(const QString &providerMessage) const;
-    void fail(const QString &message);
-    void finish();
-    void release();
-    void commitFinal(const QString &text);
-    void commitPartial();
-    void markAttemptConnected();
+    bool reconnectLater(const SpeechFailure &failure);
     void waitToReconnect(const QString &reason);
     void reconnect();
     bool renewSignIn();
     void handleSignInRenewed(const std::optional<ProviderFailure> &failure);
-    void resumeStreaming();
-    SpeechSettings currentSpeechSettings() const;
-    void rewindTo(qsizetype position);
-    void keepAudioBounded();
-    void forgetAudioBefore(qsizetype position);
-    void markUtterancesOnceSent();
+    void fail(const QString &message);
+    void finish();
+    void release();
 
-    ProviderRegistry *m_providers;
-    // The recording's speech provider, then the saved fallbacks.
-    SpeechChain *m_speechChain;
-    SpeechAttemptPolicy m_attempts;
     TranscriptState *m_transcript;
-    QTimer m_sendTimer;
+    // The recording's speech provider, then the saved fallbacks.
+    SpeechStream *m_stream;
     // Runs while the stream waits to reconnect.
     QTimer m_reconnectTimer;
     // Which of the growing pauses before a reconnect comes next.
     int m_reconnectDelayIndex = 0;
-    // The recording's settings, with the keys the chain read.
-    AppSettings m_settings;
     bool m_running = false;
     QString m_error;
 
     QPointer<AudioInput> m_input;
     Input m_inputState = Input::Off;
-    QPointer<SpeechTranscriber> m_transcriber;
-    QByteArray m_pcm;
-    // Audio dropped from the front of m_pcm once a connected stream took it,
-    // or once too much waited, so a long recording does not keep all it
-    // heard.
-    qsizetype m_pcmDropped = 0;
-    // Bytes sent, counted from the start of the input.
-    qsizetype m_sent = 0;
-    // Where an utterance begins or ends in the input.
-    struct UtteranceMark {
-        qsizetype position;
-        bool begins;
-    };
-    // Each beginUtterance() and endUtterance(), in order, kept until that
-    // audio is dropped, so a stream that takes the audio again gets them
-    // again.
-    QList<UtteranceMark> m_utteranceMarks;
-    // The first of m_utteranceMarks the current stream has not been sent.
-    qsizetype m_nextUtteranceMark = 0;
-    // m_sent when the current attempt began: what it was sent is sent again
-    // if it fails before it connects.
-    qsizetype m_attemptSentFrom = 0;
-    // The current attempt's stream connected or sent text, so the audio
-    // before m_sent reached the service.
-    bool m_attemptConnected = false;
-    // A stream of the current provider has connected.
-    bool m_providerConnected = false;
     // The service turned the sign-in down since a stream last connected.
     bool m_signInRefused = false;
-    bool m_inputFinished = false;
-    // An attempt is open for the audio; false while a provider prepares or
-    // the stream waits to reconnect.
-    bool m_streaming = false;
-    quint64 m_attemptId = 0;
-    // Why each speech provider the stream passed could not help.
-    QList<ProviderAttemptIssue> m_speechIssues;
 };
 
 } // namespace speecher

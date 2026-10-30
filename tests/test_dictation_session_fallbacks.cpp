@@ -741,6 +741,21 @@ private slots:
         QCOMPARE(rig.refiners[QStringLiteral("openai")]->lastRawTranscript, QStringLiteral("half rest corrected"));
     }
 
+    // A cancel moves the attempt id on first too, so a provider that emits
+    // as it stops can't reopen a stream for the cancelled dictation.
+    void aCancelledAttemptCannotReconnect()
+    {
+        ChainRig rig({QStringLiteral("codex")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        codex->onCancelAttempt = [codex](quint64) {
+            codex->emitFailure(QStringLiteral("closed"), true, SpeechPhase::Streaming, Network);
+        };
+        rig.listen();
+        rig.session->cancel();
+        QCOMPARE(rig.session->state(), DictationState::Idle);
+        QCOMPARE(codex->startCalls, 1);
+    }
+
     // A provider failing to finish a paused attempt makes way for the next
     // without opening the microphone; the next attempt opens on resume, and
     // the paused one was told to finish once.

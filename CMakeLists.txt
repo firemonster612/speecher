@@ -325,10 +325,13 @@ set(SPEECHER_WORKFLOW_SOURCES
   src/providers/PreparationRunner.cpp
   src/providers/ProviderRegistry.cpp
   src/providers/RefinementChain.cpp
+  src/providers/SpeechAttempts.cpp
   src/providers/SpeechChain.cpp
+  src/providers/SpeechStream.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/dictation/BetweenAttempts.h
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
   src/dictation/EditReview.h
@@ -337,7 +340,9 @@ set(SPEECHER_WORKFLOW_HEADERS
   src/providers/PreparationRunner.h
   src/providers/ProviderRegistry.h
   src/providers/RefinementChain.h
+  src/providers/SpeechAttempts.h
   src/providers/SpeechChain.h
+  src/providers/SpeechStream.h
   src/providers/SpeechTranscriber.h
   src/providers/TranscriptRefiner.h
 )

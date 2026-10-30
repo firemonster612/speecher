@@ -499,6 +499,45 @@ private slots:
         QCOMPARE(result.error, QString());
     }
 
+    // A file no refiner could refine keeps its text as heard, and says why
+    // for each refiner tried, whether it failed preparing or refining.
+    void aFileNoRefinerRefinedNamesEachOneTried()
+    {
+        FakeRefiner *primary = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&primary](QObject *parent) {
+                                                   primary = new FakeRefiner(parent);
+                                                   return primary;
+                                               });
+        m_registry->registerRefinementProvider({QStringLiteral("local"), QStringLiteral("Local Runner")},
+                                               [](QObject *parent) {
+                                                   auto *fallback = new FakeRefiner(parent);
+                                                   fallback->prepareFailure =
+                                                       ProviderFailure{ProviderFailureKind::Unavailable,
+                                                                       QStringLiteral("No model is downloaded")};
+                                                   return fallback;
+                                               });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
+        primary->emitFailure(QStringLiteral("offline"), ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QCOMPARE(result.refined, QStringLiteral("heard 16000"));
+        QCOMPARE(result.error,
+                 QStringLiteral("Refinement failed: Fake: offline; Local Runner: No model is downloaded"));
+    }
+
     // A batch set to None still refines, at Light, when its profile
     // translates, and says so.
     void anExplicitNoneStillTranslates()
@@ -1270,6 +1309,37 @@ private slots:
         QCOMPARE(settings.vocabularyEntries(), saved);
     }
 
+    // The Other profile's speech model applies where that profile keeps the
+    // recording's provider, as in a Transcribe batch.
+    void aRecordingUsesTheOtherProfilesModel()
+    {
+        QPointer<FakeSpeechTranscriber> local;
+        m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
+                                           [&local](QObject *parent) {
+                                               local = new FakeSpeechTranscriber(parent);
+                                               local->streamsFinals = true;
+                                               local->onStartAttempt = [&local] { local->emitConnected(); };
+                                               return local.data();
+                                           });
+        SettingsStore settings;
+        AppSettings draft = settings.snapshot();
+        draft.speech.providerId = QStringLiteral("local");
+        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+            if (profile.profile == WritingProfile::Other) {
+                profile.speechProvider = QStringLiteral("local");
+                profile.speechModel = QStringLiteral("moonshine-small");
+            }
+        }
+        settings.applySnapshot(draft);
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        QCOMPARE(local->startCalls, 1);
+        QCOMPARE(local->lastLocalModel, QStringLiteral("moonshine-small"));
+    }
+
     // A provider that finalizes only when asked, as Codex does, still writes
     // each utterance while the recording runs: a pause after speech ends it,
     // once, and quiet audio does not start another.
@@ -1944,6 +2014,42 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(ends, 2, 10000);
         QCOMPARE(claude->audioChunks.size(), 2);
         QCOMPARE(outcome, std::optional<QString>(QString()));
+    }
+
+    // A provider that never connected hands the audio that waited to the
+    // next, even once so much waited that the oldest was dropped.
+    void aRecordingFallbackTakesAudioThatOutgrewTheWait()
+    {
+        registerStreamingCodex(false);
+        QPointer<FakeSpeechTranscriber> claude;
+        m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                           [&claude](QObject *parent) {
+                                               claude = new FakeSpeechTranscriber(parent);
+                                               claude->streamsFinals = true;
+                                               return claude.data();
+                                           });
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        recording.start(QString(), {}, m_dir.path(), false, [](const QString &) {});
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        // 2 seconds, then 10 minutes, before Codex connects.
+        microphone->pushAudio(QByteArray(2 * 32000, '\1'));
+        const QByteArray minute(60 * 32000, '\0');
+        for (int i = 0; i < 10; ++i) {
+            microphone->pushAudio(minute);
+        }
+        m_codex->emitFailure(QStringLiteral("Timed out"), true, SpeechPhase::Connect,
+                             ProviderFailureKind::Timeout);
+
+        QTRY_VERIFY_WITH_TIMEOUT(claude && claude->startCalls == 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!claude->audioChunks.isEmpty(), 5000);
+        QCOMPARE(claude->audioChunks.first(), QByteArray(3200, '\0'));
     }
 
     // A stop while the stream is down tries once more at once for the audio

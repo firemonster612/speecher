@@ -2,14 +2,14 @@
 
 #include "core/DictationRecord.h"
 #include "core/ProviderReadiness.h"
+#include "dictation/BetweenAttempts.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/EditReview.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
 #include "dictation/TranscriptPipeline.h"
-#include "providers/SpeechChain.h"
-#include "providers/SpeechTranscriber.h"
+#include "providers/SpeechAttempts.h"
 #include "providers/TranscriptRefiner.h"
 
 #include <QElapsedTimer>
@@ -182,6 +182,7 @@ private:
     void emitReview();
     bool selectionUnchanged();
     void handleSpeechFailure(const SpeechFailure &failure);
+    void handleAttemptCompleted();
     void endSpeechAfterFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
     void startNextAttempt();
@@ -205,12 +206,10 @@ private:
     // instructions are the words spoken; otherwise the text's own.
     void deliverFinal(const QString &text, const QString &note = {}, std::optional<int> spokenWords = {});
     void discard();
+    void forgetSession();
     void clearScreenshotContext();
     void resumePausedMedia();
-    bool selectSpeechTranscriber(const QString &providerId, QString *error);
     bool selectTranscriptRefiner(const QString &providerId);
-    void disconnectSpeechTranscriber();
-    void connectSpeechTranscriber(SpeechTranscriber *transcriber);
     void disconnectTranscriptRefiner();
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
     void toggleSession(const SessionOverrides &overrides);
@@ -223,14 +222,12 @@ private:
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
-    SpeechChain *m_speechChain = nullptr;
-    SpeechAttemptPolicy m_attempts;
+    // The session's speech providers, through the registry's transcribers.
+    SpeechAttempts *m_speech = nullptr;
     RefinementChain *m_refinementChain = nullptr;
     QTimer *m_completionTimer = nullptr;
-    // The registry owns these and may be destroyed first; never call a dead one.
-    QPointer<SpeechTranscriber> m_transcriber;
+    // The registry owns it and may be destroyed first; never call a dead one.
     QPointer<TranscriptRefiner> m_refiner;
-    QVector<QMetaObject::Connection> m_transcriberConnections;
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
@@ -240,7 +237,6 @@ private:
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;
-    quint64 m_attemptId = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
     Target m_target;
@@ -253,17 +249,7 @@ private:
     // From Listening to Stopping: the audio a Dictation Session transcribed.
     QElapsedTimer m_listeningClock;
     int m_listeningMs = 0;
-    // The current attempt is finishing because of a pause. Its end is not a
-    // rollover, and the next attempt may only open once it has come.
-    bool m_finishingPausedAttempt = false;
-    // Audio no open attempt can take yet: heard after a resume while the
-    // paused attempt still finishes, while the next provider prepares, or
-    // after the last attempt ended during the stop. The next attempt gets
-    // it, once.
-    QList<QByteArray> m_pendingAudio;
-    // No provider is ready for the next attempt: the session is starting,
-    // or the next provider prepares after one failed.
-    bool m_awaitingSpeechProvider = false;
+    BetweenAttempts m_between;
     // The failure that sent the session on to the next provider, which ends
     // the speech if none takes over.
     SpeechFailure m_switchFailure;
@@ -284,9 +270,6 @@ private:
     // attempt, and that start goes on to Listening.
     quint64 m_microphoneStartGeneration = 0;
     std::optional<SessionOverrides> m_pendingStart;
-    // The last attempt ended while the microphone was stopping; the post-roll
-    // since waits in m_pendingAudio for stopListening().
-    bool m_attemptEndedDuringStop = false;
 };
 
 } // namespace speecher
