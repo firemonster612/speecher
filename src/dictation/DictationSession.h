@@ -4,6 +4,7 @@
 #include "core/ProviderReadiness.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/EditReview.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
 #include "dictation/TranscriptPipeline.h"
@@ -175,7 +176,6 @@ private:
     void startFollowUp();
     void returnToReview();
     void enterReview();
-    void endReview();
     void emitReview();
     bool selectionUnchanged();
     void handleSpeechFailure(const SpeechFailure &failure);
@@ -233,26 +233,7 @@ private:
     QString m_lastMessage;
     QString m_speechWarning;
     QString m_lastTranscript;
-    // The selection edit under review: its revision, what was said for it,
-    // and the session it came from, which a follow-up dictates on top of and
-    // goes back to when it comes to nothing.
-    struct Review {
-        QString edit;
-        QStringList instructions;
-        Target target;
-        AppSettings settings;
-        TranscriptPipelineResult pipeline;
-        // What the receipt reports for this revision.
-        QString speechWarning;
-        ProviderHistory providerHistory;
-        // What Insights records for it, across every instruction.
-        int spokenWords = 0;
-        int listeningMs = 0;
-    };
-    std::optional<Review> m_review;
-    // A follow-up instruction for m_review is being dictated.
-    bool m_followingUp = false;
-    ReviewKeys m_reviewKeys;
+    EditReview m_review;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;

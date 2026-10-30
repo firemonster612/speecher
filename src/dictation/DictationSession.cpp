@@ -218,7 +218,7 @@ bool DictationSession::startPending() const
 
 bool DictationSession::reviewUp() const
 {
-    return m_review.has_value();
+    return m_review.isUp();
 }
 
 QString DictationSession::lastTranscript() const
@@ -284,7 +284,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     // press, is a follow-up to it, on the edit's own settings: overrides do
     // not apply. One that lands while the microphone stops waits as any start
     // does, the review shown as it is until it begins.
-    if (m_state == DictationState::Reviewing && !m_followingUp) {
+    if (m_state == DictationState::Reviewing && !m_review.followingUp()) {
         if (m_audioStopDepth > 0) {
             m_pendingStart = SessionOverrides{};
         } else {
@@ -292,7 +292,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
         }
         return;
     }
-    const bool followUp = m_state == DictationState::Reviewing && m_followingUp;
+    const bool followUp = m_state == DictationState::Reviewing && m_review.followingUp();
     if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
         return;
     }
@@ -305,7 +305,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     }
 
     // A follow-up keeps the settings the edit was made with.
-    AppSettings settings = followUp ? m_review->settings : m_settings->dictationSnapshot();
+    AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
     if (overrides.outputFormat) {
         settings.output.format = *overrides.outputFormat;
     }
@@ -375,7 +375,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
     // A follow-up edits the same selection, so the Target is the review's:
     // capturing again would also replace the control the provider tracks.
-    Target target = m_followingUp ? m_review->target
+    Target target = m_review.followingUp() ? m_review.revision().target
         : m_targetProvider ? m_targetProvider->capture()
                            : Target{};
     if (generation != m_generation) {
@@ -384,7 +384,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     m_target = std::move(target);
     m_target.category = classifyTarget(m_target, rules);
     // Lengths only: the text itself stays out of the log.
-    qInfo().noquote() << (m_followingUp ? "target kept for follow-up app=" : "target captured app=")
+    qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
                       << "role=" + m_target.role
                       << "accessible=" << m_target.accessible << "editable=" << m_target.editable
@@ -410,7 +410,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         && m_screenshotProvider
         && chainReadsScreenshots
         && !m_target.secure
-        && !m_followingUp) {
+        && !m_review.followingUp()) {
         m_screenshotCaptureGeneration = generation;
         m_screenshotProvider->capture();
     }
@@ -635,7 +635,7 @@ ProviderLabels DictationSession::providerLabels() const
 
 void DictationSession::setReviewKeys(const ReviewKeys &keys)
 {
-    if (std::exchange(m_reviewKeys, keys) != keys && m_review) {
+    if (m_review.setKeys(keys) && m_review.isUp()) {
         emitReview();
     }
 }
@@ -650,7 +650,7 @@ void DictationSession::stopListening()
 {
     // Stopping a follow-up before it was heard, or while it is refined,
     // leaves the review as it was, as cancelling it does.
-    if (m_followingUp && (m_state == DictationState::Starting || m_state == DictationState::Refining)) {
+    if (m_review.followingUp() && (m_state == DictationState::Starting || m_state == DictationState::Refining)) {
         cancel();
         return;
     }
@@ -735,7 +735,7 @@ void DictationSession::cancelForShutdown()
     if (m_state == DictationState::Idle) {
         return;
     }
-    endReview();
+    m_review.end();
     discard();
     emit popupHideRequested();
     setState(DictationState::Idle);
@@ -761,13 +761,13 @@ void DictationSession::cancel()
         // Keep original: the selection was never touched, so there is
         // nothing to report.
         qInfo() << "selection edit kept the original";
-        endReview();
+        m_review.end();
         discard();
         emit popupHideRequested();
         setState(DictationState::Idle);
         return;
     }
-    if (m_followingUp) {
+    if (m_review.followingUp()) {
         qInfo().noquote() << "follow-up cancelled state=" + stateName();
         discard();
         returnToReview();
@@ -998,7 +998,7 @@ void DictationSession::setState(DictationState state, const QString &message, co
 {
     // A follow-up that fails, before or after it was heard, leaves the
     // review as it was rather than ending in an error.
-    if (state == DictationState::Error && m_followingUp) {
+    if (state == DictationState::Error && m_review.followingUp()) {
         qWarning().noquote() << "follow-up failed message=" + message;
         returnToReview();
         return;
@@ -1117,9 +1117,9 @@ void DictationSession::beginRefinement(quint64 generation)
     }
     const AppSettings &settings = *m_sessionSettings;
     Target target = m_target;
-    if (m_followingUp) {
+    if (m_review.followingUp()) {
         // A follow-up edits the revision under review, not the selection.
-        target.selectedText = m_review->edit;
+        target.selectedText = m_review.revision().edit;
     }
     m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target,
                                                         m_transcript->heardLanguage());
@@ -1248,29 +1248,9 @@ void DictationSession::failSelectionEdit(const QString &message)
 // or Keep original ends the review.
 void DictationSession::reviewSelectionEdit(const QString &revised)
 {
-    const std::optional<Review> before = m_followingUp ? m_review : std::nullopt;
-    Review review{revised, before ? before->instructions : QStringList(), m_target, *m_sessionSettings,
-                  m_transcriptPipeline, m_speechWarning, m_providerHistory};
-    review.instructions.append(m_transcript->text());
-    review.spokenWords = (before ? before->spokenWords : 0) + countWords(m_transcript->text());
-    review.listeningMs = (before ? before->listeningMs : 0) + m_listeningMs;
-    // Insights names every provider the edit's instructions ran on, earliest
-    // first.
-    if (before) {
-        const auto merged = [](QStringList earlier, const QStringList &later) {
-            for (const QString &id : later) {
-                if (!earlier.contains(id)) {
-                    earlier.append(id);
-                }
-            }
-            return earlier;
-        };
-        review.providerHistory.speechRan = merged(before->providerHistory.speechRan, m_providerHistory.speechRan);
-        review.providerHistory.refinementRan =
-            merged(before->providerHistory.refinementRan, m_providerHistory.refinementRan);
-    }
-    m_followingUp = false;
-    m_review = std::move(review);
+    const QString spoken = m_transcript->text();
+    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_transcriptPipeline, m_speechWarning,
+                     m_providerHistory, countWords(spoken), m_listeningMs});
     m_refinementGeneration = 0;
     enterReview();
 }
@@ -1280,22 +1260,23 @@ void DictationSession::reviewSelectionEdit(const QString &revised)
 void DictationSession::startFollowUp()
 {
     qInfo() << "follow-up requested";
-    m_followingUp = true;
+    m_review.startFollowUp();
     emitReview();
     startSession({});
 }
 
 void DictationSession::returnToReview()
 {
-    m_followingUp = false;
+    m_review.endFollowUp();
     m_refinementGeneration = 0;
-    m_target = m_review->target;
-    m_sessionSettings = m_review->settings;
-    m_transcriptPipeline = m_review->pipeline;
+    const EditReview::Revision &revision = m_review.revision();
+    m_target = revision.target;
+    m_sessionSettings = revision.settings;
+    m_transcriptPipeline = revision.pipeline;
     // Nothing the follow-up met belongs in the receipt of the revision kept.
     m_usedRawTranscript = false;
-    m_speechWarning = m_review->speechWarning;
-    m_providerHistory = m_review->providerHistory;
+    m_speechWarning = revision.speechWarning;
+    m_providerHistory = revision.providerHistory;
     enterReview();
 }
 
@@ -1303,25 +1284,16 @@ void DictationSession::enterReview()
 {
     // The controller takes the review's keys as the state changes; when that
     // changes their names, setReviewKeys has already shown the review.
-    const ReviewKeys keys = m_reviewKeys;
+    const ReviewKeys keys = m_review.keys();
     setState(DictationState::Reviewing);
-    if (m_reviewKeys == keys) {
+    if (m_review.keys() == keys) {
         emitReview();
     }
 }
 
-void DictationSession::endReview()
-{
-    m_followingUp = false;
-    m_review.reset();
-}
-
 void DictationSession::emitReview()
 {
-    SelectionEditReview review =
-        selectionEditReview(m_review->target.selectedText, m_review->edit, m_review->instructions, m_reviewKeys);
-    review.following = m_followingUp;
-    emit popupSelectionEditReviewRequested(review);
+    emit popupSelectionEditReviewRequested(m_review.presentation());
 }
 
 void DictationSession::replaceSelection()
@@ -1336,11 +1308,11 @@ void DictationSession::replaceSelection()
     // another Replace acts on the review as it stands.
     const quint64 generation = m_generation;
     const bool unchanged = selectionUnchanged();
-    if (generation != m_generation || !m_review) {
+    if (generation != m_generation || !m_review.isUp()) {
         return;
     }
-    const Review review = *m_review;
-    endReview();
+    const EditReview::Revision review = m_review.revision();
+    m_review.end();
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
     if (!unchanged) {
