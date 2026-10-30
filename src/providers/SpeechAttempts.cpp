@@ -181,9 +181,14 @@ SpeechFailure SpeechAttempts::endedTooSoon() const
     return SpeechAttemptPolicy::endedTooSoon(m_id);
 }
 
+bool SpeechAttempts::triedFallbacks(const QList<ProviderAttemptIssue> &issues) const
+{
+    return m_chain->providerIds().size() > 1 && !issues.isEmpty();
+}
+
 QString SpeechAttempts::failureText(const QString &providerMessage, const QList<ProviderAttemptIssue> &issues) const
 {
-    if (m_chain->providerIds().size() == 1 || issues.isEmpty()) {
+    if (!triedFallbacks(issues)) {
         return providerMessage;
     }
     return noSpeechServiceText(issues, m_providers->labels());

@@ -518,13 +518,13 @@ void DictationSession::speechChainExhausted()
         return;
     }
     const ProviderAttemptIssue only = m_providerHistory.issues.value(0);
-    if (m_speech->chain()->providerIds().size() == 1) {
+    const QString message = m_speech->failureText(only.message, m_providerHistory.issues);
+    if (!m_speech->triedFallbacks(m_providerHistory.issues)) {
         // Without internet, no setting would help.
-        failStartup(only.message, only.offline ? PopupErrorAction{} : speechSetupAction(only.providerId));
+        failStartup(message, only.offline ? PopupErrorAction{} : speechSetupAction(only.providerId));
         return;
     }
-    failStartup(noSpeechServiceText(m_providerHistory.issues, providerLabels()),
-                {ErrorFix::SettingsPage, QStringLiteral("speech")});
+    failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
 // A provider still preparing gets no more than the connect budget's worth of
@@ -1514,10 +1514,10 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
 
     m_speech->cancel();
     // With fallbacks, every provider tried says why it could not take over.
-    const bool chainTried = m_speech->chain()->providerIds().size() > 1 && !m_providerHistory.issues.isEmpty();
     const QString message = m_speech->failureText(failure.message, m_providerHistory.issues);
-    const PopupErrorAction fix =
-        chainTried ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")} : PopupErrorAction{};
+    const PopupErrorAction fix = m_speech->triedFallbacks(m_providerHistory.issues)
+        ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")}
+        : PopupErrorAction{};
     failSession(message, fix);
     stopAudio();
 }
