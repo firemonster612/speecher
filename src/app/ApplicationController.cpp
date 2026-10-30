@@ -347,6 +347,8 @@ TranscribeQueue *ApplicationController::transcribeQueue()
                                                 [this] { return fileTranscriptionRefusal(); }, this);
         connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, m_updates,
                 &UpdateController::resumePendingRestart);
+        connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, this,
+                &ApplicationController::unsavedTranscriptsChanged);
     }
     return m_transcribeQueue;
 }

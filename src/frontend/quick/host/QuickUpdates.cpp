@@ -56,6 +56,7 @@ QuickUpdates::QuickUpdates(ApplicationController *controller, UpdateController *
     // What a restart waits for changes with them.
     connect(controller->session(), &DictationSession::stateChanged, this, &QuickUpdates::changed);
     connect(controller, &ApplicationController::recordingChanged, this, &QuickUpdates::changed);
+    connect(controller, &ApplicationController::unsavedTranscriptsChanged, this, &QuickUpdates::changed);
     connect(controller->fileTranscription(), &FileTranscriptionSession::fileStarted, this, &QuickUpdates::changed);
     connect(controller->fileTranscription(), &FileTranscriptionSession::batchFinished, this, &QuickUpdates::changed);
     connect(updates, &UpdateController::openReleasePageRequested, this, &QuickUpdates::openAllReleases);

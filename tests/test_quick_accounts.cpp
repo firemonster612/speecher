@@ -564,6 +564,29 @@ private slots:
         QCOMPARE(field->property("text").toString(), QStringLiteral("newer-key"));
     }
 
+    // A row's save asked for while a write of the same key from elsewhere
+    // waits on the keyring is answered once the keyring answers it: refused,
+    // it shows why and the field keeps its key.
+    void aRowSaveQueuedBehindAnotherWriteWaitsForItsAnswer()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine, QStringLiteral("openAiApiKey"));
+        QVERIFY(row.field);
+        row.field->setProperty("text", QStringLiteral("row-key"));
+        QMetaObject::invokeMethod(row.field, "editingFinished", Qt::QueuedConnection);
+
+        QCOMPARE(controller.settings()->secrets()->saveApiKey(QStringLiteral("other-key")),
+                 SecretStore::SaveResult::Pending);
+
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
+                 QVariant(QVariantMap{{QStringLiteral("action"), QStringLiteral("save")},
+                                      {QStringLiteral("reason"), QStringLiteral("Keyring write denied")}}));
+        QCOMPARE(row.field->property("text").toString(), QStringLiteral("row-key"));
+    }
+
     // A keyring that does not answer leaves a sign-in that needs it unknown,
     // in the keyring's words, rather than "not found".
     void aKeyringTimeoutShowsTheKeyringsError()

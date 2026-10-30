@@ -59,12 +59,13 @@ struct SecretPresence {
 
 // Saves value, or clears the secret when it is empty. The OpenAI key never
 // falls back to the settings file, so it goes through saveApiKey either way.
-bool storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
+void storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
 {
     if (secret == SecretStore::Secret::OpenAiApiKey) {
-        return secrets->saveApiKey(value);
+        secrets->saveApiKey(value);
+    } else {
+        secrets->saveSecret(secret, value);
     }
-    return value.isEmpty() ? secrets->clearSecret(secret) : secrets->saveSecret(secret, value);
 }
 
 // Tells ProviderAvailability what a check found of a provider's sign-in, for
@@ -98,6 +99,7 @@ Accounts::Accounts(SettingsStore &settings, ProviderAvailability &availability, 
     , m_registry(registry)
 {
     connect(&settings, &SettingsStore::snapshotApplied, this, &Accounts::settingsSaved);
+    connect(settings.secrets(), &SecretStore::saveFinished, this, &Accounts::secretSaveFinished);
 }
 
 void Accounts::start()
@@ -235,22 +237,24 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    // The keyring's wait runs the event loop, where the UI can save the same
-    // secret again. That write waits its turn, so the keyring and the
-    // daemon's copy both end with the value asked for last.
-    if (m_writes.contains(secret)) {
-        m_writes.insert(secret, value);
+    if (!m_saving.contains(secret)) {
+        m_saving.append(secret);
+    }
+    storeSecret(m_settings.secrets(), secret, value);
+}
+
+// The keyring's wait runs the event loop, where the UI can save the same
+// secret again. The store writes the one asked for last next and answers only
+// once it settles, so a field that asked for an earlier value meanwhile lets
+// go of what it holds only once the value asked for last is kept.
+void Accounts::secretSaveFinished(SecretStore::Secret secret, bool cleared, bool stored)
+{
+    if (!m_saving.removeOne(secret)) {
         return;
     }
-    for (std::optional<QString> next = value; next; next = m_writes.take(secret)) {
-        m_writes.insert(secret, std::nullopt);
-        const bool done = storeSecret(m_settings.secrets(), secret, *next);
-        finishWrite(secret, done, !next->isEmpty());
-        // A field that asked for an earlier value meanwhile lets go of what
-        // it holds only once the value asked for last is kept.
-        if (done && !next->isEmpty() && !m_writes.value(secret)) {
-            emit secretSaved(secret);
-        }
+    finishWrite(secret, stored, !cleared);
+    if (stored && !cleared) {
+        emit secretSaved(secret);
     }
 }
 

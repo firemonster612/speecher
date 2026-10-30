@@ -96,9 +96,11 @@ private:
     void run(SignInService service, SignInRun signIn);
     void recheckAll();
     void readSavedSecrets();
-    // Saves value, or clears the secret when it is empty, once any write of
-    // the same secret in progress is done.
+    // Saves value, or clears the secret when it is empty. The answer comes
+    // with SecretStore::saveFinished, during this call or after a write of
+    // the same secret under way.
     void write(SecretStore::Secret secret, const QString &value);
+    void secretSaveFinished(SecretStore::Secret secret, bool cleared, bool stored);
     void finishWrite(SecretStore::Secret secret, bool done, bool saved);
     void settingsSaved();
 
@@ -120,9 +122,8 @@ private:
     // Secrets saved or cleared since that read began, which it must not
     // overwrite.
     QList<SecretStore::Secret> m_secretsWritten;
-    // Secrets being written, each with the value asked for while it was
-    // (empty to clear), if any.
-    QMap<SecretStore::Secret, std::optional<QString>> m_writes;
+    // Secrets whose save or clear waits for the store's answer.
+    QList<SecretStore::Secret> m_saving;
     // The settings the sign-ins depend on, as last checked.
     QStringList m_signInSettings;
 };
