@@ -5,19 +5,23 @@ import Speecher.Theme
 // The Spoken language's control: a button with the current language's flag
 // and name that opens a LanguagePopover to search and choose from, in place
 // of a Select. options are the popover's languages. It shows currentId and
-// only asks for a change through chosen: the caller sets currentId.
+// only asks for a change through chosen: the caller sets currentId. shownId,
+// when set apart from it, is what the button shows while the popover checks
+// currentId: for an option that stands for another, such as a fallback's
+// "Same as main language", the language that resolves to.
 T.AbstractButton {
     id: control
 
     property var options: []
     property string currentId
+    property string shownId: currentId
     property string placeholder
     property string searchText
     property string clearText
     property string emptyText
     signal chosen(string id)
 
-    readonly property var _current: options.find(o => o.id === currentId) || null
+    readonly property var _current: options.find(o => o.id === shownId) || null
 
     implicitWidth: Theme.selectWidth
     implicitHeight: Theme.controlHeight
@@ -48,7 +52,7 @@ T.AbstractButton {
             size: 16
             anchors.verticalCenter: parent.verticalCenter
             visible: !!control._current && !control._current.icon
-            code: control.currentId
+            code: control.shownId
         }
         Icon {
             visible: !!control._current && !!control._current.icon

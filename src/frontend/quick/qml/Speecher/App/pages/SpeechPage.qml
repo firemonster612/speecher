@@ -77,7 +77,8 @@ Page {
             moveDownText: Words.moveDown
             removeText: Words.remove
             onEdited: ids => Settings.set("speechFallbackList", ids)
-            // Each fallback listens for its own Spoken Language.
+            // Each fallback listens for its own Spoken Language, or, with none
+            // chosen ("Same as main language", id ""), the one core resolves.
             rowControl: Component {
                 LanguageSelect {
                     id: fallbackLanguage
@@ -85,10 +86,16 @@ Page {
                     readonly property var service: ModelText.service(modelData)
                     objectName: "fallbackLanguage_" + modelData
                     placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                    options: ModelText.spokenLanguageOptions(service)
-                    currentId: service.spokenLanguage || ""
-                    onChosen: id => Settings.set("speechFallbackLanguages", Object.assign(
-                        {}, Settings.values.speechFallbackLanguages, { [fallbackLanguage.modelData]: id }))
+                    options: [{ id: "", label: Schema.row("speechFallbackLanguages").sameAsMain, icon: "link" }]
+                             .concat(ModelText.spokenLanguageOptions(service))
+                    currentId: (Settings.values.speechFallbackLanguages || {})[modelData] || ""
+                    shownId: service.spokenLanguage || ""
+                    onChosen: id => {
+                        const languages = Object.assign({}, Settings.values.speechFallbackLanguages)
+                        if (id) languages[fallbackLanguage.modelData] = id
+                        else delete languages[fallbackLanguage.modelData]
+                        Settings.set("speechFallbackLanguages", languages)
+                    }
                 }
             }
         }
