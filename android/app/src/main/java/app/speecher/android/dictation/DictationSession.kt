@@ -35,6 +35,23 @@ class DictationSession(
     /** The field's connection while the IME has one. */
     @Volatile var connection: InputConnection? = null
     /**
+     * Counts the fields the IME started input in. Words go only into the field Insert or Retry was
+     * tapped in: when the person moves to another while they are on their way, they fail to go in
+     * and stay in the panel, rather than land in the field the person moved to.
+     */
+    @Volatile var fieldsStarted = 0
+    @Volatile private var insertField = 0
+
+    /** Binds the words of the Insert or Retry being tapped to the current field. */
+    fun bindInsert() {
+        insertField = fieldsStarted
+    }
+
+    /** The [connection], unless the person moved to another field since tapping Insert or Retry. */
+    val insertConnection: InputConnection?
+        get() = connection.takeIf { insertField == fieldsStarted }
+
+    /**
      * What the chip read of the target window at tap, if the user opted in and it arrived. Dropped
      * when it arrives after the session ended.
      */

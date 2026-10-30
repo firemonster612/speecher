@@ -82,6 +82,21 @@ class CommitToFieldTest {
     }
 
     @Test
+    fun `words for a field the person left since tapping Insert are kept but not inserted`() {
+        val session = session()
+        session.bindInsert()
+        // The IME starting input in another field.
+        session.fieldsStarted++
+
+        assertFalse(commitToField(context, session, "hello"))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(LatestTranscript("hello", "Example"), latestTranscript)
+        assertEquals(emptyList<Pair<CorrectionWindow, String>>(), watched)
+        session.end()
+    }
+
+    @Test
     fun `a chip service destroyed before the watch starts watches nothing`() {
         val session = session()
 

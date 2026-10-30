@@ -632,12 +632,19 @@ class DictationEngine(
         current: Int,
         reason: FailureReason,
         detail: String,
-        raw: String = transcript(),
+        raw: String? = null,
     ) {
         val now = phase
         if (current != session || now == Phase.Idle || now is Phase.Failed) return
         val cleanup = (now as? Phase.Refining)?.cleanup
-        showFailure(reason, detail, raw, cleanup?.let(Retry::Refine) ?: Retry.Restart)
+        // The transcript is read here, under the lock: a default argument would read it before
+        // the lock is taken, while the speech thread may be appending to it.
+        showFailure(
+            reason,
+            detail,
+            raw ?: transcript(),
+            cleanup?.let(Retry::Refine) ?: Retry.Restart,
+        )
     }
 
     /** The field did not take [text]. This replaces any failure, with a retry that commits it. */

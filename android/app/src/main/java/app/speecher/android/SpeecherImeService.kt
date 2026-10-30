@@ -39,7 +39,6 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        ImeSwap(this).let { if (it.stranded()) it.switchBack(this) }
         ActiveDictation.session?.let { show(it, it.engine.state) }
         ActiveDictation.observe = ::show
         ActiveDictation.onInserted = ::switchBack
@@ -77,11 +76,14 @@ class SpeecherImeService : InputMethodService() {
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
                         onInsert = {
-                            if (ActiveDictation.session?.engine?.insert() == true)
+                            val session = ActiveDictation.session
+                            session?.bindInsert()
+                            if (session?.engine?.insert() == true)
                                 view.vibrateForStartOrStop(settings.value)
                         },
                         onInsertRefined = {
                             val session = ActiveDictation.session
+                            session?.bindInsert()
                             if (session?.engine?.insertRefined(session.cleanup) == true)
                                 view.vibrateForStartOrStop(settings.value)
                         },
@@ -123,6 +125,7 @@ class SpeecherImeService : InputMethodService() {
         ActiveDictation.session?.let { session ->
             session.connection = currentInputConnection
             session.target = attribute?.let { targetApp(it, packageManager) }
+            if (!restarting) session.fieldsStarted++
         }
     }
 
@@ -186,8 +189,9 @@ class SpeecherImeService : InputMethodService() {
     private fun recover() {
         val recovery = (panelState.value as? DictationState.Failed)?.reason?.recovery ?: return
         if (recovery == Recovery.Retry) {
-            if (ActiveDictation.session?.engine?.retry() == true)
-                panel?.vibrateForStartOrStop(settings.value)
+            val session = ActiveDictation.session
+            session?.bindInsert()
+            if (session?.engine?.retry() == true) panel?.vibrateForStartOrStop(settings.value)
             return
         }
         switchBack()
