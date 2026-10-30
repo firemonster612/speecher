@@ -99,8 +99,9 @@ public:
     Q_INVOKABLE void virtualKeyboardTestReceived(const QString &text);
     Q_INVOKABLE void cancelVirtualKeyboardTest();
     Q_INVOKABLE void copy(const QString &text);
-    // Opens a web link or an absolute path with the desktop. Anything else is
-    // refused with a warning in the log.
+    // Opens a web link (http or https) or an absolute path with the desktop.
+    // Anything else, such as another scheme, is refused with a warning in the
+    // log.
     Q_INVOKABLE void open(const QString &target);
     Q_INVOKABLE void openShortcutSettings();
     Q_INVOKABLE void quit();
