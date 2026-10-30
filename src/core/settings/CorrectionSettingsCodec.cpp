@@ -219,25 +219,4 @@ bool recordEvidence(QSettings &settings,
     return true;
 }
 
-void setEnabled(QSettings &settings, const QString &id, bool enabled)
-{
-    QList<LearnedCorrection> corrections = load(settings);
-    for (LearnedCorrection &correction : corrections) {
-        if (correction.id == id) {
-            correction.enabled = enabled;
-            store(settings, corrections);
-            return;
-        }
-    }
-}
-
-void remove(QSettings &settings, const QString &id)
-{
-    QList<LearnedCorrection> corrections = load(settings);
-    corrections.removeIf([&id](const LearnedCorrection &correction) {
-        return correction.id == id;
-    });
-    store(settings, corrections);
-}
-
 } // namespace speecher::CorrectionSettingsCodec

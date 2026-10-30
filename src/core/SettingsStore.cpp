@@ -394,17 +394,6 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
     emit snapshotApplied(previous);
 }
 
-bool SettingsStore::launchAtLogin() const
-{
-    return SettingsCodecs::launchAtLogin();
-}
-
-void SettingsStore::setLaunchAtLogin(bool enabled)
-{
-    SettingsCodecs::setLaunchAtLogin(enabled);
-    reconcileLaunchAtLogin();
-}
-
 void SettingsStore::setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile)
 {
     m_reconcileLaunchAtLogin = std::move(reconcile);
@@ -416,18 +405,9 @@ void SettingsStore::reconcileLaunchAtLogin()
         return;
     }
     QString error;
-    if (!m_reconcileLaunchAtLogin(launchAtLogin(), &error)) {
+    if (!m_reconcileLaunchAtLogin(SettingsCodecs::launchAtLogin(), &error)) {
         qWarning().noquote() << "launch at login reconciliation failed message=" + error;
     }
-}
-
-void SettingsStore::setCorrectionLearningEnabled(bool enabled)
-{
-    if (correctionLearningEnabled() == enabled) {
-        return;
-    }
-    SettingsCodecs::setCorrectionLearningEnabled(enabled);
-    emit correctionLearningEnabledChanged(enabled);
 }
 
 std::optional<QStringList> SettingsStore::addVocabularyTerms(const QStringList &terms)
@@ -447,7 +427,7 @@ std::optional<QStringList> SettingsStore::addVocabularyTerms(const QStringList &
 bool SettingsStore::recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                              const QString &applicationId)
 {
-    if (!correctionLearningEnabled()) {
+    if (!SettingsCodecs::correctionLearningEnabled()) {
         return false;
     }
     if (!CorrectionSettingsCodec::recordEvidence(m_settings, evidence, applicationId)) {
@@ -466,65 +446,9 @@ bool SettingsStore::recordVocabularyUsage(const QString &text)
     return true;
 }
 
-QString SettingsStore::audioInputDeviceId() const
-{
-    return audioCaptureSettings().deviceId;
-}
-
-void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)
-{
-    const AudioCaptureSettings previous = audioCaptureSettings();
-    SettingsCodecs::setAudioCaptureSettings(value);
-    emitAudioCaptureSettingsChangedIfNeeded(previous);
-}
-
-void SettingsStore::setUpdateChannel(UpdateChannel value)
-{
-    if (updateChannel() == value) {
-        return;
-    }
-    SettingsCodecs::setUpdateChannel(value);
-    emit updateSettingsChanged();
-}
-
-void SettingsStore::setAutoCheckUpdates(bool value)
-{
-    if (autoCheckUpdates() == value) {
-        return;
-    }
-    SettingsCodecs::setAutoCheckUpdates(value);
-    emit updateSettingsChanged();
-}
-
-void SettingsStore::setAutoInstallUpdates(bool value)
-{
-    if (autoInstallUpdates() == value) {
-        return;
-    }
-    SettingsCodecs::setAutoInstallUpdates(value);
-    emit updateSettingsChanged();
-}
-
-void SettingsStore::setUpdateCheckIntervalMinutes(int value)
-{
-    if (updateCheckIntervalMinutes() == value) {
-        return;
-    }
-    SettingsCodecs::setUpdateCheckIntervalMinutes(value);
-    emit updateSettingsChanged();
-}
-
 SettingsFile &SettingsStore::raw()
 {
     return m_settings;
-}
-
-void SettingsStore::emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous)
-{
-    const AudioCaptureSettings current = audioCaptureSettings();
-    if (current != previous) {
-        emit audioCaptureSettingsChanged(current);
-    }
 }
 
 } // namespace speecher
