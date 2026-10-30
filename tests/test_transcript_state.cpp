@@ -41,6 +41,20 @@ private slots:
 
         QCOMPARE(state.text(), QStringLiteral("yes yes"));
     }
+
+    // The language the kept words were heard in: a partial counts while it
+    // shows, and one taken back leaves the earlier attempt's.
+    void heardLanguageFollowsTheWordsKept()
+    {
+        TranscriptState state;
+        state.startAttempt(QStringLiteral("de"));
+        state.commitFinal(QStringLiteral("hallo"));
+        state.startAttempt(QStringLiteral("fr"));
+        state.setPartial(QStringLiteral("euh"));
+        QCOMPARE(state.heardLanguage(), QStringLiteral("fr"));
+        state.setPartial(QString());
+        QCOMPARE(state.heardLanguage(), QStringLiteral("de"));
+    }
 };
 
 int runTranscriptStateTests(int argc, char **argv)

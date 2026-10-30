@@ -28,7 +28,8 @@ bool TranscriptState::isEmpty() const
 
 QString TranscriptState::heardLanguage() const
 {
-    return m_heardLanguage;
+    // A partial still showing was heard by this attempt; one taken back wasn't.
+    return m_partial.trimmed().isEmpty() ? m_heardLanguage : m_attemptLanguage;
 }
 
 void TranscriptState::clear()
@@ -47,9 +48,6 @@ void TranscriptState::setPartial(const QString &partial)
         return;
     }
     m_partial = partial;
-    if (!partial.trimmed().isEmpty()) {
-        m_heardLanguage = m_attemptLanguage;
-    }
     emit changed(text());
 }
 
