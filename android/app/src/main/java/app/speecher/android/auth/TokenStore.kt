@@ -28,27 +28,12 @@ enum class ApiKey {
 }
 
 /**
- * Sign-ins and [ApiKey]s, encrypted with an Android Keystore key that never leaves the keystore.
+ * Sign-ins and [ApiKey]s, encrypted with [secretKey]: an Android Keystore key that never leaves the
+ * keystore, which tests replace.
  */
-class TokenStore(context: Context) {
+class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreKey)) {
     private val preferences = context.getSharedPreferences("accounts", Context.MODE_PRIVATE)
-    private val key: SecretKey by lazy {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey("speecher-oauth", null) as? SecretKey)
-            ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-                .apply {
-                    init(
-                        KeyGenParameterSpec.Builder(
-                                "speecher-oauth",
-                                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-                            )
-                            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                            .build()
-                    )
-                }
-                .generateKey()
-    }
+    private val key: SecretKey by secretKey
 
     fun signedIn(): Set<Provider> =
         Provider.entries.filterTo(mutableSetOf()) { load(it.oauth) != null }
@@ -64,9 +49,11 @@ class TokenStore(context: Context) {
                     .put("scope", tokens.scope)
                     .toString()
             )
-        preferences.edit(commit = true) {
-            putString(provider.name, value)
-            remove(sessionEndedKey(provider))
+        synchronized(signIns) {
+            preferences.edit(commit = true) {
+                putString(provider.name, value)
+                remove(sessionEndedKey(provider))
+            }
         }
     }
 
@@ -118,12 +105,13 @@ class TokenStore(context: Context) {
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     }
 
-    fun signOut(provider: OAuthProvider) {
-        preferences.edit(commit = true) {
-            remove(provider.name)
-            remove(sessionEndedKey(provider))
+    fun signOut(provider: OAuthProvider) =
+        synchronized(signIns) {
+            preferences.edit(commit = true) {
+                remove(provider.name)
+                remove(sessionEndedKey(provider))
+            }
         }
-    }
 
     /**
      * Providers that rejected their saved sign-in during a dictation, until it is replaced or a
@@ -148,26 +136,60 @@ class TokenStore(context: Context) {
     /**
      * Call on a worker thread before a provider request. A refresh the token endpoint turns down
      * fails as a rejected sign-in; one that fails for no reason of its own still leaves no usable
-     * sign-in, as on the desktop.
+     * sign-in, as on the desktop. One refresh per provider runs at a time across every store, so a
+     * rotating refresh token is spent once; a sign-out or sign-in during it wins over its result.
      */
-    @Synchronized
     fun validTokens(provider: OAuthProvider, http: OkHttpClient): OAuthTokens? {
-        val stored = load(provider) ?: return null
-        if (stored.expiresAtMillis - 60_000 > System.currentTimeMillis()) return stored
-        val refreshed =
-            try {
-                refreshTokens(http, provider, stored)
-            } catch (error: OAuthHttpException) {
-                val kind =
-                    if (error.status == 400 || error.status == 401)
-                        ProviderFailureKind.Authentication
-                    else
-                        failureKindForHttpStatus(error.status).takeUnless {
-                            it == ProviderFailureKind.Other
-                        } ?: ProviderFailureKind.Unavailable
-                throw ProviderFailure(kind, "Sign-in refresh failed", error.status, error)
+        synchronized(refreshes.getValue(provider)) {
+            val stored = load(provider) ?: return null
+            if (stored.expiresAtMillis - 60_000 > System.currentTimeMillis()) return stored
+            val refreshed =
+                try {
+                    refreshTokens(http, provider, stored)
+                } catch (error: OAuthHttpException) {
+                    val kind =
+                        if (error.status == 400 || error.status == 401)
+                            ProviderFailureKind.Authentication
+                        else
+                            failureKindForHttpStatus(error.status).takeUnless {
+                                it == ProviderFailureKind.Other
+                            } ?: ProviderFailureKind.Unavailable
+                    throw ProviderFailure(kind, "Sign-in refresh failed", error.status, error)
+                }
+            synchronized(signIns) {
+                val now = load(provider)
+                if (now != stored) return now
+                save(provider, refreshed)
             }
-        save(provider, refreshed)
-        return refreshed
+            return refreshed
+        }
     }
+
+    private companion object {
+        /** Held through each provider's refresh, its request included. */
+        val refreshes = OAuthProvider.entries.associateWith { Any() }
+        /**
+         * Held for each sign-in write, and by a refresh from checking its sign-in is still the one
+         * saved until it saves the result. Never held through a request, so a sign-out never waits.
+         */
+        val signIns = Any()
+    }
+}
+
+private fun keystoreKey(): SecretKey {
+    val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    return (store.getKey("speecher-oauth", null) as? SecretKey)
+        ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            .apply {
+                init(
+                    KeyGenParameterSpec.Builder(
+                            "speecher-oauth",
+                            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                        )
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .build()
+                )
+            }
+            .generateKey()
 }
