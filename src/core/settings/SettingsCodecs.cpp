@@ -458,9 +458,6 @@ void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
     m_settings.setValue(SettingsKeys::LocalRunnerModel, value.model.trimmed());
 }
 
-// The terms a transcription request carries. Everything a person typed is
-// stored; only this list is capped, taking entries in the priority order
-// normalizeVocabularyEntries already put them in.
 // Terms lose the profiles the settings no longer hold, on the way in and out,
 // so a profile recreated under a deleted one's id does not inherit its terms.
 static QList<VocabularyEntry> withOfferedProfiles(QList<VocabularyEntry> entries,

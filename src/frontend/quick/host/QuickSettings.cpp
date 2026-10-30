@@ -395,10 +395,8 @@ QuickSettings::QuickSettings(ApplicationController *controller, QObject *parent)
 {
     SettingsStore *store = controller->settings();
     connect(store, &SettingsStore::snapshotApplied, this, &QuickSettings::refresh);
-    connect(store, &SettingsStore::audioCaptureSettingsChanged, this, &QuickSettings::refresh);
-    connect(store, &SettingsStore::correctionLearningEnabledChanged, this, &QuickSettings::refresh);
-    connect(store, &SettingsStore::updateSettingsChanged, this, &QuickSettings::refresh);
-    // Choosing, deleting and pulling models save without a snapshot.
+    // LocalSetup's live facts, such as endpoint checks and detected runners,
+    // change without a save.
     connect(controller->localSetup(), &LocalSetup::changed, this, &QuickSettings::refresh);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSettings::refresh);
     // The desktop's chooser answers later, and may refuse.
