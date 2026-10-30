@@ -216,7 +216,7 @@ void SpeechAttempts::connectTranscriber()
                              });
     m_connections << connect(m_transcriber, &SpeechTranscriber::attemptTranscript, this,
                              [this](quint64 attemptId, const QString &text) {
-                                 if (attemptId == m_id && (!m_acceptsText || m_acceptsText())) {
+                                 if (takesText(attemptId)) {
                                      m_transcript->replaceAttemptFinals(text);
                                  }
                              });
