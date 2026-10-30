@@ -263,11 +263,52 @@ private slots:
     // The socket's folder is this user's alone, unlike the shared /tmp.
     void theSocketsFolderIsTheUsersAlone()
     {
-        const QFileInfo folder(QFileInfo(appSocketName()).absolutePath());
+        const QFileInfo folder(QFileInfo(SingleInstanceIpc::socketName({})).absolutePath());
         QCOMPARE(folder.ownerId(), uint(getuid()));
         const QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
             | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
         QCOMPARE((folder.permissions() & openToOthers).toInt(), 0);
+    }
+
+    // Without a runtime directory of the user's alone, Speecher doesn't
+    // listen, rather than put its socket in the shared /tmp.
+    void noPrivateRuntimeDirectoryMeansNoSocket()
+    {
+        if (getuid() == 0) {
+            QSKIP("Root owns the folder that stands in for another user's");
+        }
+        // Root's /, which Qt's fallback under $TMPDIR can't be made in either.
+        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
+        const QByteArray temporary = qgetenv("TMPDIR");
+        qputenv("SPEECHER_INSTANCE", uniqueIpcName().toUtf8());
+        qputenv("XDG_RUNTIME_DIR", "/");
+        qputenv("TMPDIR", "/");
+        const auto restore = qScopeGuard([runtime, temporary] {
+            qunsetenv("SPEECHER_INSTANCE");
+            qputenv("XDG_RUNTIME_DIR", runtime);
+            temporary.isNull() ? qunsetenv("TMPDIR") : qputenv("TMPDIR", temporary);
+        });
+        SingleInstanceIpc ipc;
+        QString error;
+
+        QCOMPARE(ipc.listen(&error), IpcListenResult::Failed);
+
+        QVERIFY(error.contains(QStringLiteral("No folder private to this user")));
+    }
+
+    // A command run without $XDG_RUNTIME_DIR, from cron say, looks in
+    // systemd's /run/user/<uid>, where the desktop session's Speecher listens.
+    void aCommandWithoutTheRuntimeVariableLooksInTheSessionsFolder()
+    {
+        const QString session = QStringLiteral("/run/user/%1").arg(getuid());
+        if (!QFileInfo(session).isDir()) {
+            QSKIP("No systemd session folder here");
+        }
+        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
+        qunsetenv("XDG_RUNTIME_DIR");
+        const auto restore = qScopeGuard([runtime] { qputenv("XDG_RUNTIME_DIR", runtime); });
+
+        QCOMPARE(QFileInfo(SingleInstanceIpc::socketName({})).absolutePath(), session);
     }
 
     // A Speecher from before the socket moved there listens in /tmp, and a
@@ -277,7 +318,7 @@ private slots:
         qputenv("SPEECHER_INSTANCE", uniqueIpcName().toUtf8());
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSTANCE"); });
         QLocalServer older;
-        QVERIFY(older.listen(QFileInfo(appSocketName()).fileName()));
+        QVERIFY(older.listen(appSocketName()));
 
         IpcResponse response;
         QCOMPARE(SingleInstanceIpc::sendRequest({IpcCommand::Status}, &response, 75), IpcCommandResult::NoResponse);

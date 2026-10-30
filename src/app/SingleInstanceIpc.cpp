@@ -290,6 +290,12 @@ QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatfo
 IpcListenResult SingleInstanceIpc::listen(QString *error)
 {
     const QString listenName = socketName();
+    if (listenName.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("No folder private to this user to put Speecher's socket in");
+        }
+        return IpcListenResult::Failed;
+    }
 #ifdef Q_OS_WIN
     // Windows permits multiple QLocalServers on one pipe. Keep an atomic
     // process-lifetime claim while probing legacy endpoints and opening ours.

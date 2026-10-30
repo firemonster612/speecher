@@ -1387,9 +1387,7 @@ private slots:
         qputenv("SPEECHER_INSTANCE", "verify");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSTANCE"); });
         QCOMPARE(SettingsKeys::application(), QStringLiteral("speecher-verify"));
-        const QString personsName = QFileInfo(personsSocket).fileName();
-        QCOMPARE(QFileInfo(appSocketName()).fileName(),
-                 QStringLiteral("speecher-verify") + personsName.mid(QStringLiteral("speecher").size()));
+        QCOMPARE(appSocketName(), QStringLiteral("speecher-verify") + personsSocket.mid(QStringLiteral("speecher").size()));
 
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);

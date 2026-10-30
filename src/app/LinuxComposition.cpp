@@ -29,9 +29,37 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
+
+#include <unistd.h>
 
 namespace speecher {
 namespace {
+
+// Whether path is a folder of this user's that no one else may enter.
+bool privateFolder(const QString &path)
+{
+    const QFileInfo folder(path);
+    const QFile::Permissions groupAndOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
+        | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
+    return !path.isEmpty() && folder.isDir() && folder.ownerId() == getuid()
+        && !(folder.permissions() & groupAndOthers);
+}
+
+// Where the single-instance socket lives: $XDG_RUNTIME_DIR, or without it
+// systemd's /run/user/<uid>, which a shell lacking the variable (cron, su)
+// shares with the desktop session, or else Qt's fallback, each only while
+// it is this user's alone. A bare name would put the socket in the shared
+// /tmp, where another user can take it first, so without such a folder there
+// is no name, and listening fails.
+QString inRuntimeDirectory(const QString &name)
+{
+    const QString session = QStringLiteral("/run/user/%1").arg(getuid());
+    const QString directory = qEnvironmentVariableIsEmpty("XDG_RUNTIME_DIR") && privateFolder(session)
+        ? session
+        : QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    return privateFolder(directory) ? QDir(directory).filePath(name) : QString();
+}
 
 QString appImageSocketName()
 {
@@ -61,21 +89,22 @@ QString LinuxComposition::outputSummary() const
 
 QString LinuxComposition::ipcListenName() const
 {
-    return isRunningFromOwnAppImage() ? appImageSocketName() : appSocketName();
+    return inRuntimeDirectory(isRunningFromOwnAppImage() ? appImageSocketName() : appSocketName());
 }
 
 QStringList LinuxComposition::ipcConnectCandidates() const
 {
     const QStringList names = isRunningFromOwnAppImage() ? QStringList{appImageSocketName()}
                                                          : QStringList{appSocketName(), executablePathSocketName()};
-    // Then the same names in /tmp, where a Speecher from before the sockets
-    // moved to the runtime directory still listens.
-    QStringList candidates = names;
+    QStringList candidates;
     for (const QString &name : names) {
-        candidates.append(QFileInfo(name).fileName());
+        if (const QString path = inRuntimeDirectory(name); !path.isEmpty()) {
+            candidates.append(path);
+        }
     }
-    candidates.removeDuplicates();
-    return candidates;
+    // Then the bare names, in /tmp, where a Speecher from before the sockets
+    // moved to the runtime directory still listens.
+    return candidates + names;
 }
 
 QString LinuxComposition::detachedExecutablePath() const
