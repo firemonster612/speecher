@@ -76,14 +76,11 @@ class SpeecherImeService : InputMethodService() {
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
                         onInsert = {
-                            val session = ActiveDictation.session
-                            session?.bindInsert()
-                            if (session?.engine?.insert() == true)
+                            if (ActiveDictation.session?.engine?.insert() == true)
                                 view.vibrateForStartOrStop(settings.value)
                         },
                         onInsertRefined = {
                             val session = ActiveDictation.session
-                            session?.bindInsert()
                             if (session?.engine?.insertRefined(session.cleanup) == true)
                                 view.vibrateForStartOrStop(settings.value)
                         },
@@ -123,15 +120,14 @@ class SpeecherImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         ActiveDictation.session?.let { session ->
-            session.connection = currentInputConnection
             session.target = attribute?.let { targetApp(it, packageManager) }
-            if (!restarting) session.fieldsStarted++
+            session.startInput(currentInputConnection, restarting)
         }
     }
 
     override fun onFinishInput() {
         ActiveDictation.session?.let { session ->
-            session.connection = null
+            session.finishInput()
             session.target = null
         }
         super.onFinishInput()
@@ -189,9 +185,8 @@ class SpeecherImeService : InputMethodService() {
     private fun recover() {
         val recovery = (panelState.value as? DictationState.Failed)?.reason?.recovery ?: return
         if (recovery == Recovery.Retry) {
-            val session = ActiveDictation.session
-            session?.bindInsert()
-            if (session?.engine?.retry() == true) panel?.vibrateForStartOrStop(settings.value)
+            if (ActiveDictation.session?.engine?.retry() == true)
+                panel?.vibrateForStartOrStop(settings.value)
             return
         }
         switchBack()

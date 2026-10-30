@@ -106,6 +106,11 @@ class DictationEngine(
     private val transcribe: ((ByteArray, Cancellation) -> String)?,
     /** Puts non-blank text into the field; false when it could not. */
     private val commit: (String) -> Boolean,
+    /**
+     * Binds the words to the field focused now, the only one [commit] may put them into. Called by
+     * each tap that acts: an Insert that stops the listening or commits, and a Retry.
+     */
+    private val bindField: () -> Unit,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
     /** Waits out a reconnect's backoff on the executor thread. */
@@ -280,6 +285,7 @@ class DictationEngine(
      */
     private fun stop(cleanup: CleanupProvider?): Boolean {
         val now = stoppable ?: return false
+        bindField()
         phase = now.copy(mic = Mic.Stopped(cleanup))
         if (now.mic == Mic.Paused) {
             resumeMedia()
@@ -346,6 +352,7 @@ class DictationEngine(
             is Phase.Refining -> {
                 val cleanup = now.cleanup ?: return false
                 if (selected != null) return false
+                bindField()
                 cancelSession()
                 // The stopped cleanup was still called, as the desktop's record counts it.
                 cleanupsCalled += cleanup
@@ -353,6 +360,7 @@ class DictationEngine(
             }
             is Phase.Failed -> {
                 if (selected != null) return false
+                bindField()
                 val retry = now.retry
                 if (retry is Retry.Commit) commitTranscript(retry.text)
                 else commitHeard(now.transcript)
@@ -377,6 +385,7 @@ class DictationEngine(
     @Synchronized
     fun retry(): Boolean {
         val failed = phase as? Phase.Failed ?: return false
+        bindField()
         when (val retry = failed.retry) {
             is Retry.Commit -> commitTranscript(retry.text)
             is Retry.Refine -> refineTranscript(retry.cleanup, failed.transcript)

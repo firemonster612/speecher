@@ -45,7 +45,10 @@ class SignIn(
     private var listenerClosed: CountDownLatch? = null
     private var attempt: OAuthAttempt? = restoredPending()
     private var provider: OAuthProvider? = restoredProvider()
-    /** The attempt whose pasted code is being exchanged: a code works once, so it goes once. */
+    /**
+     * The attempt whose code is being exchanged, from the browser's redirect or a paste: a code
+     * works once, so each attempt exchanges once.
+     */
     private var exchanging: OAuthAttempt? = null
     @Volatile private var sequence = 0
 
@@ -124,6 +127,11 @@ class SignIn(
                                     respond(it, label, false)
                                     continue
                                 }
+                                // A pasted code got there first and replaced this attempt.
+                                if (!claimExchange(current)) {
+                                    respond(it, label, false)
+                                    error("Sign-in attempt was replaced")
+                                }
                                 val exchange = runCatching { exchange(id, provider, current, code) }
                                 respond(it, label, exchange.isSuccess)
                                 return@runCatching exchange.getOrThrow()
@@ -146,14 +154,14 @@ class SignIn(
     }
 
     /**
-     * Finishes the attempt with the code the person pasted. A second paste while its code is being
-     * exchanged does nothing, and a newer attempt replaces this one's result.
+     * Finishes the attempt with the code the person pasted. A paste while the attempt's code is
+     * being exchanged, pasted or from the browser, does nothing, and a newer attempt replaces this
+     * one's result.
      */
     fun completePastedCode(pasted: String, result: (Result<OAuthTokens>) -> Unit) {
         val current = requireNotNull(attempt) { "No sign-in in progress. Tap Sign in first." }
         val forProvider = requireNotNull(provider) { "No sign-in in progress. Tap Sign in first." }
-        if (exchanging === current) return
-        exchanging = current
+        if (!claimExchange(current)) return
         val id = replaceAttempt()
         sharedExecutor.execute {
             val outcome = runCatching {
@@ -209,6 +217,14 @@ class SignIn(
                         "Connection: close\r\n\r\n${signInPage(label, success)}")
                     .toByteArray()
             )
+    }
+
+    /** Claims [attempt]'s one exchange; false when it was claimed already. */
+    @Synchronized
+    private fun claimExchange(attempt: OAuthAttempt): Boolean {
+        if (exchanging === attempt) return false
+        exchanging = attempt
+        return true
     }
 
     /**

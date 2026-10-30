@@ -280,22 +280,23 @@ fun createDictationEngine(
             }
         else null,
         { text -> commitToField(context, session, text) },
+        session::bindField,
         sharedExecutor,
         { next ->
-            main.post {
-                // A rejected sign-in ends the account's session, the opposite of the
-                // clearSessionEnded calls above. A turned-down refresh sent no request, and
-                // validTokens ended its session already.
-                val reason = (next as? DictationState.Failed)?.reason
-                if (
-                    reason is FailureReason.ProviderFailed &&
-                        reason.kind == ProviderFailureKind.Authentication
-                )
-                    reason.account?.let { account ->
-                        usedSignIns[account]?.let { store.endSession(account.oauth, it) }
+            // A rejected sign-in ends the account's session, the opposite of the
+            // clearSessionEnded calls above. A turned-down refresh sent no request, and validTokens
+            // ended its session already. On a worker, since checking the sign-in decrypts it.
+            val reason = (next as? DictationState.Failed)?.reason
+            if (
+                reason is FailureReason.ProviderFailed &&
+                    reason.kind == ProviderFailureKind.Authentication
+            )
+                reason.account?.let { account ->
+                    usedSignIns[account]?.let { rejected ->
+                        sharedExecutor.execute { store.endSession(account.oauth, rejected) }
                     }
-                onState(next)
-            }
+                }
+            main.post { onState(next) }
         },
         // A refused request, as during a phone call, needs nothing: the media plays on, the
         // dictation goes ahead, and abandoning focus never granted does nothing.

@@ -154,7 +154,7 @@ class SettingsStore(private val context: Context) {
         val deletedProfiles = customProfileIds() - settings.writingProfiles.keys
         preferences.edit(commit = true) {
             deletedProfiles.forEach { profile ->
-                profileFields.forEach { field -> remove("${profile.key}$field") }
+                profileFields.keys.forEach { field -> remove("${profile.key}$field") }
             }
             putString("transcription", settings.transcriptionProvider.name)
             putBoolean("refinement", settings.refinementEnabled)
@@ -186,14 +186,11 @@ class SettingsStore(private val context: Context) {
             putBoolean("includeScreenshot", settings.includeScreenshot)
             putString("defaultWritingProfile", settings.defaultWritingProfile.key)
             settings.writingProfiles.forEach { (profile, choice) ->
-                val key = profile.key
-                putString("${key}Cleanup", choice.cleanupStrength.name)
-                putString("${key}Tone", choice.tone.name)
-                putString("${key}Instructions", choice.instructions)
-                putString("${key}CustomCleanup", choice.customCleanupLevel)
-                putString("${key}CustomTone", choice.customTone)
-                putString("${key}OutputLanguage", choice.outputLanguage)
-                if (!profile.isBuiltIn) putString("${key}Name", choice.name)
+                profileFields.forEach { (field, value) ->
+                    // A built-in profile's name is the app's, never stored.
+                    if (field != NAME_FIELD || !profile.isBuiltIn)
+                        putString("${profile.key}$field", value(choice))
+                }
             }
             putList("customProfiles", settings.writingProfiles.keys.filterNot { it.isBuiltIn })
             putList("appRules", settings.appRules.map(::StoredRule))
@@ -347,16 +344,17 @@ class SettingsStore(private val context: Context) {
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
         const val VERSION = 2
-        /** What each Writing Profile stores, each under its key prefix. */
-        val profileFields =
-            listOf(
-                "Cleanup",
-                "Tone",
-                "Instructions",
-                "CustomCleanup",
-                "CustomTone",
-                "Name",
-                "OutputLanguage",
+        const val NAME_FIELD = "Name"
+        /** What save stores of each Writing Profile, under its key prefix plus the field's name. */
+        val profileFields: Map<String, (WritingProfileSettings) -> String?> =
+            mapOf(
+                "Cleanup" to { it.cleanupStrength.name },
+                "Tone" to { it.tone.name },
+                "Instructions" to { it.instructions },
+                "CustomCleanup" to { it.customCleanupLevel },
+                "CustomTone" to { it.customTone },
+                NAME_FIELD to { it.name },
+                "OutputLanguage" to { it.outputLanguage },
             )
 
         /**

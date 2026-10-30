@@ -39,6 +39,8 @@ internal class TestDictation(
     val media = mutableListOf<String>()
     /** Whether the field takes a commit. */
     var fieldTakesText = true
+    /** How many taps bound the words to the field focused then. */
+    var fieldsBound = 0
     /** The field's selected text, read when Insert refined is tapped. */
     var selection: String? = null
     /** Thrown by every stream the engine opens while set. */
@@ -64,6 +66,7 @@ internal class TestDictation(
                 commits.add(it)
                 fieldTakesText
             },
+            bindField = { fieldsBound++ },
             executor = executor,
             onState = {
                 states.add(it)

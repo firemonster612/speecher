@@ -5,6 +5,9 @@ import android.os.Looper
 import androidx.core.content.edit
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
+import java.net.ConnectException
+import java.net.InetAddress
+import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -78,6 +81,29 @@ class SignInTest {
         main.idle()
     }
 
+    /** The browser's request to the sign-in listener for [path], once the listener is up. */
+    private fun browserRedirect(path: String): Socket {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (true) {
+            try {
+                return Socket(InetAddress.getLoopbackAddress(), CLAUDE_LISTENER_PORT).apply {
+                    getOutputStream().write("GET $path HTTP/1.1\r\n\r\n".toByteArray())
+                }
+            } catch (_: ConnectException) {
+                assertTrue(System.nanoTime() < deadline)
+                Thread.sleep(10)
+            }
+        }
+    }
+
+    private fun awaitRequests(count: Int) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (requests.get() < count) {
+            assertTrue(System.nanoTime() < deadline)
+            Thread.sleep(10)
+        }
+    }
+
     @Test
     fun `a code pasted twice is exchanged once`() {
         signIn.completePastedCode("code") { results += it }
@@ -87,6 +113,21 @@ class SignInTest {
 
         assertEquals(1, requests.get())
         assertEquals(listOf("access"), results.map { it.getOrThrow().accessToken })
+    }
+
+    @Test
+    fun `a code pasted while the browser's code is exchanged is not exchanged again`() {
+        val attempt = signIn.start(OAuthProvider.Claude, "Claude") { results += it }
+        browserRedirect("/callback?code=browser&state=${attempt.state}").use {
+            awaitRequests(1)
+            signIn.completePastedCode("code") { results += it }
+            answer.countDown()
+            awaitExchange()
+        }
+
+        assertEquals(1, requests.get())
+        assertEquals(listOf("access"), results.map { it.getOrThrow().accessToken })
+        assertEquals("access", tokens.load(OAuthProvider.Claude)?.accessToken)
     }
 
     @Test
@@ -101,3 +142,6 @@ class SignInTest {
         assertEquals(newer.state, pending.getString("state", null))
     }
 }
+
+/** The port Claude's sign-in redirect comes back to. */
+private const val CLAUDE_LISTENER_PORT = 54545
