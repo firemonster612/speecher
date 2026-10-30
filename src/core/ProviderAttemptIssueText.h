@@ -11,15 +11,10 @@
 #include <QString>
 #include <QStringList>
 
-#include <functional>
-
 namespace speecher {
 
 // "A", "A and B", "A, B and C".
 QString joinedWithAnd(const QStringList &items);
-// The issues keep accepts, in order.
-QList<ProviderAttemptIssue> issuesWhere(const QList<ProviderAttemptIssue> &issues,
-                                        const std::function<bool(const ProviderAttemptIssue &)> &keep);
 // Whether the service turned down a provider's sign-in, rather than a key.
 bool rejectedSignIn(const ProviderAttemptIssue &issue);
 // One sentence naming each provider and why, providers with the same reason

@@ -3,7 +3,12 @@
 #include "core/ProviderFailure.h"
 #include "core/ProviderTable.h"
 
+#include <QList>
 #include <QString>
+
+#include <algorithm>
+#include <functional>
+#include <iterator>
 
 namespace speecher {
 
@@ -34,5 +39,14 @@ struct ProviderAttemptIssue {
     // be missing. Always so for one Interrupted.
     bool wordsLost = false;
 };
+
+// The issues for which keep returns true, in their original order.
+inline QList<ProviderAttemptIssue> issuesWhere(const QList<ProviderAttemptIssue> &issues,
+                                               const std::function<bool(const ProviderAttemptIssue &)> &keep)
+{
+    QList<ProviderAttemptIssue> kept;
+    std::copy_if(issues.cbegin(), issues.cend(), std::back_inserter(kept), keep);
+    return kept;
+}
 
 } // namespace speecher
