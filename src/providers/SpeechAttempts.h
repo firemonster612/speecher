@@ -104,8 +104,11 @@ public:
     // reconnects; false when its end is a refusal, endedTooSoon().
     bool takeRollover();
     SpeechFailure endedTooSoon() const;
-    // Why no speech provider could take the audio: with fallbacks and
-    // issues, each provider tried and why; otherwise providerMessage.
+    // Whether the chain has fallbacks and issues says why any provider it
+    // tried could not help.
+    bool triedFallbacks(const QList<ProviderAttemptIssue> &issues) const;
+    // Why no speech provider could take the audio: once triedFallbacks(),
+    // each provider tried and why; otherwise providerMessage.
     QString failureText(const QString &providerMessage, const QList<ProviderAttemptIssue> &issues) const;
 
 signals:

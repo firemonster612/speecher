@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "core/ProviderAttemptIssueText.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -543,7 +544,7 @@ private slots:
         preparing.release();
         // Its result would reach the session as the worker's thread ends,
         // just after the job.
-        QTRY_COMPARE(local->backgroundPreparesFinished.load(), 1);
+        QTRY_COMPARE(local->backgroundPreparesFinished(), 1);
         QTest::qWait(100);
         QCOMPARE(local->prepareCalls, 0);
         QCOMPARE(states.count(), stateChanges);

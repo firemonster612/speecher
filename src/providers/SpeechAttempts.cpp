@@ -1,7 +1,7 @@
 #include "providers/SpeechAttempts.h"
 
+#include "core/ProviderAttemptIssueText.h"
 #include "core/TranscriptState.h"
-#include "dictation/PopupPresentation.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -181,9 +181,14 @@ SpeechFailure SpeechAttempts::endedTooSoon() const
     return SpeechAttemptPolicy::endedTooSoon(m_id);
 }
 
+bool SpeechAttempts::triedFallbacks(const QList<ProviderAttemptIssue> &issues) const
+{
+    return m_chain->providerIds().size() > 1 && !issues.isEmpty();
+}
+
 QString SpeechAttempts::failureText(const QString &providerMessage, const QList<ProviderAttemptIssue> &issues) const
 {
-    if (m_chain->providerIds().size() == 1 || issues.isEmpty()) {
+    if (!triedFallbacks(issues)) {
         return providerMessage;
     }
     return noSpeechServiceText(issues, m_providers->labels());
@@ -211,7 +216,7 @@ void SpeechAttempts::connectTranscriber()
                              });
     m_connections << connect(m_transcriber, &SpeechTranscriber::attemptTranscript, this,
                              [this](quint64 attemptId, const QString &text) {
-                                 if (attemptId == m_id && (!m_acceptsText || m_acceptsText())) {
+                                 if (takesText(attemptId)) {
                                      m_transcript->replaceAttemptFinals(text);
                                  }
                              });

@@ -791,6 +791,37 @@ private slots:
         QCOMPARE(m_script.attempts, 0);
     }
 
+    // A provider that returned the file's text reached its service, even
+    // without a stream to connect: a failure after it never hands the file
+    // to a fallback.
+    void aFileStaysWithAProviderThatReturnedItsText()
+    {
+        FakeSpeechTranscriber *codex = nullptr;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codex](QObject *parent) {
+                                               codex = new FakeSpeechTranscriber(parent);
+                                               codex->autoCompleteOnFinish = false;
+                                               return codex;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
+        codex->emitAttemptText(QStringLiteral("the words"));
+        codex->emitFailure(QStringLiteral("offline"), false, SpeechPhase::Connect, ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(m_script.attempts, 0);
+    }
+
     // A provider that never connected only buffered what it was sent: the
     // next one starts the file over, from its first chunk.
     void aFileThatNeverConnectedStartsOverOnTheNextProvider()

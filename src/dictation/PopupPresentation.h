@@ -70,10 +70,6 @@ DictationOutcome dictationOutcome(const QString &receipt,
                                   bool usedRawTranscript,
                                   const QString &speechWarning,
                                   const ProviderLabels &labels);
-// The error when no speech provider in the chain could take the dictation,
-// naming each and why.
-QString noSpeechServiceText(const QList<ProviderAttemptIssue> &issues, const ProviderLabels &labels);
-
 } // namespace speecher
 
 Q_DECLARE_METATYPE(speecher::PopupErrorAction)

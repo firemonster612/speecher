@@ -1424,6 +1424,24 @@ private slots:
         QVERIFY2(!failure, qPrintable(failure ? failure->message : QString()));
     }
 
+    // A renewal that fails leaves the sign-in due as last read, so the next
+    // session renews again rather than open with the expired token.
+    void aFailedCliproxyRenewalKeepsTheSignInDue()
+    {
+        qputenv("SPEECHER_CLIPROXY_CLAUDE_TOKEN_URL", "http://127.0.0.1:1/token");
+        const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CLAUDE_TOKEN_URL"); });
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("stale-token"), QDateTime::currentDateTimeUtc().addSecs(-60)));
+
+        AnthropicTranscriptRefiner refiner;
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
+        QVERIFY(refiner.createRefreshJob({}, accounts)->run());
+        QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
+    }
+
     // A picker keeps showing the account chosen even after its file is gone,
     // so the choice doesn't silently become "Choose…".
     void providerSignInKeepsAChosenAccountWhoseFileIsGone()

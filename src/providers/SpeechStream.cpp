@@ -52,6 +52,16 @@ SpeechAttempts *SpeechStream::attempts() const
     return m_attempts;
 }
 
+SpeechTranscriber *SpeechStream::transcriber() const
+{
+    return m_attempts->transcriber();
+}
+
+void SpeechStream::renewSignIn()
+{
+    m_attempts->chain()->renewSignIn(transcriber(), speechSettings(), m_settings.accounts);
+}
+
 void SpeechStream::setRecovery(Recovery recovery)
 {
     m_recovery = std::move(recovery);
