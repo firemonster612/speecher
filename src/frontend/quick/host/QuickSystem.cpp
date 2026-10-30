@@ -419,6 +419,15 @@ bool QuickSystem::canRemove() const
 #endif
 }
 
+bool QuickSystem::canLaunchAtLogin() const
+{
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+    return true;
+#else
+    return false;
+#endif
+}
+
 QString QuickSystem::computerName() const
 {
     return QSysInfo::machineHostName();

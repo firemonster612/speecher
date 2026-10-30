@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup, and the real `Settings`, `Dictation`, `DictationState`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -91,10 +91,10 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
   to its `AppSettings` field, and `set` saves through the daemon's
-  `SettingsStore`, so the CLI and the daemon see the same values. A row the
-  table lacks reads as absent, and where `Settings.saves(id)` is false
-  (`Schema.settable`) SchemaRow and search leave the row out; add the row
-  to the table when its page is wired. The
+  `SettingsStore`, so the CLI and the daemon see the same values. Every
+  schema row with a value has its entry in the table; a row only some
+  computers have names a `System` capability in `needs`, as `launchAtLogin`
+  does (`System.canLaunchAtLogin`). The
   shortcut rows go to the controller, which binds and keeps them, and show
   the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
@@ -114,7 +114,11 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `Library.refusalText(list, reason)` words it for the form. `remove(list,
   key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
   take the file the page's FileDialog chose. Library.qml words the lists.
-- `Settings.act(id)` runs an action row (`runSetup`).
+- `Settings.act(id)` runs an action row (`runSetup`), and
+  `Settings.completeSetup()` records that the setup assistant finished.
+- `Navigation` is which page Main shows (`current`) and the row a page
+  lands on (`pendingRow`); `go(pageId)` and `goToRow(pageId, rowId)` ask for
+  them. The host holds it and opens Main on a page through it.
 - `Updates` is the updater as `QuickUpdates.h` documents it: the running
   `version`, its state
   (checking through restarting, with check and install failures apart), the

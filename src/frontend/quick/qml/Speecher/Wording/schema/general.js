@@ -30,7 +30,7 @@ var rows = [
       keywords: "corner radius round square window frame border" },
     { id: "launchAtLogin", page: "general", section: "Startup", kind: "toggle",
       label: "Start Speecher at login", help: "Dictation only works while Speecher is running.",
-      keywords: "startup autostart boot launch" },
+      keywords: "startup autostart boot launch", needs: "canLaunchAtLogin" },
 
     // Each health row's state, status and fix come from System.checks.
     { id: "microphoneAccess", page: "permissions", section: "", kind: "custom",

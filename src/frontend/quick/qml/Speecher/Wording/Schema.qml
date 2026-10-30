@@ -79,12 +79,6 @@ QtObject {
         if (spec.needs && !has(spec.needs)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
-    // Whether the row can be set in this build: a custom row draws its own
-    // content, a secret goes to Accounts, and anything else needs saves(id),
-    // the backend saving it.
-    function settable(spec, saves) {
-        return spec.kind === "custom" || spec.kind === "secret" || saves(spec.id)
-    }
     // The row's options this computer has.
     function options(spec, has) {
         return (spec.options || []).filter(o => !o.needs || has(o.needs))

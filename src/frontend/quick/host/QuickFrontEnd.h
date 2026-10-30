@@ -8,6 +8,7 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "frontend/quick/host/QuickTranscription.h"
@@ -57,17 +58,12 @@ protected:
     // Turns closing either window into hiding it.
     bool eventFilter(QObject *watched, QEvent *event) override;
 
-private slots:
-    void finishSetup();
-
 private:
     // Makes a window from Speecher.App, or logs why it could not.
     QQuickWindow *createWindow(const QString &typeName);
     void setupClosed();
     // Main, on pageId, or on the page it is on when pageId is empty.
     void showPage(const QString &pageId);
-    // The page Main shows, or opens on.
-    void setPage(const QString &pageId);
 
     ApplicationController *m_controller;
     TrayIcon *m_tray;
@@ -83,6 +79,7 @@ private:
     QuickInsights m_insights;
     QuickAccounts m_accounts;
     QuickLibrary::ControllerScope m_library;
+    QuickNavigation m_navigation;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;
     QuickPopupWindow *m_popup = nullptr;

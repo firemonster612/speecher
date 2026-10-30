@@ -1,5 +1,6 @@
 #include "frontend/quick/host/QuickPopupWindow.h"
 
+#include "frontend/quick/host/PopupWindowBase.h"
 #include "platform/PopupPositioner.h"
 #ifdef Q_OS_MACOS
 #include "platform/mac/MacClickThrough.h"
@@ -9,7 +10,6 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QQmlComponent>
-#include <QQuickWindow>
 #include <QRegion>
 #include <QTimer>
 
@@ -48,7 +48,7 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
     m_positioner->setParent(this);
     QQmlComponent component(engine, QStringLiteral("Speecher.Popup"), QStringLiteral("PopupWindow"));
     QObject *object = component.create();
-    m_window = qobject_cast<QQuickWindow *>(object);
+    m_window = qobject_cast<PopupWindowBase *>(object);
     if (!m_window) {
         qWarning().noquote() << "QML: could not make the dictation popup:" << component.errorString();
         delete object;
@@ -69,11 +69,11 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
         }, Qt::QueuedConnection);
     }, Qt::DirectConnection);
 #ifdef Q_OS_WIN
-    connect(m_window, SIGNAL(shadowRegionChanged()), this, SLOT(applyInputRegion()));
+    connect(m_window, &PopupWindowBase::shadowRegionChanged, this, &QuickPopupWindow::applyInputRegion);
 #else
-    connect(m_window, SIGNAL(inputRegionChanged()), this, SLOT(applyInputRegion()));
+    connect(m_window, &PopupWindowBase::inputRegionChanged, this, &QuickPopupWindow::applyInputRegion);
 #endif
-    connect(m_window, SIGNAL(emptyChanged()), this, SLOT(hideOnceEmpty()));
+    connect(m_window, &PopupWindowBase::emptyChanged, this, &QuickPopupWindow::hideOnceEmpty);
     // The window is sized before it shows, but a size that still changes
     // while it is up (a review answered by other keys than the configured
     // ones) would keep its top-left corner and move the capsule off centre.
@@ -129,7 +129,7 @@ void QuickPopupWindow::framePresented(quint64 generation)
 // transparent and must let clicks through to the app underneath.
 void QuickPopupWindow::applyInputRegion()
 {
-    const QRect region = m_window->property("inputRegion").toRectF().toAlignedRect();
+    const QRect region = m_window->inputRegion().toAlignedRect();
 #if defined(Q_OS_MACOS)
     // Cocoa's mask clips drawing too, which cut the shadow off.
     mac::takeClicksOnlyIn(m_window, region);
@@ -137,7 +137,7 @@ void QuickPopupWindow::applyInputRegion()
     // The mask is the window region, which clips drawing too, so it takes in
     // the shadow. A click on the shadow, a ring 20 pixels wide at the sides,
     // 12 above the capsule and 28 below it, stays with the popup.
-    m_window->setMask(QRegion(m_window->property("shadowRegion").toRectF().toAlignedRect()));
+    m_window->setMask(QRegion(m_window->shadowRegion().toAlignedRect()));
 #else
 #ifdef SPEECHER_WITH_X11
     // On X11 the mask would be the window's shape, cutting off the shadow and
@@ -156,7 +156,7 @@ void QuickPopupWindow::applyInputRegion()
 
 void QuickPopupWindow::hideOnceEmpty()
 {
-    if (m_window->property("empty").toBool()) {
+    if (m_window->empty()) {
         hide();
     }
 }

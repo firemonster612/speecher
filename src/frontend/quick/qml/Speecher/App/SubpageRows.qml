@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Controls
+import Speecher.Backend
 import Speecher.Wording
 
 // A card of rows leading to a page's subpages, each with its title and the

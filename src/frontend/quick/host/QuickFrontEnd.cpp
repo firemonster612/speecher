@@ -123,6 +123,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_insights(controller)
     , m_accounts(controller)
     , m_library(controller)
+    , m_navigation(nullptr)
 {
     registerFonts();
     m_engine.addImageProvider(QStringLiteral("qr"), new QrCodeImageProvider);
@@ -178,8 +179,10 @@ void QuickFrontEnd::showPage(const QString &pageId)
 {
     // Before a first Main is made, so it builds only the page asked for:
     // building Updates on the way to another page would mark the news seen.
+    // Through go(), so asking for the page already showing still opens the
+    // sidebar group that holds it.
     if (!pageId.isEmpty()) {
-        setPage(pageId);
+        m_navigation.go(pageId);
     }
     if (!m_main) {
         m_main = createWindow(QStringLiteral("Main"));
@@ -222,7 +225,6 @@ void QuickFrontEnd::showSetupAssistant(SetupAssistantPage)
         if (!m_setup) {
             return;
         }
-        connect(m_setup, SIGNAL(finished()), this, SLOT(finishSetup()));
         connect(m_setup, &QWindow::visibleChanged, this, [this](bool visible) {
             if (!visible) {
                 setupClosed();
@@ -259,11 +261,6 @@ void QuickFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &m
     m_tray->showMessage(title, message, [this, pageId] { showPage(pageId); });
 }
 
-void QuickFrontEnd::finishSetup()
-{
-    m_controller->completeSetup();
-}
-
 QQuickWindow *QuickFrontEnd::createWindow(const QString &typeName)
 {
     QQmlComponent component(&m_engine, appModule, typeName);
@@ -288,15 +285,6 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QObject::eventFilter(watched, event);
-}
-
-void QuickFrontEnd::setPage(const QString &pageId)
-{
-    if (QObject *navigation = m_engine.singletonInstance<QObject *>(appModule, QStringLiteral("Navigation"))) {
-        // Through go(), so asking for the page already showing still opens
-        // the sidebar group that holds it.
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, pageId));
-    }
 }
 
 void QuickFrontEnd::setupClosed()

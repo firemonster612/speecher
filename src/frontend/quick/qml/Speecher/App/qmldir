@@ -1,5 +1,4 @@
 module Speecher.App
-singleton Navigation 1.0 Navigation.qml
 singleton ModelText 1.0 ModelText.qml
 singleton Microphones 1.0 Microphones.qml
 singleton ColorSchemes 1.0 ColorSchemes.qml

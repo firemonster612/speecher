@@ -38,6 +38,7 @@ class QuickSystem final : public QObject {
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
     Q_PROPERTY(bool canRemove READ canRemove CONSTANT)
+    Q_PROPERTY(bool canLaunchAtLogin READ canLaunchAtLogin CONSTANT)
     Q_PROPERTY(QString computerName READ computerName CONSTANT)
     Q_PROPERTY(QString phoneTransfer READ phoneTransfer NOTIFY phoneChanged)
     Q_PROPERTY(QString phoneLink READ phoneLink NOTIFY phoneChanged)
@@ -92,6 +93,9 @@ public:
     bool canOpenShortcutSettings() const;
     // Whether uninstall can remove Speecher from this computer.
     bool canRemove() const;
+    // Whether the platform can start Speecher at login, as the launchAtLogin
+    // setting asks: macOS and Windows.
+    bool canLaunchAtLogin() const;
     QString computerName() const;
     // Empty while no code is shown; otherwise waiting, sent, interrupted,
     // noNetwork or failed (PhoneTransferState).

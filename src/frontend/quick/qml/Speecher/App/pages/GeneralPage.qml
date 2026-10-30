@@ -12,7 +12,7 @@ Page {
     objectName: "generalPage"
     title: Schema.page("general").title
     // Startup shows only where Speecher can start at login.
-    subtitle: Settings.saves("launchAtLogin") ? Schema.page("general").subtitle : Schema.page("general").subtitleNoStartup
+    subtitle: System.canLaunchAtLogin ? Schema.page("general").subtitle : Schema.page("general").subtitleNoStartup
 
     property bool _phoneOpen: false
     property bool _confirmClear: false
@@ -60,9 +60,9 @@ Page {
 
     SubpageRows { pageId: "general" }
 
-    // Saved only where Speecher can start at login.
+    // Only where Speecher can start at login.
     Reveal {
-        open: Settings.saves("launchAtLogin")
+        open: System.canLaunchAtLogin
         Section {
             title: Schema.row("launchAtLogin").section
             SchemaRow { rowId: "launchAtLogin" }

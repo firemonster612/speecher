@@ -112,7 +112,7 @@ Page {
             help: Library.profilesText.appMatchesHelp
             clickable: true
             trailingText: Library.recognitionRulesText
-            onClicked: Navigation.goToRow("appRecognitionRules")
+            onClicked: Navigation.goToRow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
         }
         SchemaRow {
             rowId: "additionalInstructions"

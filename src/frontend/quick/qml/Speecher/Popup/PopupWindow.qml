@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Window
 
 // The window that carries the popup in the app: frameless, transparent and
 // never focused. Core places it (a layer-shell surface on Wayland, a panel
@@ -15,18 +14,18 @@ import QtQuick.Window
 // changes, frame by frame as the capsule morphs, so clicks on the
 // transparent room around them reach the app underneath. On Windows, where
 // the mask also clips drawing, it follows shadowRegion instead. Once the
-// popup is empty, faded out, the host hides the window.
-Window {
+// popup is empty, faded out, the host hides the window. The host reads
+// inputRegion, shadowRegion and empty from the C++ PopupWindowBase.
+PopupWindowBase {
     id: window
 
-    readonly property bool empty: popup.empty
     readonly property int shadowRoom: 32
-    // What takes the pointer, in the window's coordinates.
-    readonly property rect inputRegion: Qt.rect(popup.touchable.x + shadowRoom, popup.touchable.y + shadowRoom,
-                                               popup.touchable.width, popup.touchable.height)
-    // The input region and as far as the capsule's shadow reaches, which is
-    // shifted down.
-    readonly property rect shadowRegion: {
+
+    empty: popup.empty
+    inputRegion: Qt.rect(popup.touchable.x + shadowRoom, popup.touchable.y + shadowRoom,
+                         popup.touchable.width, popup.touchable.height)
+    // The capsule's shadow is shifted down.
+    shadowRegion: {
         const reach = popup.shadow.blur + popup.shadow.spread
         const left = Math.min(inputRegion.x, popup.capsule.x + shadowRoom - reach)
         const top = Math.min(inputRegion.y, popup.capsule.y + shadowRoom - reach + popup.shadow.offset.y)

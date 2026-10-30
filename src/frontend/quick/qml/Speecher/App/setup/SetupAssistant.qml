@@ -3,6 +3,7 @@ import QtQuick.Window
 import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
+import Speecher.Backend
 import Speecher.App
 
 // The first-run assistant: the steps down the side, the current one on a
@@ -42,8 +43,7 @@ ClientWindow {
     function go(index) { if (choices.reachable(index)) step = Math.max(0, Math.min(steps.length - 1, index)) }
     // Finish writes the choices, says setup is done, then closes; closing
     // any other way leaves setup to run again.
-    signal finished()
-    function finish() { choices.finish(); finished(); close() }
+    function finish() { choices.finish(); Settings.completeSetup(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------
