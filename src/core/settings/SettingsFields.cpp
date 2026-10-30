@@ -124,8 +124,6 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         readOnly("speech.claudeEndpointBase", member(&A::speech, &SpeechSettings::claudeEndpointBase),
                  &C::claudeEndpointBase),
         readOnly("speech.claudeVoicePath", member(&A::speech, &SpeechSettings::claudeVoicePath), &C::claudeVoicePath),
-        perRun("speech.timedSegments", member(&A::speech, &SpeechSettings::timedSegments)),
-        perRun("speech.cutIntoUtterances", member(&A::speech, &SpeechSettings::cutIntoUtterances)),
         stored("audio", member(&A::audio), &C::audioCaptureSettings, &C::setAudioCaptureSettings),
 
         stored("refinement.providerId", member(&A::refinement, &RefinementSettings::providerId),

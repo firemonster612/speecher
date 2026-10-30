@@ -1021,7 +1021,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     // A provider can fail inside startAttempt(), or as the audio that waited
     // goes to it: the session has moved on to the next one, or ended, and
     // must not open the microphone for this one.
-    if (!m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId))) {
+    if (!m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId), {})) {
         return;
     }
     const quint64 attemptId = m_speech->currentId();
@@ -1546,7 +1546,7 @@ void DictationSession::startNextAttempt()
 {
     const QString providerId = m_speech->chain()->currentId();
     noteRan(ProviderRole::Speech, providerId);
-    m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId));
+    m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId), {});
 }
 
 bool DictationSession::selectTranscriptRefiner(const QString &providerId)

@@ -162,7 +162,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     , m_settings(settings)
     , m_providers(providers)
     , m_transcript(new TranscriptState(this))
-    , m_stream(new SpeechStream(providers, m_transcript, this))
+    , m_stream(new SpeechStream(providers, m_transcript, {.timedSegments = true}, this))
     , m_refinementChain(new RefinementChain(
           [this](const QString &providerId) { return acquireRefiner(providerId); }, this))
 {
@@ -257,7 +257,6 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     // Never waits for the keyring, so a caller's refusal check still holds
     // when the batch starts; the chains read keys on their worker.
     m_batchSettings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, options);
-    m_batchSettings.speech.timedSegments = true;
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
     m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);

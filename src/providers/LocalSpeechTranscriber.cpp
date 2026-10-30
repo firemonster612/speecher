@@ -75,7 +75,8 @@ std::optional<ProviderFailure> LocalSpeechTranscriber::prepare(const SpeechSetti
     return std::nullopt;
 }
 
-void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
+void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings,
+                                          const SpeechAttemptOptions &options)
 {
     m_idleTimer.stop();
     m_idleTimer.setInterval(idleUnloadMs(settings.local.idleUnloadMinutes));
@@ -92,7 +93,7 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         });
         return;
     }
-    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn, timed = settings.timedSegments,
+    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn, timed = options.timedSegments,
               language = settings.language] {
         begin(attemptId, modelPath, runsOn, timed, language);
     });

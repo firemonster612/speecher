@@ -41,7 +41,7 @@ public:
 
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
     std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
-    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &options) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;

@@ -32,7 +32,9 @@ public:
     // before the stream's: true when it took the failure.
     using Recovery = std::function<bool(const SpeechFailure &failure)>;
 
-    SpeechStream(ProviderRegistry *providers, TranscriptState *transcript, QObject *parent = nullptr);
+    // Every attempt the stream starts asks for options.
+    SpeechStream(ProviderRegistry *providers, TranscriptState *transcript, SpeechAttemptOptions options,
+                 QObject *parent = nullptr);
 
     SpeechAttempts *attempts() const;
     // The transcriber of the provider the stream is on, or null.
@@ -115,6 +117,7 @@ private:
     ProviderRegistry *m_providers;
     SpeechAttempts *m_attempts;
     TranscriptState *m_transcript;
+    SpeechAttemptOptions m_options;
     Recovery m_recovery;
     std::function<void()> m_rollover;
     qsizetype m_mostKeptBytes = 0;

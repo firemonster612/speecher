@@ -773,7 +773,7 @@ private slots:
         QVERIFY(clip.open(QIODevice::ReadOnly));
         const QByteArray pcm = clip.readAll();
 
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {});
         // 100 ms chunks at the pace the microphone delivers them.
         constexpr qsizetype chunkBytes = 3200;
         for (qsizetype offset = 0; offset < pcm.size(); offset += chunkBytes) {
@@ -798,8 +798,7 @@ private slots:
 
         // Transcribe does; models that time their segments do so within the
         // clip, in order.
-        settings.timedSegments = true;
-        transcriber.startAttempt(2, settings);
+        transcriber.startAttempt(2, settings, {.timedSegments = true});
         transcriber.sendAudio(2, pcm);
         transcriber.finishInput(2);
         QVERIFY(completed.wait(120000));
@@ -872,10 +871,10 @@ private slots:
         const QByteArray pcm = clip.readAll();
 
         transcriber.runSpeedTest(modelId, {});
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {});
         transcriber.sendAudio(1, pcm.left(3200));
         transcriber.cancelAttempt(1);
-        transcriber.startAttempt(2, settings);
+        transcriber.startAttempt(2, settings, {});
         transcriber.sendAudio(2, pcm);
         transcriber.finishInput(2);
 
@@ -947,7 +946,7 @@ private slots:
         const std::optional<ProviderFailure> prepared = transcriber.prepare(settings, {});
         QVERIFY(prepared);
         QCOMPARE(prepared->kind, ProviderFailureKind::Unavailable);
-        transcriber.startAttempt(7, settings);
+        transcriber.startAttempt(7, settings, {});
         QVERIFY(failed.wait(2000));
         const SpeechFailure failure = failed.first().at(0).value<SpeechFailure>();
         QCOMPARE(failure.attemptId, quint64(7));

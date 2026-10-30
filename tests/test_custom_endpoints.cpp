@@ -52,7 +52,7 @@ void dictate(EndpointSpeechTranscriber &transcriber, const QString &origin, quin
     SpeechSettings settings;
     settings.endpoint.baseUrl = origin;
     settings.vocabulary = vocabulary;
-    transcriber.startAttempt(attempt, settings);
+    transcriber.startAttempt(attempt, settings, {});
     transcriber.sendAudio(attempt, QByteArray(640, '\0'));
     transcriber.finishInput(attempt);
 }
@@ -215,7 +215,7 @@ private slots:
         SpeechSettings settings;
         settings.endpoint.baseUrl = server.origin();
         settings.language = QStringLiteral("auto");
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {});
         transcriber.sendAudio(1, QByteArray(640, '\0'));
         transcriber.finishInput(1);
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
@@ -482,8 +482,7 @@ private slots:
         SpeechSettings settings;
         settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         settings.vocabulary = {QStringLiteral("Speecher")};
-        settings.cutIntoUtterances = true;
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
         transcriber.beginUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'a'));
         transcriber.endUtterance(1);
@@ -536,8 +535,7 @@ private slots:
         QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
         SpeechSettings settings;
         settings.endpoint.baseUrl = server.origin();
-        settings.cutIntoUtterances = true;
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
         transcriber.beginUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'a'));
         transcriber.endUtterance(1);

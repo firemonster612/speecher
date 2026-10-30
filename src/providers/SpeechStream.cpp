@@ -25,11 +25,13 @@ qsizetype marksBefore(const Marks &marks, qsizetype position)
 
 } // namespace
 
-SpeechStream::SpeechStream(ProviderRegistry *providers, TranscriptState *transcript, QObject *parent)
+SpeechStream::SpeechStream(ProviderRegistry *providers, TranscriptState *transcript, SpeechAttemptOptions options,
+                           QObject *parent)
     : QObject(parent)
     , m_providers(providers)
     , m_attempts(new SpeechAttempts(providers, SpeechAttempts::Transcribers::Fresh, transcript, this))
     , m_transcript(transcript)
+    , m_options(options)
 {
     m_sendTimer.setInterval(kSpeechCatchUpIntervalMs);
     m_sendTimer.setTimerType(Qt::PreciseTimer);
@@ -208,7 +210,7 @@ void SpeechStream::beginStreaming()
     m_attemptStart = m_sent;
     // A provider failing inside startAttempt() has made way for the next, or
     // failed the stream: nothing may be sent for this attempt.
-    if (!m_attempts->startAttempt(speechSettings())) {
+    if (!m_attempts->startAttempt(speechSettings(), m_options)) {
         return;
     }
     m_streaming = true;
@@ -225,7 +227,7 @@ void SpeechStream::beginStreaming()
 void SpeechStream::startNextAttempt()
 {
     m_attemptStart = m_sent;
-    m_attempts->startAttempt(speechSettings());
+    m_attempts->startAttempt(speechSettings(), m_options);
 }
 
 void SpeechStream::sendNextChunk()

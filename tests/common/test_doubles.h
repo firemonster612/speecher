@@ -266,7 +266,7 @@ public:
         return streamsFinals;
     }
 
-    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &) override
     {
         ++startCalls;
         currentAttemptId = attemptId;

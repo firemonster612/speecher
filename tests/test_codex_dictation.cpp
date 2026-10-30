@@ -566,7 +566,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(peer, 1000);
         peer->sendTextMessage(QStringLiteral(
@@ -626,7 +626,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -677,7 +677,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -728,7 +728,7 @@ private slots:
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -770,7 +770,7 @@ private slots:
         QSignalSpy attemptText(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
-        transcriber.startAttempt(7, settings);
+        transcriber.startAttempt(7, settings, {});
 
         QTimer sender;
         sender.setInterval(100);

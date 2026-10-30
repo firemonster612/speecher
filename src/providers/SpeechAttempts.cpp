@@ -79,7 +79,7 @@ quint64 SpeechAttempts::currentId() const
     return m_id;
 }
 
-bool SpeechAttempts::startAttempt(const SpeechSettings &speech)
+bool SpeechAttempts::startAttempt(const SpeechSettings &speech, const SpeechAttemptOptions &options)
 {
     commitPartial();
     m_transcript->startAttempt(speech.language);
@@ -88,7 +88,7 @@ bool SpeechAttempts::startAttempt(const SpeechSettings &speech)
     ++m_providerAttempts;
     m_policy.attemptStarted();
     const quint64 attemptId = ++m_id;
-    m_transcriber->startAttempt(attemptId, speech);
+    m_transcriber->startAttempt(attemptId, speech, options);
     return attemptId == m_id;
 }
 

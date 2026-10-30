@@ -85,12 +85,12 @@ public:
         return std::nullopt;
     }
 
-    void startAttempt(quint64, const SpeechSettings &settings) override
+    void startAttempt(quint64, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
     {
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
         m_script->language = settings.language;
-        m_script->timedSegments = settings.timedSegments;
+        m_script->timedSegments = options.timedSegments;
         m_bytes = 0;
     }
 
