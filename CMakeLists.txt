@@ -382,6 +382,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/EndpointTranscriptRefiner.h
   src/providers/LocalRunner.h
   src/providers/PcmWav.h
+  src/providers/SpeechAudio.h
   src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicAuthProvider.h
