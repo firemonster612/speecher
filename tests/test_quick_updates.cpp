@@ -11,6 +11,7 @@
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribeQueue.h"
 
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -235,6 +236,12 @@ private slots:
         emit controller.fileTranscription()->batchFinished({}, false);
         QCOMPARE(changed.count(), 4);
         QCOMPARE(updates.restartBlocker(), QStringLiteral("unsavedTranscripts"));
+
+        // The last unsaved transcript exported or dismissed.
+        blocker = UpdateController::RestartBlocker::None;
+        emit controller.transcribeQueue()->unsavedResultsChanged();
+        QCOMPARE(changed.count(), 5);
+        QCOMPARE(updates.restartBlocker(), QString());
     }
 
     void lastCheckedIsWhenACheckLastSucceeded()

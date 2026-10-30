@@ -204,6 +204,9 @@ signals:
     void lastTranscriptChanged(const QString &text);
     void lastRecordChanged();
     void recordingChanged(bool recording);
+    // The Transcribe queue's results that aren't saved, exported or dismissed
+    // changed, so what an update restart waits for may have too.
+    void unsavedTranscriptsChanged();
     void audioLevelChanged(float level);
     void globalShortcutChanged();
     void globalShortcutSupportChanged();
