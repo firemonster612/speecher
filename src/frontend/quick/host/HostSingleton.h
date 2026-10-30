@@ -2,6 +2,8 @@
 
 #include <QQmlEngine>
 
+#include <type_traits>
+
 namespace speecher {
 
 // The instance side of a host singleton: the object the host makes before
@@ -22,7 +24,13 @@ public:
     }
 
 protected:
-    HostSingleton() { s_instance = this; }
+    HostSingleton()
+    {
+        // Qt makes its own instance of a default-constructible singleton type
+        // and never calls create, so QML would not see the host's.
+        static_assert(!std::is_default_constructible_v<T>, "a host singleton's constructor takes what the host gives it");
+        s_instance = this;
+    }
     ~HostSingleton()
     {
         if (s_instance == this) {
