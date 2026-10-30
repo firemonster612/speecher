@@ -132,6 +132,9 @@ inline const QString kCustomOnlyCleanupBase = QStringLiteral("custom_only");
 // what was said.
 QString refinedCleanupLevel(const QString &level, const QString &outputLanguage);
 
+// How much text either side of the caret a capture records as nearby text.
+inline constexpr int nearbyTextChars = 240;
+
 struct Target {
     QString applicationId;
     QString applicationName;

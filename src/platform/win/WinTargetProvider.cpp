@@ -3,10 +3,8 @@
 #include "platform/win/WinCorrectionObserver.h"
 #include "output/win/WinPasteDelivery.h"
 
-#include <QEventLoop>
 #include <QFileInfo>
 #include <QSet>
-#include <QTimer>
 
 #include <windows.h>
 #include <ole2.h>
@@ -20,10 +18,6 @@ namespace speecher {
 namespace {
 
 using Microsoft::WRL::ComPtr;
-
-constexpr int insertionVerificationAttempts = 5;
-constexpr int insertionVerificationPauseMs = 30;
-constexpr int targetContextCharacters = 240;
 
 QString bstrString(BSTR value)
 {
@@ -192,11 +186,15 @@ QString windowTitle(HWND window)
     return QString::fromWCharArray(title.data(), copied);
 }
 
-void spinEventLoop(int milliseconds)
+// The control's text and the selection a write will replace, or nothing when
+// the control reports no selection inside its text.
+std::optional<InsertionBaseline> baselineOf(IUIAutomationElement *element)
 {
-    QEventLoop wait;
-    QTimer::singleShot(milliseconds, &wait, &QEventLoop::quit);
-    wait.exec(QEventLoop::ExcludeUserInputEvents);
+    const auto selection = selectionOffsets(element);
+    if (!selection) {
+        return std::nullopt;
+    }
+    return InsertionBaseline::forSelection(currentText(element), selection->first, selection->second);
 }
 
 const QSet<QString> &terminalExecutables()
@@ -243,9 +241,7 @@ void WinTargetProvider::clearCapture()
     }
     m_native->window = nullptr;
     m_native->focused.Reset();
-    m_valueBeforeInsertion.reset();
-    m_insertionOffset.reset();
-    m_replacedSelectionEnd.reset();
+    m_insertionBaseline.reset();
 }
 
 Target WinTargetProvider::capture()
@@ -304,24 +300,17 @@ Target WinTargetProvider::capture()
             }
 
             if (!target.secure) {
-                const QString value = currentText(focused.Get());
-                const auto selection = selectionOffsets(focused.Get());
-                if (selection && selection->first >= 0
-                    && selection->second >= selection->first
-                    && selection->second <= value.size()) {
-                    const int start = selection->first;
-                    const int end = selection->second;
-                    m_valueBeforeInsertion = value;
-                    m_insertionOffset = start;
-                    m_replacedSelectionEnd = end;
+                m_insertionBaseline = baselineOf(focused.Get());
+                if (m_insertionBaseline) {
+                    const auto &[value, start, end] = *m_insertionBaseline;
                     target.caretOffset = start;
                     if (end > start) {
                         target.selectionStart = start;
                         target.selectionEnd = end;
                         target.selectedText = value.mid(start, end - start);
                     }
-                    target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
-                    target.nearbyTextAfter = value.mid(end, targetContextCharacters);
+                    target.nearbyTextBefore = value.left(start).right(nearbyTextChars);
+                    target.nearbyTextAfter = value.mid(end, nearbyTextChars);
                 }
             }
         }
@@ -383,16 +372,14 @@ bool WinTargetProvider::insertText(const Target &target,
         return false;
     }
 
-    const QString before = currentText(m_native->focused.Get());
-    const auto selection = selectionOffsets(m_native->focused.Get());
-    if (!selection || selection->second > before.size()) {
+    const std::optional<InsertionBaseline> baseline = baselineOf(m_native->focused.Get());
+    if (!baseline) {
         if (error) {
             *error = QStringLiteral("The focused control did not report its insertion point");
         }
         return false;
     }
-    const QString value = before.left(selection->first)
-        + plainText + before.mid(selection->second);
+    const QString value = baseline->expectedAfter(plainText);
     ComPtr<IUIAutomationValuePattern> valuePattern;
     if (FAILED(m_native->focused->GetCurrentPatternAs(
             UIA_ValuePatternId, IID_PPV_ARGS(&valuePattern))) || !valuePattern) {
@@ -412,9 +399,7 @@ bool WinTargetProvider::insertText(const Target &target,
         return false;
     }
 
-    m_valueBeforeInsertion = before;
-    m_insertionOffset = selection->first;
-    m_replacedSelectionEnd = selection->second;
+    m_insertionBaseline = baseline;
     // SetValue already succeeded. TextDelivery verifies separately; treating
     // unavailable or delayed readback as rejection could insert the text twice.
     return true;
@@ -422,9 +407,7 @@ bool WinTargetProvider::insertText(const Target &target,
 
 bool WinTargetProvider::preparePaste(const Target &target)
 {
-    m_valueBeforeInsertion.reset();
-    m_insertionOffset.reset();
-    m_replacedSelectionEnd.reset();
+    m_insertionBaseline.reset();
     if (!stillFocused(target)) {
         return false;
     }
@@ -433,62 +416,35 @@ bool WinTargetProvider::preparePaste(const Target &target)
         return false;
     }
     if (!target.secure && m_native->focused) {
-        const QString value = currentText(m_native->focused.Get());
-        const auto selection = selectionOffsets(m_native->focused.Get());
-        if (selection && selection->first >= 0
-            && selection->second >= selection->first
-            && selection->second <= value.size()) {
-            m_valueBeforeInsertion = value;
-            m_insertionOffset = selection->first;
-            m_replacedSelectionEnd = selection->second;
-        }
+        m_insertionBaseline = baselineOf(m_native->focused.Get());
     }
     return stillFocused(target);
 }
 
 bool WinTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_native->focused || !m_valueBeforeInsertion || !m_insertionOffset
-        || !m_replacedSelectionEnd || plainText.isEmpty() || target.secure
-        || !stillFocused(target)) {
+    if (!m_native->focused || !m_insertionBaseline || target.secure || !stillFocused(target)) {
         return false;
     }
-    // The insertion replaces the saved selection with the text; anything else
-    // that changed the control (a background edit, an ignored paste) must not
-    // verify, so require the exact transformation, surrounding text included.
-    const QString expected = m_valueBeforeInsertion->left(*m_insertionOffset)
-        + plainText + m_valueBeforeInsertion->mid(*m_replacedSelectionEnd);
-    if (expected == *m_valueBeforeInsertion) {
-        // Replacing a selection with identical text has no observable
-        // change; value comparison cannot verify it.
+    // A copy, because a capture during verify's nested event loop resets the member.
+    const InsertionBaseline baseline = *m_insertionBaseline;
+    if (!baseline.verify(plainText, [this, &target]() -> std::optional<QString> {
+            if (!stillFocused(target)) {
+                return std::nullopt;
+            }
+            return currentText(m_native->focused.Get());
+        })) {
         return false;
     }
-    for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
-        if (attempt > 0) {
-            spinEventLoop(insertionVerificationPauseMs);
-        }
-        if (!stillFocused(target)) {
-            return false;
-        }
-        if (currentText(m_native->focused.Get()) != expected) {
-            continue;
-        }
-        observeCorrections(target, expected, *m_insertionOffset, plainText);
-        return true;
+    if (const auto window = baseline.correctionWindow(target, plainText)) {
+        observeCorrections(*window);
     }
-    return false;
+    return true;
 }
 
-void WinTargetProvider::observeCorrections(const Target &target,
-                                           const QString &value,
-                                           int insertedAt,
-                                           const QString &plainText)
+void WinTargetProvider::observeCorrections(const CorrectionWindow &window)
 {
-    const QString prefix = value.left(insertedAt).right(correctionContextChars);
-    const QString suffix = value.mid(insertedAt + plainText.size()).left(correctionContextChars);
-    if (!m_correctionObservationEnabled
-        || prefix.size() < correctionMinContextChars
-        || suffix.size() < correctionMinContextChars) {
+    if (!m_correctionObservationEnabled) {
         return;
     }
     if (!m_correctionObserver) {
@@ -497,7 +453,7 @@ void WinTargetProvider::observeCorrections(const Target &target,
     m_correctionObserver->observe(
         m_native->automation.Get(),
         m_native->focused.Get(),
-        {target, plainText, prefix, suffix},
+        window,
         [this](const QString &original,
                const QString &corrected,
                const QString &applicationId,

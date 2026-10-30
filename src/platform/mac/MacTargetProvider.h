@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dictation/DictationPorts.h"
+#include "platform/InsertionBaseline.h"
 
 #include <QString>
 
@@ -34,24 +35,14 @@ public:
 
 private:
     void releaseFocusedElement();
-    void observeCorrections(const Target &target,
-                            const QString &value,
-                            int insertedAt,
-                            const QString &plainText);
+    void observeCorrections(const CorrectionWindow &window);
 
     // AXUIElementRef, kept opaque so this header stays plain C++ for moc.
     void *m_focusedElement = nullptr;
     quint32 m_windowId = 0;
-    // The control's value immediately before direct insertion or keyboard paste.
-    // An absent baseline cannot prove that delivery changed the control.
-    std::optional<QString> m_valueBeforeInsertion;
-    // The AX selection location immediately before the write, so repeated text
-    // cannot make verification attach correction learning to an older copy.
-    std::optional<int> m_insertionOffset;
-    // End of the selection the insertion replaced, so verification can require
-    // the exact anchored transformation of the saved value rather than accept
-    // any change that happens to show the text at the offset.
-    std::optional<int> m_replacedSelectionEnd;
+    // Taken immediately before direct insertion or keyboard paste. Without one,
+    // nothing can prove that delivery changed the control.
+    std::optional<InsertionBaseline> m_insertionBaseline;
     std::unique_ptr<mac::CorrectionObserver> m_correctionObserver;
     bool m_correctionObservationEnabled = true;
 };
