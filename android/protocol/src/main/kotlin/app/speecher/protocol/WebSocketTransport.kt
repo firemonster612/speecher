@@ -15,6 +15,7 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -271,7 +272,13 @@ internal constructor(
                         throw IOException("Invalid close code")
                     val reason =
                         if (bytes.isEmpty()) "" else decodeText(bytes.copyOfRange(2, bytes.size))
-                    if (closing.compareAndSet(false, true)) submit(8, bytes)
+                    if (closing.compareAndSet(false, true)) {
+                        submit(8, bytes)
+                        // The reply goes out before the socket closes: the cancel() that follows
+                        // would drop it from the writer's queue.
+                        writer.shutdown()
+                        writer.awaitTermination(CLOSE_REPLY_MILLIS, TimeUnit.MILLISECONDS)
+                    }
                     deliverClosed(code, reason)
                     return
                 }
@@ -426,6 +433,9 @@ internal constructor(
 }
 
 private const val MAX_QUEUED_BYTES = 8L * 1024 * 1024
+
+/** How long a reply to the server's close frame may take to write before the socket closes. */
+private const val CLOSE_REPLY_MILLIS = 1000L
 
 private class UpgradeFailure(val status: Int) : IOException("WebSocket upgrade HTTP $status")
 
