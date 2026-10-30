@@ -1117,7 +1117,8 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review->edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target);
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target,
+                                                        m_speechChain->currentId());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
     if (settings.refinement.providerId == kNoRefinementProvider

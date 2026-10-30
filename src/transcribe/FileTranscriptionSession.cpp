@@ -818,7 +818,7 @@ void FileTranscriptionSession::finishTranscription()
 
 void FileTranscriptionSession::refine(const QString &raw)
 {
-    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{});
+    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{}, m_speechChain->currentId());
     // The page's choices stand in for what a target app would have implied.
     m_pipeline.refinementSettings.style = m_options.cleanupStrength;
     m_pipeline.refinementSettings.tone = m_options.tone;

@@ -2,6 +2,7 @@
 
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
+#include "core/settings/SpokenLanguages.h"
 
 #include <QDateTime>
 #include <QLocale>
@@ -196,7 +197,8 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
 
 TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscript,
                                                      const AppSettings &settings,
-                                                     const Target &target)
+                                                     const Target &target,
+                                                     const QString &speechProviderId)
 {
     TranscriptPipelineResult result;
     const QList<BindingRule> bindings = activeBindings(settings, target);
@@ -215,7 +217,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     }
     result.refinementSettings = effectiveRefinementSettings(settings, target);
     result.refinementContext.target = target;
-    result.refinementContext.spokenLanguage = settings.speech.language;
+    result.refinementContext.spokenLanguage = chainSpeechSettings(settings.speech, speechProviderId).language;
     result.refinementContext.writingProfile = writingProfileFor(settings, target);
     result.refinementVocabulary = refinementVocabulary(settings,
                                                        result.refinementContext.writingProfile,
