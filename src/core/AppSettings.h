@@ -310,7 +310,9 @@ struct RefinementEndpointSettings {
     QString model;
     QString apiKey;
 
-    // A detached URL can still use an unread proxy key until the user edits the key.
+    // Uses the CLI Proxy key, read or not, from leaving the preset at the
+    // proxy's address until the key is typed or the server changes. apiKey
+    // keeps the copy that leaving made, which requests don't use.
     bool useCliproxyKey = false;
 
     bool operator==(const RefinementEndpointSettings &other) const = default;

@@ -1009,6 +1009,49 @@ private slots:
         QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
     }
 
+    // So does the copy leaving the preset made, after a restart that read
+    // neither key yet.
+    void anotherServerDoesNotGetTheCopiedProxyKeyAfterARestart()
+    {
+        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.edit([](AppSettings &draft) {
+                draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+                draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+                draft.refinement.endpoint.preset = QStringLiteral("cliproxy");
+                return true;
+            });
+            settings.edit([](AppSettings &draft) {
+                editRefinementEndpoint(draft, {.preset = QString()});
+                return true;
+            });
+        }
+
+        SettingsStore restarted;
+        restarted.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://other.example/v1")});
+            return true;
+        });
+
+        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QString());
+    }
+
+    // A key typed for the Custom endpoint stays when its server changes, even
+    // one that matches the proxy's.
+    void aTypedKeyStaysWhenTheServerChanges()
+    {
+        AppSettings settings;
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        settings.refinement.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:8317");
+        editRefinementEndpoint(settings, {.apiKey = QStringLiteral("proxy-key")});
+
+        editRefinementEndpoint(settings, {.baseUrl = QStringLiteral("http://other.example/v1")});
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QStringLiteral("proxy-key"));
+    }
+
     // Keys land in the keyring when one works, and in the settings file
     // otherwise; either way they read back and never double up.
     void endpointKeysRoundTripOutsideTheSettingsFile()

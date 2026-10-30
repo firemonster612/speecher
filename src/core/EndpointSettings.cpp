@@ -37,17 +37,17 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
         endpoint.preset.clear();
         endpoint.baseUrl = effective.apiBase;
         // The proxy's key may follow only to the proxy's own address; a new
-        // server gets it only if this same edit supplies it.
+        // server gets it only if this same edit supplies it. Kept, read or
+        // not, as the proxy's (useCliproxyKey), so a later change of server
+        // knows to drop it.
         const bool sameServer = !serverChanged;
         endpoint.apiKey = sameServer || edit.apiKey ? effective.apiKey : QString();
-        endpoint.useCliproxyKey = sameServer && unread;
+        endpoint.useCliproxyKey = sameServer && !edit.apiKey;
         settings.unreadSecretKeys.removeAll(endpointKey);
     }
-    // Nor does it follow a Custom endpoint to another server, whether the
-    // endpoint uses it unread or holds the copy leaving the preset made.
-    const bool holdsProxyKey = endpoint.useCliproxyKey
-        || (!endpoint.apiKey.isEmpty() && endpoint.apiKey == settings.refinement.cliproxyApiKey);
-    if (serverChanged && !edit.apiKey && holdsProxyKey) {
+    // Nor does it follow a Custom endpoint to another server. A key the
+    // person typed stays.
+    if (serverChanged && !edit.apiKey && endpoint.useCliproxyKey) {
         endpoint.apiKey.clear();
         endpoint.useCliproxyKey = false;
         settings.unreadSecretKeys.removeAll(endpointKey);
