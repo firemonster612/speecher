@@ -22,6 +22,7 @@ class DictationSession;
 enum class DictationState;
 class FileTranscriptionSession;
 struct TranscribeOptions;
+class Accounts;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
@@ -109,6 +110,9 @@ public:
     NetworkReachability *networkReachability() const;
     // Where the sign-ins learned along the way are noted for settings status.
     ProviderAvailability *providerAvailability() const;
+    // Each service's sign-in and which secrets are saved, checked once a
+    // window first asks.
+    Accounts *accounts() const;
     const PlatformComposition *platform() const;
     // The Dictation Session's state as it reports it (reportedState).
     DictationState dictationState() const;
@@ -226,6 +230,7 @@ private:
     LocalSetup *m_localSetup = nullptr;
     NetworkReachability *m_reachability = nullptr;
     ProviderAvailability *m_availability = nullptr;
+    Accounts *m_accounts = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;

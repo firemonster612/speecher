@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 
+#include "app/Accounts.h"
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
@@ -233,6 +234,19 @@ private slots:
                  QStringLiteral("missing"));
         QCOMPARE(entry(files, QStringLiteral("claude-a@example.com.json")).value(QStringLiteral("state")).toString(),
                  QStringLiteral("expired"));
+    }
+
+    // The daemon checks sign-ins and notes them without any window, so
+    // nothing but the asking needs the UI.
+    void theDaemonChecksSignInsWithoutTheUi()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        Accounts *accounts = controller.accounts();
+        accounts->start();
+        QTRY_VERIFY(accounts->signIn(SignInService::OpenAi));
+        QCOMPARE(accounts->signIn(SignInService::OpenAi)->state, SignInState::Missing);
+        QCOMPARE(notedSignIns(controller).value(QStringLiteral("openai"), true), false);
     }
 
     // A service's card on Accounts follows its checks rather than keeping

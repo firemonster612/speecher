@@ -17,6 +17,7 @@ struct CliProxyAccount {
     QString problem;
     // A chosen account whose file is gone; see ProviderSignIn::accounts.
     bool missing = false;
+    bool operator==(const CliProxyAccount &) const = default;
 };
 
 struct CliProxyCredentialResult {
