@@ -35,6 +35,8 @@ QByteArray claudeCodeUserAgent()
     return QStringLiteral("claude-cli/%1 (external, cli)").arg(normalizedVersion).toUtf8();
 }
 
+// Adaptive thinking starts with the 4.6 models; Opus 4.5 rejects it and takes
+// only a thinking budget.
 bool modelSupportsAdaptiveEffort(const QString &model)
 {
     const QString normalized = model.toCaseFolded();
@@ -44,8 +46,7 @@ bool modelSupportsAdaptiveEffort(const QString &model)
         || normalized.contains(QStringLiteral("sonnet-4-6"))
         || normalized.contains(QStringLiteral("opus-4-8"))
         || normalized.contains(QStringLiteral("opus-4-7"))
-        || normalized.contains(QStringLiteral("opus-4-6"))
-        || normalized.contains(QStringLiteral("opus-4-5"));
+        || normalized.contains(QStringLiteral("opus-4-6"));
 }
 
 // Fast mode is a research preview limited to Opus 5.5, Opus 5 and Opus 4.8

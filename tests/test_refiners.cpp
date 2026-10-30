@@ -1466,6 +1466,8 @@ private slots:
         QTest::addColumn<QString>("effort");
         QTest::newRow("Haiku 5.5 takes extra high") << "claude-haiku-5-5" << "xhigh";
         QTest::newRow("Opus 4.6 tops out at max") << "claude-opus-4-6" << "max";
+        // Adaptive thinking starts with the 4.6 models.
+        QTest::newRow("Opus 4.5 takes none") << "claude-opus-4-5" << "";
         QTest::newRow("Sonnet 4.5 takes none") << "claude-sonnet-4-5" << "";
     }
 
