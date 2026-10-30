@@ -158,15 +158,15 @@ private slots:
     void localModelRatesTheModelItWouldRun()
     {
         QCOMPARE(ratedModel(ProviderRole::Speech, QStringLiteral("local"), referencePc()), QStringLiteral("Parakeet 0.6B"));
-        // 6.43% AA-WER; 10 s of speech in 10/26.01 s on this chip.
-        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc()), QList<double>({5.5, 9}));
+        // 3.99% FLEURS, an estimated 3.66% AA-WER; 10 s of speech in 10/26.01 s on this chip.
+        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc()), QList<double>({8.5, 9}));
 
         AppSettings settings;
         LocalSpeechSettings &local = settings.speech.local;
         local.speedTestSeconds.insert(localSpeedTestKey(QStringLiteral("parakeet"), {QStringLiteral("cpu"), {}}), 4.0);
-        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings), QList<double>({5.5, 9}));
+        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings), QList<double>({8.5, 9}));
         local.speedTestSeconds.insert(localSpeedTestKey(QStringLiteral("parakeet"), local.runsOn), 2.0);
-        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings), QList<double>({5.5, 6}));
+        QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings), QList<double>({8.5, 6}));
 
         local.modelId = QStringLiteral("whisper-turbo");
         local.modelChosen = true;
@@ -191,7 +191,9 @@ private slots:
         QCOMPARE(values(QStringLiteral("moonshine-small"), referencePc()), QList<double>({4, 8.5}));
         QCOMPARE(values(QStringLiteral("qwen3-asr"), referencePc()), QList<double>({9, 3.5}));
         QCOMPARE(values(QStringLiteral("voxtral-small"), referencePc()), QList<double>({9, -1}));
-        QCOMPARE(values(QStringLiteral("parakeet"), HardwareProfile{}), QList<double>({5.5, -1}));
+        QCOMPARE(values(QStringLiteral("parakeet"), HardwareProfile{}), QList<double>({8.5, -1}));
+        // Its own 4.5% AA-WER, behind Parakeet 0.6B as on FLEURS.
+        QCOMPARE(values(QStringLiteral("parakeet-v3"), HardwareProfile{}), QList<double>({7.5, -1}));
     }
 
     // Until the hardware probe answers, the profile has no memory reading and

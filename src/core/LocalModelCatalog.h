@@ -32,14 +32,19 @@ struct LocalModel {
     qint64 sizeBytes = 0;
     double librispeechCleanWer = 0;
     double fleursEnglishWer = 0;
-    // Artificial Analysis's AA-WER v2 for the model, or for the nearest model
-    // it lists; 0 where it lists none. The Accuracy rating reads it.
+    // Artificial Analysis's AA-WER v2 for the model; 0 where it doesn't list
+    // it. The Accuracy rating reads it.
     double artificialAnalysisWer = 0;
     bool streams = false;
     // transcribe.cpp's catalog/<variant>.json: the language codes the model
     // takes as a hint, and whether it detects the language when given none.
+    // detectsLanguage is false where it detects among only a few languages,
+    // so Automatic isn't offered with it.
     QStringList languages;
     bool detectsLanguage = false;
+    // Languages it takes but is never suggested for, because another model
+    // that takes them makes far fewer mistakes.
+    QStringList notSuggestedFor;
     QString licence;
     // Multiples of real time on transcribe.cpp's reference machines; 0 where
     // it published none.

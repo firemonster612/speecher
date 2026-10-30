@@ -17,8 +17,7 @@ constexpr double maxSuggestedSecondsFor10s = 1.5;
 // v0.2.4's catalog/<variant>.json (speed: xrt_compute on the 35 s dots
 // sample). Granite Speech 5.0 470M TurboCTC is left out: its output has no
 // punctuation or capitals. AA-WER is Artificial Analysis's speech-to-text
-// leaderboard, read 2026-10-05; Parakeet's is Parakeet TDT 0.6B V2's, the
-// nearest model it lists.
+// leaderboard, read 2026-10-05, and 2026-10-30 for Parakeet v3.
 const QList<LocalModel> catalog{
     {
         .id = QStringLiteral("moonshine-small"),
@@ -39,7 +38,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Computers short on memory"),
         .pros = {QStringLiteral("Smallest download"),
                  QStringLiteral("Words appear as you speak")},
-        .cons = {QStringLiteral("About twice the mistakes of Parakeet on everyday speech")},
+        .cons = {QStringLiteral("About twice the mistakes of Parakeet 0.6B on everyday speech")},
     },
     {
         .id = QStringLiteral("moonshine-medium"),
@@ -60,7 +59,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Computers short on memory"),
         .pros = {QStringLiteral("Words appear as you speak"),
                  QStringLiteral("Fewer mistakes than Moonshine Small")},
-        .cons = {QStringLiteral("About twice the mistakes of Parakeet on everyday speech")},
+        .cons = {QStringLiteral("About twice the mistakes of Parakeet 0.6B on everyday speech")},
     },
     {
         .id = QStringLiteral("parakeet"),
@@ -72,7 +71,6 @@ const QList<LocalModel> catalog{
         .sizeBytes = 731357568,
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.99,
-        .artificialAnalysisWer = 6.43,
         .streams = true,
         .languages = languageCodes("en"),
         // transcribe.cpp's catalog says CC-BY-4.0; the upstream model card wins.
@@ -85,6 +83,34 @@ const QList<LocalModel> catalog{
                  QStringLiteral("Fewest mistakes of the models that show words as you speak"),
                  QStringLiteral("Quick even on older laptops")},
         .cons = {QStringLiteral("More mistakes than Qwen3-ASR on everyday speech")},
+    },
+    {
+        .id = QStringLiteral("parakeet-v3"),
+        .name = QStringLiteral("Parakeet v3 0.6B"),
+        .huggingFaceRepo = QStringLiteral("handy-computer/parakeet-tdt-0.6b-v3-gguf"),
+        .revision = QStringLiteral("d8d8c32cb2017c57e5307767343e97870f8a7f53"),
+        .fileName = QStringLiteral("parakeet-tdt-0.6b-v3-Q8_0.gguf"),
+        .sha256 = QStringLiteral("5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7"),
+        .sizeBytes = 739508576,
+        .librispeechCleanWer = 1.94,
+        .fleursEnglishWer = 4.83,
+        .artificialAnalysisWer = 4.5,
+        .streams = false,
+        .languages = languageCodes("bg hr cs da nl en et fi fr de el hu it lv lt mt pl pt ro ru sk sl es sv uk"),
+        // It detects only among its own 25, so Automatic stays with Whisper.
+        .detectsLanguage = false,
+        // Over 5 points of FLEURS WER behind Whisper Large v3 Turbo.
+        .notSuggestedFor = languageCodes("el da fi sv"),
+        .licence = QStringLiteral("CC BY 4.0"),
+        .m4MaxMetalSpeed = 215.45,
+        .ryzen4750uVulkanSpeed = 25.84,
+        .rating = ModelRating::Situational,
+        .bestFor = QStringLiteral("European languages without the wait"),
+        .pros = {QStringLiteral("25 European languages"),
+                 QStringLiteral("Quick even on older laptops")},
+        .cons = {QStringLiteral("Text appears after you stop"),
+                 QStringLiteral("More mistakes than Parakeet 0.6B in English"),
+                 QStringLiteral("Many more mistakes than Whisper in Greek, Danish, Finnish and Swedish")},
     },
     {
         .id = QStringLiteral("whisper-turbo"),
@@ -110,7 +136,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Few mistakes in under 1 GB, if you can wait"),
         .pros = {QStringLiteral("Fewer mistakes than the Moonshine models on everyday speech")},
         .cons = {QStringLiteral("Text appears after you stop"),
-                 QStringLiteral("More mistakes than Parakeet on everyday speech"),
+                 QStringLiteral("More mistakes than Parakeet 0.6B on everyday speech"),
                  QStringLiteral("Now and then leaves out punctuation"),
                  QStringLiteral("A few seconds' wait on older laptops")},
     },
@@ -161,7 +187,7 @@ const QList<LocalModel> catalog{
         .pros = {QStringLiteral("Fewest mistakes on clear speech")},
         .cons = {QStringLiteral("2.4 GB download"),
                  QStringLiteral("Text appears after you stop"),
-                 QStringLiteral("More mistakes than Parakeet on everyday speech")},
+                 QStringLiteral("More mistakes than Parakeet 0.6B on everyday speech")},
     },
     {
         // Q5_K_M: Q4_K_M loses half a point of WER and would be no better than
@@ -283,7 +309,7 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware, const QSt
     // Only the models that listen for the language, unless none does.
     QList<const LocalModel *> candidates;
     for (const LocalModel &model : catalog) {
-        if (localModelListensFor(model, spokenLanguage)) {
+        if (localModelListensFor(model, spokenLanguage) && !model.notSuggestedFor.contains(spokenLanguage)) {
             candidates << &model;
         }
     }

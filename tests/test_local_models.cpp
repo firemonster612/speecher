@@ -600,8 +600,11 @@ private slots:
     {
         // No streaming model takes German, so the smallest that does; Cohere
         // takes it as a hint but cannot detect a language.
-        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("de")).id, QStringLiteral("whisper-turbo"));
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("de")).id, QStringLiteral("parakeet-v3"));
         QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("auto")).id, QStringLiteral("whisper-turbo"));
+        // Parakeet v3 takes Greek but is never suggested for it.
+        QVERIFY(localModelListensFor(*findLocalModel(QStringLiteral("parakeet-v3")), QStringLiteral("el")));
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("el")).id, QStringLiteral("whisper-turbo"));
         QVERIFY(!localModelListensFor(*findLocalModel(QStringLiteral("cohere")), QStringLiteral("auto")));
     }
 
