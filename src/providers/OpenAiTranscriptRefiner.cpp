@@ -29,20 +29,24 @@ std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const Re
     }
 
     // Whether the sign-in is due is read on the worker, which renews it; this
-    // thread only guesses, for the indicator.
+    // thread only guesses, for the indicator. A sign-in not due leaves
+    // prepare() to resolve as it would without a job.
     auto resolved = std::make_shared<OpenAiAuth>();
     PreparationJob job;
     job.showRefreshIndicator = signIn.codexOauthExpiredAsLastRead();
     // Every source the mode allows, as prepare() resolves them, so a sign-in
     // that can't renew still leaves an API key to use. The worker reads the
     // keyring through a SecretStore of its own, never the GUI thread's.
-    job.run = [settings, accounts, resolved] {
+    job.run = [settings, accounts, resolved]() -> std::optional<ProviderFailure> {
+        if (!OpenAiAuthProvider::forRefinement(nullptr, accounts, settings).requiresCodexOauthRefresh()) {
+            return std::nullopt;
+        }
         SettingsStore source;
         *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts, settings).resolve();
         return resolved->failure();
     };
     job.apply = [this, resolved](const std::optional<ProviderFailure> &failure) {
-        if (!failure) {
+        if (!failure && resolved->ok) {
             m_auth = *resolved;
             m_authResolvedByJob = true;
         }
