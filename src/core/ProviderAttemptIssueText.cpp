@@ -56,12 +56,20 @@ QString shortfall(const ProviderAttemptIssue &issue)
 
 } // namespace
 
-QString joinedList(const QStringList &items)
+QString joinedWithAnd(const QStringList &items)
 {
     if (items.size() < 2) {
         return items.value(0);
     }
     return items.first(items.size() - 1).join(QStringLiteral(", ")) + QStringLiteral(" and ") + items.last();
+}
+
+QList<ProviderAttemptIssue> issuesWhere(const QList<ProviderAttemptIssue> &issues,
+                                        const std::function<bool(const ProviderAttemptIssue &)> &keep)
+{
+    QList<ProviderAttemptIssue> kept;
+    std::copy_if(issues.cbegin(), issues.cend(), std::back_inserter(kept), keep);
+    return kept;
 }
 
 bool rejectedSignIn(const ProviderAttemptIssue &issue)
@@ -83,9 +91,9 @@ QString shortfallSentence(const QList<ProviderAttemptIssue> &issues, const Provi
     }
     QStringList clauses;
     for (qsizetype index = 0; index < reasons.size(); ++index) {
-        clauses.append(joinedList(names[index]) + QLatin1Char(' ') + reasons[index]);
+        clauses.append(joinedWithAnd(names[index]) + QLatin1Char(' ') + reasons[index]);
     }
-    return clauses.isEmpty() ? QString() : joinedList(clauses) + QLatin1Char('.');
+    return clauses.isEmpty() ? QString() : joinedWithAnd(clauses) + QLatin1Char('.');
 }
 
 QStringList signInSentences(const QList<ProviderAttemptIssue> &issues, const ProviderLabels &labels)
@@ -104,9 +112,8 @@ QStringList signInSentences(const QList<ProviderAttemptIssue> &issues, const Pro
 QString noSpeechServiceText(const QList<ProviderAttemptIssue> &issues, const ProviderLabels &labels)
 {
     QStringList sentences{QStringLiteral("No speech service is available.")};
-    QList<ProviderAttemptIssue> notSignIns;
-    std::copy_if(issues.cbegin(), issues.cend(), std::back_inserter(notSignIns),
-                 [](const ProviderAttemptIssue &issue) { return !rejectedSignIn(issue); });
+    const QList<ProviderAttemptIssue> notSignIns =
+        issuesWhere(issues, [](const ProviderAttemptIssue &issue) { return !rejectedSignIn(issue); });
     const QString sentence = shortfallSentence(notSignIns, labels);
     if (!sentence.isEmpty()) {
         sentences.append(sentence);
