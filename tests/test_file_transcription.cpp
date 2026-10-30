@@ -728,6 +728,33 @@ private slots:
         QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
+    // A fallback hears the file listening for its own Spoken Language.
+    void aFallbackListensForItsOwnSpokenLanguage()
+    {
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [](QObject *parent) {
+                                               auto *speech = new FakeSpeechTranscriber(parent);
+                                               speech->prepareResult = {false, QStringLiteral("offline"),
+                                                                        ProviderFailureKind::Network};
+                                               return speech;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(m_script.attempts, 1);
+        QCOMPARE(m_script.language, QStringLiteral("fr"));
+    }
+
     void theRefinerRenewsOncePerFile_data()
     {
         QTest::addColumn<bool>("everySpeechProviderFails");

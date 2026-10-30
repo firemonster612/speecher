@@ -159,6 +159,7 @@ public:
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
     using SettingsCodecs::setSpeechFallbackProviders;
+    using SettingsCodecs::setSpeechFallbackLanguages;
     using SettingsCodecs::localSpeechSettings;
     using SettingsCodecs::setLocalSpeechSettings;
     using SettingsCodecs::localRunnerSettings;

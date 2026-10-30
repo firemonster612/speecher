@@ -654,6 +654,73 @@ private slots:
         settings.raw().clear();
     }
 
+    // Each fallback's own Spoken Language round-trips; settings saved before
+    // fallbacks had one load with none, and an English-only fallback behind
+    // Automatic then listens for English.
+    void fallbackSpokenLanguagesRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::SpeechProvider, QStringLiteral("codex"));
+        settings.raw().setValue(SettingsKeys::SpeechFallbackProviders, QStringList{QStringLiteral("local")});
+        settings.raw().setValue(SettingsKeys::SpokenLanguage, QStringLiteral("auto"));
+        AppSettings draft = SettingsStore().snapshot();
+        QVERIFY(draft.speech.fallbackLanguages.isEmpty());
+        QCOMPARE(chainSpeechSettings(draft.speech, QStringLiteral("local")).language, QStringLiteral("en"));
+
+        draft.speech.fallbackLanguages = {{QStringLiteral("local"), QStringLiteral("de")}};
+        settings.applySnapshot(draft);
+        const AppSettings saved = SettingsStore().snapshot();
+        QCOMPARE(saved.speech.fallbackLanguages, draft.speech.fallbackLanguages);
+        QCOMPARE(saved.speech.language, QStringLiteral("auto"));
+        settings.raw().clear();
+    }
+
+    void aFallbackListensForItsOwnSpokenLanguage_data()
+    {
+        QTest::addColumn<QString>("spoken");
+        QTest::addColumn<QString>("fallback");
+        QTest::addColumn<QString>("chosen");
+        QTest::addColumn<QString>("expected");
+        QTest::addColumn<bool>("listens");
+        QTest::newRow("English-only, behind Automatic") << QStringLiteral("auto") << QStringLiteral("local") << QString()
+                                                        << QStringLiteral("en") << true;
+        QTest::newRow("takes the Spoken Language") << QStringLiteral("de") << QStringLiteral("claude") << QString()
+                                                   << QStringLiteral("de") << true;
+        QTest::newRow("lacks the Spoken Language") << QStringLiteral("af") << QStringLiteral("claude") << QString()
+                                                   << QStringLiteral("en") << true;
+        QTest::newRow("chosen") << QStringLiteral("auto") << QStringLiteral("claude") << QStringLiteral("fr")
+                                << QStringLiteral("fr") << true;
+        QTest::newRow("chosen, can't listen") << QStringLiteral("auto") << QStringLiteral("local")
+                                              << QStringLiteral("fr") << QStringLiteral("fr") << false;
+    }
+
+    // A fallback listens for the language chosen for it; with none, for the
+    // Spoken Language where it can, otherwise English. The primary keeps the
+    // Spoken Language.
+    void aFallbackListensForItsOwnSpokenLanguage()
+    {
+        QFETCH(QString, spoken);
+        QFETCH(QString, fallback);
+        QFETCH(QString, chosen);
+        QFETCH(QString, expected);
+        QFETCH(bool, listens);
+        SpeechSettings speech;
+        speech.providerId = QStringLiteral("codex");
+        speech.language = spoken;
+        speech.local.modelId = QStringLiteral("parakeet");
+        if (!chosen.isEmpty()) {
+            speech.fallbackLanguages.insert(fallback, chosen);
+        }
+        speech.fallbackLanguages.insert(QStringLiteral("codex"), QStringLiteral("ja"));
+
+        const SpeechSettings resolved = chainSpeechSettings(speech, fallback);
+        QCOMPARE(resolved.providerId, fallback);
+        QCOMPARE(resolved.language, expected);
+        QCOMPARE(listensForSpokenLanguage(resolved), listens);
+        QCOMPARE(chainSpeechSettings(speech, QStringLiteral("codex")).language, spoken);
+    }
+
     void localSpeechSettingsRoundTrip()
     {
         SettingsStore settings;

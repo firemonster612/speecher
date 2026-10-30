@@ -726,9 +726,7 @@ void FileTranscriptionSession::resumeStreaming()
 
 SpeechSettings FileTranscriptionSession::currentSpeechSettings() const
 {
-    SpeechSettings speech = m_batchSettings.speech;
-    speech.providerId = m_speechChain->currentId();
-    return speech;
+    return chainSpeechSettings(m_batchSettings.speech, m_speechChain->currentId());
 }
 
 void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)

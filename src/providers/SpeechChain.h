@@ -19,7 +19,7 @@ struct StartupPreparationResult;
 // A session's speech providers, primary first, and the one it is on. It walks
 // forward only: preparing finds the first provider from the current one on
 // that can take the session's audio, passing over one that can't listen for
-// the Spoken Language (the primary is the caller's to check), needs the
+// its Spoken Language (the primary is the caller's to check), needs the
 // internet while the system says it is offline, is unknown, or doesn't stream
 // final text when only that will do. It reads keys the settings have not read
 // yet and renews sign-ins off this thread, renewing the refiner's sign-in

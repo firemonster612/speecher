@@ -38,6 +38,8 @@ inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscrip
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
 inline const QString SpeechFallbackProviders = QStringLiteral("stt/fallbackProviders");
+// A group: one key per speech fallback's provider id, holding its Spoken Language.
+inline const QString SpeechFallbackLanguages = QStringLiteral("stt/fallbackLanguages");
 inline const QString CodexFinalRetranscribe = QStringLiteral("stt/codexFinalRetranscribe");
 inline const QString SpokenLanguage = QStringLiteral("stt/language");
 inline const QString LocalModelChosen = QStringLiteral("local/modelChosen");

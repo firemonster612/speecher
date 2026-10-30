@@ -582,13 +582,6 @@ void DictationSession::retireSpeechAttempt()
     m_transcriber->cancelAttempt(retired);
 }
 
-SpeechSettings DictationSession::speechSettingsFor(const QString &providerId) const
-{
-    SpeechSettings speech = m_sessionSettings->speech;
-    speech.providerId = providerId;
-    return speech;
-}
-
 void DictationSession::noteProviderIssue(ProviderRole role,
                                          const QString &providerId,
                                          Stage stage,
@@ -1038,7 +1031,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     const quint64 attemptId = m_attemptId;
     const QString providerId = m_speechChain->currentId();
     noteRan(ProviderRole::Speech, providerId);
-    m_transcriber->startAttempt(attemptId, speechSettingsFor(providerId));
+    m_transcriber->startAttempt(attemptId, chainSpeechSettings(m_sessionSettings->speech, providerId));
     sendPendingAudio();
     // A provider can fail inside startAttempt(): the session has moved on to
     // the next one, or ended, and must not open the microphone for this one.
@@ -1676,7 +1669,7 @@ void DictationSession::startNextAttempt()
     m_attempts.attemptStarted();
     const QString providerId = m_speechChain->currentId();
     noteRan(ProviderRole::Speech, providerId);
-    m_transcriber->startAttempt(m_attemptId, speechSettingsFor(providerId));
+    m_transcriber->startAttempt(m_attemptId, chainSpeechSettings(m_sessionSettings->speech, providerId));
 }
 
 bool DictationSession::selectSpeechTranscriber(const QString &providerId, QString *error)

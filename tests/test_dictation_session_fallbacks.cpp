@@ -341,9 +341,9 @@ private slots:
         QCOMPARE(openai->backgroundRefreshCalls, 1);
     }
 
-    // A fallback that can't listen for the Spoken Language, by its Local
-    // Model's catalog entry, is passed over; one with no model is tried and
-    // fails as unavailable.
+    // A fallback that can't listen for the Spoken Language chosen for it, by
+    // its Local Model's catalog entry, is passed over; one with no model is
+    // tried and fails as unavailable.
     void aFallbackThatCantListenForTheSpokenLanguageIsPassedOver_data()
     {
         QTest::addColumn<QString>("modelId");
@@ -358,6 +358,7 @@ private slots:
         QFETCH(int, localPrepares);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("de"));
+        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("local"), QStringLiteral("fr")}});
         LocalSpeechSettings local = rig.settings.localSpeechSettings();
         local.modelId = modelId;
         rig.settings.setLocalSpeechSettings(local);
@@ -369,13 +370,34 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
     }
 
+    // Behind ChatGPT Codex on Automatic, an English-only Local Model with no
+    // language chosen is ready, and runs listening for English.
+    void anEnglishOnlyFallbackBehindAutomaticListensForEnglish()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.settings.setSpokenLanguage(QStringLiteral("auto"));
+        LocalSpeechSettings local = rig.settings.localSpeechSettings();
+        local.modelId = QStringLiteral("parakeet");
+        rig.settings.setLocalSpeechSettings(local);
+        LiveFacts facts;
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), rig.settings.dictationSnapshot(), facts),
+                 FallbackProblem::None);
+
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->lastLanguage, QStringLiteral("en"));
+    }
+
     // The session and fallbackProblem() decide a language skip the same way,
     // from the provider's own language list: Claude Voice can't listen for
-    // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
+    // Afrikaans chosen for it, which a Custom Endpoint can.
     void theSessionAndFallbackProblemAgreeOnALanguageSkip()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("af"));
+        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("af")}});
         rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);

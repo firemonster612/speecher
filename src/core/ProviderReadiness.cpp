@@ -120,9 +120,7 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
         report.signedIn = facts.signedIn.value(id);
     }
     if (problem == FallbackProblem::SpokenLanguage) {
-        SpeechSettings speech = settings.speech;
-        speech.providerId = id;
-        report.problem = spokenLanguageProblem(speech, label);
+        report.problem = spokenLanguageProblem(chainSpeechSettings(settings.speech, id), label);
     } else {
         report.problem = problemText(problem, role, settings, facts, id, label);
     }
@@ -141,9 +139,7 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
 
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId)
 {
-    SpeechSettings candidate = speech;
-    candidate.providerId = providerId;
-    return !listensForSpokenLanguage(candidate);
+    return !listensForSpokenLanguage(chainSpeechSettings(speech, providerId));
 }
 
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,

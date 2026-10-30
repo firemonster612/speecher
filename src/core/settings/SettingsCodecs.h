@@ -31,6 +31,7 @@ public:
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);
     QStringList speechFallbackProviders() const; void setSpeechFallbackProviders(const QStringList &value);
+    QHash<QString, QString> speechFallbackLanguages() const; void setSpeechFallbackLanguages(const QHash<QString, QString> &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
     QString spokenLanguage() const; void setSpokenLanguage(const QString &value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);

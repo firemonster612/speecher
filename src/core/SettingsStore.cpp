@@ -278,6 +278,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setSpeechFallbackProviders(draft.speech.fallbackProviderIds);
+    setSpeechFallbackLanguages(draft.speech.fallbackLanguages);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
     setSpokenLanguage(draft.speech.language);
     setLocalSpeechSettings(draft.speech.local);

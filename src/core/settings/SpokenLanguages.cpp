@@ -101,6 +101,25 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
         .arg(service, englishName(speech.language));
 }
 
+SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &providerId)
+{
+    SpeechSettings candidate = speech;
+    candidate.providerId = providerId;
+    if (providerId == speech.providerId) {
+        return candidate;
+    }
+    if (const auto chosen = speech.fallbackLanguages.constFind(providerId); chosen != speech.fallbackLanguages.cend()) {
+        candidate.language = *chosen;
+        return candidate;
+    }
+    if (listensForSpokenLanguage(candidate)) {
+        return candidate;
+    }
+    SpeechSettings english = candidate;
+    english.language = QStringLiteral("en");
+    return listensForSpokenLanguage(english) ? english : candidate;
+}
+
 QStringList knownSpokenLanguages()
 {
     QStringList languages = withAutomatic(claudeVoiceLanguages + codexLanguages);
