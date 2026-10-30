@@ -7,15 +7,6 @@
 #include <algorithm>
 
 namespace speecher {
-namespace {
-
-// Why the desktop would not register a binding: another app holds it.
-QString ownedElsewhereText(const ShortcutBinding &binding)
-{
-    return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
-}
-
-} // namespace
 
 SessionShortcutBinder::SessionShortcutBinder(SettingsStore *settings,
                                              GlobalShortcutAction action,

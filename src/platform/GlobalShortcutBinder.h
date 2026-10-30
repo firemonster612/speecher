@@ -140,6 +140,13 @@ public:
                 : display);
     }
 
+protected:
+    // Why the desktop would not register a binding: another app holds it.
+    static QString ownedElsewhereText(const ShortcutBinding &binding)
+    {
+        return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
+    }
+
 signals:
     void activated();
     // heldMs is how long the key was physically down, read from the events'
