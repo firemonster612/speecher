@@ -8,8 +8,8 @@
 namespace speecher {
 
 // speecher.log: a timestamped line for each message of a Speecher process.
-// It is kept to two files: once the log passes its size limit it moves to
-// path.1, replacing the older one, and a new log starts.
+// It is kept to two files: once the log passes its size limit, what it holds
+// is copied to path.1, replacing the older copy, and the log is emptied.
 class LogFile {
 public:
     LogFile(const QString &path, qint64 maxBytes);
@@ -18,7 +18,7 @@ public:
     void write(QtMsgType type, const QString &message);
 
 private:
-    void rotateIfFull();
+    void cutIfFull();
 
     QMutex m_mutex;
     QFile m_file;
