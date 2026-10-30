@@ -6,6 +6,7 @@
 #include "core/SecretStore.h"
 #include "providers/CliProxyCredentials.h"
 #include "providers/CodexCredentialStorage.h"
+#include "providers/OauthTokenRequest.h"
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -153,8 +154,8 @@ static std::optional<ProviderFailure> refreshCodexAuth(const CodexCredentialStor
     // the Codex CLI: `codex exec` pays CLI startup plus a full model request
     // just to trigger the same refresh_token grant.
     QLockFile lock(storage.lockPath());
-    if (!lock.tryLock(1000)) {
-        return unavailable(QStringLiteral("Could not lock Codex credentials for refresh"));
+    if (!lock.tryLock(refreshLockTimeoutMs(codexRefreshTimeoutMs()))) {
+        return ProviderFailure{ProviderFailureKind::Timeout, QStringLiteral("Could not lock Codex credentials for refresh")};
     }
 
     QString error;

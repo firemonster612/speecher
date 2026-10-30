@@ -48,8 +48,8 @@ public:
     static OauthRefreshResult oauthRefresh(const QString &tokenUrl,
                                            const QString &clientId,
                                            const QString &refreshToken,
-                                           const QString &scope = {},
-                                           int timeoutMs = 10000);
+                                           const QString &scope,
+                                           int timeoutMs);
     static QString claudeClientId();
     static QString codexClientId();
     // Fast, file-only check: does the selected account's token need a refresh?

@@ -27,7 +27,7 @@ namespace {
 // refresh_token grant is exercised, never a login.
 constexpr auto claudeOauthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 constexpr auto codexOauthClientId = "app_EMoamEEZ73f0CkXaXp7hrann";
-constexpr int accountLockTimeoutMs = 1000;
+constexpr int accountRefreshTimeoutMs = 10000;
 
 QString refreshTokenUrl(const QString &type)
 {
@@ -125,7 +125,8 @@ std::optional<ProviderFailure> refreshAccountFile(const QString &directory,
         type == QStringLiteral("claude") ? CliProxyCredentials::claudeClientId()
                                          : CliProxyCredentials::codexClientId(),
         refreshToken,
-        type == QStringLiteral("codex") ? QStringLiteral("openid profile email") : QString());
+        type == QStringLiteral("codex") ? QStringLiteral("openid profile email") : QString(),
+        accountRefreshTimeoutMs);
     if (!refreshed.ok) {
         return ProviderFailure{refreshed.kind,
                                QStringLiteral("Could not refresh the CLI Proxy API %1 token: %2").arg(type, refreshed.error),
@@ -279,8 +280,9 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
     }
 
     QLockFile lock(QDir(directory).filePath(resolved) + QStringLiteral(".lock"));
-    if (!lock.tryLock(accountLockTimeoutMs)) {
-        return {false, {}, {}, QStringLiteral("Could not lock CLI Proxy API account %1 for refresh").arg(resolved)};
+    if (!lock.tryLock(refreshLockTimeoutMs(accountRefreshTimeoutMs))) {
+        return {false, {}, {}, QStringLiteral("Could not lock CLI Proxy API account %1 for refresh").arg(resolved),
+                ProviderFailureKind::Timeout};
     }
     account = readAccountObject(directory, resolved);
     const QString lockedError = accountValidationError(directory, type, resolved, account);

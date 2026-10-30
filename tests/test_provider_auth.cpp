@@ -1134,6 +1134,51 @@ private slots:
         QCOMPARE(codex.kind, ProviderFailureKind::Unavailable);
     }
 
+    // Two renewals of one account that overlap, as a recording's microphone
+    // and system audio streams prepare together, share the first one's
+    // result: the second waits out the first's token request, longer than a
+    // second, instead of failing to lock the account.
+    void overlappingCliproxyRenewalsShareOneRefresh()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        int requests = 0;
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            readHttpRequest(socket, 1000);
+            ++requests;
+            QTimer::singleShot(1500, socket, [socket] {
+                const QByteArray payload = R"({"access_token":"fresh-token","expires_in":3600})";
+                socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                              + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+                socket->flush();
+            });
+        });
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
+        const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("stale-token"), QDateTime::currentDateTimeUtc().addSecs(-60)));
+
+        CliProxyCredentialResult results[2];
+        QList<QThread *> renewals;
+        for (CliProxyCredentialResult &result : results) {
+            renewals << QThread::create([&result, &dir] {
+                result = CliProxyCredentials::loadWithRefresh(dir.path(), QStringLiteral("codex"), {});
+            });
+            renewals.last()->start();
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(renewals.first()->isFinished() && renewals.last()->isFinished(), 15000);
+        qDeleteAll(renewals);
+
+        for (const CliProxyCredentialResult &result : results) {
+            QVERIFY2(result.ok, qPrintable(result.error));
+            QCOMPARE(result.accessToken, QStringLiteral("fresh-token"));
+        }
+        QCOMPARE(requests, 1);
+    }
+
     void cliproxyExpiredAccountRefreshesAndRewritesFile()
     {
         QTcpServer server;
