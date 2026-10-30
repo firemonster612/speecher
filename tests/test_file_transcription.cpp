@@ -3325,6 +3325,27 @@ private slots:
         QVERIFY(!session.isRunning());
     }
 
+    // A dictation that starts while the queue announces its batch still stops
+    // the batch from running.
+    void aDictationStartedDuringStartRefusesTheBatch()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QString refusal;
+        TranscribeQueue queue(&settings, m_registry.get(), &session, [&refusal] { return refusal; });
+        queue.addFiles({audio});
+        const QString dictating = QStringLiteral("Finish the dictation in progress, then transcribe the files.");
+        connect(&queue, &TranscribeQueue::stepChanged, &queue, [&] { refusal = dictating; });
+
+        QVERIFY(!queue.start());
+
+        QCOMPARE(queue.problem(), dictating);
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Configure);
+        QVERIFY(!session.isRunning());
+    }
+
     // Cancelled after a file finished, the batch shows that file's result;
     // back at setup, the file it never reached is still listed.
     void aCancelledBatchKeepsTheFilesItFinished()

@@ -179,7 +179,7 @@ void TranscribeQueue::setOptions(const TranscribeOptions &options)
 
 void TranscribeQueue::chooseProfile(const QString &profile)
 {
-    const AppSettings settings = m_settings->snapshot();
+    const AppSettings settings = m_settings->dictationSnapshot();
     const WritingProfileSettings chosen =
         writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFromName(profile));
     const AppSettings resolved = m_providers->withProfileProviders(settings, chosen);
@@ -219,7 +219,9 @@ bool TranscribeQueue::start()
         setProblem(refusal);
         return false;
     }
-    const AppSettings settings = withBatchChoices(m_settings->snapshot(), *m_providers, m_options);
+    // Nothing from here to the session's start waits for the keyring, so no
+    // event loop runs where a dictation could start.
+    const AppSettings settings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options);
     m_batch = m_files;
     m_batchOptions = m_options;
     // Pinned, so a retry hears in this batch's language after the setting
@@ -236,8 +238,12 @@ bool TranscribeQueue::start()
     // Before the session starts: a batch whose files all fail at once
     // finishes inside it.
     setStep(Step::Transcribe);
-    if (!m_session->start(m_batch, m_batchOptions)) {
+    // Checked again: what the signals above reach may have started a
+    // dictation.
+    const QString lateRefusal = m_refusal();
+    if (!lateRefusal.isEmpty() || !m_session->start(m_batch, m_batchOptions)) {
         setStep(Step::Configure);
+        setProblem(lateRefusal);
         return false;
     }
     return true;
@@ -368,7 +374,7 @@ void TranscribeQueue::setProblem(const QString &problem)
 
 void TranscribeQueue::seedOptions()
 {
-    const AppSettings settings = m_settings->snapshot();
+    const AppSettings settings = m_settings->dictationSnapshot();
     const QString folder = m_options.folder;
     m_options = {};
     m_options.folder = folder;
@@ -380,7 +386,7 @@ void TranscribeQueue::seedOptions()
 // the profile's own, as it would for dictation.
 void TranscribeQueue::dropWithdrawnChoices()
 {
-    const RefinementSettings refinement = m_settings->snapshot().refinement;
+    const RefinementSettings refinement = m_settings->dictationSnapshot().refinement;
     const QString profile = offeredWritingProfile(m_options.writingProfile, refinement.writingProfiles);
     if (profile != m_options.writingProfile) {
         chooseProfile(profile);
