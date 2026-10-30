@@ -1,11 +1,11 @@
 #include "common/test_doubles.h"
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 
 #include <QPointer>
 #include <QQmlEngine>
@@ -351,7 +351,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         // What the test says reads the microphone access check.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         Rig rig(controller);
         QQmlEngine engine;
         QObject *microphones = engine.singletonInstance<QObject *>("Speecher.App", "Microphones");

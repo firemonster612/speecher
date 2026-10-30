@@ -3,8 +3,10 @@
 #include "app/ApplicationController.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#ifdef Q_OS_LINUX
 #include "output/YdotoolSetup.h"
 #include "platform/KeywatchSetup.h"
+#endif
 
 #include <QDir>
 #include <QThread>
@@ -37,8 +39,12 @@ void record(QList<RemovalStep> &steps, Part part, const std::function<bool(QStri
 
 } // namespace
 
-SpeecherRemoval::Steps SpeecherRemoval::linuxSteps(ApplicationController *controller)
+std::optional<SpeecherRemoval::Steps> SpeecherRemoval::onThisComputer(ApplicationController *controller)
 {
+#ifndef Q_OS_LINUX
+    Q_UNUSED(controller);
+    return std::nullopt;
+#else
     Steps steps;
     steps.removeDesktopIntegration = [] { return removeAppImageIntegration(QDir::homePath()); };
     steps.removeShortcutRegistration = [controller](QString *error) {
@@ -64,6 +70,7 @@ SpeecherRemoval::Steps SpeecherRemoval::linuxSteps(ApplicationController *contro
     steps.deleteSettings = [controller](QString *error) { return controller->settings()->deleteAll(error); };
     steps.programFile = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
     return steps;
+#endif
 }
 
 SpeecherRemoval::SpeecherRemoval(Steps steps, QObject *parent)

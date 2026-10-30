@@ -2,20 +2,20 @@ import QtQuick
 import Speecher.Controls
 import Speecher.Backend
 
-// What removing Speecher did, from System.removal, with Quit Speecher. General
+// What removing Speecher did, from Removal.report, with Quit Speecher. General
 // shows it under its row; Main shows only it once the settings are deleted.
 Notice {
     id: report
 
-    readonly property bool _removed: System.removal.steps !== undefined
-    readonly property bool _failed: _removed && failed(System.removal)
+    readonly property bool _removed: Removal.report.steps !== undefined
+    readonly property bool _failed: _removed && failed(Removal.report)
 
     readonly property var t: ({
         removed: "Speecher is removed from this computer.",
         removedPartly: "Speecher is removed, with some things left to do by hand.",
         quit: "Quit Speecher"
     })
-    // How each of System.removal's steps reads, by part and outcome. A
+    // How each of Removal.report's steps reads, by part and outcome. A
     // failure gets the part's own error, which may be empty.
     readonly property var stepWords: ({
         shortcutRegistration: { removed: "Removed the global shortcut registration.",
@@ -47,7 +47,7 @@ Notice {
 
     tone: _failed ? "warning" : "info"
     indicator: "icon"
-    text: !_removed ? "" : (_failed ? t.removedPartly : t.removed) + " " + said(System.removal)
+    text: !_removed ? "" : (_failed ? t.removedPartly : t.removed) + " " + said(Removal.report)
     actionText: t.quit
     onAction: System.quit()
 }

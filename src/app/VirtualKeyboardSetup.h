@@ -56,24 +56,25 @@ public:
         PasteAutomatically,
     };
 
-    static bool typeWithYdotool(const QString &text, QString *error);
-
     // What the setup touches outside the process, so tests can stand in for
     // ydotool, pkexec and systemd. Each runs off the calling thread except
     // probe.
     struct System {
-        std::function<YdotoolSetupStatus(bool enabledInSpeecher)> probe = YdotoolSetup::probe;
-        std::function<bool(YdotoolSetup::HelperAction, QString *error)> runHelper = YdotoolSetup::runHelper;
-        std::function<bool(QString *error)> startService = YdotoolSetup::startUserService;
-        std::function<bool(QString *error)> stopService = YdotoolSetup::stopUserService;
-        std::function<bool(const QString &text, QString *error)> type = typeWithYdotool;
+        std::function<YdotoolSetupStatus(bool enabledInSpeecher)> probe;
+        std::function<bool(YdotoolSetup::HelperAction, QString *error)> runHelper;
+        std::function<bool(QString *error)> startService;
+        std::function<bool(QString *error)> stopService;
+        std::function<bool(const QString &text, QString *error)> type;
     };
+
+    // This computer's: ydotool's on Linux. Elsewhere there is no virtual
+    // keyboard: it probes as not installed and every step fails.
+    static System onThisComputer();
 
     // How long typed text may take to reach the field before the test fails.
     static constexpr int testArrivalMs = 1500;
 
-    explicit VirtualKeyboardSetup(SettingsStore *settings, QObject *parent = nullptr);
-    VirtualKeyboardSetup(SettingsStore *settings, System system, QObject *parent = nullptr);
+    explicit VirtualKeyboardSetup(SettingsStore *settings, System system = onThisComputer(), QObject *parent = nullptr);
     ~VirtualKeyboardSetup() override;
 
     // Probed again by refresh and after every operation.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppFrontEnd.h"
+#include "app/VirtualKeyboardSetup.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
@@ -9,6 +10,8 @@
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
+#include "frontend/quick/host/QuickPhone.h"
+#include "frontend/quick/host/QuickRemoval.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
 #include "frontend/quick/host/QuickTranscription.h"
@@ -74,7 +77,11 @@ private:
     QuickDictation m_dictation;
     QuickUpdates m_updates;
     QuickTranscription m_transcription;
+    // System's and Removal's, which removal waits for.
+    VirtualKeyboardSetup m_virtualKeyboard;
+    QuickRemoval m_removal;
     QuickSystem m_system;
+    QuickPhone m_phone;
     QuickModels m_models;
     QuickInsights m_insights;
     QuickAccounts m_accounts;

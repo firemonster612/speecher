@@ -1,11 +1,11 @@
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
 #include "core/ColorSchemes.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 
 #include <QAccessible>
 #include <QDir>
@@ -395,6 +395,9 @@ private slots:
 
     void systemColorsFollowPlasmasKdeglobals()
     {
+#ifndef Q_OS_LINUX
+        QSKIP("Plasma is Linux's");
+#endif
         qputenv("XDG_CURRENT_DESKTOP", "KDE");
         QVERIFY(writeFile(kdeglobals(), breezeColors));
         // Ahead of the system's own Breeze Light, where it has one.
@@ -878,7 +881,7 @@ private slots:
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
         // Search asks System what the computer has, as the host always can.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and
         // Windows with transparency on, blur any window.
         if (appearance.canBlur()) {

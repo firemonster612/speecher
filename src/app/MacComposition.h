@@ -40,6 +40,7 @@ public:
                                    std::function<void()> refresh) const override;
     bool requestAccessibility(QString *error = nullptr) const override;
     bool enableAccessibilityPermanently(QString *error = nullptr) const override;
+    bool canLaunchAtLogin() const override { return true; }
     bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const override;
     bool launchAtLoginEnabled() const override;
     std::optional<float> inputVolume() const override;

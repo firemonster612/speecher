@@ -1,9 +1,7 @@
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/AccessibilityMonitor.h"
-#include "app/ApplicationController.h"
-#include "app/SpeecherRemoval.h"
-#include "app/VirtualKeyboardSetup.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
@@ -13,7 +11,6 @@
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickUpdates.h"
 
 #include <QFile>
@@ -28,16 +25,17 @@
 #include <QSignalSpy>
 
 #include <memory>
+#include <optional>
 #include <tuple>
 
 // The UI's QML modules are linked into the tests by test_quick_settings.cpp,
 // which imports their plugins for the whole binary.
 
 using namespace speecher;
+using test::SystemSingletons;
 
 namespace {
 
-#ifdef Q_OS_LINUX
 YdotoolSetupStatus status(YdotoolSetupState state, bool managed = true)
 {
     YdotoolSetupStatus status;
@@ -100,6 +98,7 @@ struct FakeKeyboard {
     }
 };
 
+#ifdef Q_OS_LINUX
 SpeecherRemoval::Steps quietRemoval()
 {
     SpeecherRemoval::Steps steps;
@@ -136,22 +135,25 @@ QVariantMap failure(const char *step, const QString &error)
 }
 #endif
 
-// System with stand-ins for what it would touch on the computer: on Linux
-// the virtual keyboard and removal, which it has only there.
-struct StandInSystem {
-    explicit StandInSystem(ApplicationController *controller)
+// Removal's stand-in steps where the computer has removal, as Linux does;
+// none elsewhere.
+std::optional<SpeecherRemoval::Steps> standInRemoval()
+{
 #ifdef Q_OS_LINUX
-        : system(controller, keyboard.system(), quietRemoval())
+    return quietRemoval();
 #else
-        : system(controller)
+    return std::nullopt;
 #endif
+}
+
+// System, Removal and Phone with stand-ins for what they would touch on the
+// computer: the virtual keyboard and removal.
+struct StandInSystem : SystemSingletons {
+    StandInSystem(ApplicationController *controller, FakeKeyboard &keyboard,
+                  std::optional<SpeecherRemoval::Steps> removalSteps = standInRemoval())
+        : SystemSingletons(controller, keyboard.system(), std::move(removalSteps))
     {
     }
-
-#ifdef Q_OS_LINUX
-    FakeKeyboard keyboard;
-#endif
-    QuickSystem system;
 };
 
 // A QML var property as plain values.
@@ -173,8 +175,8 @@ std::unique_ptr<QObject> createQml(QQmlEngine &engine, const QByteArray &qml, co
 
 } // namespace
 
-// The UI's System singleton over core's virtual keyboard setup, phone
-// transfer and removal, with stand-ins for the computer.
+// The UI's System, Removal and Phone singletons over core's virtual keyboard
+// setup, removal and phone transfer, with stand-ins for the computer.
 class QuickSystemTests : public QObject {
     Q_OBJECT
 
@@ -192,7 +194,8 @@ private slots:
     {
         ApplicationController controller(true);
         FakeKeyboard keyboard;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("notInstalled"));
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("fix")).toString(), QStringLiteral("setUp"));
 
@@ -228,7 +231,8 @@ private slots:
         FakeKeyboard keyboard;
         keyboard.installed = YdotoolSetupState::Ready;
         keyboard.managed = true;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("disabled"));
 
         // Already set up: turning it on goes straight to the test.
@@ -255,7 +259,8 @@ private slots:
         FakeKeyboard keyboard;
         keyboard.helperSucceeds = false;
         keyboard.helperError = QStringLiteral("Authorization was declined.");
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
 
         system.fix(QStringLiteral("virtualKeyboardHealth"));
         QTRY_COMPARE(keyboardFailures(system),
@@ -272,7 +277,8 @@ private slots:
         keyboard.installed = YdotoolSetupState::Ready;
         keyboard.managed = true;
         SettingsStore().setYdotoolEnabled(true);
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
 
         system.removeVirtualKeyboard();
         QVERIFY(system.virtualKeyboardActions().isEmpty());
@@ -303,7 +309,8 @@ private slots:
             controller.settings()->setOutputMethod(ydotool);
             FakeKeyboard keyboard;
             keyboard.helperSucceeds = helperSucceeds;
-            QuickSystem system(&controller, keyboard.system(), quietRemoval());
+            StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
             const QString id = QStringLiteral("virtualKeyboardHealth");
             fromSetup ? system.fixFromSetup(id) : system.fix(id);
             const bool finished = QTest::qWaitFor([&system] {
@@ -323,15 +330,15 @@ private slots:
         ApplicationController controller(true);
         QVERIFY(!controller.accessibility()->enabled());
         FakeKeyboard missing;
-        QuickSystem without(&controller, missing.system(), quietRemoval());
-        QCOMPARE(without.pasteNeed(), QStringLiteral("either"));
-        QVERIFY(without.wordsStayCopied());
+        StandInSystem without(&controller, missing);
+        QCOMPARE(without.system.pasteNeed(), QStringLiteral("either"));
+        QVERIFY(without.system.wordsStayCopied());
 
         controller.settings()->setYdotoolEnabled(true);
         FakeKeyboard ready;
         ready.installed = YdotoolSetupState::Ready;
-        QuickSystem with(&controller, ready.system(), quietRemoval());
-        QVERIFY(!with.wordsStayCopied());
+        StandInSystem with(&controller, ready);
+        QVERIFY(!with.system.wordsStayCopied());
     }
 
     // Removal goes on past a failed step and reports each one.
@@ -410,22 +417,23 @@ private slots:
     {
         ApplicationController controller(true);
         FakeKeyboard keyboard;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
 
-        QVERIFY(system.removal().isEmpty());
-        system.uninstall(true);
-        QVERIFY(system.removing());
-        QTRY_VERIFY(!system.removing());
+        QVERIFY(standIn.removal.report().isEmpty());
+        standIn.removal.start(true);
+        QVERIFY(standIn.removal.running());
+        QTRY_VERIFY(!standIn.removal.running());
         const auto step = [](const char *part, const char *outcome) {
             return QVariantMap{{QStringLiteral("part"), QLatin1String(part)},
                                {QStringLiteral("outcome"), QLatin1String(outcome)},
                                {QStringLiteral("error"), QString()}};
         };
-        QCOMPARE(system.removal().value(QStringLiteral("steps")).toList(),
+        QCOMPARE(standIn.removal.report().value(QStringLiteral("steps")).toList(),
                  (QVariantList{step("shortcutRegistration", "removed"), step("settings", "kept")}));
-        QCOMPARE(system.removal().value(QStringLiteral("files")).toMap().value(QStringLiteral("removed")).toStringList(),
+        QCOMPARE(standIn.removal.report().value(QStringLiteral("files")).toMap().value(QStringLiteral("removed")).toStringList(),
                  QStringList{});
-        QVERIFY(!system.removal().value(QStringLiteral("settingsDeleted")).toBool());
+        QVERIFY(!standIn.removal.report().value(QStringLiteral("settingsDeleted")).toBool());
     }
 
     // Once removal has deleted the settings, an edit made before quitting
@@ -438,15 +446,16 @@ private slots:
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
-        QuickSystem system(&controller, keyboard.system(), steps);
+        StandInSystem standIn(&controller, keyboard, steps);
+        QuickSystem &system = standIn.system;
         settings.set(QStringLiteral("themeControl"), QStringLiteral("dark"));
         const QString file = controller.settings()->raw().fileName();
         controller.settings()->raw().sync();
         QVERIFY(QFile::exists(file));
 
-        system.uninstall(false);
-        QTRY_VERIFY(!system.removing());
-        QVERIFY(system.removal().value(QStringLiteral("settingsDeleted")).toBool());
+        standIn.removal.start(false);
+        QTRY_VERIFY(!standIn.removal.running());
+        QVERIFY(standIn.removal.report().value(QStringLiteral("settingsDeleted")).toBool());
         QVERIFY(!QFile::exists(file));
 
         settings.set(QStringLiteral("themeControl"), QStringLiteral("light"));
@@ -473,14 +482,15 @@ private slots:
             return DesktopIntegrationRemoval{};
         };
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
-        QuickSystem system(&controller, keyboard.system(), steps);
+        StandInSystem standIn(&controller, keyboard, steps);
+        QuickSystem &system = standIn.system;
         controller.settings()->setOutputMethod(QStringLiteral("clipboard"));
         const QString file = controller.settings()->raw().fileName();
 
         system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
-        system.uninstall(false);
-        QVERIFY(system.removing());
-        QTRY_VERIFY(!system.removing());
+        standIn.removal.start(false);
+        QVERIFY(standIn.removal.running());
+        QTRY_VERIFY(!standIn.removal.running());
         QCOMPARE(methodAtStart, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
         QCoreApplication::processEvents();
@@ -504,7 +514,8 @@ private slots:
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
-        QuickSystem system(&controller, keyboard.system(), steps);
+        StandInSystem standIn(&controller, keyboard, steps);
+        QuickSystem &system = standIn.system;
         QSignalSpy quit(&controller, &ApplicationController::quitRequested);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/Main.qml")));
@@ -513,9 +524,9 @@ private slots:
         QVERIFY2(window, qPrintable(component.errorString()));
         QVERIFY(QTest::qWaitForWindowExposed(window));
 
-        system.uninstall(false);
+        standIn.removal.start(false);
         window->hide();
-        QVERIFY(system.removing());
+        QVERIFY(standIn.removal.running());
         QCOMPARE(quit.count(), 0);
         QTRY_COMPARE(quit.count(), 1);
         auto *report = window->findChild<QQuickItem *>(QStringLiteral("removalReport"));
@@ -530,24 +541,23 @@ private slots:
     void thePhoneCodeLivesWhileItShows()
     {
         ApplicationController controller(true);
-        StandInSystem standIn(&controller);
-        QuickSystem &system = standIn.system;
-        QCOMPARE(system.phoneTransfer(), QString());
+        QuickPhone phone(&controller);
+        QCOMPARE(phone.state(), QString());
 
-        system.startPhoneTransfer();
-        const QString first = system.phoneLink();
-        if (system.phoneTransfer() == QLatin1String("noNetwork")) {
+        phone.start();
+        const QString first = phone.link();
+        if (phone.state() == QLatin1String("noNetwork")) {
             QVERIFY(first.isEmpty());
         } else {
-            QCOMPARE(system.phoneTransfer(), QStringLiteral("waiting"));
+            QCOMPARE(phone.state(), QStringLiteral("waiting"));
             QVERIFY(first.startsWith(QStringLiteral("speecher://import?")));
-            system.startPhoneTransfer();
-            QVERIFY(system.phoneLink() != first);
+            phone.start();
+            QVERIFY(phone.link() != first);
         }
-        system.stopPhoneTransfer();
-        QCOMPARE(system.phoneTransfer(), QString());
-        QCOMPARE(system.phoneLink(), QString());
-        QCOMPARE(system.phoneBundle().value(QStringLiteral("terms")).toInt(), 0);
+        phone.stop();
+        QCOMPARE(phone.state(), QString());
+        QCOMPARE(phone.link(), QString());
+        QCOMPARE(phone.bundle().value(QStringLiteral("terms")).toInt(), 0);
     }
 
     // A page that hides takes its code with it; showing it again starts
@@ -558,8 +568,9 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        StandInSystem standIn(&controller);
-        QuickSystem &system = standIn.system;
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        QuickPhone &phone = standIn.phone;
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
         QQmlEngine engine;
@@ -574,18 +585,18 @@ private slots:
         QVERIFY(page);
 
         QMetaObject::invokeMethod(page, "showPhoneCode", Q_ARG(QVariant, true));
-        QVERIFY(!system.phoneTransfer().isEmpty());
-        const QString first = system.phoneLink();
+        QVERIFY(!phone.state().isEmpty());
+        const QString first = phone.link();
         window->hide();
-        QCOMPARE(system.phoneTransfer(), QString());
+        QCOMPARE(phone.state(), QString());
         QVERIFY(!page->property("_phoneOpen").toBool());
 
         window->show();
-        QCOMPARE(system.phoneTransfer(), QString());
+        QCOMPARE(phone.state(), QString());
         QMetaObject::invokeMethod(page, "showPhoneCode", Q_ARG(QVariant, true));
-        QVERIFY(!system.phoneTransfer().isEmpty());
+        QVERIFY(!phone.state().isEmpty());
         if (!first.isEmpty()) {
-            QVERIFY(system.phoneLink() != first);
+            QVERIFY(phone.link() != first);
         }
     }
 
@@ -601,7 +612,8 @@ private slots:
         FakeKeyboard keyboard;
         keyboard.helperSucceeds = false;
         keyboard.helperError = QStringLiteral("Authorization was declined.");
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
         QQmlEngine engine;
         const std::unique_ptr<QObject> row = createQml(engine, R"(
             import Speecher.App
@@ -635,7 +647,8 @@ private slots:
         FakeKeyboard keyboard;
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
         keyboard.managed = true;
-        QuickSystem system(&controller, keyboard.system(), quietRemoval());
+        StandInSystem standIn(&controller, keyboard);
+        QuickSystem &system = standIn.system;
         // Setup's choices read Models and Audio, as the host always has them.
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -677,7 +690,8 @@ private slots:
     void theVirtualKeyboardAndRemovalAreLinuxOnly()
     {
         ApplicationController controller(true);
-        QuickSystem system(&controller);
+        const SystemSingletons onThisComputer(&controller);
+        const QuickSystem &system = onThisComputer.system;
         QStringList checkIds;
         for (const QVariant &check : system.checks()) {
             checkIds.append(check.toMap().value(QStringLiteral("id")).toString());
@@ -685,6 +699,8 @@ private slots:
         QCOMPARE(checkIds, (QStringList{QStringLiteral("microphoneAccess"), QStringLiteral("desktopAccessibility"),
                                         QStringLiteral("globalShortcuts")}));
         QVERIFY(!system.hasVirtualKeyboard());
+        QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
+        QVERIFY(system.virtualKeyboardActions().isEmpty());
         QVERIFY(!system.canRemove());
     }
 #endif
@@ -704,7 +720,8 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        StandInSystem standIn(&controller);
+        FakeKeyboard virtualKeyboard;
+        StandInSystem standIn(&controller, virtualKeyboard);
         // General reads Insights, Pasting and setup Models, setup Audio, as
         // the host always has them.
         QuickInsights insights(&controller);
@@ -781,7 +798,8 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        StandInSystem standIn(&controller);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
         QuickSystem &system = standIn.system;
         // The page's Library reads Models, as the host always has one.
         QuickModels models(&controller);

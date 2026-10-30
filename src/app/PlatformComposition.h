@@ -13,6 +13,7 @@ namespace speecher {
 class SessionKeyGrab;
 class GlobalShortcutBinder;
 enum class GlobalShortcutRole;
+class DesktopColors;
 class PopupPositioner;
 class WindowBackdrop;
 class SettingsStore;
@@ -83,6 +84,13 @@ public:
         Q_UNUSED(parent);
         return nullptr;
     }
+    // The desktop's own colour scheme, followed as it changes: Plasma's;
+    // none elsewhere, where the UI takes the platform palette's accent.
+    virtual DesktopColors *createDesktopColors(QObject *parent) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
     // A binder that keeps its binding in Speecher's settings does so through
     // settings, which must outlive it.
     virtual GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
@@ -98,6 +106,9 @@ public:
     // Whether Escape cancels through a whole Dictation Session, rather than
     // only keeping the original while a selection edit is reviewed.
     virtual bool escapeCancelsDictation() const { return false; }
+    // The program and arguments that open the desktop's keyboard shortcut
+    // settings; empty where Speecher knows of none.
+    virtual QStringList shortcutSettingsCommand() const { return {}; }
 
     virtual AccessibilityState accessibilityState() const = 0;
     virtual void watchAccessibilityChanges(QObject *context,
@@ -108,6 +119,8 @@ public:
     }
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
+    // Whether setLaunchAtLogin starts Speecher at login: macOS and Windows.
+    virtual bool canLaunchAtLogin() const { return false; }
     virtual bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const
     {
         Q_UNUSED(enabled);

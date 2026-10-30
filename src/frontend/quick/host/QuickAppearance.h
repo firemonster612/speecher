@@ -11,6 +11,7 @@
 namespace speecher {
 
 class ApplicationController;
+class DesktopColors;
 class WindowBackdrop;
 
 // The UI's Appearance singleton: what the desktop offers the window's look.
@@ -20,9 +21,9 @@ class QuickAppearance final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Appearance)
     QML_SINGLETON
-    // The desktop's current colours: on Plasma, its colour scheme as
-    // kdeglobals holds it, followed as it changes; elsewhere none, and the
-    // UI takes the platform palette's accent.
+    // The desktop's current colours, followed as they change, where the
+    // platform has a DesktopColors (Plasma); elsewhere none, and the UI takes
+    // the platform palette's accent.
     Q_PROPERTY(QVariantMap systemColors READ systemColors NOTIFY systemColorsChanged)
     // The desktop's installed colour schemes, { id, name, colors }, by name.
     Q_PROPERTY(QVariantList installedSchemes READ installedSchemes NOTIFY installedSchemesChanged)
@@ -56,10 +57,10 @@ private:
     void readInstalledSchemes();
 
     WindowBackdrop *m_backdrop;
-    const bool m_onPlasma;
-    QFileSystemWatcher m_watcher;
-    QStringList m_configFolders;
-    // The colours of the kdeglobals in effect, as last read.
+    DesktopColors *m_desktopColors;
+    // The folders installedSchemes is read from.
+    QFileSystemWatcher m_schemeFolders;
+    // The desktop's colours, as last read.
     QVariantMap m_systemColors;
     QVariantList m_installedSchemes;
 };

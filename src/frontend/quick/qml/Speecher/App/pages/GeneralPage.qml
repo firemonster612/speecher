@@ -18,7 +18,7 @@ Page {
     property bool _confirmClear: false
     property bool _confirmRemove: false
     property bool _removeSettings: false
-    readonly property bool _removed: System.removal.steps !== undefined
+    readonly property bool _removed: Removal.report.steps !== undefined
 
     readonly property var t: ({
         showCode: "Show code",
@@ -49,14 +49,14 @@ Page {
     // and showing it again makes a new one.
     function showPhoneCode(open) {
         _phoneOpen = open
-        if (open) System.startPhoneTransfer()
-        else System.stopPhoneTransfer()
+        if (open) Phone.start()
+        else Phone.stop()
     }
     Connections {
         target: page.Window.window
         function onVisibleChanged() { if (!page.Window.window.visible) page.showPhoneCode(false) }
     }
-    Component.onDestruction: System.stopPhoneTransfer()
+    Component.onDestruction: Phone.stop()
 
     SubpageRows { pageId: "general" }
 
@@ -104,7 +104,7 @@ Page {
                         width: 148
                         height: 148
                         // Empty once sent, as the code works once.
-                        text: System.phoneLink
+                        text: Phone.link
                     }
                     Column {
                         anchors.left: qr.right
@@ -116,13 +116,13 @@ Page {
                         // Empty until the first code is shown.
                         Txt {
                             width: parent.width
-                            text: System.phoneBundle.terms === undefined ? "" : page.phoneSummary(System.phoneBundle)
+                            text: Phone.bundle.terms === undefined ? "" : page.phoneSummary(Phone.bundle)
                             variant: "small"
                             wrapMode: Text.WordWrap
                         }
                         Txt {
                             width: parent.width
-                            text: page.phoneNote(System.phoneTransfer)
+                            text: page.phoneNote(Phone.state)
                             variant: "small"
                             tone: "secondary"
                             wrapMode: Text.WordWrap
@@ -181,8 +181,8 @@ Page {
                 text: page.t.remove
                 variant: "danger"
                 size: "small"
-                busy: System.removing
-                enabled: !System.removing && !page._removed && !page._confirmRemove
+                busy: Removal.running
+                enabled: !Removal.running && !page._removed && !page._confirmRemove
                 onClicked: page._confirmRemove = true
             }
         }
@@ -194,7 +194,7 @@ Page {
             confirmText: page.t.confirmRemove
             onCancelled: page._confirmRemove = false
             onConfirmed: {
-                System.uninstall(!page._removeSettings)
+                Removal.start(!page._removeSettings)
                 page._confirmRemove = false
             }
             leading: CheckBox {

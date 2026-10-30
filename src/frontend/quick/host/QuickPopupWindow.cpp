@@ -1,23 +1,13 @@
 #include "frontend/quick/host/QuickPopupWindow.h"
 
 #include "frontend/quick/host/PopupWindowBase.h"
+#include "platform/PopupInputRegion.h"
 #include "platform/PopupPositioner.h"
-#ifdef Q_OS_MACOS
-#include "platform/mac/MacClickThrough.h"
-#endif
 
 #include <QDebug>
 #include <QDir>
-#include <QGuiApplication>
 #include <QQmlComponent>
-#include <QRegion>
 #include <QTimer>
-
-#ifdef SPEECHER_WITH_X11
-// Last: Xlib's macros (None, Status, Bool) would clash with Qt's headers.
-#include <X11/Xlib.h>
-#include <X11/extensions/shape.h>
-#endif
 
 namespace speecher {
 
@@ -25,19 +15,6 @@ namespace {
 
 // About ten frames a second: enough to see every phase of a dictation.
 constexpr int captureIntervalMs = 100;
-
-#ifdef SPEECHER_WITH_X11
-// Only rect takes the pointer; the window's shape, which also clips what is
-// drawn, stays whole.
-void setX11InputShape(Display *display, const QWindow &window, const QRect &rect)
-{
-    const qreal ratio = window.devicePixelRatio();
-    const QRect native = QRectF(QPointF(rect.topLeft()) * ratio, QSizeF(rect.size()) * ratio).toAlignedRect();
-    XRectangle shape{short(native.x()), short(native.y()), ushort(native.width()), ushort(native.height())};
-    XShapeCombineRectangles(display, window.winId(), ShapeInput, 0, 0, &shape, 1, ShapeSet, Unsorted);
-    XFlush(display);
-}
-#endif
 
 } // namespace
 
@@ -68,11 +45,8 @@ QuickPopupWindow::QuickPopupWindow(QQmlEngine *engine, PopupPositioner *position
             framePresented(generation);
         }, Qt::QueuedConnection);
     }, Qt::DirectConnection);
-#ifdef Q_OS_WIN
-    connect(m_window, &PopupWindowBase::shadowRegionChanged, this, &QuickPopupWindow::applyInputRegion);
-#else
     connect(m_window, &PopupWindowBase::inputRegionChanged, this, &QuickPopupWindow::applyInputRegion);
-#endif
+    connect(m_window, &PopupWindowBase::shadowRegionChanged, this, &QuickPopupWindow::applyInputRegion);
     connect(m_window, &PopupWindowBase::emptyChanged, this, &QuickPopupWindow::hideOnceEmpty);
     // The window is sized before it shows, but a size that still changes
     // while it is up (a review answered by other keys than the configured
@@ -129,29 +103,7 @@ void QuickPopupWindow::framePresented(quint64 generation)
 // transparent and must let clicks through to the app underneath.
 void QuickPopupWindow::applyInputRegion()
 {
-    const QRect region = m_window->inputRegion().toAlignedRect();
-#if defined(Q_OS_MACOS)
-    // Cocoa's mask clips drawing too, which cut the shadow off.
-    mac::takeClicksOnlyIn(m_window, region);
-#elif defined(Q_OS_WIN)
-    // The mask is the window region, which clips drawing too, so it takes in
-    // the shadow. A click on the shadow, a ring 20 pixels wide at the sides,
-    // 12 above the capsule and 28 below it, stays with the popup.
-    m_window->setMask(QRegion(m_window->shadowRegion().toAlignedRect()));
-#else
-#ifdef SPEECHER_WITH_X11
-    // On X11 the mask would be the window's shape, cutting off the shadow and
-    // the capsule wherever it moves past the region, so only the input shape
-    // is set. By name: offscreen also answers to QX11Application, with no
-    // display.
-    if (QGuiApplication::platformName() == QLatin1String("xcb")) {
-        setX11InputShape(qGuiApp->nativeInterface<QNativeInterface::QX11Application>()->display(), *m_window, region);
-        return;
-    }
-#endif
-    // On Wayland the mask is the surface's input region.
-    m_window->setMask(QRegion(region));
-#endif
+    setPopupInputRegion(*m_window, m_window->inputRegion().toAlignedRect(), m_window->shadowRegion().toAlignedRect());
 }
 
 void QuickPopupWindow::hideOnceEmpty()

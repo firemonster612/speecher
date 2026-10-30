@@ -34,7 +34,7 @@ struct YdotoolSetupStatus {
     QString detail;
     bool speecherManagedSetupInstalled = false;
 
-    bool ready() const;
+    bool ready() const { return state == YdotoolSetupState::Ready || state == YdotoolSetupState::ReadyLayoutCaveat; }
 };
 
 class YdotoolSetup {

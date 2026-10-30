@@ -421,6 +421,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/audio/SilenceGate.cpp
   src/platform/audio/WavFileAudioInput.cpp
   src/platform/FallbackPopupPositioner.cpp
+  src/platform/PopupInputRegion.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
@@ -429,6 +430,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
+  src/platform/DesktopColors.h
   src/platform/MicrophoneAccess.h
   src/platform/SessionKeyGrab.h
   src/platform/CorrectionDiff.h
@@ -436,6 +438,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/HotKeyShortcutBinder.h
+  src/platform/PopupInputRegion.h
   src/platform/PopupPositioner.h
   src/platform/WindowBackdrop.h
   src/platform/PopupSurface.h
@@ -467,6 +470,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/KeywatchShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
   src/platform/MediaPauseController.cpp
+  src/platform/PlasmaDesktopColors.cpp
   src/platform/PortalRequest.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
@@ -496,6 +500,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/KeywatchShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h
   src/platform/MediaPauseController.h
+  src/platform/PlasmaDesktopColors.h
   src/platform/PortalRequest.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
@@ -600,6 +605,8 @@ set(SPEECHER_APP_SOURCES
   src/app/ShellCompletions.cpp
   src/app/ShortcutGesture.cpp
   src/app/SingleInstanceIpc.cpp
+  src/app/SpeecherRemoval.cpp
+  src/app/VirtualKeyboardSetup.cpp
   src/app/WhatsNewTracker.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
@@ -633,7 +640,9 @@ set(SPEECHER_APP_HEADERS
   src/app/ProvidersCommand.h
   src/app/ShellCompletions.h
   src/app/SingleInstanceIpc.h
+  src/app/SpeecherRemoval.h
   src/app/UpdateController.h
+  src/app/VirtualKeyboardSetup.h
   src/app/WhatsNewTracker.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
@@ -646,14 +655,10 @@ set(SPEECHER_APP_HEADERS
 
 set(SPEECHER_APP_LINUX_SOURCES
   src/app/LinuxComposition.cpp
-  src/app/SpeecherRemoval.cpp
-  src/app/VirtualKeyboardSetup.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
   src/app/LinuxComposition.h
-  src/app/SpeecherRemoval.h
-  src/app/VirtualKeyboardSetup.h
 )
 
 set(SPEECHER_APP_WIN_SOURCES

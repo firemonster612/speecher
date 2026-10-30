@@ -2,7 +2,9 @@
 
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#ifdef Q_OS_LINUX
 #include "output/YdotoolDelivery.h"
+#endif
 
 #include <QThread>
 
@@ -11,15 +13,26 @@
 
 namespace speecher {
 
-bool VirtualKeyboardSetup::typeWithYdotool(const QString &text, QString *error)
+VirtualKeyboardSetup::System VirtualKeyboardSetup::onThisComputer()
 {
-    YdotoolDelivery ydotool;
-    return ydotool.type(text, error);
-}
-
-VirtualKeyboardSetup::VirtualKeyboardSetup(SettingsStore *settings, QObject *parent)
-    : VirtualKeyboardSetup(settings, System{}, parent)
-{
+#ifdef Q_OS_LINUX
+    return {
+        .probe = YdotoolSetup::probe,
+        .runHelper = YdotoolSetup::runHelper,
+        .startService = YdotoolSetup::startUserService,
+        .stopService = YdotoolSetup::stopUserService,
+        .type = [](const QString &text, QString *error) { return YdotoolDelivery().type(text, error); },
+    };
+#else
+    const auto fail = [](auto &&...) { return false; };
+    return {
+        .probe = [](bool) { return YdotoolSetupStatus{}; },
+        .runHelper = fail,
+        .startService = fail,
+        .stopService = fail,
+        .type = fail,
+    };
+#endif
 }
 
 VirtualKeyboardSetup::VirtualKeyboardSetup(SettingsStore *settings, System system, QObject *parent)

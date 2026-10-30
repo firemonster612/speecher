@@ -11,6 +11,7 @@
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/LinuxSessionKeyGrab.h"
 #include "platform/MediaPauseController.h"
+#include "platform/PlasmaDesktopColors.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/X11KeyGrabShortcutBinder.h"
@@ -159,6 +160,21 @@ PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 WindowBackdrop *LinuxComposition::createWindowBackdrop(QObject *parent) const
 {
     return new KWinBlurBackdrop(parent);
+}
+
+DesktopColors *LinuxComposition::createDesktopColors(QObject *parent) const
+{
+    // Off Plasma, a kdeglobals left by KDE apps says nothing about the
+    // desktop's colours.
+    if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"))) {
+        return nullptr;
+    }
+    return new PlasmaDesktopColors(parent);
+}
+
+QStringList LinuxComposition::shortcutSettingsCommand() const
+{
+    return desktopShortcutSettingsCommand();
 }
 
 namespace {
