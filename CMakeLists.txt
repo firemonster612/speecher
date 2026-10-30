@@ -331,6 +331,7 @@ set(SPEECHER_WORKFLOW_SOURCES
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/dictation/BetweenAttempts.h
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
   src/dictation/EditReview.h
