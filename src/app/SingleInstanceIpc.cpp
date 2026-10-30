@@ -10,6 +10,7 @@
 #include <qt_windows.h>
 #endif
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -167,8 +168,15 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                         }
                         break;
                     }
+                    // Blank lines are not a request, so they keep the
+                    // deadline: a client sending only those would otherwise
+                    // hold an accept slot forever.
+                    const bool requestLanded = std::ranges::any_of(
+                        frames, [](const QByteArray &frame) { return !frame.trimmed().isEmpty(); });
                     if (buffer.isEmpty()) {
-                        m_incompleteRequestDeadlines.remove(socket);
+                        if (requestLanded) {
+                            m_incompleteRequestDeadlines.remove(socket);
+                        }
                     } else if (!m_incompleteRequestDeadlines.contains(socket)) {
                         // The deadline dates from accept (or from the first
                         // incomplete byte after a completed request);
