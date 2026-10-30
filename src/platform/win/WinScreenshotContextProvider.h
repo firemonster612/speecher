@@ -2,7 +2,8 @@
 
 #include "dictation/DictationPorts.h"
 
-class QThread;
+#include <QPointer>
+#include <QThread>
 
 namespace speecher {
 
@@ -11,13 +12,15 @@ class WinScreenshotContextProvider : public ScreenshotContextProvider {
 
 public:
     explicit WinScreenshotContextProvider(QObject *parent = nullptr);
-    ~WinScreenshotContextProvider() override;
 
     void capture() override;
     void cancel() override;
 
 private:
-    QThread *m_capture = nullptr;
+    // The newest capture's worker, until it finishes and is deleted.
+    QPointer<QThread> m_worker;
+    // Whether that worker's result is still to be reported.
+    bool m_wanted = false;
 };
 
 } // namespace speecher
