@@ -15,7 +15,10 @@ public:
     using SpeechTranscriber::SpeechTranscriber;
 
     bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override { return false; }
-    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override { return {true, {}}; }
+    std::optional<ProviderFailure> prepare(const SpeechSettings &, const AccountSettings &) override
+    {
+        return std::nullopt;
+    }
 
     // A couple of words every 200 ms, so the live preview visibly grows.
     void startAttempt(quint64 attemptId, const SpeechSettings &) override
@@ -67,9 +70,10 @@ class E2ETranscriptRefiner final : public TranscriptRefiner {
 public:
     using TranscriptRefiner::TranscriptRefiner;
 
-    bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override { return false; }
-    void refresh(const RefinementSettings &, const AccountSettings &) override {}
-    RefinementPrepareResult prepare(const RefinementSettings &, const AccountSettings &) override { return {true, {}}; }
+    std::optional<ProviderFailure> prepare(const RefinementSettings &, const AccountSettings &) override
+    {
+        return std::nullopt;
+    }
 
     // A word every 100 ms after a pause long enough for the Refining… shimmer
     // to be seen, then the completed sentence.

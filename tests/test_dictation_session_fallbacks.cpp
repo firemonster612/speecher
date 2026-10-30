@@ -253,10 +253,10 @@ private slots:
     void speechStartsOnTheFirstProviderThatPrepares()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("offline"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("offline")};
         rig.speech[QStringLiteral("claude")]->backgroundPrepare = true;
-        rig.speech[QStringLiteral("claude")]->prepareResult = {false, QStringLiteral("expired"),
-                                                              ProviderFailureKind::Authentication};
+        rig.speech[QStringLiteral("claude")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Authentication, QStringLiteral("expired")};
         QSignalSpy signIns(rig.session.get(), &DictationSession::providerSignInObserved);
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("codex")]->startCalls, 0);
@@ -274,7 +274,8 @@ private slots:
     void anUnavailableProviderIsNotTakenForSignedOut()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("Desktop keyring unavailable")};
+        rig.speech[QStringLiteral("codex")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("Desktop keyring unavailable")};
         QSignalSpy signIns(rig.session.get(), &DictationSession::providerSignInObserved);
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
@@ -289,10 +290,11 @@ private slots:
     void noSpeechProviderStartsAndTheErrorNamesEach()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint"), QStringLiteral("local")});
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
-        rig.speech[QStringLiteral("endpoint")]->prepareResult = {false, QStringLiteral("slow"),
-                                                                ProviderFailureKind::Timeout};
-        rig.speech[QStringLiteral("local")]->prepareResult = {false, QStringLiteral("no model")};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
+        rig.speech[QStringLiteral("endpoint")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Timeout, QStringLiteral("slow")};
+        rig.speech[QStringLiteral("local")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("no model")};
         QSignalSpy errors(rig.session.get(), &DictationSession::popupErrorRequested);
         rig.session->startListening();
         QTRY_COMPARE(rig.session->state(), DictationState::Error);
@@ -332,13 +334,12 @@ private slots:
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
         openai->refreshRequired = true;
-        openai->backgroundRefresh = true;
         codex->onStartAttempt = [codex] {
             codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         };
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
-        QCOMPARE(openai->backgroundRefreshCalls, 1);
+        QCOMPARE(openai->refreshRuns, 1);
     }
 
     // A fallback that can't listen for the Spoken Language, by its Local
@@ -361,8 +362,9 @@ private slots:
         LocalSpeechSettings local = rig.settings.localSpeechSettings();
         local.modelId = modelId;
         rig.settings.setLocalSpeechSettings(local);
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
-        rig.speech[QStringLiteral("local")]->prepareResult = {false, QStringLiteral("no model")};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
+        rig.speech[QStringLiteral("local")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("no model")};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, localPrepares);
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 0);
@@ -383,7 +385,7 @@ private slots:
         QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), rig.settings.dictationSnapshot(), facts),
                  FallbackProblem::None);
 
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
         QCOMPARE(rig.speech[QStringLiteral("local")]->lastLanguage, QStringLiteral("en"));
@@ -396,7 +398,7 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
         rig.settings.setSpokenLanguage(QStringLiteral("de"));
         rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
         rig.session->stopListening();
@@ -413,8 +415,8 @@ private slots:
                      {QStringLiteral("openai")});
         rig.settings.setSpokenLanguage(QStringLiteral("de"));
         rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
-        rig.speech[QStringLiteral("endpoint")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
+        rig.speech[QStringLiteral("endpoint")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
         rig.speech[QStringLiteral("claude")]->emitFailure(QStringLiteral("gone"), false, SpeechPhase::Streaming, Network);
@@ -431,7 +433,7 @@ private slots:
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("af"));
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->startCalls, 1);
@@ -523,7 +525,7 @@ private slots:
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         local->backgroundPrepare = true;
-        local->prepareResult = {false, QStringLiteral("offline"), Network};
+        local->prepareFailure = ProviderFailure{Network, QStringLiteral("offline")};
         local->duringBackgroundPrepare = [&preparing, &prepareStarted] {
             prepareStarted = true;
             preparing.acquire();
@@ -940,7 +942,7 @@ private slots:
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
         FakeRefiner *anthropic = rig.refiners[QStringLiteral("anthropic")];
         FakeRefiner *local = rig.refiners[QStringLiteral("local")];
-        openai->prepareResult = {false, QStringLiteral("refused"), Network};
+        openai->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         QSignalSpy preview(rig.session.get(), &DictationSession::popupRefinementPreviewChanged);
@@ -1037,7 +1039,7 @@ private slots:
         rig.target.target.selectionStart = 0;
         rig.target.target.selectionEnd = 23;
         FakeRefiner *local = rig.refiners[QStringLiteral("local")];
-        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.refiners[QStringLiteral("openai")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("make it friday"));
         rig.session->stopListening();
@@ -1112,11 +1114,10 @@ private slots:
         QFETCH(bool, stopWhileRenewing);
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("local"), QStringLiteral("openai")});
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
-        rig.refiners[QStringLiteral("local")]->prepareResult = {false, QStringLiteral("no runner"), Network};
+        rig.refiners[QStringLiteral("local")]->prepareFailure = ProviderFailure{Network, QStringLiteral("no runner")};
         rig.listen();
         openai->refreshRequired = true;
-        openai->backgroundRefresh = true;
-        openai->backgroundRefreshDelayMs = 100;
+        openai->refreshDelayMs = 100;
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
         QCOMPARE(rig.session->state(), DictationState::Refining);
@@ -1131,7 +1132,7 @@ private slots:
             return;
         }
         QTRY_COMPARE(openai->refineCalls, 1);
-        QCOMPARE(openai->backgroundRefreshCalls, 1);
+        QCOMPARE(openai->refreshRuns, 1);
         QCOMPARE(openai->refreshCalls, 1);
     }
 
@@ -1158,8 +1159,8 @@ private slots:
                      {QStringLiteral("openai"), QStringLiteral("local")});
         rig.settings.setInsightsEnabled(true);
         rig.session->setReachability(Reachability(reachability));
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
-        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
+        rig.refiners[QStringLiteral("openai")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.refiners[QStringLiteral("local")]->autoComplete = true;
         rig.refiners[QStringLiteral("local")]->autoCompleteText = QStringLiteral("Spoken words.");
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
@@ -1295,8 +1296,8 @@ private slots:
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         rig.settings.setCompletionStatusDurationMs(100);
-        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("expired"),
-                                                             ProviderFailureKind::Authentication};
+        rig.speech[QStringLiteral("codex")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Authentication, QStringLiteral("expired")};
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
@@ -1316,7 +1317,7 @@ private slots:
     void withoutFallbacksTheOutcomeIsTodays()
     {
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai")});
-        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.refiners[QStringLiteral("openai")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
@@ -1346,13 +1347,12 @@ private slots:
         session.startListening();
         QTRY_COMPARE(session.state(), DictationState::Listening);
         refiner->refreshRequired = true;
-        refiner->backgroundRefresh = true;
-        refiner->refreshResult = {false, QStringLiteral("refresh failed"), ProviderFailureKind::Network};
+        refiner->refreshFailure = ProviderFailure{ProviderFailureKind::Network, QStringLiteral("refresh failed")};
         speech->emitFinalText(QStringLiteral("spoken words"));
         session.stopListening();
         QCOMPARE(session.state(), DictationState::Refining);
         QTRY_COMPARE(delivery.calls, 1);
-        QCOMPARE(refiner->backgroundRefreshCalls, 1);
+        QCOMPARE(refiner->refreshRuns, 1);
         QCOMPARE(refiner->prepareCalls, 0);
         QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
     }

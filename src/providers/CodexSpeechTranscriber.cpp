@@ -33,19 +33,19 @@ QString transcribeEndpoint()
                               : override;
 }
 
-SpeechPrepareResult prepareCodex(const AccountSettings &accounts, QString *accessToken)
+std::optional<ProviderFailure> prepareCodex(const AccountSettings &accounts, QString *accessToken)
 {
     const OpenAiAuth auth = OpenAiAuthProvider::forSpeech(accounts).resolve();
     *accessToken = auth.ok ? auth.bearerToken : QString();
     if (auth.ok) {
-        return {true, {}};
+        return std::nullopt;
     }
     // A CLI Proxy API account's error says which account; the Codex app's
     // sign-in needs saying where to sign in.
     const QString message = auth.source == QStringLiteral("cliproxy")
         ? auth.status
         : QStringLiteral("%1. Sign in with ChatGPT in the ChatGPT app or Codex CLI.").arg(auth.status);
-    return {false, message, auth.kind, auth.httpStatus};
+    return ProviderFailure{auth.kind, message, auth.httpStatus};
 }
 
 } // namespace
@@ -60,20 +60,21 @@ bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Accou
     return OpenAiAuthProvider::forSpeech(accounts).requiresCodexOauthRefresh();
 }
 
-std::optional<SpeechPrepareJob> CodexSpeechTranscriber::createPrepareJob(
+std::optional<PreparationJob> CodexSpeechTranscriber::createPrepareJob(
     const SpeechSettings &settings, const AccountSettings &accounts)
 {
     auto accessToken = std::make_shared<QString>();
-    SpeechPrepareJob job;
+    PreparationJob job;
     job.showRefreshIndicator = requiresRefresh(settings, accounts);
     job.run = [accounts, accessToken] { return prepareCodex(accounts, accessToken.get()); };
-    job.apply = [this, accessToken](const SpeechPrepareResult &result) {
-        m_accessToken = result.ok ? *accessToken : QString();
+    job.apply = [this, accessToken](const std::optional<ProviderFailure> &failure) {
+        m_accessToken = failure ? QString() : *accessToken;
     };
     return job;
 }
 
-SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &, const AccountSettings &accounts)
+std::optional<ProviderFailure> CodexSpeechTranscriber::prepare(const SpeechSettings &,
+                                                               const AccountSettings &accounts)
 {
     return prepareCodex(accounts, &m_accessToken);
 }

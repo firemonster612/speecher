@@ -13,8 +13,7 @@
 namespace speecher {
 
 class ProviderRegistry;
-class StartupPreparationRunner;
-struct StartupPreparationResult;
+class PreparationRunner;
 
 // A session's speech providers, primary first, and the one it is on. It walks
 // forward only: preparing finds the first provider from the current one on
@@ -41,10 +40,6 @@ public:
         // to prepare off this thread still reports from the worker, and
         // cancel() stops it.
         bool readyLater = false;
-        // The refiner's sign-in renews on this thread before the first
-        // speech provider that gets that far prepares, even if none then
-        // does; otherwise only once one has prepared.
-        bool renewRefinerFirst = false;
     };
 
     SpeechChain(ProviderRegistry *providers, Acquire acquire, QObject *parent = nullptr);
@@ -92,16 +87,16 @@ signals:
     void ready();
     // No provider is left to take the audio.
     void exhausted();
-    void signInRenewed(const speecher::SpeechPrepareResult &result);
+    void signInRenewed(const std::optional<speecher::ProviderFailure> &failure);
 
 private:
     void walk();
-    void renewRefiner();
-    void finishPreparation(const StartupPreparationResult &result);
+    void finishPreparation(const std::optional<ProviderFailure> &failure);
+    void useResolvedSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings);
 
     ProviderRegistry *m_providers;
     Acquire m_acquire;
-    StartupPreparationRunner *m_runner;
+    PreparationRunner *m_runner;
     QStringList m_providerIds;
     int m_index = 0;
     Options m_options;

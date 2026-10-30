@@ -1,6 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "dictation/StartupPreparationRunner.h"
+#include "dictation/PreparationRunner.h"
 
 #include <QSemaphore>
 #include <QElapsedTimer>
@@ -165,138 +165,129 @@ private slots:
         QCOMPARE(changed.count(), 3);
     }
 
-    void startupPreparationRunnerAppliesJobsInOrder()
+    void preparationRunnerAppliesJobsInOrder()
     {
-        StartupPreparationRunner runner;
+        PreparationRunner runner;
         QStringList events;
-        SpeechPrepareJob speechJob;
+        PreparationJob speechJob;
         speechJob.run = [&events] {
             events.append(QStringLiteral("speech run"));
-            return SpeechPrepareResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        speechJob.apply = [&events](const SpeechPrepareResult &) {
+        speechJob.apply = [&events](const std::optional<ProviderFailure> &) {
             events.append(QStringLiteral("speech apply"));
         };
-        RefinementRefreshJob refinerJob;
+        PreparationJob refinerJob;
         refinerJob.run = [&events] {
             events.append(QStringLiteral("refiner run"));
-            return RefinementRefreshResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        refinerJob.apply = [&events](const RefinementRefreshResult &) {
+        refinerJob.apply = [&events](const std::optional<ProviderFailure> &) {
             events.append(QStringLiteral("refiner apply"));
         };
-        QSignalSpy completed(&runner, &StartupPreparationRunner::completed);
+        QSignalSpy prepared(&runner, &PreparationRunner::speechPrepared);
 
-        runner.start(17, std::move(speechJob), std::move(refinerJob), {true, {}});
+        runner.prepareSpeech(std::move(speechJob), std::move(refinerJob));
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(prepared.count(), 1, 1000);
         QCOMPARE(events, QStringList({QStringLiteral("speech run"),
                                       QStringLiteral("refiner run"),
                                       QStringLiteral("speech apply"),
                                       QStringLiteral("refiner apply")}));
-        const StartupPreparationResult result =
-            qvariant_cast<StartupPreparationResult>(completed.first().first());
-        QCOMPARE(result.revision, quint64(17));
-        QVERIFY(result.speech.ok);
-        QVERIFY(result.refinerRefreshAttempted);
-        QVERIFY(result.refinerRefresh.ok);
+        QVERIFY(!prepared.first().first().value<std::optional<ProviderFailure>>());
     }
 
-    void startupPreparationRunnerSkipsRefinerAfterSpeechFailure()
+    void preparationRunnerSkipsRefinerAfterSpeechFailure()
     {
-        StartupPreparationRunner runner;
+        PreparationRunner runner;
         bool speechApplied = false;
         bool refinerRan = false;
-        SpeechPrepareJob speechJob;
+        PreparationJob speechJob;
         speechJob.run = [] {
-            return SpeechPrepareResult{false, QStringLiteral("speech failed")};
+            return std::optional(ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("speech failed")});
         };
-        speechJob.apply = [&speechApplied](const SpeechPrepareResult &) {
+        speechJob.apply = [&speechApplied](const std::optional<ProviderFailure> &) {
             speechApplied = true;
         };
-        RefinementRefreshJob refinerJob;
+        PreparationJob refinerJob;
         refinerJob.run = [&refinerRan] {
             refinerRan = true;
-            return RefinementRefreshResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        QSignalSpy completed(&runner, &StartupPreparationRunner::completed);
+        QSignalSpy prepared(&runner, &PreparationRunner::speechPrepared);
 
-        runner.start(18, std::move(speechJob), std::move(refinerJob), {true, {}});
+        runner.prepareSpeech(std::move(speechJob), std::move(refinerJob));
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
-        const StartupPreparationResult result =
-            qvariant_cast<StartupPreparationResult>(completed.first().first());
+        QTRY_COMPARE_WITH_TIMEOUT(prepared.count(), 1, 1000);
         QVERIFY(speechApplied);
         QVERIFY(!refinerRan);
-        QVERIFY(!result.speech.ok);
-        QCOMPARE(result.speech.message, QStringLiteral("speech failed"));
-        QVERIFY(!result.refinerRefreshAttempted);
+        const auto failure = prepared.first().first().value<std::optional<ProviderFailure>>();
+        QVERIFY(failure);
+        QCOMPARE(failure->message, QStringLiteral("speech failed"));
     }
 
-    void startupPreparationRunnerReportsRefinerFailure()
+    void preparationRunnerReportsRefinerFailure()
     {
-        StartupPreparationRunner runner;
+        PreparationRunner runner;
         bool refinerApplied = false;
-        RefinementRefreshJob refinerJob;
+        PreparationJob refinerJob;
         refinerJob.run = [] {
-            return RefinementRefreshResult{false, QStringLiteral("refresh failed")};
+            return std::optional(ProviderFailure{ProviderFailureKind::Network, QStringLiteral("refresh failed")});
         };
-        refinerJob.apply = [&refinerApplied](const RefinementRefreshResult &result) {
-            refinerApplied = !result.ok;
+        refinerJob.apply = [&refinerApplied](const std::optional<ProviderFailure> &failure) {
+            refinerApplied = failure.has_value();
         };
-        QSignalSpy completed(&runner, &StartupPreparationRunner::completed);
+        QSignalSpy prepared(&runner, &PreparationRunner::refinerPrepared);
 
-        runner.start(19, std::nullopt, std::move(refinerJob), {true, {}});
+        runner.prepareRefiner(std::move(refinerJob));
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
-        const StartupPreparationResult result =
-            qvariant_cast<StartupPreparationResult>(completed.first().first());
+        QTRY_COMPARE_WITH_TIMEOUT(prepared.count(), 1, 1000);
         QVERIFY(refinerApplied);
-        QVERIFY(result.speech.ok);
-        QVERIFY(result.refinerRefreshAttempted);
-        QVERIFY(!result.refinerRefresh.ok);
-        QCOMPARE(result.refinerRefresh.message, QStringLiteral("refresh failed"));
+        const auto failure = prepared.first().first().value<std::optional<ProviderFailure>>();
+        QVERIFY(failure);
+        QCOMPARE(failure->kind, ProviderFailureKind::Network);
+        QCOMPARE(failure->message, QStringLiteral("refresh failed"));
     }
 
-    void startupPreparationRunnerCancellationSuppressesCompletion()
+    void preparationRunnerCancellationSuppressesCompletion()
     {
-        StartupPreparationRunner runner;
+        PreparationRunner runner;
         QSemaphore started;
         QSemaphore release;
         bool applied = false;
-        SpeechPrepareJob speechJob;
+        PreparationJob speechJob;
         speechJob.run = [&started, &release] {
             started.release();
             release.acquire();
-            return SpeechPrepareResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        speechJob.apply = [&applied](const SpeechPrepareResult &) {
+        speechJob.apply = [&applied](const std::optional<ProviderFailure> &) {
             applied = true;
         };
-        QSignalSpy completed(&runner, &StartupPreparationRunner::completed);
+        QSignalSpy prepared(&runner, &PreparationRunner::speechPrepared);
 
-        runner.start(20, std::move(speechJob), std::nullopt, {true, {}});
+        runner.prepareSpeech(std::move(speechJob), std::nullopt);
         QVERIFY(started.tryAcquire(1, 1000));
         runner.cancel();
         release.release();
 
         QTest::qWait(50);
-        QCOMPARE(completed.count(), 0);
+        QCOMPARE(prepared.count(), 0);
         QVERIFY(!applied);
     }
 
-    void startupPreparationRunnerDestructionDoesNotWaitForBlockedJob()
+    void preparationRunnerDestructionDoesNotWaitForBlockedJob()
     {
         const auto started = std::make_shared<QSemaphore>();
         const auto release = std::make_shared<QSemaphore>();
-        auto runner = std::make_unique<StartupPreparationRunner>();
-        SpeechPrepareJob speechJob;
+        auto runner = std::make_unique<PreparationRunner>();
+        PreparationJob speechJob;
         speechJob.run = [started, release] {
             started->release();
             release->acquire();
-            return SpeechPrepareResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        runner->start(23, std::move(speechJob), std::nullopt, {true, {}});
+        runner->prepareSpeech(std::move(speechJob), std::nullopt);
         QVERIFY(started->tryAcquire(1, 1000));
 
         QElapsedTimer elapsed;
@@ -307,35 +298,37 @@ private slots:
         release->release();
     }
 
-    void startupPreparationRunnerIgnoresReplacedGeneration()
+    // Each start replaces the one before, whatever kind of job either is.
+    void preparationRunnerIgnoresReplacedPreparation()
     {
-        StartupPreparationRunner runner;
+        PreparationRunner runner;
         QSemaphore started;
         QSemaphore release;
         bool staleApplied = false;
-        SpeechPrepareJob staleJob;
+        PreparationJob staleJob;
         staleJob.run = [&started, &release] {
             started.release();
             release.acquire();
-            return SpeechPrepareResult{true, {}};
+            return std::optional<ProviderFailure>();
         };
-        staleJob.apply = [&staleApplied](const SpeechPrepareResult &) {
+        staleJob.apply = [&staleApplied](const std::optional<ProviderFailure> &) {
             staleApplied = true;
         };
-        QSignalSpy completed(&runner, &StartupPreparationRunner::completed);
+        QSignalSpy speechPrepared(&runner, &PreparationRunner::speechPrepared);
+        QSignalSpy refinerPrepared(&runner, &PreparationRunner::refinerPrepared);
 
-        runner.start(21, std::move(staleJob), std::nullopt, {true, {}});
+        runner.prepareSpeech(std::move(staleJob), std::nullopt);
         QVERIFY(started.tryAcquire(1, 1000));
-        runner.start(22, std::nullopt, std::nullopt, {true, {}});
+        PreparationJob refinerJob;
+        refinerJob.run = [] { return std::optional<ProviderFailure>(); };
+        runner.prepareRefiner(std::move(refinerJob));
         release.release();
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
-        const StartupPreparationResult result =
-            qvariant_cast<StartupPreparationResult>(completed.first().first());
-        QCOMPARE(result.revision, quint64(22));
+        QTRY_COMPARE_WITH_TIMEOUT(refinerPrepared.count(), 1, 1000);
         QVERIFY(!staleApplied);
         QTest::qWait(50);
-        QCOMPARE(completed.count(), 1);
+        QCOMPARE(speechPrepared.count(), 0);
+        QCOMPARE(refinerPrepared.count(), 1);
     }
 
     // The speech request carries only the terms for the Writing Profile the
@@ -1225,7 +1218,7 @@ private slots:
         QCOMPARE(delivery->calls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 3000);
 
-        speech->prepareResult = {false, QStringLiteral("Sign in again")};
+        speech->prepareFailure = ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("Sign in again")};
         message.clear();
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 250);
@@ -1827,10 +1820,8 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registry.speechProvider(QStringLiteral("claude"));
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        speech->prepareResult = {
-            false,
-            QStringLiteral("Claude login cannot be refreshed"),
-        };
+        speech->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("Claude login cannot be refreshed")};
 
         QSignalSpy shown(&session, &DictationSession::popupShowRequested);
         QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
@@ -1877,8 +1868,7 @@ private slots:
         registry.speechProvider(QStringLiteral("claude"));
         registry.refinementProvider(QStringLiteral("openai"));
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        refiner->backgroundRefresh = true;
-        refiner->backgroundRefreshDelayMs = 500;
+        refiner->refreshDelayMs = 500;
         refiner->refreshRequired = true;
 
         QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
@@ -1888,14 +1878,14 @@ private slots:
 
         // Back before the refresh's sleep ends, as waiting on it would
         // not be.
-        QVERIFY2(timer.elapsed() < qint64(refiner->backgroundRefreshDelayMs), qPrintable(QString::number(timer.elapsed())));
+        QVERIFY2(timer.elapsed() < qint64(refiner->refreshDelayMs), qPrintable(QString::number(timer.elapsed())));
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(refreshSpy.count(), 0);
         QVERIFY(!audio->started);
 
         QTRY_COMPARE(refreshSpy.count(), 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
-        QCOMPARE(refiner->backgroundRefreshCalls, 1);
+        QCOMPARE(refiner->refreshRuns, 1);
         QCOMPARE(refiner->refreshCalls, 1);
         QCOMPARE(speech->startCalls, 1);
         QVERIFY(audio->started);

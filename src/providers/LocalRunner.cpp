@@ -159,22 +159,14 @@ LocalRunnerRefiner::LocalRunnerRefiner(const QString &label, QObject *parent)
     connect(m_chat, &ChatCompletionsRefiner::failed, this, &TranscriptRefiner::failed);
 }
 
-bool LocalRunnerRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const
-{
-    return false;
-}
-
-void LocalRunnerRefiner::refresh(const RefinementSettings &, const AccountSettings &)
-{
-}
-
-RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
+std::optional<ProviderFailure> LocalRunnerRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
 {
     if (settings.localRunner.lacksModel()) {
-        return {false, QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner)),
-                ProviderFailureKind::Unavailable};
+        return ProviderFailure{
+            ProviderFailureKind::Unavailable,
+            QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner))};
     }
-    return {true, {}};
+    return std::nullopt;
 }
 
 void LocalRunnerRefiner::refine(const QString &rawTranscript,
@@ -183,9 +175,8 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
                                 const RefinementSettings &settings,
                                 const AccountSettings &accounts)
 {
-    const RefinementPrepareResult prepared = prepare(settings, accounts);
-    if (!prepared.ok) {
-        emit failed({prepared.kind, prepared.message});
+    if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
+        emit failed(*failure);
         return;
     }
     const LocalRunnerSettings &runner = settings.localRunner;

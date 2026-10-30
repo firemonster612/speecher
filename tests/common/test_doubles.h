@@ -225,13 +225,13 @@ public:
         return utteranceAnswerTimeout.value_or(SpeechTranscriber::utteranceAnswerTimeoutMs());
     }
 
-    std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &, const AccountSettings &) override
+    std::optional<PreparationJob> createPrepareJob(const SpeechSettings &, const AccountSettings &) override
     {
         if (!backgroundPrepare) {
             return std::nullopt;
         }
 
-        SpeechPrepareJob job;
+        PreparationJob job;
         job.showRefreshIndicator = refreshRequired;
         job.run = [this] {
             ++backgroundPrepareCalls;
@@ -242,18 +242,18 @@ public:
                 QThread::msleep(backgroundPrepareDelayMs);
             }
             ++backgroundPreparesFinished;
-            return prepareResult;
+            return prepareFailure;
         };
-        job.apply = [this](const SpeechPrepareResult &) {
+        job.apply = [this](const std::optional<ProviderFailure> &) {
             ++prepareCalls;
         };
         return job;
     }
 
-    SpeechPrepareResult prepare(const SpeechSettings &, const AccountSettings &) override
+    std::optional<ProviderFailure> prepare(const SpeechSettings &, const AccountSettings &) override
     {
         ++prepareCalls;
-        return prepareResult;
+        return prepareFailure;
     }
 
     bool streamsFinalText(const SpeechSettings &) const override
@@ -347,7 +347,7 @@ public:
     bool refreshRequired = false;
     bool backgroundPrepare = false;
     unsigned long backgroundPrepareDelayMs = 0;
-    SpeechPrepareResult prepareResult{true, {}};
+    std::optional<ProviderFailure> prepareFailure;
     bool streamsFinals = false;
     std::optional<int> utteranceAnswerTimeout;
     // Runs inside a background prepare job, on the worker.
@@ -381,41 +381,31 @@ public:
     {
     }
 
-    bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override
+    std::optional<PreparationJob> createRefreshJob(const RefinementSettings &, const AccountSettings &) override
     {
-        return refreshRequired;
-    }
-
-    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &, const AccountSettings &) override
-    {
-        if (!backgroundRefresh || !refreshRequired) {
+        if (!refreshRequired) {
             return std::nullopt;
         }
 
-        RefinementRefreshJob job;
+        PreparationJob job;
         job.showRefreshIndicator = true;
         job.run = [this] {
-            ++backgroundRefreshCalls;
-            if (backgroundRefreshDelayMs > 0) {
-                QThread::msleep(backgroundRefreshDelayMs);
+            ++refreshRuns;
+            if (refreshDelayMs > 0) {
+                QThread::msleep(refreshDelayMs);
             }
-            return refreshResult;
+            return refreshFailure;
         };
-        job.apply = [this](const RefinementRefreshResult &) {
+        job.apply = [this](const std::optional<ProviderFailure> &) {
             ++refreshCalls;
         };
         return job;
     }
 
-    void refresh(const RefinementSettings &, const AccountSettings &) override
-    {
-        ++refreshCalls;
-    }
-
-    RefinementPrepareResult prepare(const RefinementSettings &, const AccountSettings &) override
+    std::optional<ProviderFailure> prepare(const RefinementSettings &, const AccountSettings &) override
     {
         ++prepareCalls;
-        return prepareResult;
+        return prepareFailure;
     }
 
     void refine(const QString &rawTranscript,
@@ -458,14 +448,15 @@ public:
     }
 
     QString providerId = QStringLiteral("openai");
+    // The sign-in renews in a refresh job, on the worker.
     bool refreshRequired = false;
-    bool backgroundRefresh = false;
-    unsigned long backgroundRefreshDelayMs = 0;
+    unsigned long refreshDelayMs = 0;
     bool autoComplete = false;
     QString autoCompleteText;
-    RefinementRefreshResult refreshResult{true, {}};
-    RefinementPrepareResult prepareResult{true, {}};
-    int backgroundRefreshCalls = 0;
+    std::optional<ProviderFailure> refreshFailure;
+    std::optional<ProviderFailure> prepareFailure;
+    // Refresh jobs run on the worker, and applied back on this thread.
+    int refreshRuns = 0;
     int refreshCalls = 0;
     int prepareCalls = 0;
     int refineCalls = 0;

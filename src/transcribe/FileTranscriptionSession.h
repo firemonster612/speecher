@@ -25,7 +25,7 @@ namespace speecher {
 
 class ProviderRegistry;
 class SettingsStore;
-class StartupPreparationRunner;
+class PreparationRunner;
 class TranscriptState;
 
 enum class TranscriptDestination {
@@ -209,7 +209,7 @@ private:
     void waitToReconnect(const QString &reason);
     void reconnect();
     bool renewSignIn();
-    void handleSignInRenewed(const SpeechPrepareResult &result);
+    void handleSignInRenewed(const std::optional<ProviderFailure> &failure);
     void resumeStreaming();
     SpeechSettings currentSpeechSettings() const;
     void rewindTo(qsizetype position);
@@ -245,7 +245,7 @@ private:
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
     // Renews m_refiner's sign-in on a worker before the file refines.
-    StartupPreparationRunner *m_refinerPreparation;
+    PreparationRunner *m_refinerPreparation;
     QByteArray m_pcm;
     // Microphone audio dropped from the front of m_pcm once a connected stream
     // took it, or once too much waited, so a long recording does not keep

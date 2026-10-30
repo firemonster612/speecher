@@ -316,7 +316,6 @@ private slots:
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
                 auto *codex = new test::FakeSpeechTranscriber(parent);
                 codex->providerId = QStringLiteral("codex");
-                codex->prepareResult.ok = true;
                 return codex;
             });
         QuickSettings settings(&controller);
@@ -366,9 +365,9 @@ private slots:
     // unknown and says why, and checking again can still find it.
     void setupSaysWhyASignInCheckFailedAndChecksAgain()
     {
-        SpeechPrepareResult answer;
-        answer.message = QStringLiteral("ChatGPT didn't answer in time.");
-        answer.kind = ProviderFailureKind::Timeout;
+        std::optional<ProviderFailure> answer =
+            ProviderFailure{ProviderFailureKind::Timeout, QStringLiteral("ChatGPT didn't answer in time.")};
+        const QString unanswered = answer->message;
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
@@ -378,7 +377,7 @@ private slots:
                 codex->providerId = QStringLiteral("codex");
                 codex->backgroundPrepare = true;
                 codex->backgroundPrepareDelayMs = 50;
-                codex->prepareResult = answer;
+                codex->prepareFailure = answer;
                 return codex;
             });
         QuickSettings settings(&controller);
@@ -399,12 +398,11 @@ private slots:
         QVERIFY(codex().value(QStringLiteral("signInChecking")).toBool());
         QTRY_VERIFY(!codex().value(QStringLiteral("signInChecking")).toBool());
         QCOMPARE(codex().value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
-        QCOMPARE(codex().value(QStringLiteral("signInCheckFailure")).toString(), answer.message);
+        QCOMPARE(codex().value(QStringLiteral("signInCheckFailure")).toString(), unanswered);
         QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
-        QCOMPARE(transcription().value(QStringLiteral("verdict")).toString(), answer.message);
+        QCOMPARE(transcription().value(QStringLiteral("verdict")).toString(), unanswered);
 
-        answer = {};
-        answer.ok = true;
+        answer.reset();
         models.checkSignIns();
         QVERIFY(codex().value(QStringLiteral("signInCheckFailure")).toString().isEmpty());
         QTRY_VERIFY(transcription().value(QStringLiteral("done")).toBool());

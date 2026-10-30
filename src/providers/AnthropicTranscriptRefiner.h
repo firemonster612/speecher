@@ -12,11 +12,10 @@ class AnthropicTranscriptRefiner final : public TranscriptRefiner {
 public:
     explicit AnthropicTranscriptRefiner(QObject *parent = nullptr);
 
-    bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const override;
-    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings,
-                                                         const AccountSettings &accounts) override;
-    void refresh(const RefinementSettings &settings, const AccountSettings &accounts) override;
-    RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) override;
+    std::optional<PreparationJob> createRefreshJob(const RefinementSettings &settings,
+                                                   const AccountSettings &accounts) override;
+    std::optional<ProviderFailure> prepare(const RefinementSettings &settings,
+                                           const AccountSettings &accounts) override;
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
                 const RefinementContext &context,

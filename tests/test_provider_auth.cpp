@@ -1097,19 +1097,20 @@ private slots:
             {QStringLiteral("expiresAt"), double(expired.toMSecsSinceEpoch())},
         }}}).toJson());
         credentials.close();
-        const RefinementRefreshResult claude = AnthropicTranscriptRefiner().createRefreshJob({}, accounts)->run();
-        QVERIFY(!claude.ok);
-        QCOMPARE(claude.kind, kind);
-        QCOMPARE(claude.httpStatus, httpStatus);
+        const std::optional<ProviderFailure> claude =
+            AnthropicTranscriptRefiner().createRefreshJob({}, accounts)->run();
+        QVERIFY(claude);
+        QCOMPARE(claude->kind, kind);
+        QCOMPARE(claude->httpStatus, httpStatus);
 
         accounts.openAiAuthMode = QStringLiteral("cliproxy");
         accounts.cliproxyOauthDir = dir.path();
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
                                      QStringLiteral("codex"), QStringLiteral("stale-token"), expired));
-        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare({}, accounts);
-        QVERIFY(!codex.ok);
-        QCOMPARE(codex.kind, kind);
-        QCOMPARE(codex.httpStatus, httpStatus);
+        const std::optional<ProviderFailure> codex = CodexSpeechTranscriber().prepare({}, accounts);
+        QVERIFY(codex);
+        QCOMPARE(codex->kind, kind);
+        QCOMPARE(codex->httpStatus, httpStatus);
     }
 
     void tokenEndpointThatNeverAnswersTimesOut()
@@ -1129,9 +1130,9 @@ private slots:
         AccountSettings accounts;
         accounts.openAiAuthMode = QStringLiteral("cliproxy");
         accounts.cliproxyOauthDir = dir.path();
-        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare({}, accounts);
-        QVERIFY(!codex.ok);
-        QCOMPARE(codex.kind, ProviderFailureKind::Unavailable);
+        const std::optional<ProviderFailure> codex = CodexSpeechTranscriber().prepare({}, accounts);
+        QVERIFY(codex);
+        QCOMPARE(codex->kind, ProviderFailureKind::Unavailable);
     }
 
     // Two renewals of one account that overlap, as a recording's microphone
@@ -1361,9 +1362,9 @@ private slots:
         AccountSettings accounts;
         accounts.anthropicAuthMode = QStringLiteral("cliproxy");
         accounts.cliproxyOauthDir = dir.path();
-        QVERIFY(!refiner.requiresRefresh(settings, accounts));
-        const RefinementPrepareResult prepared = refiner.prepare(settings, accounts);
-        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+        QVERIFY(!refiner.createRefreshJob(settings, accounts)->showRefreshIndicator);
+        const std::optional<ProviderFailure> failure = refiner.prepare(settings, accounts);
+        QVERIFY2(!failure, qPrintable(failure ? failure->message : QString()));
     }
 
     // A picker keeps showing the account chosen even after its file is gone,

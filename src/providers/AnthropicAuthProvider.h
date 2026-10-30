@@ -5,6 +5,8 @@
 
 #include <QString>
 
+#include <optional>
+
 // The Anthropic provider family's sign-in, which Claude Voice dictation and
 // Anthropic refinement share: Claude Code's own credentials or, in the
 // cliproxy auth mode, a CLI Proxy API Account file or, for refinement only,
@@ -20,6 +22,11 @@ struct AnthropicAuth {
     // A missing or expired sign-in unless a refresh said otherwise.
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
+
+    std::optional<ProviderFailure> failure() const
+    {
+        return ok ? std::nullopt : std::optional(ProviderFailure{kind, error, httpStatus});
+    }
 };
 
 class AnthropicAuthProvider {

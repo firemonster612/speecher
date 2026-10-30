@@ -37,7 +37,9 @@ static QString liveRefine(const QString &rawTranscript,
     }
     RefinementContext context;
     AnthropicTranscriptRefiner refiner;
-    refiner.refresh(settings, accounts);
+    if (const std::optional<PreparationJob> renewal = refiner.createRefreshJob(settings, accounts)) {
+        renewal->apply(renewal->run());
+    }
     QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
     QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
     refiner.refine(rawTranscript, vocabulary, context, settings, accounts);
@@ -2133,11 +2135,11 @@ private slots:
         accounts.openAiCliproxyAccount = QStringLiteral("codex-selected@example.com.json");
         accounts.cliproxyOauthDir = dir.path();
         OpenAiTranscriptRefiner refiner(nullptr);
-        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob({}, accounts);
+        std::optional<PreparationJob> job = refiner.createRefreshJob({}, accounts);
         QVERIFY(job.has_value());
 
-        const RefinementRefreshResult result = job->run();
-        QVERIFY2(result.ok, qPrintable(result.message));
+        const std::optional<ProviderFailure> result = job->run();
+        QVERIFY2(!result, qPrintable(result ? result->message : QString()));
         QFile selected(dir.filePath(QStringLiteral("codex-selected@example.com.json")));
         QVERIFY(selected.open(QIODevice::ReadOnly));
         QCOMPARE(QJsonDocument::fromJson(selected.readAll()).object()
@@ -2188,15 +2190,15 @@ private slots:
         const RefinementSettings settings;
         const AccountSettings accounts;
         OpenAiTranscriptRefiner refiner(nullptr);
-        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings, accounts);
+        std::optional<PreparationJob> job = refiner.createRefreshJob(settings, accounts);
         QVERIFY(job.has_value());
-        const RefinementRefreshResult result = job->run();
-        QVERIFY2(result.ok, qPrintable(result.message));
+        const std::optional<ProviderFailure> result = job->run();
+        QVERIFY2(!result, qPrintable(result ? result->message : QString()));
         job->apply(result);
         QCOMPARE(tokenRequests, 1);
 
-        const RefinementPrepareResult prepared = refiner.prepare(settings, accounts);
-        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+        const std::optional<ProviderFailure> prepared = refiner.prepare(settings, accounts);
+        QVERIFY2(!prepared, qPrintable(prepared ? prepared->message : QString()));
         QCOMPARE(tokenRequests, 1);
     }
 
@@ -2275,11 +2277,11 @@ private slots:
         accounts.anthropicAuthMode = QStringLiteral("cliproxy");
         accounts.cliproxyOauthDir = dir.path();
 
-        std::optional<RefinementRefreshJob> job = AnthropicTranscriptRefiner().createRefreshJob({}, accounts);
+        std::optional<PreparationJob> job = AnthropicTranscriptRefiner().createRefreshJob({}, accounts);
         QVERIFY(job.has_value());
-        const RefinementRefreshResult renewed = job->run();
-        QVERIFY(!renewed.ok);
-        QVERIFY2(renewed.message.contains(QStringLiteral("no refresh token")), qPrintable(renewed.message));
+        const std::optional<ProviderFailure> renewed = job->run();
+        QVERIFY(renewed);
+        QVERIFY2(renewed->message.contains(QStringLiteral("no refresh token")), qPrintable(renewed->message));
     }
 
     // An expired Claude sign-in renews in the refresh job, on the worker;
@@ -2316,19 +2318,19 @@ private slots:
         const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL"); });
 
         AnthropicTranscriptRefiner refiner;
-        QVERIFY(!refiner.prepare({}, accounts).ok);
+        QVERIFY(refiner.prepare({}, accounts));
         QCOMPARE(tokenRequests, 0);
 
-        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob({}, accounts);
+        std::optional<PreparationJob> job = refiner.createRefreshJob({}, accounts);
         QVERIFY(job.has_value());
-        const RefinementRefreshResult renewed = job->run();
-        QVERIFY2(renewed.ok, qPrintable(renewed.message));
+        const std::optional<ProviderFailure> renewed = job->run();
+        QVERIFY2(!renewed, qPrintable(renewed ? renewed->message : QString()));
         job->apply(renewed);
         QCOMPARE(tokenRequests, 1);
 
         QVERIFY(QFile::remove(accounts.claudeCredentialsPath));
-        const RefinementPrepareResult prepared = refiner.prepare({}, accounts);
-        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+        const std::optional<ProviderFailure> prepared = refiner.prepare({}, accounts);
+        QVERIFY2(!prepared, qPrintable(prepared ? prepared->message : QString()));
     }
 };
 

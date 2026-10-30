@@ -66,11 +66,13 @@ bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Accou
     return false;
 }
 
-SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
+std::optional<ProviderFailure> LocalSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
 {
     QString error;
-    const bool ready = !downloadedModelPath(settings.local.modelId, &error).isEmpty();
-    return {ready, error, ProviderFailureKind::Unavailable};
+    if (downloadedModelPath(settings.local.modelId, &error).isEmpty()) {
+        return ProviderFailure{ProviderFailureKind::Unavailable, error};
+    }
+    return std::nullopt;
 }
 
 void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)

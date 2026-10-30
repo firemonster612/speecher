@@ -2,7 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
-#include "dictation/StartupPreparationRunner.h"
+#include "dictation/PreparationRunner.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -24,9 +24,10 @@ SpeechChain::SpeechChain(ProviderRegistry *providers, Acquire acquire, QObject *
     : QObject(parent)
     , m_providers(providers)
     , m_acquire(std::move(acquire))
-    , m_runner(new StartupPreparationRunner(this))
+    , m_runner(new PreparationRunner(this))
 {
-    connect(m_runner, &StartupPreparationRunner::completed, this, &SpeechChain::finishPreparation);
+    connect(m_runner, &PreparationRunner::speechPrepared, this, &SpeechChain::finishPreparation);
+    connect(m_runner, &PreparationRunner::secretsResolved, this, &SpeechChain::useResolvedSecrets);
 }
 
 void SpeechChain::begin(const QString &primary, const QStringList &fallbacks)
@@ -83,9 +84,12 @@ void SpeechChain::prepareNext(const AppSettings &settings, TranscriptRefiner *re
 void SpeechChain::renewSignIn(SpeechTranscriber *transcriber, const SpeechSettings &speech,
                               const AccountSettings &accounts)
 {
-    std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(speech, accounts);
-    const SpeechPrepareResult prepared = job ? SpeechPrepareResult{true, {}} : transcriber->prepare(speech, accounts);
-    m_runner->start(0, std::move(job), std::nullopt, prepared);
+    std::optional<PreparationJob> job = transcriber->createPrepareJob(speech, accounts);
+    if (!job) {
+        // Reported from the worker all the same, as a renewal always is.
+        job = PreparationJob{.run = [failure = transcriber->prepare(speech, accounts)] { return failure; }};
+    }
+    m_runner->prepareSpeech(std::move(job), std::nullopt);
     m_renewing = true;
 }
 
@@ -129,47 +133,48 @@ void SpeechChain::walk()
             continue;
         }
         if (SettingsStore::hasUnreadProviderSecrets(m_settings, ProviderRole::Speech, providerId)) {
-            m_runner->resolveSecrets(0, ProviderRole::Speech, providerId, m_settings);
+            m_runner->resolveSecrets(ProviderRole::Speech, providerId, m_settings);
             return;
         }
 
         const AccountSettings &accounts = m_settings.accounts;
-        std::optional<SpeechPrepareJob> speechJob = transcriber->createPrepareJob(speech, accounts);
+        std::optional<PreparationJob> speechJob = transcriber->createPrepareJob(speech, accounts);
         const bool speechRefreshRequired =
             speechJob ? speechJob->showRefreshIndicator : transcriber->requiresRefresh(speech, accounts);
         // The refiner's sign-in renews alongside, so refinement need not wait
         // for it later; offline, refinement passes it over.
-        std::optional<RefinementRefreshJob> refinerJob;
-        bool refinerRefreshRequired = false;
+        std::optional<PreparationJob> refinerJob;
         const RefinementSettings &refinement = m_settings.refinement;
         if (m_refiner && !m_refinerRefreshed
             && !offlineFor(ProviderRole::Refinement, refinement.providerId, m_settings)) {
             refinerJob = m_refiner->createRefreshJob(refinement, accounts);
-            refinerRefreshRequired =
-                refinerJob ? refinerJob->showRefreshIndicator : m_refiner->requiresRefresh(refinement, accounts);
         }
-        if (speechRefreshRequired || refinerRefreshRequired) {
+        // Applied only once a speech provider prepared; then not again this
+        // walk.
+        if (refinerJob) {
+            refinerJob->apply =[this, apply = std::move(refinerJob->apply)](
+                                    const std::optional<ProviderFailure> &failure) {
+                m_refinerRefreshed = true;
+                if (failure) {
+                    qWarning().noquote() << "refinement oauth refresh unavailable status=" + failure->message;
+                }
+                if (apply) {
+                    apply(failure);
+                }
+            };
+        }
+        if (speechRefreshRequired || (refinerJob && refinerJob->showRefreshIndicator)) {
             emit renewingSignIn();
         }
-        const bool renewRefinerHere = !refinerJob && refinerRefreshRequired;
-        if (renewRefinerHere && m_options.renewRefinerFirst) {
-            renewRefiner();
-        }
 
-        SpeechPrepareResult speechPrepared{true, {}};
         if (!speechJob) {
-            speechPrepared = transcriber->prepare(speech, accounts);
-            if (!speechPrepared.ok) {
-                emit passedOver(providerId, Stage::Prepare,
-                                {speechPrepared.kind, speechPrepared.message, speechPrepared.httpStatus});
+            if (const std::optional<ProviderFailure> failure = transcriber->prepare(speech, accounts)) {
+                emit passedOver(providerId, Stage::Prepare, *failure);
                 continue;
             }
         }
-        if (renewRefinerHere && !m_options.renewRefinerFirst) {
-            renewRefiner();
-        }
         if (speechJob || refinerJob || m_options.readyLater) {
-            m_runner->start(0, std::move(speechJob), std::move(refinerJob), speechPrepared);
+            m_runner->prepareSpeech(std::move(speechJob), std::move(refinerJob));
             return;
         }
         emit ready();
@@ -178,36 +183,32 @@ void SpeechChain::walk()
     emit exhausted();
 }
 
-void SpeechChain::renewRefiner()
-{
-    m_refiner->refresh(m_settings.refinement, m_settings.accounts);
-    m_refinerRefreshed = true;
-}
-
-void SpeechChain::finishPreparation(const StartupPreparationResult &result)
+void SpeechChain::finishPreparation(const std::optional<ProviderFailure> &failure)
 {
     if (std::exchange(m_renewing, false)) {
-        emit signInRenewed(result.speech);
+        emit signInRenewed(failure);
         return;
     }
-    if (!result.speech.ok) {
-        emit passedOver(currentId(), Stage::Prepare,
-                        {result.speech.kind, result.speech.message, result.speech.httpStatus});
+    if (failure) {
+        emit passedOver(currentId(), Stage::Prepare, *failure);
         ++m_index;
         walk();
         return;
     }
-    if (result.resolvedSettings) {
-        m_settings = *result.resolvedSettings;
-        emit secretsResolved(m_settings);
+    emit ready();
+}
+
+void SpeechChain::useResolvedSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings)
+{
+    if (failure) {
+        emit passedOver(currentId(), Stage::Prepare, *failure);
+        ++m_index;
         walk();
         return;
     }
-    m_refinerRefreshed |= result.refinerRefreshAttempted;
-    if (result.refinerRefreshAttempted && !result.refinerRefresh.ok) {
-        qWarning().noquote() << "refinement oauth refresh unavailable status=" + result.refinerRefresh.message;
-    }
-    emit ready();
+    m_settings = settings;
+    emit secretsResolved(m_settings);
+    walk();
 }
 
 int SpeechAttemptPolicy::stableAttemptMs()

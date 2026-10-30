@@ -1168,7 +1168,8 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("raw fallback"));
-        refiner->prepareResult = {false, QStringLiteral("No OpenAI credential found")};
+        refiner->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("No OpenAI credential found")};
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);

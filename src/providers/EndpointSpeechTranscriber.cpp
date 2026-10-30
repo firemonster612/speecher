@@ -163,13 +163,14 @@ bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Ac
     return false;
 }
 
-SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
+std::optional<ProviderFailure> EndpointSpeechTranscriber::prepare(const SpeechSettings &settings,
+                                                                  const AccountSettings &)
 {
     if (settings.endpoint.baseUrl.isEmpty()) {
-        return {false, QStringLiteral("Set the speech endpoint's server URL in Settings."),
-                ProviderFailureKind::Unavailable};
+        return ProviderFailure{ProviderFailureKind::Unavailable,
+                               QStringLiteral("Set the speech endpoint's server URL in Settings.")};
     }
-    return {true, {}};
+    return std::nullopt;
 }
 
 bool EndpointSpeechTranscriber::streamsFinalText(const SpeechSettings &) const
