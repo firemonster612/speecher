@@ -60,8 +60,6 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
     m_keepAliveTimer.setSingleShot(true);
     m_keepAliveTimer.setInterval(keepAliveMs);
     connect(&m_keepAliveTimer, &QTimer::timeout, this, [this] {
-        // sendAudio() doesn't check m_cancelled or m_failureEmitted, so audio
-        // arriving after either can restart this timer.
         if (!m_finalizing && !m_sessionClosed && !m_cancelled && !m_failureEmitted) {
             const int bytesPer100Ms = m_socket.property("sampleRateHz").toInt() / 10 * 2;
             sendAudioMessage(QByteArray(bytesPer100Ms, '\0'));
@@ -208,7 +206,7 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz, const QString &lan
 void CodexDictationClient::sendAudio(const QByteArray &pcm)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
-    if (pcm.isEmpty() || m_finishRequested || m_finalizing || m_sessionClosed) {
+    if (pcm.isEmpty() || m_finishRequested || m_finalizing || m_sessionClosed || m_cancelled || m_failureEmitted) {
         return;
     }
     if (!m_sessionStarted) {
