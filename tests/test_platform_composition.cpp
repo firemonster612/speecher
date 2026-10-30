@@ -31,6 +31,7 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
+#include "platform/atspi/AtSpiAccess.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickAccounts.h"
@@ -2379,6 +2380,29 @@ private slots:
         QVERIFY(removal.failed.isEmpty());
         QVERIFY(!QFile::exists(desktopFile));
         QVERIFY(!QFile::exists(icon));
+    }
+
+    // Removal takes back the session-wide accessibility switch Speecher
+    // turned on, but not a file someone has since added their own settings to.
+    void removalDeletesSpeechersAccessibilitySettingOnly()
+    {
+        const QString path = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+            + QStringLiteral("/environment.d/90-speecher-atspi.conf");
+        const auto cleanUp = qScopeGuard([path] { QFile::remove(path); });
+        QVERIFY(writeFixtureFile(path,
+                                 "# Enable AT-SPI for Speecher target-aware desktop integration.\n"
+                                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\n"));
+        DesktopIntegrationRemoval removal;
+        atspi::removePermanentAccessibility(removal);
+        QCOMPARE(removal.removed, QStringList{QStringLiteral("accessibility setting")});
+        QVERIFY(!QFile::exists(path));
+
+        QVERIFY(writeFixtureFile(path, "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\nGTK_THEME=Adwaita\n"));
+        removal = {};
+        atspi::removePermanentAccessibility(removal);
+        QVERIFY(removal.removed.isEmpty());
+        QCOMPARE(removal.failed.size(), 1);
+        QVERIFY(QFile::exists(path));
     }
 #endif
 

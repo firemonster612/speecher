@@ -6,6 +6,7 @@
 #ifdef Q_OS_LINUX
 #include "output/YdotoolSetup.h"
 #include "platform/KeywatchSetup.h"
+#include "platform/atspi/AtSpiAccess.h"
 #endif
 
 #include <QDir>
@@ -48,7 +49,11 @@ std::optional<SpeecherRemoval::Steps> SpeecherRemoval::onThisComputer(Applicatio
     return std::nullopt;
 #else
     Steps steps;
-    steps.removeDesktopIntegration = [] { return removeAppImageIntegration(QDir::homePath()); };
+    steps.removeDesktopIntegration = [] {
+        DesktopIntegrationRemoval removal = removeAppImageIntegration(QDir::homePath());
+        atspi::removePermanentAccessibility(removal);
+        return removal;
+    };
     steps.removeShortcutRegistration = [controller](QString *error) {
         return controller->removeGlobalShortcutRegistration(error);
     };

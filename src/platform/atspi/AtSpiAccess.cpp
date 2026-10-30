@@ -1,5 +1,7 @@
 #include "platform/atspi/AtSpiAccess.h"
 
+#include "platform/LinuxDesktopIntegration.h"
+
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusVariant>
@@ -18,6 +20,11 @@ namespace speecher::atspi {
 namespace {
 
 constexpr auto accessibilityVariable = "QT_LINUX_ACCESSIBILITY_ALWAYS_ON";
+// The whole of the environment.d file enableAccessibilityPermanently()
+// writes; removal deletes the file only while it still says exactly this.
+constexpr char accessibilityEnvironment[] =
+    "# Enable AT-SPI for Speecher target-aware desktop integration.\n"
+    "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\n";
 constexpr int accessibilityCallTimeoutMs = 250;
 
 QString accessibilityEnvironmentPath()
@@ -138,8 +145,7 @@ bool enableAccessibilityPermanently(QString *error)
         }
         return false;
     }
-    file.write("# Enable AT-SPI for Speecher target-aware desktop integration.\n"
-               "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\n");
+    file.write(accessibilityEnvironment);
     if (!file.commit()) {
         if (error) {
             *error = QStringLiteral("Could not save the accessibility setting: %1")
@@ -154,6 +160,28 @@ bool enableAccessibilityPermanently(QString *error)
     }
     return true;
 #endif
+}
+
+void removePermanentAccessibility(DesktopIntegrationRemoval &removal)
+{
+    const QString name = QStringLiteral("accessibility setting");
+    const QString path = accessibilityEnvironmentPath();
+    QFile file(path);
+    if (!file.exists()) {
+        removal.absent.append(name);
+        return;
+    }
+    if (!file.open(QIODevice::ReadOnly) || file.readAll() != accessibilityEnvironment) {
+        removal.failed.append(
+            QStringLiteral("%1: %2 holds settings other than Speecher's").arg(name, path));
+        return;
+    }
+    file.close();
+    if (file.remove()) {
+        removal.removed.append(name);
+    } else {
+        removal.failed.append(QStringLiteral("%1: could not delete %2").arg(name, path));
+    }
 }
 
 #ifdef SPEECHER_WITH_ATSPI
