@@ -81,6 +81,34 @@ QString preferencesPath(SettingsStore &settings)
     return preferences.path();
 }
 
+// Deleting the settings moves every QSettings made afterwards to a throwaway
+// folder; the guard puts them back here for the tests that come after.
+auto keepSettingsHere(SettingsStore &settings)
+{
+    return qScopeGuard([preferences = preferencesPath(settings)] {
+        QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences);
+        QSettings::setPath(QSettings::defaultFormat(), QSettings::SystemScope, preferences);
+    });
+}
+
+#ifdef Q_OS_LINUX
+// A removal of Speecher whose keyring and settings steps act on this store;
+// the other steps find nothing to remove.
+SpeecherRemoval::Steps removalSteps(SettingsStore &settings)
+{
+    SpeecherRemoval::Steps steps;
+    steps.removeDesktopIntegration = [] { return DesktopIntegrationRemoval{}; };
+    steps.removeShortcutRegistration = [](QString *) { return true; };
+    steps.virtualKeyboardInstalled = [] { return false; };
+    steps.keyHelperInstalled = [] { return false; };
+    steps.deleteSecrets = [&settings](QString *) { return settings.secrets()->deleteKeyringSecrets(); };
+    steps.settingsHideKeys = [&settings] { return !settings.secrets()->deletionMarkers().isEmpty(); };
+    steps.deleteSettings = [&settings](QString *path) { return settings.deleteAll(path); };
+    steps.deleteSettingsButMarkers = [&settings](QString *path) { return settings.deleteAllButDeletionMarkers(path); };
+    return steps;
+}
+#endif
+
 // Compares what another Speecher process reads for the secret, from this
 // one's settings file and keyring, with expected: a peer of this binary
 // running printWhatAPeerReads. It saves nothing first: a key a save said was
@@ -1399,38 +1427,103 @@ private slots:
 
 #ifdef Q_OS_LINUX
     // Removal keeps the settings while the keyring keeps a key they hide, so
-    // a clear the keyring refused stays hidden, for another process too.
-    void removalKeepsTheSettingsThatHideAKey()
+    // a clear the keyring refused stays hidden, for another process too. It
+    // keeps nothing else: no other key the settings file holds, no other
+    // setting.
+    void removalKeepsOnlyWhatHidesAKey()
     {
         const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([secrets, openAi] {
+        const auto restore = qScopeGuard([secrets, openAi, proxy] {
+            qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
             secrets->saveSecret(openAi, {});
+            secrets->saveSecret(proxy, {});
         });
         QCOMPARE(secrets->saveSecret(openAi, QStringLiteral("hidden-key")), SaveResult::Stored);
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         QCOMPARE(secrets->saveSecret(openAi, {}), SaveResult::Refused);
-        SpeecherRemoval::Steps steps;
-        steps.removeDesktopIntegration = [] { return DesktopIntegrationRemoval{}; };
-        steps.removeShortcutRegistration = [](QString *) { return true; };
-        steps.virtualKeyboardInstalled = [] { return false; };
-        steps.keyHelperInstalled = [] { return false; };
-        steps.deleteSecrets = [secrets](QString *) { return secrets->deleteKeyringSecrets(); };
-        steps.deleteSettings = [&settings](QString *path) { return settings.deleteAll(path); };
-        SpeecherRemoval removal(steps);
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("plain-key")), SaveResult::Stored);
+        settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("a term"));
+        SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
 
         removal.start(true);
 
         QTRY_COMPARE(finished.count(), 1);
-        QVERIFY(!finished.first().first().value<RemovalReport>().settingsDeleted());
+        QCOMPARE(finished.first().first().value<RemovalReport>().steps.last().outcome,
+                 RemovalStep::Outcome::KeptHidingKeys);
+        QVERIFY(!settings.raw().contains(SettingsKeys::VocabularyEntries));
         QCOMPARE(SettingsStore().secrets()->secret(openAi), QString());
         comparePeerRead(settings, openAi, QString());
+        comparePeerRead(settings, proxy, QString());
+    }
+
+    // Without a keyring to delete a key from, removal deletes the settings
+    // and the keys they hold: they hide no key a keyring kept.
+    void removalWithoutAKeyringDeletesTheSettings()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
+            qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
+        });
+        const auto kept = keepSettingsHere(settings);
+        // A private keyring refuses everything, as a missing one does.
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("plain-key")), SaveResult::Stored);
+        SpeecherRemoval removal(removalSteps(settings));
+        QSignalSpy finished(&removal, &SpeecherRemoval::finished);
+
+        removal.start(true);
+
+        QTRY_COMPARE(finished.count(), 1);
+        QVERIFY(finished.first().first().value<RemovalReport>().settingsDeleted());
+        comparePeerRead(settings, proxy, QString());
     }
 #endif
+
+    // Settings deleted while a save waits on the keyring refuse it, though
+    // nothing removed Speecher's secrets first.
+    void aSaveTheSettingsDeletionInterruptsIsRefused()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto kept = keepSettingsHere(settings);
+        QTimer::singleShot(0, secrets, [&settings] { QVERIFY(settings.deleteAll(nullptr)); });
+
+        QCOMPARE(secrets->saveApiKey(QStringLiteral("late-key")), SaveResult::Refused);
+
+        QCOMPARE(secrets->lastError(), QStringLiteral("Speecher's settings were deleted"));
+    }
+
+    // A save is judged by its own settings file, also after another store
+    // deleted the settings, which moves where new readers look.
+    void aSaveIsJudgedByItsOwnSettingsFile()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto kept = keepSettingsHere(settings);
+        SettingsStore deleting;
+        QVERIFY(deleting.deleteAll(nullptr));
+
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Stored);
+
+        comparePeerRead(settings, proxy, QStringLiteral("new-key"));
+    }
 
     // Once Speecher's settings are deleted, a save is refused before it
     // reaches the keyring or the settings file, so no key comes back.
@@ -1441,12 +1534,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        // Deleting the settings moves every QSettings made afterwards to a
-        // throwaway folder; the tests after this one keep theirs here.
-        const auto restore = qScopeGuard([preferences = preferencesPath(settings)] {
-            QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences);
-            QSettings::setPath(QSettings::defaultFormat(), QSettings::SystemScope, preferences);
-        });
+        const auto kept = keepSettingsHere(settings);
         secrets->deleteKeyringSecrets();
         QVERIFY(settings.deleteAll(nullptr));
 
@@ -1499,6 +1587,9 @@ private slots:
         QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
 
         QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Refused);
+        // The retry finds the key written and only the file left to save, so
+        // it writes the key no second time.
+        QTest::failOnWarning(QRegularExpression(QStringLiteral("keyring unavailable")));
         QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Refused);
         comparePeerRead(settings, proxy, QStringLiteral("old-key"));
         // Clearing a key never saved changes nothing, nor does, with a
@@ -1511,6 +1602,53 @@ private slots:
         QVERIFY(QFile::setPermissions(file, permissions));
         QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Stored);
         comparePeerRead(settings, proxy, QStringLiteral("new-key"));
+    }
+
+    // A save of the settings file stores every change made before it,
+    // whoever saves it, so a key whose own save the file refused is stored
+    // once another save went through, though the file won't save a later
+    // change.
+    void aSaveOfTheSettingsFileStoresEveryEarlierChange_data()
+    {
+        QTest::addColumn<bool>("byAnotherKey");
+        QTest::newRow("another key's save") << true;
+        QTest::newRow("the settings' own save") << false;
+    }
+
+    void aSaveOfTheSettingsFileStoresEveryEarlierChange()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows keeps the settings in the registry, which file permissions don't lock");
+#endif
+        QFETCH(bool, byAnotherKey);
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        const auto speech = SecretStore::Secret::SpeechEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("a term"));
+        settings.raw().sync();
+        SecretStore *secrets = settings.secrets();
+        const QString file = settings.raw().fileName();
+        const QFileDevice::Permissions permissions = QFile::permissions(file);
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(file, permissions);
+            secrets->saveSecret(proxy, {});
+            secrets->saveSecret(speech, {});
+        });
+        QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("proxy-key")), SaveResult::Refused);
+        QVERIFY(QFile::setPermissions(file, permissions));
+        if (byAnotherKey) {
+            QCOMPARE(secrets->saveSecret(speech, QStringLiteral("speech-key")), SaveResult::Stored);
+        } else {
+            settings.raw().sync();
+        }
+        QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
+        settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("another term"));
+
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("proxy-key")), SaveResult::Stored);
+
+        comparePeerRead(settings, proxy, QStringLiteral("proxy-key"));
     }
 
     void unreadDraftSurvivesPrefetchCompletion()

@@ -22,9 +22,11 @@ struct RemovalStep {
     enum class Outcome {
         Removed,
         Failed,
-        // Settings the person chose to keep, or that removal kept because
-        // the keyring's deletions failed.
+        // Settings the person chose to keep.
         Kept,
+        // Settings deleted all but the deletion markers that hide API keys
+        // the keyring couldn't delete: deleting those would show the keys.
+        KeptHidingKeys,
     };
     enum class Part {
         ShortcutRegistration,
@@ -55,9 +57,9 @@ struct RemovalReport {
 // item by item: the desktop integration, the Global Shortcut registration,
 // the system helpers it installed (each through pkexec, off the calling
 // thread), and, when asked, the keyring secrets and the settings. Those go
-// last, so no later step writes them again, and the settings only once the
-// keyring's secrets are gone. Any other step that fails does not stop the
-// rest.
+// last, so no later step writes them again, the settings after the keyring's
+// secrets and all but what hides a key the keyring couldn't delete. Any other
+// step that fails does not stop the rest.
 class SpeecherRemoval final : public QObject {
     Q_OBJECT
 
@@ -74,8 +76,14 @@ public:
         std::function<bool()> keyHelperInstalled;
         std::function<bool(QString *error)> removeKeyHelper;
         std::function<bool(QString *error)> deleteSecrets;
+        // Whether the settings hold a deletion marker, which hides a key the
+        // keyring kept (SecretStore::deletionMarkers).
+        std::function<bool()> settingsHideKeys;
         // On failure, the settings file's path in error.
         std::function<bool(QString *error)> deleteSettings;
+        // Deletes every setting but the deletion markers; on failure, the
+        // settings file's path in error.
+        std::function<bool(QString *error)> deleteSettingsButMarkers;
         QString programFile;
     };
 

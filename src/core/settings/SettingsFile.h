@@ -15,14 +15,20 @@ public:
     SettingsFile(const QString &organization, const QString &application);
     ~SettingsFile() override;
 
-    // QSettings::sync, unless deleteFile ran. Hides it, so code holding a
-    // SettingsFile can't save around the gate.
+    // save, then QSettings::sync, which also reads what another process
+    // saved, unless deleteFile ran. Hides it, so code holding a SettingsFile
+    // can't save around the gate.
     void sync();
     // Saves what changed now and says whether it saved: false once deleteFile
     // ran, or when the file won't save. status() can't say: it keeps the
     // first error QSettings meets, a malformed line it read included, for as
     // long as this object lives.
     bool save();
+    // How many saves of this object's file went through: save, sync and the
+    // save QSettings makes on its own after a change. Every change made
+    // through this object before one is in the file. A save through another
+    // QSettings on the file isn't counted.
+    quint64 saves() const { return m_saves; }
     // Clears every setting, deletes the file and closes the gate. Returns
     // false when the file won't go. The destructor deletes it again, for
     // whatever another QSettings wrote meanwhile.
@@ -34,6 +40,7 @@ protected:
 
 private:
     bool m_deleted = false;
+    quint64 m_saves = 0;
 };
 
 } // namespace speecher
