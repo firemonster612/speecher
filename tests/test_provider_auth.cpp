@@ -110,7 +110,7 @@ public:
         if (!bytes.isEmpty() && decoded.toHex() == bytes.toLower()) bytes = decoded;
         return bytes;
     }
-    QString path() const { return QDir::homePath() + QStringLiteral("/.claude/.credentials.json"); }
+    QString path() const { return defaultClaudeCredentialsPath(); }
     QByteArray previousUser, previousConfig, account;
     const QByteArray service;
 };
@@ -1433,6 +1433,21 @@ private slots:
         QTemporaryDir dir;
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
                                      QStringLiteral("stale-token"), QDateTime::currentDateTimeUtc().addSecs(-60)));
+
+        AnthropicTranscriptRefiner refiner;
+        AccountSettings accounts;
+        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.cliproxyOauthDir = dir.path();
+        QVERIFY(refiner.createRefreshJob({}, accounts)->run());
+        QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
+    }
+
+    // So does an account turned away before any renewal, here a disabled one.
+    void aCliproxyAccountThatFailsValidationKeepsTheSignInDue()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("stale-token"), QDateTime::currentDateTimeUtc().addSecs(-60), true));
 
         AnthropicTranscriptRefiner refiner;
         AccountSettings accounts;

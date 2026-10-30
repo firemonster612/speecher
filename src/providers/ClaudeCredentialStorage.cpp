@@ -1,4 +1,5 @@
 #include "providers/ClaudeCredentialStorage.h"
+#include "core/settings/SettingsCodecs.h"
 #include "providers/NativeCredentialStorage.h"
 
 #include <QCryptographicHash>
@@ -20,15 +21,19 @@ ClaudeCredentialStorage::ClaudeCredentialStorage(const QString &path)
     : m_path(path)
 {
 #ifdef Q_OS_MACOS
-    const QString defaultPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
-    if (QFileInfo(path).absoluteFilePath() != defaultPath) return;
+    // Claude Code keeps the sign-in of its config directory in the Keychain.
+    // A stored ~/.claude path, from before the default followed
+    // CLAUDE_CONFIG_DIR, still names that sign-in.
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    if (absolutePath != QFileInfo(defaultClaudeCredentialsPath()).absoluteFilePath()
+        && absolutePath != QDir::homePath() + QStringLiteral("/.claude/.credentials.json")) return;
+    m_path = defaultClaudeCredentialsPath();
 
     // Claude Code hashes the raw config directory string, only when nonempty.
     const QByteArray configDir = qgetenv("CLAUDE_CONFIG_DIR");
     m_service = "Claude Code-credentials";
     if (!configDir.isEmpty()) {
         m_service += '-' + QCryptographicHash::hash(configDir, QCryptographicHash::Sha256).toHex().left(8);
-        m_path = QDir(QString::fromUtf8(configDir)).filePath(QStringLiteral(".credentials.json"));
     }
     m_account = qgetenv("USER");
     if (m_account.isEmpty()) {

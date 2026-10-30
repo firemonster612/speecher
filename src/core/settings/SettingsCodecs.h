@@ -12,6 +12,10 @@ namespace speecher {
 QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded);
 QByteArray pasteRulesToJson(const QList<PasteRule> &rules);
 
+// Where Claude Code keeps its sign-in: its config directory, which
+// CLAUDE_CONFIG_DIR moves from ~/.claude.
+QString defaultClaudeCredentialsPath();
+
 class SettingsCodecs {
 public:
     SettingsCodecs();

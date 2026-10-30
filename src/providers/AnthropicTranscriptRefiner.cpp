@@ -24,6 +24,8 @@ AnthropicTranscriptRefiner::AnthropicTranscriptRefiner(QObject *parent)
 std::optional<PreparationJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
                                                                            const AccountSettings &accounts)
 {
+    // As in OpenAiTranscriptRefiner: a handed-over token is for one preparation.
+    m_authResolvedByJob = false;
     const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts, settings);
     auto accessToken = std::make_shared<QString>();
     PreparationJob job;

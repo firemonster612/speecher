@@ -23,6 +23,9 @@ OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObje
 std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
                                                                         const AccountSettings &accounts)
 {
+    // A sign-in an earlier job handed over belongs to the preparation it was
+    // made for, which may never have come: settings can have changed since.
+    m_authResolvedByJob = false;
     const OpenAiAuthProvider signIn = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings);
     if (!signIn.mayUseCodexOauth()) {
         return std::nullopt;

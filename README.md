@@ -395,7 +395,7 @@ Technical text is preserved more literally. Commands, paths, URLs, environment v
 
 ## Credentials
 
-Claude credentials are read from `~/.claude/.credentials.json`. If the token is expired, Speecher tries to refresh it through Claude Code before starting capture.
+Claude credentials are read from `~/.claude/.credentials.json`, or `.credentials.json` in `$CLAUDE_CONFIG_DIR` when that is set, as Claude Code does. If the token is expired, Speecher tries to refresh it through Claude Code before starting capture.
 
 Anthropic refinement has two auth modes:
 

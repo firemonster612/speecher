@@ -13,14 +13,6 @@ namespace {
 
 using Stage = ProviderAttemptIssue::Stage;
 
-QList<ProviderAttemptIssue> issuesWhere(const QList<ProviderAttemptIssue> &issues,
-                                        const std::function<bool(const ProviderAttemptIssue &)> &keep)
-{
-    QList<ProviderAttemptIssue> kept;
-    std::copy_if(issues.cbegin(), issues.cend(), std::back_inserter(kept), keep);
-    return kept;
-}
-
 // The provider that did a role's work in place of one that let it down: the
 // last that ran, unless it failed too or the raw transcript stood in.
 QString standIn(const QStringList &ran, const QList<ProviderAttemptIssue> &roleIssues, bool rawTranscriptStoodIn)
@@ -66,7 +58,7 @@ QString fallbackNote(const ProviderHistory &history, bool usedRawTranscript, con
         if (!refinementStandIn.isEmpty()) {
             names.append(labels(ProviderRole::Refinement, refinementStandIn));
         }
-        const QString note = QStringLiteral("No internet, so %1 did this one.").arg(joinedList(names));
+        const QString note = QStringLiteral("No internet, so %1 did this one.").arg(joinedWithAnd(names));
         return speechWordsLost ? note + QStringLiteral(" A few words may be missing.") : note;
     }
 
@@ -87,7 +79,7 @@ QString fallbackNote(const ProviderHistory &history, bool usedRawTranscript, con
                     }
                 }
                 sentences.append(QStringLiteral("%1 dropped, so %2 finished. A few words may be missing.")
-                                     .arg(joinedList(dropped), usedName));
+                                     .arg(joinedWithAnd(dropped), usedName));
             } else if (others.isEmpty()) {
                 sentences.append(QStringLiteral("Used %1.").arg(usedName));
             } else if (role == ProviderRole::Speech) {

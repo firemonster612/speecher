@@ -9,6 +9,7 @@
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickLibrary.h"
@@ -27,6 +28,7 @@
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <memory>
@@ -114,6 +116,8 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        // Nothing here reads this user's Claude Code sign-in.
+        settings.raw().setValue(SettingsKeys::ClaudeCredentialsPath, m_home.filePath(QStringLiteral("claude.json")));
         failOnUnexpectedWarnings();
     }
 
@@ -629,6 +633,9 @@ private slots:
         }
         component.completeCreate();
     }
+
+private:
+    QTemporaryDir m_home;
 };
 
 int runQuickModelsTests(int argc, char **argv)
