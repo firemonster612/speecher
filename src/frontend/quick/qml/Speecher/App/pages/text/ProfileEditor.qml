@@ -193,6 +193,7 @@ Column {
             label: Schema.row("profileInstructions").label
             help: Schema.row("profileInstructions").help
             TextArea {
+                objectName: "profileInstructions"
                 width: parent.width
                 minHeight: 64
                 text: editor.profile.instructions || ""
