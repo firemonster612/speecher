@@ -847,8 +847,13 @@ private slots:
         QVERIFY(dictation.contains(QStringLiteral("Never infer or learn a tone from target text.\n\n")
                                    + rule + QStringLiteral("\n\nRule: literal_technical_text.")));
         QVERIFY(dictation.contains(QStringLiteral(R"("requested_tone":"Terse")")));
+        // The compact prompt has no requested_tone, so it names the tone.
         QVERIFY(compactRefinementSystemPrompt(QStringLiteral("balanced"), context)
-                    .endsWith(QStringLiteral("without quotes.\n\n") + rule));
+                    .endsWith(QStringLiteral("without quotes.\n\n"
+                                             "Rule: custom_writing_tone.\n"
+                                             "The user defined the tone \"Terse\" as follows. Apply it without "
+                                             "changing facts or intent:\n"
+                                             "Short sentences, lowercase.")));
         context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
         QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("balanced"), context)
                     .contains(QStringLiteral("tone from target text.\n\n") + rule

@@ -295,12 +295,16 @@ static QStringList conflictResolutionRules()
 }
 
 // Follows the built-in tone rule when the requested tone is one the user
-// defined, whose name requested_tone then carries.
-static void appendCustomToneRule(QStringList &parts, const RefinementContext &context)
+// defined. toneReference is how the prompt names it: in the full prompts,
+// requested_tone carries its name.
+static void appendCustomToneRule(QStringList &parts,
+                                 const RefinementContext &context,
+                                 const QString &toneReference = QStringLiteral("the tone named in requested_tone"))
 {
     if (context.customTone) {
         parts << QStringLiteral("Rule: custom_writing_tone.\n"
-                                "The user defined the tone named in requested_tone as follows. Apply it without changing facts or intent:\n")
+                                "The user defined %1 as follows. Apply it without changing facts or intent:\n")
+                         .arg(toneReference)
                 + context.customTone->instruction.trimmed();
     }
 }
@@ -583,7 +587,7 @@ QString compactRefinementSystemPrompt(const QString &style, const RefinementCont
             parts << QStringLiteral("Write in this tone: %1.").arg(tone);
         }
     }
-    appendCustomToneRule(parts, context);
+    appendCustomToneRule(parts, context, QStringLiteral("the tone \"%1\"").arg(tone));
     appendCleanupLevel(parts, context);
     appendSpokenLanguageRule(parts, context);
     appendOutputLanguageRule(parts, context);
