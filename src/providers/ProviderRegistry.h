@@ -1,7 +1,8 @@
 #pragma once
 
 #include "core/ProviderChain.h"
-#include "dictation/DictationPorts.h"
+#include "providers/SpeechTranscriber.h"
+#include "providers/TranscriptRefiner.h"
 
 #include <QHash>
 #include <QVector>

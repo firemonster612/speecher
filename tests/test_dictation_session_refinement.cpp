@@ -1121,6 +1121,36 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("raw fallback"));
     }
 
+    // A refiner that renews its sign-in in prepare() waits in an event loop,
+    // where a cancel can run.
+    void aCancelWhileTheRefinerPreparesRefinesNothing()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        QVERIFY(refiner);
+        refiner->onPrepare = [&session] { session.cancel(); };
+        speech->emitFinalText(QStringLiteral("never mind"));
+        session.stopListening();
+
+        QTRY_COMPARE(refiner->prepareCalls, 1);
+        QCOMPARE(refiner->refineCalls, 0);
+        QCOMPARE(delivery.calls, 0);
+        QCOMPARE(session.state(), DictationState::Idle);
+    }
+
     void dictationSessionCorruptedPlaceholderFallsBackToBoundText()
     {
         SettingsStore settings;

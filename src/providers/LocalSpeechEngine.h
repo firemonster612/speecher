@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
-#include "dictation/DictationPorts.h"
+#include "providers/SpeechTranscriber.h"
 
 #include <QByteArray>
 #include <QList>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dictation/DictationPorts.h"
+#include "providers/SpeechTranscriber.h"
 
 #include <QUrl>
 

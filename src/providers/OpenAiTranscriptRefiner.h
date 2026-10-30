@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dictation/DictationPorts.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/TranscriptRefiner.h"
 
 namespace speecher {
 

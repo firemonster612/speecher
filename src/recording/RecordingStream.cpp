@@ -2,7 +2,9 @@
 
 #include "core/TranscriptState.h"
 #include "core/settings/SpokenLanguages.h"
+#include "dictation/PopupPresentation.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/SpeechAudio.h"
 
 #include <QDebug>
 
@@ -14,17 +16,11 @@ namespace {
 
 using Stage = ProviderAttemptIssue::Stage;
 
-constexpr int kBytesPerSecond = 16000 * 2;
-// 100 ms of 16 kHz mono s16, the chunk size live capture sends.
-constexpr qsizetype kChunkBytes = kBytesPerSecond / 10;
-// How fast audio that waited for the stream catches up: one chunk every
-// 12 ms, as a file is sent.
-constexpr int kSendIntervalMs = 12;
 // The pauses before each reconnect of a dropped stream; the last repeats for
 // as long as the input runs.
 constexpr int kReconnectDelaysMs[] = {1000, 2000, 5000, 10000, 30000};
 // The most audio kept while the stream is down: ten minutes.
-constexpr qsizetype kMostKeptBytes = qsizetype(10) * 60 * kBytesPerSecond;
+constexpr qsizetype kMostKeptBytes = qsizetype(10) * 60 * kSpeechBytesPerSecond;
 
 // How many of marks, in order of position, fall before position.
 template <typename Marks>
@@ -45,7 +41,7 @@ RecordingStream::RecordingStream(ProviderRegistry *providers, QObject *parent)
 {
     // The provider starts once the worker reports, never inside start().
     m_speechChain->setOptions({.streamedFinalsOnly = true, .readyLater = true});
-    m_sendTimer.setInterval(kSendIntervalMs);
+    m_sendTimer.setInterval(kSpeechCatchUpIntervalMs);
     m_sendTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_sendTimer, &QTimer::timeout, this, &RecordingStream::sendNextChunk);
     m_reconnectTimer.setSingleShot(true);
@@ -283,7 +279,7 @@ void RecordingStream::sendNextChunk()
         return;
     }
     // A send stops at the next utterance mark, which follows it at once.
-    qsizetype chunkBytes = kChunkBytes;
+    qsizetype chunkBytes = kSpeechChunkBytes;
     if (m_nextUtteranceMark < m_utteranceMarks.size()) {
         chunkBytes = std::min(chunkBytes, m_utteranceMarks.at(m_nextUtteranceMark).position - m_sent);
     }
@@ -335,7 +331,7 @@ void RecordingStream::keepAudioBounded()
         return;
     }
     forgetAudioBefore(m_pcmDropped + excess);
-    emit audioLost(excess * 1000 / kBytesPerSecond);
+    emit audioLost(excess * 1000 / kSpeechBytesPerSecond);
 }
 
 // Audio before position is never sent again, nor the utterance marks within

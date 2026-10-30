@@ -9,6 +9,8 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "dictation/TranscriptPipeline.h"
 #include "providers/SpeechChain.h"
+#include "providers/SpeechTranscriber.h"
+#include "providers/TranscriptRefiner.h"
 
 #include <QElapsedTimer>
 #include <QMetaObject>

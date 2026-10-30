@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/CleanupModelCatalog.h"
-#include "dictation/DictationPorts.h"
+#include "providers/TranscriptRefiner.h"
 
 #include <QNetworkAccessManager>
 #include <QPointer>

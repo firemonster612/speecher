@@ -1,5 +1,5 @@
-#include "dictation/PreparationRunner.h"
 #include "core/SettingsStore.h"
+#include "providers/PreparationRunner.h"
 
 #include <QDebug>
 #include <QThread>

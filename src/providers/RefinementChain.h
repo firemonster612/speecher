@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/ProviderAttemptIssue.h"
 #include "core/ProviderReadiness.h"
-#include "dictation/DictationPorts.h"
-#include "dictation/DictationTypes.h"
+#include "providers/TranscriptRefiner.h"
 
 #include <QPointer>
 #include <QStringList>
@@ -82,6 +82,8 @@ private:
     AppSettings m_settings;
     RefinementSettings m_refinement;
     QPointer<TranscriptRefiner> m_refiner;
+    // Moves on at each cancel, so a walk that one ended stops.
+    quint64 m_walk = 0;
 };
 
 } // namespace speecher

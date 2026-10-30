@@ -289,6 +289,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
+  src/core/ProviderAttemptIssue.h
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ReleaseNotes.h
@@ -320,8 +321,8 @@ set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
   src/dictation/DictationPorts.cpp
   src/dictation/EditReview.cpp
-  src/dictation/PreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
+  src/providers/PreparationRunner.cpp
   src/providers/ProviderRegistry.cpp
   src/providers/RefinementChain.cpp
   src/providers/SpeechChain.cpp
@@ -331,11 +332,14 @@ set(SPEECHER_WORKFLOW_HEADERS
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
   src/dictation/EditReview.h
-  src/dictation/PreparationRunner.h
   src/dictation/TranscriptPipeline.h
+  src/providers/PreparationJob.h
+  src/providers/PreparationRunner.h
   src/providers/ProviderRegistry.h
   src/providers/RefinementChain.h
   src/providers/SpeechChain.h
+  src/providers/SpeechTranscriber.h
+  src/providers/TranscriptRefiner.h
 )
 
 set(SPEECHER_PROVIDER_SOURCES
@@ -382,6 +386,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/EndpointTranscriptRefiner.h
   src/providers/LocalRunner.h
   src/providers/PcmWav.h
+  src/providers/SpeechAudio.h
   src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicAuthProvider.h

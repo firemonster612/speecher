@@ -6,6 +6,7 @@
 #include "dictation/TranscriptPipeline.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/SpeechTranscriber.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingStream.h"
 #include "transcribe/FileTranscriptionSession.h"

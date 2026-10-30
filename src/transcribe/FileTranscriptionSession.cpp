@@ -6,6 +6,7 @@
 #include "core/settings/SpokenLanguages.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/SpeechAudio.h"
 #include "transcribe/TranscribePresentation.h"
 
 #include <QAudioDecoder>
@@ -28,14 +29,6 @@ namespace {
 
 using Stage = ProviderAttemptIssue::Stage;
 
-constexpr int kBytesPerSecond = 16000 * 2;
-// 100 ms of 16 kHz mono s16, the chunk size live capture sends.
-constexpr qsizetype kChunkBytes = kBytesPerSecond / 10;
-// One 100 ms chunk every 12 ms, about 8.3 times real time. Faster-than-real-time
-// streaming is unproven for Claude Voice, which also caps what it buffers before
-// its socket connects at 4 MB; at this rate even its 10 s connection timeout
-// queues only about 83 s of audio (2.7 MB), so the cap is never reached.
-constexpr int kSendIntervalMs = 12;
 // Waveform resolution handed to the front end.
 constexpr int kPeakCount = 240;
 
@@ -178,7 +171,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     qRegisterMetaType<TranscribeFileResult>();
     // The provider starts once the worker reports, never inside start().
     m_speechChain->setOptions({.readyLater = true});
-    m_sendTimer.setInterval(kSendIntervalMs);
+    m_sendTimer.setInterval(kSpeechCatchUpIntervalMs);
     m_sendTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_sendTimer, &QTimer::timeout, this, &FileTranscriptionSession::sendNextChunk);
     connect(m_speechChain, &SpeechChain::passedOver, this,
@@ -320,7 +313,7 @@ void FileTranscriptionSession::startFile()
             failFile(QStringLiteral("The file contains no audio"));
             return;
         }
-        emit fileDecoded(m_index, peakLevels(m_pcm), m_pcm.size() * 1000 / kBytesPerSecond);
+        emit fileDecoded(m_index, peakLevels(m_pcm), m_pcm.size() * 1000 / kSpeechBytesPerSecond);
         prepareProviders();
     });
     connect(m_decoder, qOverload<QAudioDecoder::Error>(&QAudioDecoder::error), this, [this] {
@@ -487,7 +480,7 @@ void FileTranscriptionSession::sendNextChunk()
         m_transcriber->finishInput(m_attemptId);
         return;
     }
-    const QByteArray chunk = m_pcm.mid(m_sent - m_pcmDropped, kChunkBytes);
+    const QByteArray chunk = m_pcm.mid(m_sent - m_pcmDropped, kSpeechChunkBytes);
     m_sent += chunk.size();
     const quint64 attemptId = m_attemptId;
     m_transcriber->sendAudio(attemptId, chunk);
@@ -518,7 +511,7 @@ void FileTranscriptionSession::startNextAttempt()
     commitPartial();
     const SpeechSettings speech = currentSpeechSettings();
     m_transcript->startAttempt(speech.language);
-    m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
+    m_attemptStartMs = m_sent * 1000 / kSpeechBytesPerSecond;
     m_attempts.attemptStarted();
     m_transcriber->startAttempt(++m_attemptId, speech);
 }
@@ -653,10 +646,6 @@ void FileTranscriptionSession::releaseRefiner()
 
 void FileTranscriptionSession::startRefiner()
 {
-    // A cancel that ran while the refiner prepared has let it go.
-    if (!m_refiner) {
-        return;
-    }
     m_refiner->refine(m_pipeline.refinementInput,
                       m_pipeline.refinementVocabulary,
                       m_pipeline.refinementContext,

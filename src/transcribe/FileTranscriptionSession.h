@@ -6,6 +6,8 @@
 #include "dictation/TranscriptPipeline.h"
 #include "providers/RefinementChain.h"
 #include "providers/SpeechChain.h"
+#include "providers/SpeechTranscriber.h"
+#include "providers/TranscriptRefiner.h"
 #include "transcribe/Subtitles.h"
 
 #include <QByteArray>
