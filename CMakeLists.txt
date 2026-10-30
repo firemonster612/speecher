@@ -312,6 +312,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/Vocabulary.h
   src/core/VocabularyEdits.h
   src/core/WordPreview.h
+  src/core/WordSpacing.h
   src/core/WritingProfileEdits.h
   src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h

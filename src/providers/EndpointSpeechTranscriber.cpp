@@ -2,6 +2,7 @@
 #include "providers/EndpointRequest.h"
 
 #include "core/VocabularyLimit.h"
+#include "core/WordSpacing.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/PcmWav.h"
 #include "providers/ProviderFailureClassification.h"
@@ -59,20 +60,7 @@ template <typename Iterator>
 bool firstLetterWrittenWithoutSpaces(Iterator begin, Iterator end)
 {
     const Iterator letter = std::find_if(begin, end, [](QChar c) { return c.script() > QChar::Script_Common; });
-    if (letter == end) return false;
-    switch (letter->script()) {
-    case QChar::Script_Han:
-    case QChar::Script_Hiragana:
-    case QChar::Script_Katakana:
-    case QChar::Script_Thai:
-    case QChar::Script_Lao:
-    case QChar::Script_Khmer:
-    case QChar::Script_Myanmar:
-    case QChar::Script_Tibetan:
-        return true;
-    default:
-        return false;
-    }
+    return letter != end && writtenWithoutSpaces(letter->script());
 }
 
 // A trimmed segment as it follows text: after a space, the way Whisper spaces
