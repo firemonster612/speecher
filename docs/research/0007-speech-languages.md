@@ -84,6 +84,7 @@ From `catalog/<variant>.json` (`languages`, `capabilities.lang_detect`):
 | --- | --- | --- |
 | Moonshine Small, Medium | en | no |
 | Parakeet 0.6B | en | no |
+| Parakeet v3 0.6B | 25 | yes |
 | Whisper Large v3 Turbo | 100 codes (Whisper's list) | yes |
 | Qwen3-ASR 1.7B | 30 | yes |
 | Cohere Transcribe | 14 | no |

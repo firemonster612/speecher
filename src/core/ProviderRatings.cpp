@@ -68,11 +68,10 @@ QList<Rating> refinementBars(int checksPassed, std::optional<double> waitSeconds
 
 // AA-WER over FLEURS English, averaged over the catalog models Artificial
 // Analysis lists by name, turns a FLEURS figure into an AA-WER estimate.
-// Parakeet's AA figure is a sibling model's, so it stays out.
 double fleursToArtificialAnalysis()
 {
-    const QStringList listed{QStringLiteral("whisper-turbo"), QStringLiteral("cohere"),
-                             QStringLiteral("voxtral-small")};
+    const QStringList listed{QStringLiteral("parakeet-v3"), QStringLiteral("whisper-turbo"),
+                             QStringLiteral("cohere"), QStringLiteral("voxtral-small")};
     double sum = 0;
     for (const QString &id : listed) {
         const LocalModel *model = findLocalModel(id);
