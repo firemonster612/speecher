@@ -1145,8 +1145,11 @@ private slots:
         int requests = 0;
         connect(&server, &QTcpServer::newConnection, this, [&] {
             QTcpSocket *socket = server.nextPendingConnection();
-            readHttpRequest(socket, 1000);
-            ++requests;
+            // Only this account's renewals count, not a stray connection
+            // another test process on the machine makes to the port.
+            if (readHttpRequest(socket, 1000).contains("refresh-stale-token")) {
+                ++requests;
+            }
             QTimer::singleShot(1500, socket, [socket] {
                 const QByteArray payload = R"({"access_token":"fresh-token","expires_in":3600})";
                 socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
