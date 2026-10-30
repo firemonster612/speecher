@@ -1590,9 +1590,16 @@ void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
     m_settings.setValue(SettingsKeys::CliproxyBaseUrl, endpointServerBase(value));
 }
 
+QString defaultClaudeCredentialsPath()
+{
+    QString configDir = qEnvironmentVariable("CLAUDE_CONFIG_DIR");
+    if (configDir.isEmpty()) configDir = QDir::homePath() + QStringLiteral("/.claude");
+    return QDir(configDir).filePath(QStringLiteral(".credentials.json"));
+}
+
 QString SettingsCodecs::claudeCredentialsPath() const
 {
-    return value(SettingsKeys::ClaudeCredentialsPath, QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
+    return value(SettingsKeys::ClaudeCredentialsPath, defaultClaudeCredentialsPath()).toString();
 }
 
 QString SettingsCodecs::claudeEndpointBase() const

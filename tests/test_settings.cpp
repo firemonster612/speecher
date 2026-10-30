@@ -1378,7 +1378,9 @@ private slots:
         QCOMPARE(snapshot.accounts.anthropicAuthMode, QStringLiteral("oauth"));
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
         QCOMPARE(snapshot.refinement.anthropicFastMode, false);
-        QVERIFY(snapshot.accounts.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
+        // Claude Code's config directory, as CLAUDE_CONFIG_DIR (set by test_main) moves it.
+        QCOMPARE(snapshot.accounts.claudeCredentialsPath,
+                 QDir(qEnvironmentVariable("CLAUDE_CONFIG_DIR")).filePath(QStringLiteral(".credentials.json")));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);

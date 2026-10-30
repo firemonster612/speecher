@@ -110,7 +110,7 @@ public:
         if (!bytes.isEmpty() && decoded.toHex() == bytes.toLower()) bytes = decoded;
         return bytes;
     }
-    QString path() const { return QDir::homePath() + QStringLiteral("/.claude/.credentials.json"); }
+    QString path() const { return defaultClaudeCredentialsPath(); }
     QByteArray previousUser, previousConfig, account;
     const QByteArray service;
 };
