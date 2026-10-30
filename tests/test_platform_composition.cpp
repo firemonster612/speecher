@@ -35,6 +35,7 @@
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QQmlComponent>
@@ -1044,6 +1045,7 @@ private slots:
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
         QuickAccounts accounts(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);
@@ -1084,6 +1086,7 @@ private slots:
         platform->binder->desktopChooser = true;
         QuickSettings settings(&controller);
         QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);
@@ -1107,6 +1110,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);
@@ -1154,6 +1158,7 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
         QVERIFY(window);

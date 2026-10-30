@@ -10,6 +10,7 @@
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
 
@@ -509,6 +510,8 @@ private slots:
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        // Home reads Audio for its microphone.
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // The window and General read Appearance, as the host always has it.
         QuickAppearance appearance(&controller);
         FakeKeyboard keyboard;
@@ -517,6 +520,7 @@ private slots:
         StandInSystem standIn(&controller, keyboard, steps);
         QuickSystem &system = standIn.system;
         QSignalSpy quit(&controller, &ApplicationController::quitRequested);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/Main.qml")));
         const std::unique_ptr<QObject> created(component.create());
@@ -573,6 +577,7 @@ private slots:
         QuickPhone &phone = standIn.phone;
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
             import QtQuick
@@ -614,6 +619,7 @@ private slots:
         keyboard.helperError = QStringLiteral("Authorization was declined.");
         StandInSystem standIn(&controller, keyboard);
         QuickSystem &system = standIn.system;
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> row = createQml(engine, R"(
             import Speecher.App
@@ -727,6 +733,7 @@ private slots:
         QuickInsights insights(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
 
         // Each row's id and whether it shows, on the page in a window.
@@ -803,6 +810,7 @@ private slots:
         QuickSystem &system = standIn.system;
         // The page's Library reads Models, as the host always has one.
         QuickModels models(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/AppRulesPage.qml")));
         const std::unique_ptr<QObject> page(component.create());

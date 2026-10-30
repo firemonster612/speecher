@@ -13,6 +13,7 @@
 #include "frontend/quick/host/QuickAccounts.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJsonDocument>
@@ -474,6 +475,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine);
         QVERIFY(row.field);
@@ -505,6 +507,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine);
         QVERIFY(row.field);
@@ -542,6 +545,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine, QStringLiteral("openAiApiKey"));
         QVERIFY(row.field);
@@ -630,6 +634,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine);
         QVERIFY(row.clear);
