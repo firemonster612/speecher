@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -33,14 +33,15 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - Wired: `Settings` (`host/QuickSettings`),
   `Dictation` and `DictationState` (`host/QuickDictation`), `Updates`
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
-  `System` (`host/QuickSystem`), `Models` (`host/QuickModels`), `Insights`
+  `System` (`host/QuickSystem`), `Phone` (`host/QuickPhone`), `Removal`
+  (`host/QuickRemoval`), `Models` (`host/QuickModels`), `Insights`
   (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Audio`
   (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
   (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
 - `Appearance` is what the desktop offers the look: `systemColors`, the
-  desktop's colour scheme as roles `{ window, text, accent, negative }` (on
-  Plasma read from kdeglobals and followed as it changes, elsewhere only the
-  platform's accent), `installedSchemes` (`{ id, name, colors }`, KDE's
+  desktop's colour scheme as roles `{ window, text, accent, negative }` (the
+  platform's `DesktopColors`, on Plasma read from kdeglobals and followed as
+  it changes; elsewhere only the platform's accent), `installedSchemes` (`{ id, name, colors }`, KDE's
   `.colors` files in the XDG data dirs, read by core's `ColorSchemes`),
   `canBlur`, and `setBlurBehind(window, area, radius, dark)`, which asks the
   platform's `WindowBackdrop` (Wayland's `ext_background_effect`, or KWin's
@@ -54,9 +55,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`VirtualKeyboardTest`) puts core's test text in the field.
   `System.pasteRoute` is the steps core's delivery takes (insert, press,
   copy), `pasteNeed` what they need of the computer and `wordsStayCopied`
-  whether that is missing, so words only reach the clipboard. The phone code lives from `startPhoneTransfer()` to
-  `stopPhoneTransfer()`, and `QrCode` draws it through the host's
-  `image://qr` provider. `uninstall` reports in `System.removal` by part and
+  whether that is missing, so words only reach the clipboard. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
+  and `QrCode` draws it through the host's `image://qr` provider.
+  `Removal.start(keepSettings)` reports in `Removal.report` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in
   Main once the settings are deleted. The paste rules are Settings rows: `globalPasteRule`,
   `categoryPasteRule_<type>` (`inherit` is no rule of its own) and

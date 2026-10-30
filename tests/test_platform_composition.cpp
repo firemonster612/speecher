@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
 #include "common/test_manifest_updater_access.h"
+#include "common/test_system_singletons.h"
 
 #include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
@@ -35,7 +36,6 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -1034,7 +1034,7 @@ private slots:
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         // The step's check is System's.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         // Setup's choices read Models, as the host always has one.
         QuickModels models(&controller);
         // Setup reads Accounts, which the host always makes. Its keyring

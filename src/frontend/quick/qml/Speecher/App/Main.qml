@@ -21,7 +21,7 @@ ClientWindow {
     minimumHeight: 600
     visible: true
     title: Words.shell.appName
-    readonly property bool settingsDeleted: System.removal.settingsDeleted === true
+    readonly property bool settingsDeleted: Removal.report.settingsDeleted === true
     readonly property bool leftToQuit: settingsDeleted && !visible
     // Search opened while removal ran goes with the rest of the window.
     onSettingsDeletedChanged: if (settingsDeleted) searchPalette.close()

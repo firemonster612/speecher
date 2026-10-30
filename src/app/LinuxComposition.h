@@ -24,7 +24,9 @@ public:
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override;
     PopupPositioner *createPopupPositioner(QObject *parent) const override;
     WindowBackdrop *createWindowBackdrop(QObject *parent) const override;
+    DesktopColors *createDesktopColors(QObject *parent) const override;
     SessionKeyGrab *createSessionKeyGrab(QObject *parent) const override;
+    QStringList shortcutSettingsCommand() const override;
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
                                                      SettingsStore *settings,
                                                      QObject *parent) const override;

@@ -28,11 +28,6 @@ QString installedServicePath()
 
 } // namespace
 
-bool YdotoolSetupStatus::ready() const
-{
-    return state == YdotoolSetupState::Ready || state == YdotoolSetupState::ReadyLayoutCaveat;
-}
-
 YdotoolSetupStatus YdotoolSetup::evaluate(const YdotoolProbeFacts &facts)
 {
     if (!facts.enabledInSpeecher

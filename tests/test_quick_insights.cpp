@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
 #include "core/InsightsLog.h"
@@ -9,7 +10,6 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickDictation.h"
 
 #include <QClipboard>
@@ -349,7 +349,7 @@ private slots:
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
         QGuiApplication::clipboard()->clear();
@@ -410,7 +410,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickModels models(&controller);
 
@@ -452,7 +452,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
 
@@ -492,7 +492,7 @@ private slots:
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
 

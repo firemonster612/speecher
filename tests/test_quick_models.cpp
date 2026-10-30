@@ -2,6 +2,7 @@
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
@@ -14,7 +15,6 @@
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
-#include "frontend/quick/host/QuickSystem.h"
 #include "providers/LocalModelStore.h"
 
 #include <QDir>
@@ -323,7 +323,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
@@ -385,7 +385,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
@@ -423,7 +423,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
@@ -470,7 +470,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
@@ -513,7 +513,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread
@@ -605,7 +605,7 @@ private slots:
         QuickModels models(&controller);
         // Setup and the pages read System and Audio, as the host always has
         // them.
-        QuickSystem system(&controller);
+        test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // Their key rows read Accounts, which the host always makes. Its
         // keyring reads fail at once, so none is left waiting on this thread

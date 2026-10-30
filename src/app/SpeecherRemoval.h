@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include <functional>
+#include <optional>
 
 namespace speecher {
 
@@ -76,7 +77,10 @@ public:
         QString programFile;
     };
 
-    static Steps linuxSteps(ApplicationController *controller);
+    // This computer's steps: Linux's. Elsewhere none, as Speecher sets up
+    // nothing outside its own app, which goes the platform's way: the Trash,
+    // or Windows' uninstaller.
+    static std::optional<Steps> onThisComputer(ApplicationController *controller);
 
     explicit SpeecherRemoval(Steps steps, QObject *parent = nullptr);
 
