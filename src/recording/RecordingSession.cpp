@@ -357,7 +357,7 @@ void RecordingSession::start(const QString &path,
     m_microphone->setSilenced(m_dictating);
     m_me.connecting = true;
     m_them.connecting = m_systemAudio != nullptr;
-    m_voiceThreshold = m_settings->audioCaptureSettings().vadThresholdPercent;
+    m_voiceThreshold = settings.audio.vadThresholdPercent;
     m_phase = Phase::Starting;
     m_startDone = std::move(done);
     m_clock.start();

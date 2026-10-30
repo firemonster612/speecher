@@ -13,13 +13,13 @@ ProviderSignIn::ProviderSignIn(SettingsStore &settings)
 
 QString ProviderSignIn::chosenAccount(const QString &type) const
 {
-    return type == QStringLiteral("codex") ? m_settings.openAiCliproxyAccount()
-                                           : m_settings.anthropicCliproxyAccount();
+    const AccountSettings accounts = m_settings.dictationSnapshot().accounts;
+    return type == QStringLiteral("codex") ? accounts.openAiCliproxyAccount : accounts.anthropicCliproxyAccount;
 }
 
 QString ProviderSignIn::resolvedAccountDirectory() const
 {
-    return m_settings.cliproxyOauthDir();
+    return m_settings.dictationSnapshot().accounts.cliproxyOauthDir;
 }
 
 QList<CliProxyAccount> ProviderSignIn::accounts(const QString &type) const

@@ -99,9 +99,9 @@ DictationSession::DictationSession(SettingsStore *settings,
     connect(speechChain, &SpeechChain::ready, this, &DictationSession::speechProviderReady);
     connect(speechChain, &SpeechChain::exhausted, this, &DictationSession::speechChainExhausted);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        const int words = m_settings ? m_settings->previewWords() : 7;
-        const bool showPreview = !m_settings || m_settings->transcriptionPreviewEnabled();
-        emit previewDisplayChanged(showPreview ? WordPreview::lastWords(text, words) : QString());
+        const UiSettings ui = uiSettings();
+        const int words = ui.previewWords;
+        emit previewDisplayChanged(ui.transcriptionPreviewEnabled ? WordPreview::lastWords(text, words) : QString());
         qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
         emit previewChanged(text);
     });
@@ -766,7 +766,7 @@ void DictationSession::cancel()
     emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
     const quint64 generation = m_generation;
     // The live setting: discard() has already dropped the session snapshot.
-    QTimer::singleShot(m_settings->completionStatusDurationMs(), Qt::PreciseTimer, this, [this, generation] {
+    QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this, [this, generation] {
         if (generation == m_generation && m_state == DictationState::Idle) {
             emit popupHideRequested();
         }
@@ -1366,7 +1366,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         emit transcriptDelivered(text);
         // The live setting, not the session snapshot: turning insights off
         // mid-session must stop this one being recorded.
-        if (m_settings->insightsEnabled()) {
+        if (m_settings->dictationSnapshot().insightsEnabled) {
             DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName};
             record.speechProviders = m_providerHistory.speechRan;
             record.refinementProviders = m_providerHistory.refinementRan;
@@ -1406,6 +1406,11 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
 void DictationSession::resumePausedMedia()
 {
     m_mediaController->resumePaused();
+}
+
+UiSettings DictationSession::uiSettings() const
+{
+    return m_settings ? m_settings->dictationSnapshot().ui : UiSettings{};
 }
 
 void DictationSession::clearScreenshotContext()
@@ -1595,7 +1600,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             return;
         }
         m_refinementStream += text;
-        if (m_settings && !m_settings->refinementPreviewEnabled()) {
+        if (!uiSettings().refinementPreviewEnabled) {
             emit popupRefinementPreviewChanged({});
             return;
         }
@@ -1639,8 +1644,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
         restored += preview.mid(cursor);
         preview = std::move(restored);
-        const int words = m_settings ? m_settings->previewWords() : 7;
-        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
+        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, uiSettings().previewWords));
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this, current](const QString &text) {
         if (!current()) {

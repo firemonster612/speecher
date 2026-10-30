@@ -208,6 +208,9 @@ private:
     void discard();
     void forgetSession();
     void clearScreenshotContext();
+    // The live UI settings, which apply the moment they change, mid-session
+    // too; the defaults without a store.
+    UiSettings uiSettings() const;
     void resumePausedMedia();
     bool selectTranscriptRefiner(const QString &providerId);
     void disconnectTranscriptRefiner();
