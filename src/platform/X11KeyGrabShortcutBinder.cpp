@@ -81,10 +81,10 @@ int recordGrabError(Display *, XErrorEvent *event)
 // One X connection serves every key grab. While a grabbed key is held, the
 // server turns its passive grab into an active grab of the whole keyboard
 // and sends every key pressed meanwhile to the grabbing connection; sharing
-// one connection routes each of those to the binder that holds the key,
-// whichever binder's key started the grab. Opened on first use and kept for
+// one connection routes each of those to the hold that has the key,
+// whichever hold's key started the grab. Opened on first use and kept for
 // the life of the process.
-class X11KeyGrabShortcutBinder::Connection {
+class X11KeyHold::Connection {
 public:
     static Connection &instance()
     {
@@ -93,17 +93,17 @@ public:
     }
 
     Display *display = nullptr;
-    QList<X11KeyGrabShortcutBinder *> binders;
+    QList<X11KeyHold *> holds;
 
     // Ends an active grab a held key left behind, so keys pressed while it is
     // still down reach the focused app. The server may have started one whose
     // press Speecher has not read yet, so this never asks whether one is on.
-    // The held key's release goes to the app too, so no binder may go on
+    // The held key's release goes to the app too, so no hold may go on
     // waiting for one.
     void releaseKeyboard()
     {
-        for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
-            binder->m_down = false;
+        for (X11KeyHold *hold : std::as_const(holds)) {
+            hold->m_down = false;
         }
         XUngrabKeyboard(display, CurrentTime);
     }
@@ -116,8 +116,8 @@ public:
             if (event.type != KeyPress && event.type != KeyRelease) {
                 continue;
             }
-            for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
-                binder->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
+            for (X11KeyHold *hold : std::as_const(holds)) {
+                hold->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
             }
         }
     }
@@ -137,48 +137,30 @@ private:
     }
 };
 
-X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(SettingsStore *settings,
-                                                   GlobalShortcutAction action,
-                                                   QObject *parent)
-    : SessionShortcutBinder(settings, std::move(action), parent)
+X11KeyHold::X11KeyHold(QObject *parent)
+    : KeyHold(parent)
     , m_display(Connection::instance().display)
 {
-    Connection::instance().binders.append(this);
+    Connection::instance().holds.append(this);
 }
 
-X11KeyGrabShortcutBinder::~X11KeyGrabShortcutBinder()
+X11KeyHold::~X11KeyHold()
 {
     letGo();
-    Connection::instance().binders.removeOne(this);
+    Connection::instance().holds.removeOne(this);
 }
 
-bool X11KeyGrabShortcutBinder::supported() const
+bool X11KeyHold::connected() const
 {
     return m_display != nullptr;
 }
 
-QString X11KeyGrabShortcutBinder::unsupportedReason() const
+bool X11KeyHold::hasKeyFor(const QKeySequence &combination) const
 {
-    return supported() ? QString() : QStringLiteral("Speecher could not reach the X server.");
+    return m_display && grabFor(m_display, combination).keycode != 0;
 }
 
-QString X11KeyGrabShortcutBinder::unsupportedBindingReason(const ShortcutBinding &binding) const
-{
-    const QString reason = GlobalShortcutBinder::unsupportedBindingReason(binding);
-    if (!reason.isEmpty() || binding.isEmpty()) {
-        return reason;
-    }
-    if (!m_display) {
-        return unsupportedReason();
-    }
-    if (grabFor(m_display, binding.combination()).keycode == 0) {
-        return QStringLiteral("X11 has no key for %1.").arg(binding.displayText());
-    }
-    return QString();
-}
-
-X11KeyGrabShortcutBinder::Grab X11KeyGrabShortcutBinder::grabFor(Display *display,
-                                                                const QKeySequence &combination)
+X11KeyHold::Grab X11KeyHold::grabFor(Display *display, const QKeySequence &combination)
 {
     if (combination.isEmpty()) {
         return {};
@@ -194,7 +176,7 @@ X11KeyGrabShortcutBinder::Grab X11KeyGrabShortcutBinder::grabFor(Display *displa
     return {keycode, modifiers};
 }
 
-bool X11KeyGrabShortcutBinder::take(const QKeySequence &combination)
+bool X11KeyHold::take(const QKeySequence &combination)
 {
     const Grab keys = m_display ? grabFor(m_display, combination) : Grab();
     if (keys.keycode == 0) {
@@ -226,7 +208,7 @@ bool X11KeyGrabShortcutBinder::take(const QKeySequence &combination)
     return true;
 }
 
-void X11KeyGrabShortcutBinder::letGo()
+void X11KeyHold::letGo()
 {
     if (!m_display || m_held.keycode == 0) {
         return;
@@ -241,7 +223,7 @@ void X11KeyGrabShortcutBinder::letGo()
     XFlush(m_display);
 }
 
-void X11KeyGrabShortcutBinder::keyEvent(bool press, int keycode, unsigned int state)
+void X11KeyHold::keyEvent(bool press, int keycode, unsigned int state)
 {
     if (m_held.keycode == 0 || keycode != m_held.keycode) {
         return;
@@ -250,8 +232,52 @@ void X11KeyGrabShortcutBinder::keyEvent(bool press, int keycode, unsigned int st
         m_down = false;
     } else if (!m_down && (state & shortcutModifiers) == m_held.modifiers) {
         m_down = true;
-        emit activated();
+        emit pressed();
     }
+}
+
+X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(SettingsStore *settings,
+                                                   GlobalShortcutAction action,
+                                                   QObject *parent)
+    : SessionShortcutBinder(settings, std::move(action), parent)
+    , m_keys(new X11KeyHold(this))
+{
+    connect(m_keys, &KeyHold::pressed, this, &GlobalShortcutBinder::activated);
+}
+
+bool X11KeyGrabShortcutBinder::supported() const
+{
+    return m_keys->connected();
+}
+
+QString X11KeyGrabShortcutBinder::unsupportedReason() const
+{
+    return supported() ? QString() : QStringLiteral("Speecher could not reach the X server.");
+}
+
+QString X11KeyGrabShortcutBinder::unsupportedBindingReason(const ShortcutBinding &binding) const
+{
+    const QString reason = GlobalShortcutBinder::unsupportedBindingReason(binding);
+    if (!reason.isEmpty() || binding.isEmpty()) {
+        return reason;
+    }
+    if (!supported()) {
+        return unsupportedReason();
+    }
+    if (!m_keys->hasKeyFor(binding.combination())) {
+        return QStringLiteral("X11 has no key for %1.").arg(binding.displayText());
+    }
+    return QString();
+}
+
+bool X11KeyGrabShortcutBinder::take(const QKeySequence &keys)
+{
+    return m_keys->take(keys);
+}
+
+void X11KeyGrabShortcutBinder::letGo()
+{
+    m_keys->letGo();
 }
 
 } // namespace speecher

@@ -487,6 +487,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/YdotoolSetup.h
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
+  src/platform/KeyHold.h
   src/platform/KWinActiveWindow.h
   src/platform/LinuxSessionKeyGrab.h
   src/platform/KeywatchSetup.h

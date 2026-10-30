@@ -7,6 +7,7 @@
 #endif
 
 #include <algorithm>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -15,40 +16,33 @@ struct TakenKey {
     SessionKeyGrab::Key key;
     QKeySequence keys;
     // Plasma lists it in the desktop's shortcut settings while it is held.
-    // It is no Global Shortcut and nothing is stored, so its role goes unused
-    // and its binder gets no settings.
-    GlobalShortcutAction action;
+    QString id;
+    QString description;
 };
 
 QList<TakenKey> takenKeys()
 {
     return {
-        {SessionKeyGrab::Key::Escape, QKeySequence(Qt::Key_Escape),
-         {.id = QStringLiteral("session-escape"),
-          .description = QStringLiteral("Keep the original while reviewing an edit"),
-          .sessionOnly = true}},
-        {SessionKeyGrab::Key::Enter, QKeySequence(Qt::Key_Return),
-         {.id = QStringLiteral("session-enter"),
-          .description = QStringLiteral("Replace the selection while reviewing an edit"),
-          .sessionOnly = true}},
+        {SessionKeyGrab::Key::Escape, QKeySequence(Qt::Key_Escape), QStringLiteral("session-escape"),
+         QStringLiteral("Keep the original while reviewing an edit")},
+        {SessionKeyGrab::Key::Enter, QKeySequence(Qt::Key_Return), QStringLiteral("session-enter"),
+         QStringLiteral("Replace the selection while reviewing an edit")},
         {SessionKeyGrab::Key::Enter, QKeySequence(Qt::KeypadModifier | Qt::Key_Enter),
-         {.id = QStringLiteral("session-keypad-enter"),
-          .description = QStringLiteral("Replace the selection with keypad Enter while reviewing an edit"),
-          .sessionOnly = true}},
+         QStringLiteral("session-keypad-enter"),
+         QStringLiteral("Replace the selection with keypad Enter while reviewing an edit")},
     };
 }
 
-SessionShortcutBinder *binderFor(const GlobalShortcutAction &action, QObject *parent)
+KeyHold *keyHoldFor(const TakenKey &taken, QObject *parent)
 {
-    auto *plasma = new KGlobalAccelSessionShortcutBinder(nullptr, action, parent);
-    if (plasma->supported()) {
+    if (KGlobalAccelKeyHold::available()) {
+        auto *plasma = new KGlobalAccelKeyHold(taken.id, taken.description, parent);
         plasma->dropLeftoverRegistration();
         return plasma;
     }
-    delete plasma;
 #ifdef SPEECHER_WITH_X11
     if (!isWaylandSession()) {
-        return new X11KeyGrabShortcutBinder(nullptr, action, parent);
+        return new X11KeyHold(parent);
     }
 #endif
     return nullptr;
@@ -60,13 +54,12 @@ LinuxSessionKeyGrab::LinuxSessionKeyGrab(QObject *parent)
     : SessionKeyGrab(parent)
 {
     for (const TakenKey &taken : takenKeys()) {
-        SessionShortcutBinder *binder = binderFor(taken.action, this);
-        if (!binder) {
+        KeyHold *keys = keyHoldFor(taken, this);
+        if (!keys) {
             continue;
         }
-        binder->holdWhileArmed(taken.keys);
-        connect(binder, &GlobalShortcutBinder::activated, this, [this, key = taken.key] { emit pressed(key); });
-        m_binders[size_t(taken.key)].append(binder);
+        connect(keys, &KeyHold::pressed, this, [this, key = taken.key] { emit pressed(key); });
+        m_holds[size_t(taken.key)].append({keys, taken.keys});
     }
 }
 
@@ -74,12 +67,14 @@ LinuxSessionKeyGrab::LinuxSessionKeyGrab(QObject *parent)
 // leaves the main Enter working.
 bool LinuxSessionKeyGrab::setGrabbed(Key key, bool grabbed)
 {
-    const QList<SessionShortcutBinder *> &binders = m_binders[size_t(key)];
-    for (SessionShortcutBinder *binder : binders) {
-        binder->setArmed(grabbed);
+    QList<Hold> &holds = m_holds[size_t(key)];
+    if (std::exchange(m_grabbed[size_t(key)], grabbed) != grabbed) {
+        for (Hold &hold : holds) {
+            hold.keys->letGo();
+            hold.held = grabbed && hold.keys->take(hold.combination);
+        }
     }
-    return std::any_of(binders.cbegin(), binders.cend(),
-                       [](const SessionShortcutBinder *binder) { return binder->holding(); });
+    return std::any_of(holds.cbegin(), holds.cend(), [](const Hold &hold) { return hold.held; });
 }
 
 } // namespace speecher
