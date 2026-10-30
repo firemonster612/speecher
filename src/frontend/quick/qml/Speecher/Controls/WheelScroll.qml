@@ -118,8 +118,13 @@ Item {
                 scroll._samples = scroll._samples.filter(s => now - s.at < 100).concat([{ at: now, dy: dy }])
             } else {
                 scroll._velocity = 0
-                const from = isNaN(scroll._glideTo) ? scroll.flickable.contentY : scroll._glideTo
-                scroll._glideTo = Math.max(scroll._top(), Math.min(scroll._bottom(), from + dy))
+                // A new glide starts where the view is now, which something
+                // else may have moved since this last placed it.
+                if (isNaN(scroll._glideTo)) {
+                    scroll._glideTo = scroll.flickable.contentY
+                    scroll._placedY = scroll.flickable.contentY
+                }
+                scroll._glideTo = Math.max(scroll._top(), Math.min(scroll._bottom(), scroll._glideTo + dy))
                 if (Theme.movement === 0) {
                     scroll._place(scroll._glideTo)
                     scroll._glideTo = NaN

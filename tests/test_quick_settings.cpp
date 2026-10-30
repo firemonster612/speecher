@@ -15,6 +15,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
+#include <QWheelEvent>
 
 #include <memory>
 #include <optional>
@@ -471,6 +472,43 @@ private slots:
         QVERIFY(control->property("checked").toBool());
         QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
         QVERIFY(!control->property("checked").toBool());
+    }
+
+    // After something else moves the view, as a scroll bar drag or a jump
+    // to a search result does, a wheel notch still glides it on from there.
+    void theWheelScrollsOnAfterTheViewIsMovedElsewhere()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import Speecher.Controls
+            Window {
+                property alias view: view
+                property alias scroll: scroll
+                width: 200; height: 200; visible: true
+                Flickable { id: view; anchors.fill: parent; contentHeight: 2000; WheelScroll { id: scroll } }
+            }
+        )", QUrl());
+        std::unique_ptr<QObject> created(component.create());
+        auto *window = qobject_cast<QQuickWindow *>(created.get());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QObject *view = window->property("view").value<QObject *>();
+        const QObject *scroll = window->property("scroll").value<QObject *>();
+        const qreal notch = scroll->property("wheelLines").toReal() * scroll->property("lineHeight").toReal();
+        const auto wheelDown = [window] {
+            const QPointF at(100, 100);
+            QWheelEvent event(at, window->mapToGlobal(at), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier,
+                              Qt::NoScrollPhase, false);
+            QGuiApplication::sendEvent(window, &event);
+        };
+
+        wheelDown();
+        QTRY_COMPARE(view->property("contentY").toReal(), notch);
+        view->setProperty("contentY", 500);
+        wheelDown();
+        QTRY_COMPARE(view->property("contentY").toReal(), 500 + notch);
     }
 
     void aServiceCardsStatusStaysInItsCard_data()
