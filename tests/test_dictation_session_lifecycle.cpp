@@ -1322,11 +1322,21 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("first second third"));
     }
 
-    // Audio heard after a resume while the paused attempt still finishes is
-    // held no longer than the connect budget's worth, ten seconds: past it
-    // the speech ends with what was heard, and the provider is passed over.
-    void aPausedAttemptFinishingPastTheConnectBudgetEndsTheSpeech()
+    void audioPastTheConnectBudgetNeverCutsAPausedAttemptShort_data()
     {
+        QTest::addColumn<bool>("stoppedFirst");
+        QTest::newRow("still listening") << false;
+        QTest::newRow("stopping") << true;
+    }
+
+    // Audio heard after a resume while the paused attempt still finishes is
+    // held up to the connect budget's worth, ten seconds. What goes past it
+    // is dropped and listening stops, but the paused attempt, whose words may
+    // only come when it finishes, is never cancelled: it finishes, and what
+    // is held goes to one final attempt on the same provider.
+    void audioPastTheConnectBudgetNeverCutsAPausedAttemptShort()
+    {
+        QFETCH(bool, stoppedFirst);
         SettingsStore settings;
         settings.raw().clear();
         auto audio = std::make_unique<FakeAudioInput>();
@@ -1340,22 +1350,35 @@ private slots:
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        speech->emitFinalText(QStringLiteral("said"));
         speech->autoCompleteOnFinish = false;
+        const quint64 pausedAttempt = speech->currentAttemptId;
         session.pause();
         session.resume();
+        if (stoppedFirst) {
+            session.stopListening();
+            QCOMPARE(int(session.state()), int(DictationState::Stopping));
+        }
         const QByteArray second(16000 * 2, '\0');
-        for (int seconds = 0; seconds < 10; ++seconds) {
+        for (int seconds = 0; seconds < 11; ++seconds) {
             audio->pushAudio(second);
         }
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
-        audio->pushAudio(second);
+        QCOMPARE(int(session.state()), int(DictationState::Stopping));
+        QVERIFY(speech->cancelledAttempts.isEmpty());
+        QCOMPARE(delivery->calls, 0);
+
+        emit speech->finalTranscript(pausedAttempt, QStringLiteral("said before the pause"));
+        speech->autoCompleteOnFinish = true;
+        speech->emitCompletion();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
-        QCOMPARE(delivery->lastText, QStringLiteral("said"));
-        QCOMPARE(speech->startCalls, 1);
+        QCOMPARE(delivery->lastText, QStringLiteral("said before the pause"));
+        QCOMPARE(speech->startCalls, 2);
+        QCOMPARE(speech->audioChunks, QList<QByteArray>(10, second));
+        QVERIFY(speech->cancelledAttempts.isEmpty());
         QTRY_COMPARE(outcome.size(), 1);
-        QVERIFY2(outcome.first().at(0).toString().contains(QStringLiteral("It took too long to finish")),
+        QVERIFY2(outcome.first().at(0).toString().contains(QStringLiteral("Part of the dictation may be missing")),
+                 qPrintable(outcome.first().at(0).toString()));
+        QVERIFY2(!outcome.first().at(0).toString().contains(QStringLiteral("too long")),
                  qPrintable(outcome.first().at(0).toString()));
     }
 

@@ -532,26 +532,32 @@ void DictationSession::speechChainExhausted()
     failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
-// No more than the connect budget's worth of audio is held, whether the next
-// provider is still preparing or the paused attempt is still finishing: past
-// it, the provider is passed over and the speech ends with what was heard.
+// No more than the connect budget's worth of audio is held. A provider still
+// preparing past it is passed over and the speech ends with what was heard.
+// A paused attempt still finishing, or the last one ending during the stop,
+// is never cut short: what goes past the budget is dropped, and listening
+// stops, so the attempt finishes and what is held goes to a final one.
 void DictationSession::holdPendingAudio(const QByteArray &pcm)
 {
-    m_between.hold(pcm);
-    if (m_between.heldBytes() <= kMaxPendingAudioBytes) {
+    if (!m_between.awaitingProvider && m_between.heldBytes() + pcm.size() > kMaxPendingAudioBytes) {
+        qWarning() << "speech audio held past the connect budget while an attempt finishes; dropping";
+        if (m_speechWarning.isEmpty()) {
+            m_speechWarning = QStringLiteral("Part of the dictation may be missing. "
+                                             "Too much was said while earlier words were still transcribed.");
+        }
+        if (m_state == DictationState::Listening) {
+            stopListening();
+        }
         return;
     }
-    const bool preparing = m_between.awaitingProvider;
-    qWarning() << "speech audio held past the connect budget preparing=" << preparing;
-    m_speech->chain()->cancel();
-    const QString reason = preparing ? QStringLiteral("It took too long to start")
-                                     : QStringLiteral("It took too long to finish");
-    noteProviderIssue(ProviderRole::Speech, m_speech->chain()->currentId(),
-                      preparing ? Stage::Prepare : Stage::Interrupted, {ProviderFailureKind::Timeout, reason});
-    if (!preparing) {
-        // No switch named why the speech ends: this does.
-        m_switchFailure = {.message = reason, .phase = SpeechPhase::Finalize, .kind = ProviderFailureKind::Timeout};
+    m_between.hold(pcm);
+    if (!m_between.awaitingProvider || m_between.heldBytes() <= kMaxPendingAudioBytes) {
+        return;
     }
+    qWarning() << "speech provider still preparing past the connect budget";
+    m_speech->chain()->cancel();
+    noteProviderIssue(ProviderRole::Speech, m_speech->chain()->currentId(), Stage::Prepare,
+                      {ProviderFailureKind::Timeout, QStringLiteral("It took too long to start")});
     speechChainExhausted();
 }
 
