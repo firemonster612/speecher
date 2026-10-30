@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/AppSettings.h"
 #include "core/ProviderFailure.h"
 
 #include <QString>
@@ -9,8 +10,6 @@
 namespace speecher {
 
 class SecretStore;
-struct AccountSettings;
-struct RefinementSettings;
 
 struct OpenAiAuth {
     bool ok = false;
@@ -42,7 +41,7 @@ struct OpenAiAuthStatus {
 class OpenAiAuthProvider {
 public:
     explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr,
-                                const QString &mode = QStringLiteral("auto"),
+                                OpenAiAuthMode mode = OpenAiAuthMode::Auto,
                                 const QString &cliproxyAccount = {},
                                 const QString &cliproxyDir = {},
                                 const QString &settingsApiKey = {},
@@ -76,7 +75,7 @@ public:
 
 private:
     SecretStore *m_secretStore = nullptr;
-    QString m_mode;
+    OpenAiAuthMode m_mode;
     QString m_cliproxyAccount;
     QString m_cliproxyDir;
     QString m_settingsApiKey;

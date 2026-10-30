@@ -69,8 +69,9 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         const RefinementSettings &settings,
                                         const AccountSettings &accounts)
 {
-    qInfo().noquote() << "anthropic refinement mode=" + accounts.anthropicAuthMode + " model=" + settings.anthropicModel;
-    const bool cliproxy = accounts.anthropicAuthMode == QStringLiteral("cliproxy");
+    qInfo().noquote() << "anthropic refinement mode=" + anthropicAuthModeName(accounts.anthropicAuthMode)
+            + " model=" + settings.anthropicModel;
+    const bool cliproxy = accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy;
     if (m_accessToken.isEmpty() || cliproxy) {
         if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
             emit failed(*failure);

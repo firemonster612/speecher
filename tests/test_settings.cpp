@@ -409,11 +409,11 @@ private slots:
         QCOMPARE(settings.useTargetContext(), true);
         QCOMPARE(settings.includeScreenshotContext(), false);
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-6-luna"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
+        QCOMPARE(settings.openAiAuthMode(), OpenAiAuthMode::Auto);
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         QCOMPARE(settings.openAiSpeed(), QStringLiteral("fast"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5-5"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        QCOMPARE(settings.anthropicAuthMode(), AnthropicAuthMode::Oauth);
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.anthropicFastMode(), true);
         // The Codex accuracy pass is on until someone turns it off.
@@ -503,20 +503,31 @@ private slots:
         settings.setOpenAiModel(QString());
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-6-luna"));
 
-        settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_env"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
-        settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_settings"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("settings"));
-        settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("codex_then_api_key"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
-        settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("codex_oauth"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("codex_oauth"));
-        settings.setOpenAiAuthMode(QStringLiteral("codex_oauth"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("codex_oauth"));
-        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("cliproxy"));
-        settings.setOpenAiAuthMode(QStringLiteral("env"));
-        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
+        // Each auth mode is stored by the name earlier releases stored, and
+        // the names they stored before these read as the mode they meant.
+        const std::pair<const char *, OpenAiAuthMode> openAiModes[] = {
+            {"auto", OpenAiAuthMode::Auto},
+            {"codex_oauth", OpenAiAuthMode::CodexOauth},
+            {"codex_api_key", OpenAiAuthMode::CodexApiKey},
+            {"env", OpenAiAuthMode::Env},
+            {"settings", OpenAiAuthMode::Settings},
+            {"cliproxy", OpenAiAuthMode::Cliproxy},
+        };
+        for (const auto &[name, mode] : openAiModes) {
+            settings.setOpenAiAuthMode(mode);
+            QCOMPARE(settings.raw().value(QStringLiteral("openai/auth/mode")).toString(), QString::fromLatin1(name));
+            QCOMPARE(settings.openAiAuthMode(), mode);
+        }
+        const std::pair<const char *, OpenAiAuthMode> legacyOpenAiModes[] = {
+            {"api_key_env", OpenAiAuthMode::Env},
+            {"api_key_settings", OpenAiAuthMode::Settings},
+            {"codex_then_api_key", OpenAiAuthMode::Auto},
+            {"unknown", OpenAiAuthMode::Auto},
+        };
+        for (const auto &[name, mode] : legacyOpenAiModes) {
+            settings.raw().setValue(QStringLiteral("openai/auth/mode"), QString::fromLatin1(name));
+            QCOMPARE(settings.openAiAuthMode(), mode);
+        }
         settings.setOpenAiEffort(QStringLiteral("xhigh"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("xhigh"));
         settings.setOpenAiEffort(QStringLiteral("none"));
@@ -546,12 +557,14 @@ private slots:
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-5-5"));
         settings.setAnthropicModel(QStringLiteral("claude-haiku-4-5"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-5-5"));
-        settings.setAnthropicAuthMode(QStringLiteral("oauth"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
-        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
-        settings.setAnthropicAuthMode(QStringLiteral("unknown"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        settings.setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
+        QCOMPARE(settings.raw().value(QStringLiteral("anthropic/auth/mode")).toString(), QStringLiteral("cliproxy"));
+        QCOMPARE(settings.anthropicAuthMode(), AnthropicAuthMode::Cliproxy);
+        settings.setAnthropicAuthMode(AnthropicAuthMode::Oauth);
+        QCOMPARE(settings.raw().value(QStringLiteral("anthropic/auth/mode")).toString(), QStringLiteral("oauth"));
+        QCOMPARE(settings.anthropicAuthMode(), AnthropicAuthMode::Oauth);
+        settings.raw().setValue(QStringLiteral("anthropic/auth/mode"), QStringLiteral("unknown"));
+        QCOMPARE(settings.anthropicAuthMode(), AnthropicAuthMode::Oauth);
         settings.setOpenAiCliproxyAccount(QStringLiteral(" codex-user@example.com.json "));
         QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
         settings.setAnthropicCliproxyAccount(QStringLiteral("claude-user@example.com.json"));
@@ -1339,11 +1352,11 @@ private slots:
         });
         settings.setUseTargetContext(false);
         settings.setIncludeScreenshotContext(true);
-        settings.setOpenAiAuthMode(QStringLiteral("env"));
+        settings.setOpenAiAuthMode(OpenAiAuthMode::Env);
         settings.setOpenAiEffort(QStringLiteral("high"));
         settings.setOpenAiSpeed(QStringLiteral("standard"));
         settings.setAnthropicModel(QStringLiteral("claude-opus-5"));
-        settings.setAnthropicAuthMode(QStringLiteral("oauth"));
+        settings.setAnthropicAuthMode(AnthropicAuthMode::Oauth);
         settings.setAnthropicEffort(QStringLiteral("xhigh"));
         settings.setAnthropicFastMode(false);
         settings.setOutputFormat(OutputFormat::Html);
@@ -1395,11 +1408,11 @@ private slots:
                  QStringLiteral("formal"));
         QCOMPARE(snapshot.refinement.useTargetContext, false);
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
-        QCOMPARE(snapshot.accounts.openAiAuthMode, QStringLiteral("env"));
+        QCOMPARE(snapshot.accounts.openAiAuthMode, OpenAiAuthMode::Env);
         QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
         QCOMPARE(snapshot.refinement.openAiSpeed, QStringLiteral("standard"));
         QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-5"));
-        QCOMPARE(snapshot.accounts.anthropicAuthMode, QStringLiteral("oauth"));
+        QCOMPARE(snapshot.accounts.anthropicAuthMode, AnthropicAuthMode::Oauth);
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
         QCOMPARE(snapshot.refinement.anthropicFastMode, false);
         // Claude Code's config directory, as CLAUDE_CONFIG_DIR (set by test_main) moves it.

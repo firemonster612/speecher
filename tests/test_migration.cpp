@@ -422,11 +422,11 @@ private:
         // 0.2.0's default models move to the ones that replaced them.
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
         QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
-        QCOMPARE(settings.accounts.openAiAuthMode, QStringLiteral("settings"));
+        QCOMPARE(settings.accounts.openAiAuthMode, OpenAiAuthMode::Settings);
         QCOMPARE(settings.refinement.openAiEffort, QStringLiteral("medium"));
         QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
         QCOMPARE(settings.accounts.openAiCliproxyAccount, QStringLiteral("openai-fixture@example.com"));
-        QCOMPARE(settings.accounts.anthropicAuthMode, QStringLiteral("cliproxy"));
+        QCOMPARE(settings.accounts.anthropicAuthMode, AnthropicAuthMode::Cliproxy);
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("high"));
         QVERIFY(!settings.refinement.anthropicFastMode);
         QCOMPARE(settings.accounts.anthropicCliproxyAccount, QStringLiteral("claude-fixture@example.com"));

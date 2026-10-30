@@ -1086,33 +1086,23 @@ void SettingsCodecs::setOpenAiModel(const QString &value)
                         model.isEmpty() ? QStringLiteral("gpt-6-luna") : model);
 }
 
-QString SettingsCodecs::openAiAuthMode() const
+OpenAiAuthMode SettingsCodecs::openAiAuthMode() const
 {
-    const QString mode = value(SettingsKeys::OpenAiAuthMode, QStringLiteral("auto")).toString();
-    if (mode == QStringLiteral("codex_then_api_key")) {
-        return QStringLiteral("auto");
-    }
+    const QString mode = value(SettingsKeys::OpenAiAuthMode, QString()).toString();
+    // Names earlier releases stored; their codex_then_api_key reads as Auto
+    // with any other unknown name.
     if (mode == QStringLiteral("api_key_env")) {
-        return QStringLiteral("env");
+        return OpenAiAuthMode::Env;
     }
     if (mode == QStringLiteral("api_key_settings")) {
-        return QStringLiteral("settings");
+        return OpenAiAuthMode::Settings;
     }
-    if (mode == QStringLiteral("auto") || mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("codex_oauth")
-        || mode == QStringLiteral("env") || mode == QStringLiteral("settings") || mode == QStringLiteral("cliproxy")) {
-        return mode;
-    }
-    return QStringLiteral("auto");
+    return openAiAuthModeFromName(mode);
 }
 
-void SettingsCodecs::setOpenAiAuthMode(const QString &value)
+void SettingsCodecs::setOpenAiAuthMode(OpenAiAuthMode value)
 {
-    if (value == QStringLiteral("codex_api_key") || value == QStringLiteral("codex_oauth")
-        || value == QStringLiteral("env") || value == QStringLiteral("settings") || value == QStringLiteral("cliproxy")) {
-        m_settings.setValue(SettingsKeys::OpenAiAuthMode, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::OpenAiAuthMode, QStringLiteral("auto"));
+    m_settings.setValue(SettingsKeys::OpenAiAuthMode, openAiAuthModeName(value));
 }
 
 QString SettingsCodecs::openAiEffort() const
@@ -1173,16 +1163,14 @@ void SettingsCodecs::setAnthropicModel(const QString &value)
                         model.isEmpty() ? QStringLiteral("claude-opus-5-5") : model);
 }
 
-QString SettingsCodecs::anthropicAuthMode() const
+AnthropicAuthMode SettingsCodecs::anthropicAuthMode() const
 {
-    const QString mode = value(SettingsKeys::AnthropicAuthMode, QStringLiteral("oauth")).toString();
-    return mode == QStringLiteral("cliproxy") ? mode : QStringLiteral("oauth");
+    return anthropicAuthModeFromName(value(SettingsKeys::AnthropicAuthMode, QString()).toString());
 }
 
-void SettingsCodecs::setAnthropicAuthMode(const QString &value)
+void SettingsCodecs::setAnthropicAuthMode(AnthropicAuthMode value)
 {
-    m_settings.setValue(SettingsKeys::AnthropicAuthMode,
-                        value == QStringLiteral("cliproxy") ? value : QStringLiteral("oauth"));
+    m_settings.setValue(SettingsKeys::AnthropicAuthMode, anthropicAuthModeName(value));
 }
 
 QString SettingsCodecs::anthropicEffort() const

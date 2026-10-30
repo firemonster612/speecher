@@ -240,7 +240,7 @@ private slots:
         settings.raw().clear();
         settings.setRefinementProvider(QStringLiteral("none"));
         settings.setSpeechProvider(QStringLiteral("claude"));
-        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        settings.setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
         settings.setCliproxyOauthDir(credentials.path());
         settings.raw().setValue(SettingsKeys::ClaudeEndpointBase,
                                 QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));

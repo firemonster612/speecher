@@ -66,6 +66,69 @@ inline ShortcutActivationMode shortcutActivationModeFromName(const QString &name
     return ShortcutActivationMode::Hybrid;
 }
 
+// Where OpenAI sign-ins come from. Auto takes the first one found: the Codex
+// app's ChatGPT sign-in or API key, then OPENAI_API_KEY, then the key saved
+// in Speecher.
+enum class OpenAiAuthMode {
+    Auto,
+    CodexOauth,
+    CodexApiKey,
+    Env,
+    Settings,
+    Cliproxy,
+};
+
+inline QString openAiAuthModeName(OpenAiAuthMode mode)
+{
+    switch (mode) {
+    case OpenAiAuthMode::CodexOauth:
+        return QStringLiteral("codex_oauth");
+    case OpenAiAuthMode::CodexApiKey:
+        return QStringLiteral("codex_api_key");
+    case OpenAiAuthMode::Env:
+        return QStringLiteral("env");
+    case OpenAiAuthMode::Settings:
+        return QStringLiteral("settings");
+    case OpenAiAuthMode::Cliproxy:
+        return QStringLiteral("cliproxy");
+    case OpenAiAuthMode::Auto:
+        break;
+    }
+    return QStringLiteral("auto");
+}
+
+// Anything unrecognised reads as Auto.
+inline OpenAiAuthMode openAiAuthModeFromName(const QString &name)
+{
+    for (const OpenAiAuthMode mode : {OpenAiAuthMode::CodexOauth, OpenAiAuthMode::CodexApiKey, OpenAiAuthMode::Env,
+                                      OpenAiAuthMode::Settings, OpenAiAuthMode::Cliproxy}) {
+        if (name == openAiAuthModeName(mode)) {
+            return mode;
+        }
+    }
+    return OpenAiAuthMode::Auto;
+}
+
+// Where Anthropic sign-ins come from: Claude Code's credentials, or a CLI
+// Proxy API account.
+enum class AnthropicAuthMode {
+    Oauth,
+    Cliproxy,
+};
+
+inline QString anthropicAuthModeName(AnthropicAuthMode mode)
+{
+    return mode == AnthropicAuthMode::Cliproxy ? QStringLiteral("cliproxy")
+                                               : QStringLiteral("oauth");
+}
+
+// Anything unrecognised reads as Oauth.
+inline AnthropicAuthMode anthropicAuthModeFromName(const QString &name)
+{
+    return name == QStringLiteral("cliproxy") ? AnthropicAuthMode::Cliproxy
+                                              : AnthropicAuthMode::Oauth;
+}
+
 struct BindingRule {
     QString phrase;
     QString replacement;
@@ -338,10 +401,8 @@ struct RefinementSettings {
 // Codex dictation and OpenAI refinement, so the speech and refinement
 // providers of a family share these.
 struct AccountSettings {
-    // "auto", "codex_oauth", "codex_api_key", "env", "settings" or "cliproxy".
-    QString openAiAuthMode = QStringLiteral("auto");
-    // "oauth" (Claude Code's credentials) or "cliproxy".
-    QString anthropicAuthMode = QStringLiteral("oauth");
+    OpenAiAuthMode openAiAuthMode = OpenAiAuthMode::Auto;
+    AnthropicAuthMode anthropicAuthMode = AnthropicAuthMode::Oauth;
     // The chosen CLI Proxy API Account file of each type, or empty while the
     // directory holds only one.
     QString openAiCliproxyAccount;

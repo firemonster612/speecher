@@ -21,7 +21,7 @@
 namespace speecher {
 
 OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
-                                       const QString &mode,
+                                       OpenAiAuthMode mode,
                                        const QString &cliproxyAccount,
                                        const QString &cliproxyDir,
                                        const QString &settingsApiKey,
@@ -41,9 +41,9 @@ OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
 
 OpenAiAuthProvider OpenAiAuthProvider::forSpeech(const AccountSettings &accounts)
 {
-    const QString cliproxy = QStringLiteral("cliproxy");
     return OpenAiAuthProvider(nullptr,
-                              accounts.openAiAuthMode == cliproxy ? cliproxy : QStringLiteral("codex_oauth"),
+                              accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy ? OpenAiAuthMode::Cliproxy
+                                                                                  : OpenAiAuthMode::CodexOauth,
                               accounts.openAiCliproxyAccount,
                               accounts.cliproxyOauthDir);
 }
@@ -324,8 +324,7 @@ static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool ref
 OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
 {
     QString status;
-    const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
-    if (mode == QStringLiteral("codex_api_key")) {
+    if (m_mode == OpenAiAuthMode::CodexApiKey) {
         const CodexCredentialStorage storage;
         const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
         if (!codexKey.key.isEmpty()) {
@@ -333,10 +332,10 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         }
         return {false, {}, QStringLiteral("codex_api_key"), status, {}, {}, {}, {}, false};
     }
-    if (mode == QStringLiteral("codex_oauth")) {
+    if (m_mode == OpenAiAuthMode::CodexOauth) {
         return readCodexOauth(CodexCredentialStorage{}, refreshExpired);
     }
-    if (mode == QStringLiteral("env")) {
+    if (m_mode == OpenAiAuthMode::Env) {
         const ApiKeyCandidate envKey = readEnvApiKey();
         if (envKey.key.startsWith(QStringLiteral("sk-"))) {
             OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY found"));
@@ -345,7 +344,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         }
         return {false, {}, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY not found"), {}, {}, {}, {}, false};
     }
-    if (mode == QStringLiteral("cliproxy")) {
+    if (m_mode == OpenAiAuthMode::Cliproxy) {
         // Remote proxy: authenticate with the CLI Proxy API server key; the
         // server picks the account and refreshes its own oauth tokens.
         if (!m_cliproxyBaseUrl.isEmpty()) {
@@ -384,7 +383,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                 credentials.accountId,
                 true};
     }
-    if (mode == QStringLiteral("settings")) {
+    if (m_mode == OpenAiAuthMode::Settings) {
         const QString apiKey = m_secretStore ? m_secretStore->apiKey() : m_settingsApiKey;
         if (apiKey.startsWith(QStringLiteral("sk-"))) {
             return {true,
@@ -456,17 +455,16 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
 bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
 {
     QString status;
-    const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
-    if (mode == QStringLiteral("codex_oauth")) {
+    if (m_mode == OpenAiAuthMode::CodexOauth) {
         return readCodexOauth(CodexCredentialStorage{}, false).status == QStringLiteral("Codex OAuth token expired");
     }
-    if (mode == QStringLiteral("cliproxy")) {
+    if (m_mode == OpenAiAuthMode::Cliproxy) {
         if (!m_cliproxyBaseUrl.isEmpty()) {
             return false; // the server owns and refreshes its accounts
         }
         return CliProxyCredentials::accountNeedsRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
     }
-    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")) {
+    if (m_mode == OpenAiAuthMode::CodexApiKey || m_mode == OpenAiAuthMode::Env || m_mode == OpenAiAuthMode::Settings) {
         return false;
     }
 
@@ -500,8 +498,7 @@ bool OpenAiAuthProvider::codexOauthExpiredAsLastRead() const
 OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 {
     Q_UNUSED(m_secretStore)
-    if ((m_mode.isEmpty() ? QStringLiteral("auto") : m_mode) == QStringLiteral("cliproxy")
-        && m_cliproxyBaseUrl.isEmpty()) {
+    if (m_mode == OpenAiAuthMode::Cliproxy && m_cliproxyBaseUrl.isEmpty()) {
         const CliProxyCredentialResult credentials =
             CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         SignInExpiry::record(cliproxySignIn(m_cliproxyDir, m_cliproxyAccount), credentials.expiresAt);

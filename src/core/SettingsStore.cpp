@@ -171,7 +171,6 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
     using Secret = SecretStore::Secret;
     const std::optional<ProviderId> provider = parseProviderId(providerId);
     const bool endpoint = provider == ProviderId::Endpoint;
-    const QString cliproxy = QStringLiteral("cliproxy");
     QList<ProviderSecret> secrets;
     // Speech uses local OAuth account files, never the remote proxy API key.
     if (role == ProviderRole::Speech && endpoint) {
@@ -185,10 +184,10 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
             {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
     }
     const bool proxyPreset = endpoint
-        && (refinement.endpoint.preset == cliproxy || refinement.endpoint.useCliproxyKey);
+        && (refinement.endpoint.preset == QStringLiteral("cliproxy") || refinement.endpoint.useCliproxyKey);
     const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
-        && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == cliproxy)
-            || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == cliproxy));
+        && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy)
+            || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy));
     if (refines && (proxyPreset || remoteProxy)) {
         secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
     }

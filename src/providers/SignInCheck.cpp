@@ -12,8 +12,6 @@ namespace speecher {
 
 namespace {
 
-const QString cliproxyMode = QStringLiteral("cliproxy");
-
 // CLI Proxy API's account types, each with the setting that chooses one.
 const struct CliproxyAccountType {
     QString type;
@@ -71,7 +69,7 @@ SignInCheck checkOpenAi(const AppSettings &settings, SecretStore *secrets)
 
 SignInCheck checkAnthropic(const AppSettings &settings)
 {
-    const bool proxy = settings.accounts.anthropicAuthMode == cliproxyMode;
+    const bool proxy = settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy;
     const QString server = proxy ? settings.refinement.cliproxyBaseUrl : QString();
     const QString directory = proxy && server.isEmpty() ? settings.accounts.cliproxyOauthDir : QString();
     const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(settings.accounts, settings.refinement);
@@ -204,8 +202,9 @@ bool signInInUse(SignInService service, const AppSettings &settings)
 {
     const RefinementSettings &refinement = settings.refinement;
     if (service == SignInService::CliProxy) {
-        return settings.accounts.openAiAuthMode == cliproxyMode
-            || settings.accounts.anthropicAuthMode == cliproxyMode || !refinement.cliproxyBaseUrl.isEmpty();
+        return settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy
+            || settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy
+            || !refinement.cliproxyBaseUrl.isEmpty();
     }
     QStringList speech = QStringList{settings.speech.providerId} + settings.speech.fallbackProviderIds;
     QStringList refiners = QStringList{refinement.providerId} + refinement.fallbackProviderIds;

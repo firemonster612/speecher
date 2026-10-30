@@ -326,7 +326,7 @@ private slots:
             previousUrl.isNull() ? qunsetenv("SPEECHER_CODEX_TOKEN_URL") : qputenv("SPEECHER_CODEX_TOKEN_URL", previousUrl);
         });
         qputenv("SPEECHER_CODEX_TOKEN_URL", QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
-        const OpenAiAuth auth = OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth")).resolve();
+        const OpenAiAuth auth = OpenAiAuthProvider(nullptr, OpenAiAuthMode::CodexOauth).resolve();
         QVERIFY(!auth.ok);
         QCOMPARE(requests, 0);
         QVERIFY2(auth.status.contains(QStringLiteral("codex login")), qPrintable(auth.status));
@@ -739,7 +739,7 @@ private slots:
         qputenv("USERPROFILE", QFile::encodeName(isolatedHome.path()));
         qputenv("CODEX_HOME", QFile::encodeName(dir.filePath(QStringLiteral(".codex"))));
         qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        OpenAiAuthProvider provider(nullptr, OpenAiAuthMode::CodexOauth);
         QVERIFY(provider.resolve(false).bearerToken == QStringLiteral("home-token"));
         qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(dir.filePath(QStringLiteral("missing.json"))));
         QVERIFY(!provider.resolve(false).ok);
@@ -756,9 +756,9 @@ private slots:
         DummyCodexNative native;
         const QByteArray root = R"({"auth_mode":"chatgpt","OPENAI_API_KEY":"sk-native-key","tokens":{"access_token":"native-é-🎙","account_id":"native-account"}})";
         QVERIFY(native.write(root));
-        OpenAiAuthProvider oauth(nullptr, QStringLiteral("auto"));
+        OpenAiAuthProvider oauth(nullptr, OpenAiAuthMode::Auto);
         QVERIFY(oauth.resolve(false).bearerToken == QStringLiteral("native-é-🎙"));
-        OpenAiAuthProvider key(nullptr, QStringLiteral("codex_api_key"));
+        OpenAiAuthProvider key(nullptr, OpenAiAuthMode::CodexApiKey);
         QVERIFY(key.resolve(false).bearerToken == QStringLiteral("sk-native-key"));
 
         // Explicit test paths cannot use the native entry, even when absent.
@@ -890,7 +890,7 @@ private slots:
             socket->flush();
         });
         qputenv("SPEECHER_CODEX_TOKEN_URL", QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
-        const OpenAiAuth auth = OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth")).resolve();
+        const OpenAiAuth auth = OpenAiAuthProvider(nullptr, OpenAiAuthMode::CodexOauth).resolve();
         QString error;
         const QByteArray bytes = storage.read(&error);
         if (concurrentChange == QStringLiteral("logout")) {
@@ -955,7 +955,7 @@ private slots:
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        OpenAiAuthProvider provider(nullptr, OpenAiAuthMode::CodexOauth);
         QVERIFY(provider.requiresCodexOauthRefresh());
         const OpenAiAuth auth = provider.resolve();
         QVERIFY2(auth.ok, qPrintable(auth.status));
@@ -1002,7 +1002,7 @@ private slots:
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        OpenAiAuthProvider provider(nullptr, OpenAiAuthMode::CodexOauth);
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
         QVERIFY2(auth.status.contains(QStringLiteral("invalid_grant")), qPrintable(auth.status));
@@ -1043,7 +1043,7 @@ private slots:
             }
         });
 
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("auto"));
+        OpenAiAuthProvider provider(nullptr, OpenAiAuthMode::Auto);
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
         QCOMPARE(refreshRequests, 1);
@@ -1109,7 +1109,7 @@ private slots:
         QCOMPARE(claude->kind, kind);
         QCOMPARE(claude->httpStatus, httpStatus);
 
-        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
                                      QStringLiteral("codex"), QStringLiteral("stale-token"), expired));
@@ -1134,7 +1134,7 @@ private slots:
     {
         QTemporaryDir dir;
         AccountSettings accounts;
-        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
         const std::optional<ProviderFailure> codex = CodexSpeechTranscriber().prepare({}, accounts);
         QVERIFY(codex);
@@ -1331,12 +1331,12 @@ private slots:
 
     void openAiAuthStatusSaysWhetherTheSignInIsReady()
     {
-        const OpenAiAuthStatus missing = OpenAiAuthProvider(nullptr, QStringLiteral("settings")).status();
+        const OpenAiAuthStatus missing = OpenAiAuthProvider(nullptr, OpenAiAuthMode::Settings).status();
         QCOMPARE(missing.text, QStringLiteral("Settings API key not found"));
         QVERIFY(!missing.ready);
 
         const OpenAiAuthStatus saved =
-            OpenAiAuthProvider(nullptr, QStringLiteral("settings"), {}, {}, QStringLiteral("sk-test"), {}).status();
+            OpenAiAuthProvider(nullptr, OpenAiAuthMode::Settings, {}, {}, QStringLiteral("sk-test"), {}).status();
         QCOMPARE(saved.text, QStringLiteral("Signed in"));
         QVERIFY(saved.ready);
     }
@@ -1347,7 +1347,7 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-c@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("codex-token-c"), QDateTime::currentDateTimeUtc().addSecs(3600)));
 
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("cliproxy"), QString(), dir.path());
+        OpenAiAuthProvider provider(nullptr, OpenAiAuthMode::Cliproxy, QString(), dir.path());
         QVERIFY(!provider.requiresCodexOauthRefresh());
         const OpenAiAuth auth = provider.resolve();
         QVERIFY2(auth.ok, qPrintable(auth.status));
@@ -1421,7 +1421,7 @@ private slots:
         AnthropicTranscriptRefiner refiner;
         const RefinementSettings settings;
         AccountSettings accounts;
-        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
         QVERIFY(!refiner.createRefreshJob(settings, accounts)->showRefreshIndicator);
         const std::optional<ProviderFailure> failure = refiner.prepare(settings, accounts);
@@ -1440,7 +1440,7 @@ private slots:
 
         AnthropicTranscriptRefiner refiner;
         AccountSettings accounts;
-        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
         QVERIFY(refiner.createRefreshJob({}, accounts)->run());
         QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
@@ -1455,7 +1455,7 @@ private slots:
 
         AnthropicTranscriptRefiner refiner;
         AccountSettings accounts;
-        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
         QVERIFY(refiner.createRefreshJob({}, accounts)->run());
         QVERIFY(refiner.createRefreshJob({}, accounts)->showRefreshIndicator);
@@ -1500,8 +1500,8 @@ private slots:
         RefinementSettings &refinement = settings.refinement;
         AccountSettings &accounts = settings.accounts;
         accounts.cliproxyOauthDir = dir.path();
-        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
-        accounts.openAiAuthMode = QStringLiteral("settings");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
+        accounts.openAiAuthMode = OpenAiAuthMode::Settings;
 
         SignInCheck cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::Missing);
@@ -1544,7 +1544,7 @@ private slots:
         QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
 
         // Claude Code's own sign-in.
-        accounts.anthropicAuthMode = QStringLiteral("oauth");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Oauth;
         accounts.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Missing);
         QVERIFY(writeJsonCredentials(accounts.claudeCredentialsPath, QStringLiteral("secret-token"),
@@ -1586,7 +1586,7 @@ private slots:
                                                   {QStringLiteral("expired"), expired.toString(Qt::ISODate)}})
                             .toJson());
         noRefresh.close();
-        settings.accounts.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         settings.accounts.anthropicCliproxyAccount = claude;
         const SignInCheck anthropic = renewSignIn(SignInService::Anthropic, settings, nullptr);
         QCOMPARE(anthropic.state, SignInState::Expired);

@@ -73,12 +73,12 @@ public:
     QList<CustomTone> customTones() const; void setCustomTones(const QList<CustomTone> &value);
     QList<CustomCleanupLevel> customCleanupLevels() const; void setCustomCleanupLevels(const QList<CustomCleanupLevel> &value);
     QString openAiModel() const; void setOpenAiModel(const QString &value);
-    QString openAiAuthMode() const; void setOpenAiAuthMode(const QString &value);
+    OpenAiAuthMode openAiAuthMode() const; void setOpenAiAuthMode(OpenAiAuthMode value);
     QString openAiEffort() const; void setOpenAiEffort(const QString &value);
     QString openAiSpeed() const; void setOpenAiSpeed(const QString &value);
     QString openAiCliproxyAccount() const; void setOpenAiCliproxyAccount(const QString &value);
     QString anthropicModel() const; void setAnthropicModel(const QString &value);
-    QString anthropicAuthMode() const; void setAnthropicAuthMode(const QString &value);
+    AnthropicAuthMode anthropicAuthMode() const; void setAnthropicAuthMode(AnthropicAuthMode value);
     QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
     bool anthropicFastMode() const; void setAnthropicFastMode(bool value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);

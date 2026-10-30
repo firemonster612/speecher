@@ -38,11 +38,11 @@ Page {
             height: pair._cardHeight
             minimumHeadHeight: anthropic.naturalHeadHeight
             SchemaRow { rowId: "openAiAuthMode"; stacked: true }
-            SchemaRow { objectName: "openAiApiKeyRow"; rowId: "openAiApiKey"; stacked: true; shown: Settings.values.openAiAuthMode === "settings" }
+            SchemaRow { objectName: "openAiApiKeyRow"; rowId: "openAiApiKey"; stacked: true; shown: Settings.values.openAiAuthMode === Accounts.authModes.openAi.settings }
             SchemaRow {
                 rowId: "openAiCliproxyAccount"
                 stacked: true
-                shown: Settings.values.openAiAuthMode === "cliproxy"
+                shown: Settings.values.openAiAuthMode === Accounts.authModes.openAi.cliproxy
                 AccountSelect { rowId: "openAiCliproxyAccount"; type: "codex"; width: parent.width }
             }
         }
@@ -56,7 +56,7 @@ Page {
             SchemaRow {
                 rowId: "anthropicCliproxyAccount"
                 stacked: true
-                shown: Settings.values.anthropicAuthMode === "cliproxy"
+                shown: Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.cliproxy
                 AccountSelect { rowId: "anthropicCliproxyAccount"; type: "claude"; width: parent.width }
             }
         }

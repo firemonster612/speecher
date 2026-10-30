@@ -47,6 +47,10 @@ class QuickAccounts final : public QObject, public HostSingleton<QuickAccounts> 
     // failed. action is save or clear, reason the keyring's words, possibly
     // empty.
     Q_PROPERTY(QVariantMap secretErrors READ secretErrors NOTIFY secretsChanged)
+    // The names Settings.values holds for each auth mode, for QML to compare
+    // against: { openAi: { auto, codexOauth, codexApiKey, env, settings,
+    // cliproxy }, anthropic: { oauth, cliproxy } }.
+    Q_PROPERTY(QVariantMap authModes READ authModes CONSTANT)
 
 public:
     explicit QuickAccounts(ApplicationController *controller, QObject *parent = nullptr);
@@ -61,6 +65,7 @@ public:
     QVariantMap savedSecrets() const;
     QVariantMap pendingClears() const;
     QVariantMap secretErrors() const;
+    QVariantMap authModes() const;
 
     // Accounts::recheck, renew, saveSecret and clearSecret by id.
     Q_INVOKABLE void recheck(const QString &id);

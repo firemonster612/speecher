@@ -22,8 +22,9 @@ Card {
     readonly property var service: Accounts.services.find(s => s.id === serviceId)
     // Signing in through the Codex app or Claude Code, whose fixes the
     // card can name; an API key or CLI Proxy API keeps core's words.
-    readonly property bool oauth: serviceId === "openai" ? ["auto", "codex_oauth"].includes(Settings.values.openAiAuthMode)
-                                : serviceId === "anthropic" && Settings.values.anthropicAuthMode === "oauth"
+    readonly property bool oauth: serviceId === "openai"
+        ? [Accounts.authModes.openAi.auto, Accounts.authModes.openAi.codexOauth].includes(Settings.values.openAiAuthMode)
+        : serviceId === "anthropic" && Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.oauth
     // The line under the name: what Speecher found, or what to do.
     readonly property string detail: Words.signInDetail(service, oauth)
 
