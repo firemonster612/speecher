@@ -103,7 +103,7 @@ void SpeechChain::walk()
     for (; m_index < m_providerIds.size(); ++m_index) {
         const QString providerId = m_providerIds.at(m_index);
         const SpeechSettings speech = chainSpeechSettings(m_settings.speech, providerId);
-        // Decided as the Fallbacks row decides it (fallbackSkipsSpokenLanguage).
+        // Decided as the Fallbacks row decides it (fallbackProblem).
         if (m_index > 0 && !listensForSpokenLanguage(speech)) {
             emit passedOver(providerId, Stage::LanguageSkipped,
                             {ProviderFailureKind::Unavailable,

@@ -14,6 +14,9 @@ var rows = [
       maxCount: 2,
       emptyText: "None. Dictation stops if %1 is unavailable.", headingText: "If %1 is unavailable",
       keywords: "backup failover offline unavailable order chain second" },
+    { id: "speechFallbackLanguages", page: "speech", section: "Fallbacks", kind: "custom",
+      label: "Fallback languages", help: "The language each fallback listens for, chosen beside it.",
+      keywords: "fallback backup spoken language english automatic detect" },
 
     // Every language core knows (knownSpokenLanguages), named in English
     // with the language's own name, which the language picker searches too.

@@ -60,7 +60,7 @@ Page {
         id: fallbackSection
         title: page.fallbackSpec.headingText.arg(page.primaryLabel)
         caption: page.fallbackSpec.help
-        SearchLanding { rowIds: ["speechFallbackList"]; target: fallbackSection }
+        SearchLanding { rowIds: ["speechFallbackList", "speechFallbackLanguages"]; target: fallbackSection }
         FallbackList {
             ids: page.fallbacks
             options: Models.speechServices.filter(s => s.id !== page.primary).map(s => ({ id: s.id, label: s.label }))

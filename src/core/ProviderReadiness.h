@@ -134,12 +134,6 @@ QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFac
 // provider doesn't take "-".
 QList<QStringList> providerReportTable(const QList<ProviderReport> &reports);
 
-// Whether a speech fallback is skipped because it can't listen for its own
-// Spoken Language (chainSpeechSettings), by its own language list or its
-// Local Model's catalog entry (listensForSpokenLanguage). A missing model is
-// not skipped here; it is unavailable. The primary is never skipped.
-bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId);
-
 // Whether a provider needs the internet to work: one that signs in, or a
 // Custom Endpoint whose server isn't on this computer or its network.
 bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings);

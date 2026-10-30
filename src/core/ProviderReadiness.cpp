@@ -106,6 +106,15 @@ QString problemText(FallbackProblem problem, ProviderRole role, const AppSetting
     return {};
 }
 
+// Whether a speech fallback is skipped because it can't listen for its own
+// Spoken Language (chainSpeechSettings), by its own language list or its
+// Local Model's catalog entry (listensForSpokenLanguage). A missing model is
+// not skipped here; it is unavailable. The primary is never skipped.
+bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId)
+{
+    return !listensForSpokenLanguage(chainSpeechSettings(speech, providerId));
+}
+
 ProviderReport providerReport(ProviderRole role, const QString &id, const QString &label,
                               const AppSettings &settings, const LiveFacts &facts)
 {
@@ -136,11 +145,6 @@ ProviderReport providerReport(ProviderRole role, const QString &id, const QStrin
 }
 
 } // namespace
-
-bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId)
-{
-    return !listensForSpokenLanguage(chainSpeechSettings(speech, providerId));
-}
 
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,
                                 const LiveFacts &facts)
