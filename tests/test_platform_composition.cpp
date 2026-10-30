@@ -38,6 +38,7 @@
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickTranscription.h"
 
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -3055,9 +3056,19 @@ private slots:
     }
 
     // A restart that waited for a batch keeps waiting while a transcript the
-    // batch made is only on screen, and goes once it is exported.
+    // batch made is only on screen, and goes once the Transcribe page exports
+    // it or goes back to setup.
+    void anUpdateRestartWaitsForAnUnsavedTranscript_data()
+    {
+        QTest::addColumn<QString>("release");
+        QTest::newRow("export-one") << QStringLiteral("export-one");
+        QTest::newRow("export-all") << QStringLiteral("export-all");
+        QTest::newRow("back-to-setup") << QStringLiteral("back-to-setup");
+    }
+
     void anUpdateRestartWaitsForAnUnsavedTranscript()
     {
+        QFETCH(QString, release);
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         auto *updater = restartWatchableUpdater(controller);
@@ -3088,10 +3099,19 @@ private slots:
         updater->installAndRestart();
         QTRY_COMPARE(queue.step(), TranscribeQueue::Step::Export);
         QVERIFY(!queue.results().first().failed());
+        QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::UnsavedTranscripts);
         QCOMPARE(updater->state(), UpdateController::State::RestartPending);
         QVERIFY(restartAttempts.isEmpty());
 
-        queue.markExported(0);
+        QuickTranscription transcription(&controller);
+        if (release == QStringLiteral("export-one")) {
+            transcription.exportResult(0, QStringLiteral("text"),
+                                       QUrl::fromLocalFile(dir.filePath(QStringLiteral("silence.txt"))));
+        } else if (release == QStringLiteral("export-all")) {
+            transcription.exportAll(QStringLiteral("text"), QUrl::fromLocalFile(dir.path()));
+        } else {
+            transcription.reset();
+        }
         QCOMPARE(restartAttempts.count(), 1);
     }
 

@@ -230,6 +230,11 @@ private slots:
         emit controller.fileTranscription()->fileStarted(0, QString());
         QCOMPARE(changed.count(), 3);
         QCOMPARE(updates.restartBlocker(), QStringLiteral("transcription"));
+
+        blocker = UpdateController::RestartBlocker::UnsavedTranscripts;
+        emit controller.fileTranscription()->batchFinished({}, false);
+        QCOMPARE(changed.count(), 4);
+        QCOMPARE(updates.restartBlocker(), QStringLiteral("unsavedTranscripts"));
     }
 
     void lastCheckedIsWhenACheckLastSucceeded()
