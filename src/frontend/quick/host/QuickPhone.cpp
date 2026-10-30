@@ -8,8 +8,6 @@ namespace speecher {
 
 namespace {
 
-QuickPhone *g_instance = nullptr;
-
 QString stateName(PhoneTransferState state)
 {
     switch (state) {
@@ -33,22 +31,9 @@ QuickPhone::QuickPhone(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
 {
-    g_instance = this;
 }
 
-QuickPhone::~QuickPhone()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickPhone *QuickPhone::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickPhone::create", "the host makes Phone before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
-}
+QuickPhone::~QuickPhone() = default;
 
 QString QuickPhone::state() const
 {

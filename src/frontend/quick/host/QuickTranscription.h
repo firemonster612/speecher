@@ -1,5 +1,6 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
 #include "transcribe/TranscribeQueue.h"
 
 #include <QObject>
@@ -23,7 +24,7 @@ class ApplicationController;
 //     savedPath }
 // The page asks for files and folders with its own choosers and hands the
 // chosen ones in.
-class QuickTranscription final : public QObject {
+class QuickTranscription final : public QObject, public HostSingleton<QuickTranscription> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Transcription)
     QML_SINGLETON
@@ -65,10 +66,6 @@ class QuickTranscription final : public QObject {
 
 public:
     explicit QuickTranscription(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickTranscription() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickTranscription *create(QQmlEngine *, QJSEngine *);
 
     // Files opened from outside, such as a file manager's Open With.
     void addFiles(const QStringList &paths);

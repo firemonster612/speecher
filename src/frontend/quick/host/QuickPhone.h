@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QObject>
 #include <QQmlEngine>
 #include <QVariantMap>
@@ -14,7 +16,7 @@ class PhoneTransfer;
 // The UI's Phone singleton: the code that sends this computer's settings to
 // Speecher for Android. The code exists from start to stop: Speecher listens
 // for the phone only while it shows. Starting again makes a new code.
-class QuickPhone final : public QObject {
+class QuickPhone final : public QObject, public HostSingleton<QuickPhone> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Phone)
     QML_SINGLETON
@@ -29,9 +31,6 @@ class QuickPhone final : public QObject {
 public:
     explicit QuickPhone(ApplicationController *controller, QObject *parent = nullptr);
     ~QuickPhone() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickPhone *create(QQmlEngine *, QJSEngine *);
 
     QString state() const;
     QString link() const;

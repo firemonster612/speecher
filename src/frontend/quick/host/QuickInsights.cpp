@@ -20,8 +20,6 @@ namespace speecher {
 
 namespace {
 
-QuickInsights *g_instance = nullptr;
-
 // The ids QML uses for the periods and the measures.
 constexpr std::array<std::pair<const char *, InsightsRange>, 4> rangeIds{{
     {"7d", InsightsRange::Last7Days},
@@ -168,7 +166,6 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
 {
-    g_instance = this;
     SettingsStore *settings = controller->settings();
     connect(controller->insightsLog(), &InsightsLog::changed, this, &QuickInsights::refresh);
     // Keep insights, and the profile names the apps and profiles go by.
@@ -188,20 +185,6 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     connect(&m_midnight, &QTimer::timeout, this, &QuickInsights::refresh);
     refresh();
     refreshCorrections();
-}
-
-QuickInsights::~QuickInsights()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickInsights *QuickInsights::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickInsights::create", "the host makes Insights before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 QString QuickInsights::state() const

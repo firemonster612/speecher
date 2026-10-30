@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/VirtualKeyboardSetup.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QHash>
 #include <QObject>
@@ -20,7 +21,7 @@ class QuickRemoval;
 // It carries states and step ids; the UI words them (health.js, the pages).
 // The virtual keyboard and removing Speecher are Linux's: elsewhere
 // hasVirtualKeyboard and canRemove are false and checks has no keyboard row.
-class QuickSystem final : public QObject {
+class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_OBJECT
     QML_NAMED_ELEMENT(System)
     QML_SINGLETON
@@ -42,10 +43,6 @@ public:
     // operation starts while removal runs.
     QuickSystem(ApplicationController *controller, VirtualKeyboardSetup *virtualKeyboard, const QuickRemoval *removal,
                 QObject *parent = nullptr);
-    ~QuickSystem() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickSystem *create(QQmlEngine *, QJSEngine *);
 
     // Desktop accessibility is on, so Speecher can tell which app it pastes into.
     bool accessibility() const;

@@ -14,7 +14,6 @@ namespace speecher {
 
 namespace {
 
-QuickDictation *g_instance = nullptr;
 constexpr int msPerSecond = 1000;
 int g_errorDismissMs = 0;
 
@@ -174,7 +173,6 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     : QuickDictationState(parent)
     , m_controller(controller)
 {
-    g_instance = this;
     // A session's error that says nothing still counts down.
     m_error = errorMessage({}, {});
     m_errorDismissal.setSingleShot(true);
@@ -214,20 +212,6 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     connect(this, &QuickDictationState::followUpRequested, controller, &ApplicationController::toggle);
     connect(this, &QuickDictationState::errorActionRequested, this, &QuickDictation::openFix);
     connect(this, &QuickDictationState::errorHoldRequested, this, &QuickDictation::holdError);
-}
-
-QuickDictation::~QuickDictation()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickDictation *QuickDictation::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickDictation::create", "the host makes Dictation before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 // Another error over one on show, even the same one again, counts down from

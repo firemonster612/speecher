@@ -2,6 +2,7 @@
 
 #include "app/MicrophoneTest.h"
 #include "dictation/DictationPorts.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -22,7 +23,7 @@ class ApplicationController;
 // for while a new hold arrived, and once after its device fails while
 // running. A device that will not open, or fails again, is tried again only
 // on a new hold, a microphone coming or going, or another device saved.
-class QuickAudio final : public QObject {
+class QuickAudio final : public QObject, public HostSingleton<QuickAudio> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Audio)
     QML_SINGLETON
@@ -56,10 +57,6 @@ public:
                         QObject *parent = nullptr,
                         DeviceLister listDevices = {},
                         MicrophoneTest::InputFactory createInput = {});
-    ~QuickAudio() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickAudio *create(QQmlEngine *, QJSEngine *);
 
     QVariantList devices() const { return m_devices; }
     bool hasMicrophones() const { return !m_devices.isEmpty(); }

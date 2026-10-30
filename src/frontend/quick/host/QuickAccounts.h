@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QObject>
 #include <QQmlEngine>
 #include <QVariantList>
@@ -15,7 +17,7 @@ struct AppSettings;
 // schema's row ids. It saves and clears secrets through them but never hands
 // one to QML. Its wording is the UI's (Words, the Accounts page); a service's
 // detail is core's status line.
-class QuickAccounts final : public QObject {
+class QuickAccounts final : public QObject, public HostSingleton<QuickAccounts> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Accounts)
     QML_SINGLETON
@@ -48,7 +50,6 @@ class QuickAccounts final : public QObject {
 
 public:
     explicit QuickAccounts(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickAccounts() override;
 
     // The engine's instance: the one the host made before loading any QML.
     // The first page to ask starts the checks, so a daemon whose window never

@@ -14,8 +14,6 @@ namespace speecher {
 
 namespace {
 
-QuickAccounts *g_instance = nullptr;
-
 const struct ServiceRow {
     const char *id;
     const char *name;
@@ -87,7 +85,6 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
     , m_controller(controller)
     , m_accounts(controller->accounts())
 {
-    g_instance = this;
     connect(m_accounts, &Accounts::signInsChanged, this, &QuickAccounts::servicesChanged);
     connect(m_accounts, &Accounts::cliproxyAccountsChanged, this, &QuickAccounts::cliproxyAccountsChanged);
     connect(m_accounts, &Accounts::secretsChanged, this, &QuickAccounts::secretsChanged);
@@ -104,21 +101,13 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
     connect(controller->localSetup(), &LocalSetup::changed, this, &QuickAccounts::servicesChanged);
 }
 
-QuickAccounts::~QuickAccounts()
+QuickAccounts *QuickAccounts::create(QQmlEngine *engine, QJSEngine *jsEngine)
 {
-    if (g_instance == this) {
-        g_instance = nullptr;
+    QuickAccounts *accounts = HostSingleton::create(engine, jsEngine);
+    if (accounts) {
+        accounts->m_accounts->start();
     }
-}
-
-QuickAccounts *QuickAccounts::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickAccounts::create", "the host makes Accounts before loading QML");
-    if (g_instance) {
-        QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-        g_instance->m_accounts->start();
-    }
-    return g_instance;
+    return accounts;
 }
 
 QVariantList QuickAccounts::services() const

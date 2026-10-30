@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/InsightsSummary.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QDate>
 #include <QImage>
@@ -19,7 +20,7 @@ class ApplicationController;
 // latest transcript; the learned corrections Home lists; and the exports.
 // It carries data only: Home and General word it. Dates reach QML as Dates
 // at the start of their local day, and an absent one as null.
-class QuickInsights final : public QObject {
+class QuickInsights final : public QObject, public HostSingleton<QuickInsights> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Insights)
     QML_SINGLETON
@@ -60,10 +61,6 @@ class QuickInsights final : public QObject {
 
 public:
     explicit QuickInsights(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickInsights() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickInsights *create(QQmlEngine *, QJSEngine *);
 
     QString state() const;
     bool hasData() const;

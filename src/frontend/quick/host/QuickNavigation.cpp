@@ -2,30 +2,9 @@
 
 namespace speecher {
 
-namespace {
-
-QuickNavigation *g_instance = nullptr;
-
-} // namespace
-
 QuickNavigation::QuickNavigation(QObject *parent)
     : QObject(parent)
 {
-    g_instance = this;
-}
-
-QuickNavigation::~QuickNavigation()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickNavigation *QuickNavigation::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickNavigation::create", "the host makes Navigation before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 QString QuickNavigation::current() const

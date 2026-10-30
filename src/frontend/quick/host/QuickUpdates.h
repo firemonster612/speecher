@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QDateTime>
 #include <QObject>
 #include <QQmlEngine>
@@ -13,7 +15,7 @@ class UpdateController;
 // The UI's Updates singleton: where the updater is in a check, download or
 // restart, what it offers, and What's New, the news of the version an update
 // installed. The UI words all of it.
-class QuickUpdates final : public QObject {
+class QuickUpdates final : public QObject, public HostSingleton<QuickUpdates> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Updates)
     QML_SINGLETON
@@ -58,10 +60,6 @@ class QuickUpdates final : public QObject {
 public:
     // updates is the controller's updater; tests pass their own.
     QuickUpdates(ApplicationController *controller, UpdateController *updates, QObject *parent = nullptr);
-    ~QuickUpdates() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickUpdates *create(QQmlEngine *, QJSEngine *);
 
     QString version() const;
     QString state() const;

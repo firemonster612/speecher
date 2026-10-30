@@ -21,8 +21,6 @@ namespace speecher {
 
 namespace {
 
-QuickSystem *g_instance = nullptr;
-
 // The checks' ids, as checks and fix name them.
 const QString microphoneId = QStringLiteral("microphoneAccess");
 const QString accessibilityId = QStringLiteral("desktopAccessibility");
@@ -184,7 +182,6 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
     , m_virtualKeyboard(virtualKeyboard)
     , m_removal(removal)
 {
-    g_instance = this;
     connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
@@ -204,20 +201,6 @@ QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup
             emit changed();
         }
     });
-}
-
-QuickSystem::~QuickSystem()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickSystem *QuickSystem::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickSystem::create", "the host makes System before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 bool QuickSystem::accessibility() const

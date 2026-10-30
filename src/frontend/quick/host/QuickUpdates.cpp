@@ -16,8 +16,6 @@ namespace {
 
 using State = UpdateController::State;
 
-QuickUpdates *g_instance = nullptr;
-
 QVariantMap whatsNewMap(const WhatsNew &news)
 {
     QVariantList commits;
@@ -53,27 +51,12 @@ QuickUpdates::QuickUpdates(ApplicationController *controller, UpdateController *
     , m_whatsNew(whatsNewMap(speecher::whatsNew(bundledReleaseNotes(), embeddedHistory(), m_lastSeenVersion,
                                                 updates->currentVersion())))
 {
-    g_instance = this;
     connect(updates, &UpdateController::changed, this, &QuickUpdates::changed);
     // What a restart waits for changes with them.
     connect(controller->session(), &DictationSession::stateChanged, this, &QuickUpdates::changed);
     connect(controller, &ApplicationController::recordingChanged, this, &QuickUpdates::changed);
     connect(updates, &UpdateController::openReleasePageRequested, this, &QuickUpdates::openAllReleases);
     connect(controller->whatsNew(), &WhatsNewTracker::pendingChanged, this, &QuickUpdates::whatsNewPendingChanged);
-}
-
-QuickUpdates::~QuickUpdates()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickUpdates *QuickUpdates::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickUpdates::create", "the host makes Updates before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 QString QuickUpdates::version() const

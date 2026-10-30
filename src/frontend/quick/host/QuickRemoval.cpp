@@ -10,8 +10,6 @@ namespace speecher {
 
 namespace {
 
-QuickRemoval *g_instance = nullptr;
-
 QString partName(RemovalStep::Part part)
 {
     switch (part) {
@@ -67,7 +65,6 @@ QuickRemoval::QuickRemoval(VirtualKeyboardSetup *virtualKeyboard, std::optional<
     : QObject(parent)
     , m_virtualKeyboard(virtualKeyboard)
 {
-    g_instance = this;
     if (!steps) {
         return;
     }
@@ -79,19 +76,7 @@ QuickRemoval::QuickRemoval(VirtualKeyboardSetup *virtualKeyboard, std::optional<
     });
 }
 
-QuickRemoval::~QuickRemoval()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickRemoval *QuickRemoval::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickRemoval::create", "the host makes Removal before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
-}
+QuickRemoval::~QuickRemoval() = default;
 
 bool QuickRemoval::running() const
 {
