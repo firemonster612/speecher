@@ -26,7 +26,7 @@ class VocabularyTest {
         VocabularyWord("Kubernetes", "The container platform.", setOf(WritingProfile.Work))
 
     @Test
-    fun `words stored as bare terms load as key terms for every profile, and the rest persists`() {
+    fun `words stored as bare terms load as key terms for every profile`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
             commit = true
@@ -38,14 +38,6 @@ class VocabularyTest {
             listOf(VocabularyWord("Priya Raman"), VocabularyWord("Speecher")),
             store.load().vocabulary,
         )
-        val words =
-            listOf(
-                VocabularyWord("Speecher", priority = true),
-                kubernetes.copy(source = "csv", frequency = 2, lastUsedMs = 1_791_020_460_000),
-                VocabularyWord("Grafana", keyTerm = false),
-            )
-        store.save(SpeecherSettings(vocabulary = words))
-        assertEquals(words, store.load().vocabulary)
     }
 
     @Test

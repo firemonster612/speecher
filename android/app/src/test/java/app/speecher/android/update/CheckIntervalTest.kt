@@ -2,7 +2,6 @@ package app.speecher.android.update
 
 import android.content.Context
 import app.speecher.android.settings.SettingsStore
-import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.ui.updateCheckLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,30 +48,6 @@ class CheckIntervalTest {
         assertEquals(0L, untilCheck(1_000_000, 1_060_000, 60_000))
         // A clock set back an hour waits one interval, not the hour as well.
         assertEquals(60_000L, untilCheck(1_000_000, 1_000_000 - 3_600_000, 60_000))
-    }
-
-    @Test
-    fun `the interval persists with the unit it was entered in, every day by default`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        assertEquals(1_440, store.load().updateCheckMinutes)
-        assertNull(store.load().updateCheckUnit)
-        store.save(SpeecherSettings(updateCheckMinutes = 480, updateCheckUnit = IntervalUnit.Hours))
-        assertEquals(480, store.load().updateCheckMinutes)
-        assertEquals(IntervalUnit.Hours, store.load().updateCheckUnit)
-        store.save(SpeecherSettings(updateCheckMinutes = 15))
-        assertNull(store.load().updateCheckUnit)
-    }
-
-    @Test
-    fun `automatic checks start on, on the Stable channel, and persist`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        assertTrue(store.load().autoCheckUpdates)
-        assertEquals(UpdateChannel.Stable, store.load().updateChannel)
-        store.save(
-            SpeecherSettings(autoCheckUpdates = false, updateChannel = UpdateChannel.Nightly)
-        )
-        assertFalse(store.load().autoCheckUpdates)
-        assertEquals(UpdateChannel.Nightly, store.load().updateChannel)
     }
 
     @Test

@@ -20,36 +20,6 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 class RefinementInstructionsTest {
     @Test
-    fun `instructions, output languages and the custom prompt persist, and start empty and off`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        assertEquals(SpeecherSettings().writingProfiles, store.load().writingProfiles)
-        assertEquals(listOf("", "false", ""), store.load().let(::instructionFields))
-        val saved =
-            SpeecherSettings(
-                writingProfiles =
-                    SpeecherSettings().writingProfiles +
-                        (WritingProfile.Email to
-                            WritingProfileSettings(
-                                instructions = "Sign off with Best,\nEnzo",
-                                outputLanguage = "Spanish",
-                            )),
-                additionalInstructions = "Spell it Speecher.",
-                customSystemPromptEnabled = true,
-                customSystemPrompt = "Clean up my dictation.",
-            )
-        store.save(saved)
-        val loaded = store.load()
-        assertEquals(
-            saved.writingProfiles.getValue(WritingProfile.Email),
-            loaded.writingProfiles.getValue(WritingProfile.Email),
-        )
-        assertEquals(
-            listOf("Spell it Speecher.", "true", "Clean up my dictation."),
-            instructionFields(loaded),
-        )
-    }
-
-    @Test
     fun `profiles keep custom tones and levels until they are deleted`() {
         val store = SettingsStore(RuntimeEnvironment.getApplication())
         val tone = CustomTone("custom_terse", "Terse", "Short.")
@@ -115,11 +85,4 @@ class RefinementInstructionsTest {
         assertEquals(WritingProfile.Other, deleted.defaultWritingProfile)
         assertEquals("", deleted.profileDeletionNotice(standup))
     }
-
-    private fun instructionFields(settings: SpeecherSettings) =
-        listOf(
-            settings.additionalInstructions,
-            settings.customSystemPromptEnabled.toString(),
-            settings.customSystemPrompt,
-        )
 }

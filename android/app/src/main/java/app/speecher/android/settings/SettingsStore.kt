@@ -1,6 +1,7 @@
 package app.speecher.android.settings
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import androidx.core.content.edit
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -18,17 +19,13 @@ import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
-import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CorrectionEvidence
 import app.speecher.protocol.Corrections
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.DEFAULT_SPEECH_ENDPOINT_PATH
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.LearnedCorrection
 import app.speecher.protocol.PendingCorrection
 import app.speecher.protocol.RecognitionRule
-import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
@@ -39,8 +36,11 @@ import app.speecher.protocol.withUsage
 import java.util.UUID
 import kotlin.enums.enumEntries
 import kotlin.math.roundToInt
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
 
 class SettingsStore(private val context: Context) {
     private val preferences =
@@ -81,10 +81,7 @@ class SettingsStore(private val context: Context) {
                     ),
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
                 vocabulary = loadVocabulary(),
-                replacements =
-                    objects("replacements").map {
-                        Replacement(it.getString("phrase"), it.getString("text"))
-                    },
+                replacements = list("replacements"),
                 chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
                 chipOffsetX =
                     preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
@@ -118,39 +115,13 @@ class SettingsStore(private val context: Context) {
                             preferences.getString("${key}OutputLanguage", "")!!,
                         )
                     },
-                appRules =
-                    objects("appRules").map {
-                        RecognitionRule(
-                            it.getString("match"),
-                            AppCategory.entries.firstOrNull { category ->
-                                category.id == it.optString("category")
-                            },
-                            it.optString("profile")
-                                .takeIf(String::isNotEmpty)
-                                ?.let(::WritingProfile),
-                        )
-                    },
+                appRules = list<StoredRule>("appRules").map { it.rule },
                 additionalInstructions = preferences.getString("additionalInstructions", "")!!,
                 customSystemPromptEnabled =
                     preferences.getBoolean("customSystemPromptEnabled", false),
                 customSystemPrompt = preferences.getString("customSystemPrompt", "")!!,
-                customTones =
-                    objects("customTones").map {
-                        CustomTone(
-                            it.getString("id"),
-                            it.getString("name"),
-                            it.getString("instruction"),
-                        )
-                    },
-                customCleanupLevels =
-                    objects("customCleanupLevels").map {
-                        CustomCleanupLevel(
-                            it.getString("id"),
-                            it.getString("name"),
-                            enumOf(it.getString("base"), CleanupStrength.Balanced),
-                            it.getString("instructions"),
-                        )
-                    },
+                customTones = list("customTones"),
+                customCleanupLevels = list("customCleanupLevels"),
                 buttonLayout =
                     enumOf(
                         preferences.getString("buttonLayout", null),
@@ -196,16 +167,8 @@ class SettingsStore(private val context: Context) {
             }
             putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
-            putString("vocabulary", vocabularyJson(settings.vocabulary))
-            putString(
-                "replacements",
-                JSONArray(
-                        settings.replacements.map {
-                            JSONObject(mapOf("phrase" to it.phrase, "text" to it.text))
-                        }
-                    )
-                    .toString(),
-            )
+            putList("vocabulary", settings.vocabulary)
+            putList("replacements", settings.replacements)
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
@@ -228,60 +191,13 @@ class SettingsStore(private val context: Context) {
                 putString("${key}OutputLanguage", choice.outputLanguage)
                 if (!profile.isBuiltIn) putString("${key}Name", choice.name)
             }
-            putString(
-                "customProfiles",
-                JSONArray(settings.writingProfiles.keys.filterNot { it.isBuiltIn }.map { it.id })
-                    .toString(),
-            )
-            putString(
-                "appRules",
-                JSONArray(
-                        settings.appRules.map {
-                            JSONObject(
-                                mapOf(
-                                    "match" to it.match,
-                                    "category" to it.category?.id.orEmpty(),
-                                    "profile" to it.profile?.id.orEmpty(),
-                                )
-                            )
-                        }
-                    )
-                    .toString(),
-            )
+            putList("customProfiles", settings.writingProfiles.keys.filterNot { it.isBuiltIn })
+            putList("appRules", settings.appRules.map(::StoredRule))
             putString("additionalInstructions", settings.additionalInstructions)
             putBoolean("customSystemPromptEnabled", settings.customSystemPromptEnabled)
             putString("customSystemPrompt", settings.customSystemPrompt)
-            putString(
-                "customTones",
-                JSONArray(
-                        settings.customTones.map {
-                            JSONObject(
-                                mapOf(
-                                    "id" to it.id,
-                                    "name" to it.name,
-                                    "instruction" to it.instruction,
-                                )
-                            )
-                        }
-                    )
-                    .toString(),
-            )
-            putString(
-                "customCleanupLevels",
-                JSONArray(
-                        settings.customCleanupLevels.map {
-                            JSONObject(
-                                mapOf(
-                                    "id" to it.id,
-                                    "name" to it.name,
-                                    "base" to it.base.name,
-                                    "instructions" to it.instructions,
-                                )
-                            )
-                        }
-                    )
-                    .toString(),
-            )
+            putList("customTones", settings.customTones)
+            putList("customCleanupLevels", settings.customCleanupLevels)
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
             putBoolean("autoCheckUpdates", settings.autoCheckUpdates)
@@ -320,8 +236,7 @@ class SettingsStore(private val context: Context) {
     fun recordVocabularyUsage(text: String, nowMs: Long = System.currentTimeMillis()) {
         val words = loadVocabulary()
         val used = withUsage(words, text, nowMs)
-        if (used != words)
-            preferences.edit { putString("vocabulary", vocabularyJson(normalizedVocabulary(used))) }
+        if (used != words) preferences.edit { putList("vocabulary", normalizedVocabulary(used)) }
     }
 
     /**
@@ -342,8 +257,8 @@ class SettingsStore(private val context: Context) {
             }
         if (next != corrections)
             preferences.edit {
-                putString("learnedCorrections", learnedJson(next.learned))
-                putString("correctionEvidence", pendingJson(next.pending))
+                putList("learnedCorrections", next.learned)
+                putList("correctionEvidence", next.pending)
             }
     }
 
@@ -353,7 +268,7 @@ class SettingsStore(private val context: Context) {
      */
     fun editCorrections(edit: (List<LearnedCorrection>) -> List<LearnedCorrection>) {
         val learned = loadCorrections().learned
-        preferences.edit { putString("learnedCorrections", learnedJson(edit(learned))) }
+        preferences.edit { putList("learnedCorrections", edit(learned)) }
     }
 
     /** Just [SpeecherSettings.correctionLearningEnabled], read without loading the rest. */
@@ -383,136 +298,37 @@ class SettingsStore(private val context: Context) {
     }
 
     private fun loadVocabulary(): List<VocabularyWord> =
-        JSONArray(preferences.getString("vocabulary", "[]"))
-            .let { items ->
+        json
+            .parseToJsonElement(preferences.getString("vocabulary", "[]")!!)
+            .jsonArray
+            .map {
                 // Earlier releases stored each word as its bare term.
-                List(items.length()) { index ->
-                    val word = items.optJSONObject(index)
-                    if (word == null) VocabularyWord(items.getString(index))
-                    else
-                        VocabularyWord(
-                            word.getString("term"),
-                            word.optString("context"),
-                            (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
-                                List(ids.length()) { WritingProfile(ids.getString(it)) }.toSet()
-                            },
-                            // Stored only when off, so every earlier word is a key term.
-                            word.optBoolean("keyTerm", true),
-                            word.optBoolean("priority"),
-                            word.optString("source", "manual"),
-                            word.optInt("frequency"),
-                            word.optLong("lastUsedMs"),
-                        )
-                }
+                if (it is JsonPrimitive) VocabularyWord(it.content)
+                else json.decodeFromJsonElement(it)
             }
             .let(::normalizedVocabulary)
-
-    private fun vocabularyJson(words: List<VocabularyWord>): String =
-        JSONArray(
-                words.map { word ->
-                    JSONObject(
-                            mapOf(
-                                "term" to word.term,
-                                "context" to word.context,
-                                "profiles" to JSONArray(word.profiles.map { it.id }),
-                                "source" to word.source,
-                                "frequency" to word.frequency,
-                                "lastUsedMs" to word.lastUsedMs,
-                            )
-                        )
-                        .apply {
-                            if (!word.keyTerm) put("keyTerm", false)
-                            if (word.priority) put("priority", true)
-                        }
-                }
-            )
-            .toString()
 
     /**
      * The desktop's CorrectionSettingsCodec, with its keys; an entry missing its text is dropped.
      */
     private fun loadCorrections(): Corrections =
         Corrections(
-            objects("learnedCorrections")
-                .map {
-                    val createdAtMs = it.optLong("createdAtMs")
-                    LearnedCorrection(
-                        it.optString("id"),
-                        it.optString("original"),
-                        it.optString("corrected"),
-                        it.optString("applicationId"),
-                        createdAtMs,
-                        it.optDouble("confidence", 0.0),
-                        it.optBoolean("enabled", true),
-                        it.optInt("evidenceCount", 1),
-                        it.optLong("lastObservedAtMs", createdAtMs),
-                    )
-                }
-                .filter {
-                    it.id.isNotEmpty() && it.original.isNotBlank() && it.corrected.isNotBlank()
-                },
-            objects("correctionEvidence")
-                .map {
-                    PendingCorrection(
-                        it.optString("original"),
-                        it.optString("corrected"),
-                        it.optString("applicationId"),
-                        it.optInt("count"),
-                        it.optLong("firstObservedAtMs"),
-                        it.optLong("lastObservedAtMs"),
-                        it.optDouble("confidence", 0.0),
-                    )
-                }
-                .filter { it.original.isNotEmpty() && it.corrected.isNotEmpty() && it.count > 0 },
+            list<LearnedCorrection>("learnedCorrections").filter {
+                it.id.isNotEmpty() && it.original.isNotBlank() && it.corrected.isNotBlank()
+            },
+            list<PendingCorrection>("correctionEvidence").filter {
+                it.original.isNotEmpty() && it.corrected.isNotEmpty() && it.count > 0
+            },
         )
 
-    private fun learnedJson(corrections: List<LearnedCorrection>): String =
-        JSONArray(
-                corrections.map {
-                    JSONObject(
-                        mapOf(
-                            "id" to it.id,
-                            "original" to it.original,
-                            "corrected" to it.corrected,
-                            "applicationId" to it.applicationId,
-                            "createdAtMs" to it.createdAtMs,
-                            "confidence" to it.confidence,
-                            "enabled" to it.enabled,
-                            "evidenceCount" to it.evidenceCount,
-                            "lastObservedAtMs" to it.lastObservedAtMs,
-                        )
-                    )
-                }
-            )
-            .toString()
+    private fun customProfileIds(): List<WritingProfile> = list("customProfiles")
 
-    private fun pendingJson(pending: List<PendingCorrection>): String =
-        JSONArray(
-                pending.map {
-                    JSONObject(
-                        mapOf(
-                            "original" to it.original,
-                            "corrected" to it.corrected,
-                            "applicationId" to it.applicationId,
-                            "count" to it.count,
-                            "firstObservedAtMs" to it.firstObservedAtMs,
-                            "lastObservedAtMs" to it.lastObservedAtMs,
-                            "confidence" to it.confidence,
-                        )
-                    )
-                }
-            )
-            .toString()
+    private inline fun <reified T> list(key: String): List<T> =
+        json.decodeFromString(preferences.getString(key, "[]")!!)
 
-    private fun customProfileIds(): List<WritingProfile> =
-        JSONArray(preferences.getString("customProfiles", "[]")).let { items ->
-            List(items.length()) { index -> WritingProfile(items.getString(index)) }
-        }
-
-    private fun objects(key: String): List<JSONObject> =
-        JSONArray(preferences.getString(key, "[]")).let { items ->
-            List(items.length()) { index -> items.getJSONObject(index) }
-        }
+    private inline fun <reified T> SharedPreferences.Editor.putList(key: String, items: List<T>) {
+        putString(key, json.encodeToString(items))
+    }
 
     private fun loadRefinement(provider: Provider): RefinementChoice {
         val default = provider.defaultRefinement
@@ -527,6 +343,17 @@ class SettingsStore(private val context: Context) {
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
         const val VERSION = 2
+
+        /**
+         * Every key stays in what is stored, so an earlier release reads it back. Keys it doesn't
+         * know are skipped and an enum constant it doesn't know loads as the property's default, so
+         * what a later release stored still loads.
+         */
+        val json = Json {
+            encodeDefaults = true
+            ignoreUnknownKeys = true
+            coerceInputValues = true
+        }
         val replacedModels =
             mapOf(
                 "claude-sonnet-5" to "claude-sonnet-5-5",
@@ -535,6 +362,22 @@ class SettingsStore(private val context: Context) {
                 "claude-haiku-4-5-20251001" to "claude-haiku-5-5",
             )
     }
+}
+
+/** A [RecognitionRule] as stored, with an empty id for no app type or no profile. */
+@Serializable
+private data class StoredRule(val match: String, val category: String, val profile: String) {
+    constructor(
+        rule: RecognitionRule
+    ) : this(rule.match, rule.category?.id.orEmpty(), rule.profile?.id.orEmpty())
+
+    val rule: RecognitionRule
+        get() =
+            RecognitionRule(
+                match,
+                AppCategory.entries.firstOrNull { it.id == category },
+                profile.takeIf(String::isNotEmpty)?.let(::WritingProfile),
+            )
 }
 
 /**

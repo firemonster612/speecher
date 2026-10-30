@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import java.text.BreakIterator
+import kotlinx.serialization.Serializable
 
 // Vocabulary words, ported from src/core/Vocabulary.cpp and src/core/VocabularyLimit.cpp.
 
@@ -11,6 +12,7 @@ import java.text.BreakIterator
  * refinement uses every word either way. [source] says where it came from (manual, csv, learned or
  * legacy), and [frequency] and [lastUsedMs] count the inserted dictations that contained it.
  */
+@Serializable
 data class VocabularyWord(
     val term: String,
     val context: String = "",

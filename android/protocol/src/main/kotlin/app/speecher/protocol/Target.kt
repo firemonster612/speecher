@@ -1,5 +1,7 @@
 package app.speecher.protocol
 
+import kotlinx.serialization.Serializable
+
 // Target classification and writing profiles, ported from src/core/Target.cpp.
 
 enum class AppCategory(val id: String) {
@@ -14,6 +16,7 @@ enum class AppCategory(val id: String) {
 }
 
 /** A writing profile, by id: one of the built-ins below, or a custom profile's custom_ id. */
+@Serializable
 @JvmInline
 value class WritingProfile(val id: String) {
     val isBuiltIn: Boolean
@@ -51,13 +54,17 @@ enum class Tone(val id: String) {
 }
 
 /** A tone the user defined: the model is told its [name] and follows the [instruction]. */
-data class CustomTone(val id: String, val name: String, val instruction: String)
+@Serializable data class CustomTone(val id: String, val name: String, val instruction: String)
 
-/** A cleanup level the user defined: the rules of its [base] plus the user's [instructions]. */
+/**
+ * A cleanup level the user defined: the rules of its [base] plus the user's [instructions]. A base
+ * that is no longer a [CleanupStrength] loads as Balanced.
+ */
+@Serializable
 data class CustomCleanupLevel(
     val id: String,
     val name: String,
-    val base: CleanupStrength,
+    val base: CleanupStrength = CleanupStrength.Balanced,
     val instructions: String,
 )
 

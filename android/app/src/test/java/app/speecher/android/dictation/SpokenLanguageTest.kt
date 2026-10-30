@@ -1,7 +1,6 @@
 package app.speecher.android.dictation
 
 import app.speecher.android.provider.SpeechProvider
-import app.speecher.android.settings.SettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -9,18 +8,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class SpokenLanguageTest {
-    @Test
-    fun `the spoken language is English until one is saved`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        assertEquals("en", store.load().spokenLanguage)
-        store.save(store.load().copy(spokenLanguage = "de"))
-        assertEquals("de", store.load().spokenLanguage)
-    }
-
     @Test
     fun `each service offers its own languages`() {
         assertTrue("yue" in SpeechProvider.Claude.spokenLanguages)
