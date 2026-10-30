@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 class QAudioDecoder;
 
@@ -190,8 +191,8 @@ private:
     QPointer<AudioInput> m_input;
     Microphone m_microphone = Microphone::Off;
     QPointer<TranscriptRefiner> m_refiner;
-    // Why the last refiner the file tried could not refine it.
-    QString m_refinementFailure;
+    // Each refiner the file tried, and why it could not refine it.
+    QList<std::pair<QString, QString>> m_refinementFailures;
     // The file as it decodes, until it goes to the stream whole.
     QByteArray m_decoded;
     TranscriptPipelineResult m_pipeline;

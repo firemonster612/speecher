@@ -499,6 +499,45 @@ private slots:
         QCOMPARE(result.error, QString());
     }
 
+    // A file no refiner could refine keeps its text as heard, and says why
+    // for each refiner tried, whether it failed preparing or refining.
+    void aFileNoRefinerRefinedNamesEachOneTried()
+    {
+        FakeRefiner *primary = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&primary](QObject *parent) {
+                                                   primary = new FakeRefiner(parent);
+                                                   return primary;
+                                               });
+        m_registry->registerRefinementProvider({QStringLiteral("local"), QStringLiteral("Local Runner")},
+                                               [](QObject *parent) {
+                                                   auto *fallback = new FakeRefiner(parent);
+                                                   fallback->prepareFailure =
+                                                       ProviderFailure{ProviderFailureKind::Unavailable,
+                                                                       QStringLiteral("No model is downloaded")};
+                                                   return fallback;
+                                               });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
+        primary->emitFailure(QStringLiteral("offline"), ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QCOMPARE(result.refined, QStringLiteral("heard 16000"));
+        QCOMPARE(result.error,
+                 QStringLiteral("Refinement failed: Fake: offline; Local Runner: No model is downloaded"));
+    }
+
     // A batch set to None still refines, at Light, when its profile
     // translates, and says so.
     void anExplicitNoneStillTranslates()

@@ -190,7 +190,9 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     connect(m_stream, &SpeechStream::finished, this, &FileTranscriptionSession::finishTranscription);
     connect(m_stream, &SpeechStream::failed, this, &FileTranscriptionSession::failFile);
     connect(m_refinementChain, &RefinementChain::passedOver, this,
-            [this](const QString &, Stage, const ProviderFailure &failure) { m_refinementFailure = failure.message; });
+            [this](const QString &providerId, Stage, const ProviderFailure &failure) {
+                m_refinementFailures.append({providerId, failure.message});
+            });
     connect(m_refinementChain, &RefinementChain::secretsResolved, this,
             [this](const AppSettings &settings) { m_batchSettings = settings; });
     connect(m_refinementChain, &RefinementChain::ready, this, &FileTranscriptionSession::startRefiner);
@@ -394,7 +396,7 @@ void FileTranscriptionSession::refine(const QString &raw)
     // Keys and an expired sign-in load on the worker, as for a dictation:
     // never on this thread, where a cancel could run meanwhile. A cancel
     // drops them unanswered.
-    m_refinementFailure.clear();
+    m_refinementFailures.clear();
     emit fileRefining(m_index);
     m_refinementChain->begin(m_options.refinementProviderId, m_batchSettings.refinement.fallbackProviderIds);
     m_refinementChain->prepare(m_batchSettings, refinement);
@@ -440,7 +442,7 @@ void FileTranscriptionSession::startRefiner()
 // refinement.
 void FileTranscriptionSession::handleRefinementFailure(const ProviderFailure &failure)
 {
-    m_refinementFailure = QStringLiteral("Refinement failed: %1").arg(failure.message);
+    m_refinementFailures.append({m_refinementChain->currentId(), failure.message});
     if (permitsProviderFallback(failure.kind)) {
         m_refinementChain->prepareNext(m_batchSettings, m_pipeline.refinementSettings);
         return;
@@ -448,10 +450,17 @@ void FileTranscriptionSession::handleRefinementFailure(const ProviderFailure &fa
     completeUnrefined();
 }
 
-// No refiner refined the file: it keeps the text as heard, and says why.
+// No refiner refined the file: it keeps the text as heard, and says why for
+// each refiner tried, by name once the file had fallbacks to try.
 void FileTranscriptionSession::completeUnrefined()
 {
-    m_current.error = m_refinementFailure;
+    QStringList reasons;
+    for (const auto &[providerId, message] : std::as_const(m_refinementFailures)) {
+        reasons.append(m_refinementChain->providerIds().size() == 1
+                           ? message
+                           : QStringLiteral("%1: %2").arg(m_providers->refinementProviderLabel(providerId), message));
+    }
+    m_current.error = QStringLiteral("Refinement failed: %1").arg(reasons.join(QStringLiteral("; ")));
     completeFile(m_pipeline.deliveryFallback);
 }
 
