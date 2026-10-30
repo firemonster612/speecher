@@ -201,6 +201,7 @@ public:
     using SettingsCodecs::setGlobalShortcut;
     using SettingsCodecs::forgetGlobalShortcutCombination;
     using SettingsCodecs::forgetGlobalShortcutSingleKey;
+    using SettingsCodecs::globalShortcutCleared;
     using SettingsCodecs::portalShortcutCleared;
     using SettingsCodecs::setPortalShortcutCleared;
     using SettingsCodecs::storedApiKeyFallback;

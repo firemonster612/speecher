@@ -15,6 +15,8 @@
 #include <QTimer>
 #include <QUuid>
 
+#include <utility>
+
 namespace speecher {
 namespace {
 
@@ -488,25 +490,36 @@ void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &re
     }
 }
 
+// The timestamps are milliseconds on a clock of the desktop's choosing, so
+// only their difference means anything: the physical hold, which a release
+// handled late would otherwise stretch. A backend that sends no timestamp
+// (zero) leaves the controller to time the hold.
 void PortalGlobalShortcutBinder::handleActivated(const QDBusObjectPath &sessionHandle,
                                                   const QString &id,
-                                                  qulonglong,
+                                                  qulonglong timestamp,
                                                   const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
         && id == action().id) {
+        // A held key's auto-repeat can arrive as more activations; the hold
+        // runs from the first.
+        if (m_activatedAtMs == 0) {
+            m_activatedAtMs = timestamp;
+        }
         emit activated();
     }
 }
 
 void PortalGlobalShortcutBinder::handleDeactivated(const QDBusObjectPath &sessionHandle,
                                                     const QString &id,
-                                                    qulonglong,
+                                                    qulonglong timestamp,
                                                     const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
         && id == action().id) {
-        emit deactivated();
+        const qulonglong activatedAtMs = std::exchange(m_activatedAtMs, 0);
+        emit deactivated(activatedAtMs != 0 && timestamp >= activatedAtMs ? qint64(timestamp - activatedAtMs)
+                                                                         : -1);
     }
 }
 

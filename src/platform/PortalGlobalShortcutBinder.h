@@ -96,6 +96,8 @@ private:
     PortalResponseTracker m_responseTracker;
     RequestKind m_requestKind = RequestKind::None;
     QTimer *m_requestTimer = nullptr;
+    // The portal's timestamp of the press being held; zero when none is.
+    qulonglong m_activatedAtMs = 0;
 };
 
 } // namespace speecher

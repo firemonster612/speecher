@@ -1365,6 +1365,11 @@ void SettingsCodecs::setGlobalShortcut(GlobalShortcutRole role, const ShortcutBi
     m_settings.setValue(globalShortcutKey(role), value.toString());
 }
 
+bool SettingsCodecs::globalShortcutCleared(GlobalShortcutRole role) const
+{
+    return m_settings.contains(globalShortcutKey(role)) && globalShortcut(role).isEmpty();
+}
+
 void SettingsCodecs::forgetGlobalShortcutCombination(GlobalShortcutRole role)
 {
     if (!globalShortcut(role).isSingleKey()) {

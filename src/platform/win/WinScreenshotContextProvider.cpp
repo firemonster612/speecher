@@ -2,7 +2,7 @@
 
 #include "platform/ScreenshotImage.h"
 
-#include <QBuffer>
+#include <QCoreApplication>
 #include <QImage>
 #include <QThread>
 
@@ -12,8 +12,6 @@
 
 namespace speecher {
 namespace {
-
-constexpr qsizetype maximumCaptureSize = 32 * 1024 * 1024;
 
 ScreenshotResult captureWindow(HWND window)
 {
@@ -54,25 +52,16 @@ ScreenshotResult captureWindow(HWND window)
     const HGDIOBJ previous = SelectObject(memory, bitmap);
     const BOOL printed = PrintWindow(window, memory, PW_RENDERFULLCONTENT);
     SelectObject(memory, previous);
-    QByteArray png;
-    if (printed) {
-        const QImage image(static_cast<uchar *>(bits),
-                           width,
-                           height,
-                           width * 4,
-                           QImage::Format_RGB32);
-        QBuffer buffer(&png);
-        buffer.open(QIODevice::WriteOnly);
-        image.save(&buffer, "PNG");
-    }
+    // The image borrows the bitmap's pixels, so it is normalized before the
+    // bitmap goes.
+    const QByteArray png = printed
+        ? normalizedScreenshot(QImage(static_cast<uchar *>(bits), width, height, width * 4, QImage::Format_RGB32))
+        : QByteArray();
     DeleteObject(bitmap);
     DeleteDC(memory);
 
-    if (!printed || png.isEmpty()) {
+    if (png.isEmpty()) {
         return {{}, QStringLiteral("Windows could not capture the target window")};
-    }
-    if (png.size() > maximumCaptureSize) {
-        return {{}, QStringLiteral("The target window screenshot is larger than 32 MiB")};
     }
     return {png, {}};
 }
@@ -99,6 +88,9 @@ void WinScreenshotContextProvider::capture()
     });
     m_capture = thread;
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    // Smooth scaling runs on Qt's shared thread pool, which application
+    // teardown destroys, so the worker has to finish first.
+    connect(qApp, &QCoreApplication::aboutToQuit, thread, [thread] { thread->wait(); });
     connect(thread, &QThread::finished, this, [this, thread, result] {
         if (m_capture != thread) {
             return;

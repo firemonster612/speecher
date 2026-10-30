@@ -49,22 +49,25 @@ RoutingShortcutBinder::RoutingShortcutBinder(GlobalShortcutBinder *combination,
 
 bool RoutingShortcutBinder::supported() const
 {
-    return m_combination->supported();
+    return m_combination->supported() || m_singleKey->supported();
 }
 
+// Single-key backends answer at once; the desktop service (the portal) may
+// still be asking, which only matters while the single key cannot help.
 bool RoutingShortcutBinder::supportKnown() const
 {
-    return m_combination->supportKnown();
+    return m_combination->supportKnown() || m_singleKey->supported();
 }
 
 bool RoutingShortcutBinder::usesDesktopShortcutChooser() const
 {
-    return m_combination->usesDesktopShortcutChooser();
+    return m_combination->usesDesktopShortcutChooser()
+        && (m_combination->supported() || !m_singleKey->supported());
 }
 
 QString RoutingShortcutBinder::unsupportedReason() const
 {
-    return m_combination->unsupportedReason();
+    return supported() ? QString() : m_combination->unsupportedReason();
 }
 
 // A stored single key outranks whatever the desktop service still holds; the

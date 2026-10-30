@@ -1,15 +1,26 @@
 #include "common/test_suites.h"
 
+#include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/KeywatchSetup.h"
+#include "platform/KeywatchShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "setup/KeywatchProtocol.h"
 
+#include <QFile>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <memory>
+#include <mutex>
+#include <thread>
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 using namespace speecher;
 
@@ -22,6 +33,7 @@ public:
     using GlobalShortcutBinder::GlobalShortcutBinder;
 
     bool supported() const override { return supportedValue; }
+    bool usesDesktopShortcutChooser() const override { return desktopChooser; }
     QString unsupportedReason() const override { return {}; }
     void bind() override { bindCount += 1; }
     ShortcutBinding shortcut() const override { return m_shortcut; }
@@ -52,6 +64,7 @@ public:
     void fireDeactivated() { emit deactivated(); }
 
     bool supportedValue = true;
+    bool desktopChooser = false;
     bool takesSingleKey = false;
     QString refusal = QStringLiteral("no");
     int bindCount = 0;
@@ -59,6 +72,87 @@ public:
 
 private:
     ShortcutBinding m_shortcut;
+};
+
+// Stands in for speecher-keywatchd. It answers on a thread of its own because
+// the binder waits for the reply synchronously: each connection gets the next
+// refusal in line, and the key it asked for is recorded so the test can send
+// that connection key events.
+class FakeKeywatchDaemon {
+public:
+    struct Watch {
+        quint8 keyId;
+        int fd;
+    };
+
+    FakeKeywatchDaemon(const QString &path, QList<keywatch::Refusal> replies)
+        : m_listener(socket(AF_UNIX, SOCK_STREAM, 0))
+    {
+        sockaddr_un address{};
+        address.sun_family = AF_UNIX;
+        qstrncpy(address.sun_path, QFile::encodeName(path).constData(), sizeof(address.sun_path));
+        bind(m_listener, reinterpret_cast<sockaddr *>(&address), sizeof(address));
+        listen(m_listener, 4);
+        m_thread = std::thread([this, replies] {
+            for (const keywatch::Refusal refusal : replies) {
+                const int client = accept(m_listener, nullptr, nullptr);
+                if (client < 0) {
+                    return;
+                }
+                keywatch::WatchRequest request{};
+                if (read(client, &request, sizeof(request)) != sizeof(request)) {
+                    close(client);
+                    return;
+                }
+                const keywatch::WatchReply reply{request.version, quint8(refusal)};
+                (void)write(client, &reply, sizeof(reply));
+                const std::lock_guard lock(m_mutex);
+                m_watches.append({request.keyId, client});
+            }
+        });
+    }
+
+    ~FakeKeywatchDaemon()
+    {
+        shutdown(m_listener, SHUT_RDWR);
+        m_thread.join();
+        close(m_listener);
+        for (const Watch &watch : watches()) {
+            close(watch.fd);
+        }
+    }
+
+    QList<Watch> watches() const
+    {
+        const std::lock_guard lock(m_mutex);
+        return m_watches;
+    }
+
+    static void send(const Watch &watch, bool down, quint64 monotonicUsec)
+    {
+        keywatch::KeyEvent event{};
+        event.down = down ? 1 : 0;
+        event.monotonicUsec = monotonicUsec;
+        QCOMPARE(write(watch.fd, &event, sizeof(event)), qint64(sizeof(event)));
+    }
+
+private:
+    int m_listener;
+    std::thread m_thread;
+    mutable std::mutex m_mutex;
+    QList<Watch> m_watches;
+};
+
+// The real binder over the fake daemon. The probe looks for an installed
+// helper at its system path, so the per-binding check skips it here.
+class DaemonlessKeywatchBinder final : public KeywatchShortcutBinder {
+public:
+    using KeywatchShortcutBinder::KeywatchShortcutBinder;
+
+    QString unsupportedBindingReason(const ShortcutBinding &binding) const override
+    {
+        return SingleKeyShortcutBinder::unsupportedBindingReason(binding);
+    }
 };
 
 } // namespace
@@ -139,6 +233,41 @@ private slots:
         QCOMPARE(keywatch::permittedKeyById(altRight->id)->evdev, quint16(100));
     }
 
+    // The helper refusing a replacement key leaves the shortcut on the old
+    // key, so the old key has to stay watched, not just look bound. Events
+    // carry the daemon's timestamps, so a release this binder reads late
+    // still reports the physical hold.
+    void keywatchKeepsTheOldKeyWhenTheHelperRefusesAReplacement()
+    {
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("keywatch"));
+        FakeKeywatchDaemon daemon(path, {keywatch::Refusal::None, keywatch::Refusal::TooManyRequests,
+                                         keywatch::Refusal::None});
+        SettingsStore settings;
+        const auto forget = qScopeGuard([&] { settings.raw().remove(QStringLiteral("shortcuts/toggleDictation")); });
+        DaemonlessKeywatchBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation),
+                                        nullptr, path);
+        QSignalSpy pressed(&binder, &GlobalShortcutBinder::activated);
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+
+        const ShortcutBinding rightAlt = ShortcutBinding::singleKey(QStringLiteral("AltRight"));
+        QVERIFY(binder.setShortcut(rightAlt));
+        QString error;
+        QVERIFY(!binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("ShiftRight")), &error));
+        QCOMPARE(error, QStringLiteral("The key helper refused the watch: too many requests; try again in a minute."));
+        QCOMPARE(binder.shortcut(), rightAlt);
+
+        QTRY_COMPARE(daemon.watches().size(), 3);
+        const FakeKeywatchDaemon::Watch restored = daemon.watches().at(2);
+        QCOMPARE(restored.keyId, keywatch::permittedKeyByCode("AltRight")->id);
+
+        FakeKeywatchDaemon::send(restored, true, 1'000'000);
+        FakeKeywatchDaemon::send(restored, false, 1'080'000);
+        QTRY_COMPARE(released.count(), 1);
+        QCOMPARE(pressed.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+    }
+
     // The router sends a combination to the desktop service and a single key to
     // the key watcher; setting either kind lets go of the other, since there is
     // one binding.
@@ -162,6 +291,27 @@ private slots:
         // …and the combination binder no longer owns the binding.
         QVERIFY(!combination->shortcut().isSingleKey());
         QCOMPARE(router.unsupportedBindingReason(rightAlt), QString());
+    }
+
+    // X11 outside Plasma: the portal cannot take a combination there, but the
+    // key watcher can take a single key, so the shortcut controls stay and
+    // record the key instead of handing over to the desktop's chooser.
+    void routerIsSupportedWhenOnlyTheSingleKeyBackendIs()
+    {
+        auto *combination = new FakeBinder;
+        combination->supportedValue = false;
+        combination->desktopChooser = true;
+        auto *singleKey = new FakeBinder;
+        singleKey->takesSingleKey = true;
+        RoutingShortcutBinder router(combination, singleKey);
+
+        QVERIFY(router.supported());
+        QVERIFY(router.supportKnown());
+        QVERIFY(!router.usesDesktopShortcutChooser());
+
+        singleKey->supportedValue = false;
+        QVERIFY(!router.supported());
+        QVERIFY(router.usesDesktopShortcutChooser());
     }
 
     // The one-binding invariant across startup and recovery: while a single

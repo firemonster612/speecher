@@ -17,8 +17,9 @@ public:
                           GlobalShortcutBinder *singleKey,
                           QObject *parent = nullptr);
 
-    // The desktop-service answers, so the setup page keeps showing the
-    // desktop's own controls; a single key is asked about per binding.
+    // Supported when either backend can take a binding, so a desktop without
+    // a shortcut service (X11 outside Plasma) still offers a single key. The
+    // desktop's chooser stays in use unless only the single key works.
     bool supported() const override;
     bool supportKnown() const override;
     bool usesDesktopShortcutChooser() const override;

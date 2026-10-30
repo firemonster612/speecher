@@ -191,6 +191,15 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 #endif
 
+    // A native capture (Windows hands over a bitmap) gets the same 2560 px
+    // ceiling as a capture file, keeping its aspect ratio.
+    void capturedImageIsNormalizedToTheSharedCeiling()
+    {
+        QImage source(5120, 1440, QImage::Format_RGB32);
+        source.fill(Qt::darkCyan);
+        QCOMPARE(QImage::fromData(normalizedScreenshot(source)).size(), QSize(2560, 720));
+    }
+
     void screenshotFileIsNormalizedOffTheMainThread()
     {
         // The microphone is read on the main thread, so decoding a

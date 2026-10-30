@@ -2,7 +2,7 @@
 
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"
-#include "recording/RecordingPresentation.h"
+#include "recording/SystemAudioPresentation.h"
 
 #include <QDebug>
 #include <QScopeGuard>
