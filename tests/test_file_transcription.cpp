@@ -403,6 +403,7 @@ private slots:
                                            });
         m_refinedWith.clear();
         m_refinedVocabulary.clear();
+        m_refinedLanguage.clear();
         m_codexes.clear();
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [this](QObject *parent) {
@@ -410,6 +411,7 @@ private slots:
                                                    connect(refiner, &TranscriptRefiner::completed, this, [this, refiner] {
                                                        m_refinedWith = {refiner->lastStyle, refiner->lastTone};
                                                        m_refinedVocabulary = refiner->lastVocabulary;
+                                                       m_refinedLanguage = refiner->lastContext.spokenLanguage;
                                                    });
                                                    refiner->autoComplete = true;
                                                    refiner->autoCompleteText = QStringLiteral("Heard it.");
@@ -728,9 +730,25 @@ private slots:
         QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
     }
 
-    // A fallback hears the file listening for its own Spoken Language.
+    void aFallbackListensForItsOwnSpokenLanguage_data()
+    {
+        QTest::addColumn<QString>("chosen");
+        QTest::addColumn<QString>("batchLanguage");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("chosen") << QStringLiteral("fr") << QString() << QStringLiteral("fr");
+        QTest::newRow("chosen, batch language set") << QStringLiteral("fr") << QStringLiteral("es")
+                                                    << QStringLiteral("fr");
+        QTest::newRow("none chosen, batch language set") << QString() << QStringLiteral("es") << QStringLiteral("es");
+    }
+
+    // A fallback hears the file listening for its own Spoken Language, and
+    // refinement is told that language. A batch's language replaces only the
+    // Spoken Language, not one chosen for the fallback.
     void aFallbackListensForItsOwnSpokenLanguage()
     {
+        QFETCH(QString, chosen);
+        QFETCH(QString, batchLanguage);
+        QFETCH(QString, expected);
         m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
                                            [](QObject *parent) {
                                                auto *speech = new FakeSpeechTranscriber(parent);
@@ -743,16 +761,24 @@ private slots:
         SettingsStore settings;
         settings.setSpeechProvider(QStringLiteral("codex"));
         settings.setSpeechFallbackProviders({QStringLiteral("claude")});
-        settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        if (!chosen.isEmpty()) {
+            settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), chosen}});
+        }
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
         options.speechProviderId = QStringLiteral("codex");
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("light_cleanup");
+        if (!batchLanguage.isEmpty()) {
+            options.spokenLanguage = batchLanguage;
+        }
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
         QCOMPARE(m_script.attempts, 1);
-        QCOMPARE(m_script.language, QStringLiteral("fr"));
+        QCOMPARE(m_script.language, expected);
+        QCOMPARE(m_refinedLanguage, expected);
     }
 
     void theRefinerRenewsOncePerFile_data()
@@ -3474,6 +3500,8 @@ private:
     // Style and tone the last refinement ran with.
     QStringList m_refinedWith;
     QStringList m_refinedVocabulary;
+    // The Spoken Language the last refinement was told.
+    QString m_refinedLanguage;
 };
 
 } // namespace

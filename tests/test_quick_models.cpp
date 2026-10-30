@@ -170,6 +170,17 @@ private slots:
         QCOMPARE(languages(QStringLiteral("claude")).size(), 52);
         QVERIFY(!languages(QStringLiteral("claude")).contains(QStringLiteral("cy")));
         QVERIFY(!languages(QStringLiteral("claude")).contains(QStringLiteral("auto")));
+
+        // What the Speech page's fallback pickers show: whether a service
+        // offers Automatic, and the language it listens for in the chain.
+        AppSettings draft = controller.settings()->dictationSnapshot();
+        draft.speech.fallbackLanguages = {{QStringLiteral("codex"), QStringLiteral("cy")}};
+        controller.settings()->applySnapshot(draft);
+        const QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
+        QVERIFY(codex.value(QStringLiteral("detects")).toBool());
+        QCOMPARE(codex.value(QStringLiteral("spokenLanguage")).toString(), QStringLiteral("cy"));
+        QCOMPARE(entry(models.speechServices(), QStringLiteral("claude")).value(QStringLiteral("spokenLanguage")).toString(),
+                 QStringLiteral("en"));
     }
 
     // Before the probe answers nothing fits, is suggested, estimated or
