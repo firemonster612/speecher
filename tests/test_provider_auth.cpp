@@ -1483,7 +1483,10 @@ private slots:
         QVERIFY(!accounts.at(0).expired && !accounts.at(0).disabled && !accounts.at(0).missing);
         QVERIFY(accounts.at(1).expired && accounts.at(1).disabled);
 
-        settings.setOpenAiCliproxyAccount(QStringLiteral("codex-gone@example.com.json"));
+        settings.edit([](AppSettings &draft) {
+            draft.accounts.openAiCliproxyAccount = QStringLiteral("codex-gone@example.com.json");
+            return true;
+        });
         accounts = signIn.accounts(QStringLiteral("codex"));
         QCOMPARE(accounts.size(), 3);
         QCOMPARE(accounts.last().fileName, QStringLiteral("codex-gone@example.com.json"));

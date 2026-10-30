@@ -41,16 +41,24 @@ const ProviderFailureKind Network = ProviderFailureKind::Network;
 
 // A session over fakes registered under the real ids and labels, with a
 // chain per role. Every fake exists before the session starts, so a test can
-// script it.
+// script it. keyringSecrets are the keys the settings say the keyring holds,
+// marked before anything reads them.
 struct ChainRig {
-    explicit ChainRig(const QStringList &speechChain, const QStringList &refinementChain = {QStringLiteral("none")})
+    explicit ChainRig(const QStringList &speechChain, const QStringList &refinementChain = {QStringLiteral("none")},
+                      const QStringList &keyringSecrets = {})
     {
         settings.raw().clear();
-        settings.setSpokenLanguage(QStringLiteral("en"));
-        settings.setSpeechProvider(speechChain.first());
-        settings.setSpeechFallbackProviders(speechChain.mid(1));
-        settings.setRefinementProvider(refinementChain.first());
-        settings.setRefinementFallbackProviders(refinementChain.mid(1));
+        if (!keyringSecrets.isEmpty()) {
+            settings.raw().setValue(SettingsKeys::SecretsInKeyring, keyringSecrets);
+        }
+        settings.edit([&](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("en");
+            draft.speech.providerId = speechChain.first();
+            draft.speech.fallbackProviderIds = speechChain.mid(1);
+            draft.refinement.providerId = refinementChain.first();
+            draft.refinement.fallbackProviderIds = refinementChain.mid(1);
+            return true;
+        });
         for (const QString &id : speechChain) {
             registerFakeSpeechProvider(registry, &speech[id], id, testLabel(ProviderRole::Speech, id));
             registry.speechProvider(id);
@@ -220,7 +228,7 @@ private slots:
         registerFakeSpeechProvider(rig.registry, &rig.speech[QStringLiteral("local")], QStringLiteral("local"),
                                    QStringLiteral("Local Model"));
         rig.registry.speechProvider(QStringLiteral("local"));
-        rig.settings.setSpokenLanguage(QStringLiteral("ja"));
+        rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("ja"); return true; });
         AppSettings draft = rig.settings.snapshot();
         draft.refinement.defaultWritingProfile = WritingProfile::Personal;
         draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("local");
@@ -310,8 +318,8 @@ private slots:
     // worker; the next provider still starts.
     void aSpeechKeyThatCantBeReadFailsOnlyItsProvider()
     {
-        ChainRig rig({QStringLiteral("endpoint"), QStringLiteral("local")});
-        rig.settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("speech-endpoint-key")});
+        ChainRig rig({QStringLiteral("endpoint"), QStringLiteral("local")}, {QStringLiteral("none")},
+                     {QStringLiteral("speech-endpoint-key")});
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         qputenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS", "250");
         qputenv("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD", "1");
@@ -359,10 +367,10 @@ private slots:
         QFETCH(QString, modelId);
         QFETCH(int, localPrepares);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local"), QStringLiteral("endpoint")});
-        rig.settings.setSpokenLanguage(QStringLiteral("de"));
-        LocalSpeechSettings local = rig.settings.localSpeechSettings();
+        rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("de"); return true; });
+        LocalSpeechSettings local = rig.settings.dictationSnapshot().speech.local;
         local.modelId = modelId;
-        rig.settings.setLocalSpeechSettings(local);
+        rig.settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.speech[QStringLiteral("local")]->prepareFailure =
             ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("no model")};
@@ -377,10 +385,10 @@ private slots:
     void anEnglishOnlyFallbackBehindAutomaticListensForEnglish()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
-        rig.settings.setSpokenLanguage(QStringLiteral("auto"));
-        LocalSpeechSettings local = rig.settings.localSpeechSettings();
+        rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("auto"); return true; });
+        LocalSpeechSettings local = rig.settings.dictationSnapshot().speech.local;
         local.modelId = QStringLiteral("parakeet");
-        rig.settings.setLocalSpeechSettings(local);
+        rig.settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
         LiveFacts facts;
         facts.downloadedModels = {QStringLiteral("parakeet")};
         QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), rig.settings.dictationSnapshot(), facts),
@@ -397,8 +405,11 @@ private slots:
     void refinementGetsTheLanguageTheFallbackHeard()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
-        rig.settings.setSpokenLanguage(QStringLiteral("de"));
-        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        rig.settings.edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("de");
+            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            return true;
+        });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
@@ -414,8 +425,11 @@ private slots:
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")},
                      {QStringLiteral("openai")});
-        rig.settings.setSpokenLanguage(QStringLiteral("de"));
-        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("fr")}});
+        rig.settings.edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("de");
+            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            return true;
+        });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.speech[QStringLiteral("endpoint")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
@@ -433,7 +447,7 @@ private slots:
     void theSessionAndFallbackProblemAgreeOnALanguageSkip()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
-        rig.settings.setSpokenLanguage(QStringLiteral("af"));
+        rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("af"); return true; });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);
@@ -1095,7 +1109,7 @@ private slots:
     {
         QFETCH(bool, primaryReads);
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
-        rig.settings.setIncludeScreenshotContext(true);
+        rig.settings.edit([](AppSettings &draft) { draft.refinement.includeScreenshotContext = true; return true; });
         // Registered again with whether each reads it.
         for (const QString &id : {QStringLiteral("openai"), QStringLiteral("local")}) {
             registerFakeRefiner(rig.registry, &rig.refiners[id], id, testLabel(ProviderRole::Refinement, id),
@@ -1173,7 +1187,7 @@ private slots:
         QFETCH(int, reachability);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint")},
                      {QStringLiteral("openai"), QStringLiteral("local")});
-        rig.settings.setInsightsEnabled(true);
+        rig.settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
         rig.session->setReachability(Reachability(reachability));
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.refiners[QStringLiteral("openai")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
@@ -1198,7 +1212,7 @@ private slots:
     void aSwitchMidDictationSaysWordsMayBeMissing()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
-        rig.settings.setInsightsEnabled(true);
+        rig.settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         QSignalSpy recorded(rig.session.get(), &DictationSession::dictationRecorded);
         rig.listen();
@@ -1311,7 +1325,7 @@ private slots:
     void aTurnedDownSignInOffersAccountsAndStaysUpToBeRead()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
-        rig.settings.setCompletionStatusDurationMs(100);
+        rig.settings.edit([](AppSettings &draft) { draft.output.completionStatusDurationMs = 100; return true; });
         rig.speech[QStringLiteral("codex")]->prepareFailure =
             ProviderFailure{ProviderFailureKind::Authentication, QStringLiteral("expired")};
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
@@ -1350,7 +1364,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;

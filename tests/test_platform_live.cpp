@@ -356,11 +356,11 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        AudioCaptureSettings audio = settings.audioCaptureSettings();
+        AudioCaptureSettings audio = settings.dictationSnapshot().audio;
         audio.deviceId = QStringLiteral("missing-live-test-device");
         audio.mode = QStringLiteral("on_demand");
         audio.vadEnabled = false;
-        settings.setAudioCaptureSettings(audio);
+        settings.edit([&](AppSettings &draft) { draft.audio = audio; return true; });
 
         QtAudioInput capture(audio);
         QSignalSpy chunks(&capture, &AudioInput::audioChunk);

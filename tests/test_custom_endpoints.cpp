@@ -1870,17 +1870,20 @@ private slots:
             reset.raw().clear();
         }
         SettingsStore settings;
-        settings.setRefinementProvider(refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner);
-        settings.setSpeechProvider(speechProvider);
-        settings.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
-        settings.setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
-        settings.setCliproxyBaseUrl(remote ? QStringLiteral("http://proxy.example:8317") : QString());
+        settings.raw().setValue(SettingsKeys::SecretsInKeyring,
+            QStringList{QStringLiteral("cliproxy-api-key"), QStringLiteral("speech-endpoint-key")});
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.providerId = refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner;
+            draft.speech.providerId = speechProvider;
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
+            draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
+            draft.refinement.cliproxyBaseUrl = remote ? QStringLiteral("http://proxy.example:8317") : QString();
+            return true;
+        });
         settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
                                 refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));
         settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, refiner == QStringLiteral("endpoint-inherited"));
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
-        settings.raw().setValue(SettingsKeys::SecretsInKeyring,
-            QStringList{QStringLiteral("cliproxy-api-key"), QStringLiteral("speech-endpoint-key")});
         settings.raw().sync();
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         qputenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS", "250");
@@ -1948,8 +1951,11 @@ private slots:
         {
             SettingsStore saved;
             saved.raw().clear();
-            saved.setSpeechProvider(QStringLiteral("endpoint"));
-            saved.setRefinementProvider(QStringLiteral("none"));
+            saved.edit([](AppSettings &draft) {
+                draft.speech.providerId = QStringLiteral("endpoint");
+                draft.refinement.providerId = QStringLiteral("none");
+                return true;
+            });
             saved.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
             QCOMPARE(saved.secrets()->saveSecret(SecretStore::Secret::SpeechEndpointKey, QStringLiteral("speech-key")),
                      SaveResult::Stored);
@@ -1999,7 +2005,7 @@ private slots:
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
 
         SettingsStore settings;
-        QVERIFY(settings.speechProvider() != QStringLiteral("endpoint"));
+        QVERIFY(settings.dictationSnapshot().speech.providerId != QStringLiteral("endpoint"));
         settings.dictationSnapshot();
         QVERIFY2(settings.secrets()->lastError().isEmpty(), qPrintable(settings.secrets()->lastError()));
 
@@ -2010,7 +2016,7 @@ private slots:
         draft.speech.providerId = QStringLiteral("endpoint");
         draft.speech.endpoint.baseUrl = QStringLiteral("http://whisper.local:8080");
         settings.applySnapshot(draft);
-        QCOMPARE(settings.speechProvider(), QStringLiteral("endpoint"));
+        QCOMPARE(settings.dictationSnapshot().speech.providerId, QStringLiteral("endpoint"));
         QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
                  QStringList{QStringLiteral("speech-endpoint-key")});
         QVERIFY(!settings.raw().contains(SettingsKeys::SpeechEndpointApiKey));

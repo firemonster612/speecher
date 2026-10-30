@@ -107,9 +107,9 @@ private slots:
         settings.set(QStringLiteral("speechFallbackList"), QVariantList{QStringLiteral("codex")});
 
         SettingsStore another;
-        QCOMPARE(another.previewWords(), 12);
-        QCOMPARE(another.theme(), QStringLiteral("dark"));
-        QCOMPARE(another.speechFallbackProviders(), QStringList{QStringLiteral("codex")});
+        QCOMPARE(another.dictationSnapshot().ui.previewWords, 12);
+        QCOMPARE(another.dictationSnapshot().ui.theme, QStringLiteral("dark"));
+        QCOMPARE(another.dictationSnapshot().speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
         QCOMPARE(settings.values().value(QStringLiteral("previewWords")).toInt(), 12);
         QCOMPARE(settings.values().value(QStringLiteral("themeControl")).toString(), QStringLiteral("dark"));
         QVERIFY(changed.count() >= 1);
@@ -126,13 +126,13 @@ private slots:
         settings.set(QStringLiteral("localIdleUnload"), QStringLiteral("60"));
 
         SettingsStore another;
-        QCOMPARE(another.shortcutActivationMode(), ShortcutActivationMode::PushToTalk);
-        QVERIFY(!another.anthropicFastMode());
-        QCOMPARE(another.refinementEndpointSettings().preset, QStringLiteral("cliproxy"));
-        QCOMPARE(another.localSpeechSettings().idleUnloadMinutes, 60);
+        QCOMPARE(another.dictationSnapshot().shortcutActivationMode, ShortcutActivationMode::PushToTalk);
+        QVERIFY(!another.dictationSnapshot().refinement.anthropicFastMode);
+        QCOMPARE(another.dictationSnapshot().refinement.endpoint.preset, QStringLiteral("cliproxy"));
+        QCOMPARE(another.dictationSnapshot().speech.local.idleUnloadMinutes, 60);
 
         settings.set(QStringLiteral("refinementEndpointServer"), QStringLiteral("custom"));
-        QCOMPARE(SettingsStore().refinementEndpointSettings().preset, QString());
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.endpoint.preset, QString());
         QCOMPARE(settings.values().value(QStringLiteral("refinementEndpointServer")).toString(), QStringLiteral("custom"));
         QCOMPARE(settings.values().value(QStringLiteral("anthropicFastMode")).toString(), QStringLiteral("standard"));
     }
@@ -143,15 +143,15 @@ private slots:
         QuickSettings settings(&controller);
 
         settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("1440"));
-        QCOMPARE(SettingsStore().updateCheckIntervalMinutes(), 1440);
+        QCOMPARE(SettingsStore().dictationSnapshot().updates.checkIntervalMinutes, 1440);
         QCOMPARE(settings.values().value(QStringLiteral("updateCheckInterval")).toString(), QStringLiteral("1440"));
 
         settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("custom"));
         settings.set(QStringLiteral("updateCheckCustomInterval"),
                      QVariantMap{{QStringLiteral("number"), 3}, {QStringLiteral("unit"), QStringLiteral("days")}});
         SettingsStore another;
-        QCOMPARE(another.updateCheckIntervalMinutes(), 3 * 24 * 60);
-        QCOMPARE(another.updateCheckIntervalUnit(), QStringLiteral("days"));
+        QCOMPARE(another.dictationSnapshot().updates.checkIntervalMinutes, 3 * 24 * 60);
+        QCOMPARE(another.dictationSnapshot().updates.checkIntervalUnit, QStringLiteral("days"));
         QCOMPARE(settings.values().value(QStringLiteral("updateCheckInterval")).toString(), QStringLiteral("custom"));
         const QVariantMap custom = settings.values().value(QStringLiteral("updateCheckCustomInterval")).toMap();
         QCOMPARE(custom.value(QStringLiteral("number")).toInt(), 3);
@@ -201,7 +201,7 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("resultDuration")).toInt(), 500);
 
         settings.set(QStringLiteral("resultDuration"), 1500.0);
-        QCOMPARE(SettingsStore().completionStatusDurationMs(), 1500);
+        QCOMPARE(SettingsStore().dictationSnapshot().output.completionStatusDurationMs, 1500);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> duration = schemaRow(engine, "resultDuration");
@@ -255,9 +255,9 @@ private slots:
 
         // LocalSetup saves a model it moves dictation to without a snapshot,
         // as deleting the one in use does, and the row follows its news.
-        LocalSpeechSettings local = controller.settings()->localSpeechSettings();
+        LocalSpeechSettings local = controller.settings()->dictationSnapshot().speech.local;
         local.modelId = QStringLiteral("parakeet");
-        controller.settings()->setLocalSpeechSettings(local);
+        controller.settings()->edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
         emit controller.localSetup()->changed();
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("parakeet"));
     }
@@ -295,7 +295,7 @@ private slots:
         QuickSettings settings(&controller);
         // A copy, since the list it was found in goes with the lambda.
         const auto rule = [](PasteRuleScope scope, const char *match) -> std::optional<PasteRule> {
-            const QList<PasteRule> rules = SettingsStore().pasteRules();
+            const QList<PasteRule> rules = SettingsStore().dictationSnapshot().output.pasteRules;
             const PasteRule *found = findPasteRule(rules, scope, QLatin1String(match));
             return found ? std::optional(*found) : std::nullopt;
         };
@@ -327,7 +327,7 @@ private slots:
         // Two rules for one app are refused with core's reason, and nothing is saved.
         settings.set(QStringLiteral("applicationPasteRules"), apps + apps);
         QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
-        QCOMPARE(SettingsStore().pasteRules().size(), 3);
+        QCOMPARE(SettingsStore().dictationSnapshot().output.pasteRules.size(), 3);
         settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
         QVERIFY(!rule(PasteRuleScope::Application, "org.kde.konsole"));
         QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
@@ -374,11 +374,11 @@ private slots:
         QCOMPARE(saved.count(), 0);
         QTest::mouseRelease(window, Qt::LeftButton, {}, end.toPoint());
         QCOMPARE(saved.count(), 1);
-        QCOMPARE(SettingsStore().audioCaptureSettings().preRollMs, slider->property("value").toInt());
+        QCOMPARE(SettingsStore().dictationSnapshot().audio.preRollMs, slider->property("value").toInt());
 
         QTest::keyClick(window, Qt::Key_Left);
         QCOMPARE(saved.count(), 2);
-        QCOMPARE(SettingsStore().audioCaptureSettings().preRollMs, slider->property("value").toInt());
+        QCOMPARE(SettingsStore().dictationSnapshot().audio.preRollMs, slider->property("value").toInt());
     }
 
     void changesSavedElsewhereShowUp()
@@ -415,10 +415,10 @@ private slots:
         QVERIFY2(!result.isError(), qPrintable(result.toString()));
 
         SettingsStore another;
-        QCOMPARE(another.speechFallbackProviders(), QStringList{QStringLiteral("codex")});
-        QCOMPARE(another.audioCaptureSettings().preRollMs, 300);
-        QCOMPARE(another.updateCheckIntervalMinutes(), 120);
-        QCOMPARE(another.updateCheckIntervalUnit(), QStringLiteral("hours"));
+        QCOMPARE(another.dictationSnapshot().speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
+        QCOMPARE(another.dictationSnapshot().audio.preRollMs, 300);
+        QCOMPARE(another.dictationSnapshot().updates.checkIntervalMinutes, 120);
+        QCOMPARE(another.dictationSnapshot().updates.checkIntervalUnit, QStringLiteral("hours"));
         QCOMPARE(result.toVariant().toStringList(), QStringList{QStringLiteral("codex")});
     }
 

@@ -421,11 +421,14 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
-        settings.setCliproxyOauthDir(credentials.path());
-        settings.setCodexFinalRetranscribe(retranscribe);
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
+            draft.accounts.cliproxyOauthDirConfigured = credentials.path();
+            draft.speech.codexFinalRetranscribe = retranscribe;
+            return true;
+        });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;

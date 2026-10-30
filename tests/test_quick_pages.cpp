@@ -709,9 +709,9 @@ private slots:
         ui.showSetupAssistant(SetupAssistantPage::All);
         QQuickWindow *setup = openWindow("SetupAssistant");
         QVERIFY(setup);
-        QVERIFY(!controller.settings()->setupCompleted());
+        QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
         QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
-        QVERIFY(controller.settings()->setupCompleted());
+        QVERIFY(controller.settings()->dictationSnapshot().setupCompleted);
     }
 
     void everyPopupStateLoads_data() { themes(); }

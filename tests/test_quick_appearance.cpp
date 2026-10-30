@@ -385,12 +385,12 @@ private slots:
         settings.set(QStringLiteral("roundedCorners"), false);
 
         SettingsStore another;
-        QCOMPARE(another.colorScheme(), QStringLiteral("installed:BreezeDark"));
-        QCOMPARE(another.translucency(), false);
-        QCOMPARE(another.windowLayout(), QStringLiteral("split"));
-        QCOMPARE(another.roundedCorners(), false);
-        another.setWindowLayout(QStringLiteral("sideways"));
-        QCOMPARE(another.windowLayout(), QStringLiteral("framed"));
+        QCOMPARE(another.dictationSnapshot().ui.colorScheme, QStringLiteral("installed:BreezeDark"));
+        QCOMPARE(another.dictationSnapshot().ui.translucency, false);
+        QCOMPARE(another.dictationSnapshot().ui.windowLayout, QStringLiteral("split"));
+        QCOMPARE(another.dictationSnapshot().ui.roundedCorners, false);
+        another.edit([](AppSettings &draft) { draft.ui.windowLayout = QStringLiteral("sideways"); return true; });
+        QCOMPARE(another.dictationSnapshot().ui.windowLayout, QStringLiteral("framed"));
     }
 
     void systemColorsFollowPlasmasKdeglobals()

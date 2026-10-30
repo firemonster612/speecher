@@ -238,10 +238,13 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setSpeechProvider(QStringLiteral("claude"));
-        settings.setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
-        settings.setCliproxyOauthDir(credentials.path());
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.speech.providerId = QStringLiteral("claude");
+            draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
+            draft.accounts.cliproxyOauthDirConfigured = credentials.path();
+            return true;
+        });
         settings.raw().setValue(SettingsKeys::ClaudeEndpointBase,
                                 QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
         settings.raw().setValue(SettingsKeys::ClaudeVoicePath, QStringLiteral("/voice"));

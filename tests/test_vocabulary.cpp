@@ -20,6 +20,16 @@ QStringList vocabularyTermsOf(const QList<VocabularyEntry> &entries)
     return terms;
 }
 
+// Terms as someone types them in: manual key terms.
+QList<VocabularyEntry> manualTerms(const QStringList &terms)
+{
+    QList<VocabularyEntry> entries;
+    for (const QString &term : terms) {
+        entries.append({term});
+    }
+    return entries;
+}
+
 } // namespace
 
 class VocabularyTests : public QObject {
@@ -54,8 +64,8 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        settings.setCustomVocabulary(tooManyTerms);
-        QCOMPARE(settings.customVocabulary().size(), VocabularyLimit::maxKeyterms);
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = manualTerms(tooManyTerms); return true; });
+        QCOMPARE(settings.dictationSnapshot().speech.vocabulary.size(), VocabularyLimit::maxKeyterms);
     }
 
     void everyTermIsKeptWhileOnlyTheSentSubsetIsCapped()
@@ -73,9 +83,9 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        settings.setVocabularyEntries(many);
-        QCOMPARE(settings.vocabularyEntries().size(), 183);
-        const QStringList sent = settings.customVocabulary();
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = many; return true; });
+        QCOMPARE(settings.dictationSnapshot().vocabulary.size(), 183);
+        const QStringList sent = settings.dictationSnapshot().speech.vocabulary;
         QCOMPARE(sent.size(), VocabularyLimit::maxKeyterms);
         QCOMPARE(sent.first(), QStringLiteral("zzz starred"));
 
@@ -105,10 +115,13 @@ private slots:
         for (int i = 0; i < VocabularyLimit::maxKeyterms; ++i) {
             terms << QStringLiteral("term%1").arg(i);
         }
-        settings.setCustomVocabulary(terms);
-        settings.setLearnedCorrections({{QStringLiteral("one"), QStringLiteral("githab"),
-                                         QStringLiteral("GitHub"), QStringLiteral("editor"),
-                                         100, 0.8, true, 1, 100}});
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = manualTerms(terms); return true; });
+        settings.edit([](AppSettings &draft) {
+            draft.learnedCorrections = {{QStringLiteral("one"), QStringLiteral("githab"),
+                                             QStringLiteral("GitHub"), QStringLiteral("editor"),
+                                             100, 0.8, true, 1, 100}};
+            return true;
+        });
 
         // At the cap, the correction must not push the request over it; the
         // person's own terms win.
@@ -117,7 +130,7 @@ private slots:
         QVERIFY(!sent.contains(QStringLiteral("GitHub")));
 
         // Under the cap the correction rides along.
-        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
         QVERIFY(settings.snapshot().speech.vocabulary.contains(QStringLiteral("GitHub")));
 
         // The token cap holds too: fewer than 100 terms but exactly 500
@@ -127,7 +140,7 @@ private slots:
             wordyTerms << QStringLiteral("term%1 two three four five six seven eight nine ten").arg(i);
         }
         QCOMPARE(VocabularyLimit::tokenCount(wordyTerms), VocabularyLimit::maxTokens);
-        settings.setCustomVocabulary(wordyTerms);
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = manualTerms(wordyTerms); return true; });
         const QStringList wordySent = settings.snapshot().speech.vocabulary;
         QVERIFY(VocabularyLimit::tokenCount(wordySent) <= VocabularyLimit::maxTokens);
         QVERIFY(!wordySent.contains(QStringLiteral("GitHub")));
@@ -161,7 +174,10 @@ private slots:
         settings.raw().clear();
         VocabularyEntry limited{QStringLiteral("pnpm")};
         limited.profiles = {QStringLiteral("work")};
-        settings.setVocabularyEntries({{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}, limited});
+        settings.edit([&](AppSettings &draft) {
+            draft.vocabulary = {{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}, limited};
+            return true;
+        });
         QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
 
         // A term limited to some Writing Profiles is already listed.
@@ -169,7 +185,7 @@ private slots:
                                               QStringLiteral("file session"), QStringLiteral("PNPM")}),
                  QStringList({QStringLiteral("kwin"), QStringLiteral("file session"), QStringLiteral("PNPM")}));
         QCOMPARE(added.count(), 1);
-        const QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        const QList<VocabularyEntry> entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(vocabularyTermsOf(entries),
                  QStringList({QStringLiteral("KWin"), QStringLiteral("File Session"), QStringLiteral("pnpm")}));
         QCOMPARE(entries.first().source, QStringLiteral("csv"));
@@ -190,7 +206,7 @@ private slots:
 #endif
         SettingsStore settings;
         settings.raw().clear();
-        settings.setVocabularyEntries({{QStringLiteral("KWin")}});
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("KWin")}}; return true; });
         settings.raw().sync();
         QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
         QFile file(settings.raw().fileName());
@@ -199,12 +215,12 @@ private slots:
         QVERIFY(file.setPermissions(QFile::ReadOwner));
 
         QCOMPARE(settings.addVocabularyTerms({QStringLiteral("pnpm")}), std::nullopt);
-        QCOMPARE(vocabularyTermsOf(settings.vocabularyEntries()), QStringList({QStringLiteral("KWin")}));
+        QCOMPARE(vocabularyTermsOf(settings.dictationSnapshot().vocabulary), QStringList({QStringLiteral("KWin")}));
         QCOMPARE(added.count(), 0);
 
         QVERIFY(file.setPermissions(permissions));
         QCOMPARE(settings.addVocabularyTerms({QStringLiteral("pnpm")}), QStringList());
-        QCOMPARE(vocabularyTermsOf(settings.vocabularyEntries()),
+        QCOMPARE(vocabularyTermsOf(settings.dictationSnapshot().vocabulary),
                  QStringList({QStringLiteral("KWin"), QStringLiteral("pnpm")}));
         QCOMPARE(added.count(), 1);
     }
@@ -213,13 +229,16 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setVocabularyEntries({
-            {QStringLiteral("KWin"), QStringLiteral("manual"), true, 2, 10},
-            {QStringLiteral("kwin"), QStringLiteral("csv"), false, 7, 20},
-            {QStringLiteral("Wayland"), QStringLiteral("manual"), false, 0, 0},
+        settings.edit([](AppSettings &draft) {
+            draft.vocabulary = {
+                {QStringLiteral("KWin"), QStringLiteral("manual"), true, 2, 10},
+                {QStringLiteral("kwin"), QStringLiteral("csv"), false, 7, 20},
+                {QStringLiteral("Wayland"), QStringLiteral("manual"), false, 0, 0},
+            };
+            return true;
         });
 
-        QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QList<VocabularyEntry> entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(entries.size(), 2);
         QCOMPARE(entries.first().term, QStringLiteral("KWin"));
         QVERIFY(entries.first().starred);
@@ -227,7 +246,7 @@ private slots:
         QCOMPARE(entries.first().lastUsedMs, 20);
 
         settings.recordVocabularyUsage(QStringLiteral("KWin works on Wayland."));
-        entries = settings.vocabularyEntries();
+        entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(entries.size(), 2);
         QCOMPARE(entries.at(0).frequency, 8);
         QCOMPARE(entries.at(1).frequency, 1);
@@ -256,7 +275,7 @@ private slots:
         QList<WritingProfileSettings> profiles = defaultWritingProfileSettings();
         profiles.append({QStringLiteral("custom_standup"), QStringLiteral("balanced"), QStringLiteral("none"),
                          QString(), QStringLiteral("Standup")});
-        settings.setWritingProfileSettings(profiles);
+        settings.edit([&](AppSettings &draft) { draft.refinement.writingProfiles = profiles; return true; });
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.context = QStringLiteral("  The container platform.\n");
         kubernetes.profiles = {QStringLiteral("work"), QStringLiteral("custom_standup")};
@@ -264,9 +283,9 @@ private slots:
         VocabularyEntry lowercase{QStringLiteral("kubernetes")};
         VocabularyEntry grafana{QStringLiteral("Grafana")};
         grafana.profiles = {QStringLiteral("custom_standup")};
-        settings.setVocabularyEntries({kubernetes, lowercase, grafana});
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = {kubernetes, lowercase, grafana}; return true; });
 
-        QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QList<VocabularyEntry> entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(vocabularyTermsOf(entries), (QStringList{QStringLiteral("Grafana"), QStringLiteral("Kubernetes")}));
         QCOMPARE(entries.at(1).context, QStringLiteral("The container platform."));
         QCOMPARE(entries.at(1).profiles, (QStringList{QStringLiteral("work"), QStringLiteral("custom_standup")}));
@@ -275,15 +294,21 @@ private slots:
         // stays off, even when an import names it again.
         QVERIFY(entries.at(0).keyTerm);
         entries[0].keyTerm = false;
-        settings.setVocabularyEntries(entries + QList<VocabularyEntry>{{QStringLiteral("grafana")}});
-        QVERIFY(!settings.vocabularyEntries().at(0).keyTerm);
+        settings.edit([&](AppSettings &draft) {
+            draft.vocabulary = entries + QList<VocabularyEntry>{{QStringLiteral("grafana")}};
+            return true;
+        });
+        QVERIFY(!settings.dictationSnapshot().vocabulary.at(0).keyTerm);
 
-        settings.setWritingProfileSettings(defaultWritingProfileSettings());
-        entries = settings.vocabularyEntries();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.writingProfiles = defaultWritingProfileSettings();
+            return true;
+        });
+        entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(entries.at(0).profiles, QStringList());
         // Recreated under the same id, the profile starts with no terms.
-        settings.setWritingProfileSettings(profiles);
-        entries = settings.vocabularyEntries();
+        settings.edit([&](AppSettings &draft) { draft.refinement.writingProfiles = profiles; return true; });
+        entries = settings.dictationSnapshot().vocabulary;
         QCOMPARE(entries.at(0).profiles, QStringList());
         QCOMPARE(entries.at(1).profiles, QStringList{QStringLiteral("work")});
 
@@ -301,15 +326,18 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setVocabularyEntries({
-            {QStringLiteral("cat"), QStringLiteral("manual"), false, 0, 0},
-            {QStringLiteral("go"), QStringLiteral("manual"), false, 0, 0},
-            {QStringLiteral("New York"), QStringLiteral("manual"), false, 0, 0},
-            {QStringLiteral("東京"), QStringLiteral("manual"), false, 0, 0},
+        settings.edit([](AppSettings &draft) {
+            draft.vocabulary = {
+                {QStringLiteral("cat"), QStringLiteral("manual"), false, 0, 0},
+                {QStringLiteral("go"), QStringLiteral("manual"), false, 0, 0},
+                {QStringLiteral("New York"), QStringLiteral("manual"), false, 0, 0},
+                {QStringLiteral("東京"), QStringLiteral("manual"), false, 0, 0},
+            };
+            return true;
         });
 
         settings.recordVocabularyUsage(QStringLiteral("Education is ongoing near 東京駅 and New\nYork."));
-        const QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        const QList<VocabularyEntry> entries = settings.dictationSnapshot().vocabulary;
         const auto frequency = [&entries](const QString &term) {
             const auto entry = std::find_if(entries.cbegin(), entries.cend(), [&term](const auto &candidate) {
                 return candidate.term == term;
@@ -323,7 +351,7 @@ private slots:
         QCOMPARE(frequency(QStringLiteral("東京")), 1);
 
         settings.recordVocabularyUsage(QStringLiteral("A cat, ready to go!"));
-        const QList<VocabularyEntry> updated = settings.vocabularyEntries();
+        const QList<VocabularyEntry> updated = settings.dictationSnapshot().vocabulary;
         const auto updatedFrequency = [&updated](const QString &term) {
             const auto entry = std::find_if(updated.cbegin(), updated.cend(), [&term](const auto &candidate) {
                 return candidate.term == term;

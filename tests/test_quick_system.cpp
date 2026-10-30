@@ -205,7 +205,7 @@ private slots:
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("state")).toString(), QStringLiteral("working"));
         QTRY_COMPARE(system.virtualKeyboardTest(), QStringLiteral("ready"));
         QCOMPARE(keyboard.calls, (QStringList{QStringLiteral("install"), QStringLiteral("start")}));
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
 
         // What arrives before a run, or other text, turns nothing on.
         system.virtualKeyboardTestReceived(VirtualKeyboardSetup::testText());
@@ -213,16 +213,16 @@ private slots:
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("typing"));
         QTRY_VERIFY(keyboard.calls.contains(QStringLiteral("type ") + VirtualKeyboardSetup::testText()));
         system.virtualKeyboardTestReceived(QStringLiteral("speecher"));
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
 
         system.virtualKeyboardTestReceived(VirtualKeyboardSetup::testText());
-        QVERIFY(SettingsStore().ydotoolEnabled());
+        QVERIFY(SettingsStore().dictationSnapshot().output.ydotoolEnabled);
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("state")).toString(), QStringLiteral("ok"));
         QCOMPARE(system.virtualKeyboardActions(), (QStringList{QStringLiteral("disable"), QStringLiteral("remove")}));
 
         system.disableVirtualKeyboard();
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("disabled"));
         QCOMPARE(keyboardCheck(system).value(QStringLiteral("fix")).toString(), QStringLiteral("enable"));
     }
@@ -244,14 +244,14 @@ private slots:
         system.runVirtualKeyboardTest();
         QTRY_COMPARE_WITH_TIMEOUT(system.virtualKeyboardTest(), QStringLiteral("missed"),
                                   VirtualKeyboardSetup::testArrivalMs * 3);
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
 
         // A keyboard that can't type says so, and stays off.
         keyboard.typeSucceeds = false;
         system.runVirtualKeyboardTest();
         QTRY_COMPARE(keyboardFailures(system), QVariantList{failure("type", QString())});
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("ready"));
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
     }
 
     // Declining the password prompt leaves everything as it was, and says why.
@@ -286,7 +286,7 @@ private slots:
         QVERIFY(system.virtualKeyboardActions().isEmpty());
         QTRY_COMPARE(keyboardCheck(system).value(QStringLiteral("reason")).toString(), QStringLiteral("notInstalled"));
         QCOMPARE(keyboard.calls, (QStringList{QStringLiteral("stop"), QStringLiteral("remove")}));
-        QVERIFY(!SettingsStore().ydotoolEnabled());
+        QVERIFY(!SettingsStore().dictationSnapshot().output.ydotoolEnabled);
         QVERIFY(keyboardFailures(system).isEmpty());
 
         // A helper that fails keeps the setting and names the failure.
@@ -297,7 +297,7 @@ private slots:
         SettingsStore().setYdotoolEnabled(true);
         system.removeVirtualKeyboard();
         QTRY_COMPARE(keyboardFailures(system), QVariantList{failure("remove", QStringLiteral("pkexec failed"))});
-        QVERIFY(SettingsStore().ydotoolEnabled());
+        QVERIFY(SettingsStore().dictationSnapshot().output.ydotoolEnabled);
     }
 
     // Only the setup assistant's own setup makes the output method Automatic,
@@ -308,7 +308,7 @@ private slots:
         const QString ydotool = QString::fromLatin1(OutputMethod::Ydotool);
         // The output method after setting up a keyboard that isn't there yet.
         const auto afterSetUp = [&controller, &ydotool](bool fromSetup, bool helperSucceeds) {
-            controller.settings()->setOutputMethod(ydotool);
+            controller.settings()->edit([&](AppSettings &draft) { draft.output.method = ydotool; return true; });
             FakeKeyboard keyboard;
             keyboard.helperSucceeds = helperSucceeds;
             StandInSystem standIn(&controller, keyboard);
@@ -318,7 +318,7 @@ private slots:
             const bool finished = QTest::qWaitFor([&system] {
                 return keyboardCheck(system).value(QStringLiteral("state")).toString() != QLatin1String("working");
             });
-            return finished ? SettingsStore().outputMethod() : QStringLiteral("still setting up");
+            return finished ? SettingsStore().dictationSnapshot().output.method : QStringLiteral("still setting up");
         };
         QCOMPARE(afterSetUp(false, true), ydotool);
         QCOMPARE(afterSetUp(true, true), QString::fromLatin1(OutputMethod::Automatic));
@@ -465,9 +465,9 @@ private slots:
         QCoreApplication::processEvents();
         controller.settings()->raw().sync();
         QVERIFY(!QFile::exists(file));
-        QVERIFY(controller.settings()->ydotoolEnabled());
+        QVERIFY(controller.settings()->dictationSnapshot().output.ydotoolEnabled);
         // A reader made afterwards, as a provider check makes one.
-        { SettingsStore reader; Q_UNUSED(reader.ydotoolEnabled()); }
+        { SettingsStore reader; Q_UNUSED(reader.dictationSnapshot().output.ydotoolEnabled); }
         QVERIFY(!QFile::exists(file));
     }
 
@@ -480,13 +480,16 @@ private slots:
         SpeecherRemoval::Steps steps = quietRemoval();
         QString methodAtStart;
         steps.removeDesktopIntegration = [&controller, &methodAtStart] {
-            methodAtStart = controller.settings()->outputMethod();
+            methodAtStart = controller.settings()->dictationSnapshot().output.method;
             return DesktopIntegrationRemoval{};
         };
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
         StandInSystem standIn(&controller, keyboard, steps);
         QuickSystem &system = standIn.system;
-        controller.settings()->setOutputMethod(QStringLiteral("clipboard"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.output.method = QStringLiteral("clipboard");
+            return true;
+        });
         const QString file = controller.settings()->raw().fileName();
 
         system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));

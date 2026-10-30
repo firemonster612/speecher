@@ -148,7 +148,7 @@ private slots:
 
     void clickOpensSpeecherAndSettingsOpensSettings()
     {
-        SettingsStore().setSetupCompleted(true);
+        SettingsStore().edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         ApplicationController controller(true);
         WindowRequests windows;
         controller.setFrontEnd(&windows);
