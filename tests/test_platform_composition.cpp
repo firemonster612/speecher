@@ -9,6 +9,7 @@
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
 #include "app/IpcCommandHandler.h"
+#include "app/LogFile.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -1743,6 +1744,31 @@ private slots:
         const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
         QCOMPARE(parse({QStringLiteral("--follow")}).exitCode, 2);
         QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
+    }
+
+    // Past its limit the log moves aside, replacing the older one, so two
+    // files near the limit are all it ever takes.
+    void logRotatesPastItsLimit()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("speecher.log"));
+        const auto read = [](const QString &file) {
+            QFile log(file);
+            return log.open(QIODevice::ReadOnly) ? QString::fromUtf8(log.readAll()) : QString();
+        };
+        {
+            LogFile log(path, 100);
+            log.write(QtInfoMsg, QString(100, QLatin1Char('a')));
+            log.write(QtInfoMsg, QStringLiteral("second"));
+            log.write(QtInfoMsg, QString(100, QLatin1Char('b')));
+            log.write(QtWarningMsg, QStringLiteral("third"));
+        }
+        QVERIFY(read(path).endsWith(QStringLiteral(" warning third\n")));
+        QCOMPARE(read(path).count(QLatin1Char('\n')), 1);
+        const QString previous = read(path + QStringLiteral(".1"));
+        QVERIFY(previous.contains(QStringLiteral("second")));
+        QVERIFY(previous.contains(QStringLiteral("bbb")));
+        QVERIFY(!previous.contains(QStringLiteral("aaa")));
     }
 
     // Every usage mistake prints its message, then --help, and exits 2. An

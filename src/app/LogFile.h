@@ -1,0 +1,28 @@
+#pragma once
+
+#include <QFile>
+#include <QMutex>
+#include <QString>
+#include <QtGlobal>
+
+namespace speecher {
+
+// speecher.log: a timestamped line for each message of a Speecher process.
+// It is kept to two files: once the log passes its size limit it moves to
+// path.1, replacing the older one, and a new log starts.
+class LogFile {
+public:
+    LogFile(const QString &path, qint64 maxBytes);
+
+    // Safe from any thread. Does nothing when the log could not be opened.
+    void write(QtMsgType type, const QString &message);
+
+private:
+    void rotateIfFull();
+
+    QMutex m_mutex;
+    QFile m_file;
+    const qint64 m_maxBytes;
+};
+
+} // namespace speecher

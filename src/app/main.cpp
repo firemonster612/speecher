@@ -6,6 +6,7 @@
 #include "app/CliClient.h"
 #include "app/CommandLine.h"
 #include "app/IpcCommandHandler.h"
+#include "app/LogFile.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/ProvidersCommand.h"
@@ -23,19 +24,15 @@
 #endif
 
 #include <QApplication>
-#include <QDateTime>
 #ifdef Q_OS_WIN
 #include <QDeadlineTimer>
 #include <QThread>
 #endif
 #include <QDir>
 #include <QEventLoop>
-#include <QFile>
 #include <QIcon>
 #include <QStandardPaths>
-#include <QTextStream>
 #include <QTimer>
-#include <QMutex>
 
 #include <atomic>
 #include <csignal>
@@ -49,6 +46,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+#include <shellapi.h>
 #include "helpers/ConsoleLauncher.h"
 #else
 #include <termios.h>
@@ -57,29 +55,16 @@
 
 using namespace speecher;
 
-static QFile *g_logFile = nullptr;
-static QMutex g_logMutex;
+// Two logs of this size at most: the current one and the one before it.
+constexpr qint64 maxLogBytes = 5 * 1024 * 1024;
+
+static LogFile *g_logFile = nullptr;
 
 static void messageHandler(QtMsgType type, const QMessageLogContext &, const QString &message)
 {
-    QMutexLocker locker(&g_logMutex);
-    if (!g_logFile || !g_logFile->isOpen()) {
-        return;
+    if (g_logFile) {
+        g_logFile->write(type, message);
     }
-    const char *level = "info";
-    if (type == QtDebugMsg) {
-        level = "debug";
-    } else if (type == QtWarningMsg) {
-        level = "warning";
-    } else if (type == QtCriticalMsg) {
-        level = "critical";
-    } else if (type == QtFatalMsg) {
-        level = "fatal";
-    }
-    QTextStream stream(g_logFile);
-    stream << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
-           << ' ' << level << ' ' << message << '\n';
-    stream.flush();
 }
 
 static QString installLogHandler()
@@ -90,11 +75,7 @@ static QString installLogHandler()
     }
     QDir().mkpath(dir);
     const QString path = dir + QStringLiteral("/speecher.log");
-    g_logFile = new QFile(path);
-    if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        delete g_logFile;
-        g_logFile = nullptr;
-    }
+    g_logFile = new LogFile(path, maxLogBytes);
     qInstallMessageHandler(messageHandler);
     qInfo().noquote() << "speecher log started path=" + path;
     return path;
@@ -103,6 +84,21 @@ static QString installLogHandler()
 static QStringList commandLineArguments(int argc, char **argv)
 {
     QStringList arguments;
+#ifdef Q_OS_WIN
+    // argv is in the active code page, which loses every character outside
+    // it: a file name, a profile name or a vocabulary term in another script.
+    // The wide command line keeps them.
+    int count = 0;
+    LPWSTR *wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (wide) {
+        arguments.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            arguments << QString::fromWCharArray(wide[index]);
+        }
+        LocalFree(wide);
+        return arguments;
+    }
+#endif
     arguments.reserve(argc);
     for (int index = 0; index < argc; ++index) {
         arguments << QString::fromLocal8Bit(argv[index]);
