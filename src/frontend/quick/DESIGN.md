@@ -104,9 +104,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   names the physical key just pressed or let go (Right Alt, not Alt), which
   a modifier let go on its own records. `Settings.takesKeyAlone(id, keys)`
   refuses Shift and Left Ctrl on their own, which typing presses all the
-  time: the row says why in `errors` and keeps listening. Where the desktop picks the keys
-  (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
-  `Settings.act(id)` opens the desktop's chooser.
+  time: the row says why in `errors` and keeps listening. Where the desktop
+  picks the keys (`Settings.desktopPicksKeys(id)`, the portal), the row
+  records nothing and `Settings.act(id)` opens the desktop's chooser.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
