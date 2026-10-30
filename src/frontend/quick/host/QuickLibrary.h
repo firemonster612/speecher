@@ -2,7 +2,6 @@
 
 #include "core/SettingsEdit.h"
 
-#include <QHash>
 #include <QObject>
 #include <QQmlEngine>
 #include <QUrl>
@@ -116,7 +115,8 @@ public:
     // Forgets the newest Learned Correction; returns the undo token, or -1.
     Q_INVOKABLE int undoLastCorrection();
     // Puts back what the removal with this token took, unless an entry by
-    // its name was added since. Each token works once.
+    // its name was added since. Only the newest removal's token works, once:
+    // the window's one toast offers only its Undo.
     Q_INVOKABLE void undo(int token);
     // Merge the terms of a CSV file, or add the snippets of a JSON file that
     // the list does not hold yet. Returns { added, error }: how many are new,
@@ -136,7 +136,8 @@ private:
     void refresh();
 
     ApplicationController *m_controller;
-    QHash<int, SettingsEdit> m_undos;
+    // The newest removal's undo, whose token is m_lastUndo.
+    SettingsEdit m_undo;
     int m_lastUndo = -1;
     QVariantList m_profiles;
     QVariantList m_customTones;
