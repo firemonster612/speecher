@@ -672,20 +672,20 @@ private slots:
     {
         UpdateTestContext context;
         TestManifestUpdater updater(&context.settings);
-        updater.setRestoreStateProvider([] { return QStringLiteral("settings"); });
+        updater.setReopenMainWindowProvider([] { return true; });
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::ReadyToRestart);
         updater.installAndRestart();
         QCOMPARE(updater.restartCount, 1);
-        QCOMPARE(context.settings.updatesRestoreState(), QStringLiteral("settings"));
-        // The write is stamped so a relaunch can tell a fresh token from one a
-        // failed restart left behind.
-        QVERIFY(context.settings.updatesRestoreStateTime() > 0);
-        // Clearing the token drops its timestamp too, so an empty snapshot on a
-        // retry can't leave a stale one behind.
-        context.settings.setUpdatesRestoreState({});
-        QVERIFY(context.settings.updatesRestoreState().isEmpty());
-        QCOMPARE(context.settings.updatesRestoreStateTime(), qint64(0));
+        QVERIFY(context.settings.updatesReopenMainWindow());
+        // The write is stamped so a relaunch can tell a fresh request from one
+        // a failed restart left behind.
+        QVERIFY(context.settings.updatesReopenMainWindowTime() > 0);
+        // Clearing the request drops its timestamp too, so a retry that leaves
+        // the window closed can't leave a stale one behind.
+        context.settings.setUpdatesReopenMainWindow(false);
+        QVERIFY(!context.settings.updatesReopenMainWindow());
+        QCOMPARE(context.settings.updatesReopenMainWindowTime(), qint64(0));
 
         // A restart deferred to the end of a dictation restores what the user
         // was doing when they asked, not the idle state the restart waited for.
@@ -696,9 +696,7 @@ private slots:
             return busy ? UpdateController::RestartBlocker::Dictation
                         : UpdateController::RestartBlocker::None;
         });
-        pendingUpdater.setRestoreStateProvider([&busy] {
-            return busy ? QStringLiteral("settings") : QString();
-        });
+        pendingUpdater.setReopenMainWindowProvider([&busy] { return busy; });
         ManifestUpdaterTestAccess::setState(pendingUpdater,
                                             UpdateController::State::ReadyToRestart);
         pendingUpdater.installAndRestart();
@@ -706,7 +704,7 @@ private slots:
         busy = false;
         pendingUpdater.resumePendingRestart();
         QCOMPARE(pendingUpdater.restartCount, 1);
-        QCOMPARE(pending.settings.updatesRestoreState(), QStringLiteral("settings"));
+        QVERIFY(pending.settings.updatesReopenMainWindow());
     }
 
     void installAndRestartInErrorStateOnlyRetriesTheCheck()

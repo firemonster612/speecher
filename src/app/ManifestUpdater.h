@@ -117,7 +117,7 @@ private:
     QString m_downloadDescription;
     QString m_downloadError;
     QString m_dismissedVersion;
-    QString m_pendingRestoreState;
+    bool m_pendingReopenMainWindow = false;
     // The Nightly channel's check reads both manifests, so a stable release
     // that is the newest build reaches nightly installs too. The nightly
     // manifest lands first and waits here while the stable one is fetched; a

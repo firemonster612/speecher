@@ -89,16 +89,16 @@ public:
     virtual bool manualInstallRequired() const = 0;
     virtual bool stableReplacementAvailable() const = 0;
 
-    // Asked what the app should restore after an update restart ("listening",
-    // "settings", both, or empty), captured right before the process goes away.
-    void setRestoreStateProvider(std::function<QString()> provider)
+    // Asked, when a restart is asked for, whether the main window is on
+    // screen, so the relaunched app reopens it.
+    void setReopenMainWindowProvider(std::function<bool()> provider)
     {
-        m_restoreStateProvider = std::move(provider);
+        m_reopenMainWindowProvider = std::move(provider);
     }
 
     // What a restart now would cut short. A restart asked for meanwhile waits
     // in RestartPending until resumePendingRestart() finds nothing in the way.
-    enum class RestartBlocker { None, Dictation, Recording };
+    enum class RestartBlocker { None, Dictation, Recording, FileTranscription };
 
     void setRestartBlockerProvider(std::function<RestartBlocker()> provider)
     {
@@ -130,9 +130,9 @@ signals:
     void openReleasePageRequested();
 
 protected:
-    QString restoreState() const
+    bool reopenMainWindow() const
     {
-        return m_restoreStateProvider ? m_restoreStateProvider() : QString();
+        return m_reopenMainWindowProvider && m_reopenMainWindowProvider();
     }
 
     bool busy() const
@@ -145,7 +145,7 @@ protected:
     virtual void finishRestart() = 0;
 
 private:
-    std::function<QString()> m_restoreStateProvider;
+    std::function<bool()> m_reopenMainWindowProvider;
     std::function<RestartBlocker()> m_restartBlockerProvider;
 };
 

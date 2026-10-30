@@ -149,6 +149,11 @@ public:
     // asked for this window, take it off screen again: a launch that opens
     // files shows the Transcribe window alone even when they arrive late.
     void showDefaultMainWindow();
+    // After an update restart, reopens the main window if it was on screen
+    // when the restart was asked for, and forgets that so no later launch
+    // reopens it. Never the microphone: the relaunch has no dictation gesture
+    // behind it.
+    void reopenMainWindowAfterUpdate();
     void showSettingsWindow();
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);

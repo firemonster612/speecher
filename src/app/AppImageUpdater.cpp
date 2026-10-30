@@ -259,7 +259,7 @@ void AppImageUpdater::restartApplication()
     m_appImagePath = currentAppImagePath();
     QProcess process;
     process.setProgram(m_appImagePath);
-    process.setArguments(argumentsWithoutStartupActions(QCoreApplication::arguments().mid(1)));
+    process.setArguments(updateRelaunchArguments(QCoreApplication::arguments().mid(1)));
     process.setWorkingDirectory(QFileInfo(m_appImagePath).absolutePath());
     QProcessEnvironment environment = restartEnvironment(
         QCoreApplication::arguments(), QProcessEnvironment::systemEnvironment());

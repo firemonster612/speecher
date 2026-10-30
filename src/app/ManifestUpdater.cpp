@@ -357,7 +357,7 @@ void ManifestUpdater::restartNow()
     // Captured at the moment of the restart request: a restart deferred to the
     // end of a dictation or recording still restores what the user was doing
     // when they asked.
-    m_pendingRestoreState = restoreState();
+    m_pendingReopenMainWindow = reopenMainWindow();
     if (busy()) {
         setState(State::RestartPending);
         return;
@@ -367,8 +367,8 @@ void ManifestUpdater::restartNow()
 
 void ManifestUpdater::finishRestart()
 {
-    if (!m_pendingRestoreState.isEmpty()) {
-        m_settings->setUpdatesRestoreState(m_pendingRestoreState);
+    if (m_pendingReopenMainWindow) {
+        m_settings->setUpdatesReopenMainWindow(true);
     }
     restartApplication();
 }

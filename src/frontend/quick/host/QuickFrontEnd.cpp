@@ -150,9 +150,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     connect(&m_updates, &QuickUpdates::pageRequested, this, &QuickFrontEnd::showPage);
     // An update restart brings back the windows that were on screen, never
     // the microphone: the new process has no dictation gesture behind it.
-    controller->updates()->setRestoreStateProvider([this] {
-        return m_main && m_main->isVisible() ? QStringLiteral("settings") : QString();
-    });
+    controller->updates()->setReopenMainWindowProvider([this] { return m_main && m_main->isVisible(); });
     controller->setFrontEnd(this);
 }
 
@@ -160,7 +158,7 @@ QuickFrontEnd::~QuickFrontEnd()
 {
     m_controller->setFrontEnd(nullptr);
     // The updater outlives this object and its windows.
-    m_controller->updates()->setRestoreStateProvider({});
+    m_controller->updates()->setReopenMainWindowProvider({});
     // Going away is not the person closing setup.
     if (m_setup) {
         m_setup->disconnect(this);

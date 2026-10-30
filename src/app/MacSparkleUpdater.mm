@@ -505,7 +505,7 @@ void MacSparkleUpdater::restartNow()
     if (m_state != State::ReadyToRestart || !m_installReply) {
         return;
     }
-    m_pendingRestoreState = restoreState();
+    m_pendingReopenMainWindow = reopenMainWindow();
     if (busy()) {
         setState(State::RestartPending);
         return;
@@ -518,8 +518,8 @@ void MacSparkleUpdater::finishRestart()
     if (!m_installReply) {
         return;
     }
-    if (!m_pendingRestoreState.isEmpty()) {
-        m_settings->setUpdatesRestoreState(m_pendingRestoreState);
+    if (m_pendingReopenMainWindow) {
+        m_settings->setUpdatesReopenMainWindow(true);
     }
     setState(State::Restarting);
     auto install = std::exchange(m_installReply, nullptr);

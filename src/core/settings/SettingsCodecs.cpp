@@ -1452,24 +1452,32 @@ void SettingsCodecs::setUpdateCheckIntervalUnit(const QString &value)
     m_settings.setValue(SettingsKeys::UpdatesCheckIntervalUnit, value);
 }
 
-QString SettingsCodecs::updatesRestoreState() const
+namespace {
+
+// Stored as the "settings" token earlier releases write, which may sit in a
+// list with "listening", so a restart from one of them reopens the window too.
+const QString reopenMainWindowToken = QStringLiteral("settings");
+
+} // namespace
+
+bool SettingsCodecs::updatesReopenMainWindow() const
 {
-    return value(SettingsKeys::UpdatesRestoreState, QString()).toString();
+    return value(SettingsKeys::UpdatesRestoreState, QString()).toString().contains(reopenMainWindowToken);
 }
 
-void SettingsCodecs::setUpdatesRestoreState(const QString &value)
+void SettingsCodecs::setUpdatesReopenMainWindow(bool value)
 {
-    if (value.isEmpty()) {
-        m_settings.remove(SettingsKeys::UpdatesRestoreState);
-        m_settings.remove(SettingsKeys::UpdatesRestoreStateTime);
-    } else {
-        m_settings.setValue(SettingsKeys::UpdatesRestoreState, value);
+    if (value) {
+        m_settings.setValue(SettingsKeys::UpdatesRestoreState, reopenMainWindowToken);
         m_settings.setValue(SettingsKeys::UpdatesRestoreStateTime,
                             QDateTime::currentMSecsSinceEpoch());
+    } else {
+        m_settings.remove(SettingsKeys::UpdatesRestoreState);
+        m_settings.remove(SettingsKeys::UpdatesRestoreStateTime);
     }
 }
 
-qint64 SettingsCodecs::updatesRestoreStateTime() const
+qint64 SettingsCodecs::updatesReopenMainWindowTime() const
 {
     return value(SettingsKeys::UpdatesRestoreStateTime, 0).toLongLong();
 }

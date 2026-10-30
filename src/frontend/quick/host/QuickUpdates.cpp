@@ -6,6 +6,7 @@
 #include "core/ReleaseNotes.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "transcribe/FileTranscriptionSession.h"
 
 #include <QDesktopServices>
 #include <QUrl>
@@ -55,6 +56,8 @@ QuickUpdates::QuickUpdates(ApplicationController *controller, UpdateController *
     // What a restart waits for changes with them.
     connect(controller->session(), &DictationSession::stateChanged, this, &QuickUpdates::changed);
     connect(controller, &ApplicationController::recordingChanged, this, &QuickUpdates::changed);
+    connect(controller->fileTranscription(), &FileTranscriptionSession::fileStarted, this, &QuickUpdates::changed);
+    connect(controller->fileTranscription(), &FileTranscriptionSession::batchFinished, this, &QuickUpdates::changed);
     connect(updates, &UpdateController::openReleasePageRequested, this, &QuickUpdates::openAllReleases);
     connect(controller->whatsNew(), &WhatsNewTracker::pendingChanged, this, &QuickUpdates::whatsNewPendingChanged);
 }
@@ -130,6 +133,8 @@ QString QuickUpdates::restartBlocker() const
         return QStringLiteral("dictation");
     case UpdateController::RestartBlocker::Recording:
         return QStringLiteral("recording");
+    case UpdateController::RestartBlocker::FileTranscription:
+        return QStringLiteral("transcription");
     }
     return {};
 }

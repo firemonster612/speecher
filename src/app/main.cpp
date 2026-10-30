@@ -612,19 +612,7 @@ int main(int argc, char **argv)
         if (decision.showSettings) {
             QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
-        // An update restart records which windows were on screen; the relaunched
-        // process puts them back. Never the microphone: a new process has no
-        // dictation gesture behind it, so nothing here starts listening.
-        // Read-and-clear so a normal launch never replays it, and only honor a
-        // token young enough to be from an actual relaunch.
-        const QString restore = controller.settings()->updatesRestoreState();
-        const qint64 restoreAge = QDateTime::currentMSecsSinceEpoch()
-            - controller.settings()->updatesRestoreStateTime();
-        controller.settings()->setUpdatesRestoreState({});
-        if (!restore.isEmpty() && restoreAge >= 0 && restoreAge < 120000
-            && restore.contains(QStringLiteral("settings"))) {
-            QTimer::singleShot(0, &controller, &ApplicationController::showMain);
-        }
+        controller.reopenMainWindowAfterUpdate();
         if (!daemon && decision.transcribeFiles.isEmpty()) {
             // A launch that opens files brings up the Transcribe window alone.
             // macOS hands Finder's files over as events once the loop runs,

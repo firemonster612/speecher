@@ -10,6 +10,7 @@
 #include "dictation/PopupPresentation.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickUpdates.h"
+#include "transcribe/FileTranscriptionSession.h"
 
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -224,6 +225,11 @@ private slots:
         emit controller.recordingChanged(true);
         QCOMPARE(changed.count(), 2);
         QCOMPARE(updates.restartBlocker(), QStringLiteral("recording"));
+
+        blocker = UpdateController::RestartBlocker::FileTranscription;
+        emit controller.fileTranscription()->fileStarted(0, QString());
+        QCOMPARE(changed.count(), 3);
+        QCOMPARE(updates.restartBlocker(), QStringLiteral("transcription"));
     }
 
     void lastCheckedIsWhenACheckLastSucceeded()
