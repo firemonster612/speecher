@@ -1097,7 +1097,7 @@ private slots:
             {QStringLiteral("expiresAt"), double(expired.toMSecsSinceEpoch())},
         }}}).toJson());
         credentials.close();
-        const RefinementPrepareResult claude = AnthropicTranscriptRefiner().prepare({}, accounts);
+        const RefinementRefreshResult claude = AnthropicTranscriptRefiner().createRefreshJob({}, accounts)->run();
         QVERIFY(!claude.ok);
         QCOMPARE(claude.kind, kind);
         QCOMPARE(claude.httpStatus, httpStatus);

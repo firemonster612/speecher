@@ -839,6 +839,42 @@ private slots:
                  everySpeechProviderFails);
     }
 
+    // A cancel while the refiner's sign-in renews before refinement ends the
+    // batch once: the renewal's answer never refines or finishes the file.
+    void aCancelWhileTheRefinerRenewsEndsTheBatchOnce()
+    {
+        FakeRefiner *refiner = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&refiner](QObject *parent) {
+                                                   refiner = new FakeRefiner(parent);
+                                                   refiner->refreshRequired = true;
+                                                   refiner->backgroundRefresh = true;
+                                                   refiner->backgroundRefreshDelayMs = 200;
+                                                   refiner->autoComplete = true;
+                                                   return refiner;
+                                               });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy fileFinished(&session, &FileTranscriptionSession::fileFinished);
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+
+        QVERIFY(session.start({audio}, options));
+        // The first renewal goes with the speech provider's preparation; the
+        // second waits on the transcript's refinement.
+        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->backgroundRefreshCalls : 0, 2, 10000);
+        session.cancel();
+        QTest::qWait(400);
+
+        QCOMPARE(finished.count(), 1);
+        QVERIFY(finished.first().at(1).toBool());
+        QCOMPARE(fileFinished.count(), 0);
+    }
+
     // A provider that ends its first stream before any audio went to it
     // turned the file away: the next one takes the file from its start.
     void aStreamEndingBeforeAnyAudioHandsTheFileOver()

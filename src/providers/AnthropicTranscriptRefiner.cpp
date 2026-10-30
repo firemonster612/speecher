@@ -9,6 +9,7 @@
 #include <QDebug>
 
 #include <memory>
+#include <utility>
 
 namespace speecher {
 
@@ -58,6 +59,7 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
     job.apply = [this, accessToken](const RefinementRefreshResult &result) {
         if (result.ok) {
             m_accessToken = *accessToken;
+            m_authResolvedByJob = true;
         } else {
             m_accessToken.clear();
         }
@@ -67,17 +69,19 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
 
 void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings, const AccountSettings &accounts)
 {
-    prepare(settings, accounts);
+    m_accessToken = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(true).accessToken;
 }
 
+// Renewing an expired token is the refresh job's, on the worker: a renewal
+// here would block this thread on the network and the keychain. Without a
+// job's token, prepare() reads the sign-in as it stands.
 RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings,
                                                            const AccountSettings &accounts)
 {
-    // Refresh an expired token here rather than reporting it expired: a token
-    // valid when the user started speaking can lapse before refinement, and
-    // refusing then would drop the refinement the user asked for. The refresh
-    // helpers take the same one-second account lock the speech path uses.
-    const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(true);
+    if (std::exchange(m_authResolvedByJob, false)) {
+        return {true, {}};
+    }
+    const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(false);
     m_accessToken = auth.accessToken;
     return {auth.ok, auth.error, auth.kind, auth.httpStatus};
 }
