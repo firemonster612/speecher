@@ -52,6 +52,7 @@ class DictationEngine(
      * aborts it; null skips that pass.
      */
     private val transcribe: ((ByteArray, Cancellation) -> String)?,
+    /** Puts non-blank text into the field; false when it could not. */
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
@@ -66,6 +67,7 @@ class DictationEngine(
     private val resumeMedia: () -> Unit = {},
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
+    /** The dictation is done: its words went in, or there were none to put in. */
     private val onCommitted: (Inserted) -> Unit = {},
     /**
      * The field's selected text, null when nothing is selected or the field is a password field.
@@ -195,7 +197,7 @@ class DictationEngine(
                         if (!recording || finishingPause) opened.stop()
                     } else opened.cancel()
                 }
-            } catch (e: SpokenLanguageUnsupported) {
+            } catch (e: CannotListen) {
                 fail(current, e.reason, e.message.orEmpty())
             } catch (e: Exception) {
                 synchronized(this) {
@@ -611,7 +613,8 @@ class DictationEngine(
             fail(session, FailureReason.SelectionChanged, "The selection changed", text)
             return
         }
-        if (commit(text)) {
+        // Nothing heard leaves the field as it was: committing no text would delete a selection.
+        if (text.isBlank() || commit(text)) {
             inserted = true
             failedCommit = null
             onCommitted(
@@ -687,5 +690,8 @@ private const val PCM_BYTES_PER_MILLI = 16 * 2
  */
 private const val MAX_RETRANSCRIBE_BYTES = 80_000 * PCM_BYTES_PER_MILLI
 
-/** The provider can't listen for the saved spoken language, as [reason] says. */
-class SpokenLanguageUnsupported(val reason: FailureReason.SpokenLanguage) : Exception("$reason")
+/**
+ * The speech stream can't open, as [reason] says: the provider can't listen for the saved spoken
+ * language, or Android keeps Speecher from reaching the server. Retrying would not change that.
+ */
+class CannotListen(val reason: FailureReason) : Exception("$reason")

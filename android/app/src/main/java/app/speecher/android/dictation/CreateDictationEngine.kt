@@ -10,6 +10,8 @@ import android.text.format.DateFormat
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.lacksLocalNetwork
+import app.speecher.android.onLocalNetwork
 import app.speecher.android.provider.CleanupProvider
 import app.speecher.android.provider.OpenAiSpeed
 import app.speecher.android.provider.Provider
@@ -199,7 +201,7 @@ fun createDictationEngine(
         microphone::stop,
         { selected, onEvent ->
             spokenLanguageMismatch(selected, settings.spokenLanguage)?.let {
-                throw SpokenLanguageUnsupported(it)
+                throw CannotListen(it)
             }
             val account = selected.account
             val events = { event: SpeechEvent ->
@@ -242,6 +244,10 @@ fun createDictationEngine(
                 SpeechProvider.Endpoint -> {
                     if (settings.speechEndpoint.server.isEmpty())
                         throw ProviderFailure(ProviderFailureKind.Unavailable, "No server URL")
+                    if (
+                        lacksLocalNetwork(context) && onLocalNetwork(settings.speechEndpoint.server)
+                    )
+                        throw CannotListen(FailureReason.LocalNetworkDenied)
                     EndpointSpeechClient(
                         http,
                         settings.speechEndpoint,
@@ -288,7 +294,6 @@ fun createDictationEngine(
                     main.post {
                         ActiveDictation.watchCorrections?.invoke(window, target.packageName)
                     }
-                main.post(onInserted)
             }
             committed
         },
@@ -320,6 +325,7 @@ fun createDictationEngine(
                     dictationRecord(inserted, settings, session.target),
                 )
             }
+            main.post(onInserted)
         },
         selection = {
             // A password field's text never leaves the device, selected or not.

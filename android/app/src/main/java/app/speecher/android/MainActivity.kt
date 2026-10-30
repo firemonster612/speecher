@@ -3,6 +3,7 @@ package app.speecher.android
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -200,7 +201,7 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 ::openAccessibilitySettings,
-                                ::openAppSettings,
+                                this@MainActivity::openAppSettings,
                                 onFinish = ::leaveSetup,
                                 onUseServer = {
                                     changeSettings(
@@ -434,18 +435,8 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun scanComputerCode() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
-            startScanner()
-            return
-        }
-        val permission = Manifest.permission.ACCESS_LOCAL_NETWORK
-        when {
-            checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED -> startScanner()
-            // Denied twice, Android stops asking, so only Speecher's settings can allow it.
-            computerImport.state == ImportState.Failed(ImportFailure.NoLocalNetwork) &&
-                !shouldShowRequestPermissionRationale(permission) -> openAppSettings()
-            else -> localNetwork.launch(permission)
-        }
+        val refused = computerImport.state == ImportState.Failed(ImportFailure.NoLocalNetwork)
+        if (mayUseLocalNetwork(localNetwork, refused)) startScanner()
     }
 
     /** Starts Google's code scanner, which needs no camera permission, for the computer's code. */
@@ -459,15 +450,6 @@ class MainActivity : ComponentActivity() {
             .startScan()
             .addOnSuccessListener { retained.importFrom(it.rawValue.orEmpty()) }
             .addOnFailureListener { retained.fail(ImportFailure.ScannerUnavailable) }
-    }
-
-    private fun openAppSettings() {
-        startActivity(
-            Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.fromParts("package", packageName, null),
-            )
-        )
     }
 
     private fun import(computer: ComputerSettings) {
@@ -572,6 +554,16 @@ class MainActivity : ComponentActivity() {
                 it.resolveInfo.serviceInfo.let { s -> ComponentName(s.packageName, s.name) == own }
             }
     }
+}
+
+/** Opens Speecher's page in Android's settings, where its permissions are. */
+fun Context.openAppSettings() {
+    startActivity(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null),
+        )
+    )
 }
 
 /** The extra carrying the [Recovery] a panel failure opens Speecher for. */

@@ -119,6 +119,8 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-failed-network-live-text-off" to bottom { PanelFailedNetworkLiveTextOffPreview() },
         "panel-failed-spoken-language" to bottom { PanelFailedSpokenLanguagePreview() },
         "panel-failed-commit" to bottom { PanelFailedPreview(FailureReason.Commit, heard = true) },
+        "panel-failed-local-network" to
+            bottom { PanelFailedPreview(FailureReason.LocalNetworkDenied) },
         "panel-failed-edit-cleanup" to
             bottom {
                 PanelFailedPreview(

@@ -480,6 +480,7 @@ private val DictationState.Failed.title: String
             is FailureReason.SpokenLanguage -> "Spoken language not available"
             FailureReason.SelectionNeedsCleanup -> "Couldn't edit the selection"
             FailureReason.SelectionChanged -> "The selection changed"
+            FailureReason.LocalNetworkDenied -> "Speecher can't reach your network"
             is FailureReason.Speech -> "Transcription failed"
             is FailureReason.Cleanup -> "Cleanup failed"
         }
@@ -499,6 +500,8 @@ private val DictationState.Failed.advice: String
             FailureReason.SelectionNeedsCleanup ->
                 "Editing a selection needs cleanup. Choose a cleanup level for this app's Writing Profile."
             FailureReason.SelectionChanged -> "Select the same text again, then tap Retry."
+            FailureReason.LocalNetworkDenied ->
+                "Open Speecher, test the server's connection and allow Speecher to find nearby devices."
             is FailureReason.ProviderFailed ->
                 providerAdvice(reason.label, reason.kind, signsIn = reason.account != null)
         }
