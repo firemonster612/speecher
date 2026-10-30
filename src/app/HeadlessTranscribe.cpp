@@ -210,6 +210,7 @@ int runHeadlessTranscribe(const QStringList &files,
                           std::ostream &err,
                           bool errIsTerminal)
 {
+    int succeeded = 0;
     int failed = 0;
     // The summary closes every --json run, including one that never started.
     const auto finish = [&](int exitCode, const QString &error = {}) {
@@ -219,7 +220,7 @@ int runHeadlessTranscribe(const QStringList &files,
         if (options.json) {
             QJsonObject summary{{QStringLiteral("summary"), true},
                                 {QStringLiteral("files"), int(files.size())},
-                                {QStringLiteral("succeeded"), int(files.size()) - failed},
+                                {QStringLiteral("succeeded"), succeeded},
                                 {QStringLiteral("failed"), failed}};
             if (!error.isEmpty()) {
                 summary.insert(QStringLiteral("error"), error);
@@ -359,6 +360,7 @@ int runHeadlessTranscribe(const QStringList &files,
                              ++failed;
                              err << name.toStdString() << ": failed: " << result.error.toStdString() << "\n";
                          } else {
+                             ++succeeded;
                              if (!result.error.isEmpty()) {
                                  err << name.toStdString() << ": " << result.error.toStdString() << "\n";
                              }
