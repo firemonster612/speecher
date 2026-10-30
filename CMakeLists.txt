@@ -463,6 +463,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/KeywatchShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
   src/platform/MediaPauseController.cpp
+  src/platform/PortalRequest.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
   src/platform/KWinBlurBackdrop.cpp
@@ -490,6 +491,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/KeywatchShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h
   src/platform/MediaPauseController.h
+  src/platform/PortalRequest.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
   src/platform/KWinBlurBackdrop.h
@@ -1502,6 +1504,7 @@ if(SPEECHER_BUILD_TESTS)
     target_sources(speecher_tests PRIVATE
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
+      tests/test_portal.cpp
     )
     # The KWin blur test runs a compositor of its own.
     pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
@@ -1617,6 +1620,13 @@ if(SPEECHER_BUILD_TESTS)
   # Each brings its own bus, keyring and home, so runs beside the plain suite.
   if(UNIX AND NOT APPLE)
     find_program(SPEECHER_DBUS_RUN_SESSION dbus-run-session)
+    # The portal suite plays the desktop portal on a bus of its own.
+    if(SPEECHER_DBUS_RUN_SESSION)
+      add_test(NAME speecher_portal
+        COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- $<TARGET_FILE:speecher_tests> --suite portal)
+      set_tests_properties(speecher_portal PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+    endif()
     find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
     if(SPEECHER_DBUS_RUN_SESSION AND SPEECHER_GNOME_KEYRING)
       add_test(NAME speecher_custom_endpoints_keyring

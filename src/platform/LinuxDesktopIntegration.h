@@ -7,8 +7,8 @@ namespace speecher {
 
 QString resolvedPath(const QString &path);
 
-// Whether this session is Wayland, which decides the single-key backend and
-// whether the key-watch helper is offered.
+// Whether this session is Wayland, which decides the single-key backend,
+// whether the key-watch helper is offered and whether the portal sets shortcuts.
 bool isWaylandSession();
 
 // The program and arguments that open this desktop's keyboard shortcut

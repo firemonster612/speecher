@@ -1,17 +1,15 @@
 #pragma once
 
 #include "dictation/DictationPorts.h"
-#include "platform/PortalResponseTracker.h"
 
-#include <QDBusContext>
-#include <QDBusObjectPath>
-
-class QTimer;
+#include <QPointer>
+#include <QVariantMap>
 
 namespace speecher {
 
-class PortalScreenshotContextProvider final : public ScreenshotContextProvider,
-                                              protected QDBusContext {
+class PortalRequest;
+
+class PortalScreenshotContextProvider final : public ScreenshotContextProvider {
     Q_OBJECT
 
 public:
@@ -20,17 +18,10 @@ public:
     void capture() override;
     void cancel() override;
 
-private slots:
-    void handleResponse(uint response, const QVariantMap &results);
-    void handleTimeout();
-
 private:
-    void processResponse(const PortalResponse &response);
-    void disconnectRequest();
+    void processResponse(uint response, const QVariantMap &results);
 
-    QDBusObjectPath m_requestPath;
-    PortalResponseTracker m_responseTracker;
-    QTimer *m_requestTimer = nullptr;
+    QPointer<PortalRequest> m_request;
     quint64 m_generation = 0;
 };
 

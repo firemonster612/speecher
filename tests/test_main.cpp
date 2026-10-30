@@ -147,6 +147,12 @@ int main(int argc, char **argv)
 #ifdef Q_OS_LINUX
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
     if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
+    // Only when named: the suite takes the desktop portal's name on whatever
+    // session bus it finds, which CTest makes a private one.
+    if (selectedSuite == QLatin1String("portal")) {
+        matched = true;
+        result |= runPortalTests(argc, argv);
+    }
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

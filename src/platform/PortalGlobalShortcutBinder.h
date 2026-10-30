@@ -1,16 +1,14 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
-#include "platform/PortalResponseTracker.h"
 
-#include <QDBusContext>
 #include <QDBusObjectPath>
+#include <QPointer>
 #include <QVariantMap>
-
-class QTimer;
 
 namespace speecher {
 
+class PortalRequest;
 class SettingsStore;
 
 struct PortalShortcut {
@@ -20,8 +18,7 @@ struct PortalShortcut {
 
 using PortalShortcuts = QList<PortalShortcut>;
 
-class PortalGlobalShortcutBinder final : public GlobalShortcutBinder,
-                                         protected QDBusContext {
+class PortalGlobalShortcutBinder final : public GlobalShortcutBinder {
     Q_OBJECT
 
 public:
@@ -42,7 +39,6 @@ public:
     bool removeRegistration(QString *error = nullptr) override;
 
 private slots:
-    void handleRequestResponse(uint response, const QVariantMap &results);
     void handleActivated(const QDBusObjectPath &sessionHandle,
                          const QString &shortcutId,
                          qulonglong timestamp,
@@ -54,7 +50,6 @@ private slots:
 
 private:
     enum class RequestKind {
-        None,
         CreateForRestore,
         CreateForRegistration,
         List,
@@ -65,18 +60,16 @@ private:
     void createSession(bool registration);
     void listShortcuts();
     void bindShortcuts();
-    void sendRequest(const QString &member,
-                     QVariantList arguments,
-                     int optionsIndex,
+    void sendRequest(const QString &method,
+                     const QVariantList &arguments,
                      RequestKind kind,
                      int timeoutMs);
-    void processRequestResponse(const PortalResponse &response);
-    void requestFailed(const QString &reason, bool closeRequest = false);
+    void processRequestResponse(RequestKind kind, uint response, const QVariantMap &results);
+    void requestFailed(RequestKind kind, const QString &reason);
     bool shortcutTrigger(const QVariantMap &results, QString *trigger) const;
     void activatePendingSession(const QString &trigger);
     void closePendingSession();
-    void closeRequest();
-    void disconnectRequest();
+    void cancelRequest();
 
     SettingsStore *m_settings;
     bool m_supported = false;
@@ -92,10 +85,8 @@ private:
     QString m_triggerDescription;
     QDBusObjectPath m_sessionPath;
     QDBusObjectPath m_pendingSessionPath;
-    QDBusObjectPath m_requestPath;
-    PortalResponseTracker m_responseTracker;
-    RequestKind m_requestKind = RequestKind::None;
-    QTimer *m_requestTimer = nullptr;
+    // The session request in flight, if any.
+    QPointer<PortalRequest> m_request;
     // The portal's timestamp of the press being held; zero when none is.
     qulonglong m_activatedAtMs = 0;
 };
