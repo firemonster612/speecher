@@ -399,9 +399,12 @@ const UpdateManifest &ManifestUpdater::manifest() const
 
 QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
 {
+#ifdef SPEECHER_E2E_HOOKS
     // Update end-to-end tests point the check at a local server; the download
     // URL inside the manifest still has to be https. The stable override lets
     // a test serve two different manifests to one Nightly-channel check.
+    // Release builds have neither: whoever sets the variable would choose
+    // what the app installs.
     const QString stableOverride =
         qEnvironmentVariable("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
     if (channel == UpdateChannel::Stable && !stableOverride.isEmpty()) {
@@ -411,6 +414,7 @@ QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
     if (!override.isEmpty()) {
         return QUrl(override);
     }
+#endif
     return channel == UpdateChannel::Nightly ? nightlyManifestUrl : stableManifestUrl;
 }
 

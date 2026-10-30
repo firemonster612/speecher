@@ -115,11 +115,22 @@ public:
     bool isAppImage() const override { return false; }
     bool supportsAutomaticDownloads() const override { return false; }
     int restartCount = 0;
+    // Where checks fetch, in place of GitHub: manifest for both channels,
+    // unless stableManifest is set for the Stable one.
+    QUrl manifest;
+    QUrl stableManifest;
 
 protected:
     std::unique_ptr<QFile> createDownload(QString *, bool *) override { return {}; }
     bool installDownload(const QString &, QString *) override { return false; }
     void restartApplication() override { ++restartCount; }
+    QUrl manifestUrl(UpdateChannel channel) const override
+    {
+        if (channel == UpdateChannel::Stable && !stableManifest.isEmpty()) {
+            return stableManifest;
+        }
+        return manifest.isEmpty() ? ManifestUpdater::manifestUrl(channel) : manifest;
+    }
 };
 
 QByteArray readFile(const QString &path)
@@ -188,11 +199,9 @@ QTcpServer *manifestServer(QObject *parent, const QByteArray &body, int *request
     return server;
 }
 
-QByteArray serverUrl(const QTcpServer *server)
+QUrl serverUrl(const QTcpServer *server)
 {
-    return QStringLiteral("http://127.0.0.1:%1/update-manifest.json")
-        .arg(server->serverPort())
-        .toUtf8();
+    return QUrl(QStringLiteral("http://127.0.0.1:%1/update-manifest.json").arg(server->serverPort()));
 }
 
 void writeFile(const QString &path, const QByteArray &contents)
@@ -328,12 +337,8 @@ private slots:
             manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"), current + 1));
         QTcpServer *stableServer =
             manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
-        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(nightlyServer));
-        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(stableServer));
-        const auto restoreEnv = qScopeGuard([] {
-            qunsetenv("SPEECHER_UPDATE_MANIFEST_URL");
-            qunsetenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
-        });
+        updater.manifest = serverUrl(nightlyServer);
+        updater.stableManifest = serverUrl(stableServer);
 
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
@@ -350,7 +355,7 @@ private slots:
         QTcpServer *newerNightly = manifestServer(
             &updater,
             manifestJson(QStringLiteral("0.2.2-nightly.20260922+gdef5678"), current + 3));
-        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(newerNightly));
+        updater.manifest = serverUrl(newerNightly);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::UpdateAvailable, 10000);
@@ -372,12 +377,8 @@ private slots:
         QTcpServer *deadNightly = manifestServer(&updater, QByteArrayLiteral("not json"));
         QTcpServer *stableServer =
             manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
-        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(deadNightly));
-        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(stableServer));
-        const auto restoreEnv = qScopeGuard([] {
-            qunsetenv("SPEECHER_UPDATE_MANIFEST_URL");
-            qunsetenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
-        });
+        updater.manifest = serverUrl(deadNightly);
+        updater.stableManifest = serverUrl(stableServer);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::UpdateAvailable, 10000);
@@ -389,7 +390,7 @@ private slots:
         context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         QTcpServer *oldStable =
             manifestServer(&updater, manifestJson(QStringLiteral("0.1.0"), 1));
-        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(oldStable));
+        updater.stableManifest = serverUrl(oldStable);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::CheckFailed, 10000);
@@ -402,16 +403,15 @@ private slots:
         TestManifestUpdater updater(&context.settings);
 
         // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
-        // channels at one file; the secondary fetch must not run against it.
+        // channels at one file, as manifest alone does here; the secondary
+        // fetch must not run against it.
         int requests = 0;
         QTcpServer *server = manifestServer(
             &updater,
             manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"),
                          updater.currentBuildNumber() + 1),
             &requests);
-        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(server));
-        const auto restoreEnv =
-            qScopeGuard([] { qunsetenv("SPEECHER_UPDATE_MANIFEST_URL"); });
+        updater.manifest = serverUrl(server);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::UpdateAvailable, 10000);
@@ -709,14 +709,10 @@ private slots:
 
     void installAndRestartInErrorStateOnlyRetriesTheCheck()
     {
-        // Point the check at a closed port so the retry cannot reach GitHub.
-        qputenv("SPEECHER_UPDATE_MANIFEST_URL",
-                QByteArrayLiteral("https://127.0.0.1:1/update-manifest.json"));
-        const auto restoreUrl = qScopeGuard(
-            [] { qunsetenv("SPEECHER_UPDATE_MANIFEST_URL"); });
-
         UpdateTestContext context;
         TestManifestUpdater updater(&context.settings);
+        // Point the check at a closed port so the retry cannot reach GitHub.
+        updater.manifest = QUrl(QStringLiteral("https://127.0.0.1:1/update-manifest.json"));
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::Error,
                                             QStringLiteral("install failed"));
