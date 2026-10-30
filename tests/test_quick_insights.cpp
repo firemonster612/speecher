@@ -294,6 +294,26 @@ private slots:
         QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Journal"));
     }
 
+    // A save that changes nothing Insights shows leaves it as it was.
+    void anUnrelatedSaveChangesNothing()
+    {
+        ApplicationController controller(true);
+        controller.insightsLog()->append(recordOn(kToday, 40));
+        QuickInsights insights(&controller);
+        QSignalSpy changed(&insights, &QuickInsights::changed);
+        QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);
+        QSignalSpy correctionsChanged(&insights, &QuickInsights::correctionsChanged);
+
+        QVERIFY(controller.settings()->edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("fr");
+            return true;
+        }));
+
+        QCOMPARE(changed.count(), 0);
+        QCOMPARE(latestChanged.count(), 0);
+        QCOMPARE(correctionsChanged.count(), 0);
+    }
+
     void correctionsFollowWhatIsLearned()
     {
         ApplicationController controller(true);
