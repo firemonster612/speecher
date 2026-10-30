@@ -372,11 +372,12 @@ void RecordingStream::markAttemptConnected()
 void RecordingStream::startNextAttempt()
 {
     commitPartial();
-    m_transcript->startAttempt();
+    const SpeechSettings speech = currentSpeechSettings();
+    m_transcript->startAttempt(speech.language);
     m_attemptSentFrom = m_sent;
     m_attemptConnected = false;
     m_attempts.attemptStarted();
-    m_transcriber->startAttempt(++m_attemptId, currentSpeechSettings());
+    m_transcriber->startAttempt(++m_attemptId, speech);
 }
 
 // A dropped stream waits a pause, growing while it keeps failing, before it
