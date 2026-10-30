@@ -1464,17 +1464,19 @@ private slots:
     {
         QTest::addColumn<QString>("model");
         QTest::addColumn<QString>("effort");
-        QTest::newRow("Haiku 5.5 takes extra high") << "claude-haiku-5-5" << "xhigh";
-        QTest::newRow("Opus 4.6 tops out at max") << "claude-opus-4-6" << "max";
+        QTest::addColumn<bool>("thinking");
+        QTest::newRow("Haiku 5.5 takes extra high") << "claude-haiku-5-5" << "xhigh" << true;
+        QTest::newRow("Opus 4.6 tops out at max") << "claude-opus-4-6" << "max" << true;
         // Adaptive thinking starts with the 4.6 models.
-        QTest::newRow("Opus 4.5 takes none") << "claude-opus-4-5" << "";
-        QTest::newRow("Sonnet 4.5 takes none") << "claude-sonnet-4-5" << "";
+        QTest::newRow("Opus 4.5 tops out at high, without thinking") << "claude-opus-4-5" << "high" << false;
+        QTest::newRow("Sonnet 4.5 takes none") << "claude-sonnet-4-5" << "" << false;
     }
 
     void anthropicApiRefinerSendsTheNearestEffortTheModelTakes()
     {
         QFETCH(QString, model);
         QFETCH(QString, effort);
+        QFETCH(bool, thinking);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
@@ -1493,7 +1495,7 @@ private slots:
         const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4, contentLength)).object();
         QCOMPARE(body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(),
                  effort);
-        QCOMPARE(body.contains(QStringLiteral("thinking")), !effort.isEmpty());
+        QCOMPARE(body.contains(QStringLiteral("thinking")), thinking);
         socket->disconnectFromHost();
     }
 

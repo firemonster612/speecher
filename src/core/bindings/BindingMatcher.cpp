@@ -115,9 +115,10 @@ bool isPlaceholderIndexToken(const QString &token)
     return numberWords.contains(token);
 }
 
-QRegularExpression exactPlaceholderRegex()
+const QRegularExpression &exactPlaceholderRegex()
 {
-    return QRegularExpression(QStringLiteral("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(?![A-Za-z0-9_])"));
+    static const QRegularExpression regex(QStringLiteral("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(?![A-Za-z0-9_])"));
+    return regex;
 }
 
 } // namespace
@@ -188,7 +189,7 @@ BindingProcessingResult BindingMatcher::process(const QString &transcript, const
 QString BindingMatcher::applyOutsidePlaceholders(const QString &text, const QList<BindingRule> &rules)
 {
     if (text.isEmpty() || rules.isEmpty()) return text;
-    const QRegularExpression placeholderRegex = exactPlaceholderRegex();
+    const QRegularExpression &placeholderRegex = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = placeholderRegex.globalMatch(text);
     QString output;
     qsizetype cursor = 0;
@@ -208,7 +209,7 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
 {
     if (placeholders.isEmpty()) return {true, refinedText};
     const QHash<QString, QString> replacementByPlaceholder = replacementsByPlaceholder(placeholders);
-    const QRegularExpression exactPlaceholder = exactPlaceholderRegex();
+    const QRegularExpression &exactPlaceholder = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = exactPlaceholder.globalMatch(refinedText);
     QString restored;
     QString residue;

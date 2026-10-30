@@ -82,10 +82,10 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 }
 
 // Opened NewOnly, so an existing file is never overwritten, and a name taken
-// by the time it opens moves on to the next. QSaveFile would be atomic, but its commit
-// renames over whatever took the name meanwhile. A write that fails part way
-// removes the file instead, so no truncated transcript is left to mistake for
-// a whole one.
+// by the time it opens moves on to the next. QSaveFile would be atomic, but
+// its commit renames over whatever took the name meanwhile. A write that
+// fails part way removes the file instead, so no truncated transcript is left
+// to mistake for a whole one.
 QString saveTranscript(const QString &audioPath,
                        const QString &folder,
                        const QString &text,

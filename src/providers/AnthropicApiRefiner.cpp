@@ -35,8 +35,7 @@ QByteArray claudeCodeUserAgent()
     return QStringLiteral("claude-cli/%1 (external, cli)").arg(normalizedVersion).toUtf8();
 }
 
-// Adaptive thinking starts with the 4.6 models; Opus 4.5 rejects it and takes
-// only a thinking budget.
+// Adaptive thinking starts with the 4.6 models.
 bool modelSupportsAdaptiveEffort(const QString &model)
 {
     const QString normalized = model.toCaseFolded();
@@ -47,6 +46,13 @@ bool modelSupportsAdaptiveEffort(const QString &model)
         || normalized.contains(QStringLiteral("opus-4-8"))
         || normalized.contains(QStringLiteral("opus-4-7"))
         || normalized.contains(QStringLiteral("opus-4-6"));
+}
+
+// Opus 4.5 takes an effort of low, medium or high, but rejects adaptive
+// thinking.
+bool modelTakesEffortWithoutThinking(const QString &model)
+{
+    return model.toCaseFolded().contains(QStringLiteral("opus-4-5"));
 }
 
 // Fast mode is a research preview limited to Opus 5.5, Opus 5 and Opus 4.8
@@ -71,6 +77,10 @@ bool modelSupportsExtraHighEffort(const QString &model)
 
 QString apiEffortForModel(const QString &model, const QString &effort)
 {
+    if (modelTakesEffortWithoutThinking(model)
+        && (effort == QStringLiteral("xhigh") || effort == QStringLiteral("max"))) {
+        return QStringLiteral("high");
+    }
     if (effort == QStringLiteral("xhigh") && !modelSupportsExtraHighEffort(model)) {
         return QStringLiteral("max");
     }
@@ -222,6 +232,8 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                 {QStringLiteral("type"), QStringLiteral("adaptive")},
                 {QStringLiteral("display"), QStringLiteral("omitted")},
             });
+        }
+        if (modelSupportsAdaptiveEffort(model) || modelTakesEffortWithoutThinking(model)) {
             body.insert(QStringLiteral("output_config"), QJsonObject{
                 {QStringLiteral("effort"), apiEffortForModel(model, effort)},
             });

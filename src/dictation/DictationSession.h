@@ -177,6 +177,8 @@ private:
     void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
     void reviewSelectionEdit(const QString &revised);
+    void reviseSelectionEdit(const QString &revised);
+    void replaceWithRevision();
     void startFollowUp();
     void returnToReview();
     void enterReview();
@@ -217,8 +219,8 @@ private:
     void startSession(const SessionOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     // The live UI settings, which apply the moment a save changes them,
-    // mid-session too. Kept here so previews
-    // and streamed refinement never read a whole snapshot per word.
+    // mid-session too. Kept here so previews and streamed refinement never
+    // read a whole snapshot per word.
     UiSettings m_ui;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;

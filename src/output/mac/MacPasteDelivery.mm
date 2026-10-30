@@ -72,8 +72,8 @@ bool MacPasteDelivery::paste(const std::function<bool()> &clearToInject, QString
         return false;
     }
     // The frontmost app can have changed since the focus check before this
-    // call. Last check before the keystroke, because a paste into
-    // the wrong window cannot be undone.
+    // call. Last check before the keystroke, because a paste into the wrong
+    // window cannot be undone.
     if (clearToInject && !clearToInject()) {
         if (error) {
             *error = QStringLiteral("The active window changed or could not be verified");

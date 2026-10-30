@@ -214,43 +214,74 @@ private slots:
                  QStringLiteral("Please send efox@example.com to Alex."));
     }
 
+    void selectionEditReviewFollowsTheLiveSetting_data()
+    {
+        QTest::addColumn<bool>("followUp");
+        QTest::newRow("first instruction") << false;
+        QTest::newRow("follow-up") << true;
+    }
+
     // Like the other UI settings, turning the review off applies to a
-    // selection edit already under way.
+    // selection edit already under way. A follow-up's edit then ends the
+    // review as Replace would, counting every instruction.
     void selectionEditReviewFollowsTheLiveSetting()
     {
+        QFETCH(bool, followUp);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.providerId = QStringLiteral("openai");
+            draft.insightsEnabled = true;
             return true;
         });
-        auto audio = std::make_unique<FakeAudioInput>();
-        auto media = std::make_unique<FakeMediaController>();
-        auto target = std::make_unique<FakeTargetProvider>();
-        target->target.selectedText = QStringLiteral("the release is tomorrow");
-        target->target.selectionStart = 0;
-        target->target.selectionEnd = 23;
-        auto delivery = std::make_unique<FakeDelivery>();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.selectedText = QStringLiteral("the release is tomorrow");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 23;
+        FakeDelivery delivery;
         ProviderRegistry registry;
         FakeSpeechTranscriber *speech = nullptr;
         FakeRefiner *refiner = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
-        DictationSession session(&settings, audio.get(), media.get(), target.get(), delivery.get(), &registry);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        const auto turnReviewOff = [&settings] {
+            settings.edit([](AppSettings &draft) {
+                draft.ui.selectionEditReviewEnabled = false;
+                return true;
+            });
+        };
 
         session.startListening();
-        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        settings.edit([](AppSettings &draft) {
-            draft.ui.selectionEditReviewEnabled = false;
-            return true;
-        });
-        speech->emitFinalText(QStringLiteral("Make it louder"));
-        refiner->autoComplete = true;
-        refiner->autoCompleteText = QStringLiteral("THE RELEASE IS TOMORROW!");
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        if (!followUp) {
+            turnReviewOff();
+        }
+        speech->emitFinalText(QStringLiteral("make it louder"));
         session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("THE RELEASE IS TOMORROW"));
+        if (followUp) {
+            QCOMPARE(session.state(), DictationState::Reviewing);
+            session.toggle();
+            QTRY_COMPARE(session.state(), DictationState::Listening);
+            speech->emitFinalText(QStringLiteral("and excited"));
+            session.stopListening();
+            QTRY_COMPARE(refiner->refineCalls, 2);
+            turnReviewOff();
+            refiner->emitCompletedText(QStringLiteral("THE RELEASE IS TOMORROW!"));
+        }
 
-        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE(delivery.calls, 1);
+        QCOMPARE(delivery.lastText, followUp ? QStringLiteral("THE RELEASE IS TOMORROW!")
+                                             : QStringLiteral("THE RELEASE IS TOMORROW"));
+        QVERIFY(!session.reviewUp());
         QVERIFY(session.state() != DictationState::Reviewing);
+        QCOMPARE(recorded.count(), 1);
+        QCOMPARE(recorded.first().first().value<DictationRecord>().words, followUp ? 5 : 3);
     }
 
     void dictationSessionEditsSelectedTextFromSpokenInstructions()

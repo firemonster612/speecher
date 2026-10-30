@@ -1236,11 +1236,17 @@ void DictationSession::failSelectionEdit(const QString &message)
 // or Keep original ends the review.
 void DictationSession::reviewSelectionEdit(const QString &revised)
 {
+    reviseSelectionEdit(revised);
+    m_refinementGeneration = 0;
+    enterReview();
+}
+
+// The edit becomes the revision, after the one a follow-up was dictated for.
+void DictationSession::reviseSelectionEdit(const QString &revised)
+{
     const QString spoken = m_transcript->text();
     m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
-    m_refinementGeneration = 0;
-    enterReview();
 }
 
 // The review stays up, dimmed, while the follow-up is dictated as a session
@@ -1290,6 +1296,13 @@ void DictationSession::replaceSelection()
     if (m_state != DictationState::Reviewing || !m_sessionSettings) {
         return;
     }
+    replaceWithRevision();
+}
+
+// Ends the review and delivers the revision, with the totals of every
+// instruction spoken for it.
+void DictationSession::replaceWithRevision()
+{
     // The person may have clicked or typed in the Target while reading. The
     // edit replaces only the selection it was made from; any other goes
     // untouched and the edit waits on the clipboard. Read while the review is
@@ -1623,6 +1636,11 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
         if (refined && m_transcriptPipeline.editsSelection && m_ui.selectionEditReviewEnabled) {
             reviewSelectionEdit(*refined);
+        } else if (refined && m_review.followingUp()) {
+            // The review was turned off during a follow-up: the follow-up's
+            // edit ends the review as Replace would, every instruction counted.
+            reviseSelectionEdit(*refined);
+            replaceWithRevision();
         } else if (refined) {
             deliverFinal(*refined);
         } else if (m_transcriptPipeline.editsSelection) {
