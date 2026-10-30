@@ -2,6 +2,7 @@
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/LoopbackPcm.h"
 #include "platform/audio/LoopbackReopen.h"
+#include "platform/audio/SilenceGate.h"
 
 using namespace speecher;
 
@@ -186,6 +187,35 @@ private slots:
 
         loopback.useFormat(format(48000, 2, QAudioFormat::Float));
         QCOMPARE(loopback.convertSilent(480 * 8), QByteArray(320, '\0'));
+    }
+
+    void silenceGateLeadsSpeechWithThePreRoll()
+    {
+        // Sizes in bytes: an 8-byte pre-roll and a 4-byte post-roll.
+        SilenceGate gate;
+        QVERIFY(gate.pass("aaaaaa", false, 8, 4).isEmpty());
+        QVERIFY(gate.pass("bbbbbb", false, 8, 4).isEmpty());
+
+        // The newest quiet leads in, then the whole voiced chunk, though it
+        // is longer than the pre-roll.
+        const QByteArray speech(20, 's');
+        QCOMPARE(gate.pass(speech, true, 8, 4), (QList<QByteArray>{"aabbbbbb", speech}));
+    }
+
+    void silenceGateTrailsSpeechWithThePostRoll()
+    {
+        SilenceGate gate;
+        gate.pass("ss", true, 8, 6);
+
+        // A pause shorter than the post-roll is sent once speech resumes.
+        QVERIFY(gate.pass("qq", false, 8, 6).isEmpty());
+        QCOMPARE(gate.pass("ss", true, 8, 6), (QList<QByteArray>{"qq", "ss"}));
+
+        // Quiet that fills the post-roll sends that much, then the gate
+        // holds quiet back again.
+        QVERIFY(gate.pass("abcd", false, 8, 6).isEmpty());
+        QCOMPARE(gate.pass("efgh", false, 8, 6), (QList<QByteArray>{"abcdef"}));
+        QVERIFY(gate.pass("ijkl", false, 8, 6).isEmpty());
     }
 
     void loopbackReopenRetriesForAWhileThenGivesUp()

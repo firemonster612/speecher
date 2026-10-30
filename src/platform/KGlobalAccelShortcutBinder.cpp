@@ -174,11 +174,65 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
 #endif
 }
 
+KGlobalAccelKeyHold::KGlobalAccelKeyHold(QString id, QString description, QObject *parent)
+    : KeyHold(parent)
+    , m_id(std::move(id))
+    , m_description(std::move(description))
+{
+}
+
+bool KGlobalAccelKeyHold::available()
+{
+    return kglobalaccelAvailable();
+}
+
+bool KGlobalAccelKeyHold::take(const QKeySequence &keys)
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    delete m_action;
+    m_action = new QAction(m_description, this);
+    m_action->setAutoRepeat(false);
+    m_action->setObjectName(m_id);
+    m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
+    m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
+    connect(m_action, &QAction::triggered, this, &KeyHold::pressed);
+    // The daemon reports success but stores no key when another component
+    // owns it, so the keys it kept are the answer.
+    KGlobalAccel::self()->setShortcut(m_action, keyList(keys), KGlobalAccel::NoAutoloading);
+    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
+    return !active.isEmpty() && active.first() == keys;
+#else
+    Q_UNUSED(keys)
+    return false;
+#endif
+}
+
+void KGlobalAccelKeyHold::letGo()
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    if (m_action) {
+        KGlobalAccel::self()->removeAllShortcuts(m_action);
+        delete m_action;
+        m_action = nullptr;
+    }
+#endif
+}
+
+void KGlobalAccelKeyHold::dropLeftoverRegistration()
+{
+    if (!m_action) {
+        take({});
+        letGo();
+    }
+}
+
 KGlobalAccelSessionShortcutBinder::KGlobalAccelSessionShortcutBinder(SettingsStore *settings,
                                                                      GlobalShortcutAction action,
                                                                      QObject *parent)
     : SessionShortcutBinder(settings, std::move(action), parent)
+    , m_keys(new KGlobalAccelKeyHold(this->action().id, this->action().description, this))
 {
+    connect(m_keys, &KeyHold::pressed, this, &GlobalShortcutBinder::activated);
 }
 
 bool KGlobalAccelSessionShortcutBinder::supported() const
@@ -212,47 +266,17 @@ ShortcutBinding KGlobalAccelSessionShortcutBinder::storedShortcut() const
 void KGlobalAccelSessionShortcutBinder::bind()
 {
     SessionShortcutBinder::bind();
-    dropLeftoverRegistration();
-}
-
-void KGlobalAccelSessionShortcutBinder::dropLeftoverRegistration()
-{
-    if (!m_action) {
-        take({});
-        letGo();
-    }
+    m_keys->dropLeftoverRegistration();
 }
 
 bool KGlobalAccelSessionShortcutBinder::take(const QKeySequence &keys)
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    delete m_action;
-    m_action = new QAction(action().description, this);
-    m_action->setAutoRepeat(false);
-    m_action->setObjectName(action().id);
-    m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
-    m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
-    connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
-    // The daemon reports success but stores no key when another component
-    // owns it, so the keys it kept are the answer.
-    KGlobalAccel::self()->setShortcut(m_action, keyList(keys), KGlobalAccel::NoAutoloading);
-    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
-    return !active.isEmpty() && active.first() == keys;
-#else
-    Q_UNUSED(keys)
-    return false;
-#endif
+    return m_keys->take(keys);
 }
 
 void KGlobalAccelSessionShortcutBinder::letGo()
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    if (m_action) {
-        KGlobalAccel::self()->removeAllShortcuts(m_action);
-        delete m_action;
-        m_action = nullptr;
-    }
-#endif
+    m_keys->letGo();
 }
 
 } // namespace speecher

@@ -417,6 +417,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/audio/LoopbackPcm.cpp
   src/platform/audio/LoopbackReopen.cpp
   src/platform/audio/QtAudioInput.cpp
+  src/platform/audio/SilenceGate.cpp
   src/platform/audio/WavFileAudioInput.cpp
   src/platform/FallbackPopupPositioner.cpp
 )
@@ -445,6 +446,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/audio/LoopbackPcm.h
   src/platform/audio/LoopbackReopen.h
   src/platform/audio/QtAudioInput.h
+  src/platform/audio/SilenceGate.h
   src/platform/audio/WavFileAudioInput.h
 )
 
@@ -485,6 +487,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/YdotoolSetup.h
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
+  src/platform/KeyHold.h
   src/platform/KWinActiveWindow.h
   src/platform/LinuxSessionKeyGrab.h
   src/platform/KeywatchSetup.h

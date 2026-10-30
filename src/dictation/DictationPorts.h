@@ -97,6 +97,10 @@ public:
     // input started once and then thrown away. Inputs that read no device,
     // such as a file standing in for the microphone, ignore it.
     virtual void useDevice(const QString &deviceId) { Q_UNUSED(deviceId) }
+    // start() may wait for the first audio and stop() for the post-roll in a
+    // nested event loop. Shortcut presses, IPC, settings changes and failed()
+    // can all arrive meanwhile, so a caller may be re-entered, including by
+    // another start() or stop(), before either returns.
     virtual bool start(QString *error = nullptr) = 0;
     virtual void stop() = 0;
     virtual bool isActive() const = 0;
@@ -150,6 +154,10 @@ public:
         TitleChanged,
         Different,
     };
+    // focusMatch() and verifyInsertion() may wait in a nested event loop
+    // (asking the compositor which window is in front, or giving the app time
+    // to show the inserted text). Timers, IPC and D-Bus replies run
+    // meanwhile, so a caller may be re-entered before either returns.
     virtual FocusMatch focusMatch(const Target &target)
     {
         return stillFocused(target) ? FocusMatch::Same : FocusMatch::Different;

@@ -7,6 +7,7 @@
 #include <QMediaDevices>
 #include <QScopedPointer>
 #include "platform/audio/AudioPcmConverter.h"
+#include "platform/audio/SilenceGate.h"
 
 #include "dictation/DictationPorts.h"
 
@@ -45,7 +46,6 @@ private:
     bool waitForFirstSample(const AudioCaptureSettings &settings, QString *error);
     void waitForPostRoll(const AudioCaptureSettings &settings);
     void stopSource();
-    void resetCaptureGate(bool keepPreRoll);
     void onReadyRead();
     void handleSourceStateChanged(QAudio::State state);
     void failCapture(const QString &message);
@@ -62,12 +62,10 @@ private:
     QString m_currentDeviceId;
     QString m_currentDeviceLabel;
     AudioCaptureSettings m_captureSettings;
-    QByteArray m_preRollBuffer;
-    QByteArray m_pendingPostRoll;
+    SilenceGate m_gate;
     bool m_captureActive = false;
     bool m_sourceStopping = false;
     bool m_seenFirstSample = false;
-    bool m_vadSpeaking = false;
     bool m_conversionFailed = false;
     bool m_mediaDevicesInitialized = false;
     bool m_keepsSilence = false;
