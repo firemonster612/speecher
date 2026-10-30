@@ -7,6 +7,7 @@
 #include "core/ProviderReadiness.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/RefinementChain.h"
 
 #include <QDebug>
 #include <QHash>
@@ -60,7 +61,11 @@ DictationSession::DictationSession(SettingsStore *settings,
                                                                                             : nullptr;
                                     },
                                     this))
-    , m_refinerPreparation(new PreparationRunner(this))
+    , m_refinementChain(new RefinementChain(
+          [this](const QString &providerId) {
+              return selectTranscriptRefiner(providerId) ? m_refiner.data() : nullptr;
+          },
+          this))
     , m_completionTimer(new QTimer(this))
 {
     m_completionTimer->setSingleShot(true);
@@ -72,9 +77,12 @@ DictationSession::DictationSession(SettingsStore *settings,
         emit popupHideRequested();
         setState(DictationState::Idle);
     });
-    connect(m_refinerPreparation, &PreparationRunner::refinerPrepared, this,
-            &DictationSession::finishRefinerPreparation);
-    connect(m_refinerPreparation, &PreparationRunner::secretsResolved, this, &DictationSession::useRefinerSecrets);
+    connect(m_refinementChain, &RefinementChain::passedOver, this, &DictationSession::passOverRefiner);
+    connect(m_refinementChain, &RefinementChain::preparing, this, &DictationSession::enterRefining);
+    connect(m_refinementChain, &RefinementChain::secretsResolved, this,
+            [this](const AppSettings &settings) { m_sessionSettings = settings; });
+    connect(m_refinementChain, &RefinementChain::ready, this, &DictationSession::startRefiner);
+    connect(m_refinementChain, &RefinementChain::exhausted, this, &DictationSession::deliverWithoutRefinement);
     connect(m_speechChain, &SpeechChain::passedOver, this,
             [this](const QString &providerId, Stage stage, const ProviderFailure &failure) {
                 noteProviderIssue(ProviderRole::Speech, providerId, stage, failure);
@@ -319,8 +327,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_attemptEndedDuringStop = false;
     m_pendingAudio.clear();
     // The chains wait for the target, whose Writing Profile may lead them.
-    m_refinementChain.clear();
-    m_refinementIndex = 0;
+    m_refinementChain->begin(kNoRefinementProvider, {});
     m_usedRawTranscript = false;
     m_awaitingSpeechProvider = true;
     m_providerHistory = {};
@@ -394,10 +401,10 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     const RefinementSettings effectiveRefinement =
         TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
     // Once, for whichever refiner in the chain reads it.
-    const bool chainReadsScreenshots =
-        std::any_of(m_refinementChain.cbegin(), m_refinementChain.cend(), [this](const QString &id) {
-            return m_providers->refinementProviderReadsScreenshots(id);
-        });
+    const QStringList &refiners = m_refinementChain->providerIds();
+    const bool chainReadsScreenshots = std::any_of(refiners.cbegin(), refiners.cend(), [this](const QString &id) {
+        return m_providers->refinementProviderReadsScreenshots(id);
+    });
     if (settings.refinement.includeScreenshotContext
         && effectiveRefinement.style != QStringLiteral("none")
         && m_screenshotProvider
@@ -436,11 +443,10 @@ bool DictationSession::selectProviders()
         return false;
     }
     if (settings.refinement.providerId != kNoRefinementProvider) {
-        selectTranscriptRefiner(settings.refinement.providerId, nullptr);
+        selectTranscriptRefiner(settings.refinement.providerId);
     }
     m_speechChain->begin(settings.speech.providerId, settings.speech.fallbackProviderIds);
-    m_refinementChain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
-                                      settings.refinement.fallbackProviderIds);
+    m_refinementChain->begin(settings.refinement.providerId, settings.refinement.fallbackProviderIds);
     return true;
 }
 
@@ -637,6 +643,7 @@ void DictationSession::setReviewKeys(const ReviewKeys &keys)
 void DictationSession::setReachability(Reachability reachability)
 {
     m_speechChain->setReachability(reachability);
+    m_refinementChain->setReachability(reachability);
 }
 
 void DictationSession::stopListening()
@@ -655,7 +662,7 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Refining) {
-        m_refinerPreparation->cancel();
+        m_refinementChain->cancel();
         if (m_refiner) {
             m_refiner->cancel();
         }
@@ -789,7 +796,7 @@ void DictationSession::discard()
 {
     ++m_generation;
     m_speechChain->cancel();
-    m_refinerPreparation->cancel();
+    m_refinementChain->cancel();
     if (m_transcriber) {
         m_transcriber->cancelAttempt(m_attemptId);
     }
@@ -1136,85 +1143,12 @@ void DictationSession::beginRefinement(quint64 generation)
         return;
     }
 
-    m_refinementIndex = 0;
-    prepareRefiner();
-}
-
-// Tries the refinement chain from m_refinementIndex on, with the same
-// pipeline for each refiner. Its keys come from the keyring, and an expired
-// sign-in renews, on the worker: never on this thread, where prepare() would
-// do both.
-void DictationSession::prepareRefiner()
-{
-    if (m_refinementIndex >= m_refinementChain.size()) {
-        deliverWithoutRefinement();
-        return;
-    }
-    const QString providerId = m_refinementChain.at(m_refinementIndex);
-    if (offlineFor(ProviderRole::Refinement, providerId)) {
-        handleRefinementFailure(noInternetFailure(), Stage::Prepare);
-        return;
-    }
-    QString providerError;
-    if (!selectTranscriptRefiner(providerId, &providerError)) {
-        handleRefinementFailure({ProviderFailureKind::Unavailable, providerError}, Stage::Prepare);
-        return;
-    }
-    if (SettingsStore::hasUnreadProviderSecrets(*m_sessionSettings, ProviderRole::Refinement, providerId)) {
-        enterRefining();
-        m_refinerPreparation->resolveSecrets(ProviderRole::Refinement, providerId, *m_sessionSettings);
-        return;
-    }
-    if (std::optional<PreparationJob> refresh =
-            m_refiner->createRefreshJob(refinerSettings(), m_sessionSettings->accounts)) {
-        enterRefining();
-        m_refinerPreparation->prepareRefiner(std::move(*refresh));
-        return;
-    }
-    startRefiner();
-}
-
-bool DictationSession::refinerPreparationStale() const
-{
-    if (m_state != DictationState::Refining || m_refinementGeneration != m_generation || !m_sessionSettings) {
-        qInfo() << "refinement preparation result ignored";
-        return true;
-    }
-    return false;
-}
-
-void DictationSession::finishRefinerPreparation(const std::optional<ProviderFailure> &failure)
-{
-    if (refinerPreparationStale()) {
-        return;
-    }
-    if (failure) {
-        handleRefinementFailure(*failure, Stage::Prepare);
-        return;
-    }
-    startRefiner();
-}
-
-void DictationSession::useRefinerSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings)
-{
-    if (refinerPreparationStale()) {
-        return;
-    }
-    if (failure) {
-        handleRefinementFailure(*failure, Stage::Prepare);
-        return;
-    }
-    m_sessionSettings = settings;
-    prepareRefiner();
+    m_refinementChain->prepare(settings, refinement);
 }
 
 void DictationSession::startRefiner()
 {
-    const RefinementSettings refinement = refinerSettings();
-    if (const std::optional<ProviderFailure> failure = m_refiner->prepare(refinement, m_sessionSettings->accounts)) {
-        handleRefinementFailure(*failure, Stage::Prepare);
-        return;
-    }
+    const RefinementSettings refinement = m_refinementChain->currentSettings();
     noteSignIn(refinement.providerId, true);
 
     enterRefining();
@@ -1251,32 +1185,27 @@ void DictationSession::enterRefining()
     m_refinementGeneration = m_generation;
 }
 
-// The pipeline's refinement settings for the refiner being tried, with the
-// keys read since the pipeline was built.
-RefinementSettings DictationSession::refinerSettings() const
+// A refiner that fails to answer for want of a service makes way for the
+// next; one that answers unusably or fails otherwise ends refinement as
+// before.
+void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
 {
-    RefinementSettings refinement = m_transcriptPipeline.refinementSettings;
-    refinement.providerId = m_refinementChain.at(m_refinementIndex);
-    refinement.endpoint.apiKey = m_sessionSettings->refinement.endpoint.apiKey;
-    refinement.cliproxyApiKey = m_sessionSettings->refinement.cliproxyApiKey;
-    return refinement;
+    if (permitsProviderFallback(failure.kind)) {
+        passOverRefiner(m_refinementChain->currentId(), Stage::Connect, failure);
+        m_refinementChain->prepareNext(*m_sessionSettings, m_transcriptPipeline.refinementSettings);
+        return;
+    }
+    qWarning().noquote() << "refinement failed message=" + failure.message;
+    m_lastMessage = failure.message;
+    deliverWithoutRefinement();
 }
 
-// Any refiner that fails to prepare, and one that fails to answer for want
-// of a service, makes way for the next; one that answers unusably or fails
-// otherwise ends refinement as before.
-void DictationSession::handleRefinementFailure(const ProviderFailure &failure, Stage stage)
+void DictationSession::passOverRefiner(const QString &providerId, Stage stage, const ProviderFailure &failure)
 {
     qWarning().noquote() << "refinement failed message=" + failure.message;
     m_lastMessage = failure.message;
-    if (stage == Stage::Prepare || permitsProviderFallback(failure.kind)) {
-        noteProviderIssue(ProviderRole::Refinement, m_refinementChain.at(m_refinementIndex), stage, failure);
-        retireRefiner();
-        ++m_refinementIndex;
-        prepareRefiner();
-        return;
-    }
-    deliverWithoutRefinement();
+    noteProviderIssue(ProviderRole::Refinement, providerId, stage, failure);
+    retireRefiner();
 }
 
 // Nothing it sends from now on counts, and the next refiner starts from an
@@ -1492,7 +1421,9 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         // A role without fallbacks ends as it always has, its failures unnamed.
         ProviderHistory history = m_providerHistory;
         history.issues.removeIf([this](const ProviderAttemptIssue &issue) {
-            return (issue.role == ProviderRole::Speech ? m_speechChain->providerIds() : m_refinementChain).size() < 2;
+            const QStringList &chain =
+                issue.role == ProviderRole::Speech ? m_speechChain->providerIds() : m_refinementChain->providerIds();
+            return chain.size() < 2;
         });
         DictationOutcome outcome = dictationOutcome(result.message,
                                                           result.receipt == DeliveryReceipt::Copied,
@@ -1695,13 +1626,10 @@ bool DictationSession::selectSpeechTranscriber(const QString &providerId, QStrin
     return true;
 }
 
-bool DictationSession::selectTranscriptRefiner(const QString &providerId, QString *error)
+bool DictationSession::selectTranscriptRefiner(const QString &providerId)
 {
     TranscriptRefiner *provider = m_providers->refinementProvider(providerId);
     if (!provider) {
-        if (error) {
-            *error = QStringLiteral("Unknown refinement provider: %1").arg(providerId);
-        }
         return false;
     }
     // Always afresh, under a revision of its own: a refiner retired earlier
@@ -1870,7 +1798,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         if (!current()) {
             return;
         }
-        handleRefinementFailure(failure, Stage::Connect);
+        handleRefinementFailure(failure);
     });
 }
 

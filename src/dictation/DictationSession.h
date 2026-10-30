@@ -6,7 +6,6 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
-#include "dictation/PreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 #include "providers/SpeechChain.h"
 
@@ -22,6 +21,7 @@ class QTimer;
 namespace speecher {
 
 class ProviderRegistry;
+class RefinementChain;
 class SettingsStore;
 class TranscriptState;
 
@@ -164,14 +164,10 @@ private:
     void continueStartupAfterPreparation(quint64 generation);
     void failStartup(const QString &message, const PopupErrorAction &fix);
     void beginRefinement(quint64 generation);
-    void prepareRefiner();
-    bool refinerPreparationStale() const;
-    void finishRefinerPreparation(const std::optional<ProviderFailure> &failure);
-    void useRefinerSecrets(const std::optional<ProviderFailure> &failure, const AppSettings &settings);
     void startRefiner();
     void enterRefining();
-    RefinementSettings refinerSettings() const;
-    void handleRefinementFailure(const ProviderFailure &failure, Stage stage);
+    void handleRefinementFailure(const ProviderFailure &failure);
+    void passOverRefiner(const QString &providerId, Stage stage, const ProviderFailure &failure);
     void retireRefiner();
     void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
@@ -209,7 +205,7 @@ private:
     void clearScreenshotContext();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
-    bool selectTranscriptRefiner(const QString &providerId, QString *error);
+    bool selectTranscriptRefiner(const QString &providerId);
     void disconnectSpeechTranscriber();
     void connectSpeechTranscriber(SpeechTranscriber *transcriber);
     void disconnectTranscriptRefiner();
@@ -226,7 +222,7 @@ private:
     TranscriptState *m_transcript = nullptr;
     SpeechChain *m_speechChain = nullptr;
     SpeechAttemptPolicy m_attempts;
-    PreparationRunner *m_refinerPreparation = nullptr;
+    RefinementChain *m_refinementChain = nullptr;
     QTimer *m_completionTimer = nullptr;
     // The registry owns these and may be destroyed first; never call a dead one.
     QPointer<SpeechTranscriber> m_transcriber;
@@ -287,10 +283,7 @@ private:
     // The failure that sent the session on to the next provider, which ends
     // the speech if none takes over.
     SpeechFailure m_switchFailure;
-    // The refiners this session may use, primary first, and the one it is
-    // on; each connection to a refiner gets its own revision.
-    QStringList m_refinementChain;
-    int m_refinementIndex = 0;
+    // Each connection to a refiner gets its own revision.
     quint64 m_refinementRevision = 0;
     // The raw transcript is delivered in place of a refinement that was
     // asked for.
