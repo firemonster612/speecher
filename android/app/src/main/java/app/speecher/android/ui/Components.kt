@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +24,7 @@ import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -40,6 +42,9 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.provider.Provider
+import app.speecher.android.provider.label
+import app.speecher.android.provider.providerOrder
 
 // The screen frame, headings, rows and sheet buttons the app's screens share.
 
@@ -174,5 +179,38 @@ internal fun SheetActions(
     ) {
         TextButton(onCancel) { Text("Cancel") }
         Button(onConfirm, enabled = canConfirm) { Text(confirm) }
+    }
+}
+
+@Composable
+internal fun SwitchRow(
+    title: String,
+    checked: Boolean,
+    description: String? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = { Switch(checked, onCheckedChange) },
+        colors = rowColors(),
+    )
+}
+
+/** A link to sign in to each account that isn't, so a provider picker can offer it. */
+@Composable
+internal fun SignInLinks(
+    signedIn: Set<Provider>,
+    onSignIn: (Provider) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        providerOrder
+            .filter { it !in signedIn }
+            .forEach { provider ->
+                TextButton({ onSignIn(provider) }, Modifier.offset(x = (-12).dp)) {
+                    Text("Sign in to ${provider.label} to use it")
+                }
+            }
     }
 }

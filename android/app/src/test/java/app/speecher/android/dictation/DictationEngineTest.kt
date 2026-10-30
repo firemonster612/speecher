@@ -172,7 +172,8 @@ class DictationEngineTest {
         assertEquals(listOf("heard so far"), t.commits)
     }
 
-    private class FakeTransport : WebSocketTransport {
+    /** A socket that keeps what it was sent; one that [refusesAudio] fails inside each send. */
+    private class FakeTransport(private val refusesAudio: Boolean = false) : WebSocketTransport {
         lateinit var server: WebSocketTransport.Listener
         val sent = mutableListOf<String>()
 
@@ -187,11 +188,46 @@ class DictationEngineTest {
 
         override fun sendText(text: String) = sent.add(text)
 
-        override fun sendBinary(bytes: ByteArray) = sent.add("binary:${bytes.joinToString()}")
+        override fun sendBinary(bytes: ByteArray): Boolean {
+            if (!refusesAudio) return sent.add("binary:${bytes.joinToString()}")
+            server.onFailure(IOException("send queue full"), null)
+            return false
+        }
 
         override fun close(code: Int, reason: String?) {}
 
         override fun cancel() {}
+    }
+
+    @Test
+    fun `a stream that fails as it is sent audio fails the dictation, and Retry listens again`() {
+        val transports = mutableListOf<FakeTransport>()
+        val tasks = ManualExecutor()
+        val t =
+            TestDictation(
+                executor = tasks,
+                speechClient = { events ->
+                    val transport = FakeTransport(refusesAudio = true).also(transports::add)
+                    ClaudeVoiceClient(transport, "token", emptyList(), "en", events)
+                },
+            )
+        t.engine.start(SpeechProvider.Claude)
+        tasks.runNext() // The microphone.
+        // The first stream and both reconnects go live, then fail on their first audio.
+        repeat(3) {
+            tasks.runNext()
+            transports.last().server.onOpen()
+            t.hear(1)
+        }
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
+                "send queue full",
+                "",
+            ),
+            t.engine.state,
+        )
+        assertTrue(t.engine.retry())
     }
 
     /**

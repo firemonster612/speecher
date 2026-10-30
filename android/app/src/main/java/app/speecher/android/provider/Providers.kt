@@ -52,6 +52,12 @@ val Provider.cleanup: CleanupProvider
 val SpeechProvider.hasBatchTranscription: Boolean
     get() = this == SpeechProvider.ChatGpt
 
+/**
+ * Claude Voice and a Custom Endpoint take key terms as hints; ChatGPT's speech service takes none.
+ */
+val SpeechProvider.takesKeyTerms: Boolean
+    get() = this != SpeechProvider.ChatGpt
+
 /** A Custom Endpoint transcribes the whole recording once it stops, so no words show before. */
 val SpeechProvider.transcribesAfterStop: Boolean
     get() = this == SpeechProvider.Endpoint

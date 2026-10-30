@@ -21,7 +21,10 @@ class DictationSession(
     @Volatile var target: TargetApp?,
     /** Told each state of this session on the main thread, until it ends. */
     onState: (DictationSession, DictationState) -> Unit,
-    /** Told on the main thread once the words went in, unless the session ended first. */
+    /**
+     * Told on the main thread once the dictation is done, its words in or none to put in, unless
+     * the session ended first.
+     */
     onInserted: () -> Unit,
 ) {
     val settings = SettingsStore(context).load()
@@ -87,7 +90,7 @@ object ActiveDictation {
 
     /** Set while the IME exists: shows the running session's state on its panel. */
     @Volatile var observe: ((DictationSession, DictationState) -> Unit)? = null
-    /** Set while the IME exists: switches back once the running session's words went in. */
+    /** Set while the IME exists: switches back once the running session is done. */
     @Volatile var onInserted: (() -> Unit)? = null
     /**
      * Set while the chip service runs: it watches the field an insertion went into for the person's

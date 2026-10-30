@@ -64,6 +64,21 @@ sealed interface DictationState {
     ) : DictationState
 }
 
+/**
+ * Whether the panel offers Insert. While listening, until it is tapped, once there are words or
+ * when the service transcribes only after the stop. During the cleanup, which Insert stops to take
+ * the words as heard. After a failure that kept words, unless its recovery commits them already.
+ * Never during the batch pass, and never for a selection edit, whose words are instructions.
+ */
+val DictationState.offersInsert: Boolean
+    get() =
+        when (this) {
+            is DictationState.Listening -> !stopping && (text.isNotBlank() || textAfterStop)
+            is DictationState.Refining -> !transcribingAgain && !editsSelection
+            is DictationState.Failed ->
+                reason != FailureReason.Commit && !editsSelection && transcript.isNotBlank()
+        }
+
 /** Why dictation failed. Each reason has one [recovery]. */
 sealed interface FailureReason {
     /** Recovery: open the app to grant the microphone. */

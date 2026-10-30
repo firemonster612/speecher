@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.provider.Provider
 import app.speecher.android.provider.SpeechProvider
+import app.speecher.android.provider.takesKeyTerms
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.MAX_SPEECH_TERMS
@@ -80,7 +81,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
-    val takesKeyTerms = settings.transcriptionProvider != SpeechProvider.ChatGpt
+    val takesKeyTerms = settings.transcriptionProvider.takesKeyTerms
     Text(
         "Refinement uses the terms for the dictation's Writing Profile. " +
             when (settings.transcriptionProvider) {
@@ -431,12 +432,10 @@ private fun ChoiceRow(
  * Claude Voice, its header. A Custom Endpoint takes them all as its prompt; ChatGPT takes none.
  */
 internal fun keyTerms(settings: SpeecherSettings): Set<String> {
+    val provider = settings.transcriptionProvider
+    if (!provider.takesKeyTerms) return emptySet()
     val terms = speechTerms(settings.vocabulary)
-    return when (settings.transcriptionProvider) {
-        SpeechProvider.ChatGpt -> emptySet()
-        SpeechProvider.Claude -> claudeVoiceKeyterms(terms).toSet()
-        SpeechProvider.Endpoint -> terms.toSet()
-    }
+    return (if (provider == SpeechProvider.Claude) claudeVoiceKeyterms(terms) else terms).toSet()
 }
 
 /**
@@ -448,7 +447,7 @@ internal fun vocabularyLimit(settings: SpeecherSettings): String {
     val refinement =
         if (terms > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
         else "all are used for refinement"
-    if (settings.transcriptionProvider == SpeechProvider.ChatGpt)
+    if (!settings.transcriptionProvider.takesKeyTerms)
         return if (terms == 1) "1 term, used for refinement" else "$terms terms, $refinement"
     val sent = keyTerms(settings).size
     if (sent < terms) {

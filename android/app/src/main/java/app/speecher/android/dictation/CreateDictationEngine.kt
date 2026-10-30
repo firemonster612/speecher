@@ -18,6 +18,7 @@ import app.speecher.android.provider.Provider
 import app.speecher.android.provider.SpeechProvider
 import app.speecher.android.provider.oauth
 import app.speecher.android.provider.speech
+import app.speecher.android.provider.takesKeyTerms
 import app.speecher.android.settings.SettingsStore
 import app.speecher.android.sharedExecutor
 import app.speecher.android.sharedHttp
@@ -212,11 +213,13 @@ fun createDictationEngine(
                 onEvent(event)
             }
             val terms =
-                speechTerms(
-                    settings.vocabulary,
-                    writingProfile(settings, session.target),
-                    settings.learnedCorrections,
-                )
+                if (!selected.takesKeyTerms) emptyList()
+                else
+                    speechTerms(
+                        settings.vocabulary,
+                        writingProfile(settings, session.target),
+                        settings.learnedCorrections,
+                    )
             // Each speech provider's client; a new provider adds its branch here.
             when (selected) {
                 SpeechProvider.Claude -> {

@@ -68,6 +68,7 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.Recovery
 import app.speecher.android.dictation.advice
+import app.speecher.android.dictation.offersInsert
 import app.speecher.android.dictation.recovery
 import app.speecher.android.provider.CleanupProvider
 import app.speecher.android.provider.SpeechProvider
@@ -387,29 +388,18 @@ private fun RowScope.PanelButtons(
     val button = Modifier.weight(1f).heightIn(min = 52.dp)
     TextButton(onCancel, Modifier.heightIn(min = 52.dp)) { Text("Cancel") }
     if (state is DictationState.Failed) {
-        // On a commit failure the recovery button already re-commits the same text, so a second
-        // Insert would duplicate it; show only the recovery action there. A failed edit's words
-        // are instructions, never text to insert.
-        if (
-            state.reason != FailureReason.Commit &&
-                !state.editsSelection &&
-                state.transcript.isNotBlank()
-        ) {
-            FilledTonalButton(onInsert, button) { Text("Insert") }
-        }
+        if (state.offersInsert) FilledTonalButton(onInsert, button) { Text("Insert") }
         Button(onRecover, button) { Text(state.reason.recovery.label) }
         return
     }
-    // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout;
-    // not while it edits a selection, whose words are instructions.
-    val cleaningUp =
-        state is DictationState.Refining && !state.transcribingAgain && !state.editsSelection
+    // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout.
+    val cleaningUp = state is DictationState.Refining && state.offersInsert
     val secondary = if (cleaningUp) listOf(InsertAction.Insert) else layout.actions.dropLast(1)
     secondary.forEach { action ->
         FilledTonalButton(
             action.pick(onInsert, onInsertRefined),
             Modifier.heightIn(min = 52.dp),
-            enabled = cleaningUp || state.canInsert,
+            enabled = state.offersInsert,
         ) {
             Text(action.label, maxLines = 1)
         }
@@ -419,9 +409,6 @@ private fun RowScope.PanelButtons(
 
 private fun InsertAction.pick(onInsert: () -> Unit, onInsertRefined: () -> Unit) =
     if (this == InsertAction.Insert) onInsert else onInsertRefined
-
-private val DictationState.canInsert: Boolean
-    get() = this is DictationState.Listening && !stopping && (text.isNotBlank() || textAfterStop)
 
 /**
  * What the panel waits on once Insert is tapped, in the desktop's words, or null while it is not
@@ -450,8 +437,13 @@ private fun PrimaryInsertButton(
     modifier: Modifier,
 ) {
     val primary = layout.actions.last()
-    Button(primary.pick(onInsert, onInsertRefined), modifier, enabled = state.canInsert) {
-        val wait = state.wait
+    val wait = state.wait
+    // Showing the wait, it does nothing until the wait ends.
+    Button(
+        primary.pick(onInsert, onInsertRefined),
+        modifier,
+        enabled = wait == null && state.offersInsert,
+    ) {
         if (wait != null) {
             CircularProgressIndicator(
                 Modifier.size(18.dp).semantics { contentDescription = wait },

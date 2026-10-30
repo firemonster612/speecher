@@ -51,11 +51,16 @@ private sealed interface Phase {
 
     /**
      * ChatGPT's batch pass, while [cleanup] is null, or the [cleanup] runs as [request], which
-     * Cancel and Insert abort.
+     * Cancel and Insert abort. [transcript] is the words it works on, as heard.
      */
-    data class Refining(val request: Cancellation, val cleanup: CleanupProvider?) : Phase
+    data class Refining(
+        val request: Cancellation,
+        val cleanup: CleanupProvider?,
+        val transcript: String,
+    ) : Phase
 
-    data class Failed(val retry: Retry) : Phase
+    /** [transcript] is what was heard before the failure, which Insert and Retry carry on from. */
+    data class Failed(val retry: Retry, val transcript: String) : Phase
 }
 
 /** The microphone while listening. */
@@ -223,11 +228,15 @@ class DictationEngine(
                     val now = listeningTo(current, opening)
                     if (now != null) {
                         client = opened
-                        unsent.forEach(opened::sendAudio)
-                        unsent.clear()
+                        // One at a time: a client can fail as it is sent audio, replacing itself or
+                        // ending the dictation, and what is left is not its to send.
+                        while (client === opened && unsent.isNotEmpty()) {
+                            opened.sendAudio(unsent.removeAt(0))
+                        }
                         // Paused while it connected, or opened only for what a resume heard: it
                         // ends as it opens, whether or not the microphone is back on.
-                        if (now.mic != Mic.On || now.finishingPause) opened.stop()
+                        if (client === opened && (now.mic != Mic.On || now.finishingPause))
+                            opened.stop()
                     } else opened.cancel()
                 }
             } catch (e: CannotListen) {
@@ -280,9 +289,11 @@ class DictationEngine(
         }
         stopCapture()
         resumeMedia()
+        // Shown before the stream is told, as a stream can end, and the dictation move on, inside
+        // its stop.
+        publish(listening(0f))
         // A stream finishing a pause was already told; its end opens the one for what came after.
         if (!now.finishingPause) client?.stop()
-        publish(listening(0f))
         return true
     }
 
@@ -335,17 +346,16 @@ class DictationEngine(
             is Phase.Refining -> {
                 val cleanup = now.cleanup ?: return false
                 if (selected != null) return false
-                val heard = (state as DictationState.Refining).transcript
                 cancelSession()
                 // The stopped cleanup was still called, as the desktop's record counts it.
                 cleanupsCalled += cleanup
-                commitHeard(heard)
+                commitHeard(now.transcript)
             }
             is Phase.Failed -> {
                 if (selected != null) return false
                 val retry = now.retry
                 if (retry is Retry.Commit) commitTranscript(retry.text)
-                else commitHeard((state as DictationState.Failed).transcript)
+                else commitHeard(now.transcript)
             }
             Phase.Idle -> {}
         }
@@ -367,12 +377,11 @@ class DictationEngine(
     @Synchronized
     fun retry(): Boolean {
         val failed = phase as? Phase.Failed ?: return false
-        val transcript = (state as DictationState.Failed).transcript
         when (val retry = failed.retry) {
             is Retry.Commit -> commitTranscript(retry.text)
-            is Retry.Refine -> refineTranscript(retry.cleanup, transcript)
+            is Retry.Refine -> refineTranscript(retry.cleanup, failed.transcript)
             Retry.Restart -> {
-                startSession(sourceProvider, transcript)
+                startSession(sourceProvider, failed.transcript)
                 return true
             }
         }
@@ -399,7 +408,8 @@ class DictationEngine(
                                 recordedTooLong = true
                             }
                         }
-                        publish(listening(level))
+                        // The client can fail as it is sent audio, which can end the listening.
+                        if (micOn) publish(listening(level))
                     }
                 }
             }
@@ -424,7 +434,7 @@ class DictationEngine(
         }
         val current = session
         val cancellation = Cancellation()
-        phase = Phase.Refining(cancellation, provider)
+        phase = Phase.Refining(cancellation, provider, raw)
         publish(DictationState.Refining(raw, editsSelection = edited != null))
         executor.execute {
             try {
@@ -597,7 +607,7 @@ class DictationEngine(
             return
         }
         val cancellation = Cancellation()
-        phase = Phase.Refining(cancellation, cleanup = null)
+        phase = Phase.Refining(cancellation, cleanup = null, streamed)
         publish(DictationState.Refining(streamed, transcribingAgain = true))
         executor.execute {
             val batch =
@@ -637,7 +647,7 @@ class DictationEngine(
     private fun showFailure(reason: FailureReason, detail: String, raw: String, retry: Retry) {
         cancelSession()
         resumeMedia()
-        phase = Phase.Failed(retry)
+        phase = Phase.Failed(retry, raw)
         publish(DictationState.Failed(reason, detail, raw, editsSelection = selected != null))
     }
 

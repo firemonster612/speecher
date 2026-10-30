@@ -193,6 +193,7 @@ class WebSocketWireTest {
             val url = "ws://localhost:${server.localPort}/speech"
             val transport = webSocketTransport(url)
             val events = LinkedBlockingQueue<String>()
+            val caller = Thread.currentThread()
             transport.open(
                 url,
                 emptyMap(),
@@ -215,6 +216,8 @@ class WebSocketWireTest {
                     }
 
                     override fun onFailure(error: Throwable, statusCode: Int?) {
+                        // Never inside a call to the transport, where the caller may hold a lock.
+                        check(Thread.currentThread() != caller)
                         events.add("failure:$statusCode")
                     }
                 },

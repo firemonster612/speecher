@@ -21,14 +21,23 @@ import java.util.concurrent.atomic.AtomicLong
 interface WebSocketTransport {
     fun open(url: String, headers: Map<String, String>, subprotocol: String?, listener: Listener)
 
+    /**
+     * Queues a frame to send. False when it was not queued: the socket is not open yet, is closing
+     * or was cancelled, or has more queued than it may hold, which fails the connection.
+     */
     fun sendText(text: String): Boolean
 
+    /** As [sendText], for a binary frame. */
     fun sendBinary(bytes: ByteArray): Boolean
 
     fun close(code: Int = 1000, reason: String? = null)
 
     fun cancel()
 
+    /**
+     * Called on the transport's own threads, never inside a call to it, so a caller may hold a lock
+     * its listener takes too.
+     */
     interface Listener {
         fun onOpen()
 
@@ -294,8 +303,7 @@ internal constructor(
     override fun sendBinary(bytes: ByteArray) = enqueue(2, bytes.copyOf())
 
     // Only the single writer thread runs writeFrame, so a blocked network write never stalls a
-    // caller
-    // (e.g. the audio thread) or the reader thread. Control frames (pong, close) go straight
+    // caller (e.g. the audio thread) or the reader thread. Control frames (pong, close) go straight
     // through.
     private fun submit(opcode: Int, bytes: ByteArray) {
         try {
@@ -306,8 +314,7 @@ internal constructor(
     private fun runWrite(opcode: Int, bytes: ByteArray) {
         if (cancelled) return
         // On the single writer thread a data task ordered after the close frame sees closing ==
-        // true;
-        // dropping it keeps data frames from following the close (RFC 6455 5.5.1).
+        // true; dropping it keeps data frames from following the close (RFC 6455 5.5.1).
         if ((opcode == 1 || opcode == 2) && closing.get()) return
         try {
             writeFrame(opcode, bytes)
@@ -319,15 +326,17 @@ internal constructor(
     }
 
     // Data frames are bounded: on a stalled connection the queue cannot grow without limit the way
-    // a
-    // blocking write once bounded it. Over the cap the send is refused and the connection fails,
+    // a blocking write once bounded it. Over the cap the send is refused and the connection fails,
     // since what it would have carried is lost; a send after a close or cancel is simply dropped.
     private fun enqueue(opcode: Int, bytes: ByteArray): Boolean {
         if (cancelled || closing.get() || !opened) return false
         if (queuedBytes.addAndGet(bytes.size.toLong()) > MAX_QUEUED_BYTES) {
             queuedBytes.addAndGet(-bytes.size.toLong())
-            deliverFailure(IOException("send queue full"), null)
             cancel()
+            // Reported from its own thread, as the sender may hold a lock the listener takes.
+            Thread({ deliverFailure(IOException("send queue full"), null) }, "speech-ws-failure")
+                .apply { isDaemon = true }
+                .start()
             return false
         }
         try {
@@ -378,11 +387,9 @@ internal constructor(
         submit(8, ByteBuffer.allocate(2 + text.size).putShort(code.toShort()).put(text).array())
         // The fallback runs off the writer thread so it still fires even if a stalled socket has
         // wedged the writer; cancel() then unblocks the write, and the terminated CAS keeps
-        // delivery
-        // to exactly one callback if the peer's echo wins the race. Publish the field before
-        // start()
-        // and recheck cancelled after the sleep so a racing cancel() can never leave a late
-        // callback.
+        // delivery to exactly one callback if the peer's echo wins the race. Publish the field
+        // before start() and recheck cancelled after the sleep so a racing cancel() can never leave
+        // a late callback.
         val timer =
             Thread(
                 {
