@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QObject>
 #include <QQmlEngine>
 
@@ -8,7 +10,7 @@ namespace speecher {
 // The UI's Navigation singleton: which page Main shows, and a row to scroll
 // to and flash once that page has loaded (set by search and links to a row).
 // The host holds it, so it opens Main on a page without reaching into QML.
-class QuickNavigation final : public QObject {
+class QuickNavigation final : public QObject, public HostSingleton<QuickNavigation> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Navigation)
     QML_SINGLETON
@@ -22,10 +24,6 @@ public:
     // No default parent: the engine makes its own instance of a singleton it
     // can default-construct, and would skip create().
     explicit QuickNavigation(QObject *parent);
-    ~QuickNavigation() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickNavigation *create(QQmlEngine *, QJSEngine *);
 
     QString current() const;
     QString pendingRow() const;

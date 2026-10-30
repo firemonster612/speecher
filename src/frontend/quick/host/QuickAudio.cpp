@@ -10,12 +10,6 @@
 
 namespace speecher {
 
-namespace {
-
-QuickAudio *g_instance = nullptr;
-
-} // namespace
-
 QuickAudio::QuickAudio(ApplicationController *controller,
                        QObject *parent,
                        DeviceLister listDevices,
@@ -25,7 +19,6 @@ QuickAudio::QuickAudio(ApplicationController *controller,
     , m_listDevices(std::move(listDevices))
     , m_test(*controller, nullptr, std::move(createInput))
 {
-    g_instance = this;
     if (!m_listDevices) {
         m_listDevices = [controller] { return controller->platform()->availableAudioInputDevices(); };
         connect(new QMediaDevices(this), &QMediaDevices::audioInputsChanged, this, &QuickAudio::refreshDevices);
@@ -78,20 +71,6 @@ QuickAudio::QuickAudio(ApplicationController *controller,
         keepTestRunningSoon();
     });
     refreshDevices();
-}
-
-QuickAudio::~QuickAudio()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickAudio *QuickAudio::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickAudio::create", "the host makes Audio before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 QString QuickAudio::testState() const

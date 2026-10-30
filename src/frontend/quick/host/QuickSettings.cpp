@@ -17,8 +17,6 @@ namespace speecher {
 
 namespace {
 
-QuickSettings *g_instance = nullptr;
-
 // What an update check frequency in this unit counts in minutes; zero for a
 // unit the custom interval does not offer, such as a hand-edited "weeks".
 int minutesPerCheckIntervalUnit(const QString &unit)
@@ -394,7 +392,6 @@ QuickSettings::QuickSettings(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
 {
-    g_instance = this;
     SettingsStore *store = controller->settings();
     connect(store, &SettingsStore::snapshotApplied, this, &QuickSettings::refresh);
     connect(store, &SettingsStore::audioCaptureSettingsChanged, this, &QuickSettings::refresh);
@@ -411,20 +408,6 @@ QuickSettings::QuickSettings(ApplicationController *controller, QObject *parent)
                 setError(shortcutRowId(role), bound ? QString() : detail);
             });
     refresh();
-}
-
-QuickSettings::~QuickSettings()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickSettings *QuickSettings::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickSettings::create", "the host makes Settings before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 QVariantMap QuickSettings::values() const

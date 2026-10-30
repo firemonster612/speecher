@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QFileSystemWatcher>
 #include <QObject>
 #include <QQmlEngine>
@@ -17,7 +19,7 @@ class WindowBackdrop;
 // The UI's Appearance singleton: what the desktop offers the window's look.
 // Colours are a scheme's roles, { window, text, accent, negative } (any may
 // be missing), which Theme maps onto its palette.
-class QuickAppearance final : public QObject {
+class QuickAppearance final : public QObject, public HostSingleton<QuickAppearance> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Appearance)
     QML_SINGLETON
@@ -33,10 +35,6 @@ class QuickAppearance final : public QObject {
 
 public:
     explicit QuickAppearance(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickAppearance() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickAppearance *create(QQmlEngine *, QJSEngine *);
 
     QVariantMap systemColors() const { return m_systemColors; }
     QVariantList installedSchemes() const { return m_installedSchemes; }

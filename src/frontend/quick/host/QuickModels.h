@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/quick/host/HostSingleton.h"
+
 #include <QObject>
 #include <QQmlEngine>
 #include <QVariantList>
@@ -18,7 +20,7 @@ class ApplicationController;
 // come from the controller's LocalSetup, so they outlive the window. Data
 // only, as plain values; the UI words it (ModelText). Every list but
 // downloads changes through changed(), which fires only when something did.
-class QuickModels final : public QObject {
+class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Models)
     QML_SINGLETON
@@ -122,10 +124,6 @@ class QuickModels final : public QObject {
 
 public:
     explicit QuickModels(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickModels() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickModels *create(QQmlEngine *, QJSEngine *);
 
     QVariantList speechServices() const { return m_speechServices; }
     QVariantList refinementProviders() const { return m_refinementProviders; }

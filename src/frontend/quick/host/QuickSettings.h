@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ShortcutBinding.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -19,7 +20,7 @@ QStringList shortcutKeys(const QString &display);
 // read from and written through the daemon's SettingsStore, so the UI, the
 // daemon and every CLI run see the same values. Every schema row with a
 // value has an entry in the table in the .cpp.
-class QuickSettings final : public QObject {
+class QuickSettings final : public QObject, public HostSingleton<QuickSettings> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Settings)
     QML_SINGLETON
@@ -28,10 +29,6 @@ class QuickSettings final : public QObject {
 
 public:
     explicit QuickSettings(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickSettings() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickSettings *create(QQmlEngine *, QJSEngine *);
 
     QVariantMap values() const;
     // Why a row's last save was refused, by row id, such as a shortcut another

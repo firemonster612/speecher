@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/SpeecherRemoval.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -17,7 +18,7 @@ class VirtualKeyboardSetup;
 // the settings or not, and the report of what it did. Only a computer with
 // removal steps has it (SpeecherRemoval::onThisComputer, Linux's); elsewhere
 // System.canRemove is false and start does nothing.
-class QuickRemoval final : public QObject {
+class QuickRemoval final : public QObject, public HostSingleton<QuickRemoval> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Removal)
     QML_SINGLETON
@@ -33,9 +34,6 @@ public:
     QuickRemoval(VirtualKeyboardSetup *virtualKeyboard, std::optional<SpeecherRemoval::Steps> steps,
                  QObject *parent = nullptr);
     ~QuickRemoval() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickRemoval *create(QQmlEngine *, QJSEngine *);
 
     // Whether this computer has removal steps.
     bool available() const { return m_removal != nullptr; }

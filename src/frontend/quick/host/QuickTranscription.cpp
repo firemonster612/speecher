@@ -16,8 +16,6 @@ namespace speecher {
 
 namespace {
 
-QuickTranscription *g_instance = nullptr;
-
 // Often enough for the bar to move smoothly through a wait.
 constexpr int kProgressTickMs = 100;
 
@@ -98,7 +96,6 @@ QuickTranscription::QuickTranscription(ApplicationController *controller, QObjec
     , m_controller(controller)
     , m_queue(controller)
 {
-    g_instance = this;
     m_progressClock.setInterval(kProgressTickMs);
     const auto followProgress = [this] {
         const qreal progress = m_queue.progress();
@@ -134,20 +131,6 @@ QuickTranscription::QuickTranscription(ApplicationController *controller, QObjec
     connect(&m_queue, &TranscribeQueue::problemChanged, this, &QuickTranscription::problemChanged);
     // The refiner's model and the seeded language follow the settings.
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickTranscription::optionsChanged);
-}
-
-QuickTranscription::~QuickTranscription()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickTranscription *QuickTranscription::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickTranscription::create", "the host makes Transcription before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 void QuickTranscription::addFiles(const QStringList &paths)

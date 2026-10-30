@@ -20,8 +20,6 @@ namespace speecher {
 
 namespace {
 
-QuickAppearance *g_instance = nullptr;
-
 // A scheme's roles for Theme, leaving out the ones it lacks.
 QVariantMap colorsOf(const ColorScheme &scheme)
 {
@@ -54,7 +52,6 @@ QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *par
     , m_backdrop(controller->platform()->createWindowBackdrop(this))
     , m_desktopColors(controller->platform()->createDesktopColors(this))
 {
-    g_instance = this;
     if (m_backdrop) {
         connect(m_backdrop, &WindowBackdrop::availableChanged, this, &QuickAppearance::canBlurChanged);
     }
@@ -74,20 +71,6 @@ QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *par
     connect(&m_schemeFolders, &QFileSystemWatcher::directoryChanged, this, &QuickAppearance::readInstalledSchemes);
     readSystemColors();
     readInstalledSchemes();
-}
-
-QuickAppearance::~QuickAppearance()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickAppearance *QuickAppearance::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickAppearance::create", "the host makes Appearance before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 bool QuickAppearance::canBlur() const

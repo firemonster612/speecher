@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dictation/PopupPresentation.h"
+#include "frontend/quick/host/HostSingleton.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -124,17 +125,13 @@ protected:
 // session. The popup comes and goes as the session asks; an error waits
 // popupErrorDismissMs, and as long again as it is held, before it dismisses
 // itself.
-class QuickDictation final : public QuickDictationState {
+class QuickDictation final : public QuickDictationState, public HostSingleton<QuickDictation> {
     Q_OBJECT
     QML_NAMED_ELEMENT(Dictation)
     QML_SINGLETON
 
 public:
     explicit QuickDictation(ApplicationController *controller, QObject *parent = nullptr);
-    ~QuickDictation() override;
-
-    // The engine's instance: the one the host made before loading any QML.
-    static QuickDictation *create(QQmlEngine *, QJSEngine *);
 
     // An error, the session's or one from outside it, such as a start the
     // microphone was refused for; the host shows the popup for the latter.

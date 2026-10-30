@@ -24,8 +24,6 @@ namespace speecher {
 
 namespace {
 
-QuickModels *g_instance = nullptr;
-
 // The runners LocalSetup looks for, in the order it looks.
 const QStringList kRunnerIds{QStringLiteral("ollama"), QStringLiteral("lmstudio"), QStringLiteral("llama-server")};
 
@@ -228,7 +226,6 @@ QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
 {
-    g_instance = this;
     LocalSetup *local = controller->localSetup();
     connect(local, &LocalSetup::changed, this, &QuickModels::refresh);
     connect(local, &LocalSetup::changed, this, &QuickModels::refreshDownloads);
@@ -240,20 +237,6 @@ QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
             Qt::QueuedConnection);
     refresh();
     refreshDownloads();
-}
-
-QuickModels::~QuickModels()
-{
-    if (g_instance == this) {
-        g_instance = nullptr;
-    }
-}
-
-QuickModels *QuickModels::create(QQmlEngine *, QJSEngine *)
-{
-    Q_ASSERT_X(g_instance, "QuickModels::create", "the host makes Models before loading QML");
-    QJSEngine::setObjectOwnership(g_instance, QJSEngine::CppOwnership);
-    return g_instance;
 }
 
 void QuickModels::refresh()
