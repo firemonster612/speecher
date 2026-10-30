@@ -189,7 +189,7 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
 
 QString QuickInsights::state() const
 {
-    if (!m_controller->settings()->insightsEnabled()) {
+    if (!m_controller->settings()->dictationSnapshot().insightsEnabled) {
         return QStringLiteral("off");
     }
     return m_controller->insightsLog()->records().isEmpty() ? QStringLiteral("empty") : QStringLiteral("ready");
@@ -307,7 +307,7 @@ QVariant QuickInsights::latest() const
                        {QStringLiteral("date"), QVariant()}};
     if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         latest[QStringLiteral("app")] = record->appName;
-        latest[QStringLiteral("profile")] = dictationProfileName(*record, m_controller->settings()->writingProfileSettings());
+        latest[QStringLiteral("profile")] = dictationProfileName(*record, m_controller->settings()->dictationSnapshot().refinement.writingProfiles);
         latest[QStringLiteral("date")] = jsDate(record->finishedAt.date());
     }
     return latest;
@@ -355,7 +355,7 @@ void QuickInsights::refresh()
     m_today = m_controller->insightsToday();
     const bool ready = hasData();
     m_summary = ready ? summarize(m_controller->insightsLog()->records(), m_range, m_today,
-                                  m_controller->settings()->writingProfileSettings())
+                                  m_controller->settings()->dictationSnapshot().refinement.writingProfiles)
                       : InsightsSummary{};
     m_summaryMap = ready ? QVariant(summaryMap(m_summary)) : QVariant();
     m_heatmap.clear();
@@ -371,8 +371,8 @@ void QuickInsights::refresh()
 
 void QuickInsights::refreshCorrections()
 {
-    SettingsStore *settings = m_controller->settings();
-    QList<LearnedCorrection> learned = settings->learnedCorrections();
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    QList<LearnedCorrection> learned = settings.learnedCorrections;
     std::stable_sort(learned.begin(), learned.end(), [](const LearnedCorrection &a, const LearnedCorrection &b) {
         return a.createdAtMs > b.createdAtMs;
     });
@@ -383,7 +383,7 @@ void QuickInsights::refreshCorrections()
     }
     m_corrections = {
         {QStringLiteral("count"), int(learned.size())},
-        {QStringLiteral("learning"), settings->correctionLearningEnabled()},
+        {QStringLiteral("learning"), settings.correctionLearningEnabled},
         {QStringLiteral("accessible"),
          !m_controller->accessibility()->supported() || m_controller->accessibility()->enabled()},
         {QStringLiteral("recent"), recent},

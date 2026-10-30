@@ -49,7 +49,7 @@ QuickAudio::QuickAudio(ApplicationController *controller,
         // its place, so it is tried once more. One that would not open fails
         // the same way each time, and one that fails twice may keep failing.
         // A device no longer chosen holds nothing back: the choice moved on.
-        if (deviceId != m_controller->settings()->audioInputDeviceId()) {
+        if (deviceId != m_controller->settings()->dictationSnapshot().audio.deviceId) {
             m_failure.reset();
             emit testChanged();
             return;
@@ -129,7 +129,7 @@ void QuickAudio::releaseTest(QObject *holder)
 
 void QuickAudio::keepTestRunning()
 {
-    const QString deviceId = m_controller->settings()->audioInputDeviceId();
+    const QString deviceId = m_controller->settings()->dictationSnapshot().audio.deviceId;
     if (m_holders.isEmpty() || (m_failure && m_failure->waits && m_failure->deviceId == deviceId)) {
         return;
     }
