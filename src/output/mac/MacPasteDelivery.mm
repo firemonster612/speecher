@@ -71,8 +71,8 @@ bool MacPasteDelivery::paste(const std::function<bool()> &clearToInject, QString
         if (error) *error = QStringLiteral("Could not find the paste key in the current keyboard layout");
         return false;
     }
-    // The clipboard copy before this call blocks; the frontmost app can have
-    // changed meanwhile. Last check before the keystroke, because a paste into
+    // The frontmost app can have changed since the focus check before this
+    // call. Last check before the keystroke, because a paste into
     // the wrong window cannot be undone.
     if (clearToInject && !clearToInject()) {
         if (error) {

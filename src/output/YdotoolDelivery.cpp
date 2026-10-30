@@ -178,8 +178,8 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text,
     }
 
     releaseModifierKeys(executable, env);
-    // The clipboard helper startup and the modifier release above both block;
-    // the user may have switched windows meanwhile. Last check before the
+    // The modifier release above blocks; the user may have switched windows
+    // meanwhile. Last check before the
     // keystroke, because a paste into the wrong window cannot be undone.
     if (clearToInject && !clearToInject()) {
         if (error) {
