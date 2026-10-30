@@ -49,6 +49,7 @@ DictationSession::DictationSession(SettingsStore *settings,
                                    QObject *parent)
     : QObject(parent)
     , m_settings(settings)
+    , m_ui(settings ? settings->dictationSnapshot().ui : UiSettings{})
     , m_audio(audio)
     , m_mediaController(mediaController)
     , m_targetProvider(targetProvider)
@@ -64,9 +65,9 @@ DictationSession::DictationSession(SettingsStore *settings,
     , m_completionTimer(new QTimer(this))
 {
     if (m_settings) {
-        m_ui = m_settings->dictationSnapshot().ui;
-        connect(m_settings, &SettingsStore::snapshotApplied, this,
-                [this] { m_ui = m_settings->dictationSnapshot().ui; });
+        connect(m_settings, &SettingsStore::snapshotApplied, this, [this] {
+            m_ui = m_settings->dictationSnapshot().ui;
+        });
     }
     m_completionTimer->setSingleShot(true);
     m_completionTimer->setTimerType(Qt::PreciseTimer);

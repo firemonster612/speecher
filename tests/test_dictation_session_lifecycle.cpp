@@ -396,6 +396,11 @@ private slots:
         speech->emitFinalText(QStringLiteral("one two three four five six seven eight nine"));
         QCOMPARE(previewDisplay.last().first().toString(),
                  QStringLiteral("three four five six seven eight nine"));
+        // A save mid-dictation changes the next preview.
+        settings.edit([](AppSettings &draft) { draft.ui.previewWords = 3; return true; });
+        speech->emitPartialText(QStringLiteral("ten"));
+        QCOMPARE(previewDisplay.last().first().toString(), QStringLiteral("eight nine ten"));
+        speech->emitPartialText(QString());
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
