@@ -13,7 +13,7 @@ var rows = [
       disabledHelp: "Turn on live text above to set its length." },
     // Core stores 0 to 5 seconds; 0 doesn't show it.
     { id: "resultDuration", page: "feedback", section: "Popup", kind: "slider",
-      label: "Show the result for", help: "How long the popup stays after pasting.",
+      label: "Show the result for", help: "How long the popup stays after pasting. Set it to 0 to not show it.",
       min: 0, max: 5000, step: 50, unit: "ms", keywords: "receipt dismiss timeout" },
     { id: "reviewSelectionEdits", page: "feedback", section: "Popup", kind: "toggle",
       label: "Review edits to selected text", help: "When you dictate over a selection, see what will change and press Replace to apply it.",
