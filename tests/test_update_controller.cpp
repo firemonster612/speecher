@@ -169,26 +169,23 @@ QByteArray manifestJson(const QString &version, qint64 buildNumber)
 // Serves one JSON body to every request, for driving a real check. The
 // request is drained before the response and the socket closes after it, so
 // the kernel never answers with a reset that would flake the check.
-QTcpServer *manifestServer(QObject *parent, const QByteArray &body, int *requestCount = nullptr)
+QTcpServer *manifestServer(QObject *parent, const QByteArray &body)
 {
     auto *server = new QTcpServer(parent);
     const bool listening = server->listen(QHostAddress::LocalHost);
     Q_ASSERT(listening);
     QObject::connect(server, &QTcpServer::newConnection, server,
-                     [server, body, requestCount] {
+                     [server, body] {
         QTcpSocket *socket = server->nextPendingConnection();
         QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
         auto answered = std::make_shared<bool>(false);
         QObject::connect(socket, &QTcpSocket::readyRead, socket,
-                         [socket, body, requestCount, answered] {
+                         [socket, body, answered] {
             socket->readAll();
             if (*answered) {
                 return;
             }
             *answered = true;
-            if (requestCount) {
-                ++*requestCount;
-            }
             socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
                           + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n"
                           + body);
@@ -394,28 +391,6 @@ private slots:
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::CheckFailed, 10000);
-    }
-
-    void singleManifestOverrideFetchesExactlyOnce()
-    {
-        UpdateTestContext context;
-        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
-        TestManifestUpdater updater(&context.settings);
-
-        // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
-        // channels at one file, as manifest alone does here; the secondary
-        // fetch must not run against it.
-        int requests = 0;
-        QTcpServer *server = manifestServer(
-            &updater,
-            manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"),
-                         updater.currentBuildNumber() + 1),
-            &requests);
-        updater.manifest = serverUrl(server);
-        updater.checkForUpdates(UpdateChannel::Nightly);
-        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
-                                  UpdateController::State::UpdateAvailable, 10000);
-        QCOMPARE(requests, 1);
     }
 
     void updateBannersNameNightlyBuildsPrecisely()

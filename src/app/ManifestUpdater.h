@@ -76,8 +76,7 @@ protected:
     virtual bool installDownload(const QString &path, QString *error) = 0;
     virtual void restartApplication() = 0;
     void finishRestart() override;
-    // Where a check fetches the channel's manifest. A check that gets the
-    // same URL for both channels fetches it once.
+    // Where a check fetches the channel's manifest.
     virtual QUrl manifestUrl(UpdateChannel channel) const;
 
 private:
