@@ -77,6 +77,20 @@ Page {
             moveDownText: Words.moveDown
             removeText: Words.remove
             onEdited: ids => Settings.set("speechFallbackList", ids)
+            // Each fallback listens for its own Spoken Language.
+            rowControl: Component {
+                LanguageSelect {
+                    id: fallbackLanguage
+                    required property string modelData
+                    readonly property var service: ModelText.service(modelData)
+                    objectName: "fallbackLanguage_" + modelData
+                    placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+                    options: ModelText.spokenLanguageOptions(service)
+                    currentId: service.spokenLanguage || ""
+                    onChosen: id => Settings.set("speechFallbackLanguages", Object.assign(
+                        {}, Settings.values.speechFallbackLanguages, { [fallbackLanguage.modelData]: id }))
+                }
+            }
         }
     }
 

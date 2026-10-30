@@ -166,6 +166,9 @@ QtObject {
     // The languages by code, as the Spoken language row names them and in
     // its order, for a LanguagePopover.
     function languageOptions(codes) { return Schema.row("spokenLanguage").options.filter(o => codes.indexOf(o.id) >= 0) }
+    // The Spoken Languages a speech service can be set to: those it listens
+    // for, and Automatic where it detects the language.
+    function spokenLanguageOptions(s) { return languageOptions(s.detects ? s.languages.concat(["auto"]) : s.languages) }
     // The line under a model's name: languages and how its text arrives.
     function metaLine(m) {
         return languageCount(m.languages) + ", text " + (m.streams ? "as you speak" : "after you stop")

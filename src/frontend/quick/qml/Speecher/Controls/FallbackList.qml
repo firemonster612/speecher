@@ -10,6 +10,8 @@ import Speecher.Theme
 //            (a tone of negative or warning marks a row that can't run)
 //   statusOf: optional (id, index) => ({ text, tone }), for a status that
 //            depends on the row's place in the order
+//   rowControl: optional Component made at each row's end, before its
+//            buttons, with the row's id as its required modelData
 // emptyText and addLabel give the list its own empty and add rows; leave
 // them empty to put those elsewhere. edited fires with the new order.
 Column {
@@ -18,6 +20,7 @@ Column {
     property var ids: []
     property var options: []
     property var statusOf: null
+    property Component rowControl: null
     property int maxCount: 99
     property int rowHeight: 60
     property string emptyText
@@ -163,6 +166,10 @@ Column {
                 }
 
                 trailing: [
+                    Repeater {
+                        model: root.rowControl ? [slot.key] : []
+                        delegate: root.rowControl
+                    },
                     IconButton {
                         iconName: "arrow-up"
                         tooltip: root.moveUpText
