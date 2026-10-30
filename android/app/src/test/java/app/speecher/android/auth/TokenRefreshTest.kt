@@ -1,5 +1,6 @@
 package app.speecher.android.auth
 
+import app.speecher.android.provider.Provider
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.ProviderFailure
@@ -113,28 +114,30 @@ class TokenRefreshTest {
     }
 
     @Test
-    fun `a refresh turned down with 400 or 401 is a rejected sign-in`() {
+    fun `a refresh turned down with 400 or 401 is a rejected sign-in, which ends the session`() {
         val store = store()
-        val kinds =
+        val outcomes =
             listOf(400, 401, 500).map { status ->
                 store.save(OAuthProvider.ChatGpt, expired)
-                try {
-                    store.validTokens(
-                        OAuthProvider.ChatGpt,
-                        tokenEndpoint(CountDownLatch(0), status),
-                    )
-                    null
-                } catch (failure: ProviderFailure) {
-                    failure.kind
-                }
+                val kind =
+                    try {
+                        store.validTokens(
+                            OAuthProvider.ChatGpt,
+                            tokenEndpoint(CountDownLatch(0), status),
+                        )
+                        null
+                    } catch (failure: ProviderFailure) {
+                        failure.kind
+                    }
+                kind to (Provider.ChatGpt in store.sessionEnded())
             }
         assertEquals(
             listOf(
-                ProviderFailureKind.Authentication,
-                ProviderFailureKind.Authentication,
-                ProviderFailureKind.Server,
+                ProviderFailureKind.Authentication to true,
+                ProviderFailureKind.Authentication to true,
+                ProviderFailureKind.Server to false,
             ),
-            kinds,
+            outcomes,
         )
     }
 }

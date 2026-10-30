@@ -35,8 +35,13 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
     private val preferences = context.getSharedPreferences("accounts", Context.MODE_PRIVATE)
     private val key: SecretKey by secretKey
 
+    /**
+     * The accounts with a saved sign-in. Read without decrypting, so the chip tap that resolves the
+     * providers waits on no Keystore; a sign-in the Keystore can no longer decrypt still counts,
+     * and the dictation that uses it asks for a sign-in.
+     */
     fun signedIn(): Set<Provider> =
-        Provider.entries.filterTo(mutableSetOf()) { load(it.oauth) != null }
+        Provider.entries.filterTo(mutableSetOf()) { preferences.contains(it.oauth.name) }
 
     fun save(provider: OAuthProvider, tokens: OAuthTokens) {
         val value =
@@ -122,9 +127,15 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
             preferences.getBoolean(sessionEndedKey(it.oauth), false)
         }
 
-    fun endSession(provider: OAuthProvider) {
-        preferences.edit(commit = true) { putBoolean(sessionEndedKey(provider), true) }
-    }
+    /**
+     * Marks [provider]'s session ended because it turned down the [rejected] sign-in, unless
+     * another sign-in replaced that one since.
+     */
+    fun endSession(provider: OAuthProvider, rejected: OAuthTokens) =
+        synchronized(signIns) {
+            if (load(provider) != rejected) return@synchronized
+            preferences.edit(commit = true) { putBoolean(sessionEndedKey(provider), true) }
+        }
 
     fun clearSessionEnded(provider: OAuthProvider) {
         val key = sessionEndedKey(provider)
@@ -136,8 +147,9 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
     /**
      * Call on a worker thread before a provider request. A refresh the token endpoint turns down
      * fails as a rejected sign-in; one that fails for no reason of its own still leaves no usable
-     * sign-in, as on the desktop. One refresh per provider runs at a time across every store, so a
-     * rotating refresh token is spent once; a sign-out or sign-in during it wins over its result.
+     * sign-in, as on the desktop, and a turned-down refresh ends the session. One refresh per
+     * provider runs at a time across every store, so a rotating refresh token is spent once; a
+     * sign-out or sign-in during it wins over its result.
      */
     fun validTokens(provider: OAuthProvider, http: OkHttpClient): OAuthTokens? {
         synchronized(refreshes.getValue(provider)) {
@@ -154,6 +166,7 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
                             failureKindForHttpStatus(error.status).takeUnless {
                                 it == ProviderFailureKind.Other
                             } ?: ProviderFailureKind.Unavailable
+                    if (kind == ProviderFailureKind.Authentication) endSession(provider, stored)
                     throw ProviderFailure(kind, "Sign-in refresh failed", error.status, error)
                 }
             synchronized(signIns) {

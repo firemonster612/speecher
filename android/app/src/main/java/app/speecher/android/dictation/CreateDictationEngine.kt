@@ -27,6 +27,7 @@ import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.EndpointSpeechClient
+import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
@@ -42,6 +43,7 @@ import app.speecher.protocol.webSocketTransport
 import app.speecher.protocol.withLearnedCorrections
 import app.speecher.protocol.withVariablesFilled
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -128,9 +130,12 @@ fun createDictationEngine(
             session.target?.packageName.orEmpty(),
         )
     }
+    // The sign-in each account's latest request went out with, the one a rejection ends.
+    val usedSignIns = ConcurrentHashMap<Provider, OAuthTokens>()
     fun token(account: Provider) =
-        store.validTokens(account.oauth, http)
-            ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
+        (store.validTokens(account.oauth, http)
+                ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in"))
+            .also { usedSignIns[account] = it }
     fun refineWithAccount(
         account: Provider,
         raw: String,
@@ -279,13 +284,16 @@ fun createDictationEngine(
         { next ->
             main.post {
                 // A rejected sign-in ends the account's session, the opposite of the
-                // clearSessionEnded calls above.
+                // clearSessionEnded calls above. A turned-down refresh sent no request, and
+                // validTokens ended its session already.
                 val reason = (next as? DictationState.Failed)?.reason
                 if (
                     reason is FailureReason.ProviderFailed &&
                         reason.kind == ProviderFailureKind.Authentication
                 )
-                    reason.account?.let { store.endSession(it.oauth) }
+                    reason.account?.let { account ->
+                        usedSignIns[account]?.let { store.endSession(account.oauth, it) }
+                    }
                 onState(next)
             }
         },
