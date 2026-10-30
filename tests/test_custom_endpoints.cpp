@@ -280,6 +280,11 @@ private slots:
                             "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
                             "\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}\n\n")
             << "slow down" << QString() << ProviderFailureKind::RateLimited;
+        // A server that answers with anything but the transcript failed.
+        QTest::newRow("http-200-html") << httpResponse("200 OK", "text/html", "<html>Sign in</html>")
+                                       << "held no transcript" << QString() << ProviderFailureKind::InvalidResult;
+        QTest::newRow("json-without-text") << httpResponse("200 OK", "application/json", "{\"transcript\":\"Hi\"}")
+                                           << "held no transcript" << QString() << ProviderFailureKind::InvalidResult;
         QTest::newRow("dropped-stream") << "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                                            "Content-Length: 10000\r\nConnection: close\r\n\r\n" + keepThis
                                         << QString() << "Keep this" << ProviderFailureKind::Network;

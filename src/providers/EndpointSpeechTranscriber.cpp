@@ -393,9 +393,21 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
         emit failed(finalizeFailure(attemptId, failure));
         return;
     }
-    const QString text = m_streaming
-        ? (m_doneText.isEmpty() ? m_streamedText : m_doneText)
-        : QJsonDocument::fromJson(body).object().value(QStringLiteral("text")).toString();
+    QString text;
+    if (m_streaming) {
+        text = m_doneText.isEmpty() ? m_streamedText : m_doneText;
+    } else {
+        // Anything but the json transcript asked for, such as a page a proxy
+        // or a wrong path answered with, is a failure, not silence; an empty
+        // text is silence. Like a refused key it would fail every utterance.
+        const QJsonValue value = QJsonDocument::fromJson(body).object().value(QStringLiteral("text"));
+        if (!value.isString()) {
+            emit failed(finalizeFailure(attemptId, {ProviderFailureKind::InvalidResult,
+                                                    QStringLiteral("Speech endpoint failed: the response held no transcript")}));
+            return;
+        }
+        text = value.toString();
+    }
     const QString trimmed = text.trimmed();
     if (m_cutIntoUtterances) {
         finishUtterance(trimmed);
