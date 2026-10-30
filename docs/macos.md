@@ -125,6 +125,30 @@ distinguishes Apple tools, Apple-issued developer identities, and other
 signed code; a stable self-signed certificate alone does not stabilize the
 last category's partition.
 
+## Sparkle update keys
+
+Releases sign each update with an EdDSA key, and the app checks it against the
+public key in its `Info.plist`
+([ADR 0004](adr/0004-unsigned-macos-sparkle-eddsa.md)). The private key is
+what lets anyone ship an update, so generate it on a Mac you trust and put it
+straight into the repository secrets; never in a CI run, whose files can be
+downloaded. Use the `generate_keys` of the Sparkle that `make build` fetches,
+the version `CMakeLists.txt` pins:
+
+```sh
+make build
+keys=build/_deps/sparkle-src/bin/generate_keys
+"$keys"
+gh secret set SPARKLE_ED_PUBLIC_KEY --body "$("$keys" -p)"
+"$keys" -x sparkle-private-key
+gh secret set SPARKLE_ED_PRIVATE_KEY < sparkle-private-key
+rm sparkle-private-key
+```
+
+`generate_keys` keeps the private key in your login Keychain, which is the
+backup; run again, it reuses that key. A new key pair cuts off everyone on a
+release built with the old public key, so rotate as ADR 0004 says.
+
 ## Release gate: updating SwiftUI users to the Qt Quick build
 
 Releases up to 0.2.x shipped the SwiftUI front end. Those users get the Qt
