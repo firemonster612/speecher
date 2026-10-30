@@ -284,4 +284,17 @@ QString singleKeyTypingWarning(const ShortcutBinding &binding)
         .arg(binding.displayText());
 }
 
+QString singleKeyRecordingRefusal(const ShortcutBinding &binding)
+{
+    static const char *const refused[] = {"ShiftLeft", "ShiftRight", "ControlLeft"};
+    for (const char *code : refused) {
+        if (binding.keyCode() == QLatin1StringView(code)) {
+            return QStringLiteral("%1 is pressed all the time while typing. Use another key, such as %2, "
+                                  "or a key combination.")
+                .arg(binding.displayText(), QString::fromLatin1(physicalKey(QStringLiteral("ControlRight"))->label));
+        }
+    }
+    return QString();
+}
+
 } // namespace speecher

@@ -507,6 +507,15 @@ QStringList QuickSettings::lastKeyAlone() const
     return key.isEmpty() ? QStringList() : QStringList{key.toString()};
 }
 
+bool QuickSettings::takesKeyAlone(const QString &id, const QStringList &keys)
+{
+    const QString refusal = singleKeyRecordingRefusal(ShortcutBinding::fromString(keys.join(QLatin1Char('+'))));
+    if (!refusal.isEmpty()) {
+        setError(id, refusal);
+    }
+    return refusal.isEmpty();
+}
+
 // Sees each key press and release before the field does, with the native
 // codes QML leaves out.
 bool QuickSettings::eventFilter(QObject *watched, QEvent *event)

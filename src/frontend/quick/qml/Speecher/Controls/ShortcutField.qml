@@ -11,7 +11,8 @@ import Speecher.Theme
 // window hiding. While it listens a clear button records an empty shortcut.
 // A key with no name in a combination (a modifier, Caps Lock) records what
 // keyAlone returns for it when it is the last key pressed and that same
-// physical key is let go; on macOS Caps Lock records at once.
+// physical key is let go; on macOS Caps Lock records at once. One that
+// takesAlone refuses records nothing, and the field keeps listening.
 // Where something else picks the keys (recordsKeys false), clicking it only
 // emits clicked. emptyText, listeningText and clearText are the words it shows.
 T.AbstractButton {
@@ -29,6 +30,9 @@ T.AbstractButton {
     // alone. Only the caller can tell Right Alt from Left; unset, such a key
     // records nothing.
     property var keyAlone: null
+    // A function the caller gives that says whether keys keyAlone returned
+    // may be recorded; the caller says why not. Unset, any may.
+    property var takesAlone: null
     signal recorded(var keys)
 
     // keyAlone's answer for the nameless key pressed last, recorded when the
@@ -36,9 +40,10 @@ T.AbstractButton {
     property var _alone: []
     // macOS sends Caps Lock once per toggle, a press as the lock turns on and
     // a release as it turns off, never both for one tap.
-    readonly property bool _capsLockToggles: Qt.platform.os === "osx"
+    function _isCapsLockToggle(event) { return Qt.platform.os === "osx" && event.key === Qt.Key_CapsLock }
 
     function _recordAlone(keys) {
+        if (takesAlone && !takesAlone(keys)) return
         listening = false
         recorded(keys)
     }
@@ -81,7 +86,7 @@ T.AbstractButton {
         const name = keyName(event.key)
         if (!name) {
             _alone = keyAlone ? keyAlone() : []
-            if (_capsLockToggles && event.key === Qt.Key_CapsLock && _alone.length > 0) _recordAlone(_alone)
+            if (_isCapsLockToggle(event) && _alone.length > 0) _recordAlone(_alone)
             return
         }
         const mods = []
@@ -95,8 +100,7 @@ T.AbstractButton {
     Keys.onReleased: event => {
         if (!listening || event.isAutoRepeat) return
         const released = keyAlone ? keyAlone() : []
-        const toggle = _capsLockToggles && event.key === Qt.Key_CapsLock
-        if (released.length === 0 || (!toggle && String(released) !== String(_alone))) return
+        if (released.length === 0 || (!_isCapsLockToggle(event) && released[0] !== _alone[0])) return
         event.accepted = true
         _recordAlone(released)
     }

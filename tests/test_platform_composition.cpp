@@ -583,6 +583,14 @@ QQuickItem *findItem(QQuickWindow *window, const char *typeName)
     return nullptr;
 }
 
+// Sends a key to window as X11 and Wayland report it: by XKB keycode, which
+// is the evdev code + 8.
+void sendKey(QQuickWindow *window, QEvent::Type type, Qt::Key key, int evdev)
+{
+    QKeyEvent event(type, key, Qt::NoModifier, quint32(evdev + 8), 0, 0);
+    QGuiApplication::sendEvent(window, &event);
+}
+
 // Clicks the ShortcutField in window so it listens, as a person starts recording.
 void startListening(QQuickWindow *window, QQuickItem *field)
 {
@@ -1273,7 +1281,7 @@ private slots:
 
     // A modifier pressed and let go on its own records its physical key,
     // Right Alt rather than Alt, as one key on its own. Only that physical
-    // key's release records it: Left Shift let go while Right Shift, pressed
+    // key's release records it: Left Ctrl let go while Right Ctrl, pressed
     // last, is held records nothing.
     void aModifierLetGoAloneRecordsItsPhysicalKey()
     {
@@ -1286,30 +1294,71 @@ private slots:
         QVERIFY(window);
         QQuickItem *field = findItem(window.get(), "ShortcutField");
         QVERIFY(field);
-        // As X11 and Wayland report keys: by XKB keycode, evdev + 8. Most
-        // layouts make Right Alt AltGr.
-        const auto send = [&window](QEvent::Type type, Qt::Key key, quint32 xkbKeycode) {
-            QKeyEvent event(type, key, Qt::NoModifier, xkbKeycode, 0, 0);
-            QGuiApplication::sendEvent(window.get(), &event);
-        };
-        constexpr quint32 rightAlt = 100 + 8, leftShift = 42 + 8, rightShift = 54 + 8;
+        // Most layouts make Right Alt AltGr.
+        constexpr int rightAlt = 100, leftCtrl = 29, rightCtrl = 97;
 
         startListening(window.get(), field);
-        send(QEvent::KeyPress, Qt::Key_AltGr, rightAlt);
+        sendKey(window.get(), QEvent::KeyPress, Qt::Key_AltGr, rightAlt);
         QVERIFY(field->property("listening").toBool());
-        send(QEvent::KeyRelease, Qt::Key_AltGr, rightAlt);
+        sendKey(window.get(), QEvent::KeyRelease, Qt::Key_AltGr, rightAlt);
         QVERIFY(!field->property("listening").toBool());
         QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("AltRight")));
 
         startListening(window.get(), field);
-        send(QEvent::KeyPress, Qt::Key_Shift, leftShift);
-        send(QEvent::KeyPress, Qt::Key_Shift, rightShift);
-        send(QEvent::KeyRelease, Qt::Key_Shift, leftShift);
+        sendKey(window.get(), QEvent::KeyPress, Qt::Key_Control, leftCtrl);
+        sendKey(window.get(), QEvent::KeyPress, Qt::Key_Control, rightCtrl);
+        sendKey(window.get(), QEvent::KeyRelease, Qt::Key_Control, leftCtrl);
         QVERIFY(field->property("listening").toBool());
         QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("AltRight")));
-        send(QEvent::KeyRelease, Qt::Key_Shift, rightShift);
+        sendKey(window.get(), QEvent::KeyRelease, Qt::Key_Control, rightCtrl);
         QVERIFY(!field->property("listening").toBool());
-        QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("ShiftRight")));
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("ControlRight")));
+    }
+
+    // Shift and Left Ctrl, which typing presses all the time, are refused on
+    // their own: the row says why, keeps listening and the saved shortcut
+    // stays. Right Ctrl records.
+    void aLoneKeyTypingPressesIsRefused_data()
+    {
+        QTest::addColumn<int>("key");
+        QTest::addColumn<int>("evdev");
+        QTest::addColumn<QString>("code");
+        QTest::addColumn<bool>("refused");
+        QTest::newRow("Left Shift") << int(Qt::Key_Shift) << 42 << QStringLiteral("ShiftLeft") << true;
+        QTest::newRow("Right Shift") << int(Qt::Key_Shift) << 54 << QStringLiteral("ShiftRight") << true;
+        QTest::newRow("Left Ctrl") << int(Qt::Key_Control) << 29 << QStringLiteral("ControlLeft") << true;
+        QTest::newRow("Right Ctrl") << int(Qt::Key_Control) << 97 << QStringLiteral("ControlRight") << false;
+    }
+
+    void aLoneKeyTypingPressesIsRefused()
+    {
+        QFETCH(int, key);
+        QFETCH(int, evdev);
+        QFETCH(QString, code);
+        QFETCH(bool, refused);
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        const ShortcutBinding saved(QKeySequence(Qt::CTRL | Qt::Key_K));
+        QVERIFY(controller.setGlobalShortcut(saved));
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *row = findItem(window.get(), "SchemaRow");
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(row && field);
+        const ShortcutBinding alone = ShortcutBinding::singleKey(code);
+
+        startListening(window.get(), field);
+        sendKey(window.get(), QEvent::KeyPress, Qt::Key(key), evdev);
+        sendKey(window.get(), QEvent::KeyRelease, Qt::Key(key), evdev);
+
+        QCOMPARE(field->property("listening").toBool(), refused);
+        QCOMPARE(controller.globalShortcut(), refused ? saved : alone);
+        if (refused) {
+            QCOMPARE(row->property("help").toString(), singleKeyRecordingRefusal(alone));
+        }
     }
 
     // Where the desktop picks the keys itself (the portal), the binding is a

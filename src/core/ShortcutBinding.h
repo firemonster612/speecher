@@ -87,4 +87,9 @@ private:
 // Inline and non-blocking on every platform's recorder.
 QString singleKeyTypingWarning(const ShortcutBinding &binding);
 
+// Why the shortcut recorder refuses this key on its own, or empty: Shift,
+// either side, and Left Ctrl are pressed all the time while typing. Only the
+// recorder asks, so a binding saved before stays.
+QString singleKeyRecordingRefusal(const ShortcutBinding &binding);
+
 } // namespace speecher

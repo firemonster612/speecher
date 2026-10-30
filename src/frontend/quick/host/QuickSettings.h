@@ -62,6 +62,10 @@ public:
     // ShortcutField's keyAlone: a QML key event can't tell Right Alt from
     // Left. Empty for a key the vocabulary lacks.
     Q_INVOKABLE QStringList lastKeyAlone() const;
+    // Whether the shortcut row id's recorder may record keys, as lastKeyAlone
+    // gave them. A key it refuses (singleKeyRecordingRefusal), such as Left
+    // Shift, says why in errors and changes nothing saved.
+    Q_INVOKABLE bool takesKeyAlone(const QString &id, const QStringList &keys);
 
 signals:
     void valuesChanged();
