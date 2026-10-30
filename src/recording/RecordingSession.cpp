@@ -246,7 +246,7 @@ void RecordingSession::connectStream(Stream &stream)
             [this, &stream] { handleStreamConnected(stream); });
     connect(stream.transcription, &FileTranscriptionSession::speechReconnecting, this,
             [this, &stream](int, const QString &reason) {
-                stream.status.state = RecordingStream::State::Reconnecting;
+                stream.status.state = RecordingStreamStatus::State::Reconnecting;
                 stream.status.problem = reason;
                 emit problemChanged();
             });
@@ -285,7 +285,7 @@ RecordingStatus RecordingSession::status() const
     if (!isRecording()) {
         return {};
     }
-    QList<RecordingStream> streams{m_me.status};
+    QList<RecordingStreamStatus> streams{m_me.status};
     if (m_systemAudio) {
         streams << m_them.status;
     }
@@ -450,8 +450,8 @@ void RecordingSession::setDictating(bool dictating)
     }
     // While starting too: a stream that connected already shows it once the
     // recording runs.
-    if (m_me.status.state != RecordingStream::State::Recording
-        && m_me.status.state != RecordingStream::State::Paused) {
+    if (m_me.status.state != RecordingStreamStatus::State::Recording
+        && m_me.status.state != RecordingStreamStatus::State::Paused) {
         return;
     }
     m_me.status.state = liveState(m_me);
@@ -576,7 +576,7 @@ void RecordingSession::handleTranscriptionFinished(Stream &stream, const QList<T
         abandon(error.isEmpty() ? recordingStreamEndedText() : error);
         return;
     }
-    stream.status.state = RecordingStream::State::Stopped;
+    stream.status.state = RecordingStreamStatus::State::Stopped;
     if (m_phase == Phase::Stopping) {
         if (!error.isEmpty()) {
             stream.status.problem = error;
@@ -618,9 +618,10 @@ void RecordingSession::stopCancellingEcho()
     }
 }
 
-RecordingStream::State RecordingSession::liveState(const Stream &stream) const
+RecordingStreamStatus::State RecordingSession::liveState(const Stream &stream) const
 {
-    return &stream == &m_me && m_dictating ? RecordingStream::State::Paused : RecordingStream::State::Recording;
+    return &stream == &m_me && m_dictating ? RecordingStreamStatus::State::Paused
+                                           : RecordingStreamStatus::State::Recording;
 }
 
 void RecordingSession::releaseInputs()

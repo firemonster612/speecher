@@ -13,7 +13,7 @@ namespace speecher {
 constexpr int kLongestRecordingStopMs = 180000;
 
 // One audio source of a recording and the speaker its lines name.
-struct RecordingStream {
+struct RecordingStreamStatus {
     // Paused: the microphone's, while a dictation has it; it sends silence.
     enum class State { Recording, Paused, Reconnecting, Stopped };
 
@@ -30,7 +30,7 @@ struct RecordingStatus {
     bool recording = false;
     QString path;
     qint64 durationMs = 0;
-    QList<RecordingStream> streams;
+    QList<RecordingStreamStatus> streams;
     // Lines that could not be written to the file, and why the first could
     // not. Nothing clears them while the recording runs.
     int unwrittenLines = 0;
@@ -43,7 +43,7 @@ struct RecordingStatus {
 };
 
 // How status and its JSON name a stream's state.
-QString recordingStreamStateName(RecordingStream::State state);
+QString recordingStreamStateName(RecordingStreamStatus::State state);
 
 // How `record status --json` and the IPC response carry a status.
 QJsonObject recordingStatusJson(const RecordingStatus &status);
