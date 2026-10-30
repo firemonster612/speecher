@@ -244,7 +244,13 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
 bool SettingsStore::edit(const std::function<bool(AppSettings &)> &change)
 {
     AppSettings draft = dictationSnapshot();
+    const AppSettings before = draft;
     if (!change(draft)) {
+        return false;
+    }
+    // Saving the rest would drop that change without a word.
+    if (const QString field = changedUnstoredField(before, draft); !field.isEmpty()) {
+        qCritical().noquote() << "Settings: not saved, since the edit changed " + field + ", which is never stored";
         return false;
     }
     applySnapshot(draft);
@@ -262,76 +268,17 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
         if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
         m_secrets->saveSecret(secret, value);
     };
-    setSetupCompleted(draft.setupCompleted);
-    setLaunchAtLogin(draft.launchAtLogin);
-    setTheme(draft.ui.theme);
-    setColorScheme(draft.ui.colorScheme);
-    setTranslucency(draft.ui.translucency);
-    setWindowLayout(draft.ui.windowLayout);
-    setRoundedCorners(draft.ui.roundedCorners);
-    setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
-    setSoundsEnabled(draft.ui.soundsEnabled);
-    setTranscriptionPreviewEnabled(draft.ui.transcriptionPreviewEnabled);
-    setRefinementPreviewEnabled(draft.ui.refinementPreviewEnabled);
-    setSelectionEditReviewEnabled(draft.ui.selectionEditReviewEnabled);
-    setPreviewWords(draft.ui.previewWords);
-    setSpeechProvider(draft.speech.providerId);
-    setSpeechFallbackProviders(draft.speech.fallbackProviderIds);
-    setSpeechFallbackLanguages(draft.speech.fallbackLanguages);
-    setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
-    setSpokenLanguage(draft.speech.language);
-    setLocalSpeechSettings(draft.speech.local);
-    setSpeechEndpointSettings(draft.speech.endpoint);
-    setAudioCaptureSettings(draft.audio);
-    setRefinementProvider(draft.refinement.providerId);
-    setRefinementFallbackProviders(draft.refinement.fallbackProviderIds);
-    // Before the profiles, which fall back from a tone or level deleted here.
-    setCustomTones(draft.refinement.customTones);
-    setCustomCleanupLevels(draft.refinement.customCleanupLevels);
-    setWritingProfileSettings(draft.refinement.writingProfiles);
-    // After the profiles, since both fall back from a profile deleted there.
-    setAppRecognitionRules(draft.appRecognitionRules);
-    setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
-    setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
-    setUseTargetContext(draft.refinement.useTargetContext);
-    setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
-    setAdditionalInstructions(draft.refinement.additionalInstructions);
-    setCustomSystemPromptEnabled(draft.refinement.customSystemPromptEnabled);
-    setCustomSystemPrompt(draft.refinement.customSystemPrompt);
-    setOpenAiModel(draft.refinement.openAiModel);
-    setOpenAiEffort(draft.refinement.openAiEffort);
-    setOpenAiSpeed(draft.refinement.openAiSpeed);
-    setAnthropicModel(draft.refinement.anthropicModel);
-    setAnthropicEffort(draft.refinement.anthropicEffort);
-    setAnthropicFastMode(draft.refinement.anthropicFastMode);
-    setOpenAiAuthMode(draft.accounts.openAiAuthMode);
-    setOpenAiCliproxyAccount(draft.accounts.openAiCliproxyAccount);
-    setAnthropicAuthMode(draft.accounts.anthropicAuthMode);
-    setAnthropicCliproxyAccount(draft.accounts.anthropicCliproxyAccount);
-    setCliproxyOauthDir(draft.accounts.cliproxyOauthDirConfigured);
-    setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
-    setRefinementEndpointSettings(draft.refinement.endpoint);
-    setLocalRunnerSettings(draft.refinement.localRunner);
-    setOutputMethod(draft.output.method);
-    setOutputFormat(draft.output.format);
-    setPasteRules(draft.output.pasteRules);
-    setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
-    setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
-    setShortcutActivationMode(draft.shortcutActivationMode);
-    setUpdateChannel(draft.updates.channel);
-    setAutoCheckUpdates(draft.updates.autoCheck);
-    setAutoInstallUpdates(draft.updates.autoInstall);
-    setUpdateCheckIntervalMinutes(draft.updates.checkIntervalMinutes);
-    setUpdateCheckIntervalUnit(draft.updates.checkIntervalUnit);
-    setVocabularyEntries(draft.vocabulary);
-    setLearnedCorrections(draft.learnedCorrections);
-    setCorrectionLearningEnabled(draft.correctionLearningEnabled);
-    setInsightsEnabled(draft.insightsEnabled);
-    // The settings surface refuses invalid replacements before it saves, so a
-    // rejection here is a bug rather than something a person typed.
-    QString replacementError;
-    if (!setBindingRules(draft.bindings, &replacementError)) {
-        qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
+    writeSnapshot(draft);
+    reconcileLaunchAtLogin();
+    const AppSettings saved = SettingsCodecs::snapshot();
+    if (saved.audio != previous.audio) {
+        emit audioCaptureSettingsChanged(saved.audio);
+    }
+    if (saved.updates != previous.updates) {
+        emit updateSettingsChanged();
+    }
+    if (saved.correctionLearningEnabled != previous.correctionLearningEnabled) {
+        emit correctionLearningEnabledChanged(saved.correctionLearningEnabled);
     }
     // Last, since the keyring answers through an event loop, which can run an
     // edit of its own: one made then must find this draft's settings already

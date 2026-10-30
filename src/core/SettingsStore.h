@@ -49,12 +49,14 @@ public:
     // unreadable key never stops another. Run on the startup worker. Returns
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
-    // Saves the draft, unless deleteAll ran.
+    // Saves the draft's stored fields, unless deleteAll ran. The rest are
+    // ignored; edit refuses a change to one.
     void applySnapshot(const AppSettings &draft);
     // Saves what change makes of a dictation snapshot, unless it returns
     // false; returns whether it saved. The snapshot leaves unread keyring
     // secrets unread and applySnapshot keeps them, so an edit never clears a
-    // key it didn't read.
+    // key it didn't read. A change to a field that is never stored saves
+    // nothing and logs the field.
     bool edit(const std::function<bool(AppSettings &)> &change);
     // Clears every setting and deletes the settings file, as removing
     // Speecher with its settings does. Afterwards nothing the store holds is

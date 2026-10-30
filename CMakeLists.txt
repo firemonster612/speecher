@@ -254,6 +254,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
+  src/core/settings/SettingsFields.cpp
   src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularySettingsCodec.cpp

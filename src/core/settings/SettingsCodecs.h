@@ -5,6 +5,7 @@
 #include "core/settings/SettingsFile.h"
 
 #include <optional>
+#include <vector>
 
 namespace speecher {
 
@@ -126,9 +127,19 @@ public:
     bool recordingConsentNoticeShown() const; void setRecordingConsentNoticeShown(bool value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
     QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();
+    // Every field fields() reads, from the file. The keyring keys stay empty.
     AppSettings snapshot() const;
+    // Saves every stored field of draft, and nothing else.
+    void writeSnapshot(const AppSettings &draft);
+    // The first field Speecher never stores whose value differs between the
+    // two, by its path in AppSettings ("speech.vocabulary"); empty if none.
+    static QString changedUnstoredField(const AppSettings &before, const AppSettings &after);
 
 private:
+    struct Field;
+    // Every AppSettings field once (see SettingsFields.cpp).
+    static const std::vector<Field> &fields();
+
     QVariant value(const QString &key, const QVariant &fallback) const;
 
 protected:

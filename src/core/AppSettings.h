@@ -438,8 +438,13 @@ struct UpdateSettings {
     // so 8 hours reads back as 8 hours rather than 480 minutes. Empty while
     // one of the listed frequencies is chosen.
     QString checkIntervalUnit;
+
+    bool operator==(const UpdateSettings &other) const = default;
 };
 
+// SettingsCodecs::fields() says which of these are stored. SettingsStore::edit
+// refuses a change to any other: a run sets those on its own copy, and a
+// snapshot derives the rest.
 struct AppSettings {
     // Empty secret fields in this draft were unread, not cleared by the user.
     QStringList unreadSecretKeys;
