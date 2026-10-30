@@ -16,26 +16,6 @@
 namespace speecher {
 namespace {
 
-std::optional<OutputFormat> requestedOutputFormat(const QStringList &arguments, QString *error)
-{
-    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--format"));
-    if (optionIndex < 0) {
-        return std::nullopt;
-    }
-    if (optionIndex + 1 >= arguments.size()) {
-        if (error) {
-            *error = QStringLiteral("--format requires plain or html");
-        }
-        return std::nullopt;
-    }
-    const QString value = arguments.at(optionIndex + 1);
-    const std::optional<OutputFormat> format = outputFormatFromString(value);
-    if (!format && error) {
-        *error = QStringLiteral("Unknown output format: %1").arg(value.trimmed().toLower());
-    }
-    return format;
-}
-
 QStringList absolutePaths(const QStringList &paths)
 {
     QStringList absolute;
@@ -367,11 +347,12 @@ std::optional<QStringList> completionList(const QString &list)
 // `speecher completions <shell>` prints the shell's completion script, and
 // `completions --list <list>`, which those scripts run, one name a line.
 // Reads the settings without starting Speecher, so completing stays quick.
-CommandLineDecision printCompletions(const QStringList &arguments)
+// Returns an error message for a usage mistake.
+QString printCompletions(const QStringList &arguments)
 {
     if (arguments.size() == 1 && kCompletionShells.contains(arguments.first())) {
         std::cout << completionScript(arguments.first(), completionChoices()).toStdString();
-        return {LaunchMode::Exit};
+        return {};
     }
     const std::optional<QStringList> names = arguments.size() == 2 && arguments.first() == QStringLiteral("--list")
         ? completionList(arguments.last())
@@ -380,17 +361,13 @@ CommandLineDecision printCompletions(const QStringList &arguments)
         for (const QString &name : *names) {
             std::cout << name.toStdString() << "\n";
         }
-        return {LaunchMode::Exit};
+        return {};
     }
     const QString shells = kCompletionShells.mid(0, kCompletionShells.size() - 1).join(QStringLiteral(", "))
         + QStringLiteral(" or ") + kCompletionShells.last();
-    std::cerr << (arguments.isEmpty() ? QStringLiteral("completions needs a shell: %1").arg(shells)
-                                      : QStringLiteral("Unknown completions argument: %1 (expected %2)")
-                                            .arg(arguments.join(QLatin1Char(' ')), shells))
-                     .toStdString()
-              << "\n\n"
-              << helpText().toStdString();
-    return {LaunchMode::Exit, 2};
+    return arguments.isEmpty() ? QStringLiteral("completions needs a shell: %1").arg(shells)
+                               : QStringLiteral("Unknown completions argument: %1 (expected %2)")
+                                     .arg(arguments.join(QLatin1Char(' ')), shells);
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
@@ -411,51 +388,43 @@ std::optional<QString> spokenLanguageNamed(const QString &value, QString *error)
     return std::nullopt;
 }
 
-std::optional<QString> spokenLanguageOption(const QStringList &arguments, QString *error)
+// An output format a command line names: plain or html.
+std::optional<OutputFormat> outputFormatNamed(const QString &value, QString *error)
 {
-    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--language"));
-    if (optionIndex < 0) {
-        return std::nullopt;
+    const std::optional<OutputFormat> format = outputFormatFromString(value);
+    if (!format) {
+        *error = QStringLiteral("Unknown output format: %1").arg(value.trimmed().toLower());
     }
-    if (optionIndex + 1 >= arguments.size()) {
-        *error = QStringLiteral("--language requires a language code such as de, or auto");
-        return std::nullopt;
-    }
-    return spokenLanguageNamed(arguments.at(optionIndex + 1), error);
+    return format;
 }
 
-std::optional<QString> requestedWritingProfile(const QStringList &arguments, QString *error)
-{
-    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--profile"));
-    if (optionIndex < 0) {
-        return std::nullopt;
-    }
-    if (optionIndex + 1 >= arguments.size()) {
-        *error = QStringLiteral("--profile requires one of %1").arg(writingProfileNames(writingProfiles()));
-        return std::nullopt;
-    }
-    return writingProfileNamed(arguments.at(optionIndex + 1), error);
-}
-
-// The argument after index, which it moves past, or nothing at the end.
-std::optional<QString> takeValue(const QStringList &arguments, qsizetype &index)
+// The value of the option at index, the argument after it, which index moves
+// to. Sets error when the option is the last argument.
+std::optional<QString> optionValue(const QStringList &arguments, qsizetype &index, QString *error)
 {
     if (index + 1 < arguments.size()) {
         return arguments.at(++index);
     }
+    *error = QStringLiteral("%1 requires a value").arg(arguments.at(index));
     return std::nullopt;
 }
 
-// Adds the terms in --vocab-file's file to terms. Returns an error message
-// when the option has no file or the file cannot be read.
-QString addVocabularyFile(const std::optional<QString> &path, QStringList *terms)
+// The value of a dictation option read wherever it is given, as --format,
+// --profile and --language are, or nothing when it is not given. Sets error
+// when it has no value.
+std::optional<QString> dictationOptionValue(const QStringList &arguments, const QString &option, QString *error)
 {
-    if (!path) {
-        return QStringLiteral("--vocab-file requires a value");
-    }
-    const std::optional<QStringList> read = readVocabularyFile(*path);
+    qsizetype index = arguments.indexOf(option);
+    return index < 0 ? std::nullopt : optionValue(arguments, index, error);
+}
+
+// Adds the terms in --vocab-file's file to terms. Returns an error message
+// when the file cannot be read.
+QString addVocabularyFile(const QString &path, QStringList *terms)
+{
+    const std::optional<QStringList> read = readVocabularyFile(path);
     if (!read) {
-        return QStringLiteral("Cannot read vocabulary file %1").arg(*path);
+        return QStringLiteral("Cannot read vocabulary file %1").arg(path);
     }
     *terms += *read;
     return {};
@@ -470,11 +439,10 @@ bool readSharedChoice(const QStringList &arguments,
                       QString *error)
 {
     const QString argument = arguments.at(index);
-    const auto value = [&] { return takeValue(arguments, index); };
+    const auto value = [&] { return optionValue(arguments, index, error); };
     const auto choice = [&](const CliNames &choices, std::optional<QString> *target) {
         const std::optional<QString> given = value();
         if (!given) {
-            *error = QStringLiteral("%1 requires a value").arg(argument);
             return;
         }
         *target = storedId(choices, *given);
@@ -491,37 +459,48 @@ bool readSharedChoice(const QStringList &arguments,
         options.json = true;
     } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
         // Checked against the registry once it exists; this only reads it.
-        const std::optional<QString> given = value();
-        if (!given) {
-            *error = QStringLiteral("%1 requires a value").arg(argument);
-        } else {
+        if (const std::optional<QString> given = value()) {
             (argument == QStringLiteral("--model") ? options.speechProviderId
                                                    : options.refinementProviderId) = given->toLower();
         }
     } else if (argument == QStringLiteral("--cleanup")) {
         choice(cleanupNames(), &options.cleanupStrength);
     } else if (argument == QStringLiteral("--profile")) {
-        const std::optional<QString> given = value();
-        if (!given) {
-            *error = QStringLiteral("--profile requires a value");
-        } else {
+        if (const std::optional<QString> given = value()) {
             options.writingProfile = writingProfileNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--language")) {
-        const std::optional<QString> given = value();
-        if (!given) {
-            *error = QStringLiteral("--language requires a value");
-        } else {
+        if (const std::optional<QString> given = value()) {
             options.spokenLanguage = spokenLanguageNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--tone")) {
         choice(toneNames(), &options.tone);
     } else if (argument == QStringLiteral("--vocab-file")) {
-        *error = addVocabularyFile(value(), &options.addedVocabulary);
+        if (const std::optional<QString> path = value()) {
+            *error = addVocabularyFile(*path, &options.addedVocabulary);
+        }
     } else {
         return false;
     }
     return true;
+}
+
+// Reads --output's value into options. Returns an error message for a folder
+// that does not exist.
+QString readTranscriptDestination(const QString &value, HeadlessTranscribeOptions *options)
+{
+    const QString lowered = value.toLower();
+    if (lowered == QStringLiteral("beside")) {
+        options->destination = TranscriptDestination::BesideInput;
+    } else if (lowered == QStringLiteral("none")) {
+        options->destination = TranscriptDestination::None;
+    } else if (QFileInfo(value).isDir()) {
+        options->destination = TranscriptDestination::Folder;
+        options->folder = QFileInfo(value).absoluteFilePath();
+    } else {
+        return QStringLiteral("--output folder does not exist: %1").arg(value);
+    }
+    return {};
 }
 
 // Finishes reading `speecher transcribe -`, which always runs headless and
@@ -567,7 +546,6 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             continue;
         }
         headless = true;
-        const auto value = [&] { return takeValue(arguments, index); };
         QString error;
         if (readSharedChoice(arguments, index, options, &error)) {
         } else if (argument == QStringLiteral("--headless")) {
@@ -581,19 +559,10 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             }
             options.format = format;
         } else if (argument == QStringLiteral("--output")) {
-            const std::optional<QString> given = value();
+            const std::optional<QString> given = optionValue(arguments, index, &error);
             besideGiven = given && given->toLower() == QStringLiteral("beside");
-            if (!given) {
-                error = QStringLiteral("--output requires beside, none or a folder");
-            } else if (given->toLower() == QStringLiteral("beside")) {
-                options.destination = TranscriptDestination::BesideInput;
-            } else if (given->toLower() == QStringLiteral("none")) {
-                options.destination = TranscriptDestination::None;
-            } else if (QFileInfo(*given).isDir()) {
-                options.destination = TranscriptDestination::Folder;
-                options.folder = QFileInfo(*given).absoluteFilePath();
-            } else {
-                error = QStringLiteral("--output folder does not exist: %1").arg(*given);
+            if (given) {
+                error = readTranscriptDestination(*given, &options);
             }
         } else if (argument == QStringLiteral("--daemon")) {
             error = QStringLiteral("--daemon cannot be used with transcribe");
@@ -713,9 +682,13 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     }
     for (qsizetype index = 1; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
+        QString error;
         if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--to")) {
-            const std::optional<QString> path = takeValue(arguments, index);
-            if (!path || path->isEmpty()) {
+            const std::optional<QString> path = optionValue(arguments, index, &error);
+            if (!path) {
+                return error;
+            }
+            if (path->isEmpty()) {
                 return QStringLiteral("--to requires a file");
             }
             if (QFileInfo(*path).isDir()) {
@@ -725,8 +698,11 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
             decision->recordMicrophoneOnly = true;
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {
-            if (const QString error = addVocabularyFile(takeValue(arguments, index), &decision->vocabularyTerms);
-                !error.isEmpty()) {
+            const std::optional<QString> path = optionValue(arguments, index, &error);
+            if (!path) {
+                return error;
+            }
+            if (error = addVocabularyFile(*path, &decision->vocabularyTerms); !error.isEmpty()) {
                 return error;
             }
         } else if (subcommand == QStringLiteral("status") && argument == QStringLiteral("--json")) {
@@ -758,6 +734,124 @@ QString parseStatusArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher providers`' options. Returns an error message for a usage
+// mistake.
+QString parseProvidersArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    for (const QString &argument : arguments) {
+        if (argument != QStringLiteral("--json")) {
+            return QStringLiteral("Unknown providers option: %1").arg(argument);
+        }
+        decision->json = true;
+    }
+    decision->mode = LaunchMode::ListProviders;
+    return {};
+}
+
+// Reads what the process is for into decision, after --version and --help.
+// Returns an error message for a usage mistake.
+QString parseArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
+    if (verb == QStringLiteral("completions")) {
+        decision->mode = LaunchMode::Exit;
+        return printCompletions(arguments.mid(2));
+    }
+    // Before the dictation options below, which vocabulary does not take.
+    if (verb == QStringLiteral("vocabulary")) {
+        return parseVocabularyArguments(arguments.mid(2), decision);
+    }
+    const bool isCliCommand = verb == QStringLiteral("toggle")
+        || verb == QStringLiteral("start")
+        || verb == QStringLiteral("stop")
+        || verb == QStringLiteral("cancel")
+        || verb == QStringLiteral("status")
+        || verb == QStringLiteral("last")
+        || verb == QStringLiteral("settings")
+        || verb == QStringLiteral("setup")
+        || verb == QStringLiteral("record")
+        || verb == QStringLiteral("quit");
+    decision->startListening = arguments.contains(QStringLiteral("--start-listening"));
+    decision->showSettings = arguments.contains(QStringLiteral("--show-settings"));
+    decision->showSetup = arguments.contains(QStringLiteral("--show-setup"));
+
+    QString error;
+    SessionOverrides &overrides = decision->sessionOverrides;
+    if (const std::optional<QString> format = dictationOptionValue(arguments, QStringLiteral("--format"), &error)) {
+        overrides.outputFormat = outputFormatNamed(*format, &error);
+    }
+    if (!error.isEmpty()) {
+        return error;
+    }
+    // transcribe and listen read their own --profile and --language.
+    if (verb != QStringLiteral("transcribe") && verb != QStringLiteral("listen")) {
+        if (const std::optional<QString> profile =
+                dictationOptionValue(arguments, QStringLiteral("--profile"), &error)) {
+            overrides.writingProfile = writingProfileNamed(*profile, &error);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+        if (const std::optional<QString> language =
+                dictationOptionValue(arguments, QStringLiteral("--language"), &error)) {
+            overrides.spokenLanguage = spokenLanguageNamed(*language, &error);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+
+    if (isCliCommand) {
+        if (verb != QStringLiteral("toggle") && verb != QStringLiteral("start")) {
+            const char *misplaced = overrides.outputFormat ? "--format"
+                : overrides.writingProfile                 ? "--profile"
+                : overrides.spokenLanguage                 ? "--language"
+                                                           : nullptr;
+            if (misplaced) {
+                return QStringLiteral("%1 can only be used with toggle or start").arg(QLatin1String(misplaced));
+            }
+        }
+        decision->mode = LaunchMode::RunCli;
+        if (verb == QStringLiteral("record")) {
+            return parseRecordArguments(arguments.mid(2), decision);
+        }
+        if (verb == QStringLiteral("status")) {
+            return parseStatusArguments(arguments.mid(2), decision);
+        }
+        // The other verbs are their commands' names.
+        decision->ipcCommand = verb == QStringLiteral("settings") ? IpcCommand::ShowSettings
+            : verb == QStringLiteral("setup")                     ? IpcCommand::ShowSetup
+                                                                  : ipcCommandNamed(verb).value();
+        return {};
+    }
+
+    decision->mode = arguments.contains(QStringLiteral("--daemon"))
+        ? LaunchMode::RunDaemon
+        : LaunchMode::RunGui;
+    if (verb == QStringLiteral("transcribe")) {
+        error = parseTranscribeArguments(arguments.mid(2), decision);
+        if (!error.isEmpty() || decision->mode == LaunchMode::TranscribeHeadless) {
+            return error;
+        }
+    } else if (verb == QStringLiteral("listen")) {
+        return parseListenArguments(arguments.mid(2), decision);
+    } else if (verb == QStringLiteral("providers")) {
+        return parseProvidersArguments(arguments.mid(2), decision);
+    } else {
+        QStringList files;
+        for (const QString &argument : arguments.mid(1)) {
+            if (isAudioFile(argument)) {
+                files << argument;
+            }
+        }
+        decision->transcribeFiles = absolutePaths(files);
+    }
+    if (!decision->transcribeFiles.isEmpty()) {
+        decision->mode = LaunchMode::RunGui;
+    }
+    return {};
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
@@ -776,134 +870,10 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     }
 
     CommandLineDecision decision;
-
-    const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
-    if (verb == QStringLiteral("completions")) {
-        return printCompletions(arguments.mid(2));
-    }
-    // Before the dictation options below, which vocabulary does not take.
-    if (verb == QStringLiteral("vocabulary")) {
-        const QString error = parseVocabularyArguments(arguments.mid(2), &decision);
-        if (!error.isEmpty()) {
-            std::cerr << error.toStdString() << "\n\n"
-                      << helpText().toStdString();
-            return {LaunchMode::Exit, 2};
-        }
-        return decision;
-    }
-    const bool isCliCommand = verb == QStringLiteral("toggle")
-        || verb == QStringLiteral("start")
-        || verb == QStringLiteral("stop")
-        || verb == QStringLiteral("cancel")
-        || verb == QStringLiteral("status")
-        || verb == QStringLiteral("last")
-        || verb == QStringLiteral("settings")
-        || verb == QStringLiteral("setup")
-        || verb == QStringLiteral("record")
-        || verb == QStringLiteral("quit");
-    decision.startListening = arguments.contains(QStringLiteral("--start-listening"));
-    decision.showSettings = arguments.contains(QStringLiteral("--show-settings"));
-    decision.showSetup = arguments.contains(QStringLiteral("--show-setup"));
-
-    QString overrideError;
-    SessionOverrides &overrides = decision.sessionOverrides;
-    overrides.outputFormat = requestedOutputFormat(arguments, &overrideError);
-    // transcribe and listen read their own --profile and --language.
-    if (overrideError.isEmpty() && verb != QStringLiteral("transcribe") && verb != QStringLiteral("listen")) {
-        overrides.writingProfile = requestedWritingProfile(arguments, &overrideError);
-        if (overrideError.isEmpty()) {
-            overrides.spokenLanguage = spokenLanguageOption(arguments, &overrideError);
-        }
-    }
-    if (!overrideError.isEmpty()) {
-        std::cerr << overrideError.toStdString() << "\n";
+    if (const QString error = parseArguments(arguments, &decision); !error.isEmpty()) {
+        std::cerr << error.toStdString() << "\n\n"
+                  << helpText().toStdString();
         return {LaunchMode::Exit, 2};
-    }
-
-    if (isCliCommand) {
-        if (verb != QStringLiteral("toggle") && verb != QStringLiteral("start")) {
-            if (overrides.outputFormat) {
-                std::cerr << "--format can only be used with toggle or start\n";
-                return {LaunchMode::Exit, 2};
-            }
-            if (overrides.writingProfile) {
-                std::cerr << "--profile can only be used with toggle or start\n";
-                return {LaunchMode::Exit, 2};
-            }
-            if (overrides.spokenLanguage) {
-                std::cerr << "--language can only be used with toggle or start\n";
-                return {LaunchMode::Exit, 2};
-            }
-        }
-        decision.mode = LaunchMode::RunCli;
-        if (verb == QStringLiteral("record")) {
-            const QString error = parseRecordArguments(arguments.mid(2), &decision);
-            if (!error.isEmpty()) {
-                std::cerr << error.toStdString() << "\n\n"
-                          << helpText().toStdString();
-                return {LaunchMode::Exit, 2};
-            }
-            return decision;
-        }
-        if (verb == QStringLiteral("status")) {
-            const QString error = parseStatusArguments(arguments.mid(2), &decision);
-            if (!error.isEmpty()) {
-                std::cerr << error.toStdString() << "\n\n"
-                          << helpText().toStdString();
-                return {LaunchMode::Exit, 2};
-            }
-            return decision;
-        }
-        // The other verbs are their commands' names.
-        decision.ipcCommand = verb == QStringLiteral("settings") ? IpcCommand::ShowSettings
-            : verb == QStringLiteral("setup")                    ? IpcCommand::ShowSetup
-                                                                 : ipcCommandNamed(verb).value();
-        return decision;
-    }
-
-    decision.mode = arguments.contains(QStringLiteral("--daemon"))
-        ? LaunchMode::RunDaemon
-        : LaunchMode::RunGui;
-    if (verb == QStringLiteral("transcribe")) {
-        const QString error = parseTranscribeArguments(arguments.mid(2), &decision);
-        if (!error.isEmpty()) {
-            std::cerr << error.toStdString() << "\n\n"
-                      << helpText().toStdString();
-            return {LaunchMode::Exit, 2};
-        }
-        if (decision.mode == LaunchMode::TranscribeHeadless) {
-            return decision;
-        }
-    } else if (verb == QStringLiteral("listen")) {
-        const QString error = parseListenArguments(arguments.mid(2), &decision);
-        if (!error.isEmpty()) {
-            std::cerr << error.toStdString() << "\n\n"
-                      << helpText().toStdString();
-            return {LaunchMode::Exit, 2};
-        }
-        return decision;
-    } else if (verb == QStringLiteral("providers")) {
-        for (const QString &argument : arguments.mid(2)) {
-            if (argument != QStringLiteral("--json")) {
-                std::cerr << "Unknown providers option: " << argument.toStdString() << "\n\n"
-                          << helpText().toStdString();
-                return {LaunchMode::Exit, 2};
-            }
-            decision.json = true;
-        }
-        decision.mode = LaunchMode::ListProviders;
-        return decision;
-    } else {
-        QStringList files;
-        for (const QString &argument : arguments.mid(1)) {
-            if (isAudioFile(argument)) {
-                files << argument;
-            }
-        }
-        decision.transcribeFiles = absolutePaths(files);
-    }
-    if (!decision.transcribeFiles.isEmpty()) {
-        decision.mode = LaunchMode::RunGui;
     }
     return decision;
 }
