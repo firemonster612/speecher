@@ -70,6 +70,9 @@ bool SpeechChain::offlineFor(ProviderRole role, const QString &providerId, const
 
 void SpeechChain::prepare(const AppSettings &settings, TranscriptRefiner *refiner)
 {
+    // A renewal still running would otherwise answer the walk with
+    // signInRenewed().
+    cancel();
     m_settings = settings;
     m_refiner = refiner;
     walk();

@@ -10,6 +10,7 @@
 #include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
 #include "providers/EndpointSpeechTranscriber.h"
+#include "providers/SpeechChain.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "recording/SystemAudioPresentation.h"
@@ -1815,6 +1816,26 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(streamState(), RecordingStream::State::Stopped, 5000);
         QCOMPARE(preparedAtStarts, QList<int>({2, 3, 4}));
         QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Unauthorized"));
+    }
+
+    // A walk started while a sign-in renews replaces the renewal: it ends in
+    // ready(), never in the renewal's answer.
+    void aWalkStartedDuringARenewalEndsReady()
+    {
+        FakeSpeechTranscriber transcriber;
+        transcriber.backgroundPrepare = true;
+        SpeechChain chain(m_registry.get(), [&transcriber](const QString &) { return &transcriber; });
+        QSignalSpy ready(&chain, &SpeechChain::ready);
+        QSignalSpy renewed(&chain, &SpeechChain::signInRenewed);
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("claude");
+
+        chain.begin(settings.speech.providerId, {});
+        chain.renewSignIn(&transcriber, settings.speech, settings.accounts);
+        chain.prepare(settings);
+
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 5000);
+        QCOMPARE(renewed.count(), 0);
     }
 
     // A dropped stream is cancelled once its partial is written: whatever it
