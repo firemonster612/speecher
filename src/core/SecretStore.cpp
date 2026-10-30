@@ -345,12 +345,15 @@ bool SecretStore::refusesWrites() const
 
 // Makes the request the secret's requested state, which every read returns
 // until it settles, and returns its number. When no save may be written
-// (writeRefusal), it refuses the request unwritten instead.
+// (writeRefusal), it refuses the request unwritten instead, retiring one a
+// write under way still holds: that write would settle it under this
+// request's number.
 quint64 SecretStore::ask(Secret secret, const Request &request)
 {
     SecretState &entry = state(secret);
     const quint64 number = ++entry.requests;
     if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
+        entry.requested.reset();
         refuse(secret, number, request.value.isEmpty(), refusal);
     } else {
         entry.requested = request;
@@ -674,6 +677,14 @@ bool SecretStore::deleteKeyringSecrets()
             if (ok) {
                 ok = false;
                 firstError = m_lastError;
+            }
+            // Every start reads the OpenAI entry (mayBeInKeyring), so a key
+            // the keyring kept would come back after a reinstall; a marker
+            // hides it. A keyring that can't be read either, as where there
+            // is none, gets no marker, so removal still deletes every setting.
+            if (m_settings && row.secret == Secret::OpenAiApiKey && !keyringSecret(row.secret).isEmpty()) {
+                m_settings->raw().setValue(pendingDeletionKey(row.secret), true);
+                changedInFile(row.secret);
             }
         } else if (deletionPending(row.secret)) {
             m_settings->raw().remove(pendingDeletionKey(row.secret));

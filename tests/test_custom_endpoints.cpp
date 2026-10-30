@@ -71,6 +71,7 @@ bool privateKeyring()
 }
 
 const char *const peerSecretVariable = "SPEECHER_TEST_PEER_SECRET";
+const char *const peerRestartsVariable = "SPEECHER_TEST_PEER_RESTARTS";
 const QByteArray peerReadMarker = "peer read: ";
 
 // Where this test process keeps its settings files (tests/test_main.cpp).
@@ -112,18 +113,25 @@ SpeecherRemoval::Steps removalSteps(SettingsStore &settings)
 // Compares what another Speecher process reads for the secret, from this
 // one's settings file and keyring, with expected: a peer of this binary
 // running printWhatAPeerReads. It saves nothing first: a key a save said was
-// stored is in the files already. Windows test processes each keep their
-// settings in a registry key of their own, so there it checks nothing.
-void comparePeerRead(SettingsStore &settings, SecretStore::Secret secret, const QString &expected)
+// stored is in the files already. With restart, the peer first runs
+// startup's migrations, as Speecher starting again does. Windows test
+// processes each keep their settings in a registry key of their own, so there
+// it checks nothing.
+void comparePeerRead(SettingsStore &settings, SecretStore::Secret secret, const QString &expected,
+                     bool restart = false)
 {
 #ifdef Q_OS_WIN
     Q_UNUSED(settings);
     Q_UNUSED(secret);
     Q_UNUSED(expected);
+    Q_UNUSED(restart);
 #else
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.insert(QStringLiteral("SPEECHER_TEST_PREFERENCES_DIR"), preferencesPath(settings));
     environment.insert(QString::fromLatin1(peerSecretVariable), QString::number(int(secret)));
+    if (restart) {
+        environment.insert(QString::fromLatin1(peerRestartsVariable), QStringLiteral("1"));
+    }
     QProcess peer;
     peer.setProcessEnvironment(environment);
     peer.setProcessChannelMode(QProcess::MergedChannels);
@@ -1089,6 +1097,9 @@ private slots:
         if (!qEnvironmentVariableIsSet(peerSecretVariable)) {
             QSKIP("Run by comparePeerRead");
         }
+        if (qEnvironmentVariableIntValue(peerRestartsVariable) == 1) {
+            migrateSavedSettings();
+        }
         const auto secret = SecretStore::Secret(qEnvironmentVariableIntValue(peerSecretVariable));
         qInfo().noquote() << peerReadMarker + '[' + SettingsStore().secrets()->secret(secret).toUtf8() + ']';
     }
@@ -1489,6 +1500,83 @@ private slots:
         QVERIFY(finished.first().first().value<RemovalReport>().settingsDeleted());
         comparePeerRead(settings, proxy, QString());
     }
+
+    // Removal deletes the settings an older Speecher left under its old app
+    // id too, which the next start would import again, keys and all. When
+    // they won't go, it says so and keeps the next start from importing
+    // them: either way, Speecher starting again reads none of their keys.
+    void removalLeavesNoOlderSettingsToImport_data()
+    {
+        QTest::addColumn<bool>("olderStay");
+        QTest::newRow("deleted") << false;
+        QTest::newRow("won't go") << true;
+    }
+
+    void removalLeavesNoOlderSettingsToImport()
+    {
+        QFETCH(bool, olderStay);
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto kept = keepSettingsHere(settings);
+        QString olderFile;
+        {
+            QSettings older(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("local.speecher"),
+                            SettingsKeys::application());
+            older.setValue(SecretStore::settingsKey(proxy), QStringLiteral("older-key"));
+            older.sync();
+            olderFile = older.fileName();
+        }
+        const QString olderFolder = QFileInfo(olderFile).absolutePath();
+        const QFileDevice::Permissions permissions = QFile::permissions(olderFolder);
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(olderFolder, permissions);
+            QFile::remove(olderFile);
+        });
+        if (olderStay) {
+            QVERIFY(QFile::setPermissions(olderFolder, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        }
+        SpeecherRemoval removal(removalSteps(settings));
+        QSignalSpy finished(&removal, &SpeecherRemoval::finished);
+
+        removal.start(true);
+
+        QTRY_COMPARE(finished.count(), 1);
+        const RemovalStep step = finished.first().first().value<RemovalReport>().steps.last();
+        QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : RemovalStep::Outcome::Removed);
+        QCOMPARE(step.error, olderStay ? olderFile : QString());
+        comparePeerRead(settings, proxy, QString(), true);
+    }
+
+    // An OpenAI key the keyring kept when removal couldn't delete it stays
+    // hidden: every start reads that entry, so it would come back after a
+    // reinstall.
+    void removalHidesAnOpenAiKeyTheKeyringKept()
+    {
+        if (!privateKeyring()) {
+            QSKIP("Requires the private keyring suite");
+        }
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
+            SettingsStore().secrets()->deleteKeyringSecrets();
+        });
+        const auto kept = keepSettingsHere(settings);
+        QCOMPARE(secrets->saveApiKey(QStringLiteral("kept-key")), SaveResult::Stored);
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        SpeecherRemoval removal(removalSteps(settings));
+        QSignalSpy finished(&removal, &SpeecherRemoval::finished);
+
+        removal.start(true);
+
+        QTRY_COMPARE(finished.count(), 1);
+        QCOMPARE(finished.first().first().value<RemovalReport>().steps.last().outcome,
+                 RemovalStep::Outcome::KeptHidingKeys);
+        comparePeerRead(settings, openAi, QString(), true);
+    }
 #endif
 
     // Settings deleted while a save waits on the keyring refuse it, though
@@ -1505,6 +1593,30 @@ private slots:
         QCOMPARE(secrets->saveApiKey(QStringLiteral("late-key")), SaveResult::Refused);
 
         QCOMPARE(secrets->lastError(), QStringLiteral("Speecher's settings were deleted"));
+    }
+
+    // A save that deleting the settings interrupts goes with them: a later
+    // request, refused at once, is the only one to settle, so its number
+    // never labels the older save's payload.
+    void aSaveTheSettingsDeletionInterruptsGoesWithThem()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto kept = keepSettingsHere(settings);
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+        QTimer::singleShot(0, secrets, [&settings, secrets, proxy] {
+            QVERIFY(settings.deleteAll(nullptr));
+            QCOMPARE(secrets->saveSecret(proxy, {}), SaveResult::Refused);
+        });
+
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("old-key")), SaveResult::Pending);
+
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(finished.first().at(1).toULongLong(), quint64(2));
+        QVERIFY(finished.first().at(2).toBool());
     }
 
     // A save is judged by its own settings file, also after another store

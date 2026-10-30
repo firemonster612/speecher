@@ -19,7 +19,9 @@ class SettingsStore;
 // running app's: every store on the file sees another's changes before the
 // file saves them (QSettings keeps one copy of an open file), so a second
 // store that saved a key it read that way could report Stored for a key the
-// file never saved.
+// file never saved. Only that store's own SettingsFile deletes the settings
+// (SettingsStore::deleteAll): another handle's deletion would leave this
+// store reading copies it cached of a file that is gone.
 class SecretStore : public QObject {
     Q_OBJECT
 
@@ -101,7 +103,8 @@ public:
     // dropped, refused for that reason in saveFinished, and none is written
     // afterwards; a save asked for meanwhile is refused, also during a
     // removal started while this one waits. A deleted entry's deletion
-    // marker goes, having nothing left to hide. The settings file's copies
+    // marker goes, having nothing left to hide; an OpenAI key the keyring
+    // refuses to delete and still holds gets one. The settings file's copies
     // stay: SettingsStore::deleteAll removes them, after which every save
     // is refused.
     bool deleteKeyringSecrets();
