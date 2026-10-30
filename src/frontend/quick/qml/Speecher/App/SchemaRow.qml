@@ -169,6 +169,7 @@ SettingRow {
             // records them; every way listening ends takes them back.
             onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut(root.rowId)
             Component.onDestruction: if (listening) Settings.stopRecordingShortcut(root.rowId)
+            keyAlone: () => Settings.pressedKeyAlone()
             onRecorded: keys => Settings.set(root.rowId, keys)
         }
     }

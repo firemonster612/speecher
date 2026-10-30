@@ -57,10 +57,18 @@ public:
     // from one row to the next keeps the keys let go.
     Q_INVOKABLE void startRecordingShortcut(const QString &id);
     Q_INVOKABLE void stopRecordingShortcut(const QString &id);
+    // While a row records, the last key pressed as a shortcut row takes one
+    // key on its own (["key:AltRight"]), for ShortcutField's keyAlone: a QML
+    // key event can't tell Right Alt from Left. Empty for a key the
+    // vocabulary lacks.
+    Q_INVOKABLE QStringList pressedKeyAlone() const;
 
 signals:
     void valuesChanged();
     void errorsChanged();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void setShortcut(const QString &id, GlobalShortcutRole role, const QStringList &keys);
@@ -72,6 +80,8 @@ private:
     QVariantMap m_errors;
     // The shortcut row recording, or empty.
     QString m_recordingShortcut;
+    // The KeyboardEvent.code of the last key pressed while a row records.
+    QString m_pressedKeyCode;
 };
 
 } // namespace speecher

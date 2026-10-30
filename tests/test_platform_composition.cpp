@@ -61,6 +61,7 @@
 #include <QPalette>
 #include <QPointer>
 #include <QProcess>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLayout>
 #include <QList>
@@ -1239,6 +1240,35 @@ private slots:
         platform->binder->setShortcutError.clear();
         QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
         QCOMPARE(row->property("help").toString(), help);
+    }
+
+    // A modifier pressed and let go on its own records its physical key,
+    // Right Alt rather than Alt, as one key on its own.
+    void aModifierLetGoAloneRecordsItsPhysicalKey()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QuickSettings settings(&controller);
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
+        QVERIFY(window);
+        QQuickItem *field = findItem(window.get(), "ShortcutField");
+        QVERIFY(field);
+        // As X11 and Wayland report Right Alt: evdev 100 as XKB keycode 108,
+        // which most layouts make AltGr.
+        const auto rightAlt = [&window](QEvent::Type type) {
+            QKeyEvent event(type, Qt::Key_AltGr, Qt::NoModifier, 108, 0, 0);
+            QGuiApplication::sendEvent(window.get(), &event);
+        };
+
+        startListening(window.get(), field);
+        rightAlt(QEvent::KeyPress);
+        QVERIFY(field->property("listening").toBool());
+        rightAlt(QEvent::KeyRelease);
+
+        QVERIFY(!field->property("listening").toBool());
+        QCOMPARE(controller.globalShortcut(), ShortcutBinding::singleKey(QStringLiteral("AltRight")));
     }
 
     // Where the desktop picks the keys itself (the portal), the binding is a

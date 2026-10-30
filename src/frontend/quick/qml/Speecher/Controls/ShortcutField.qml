@@ -9,6 +9,8 @@ import Speecher.Theme
 // that may be Escape itself, such as cancel). Tab and Shift+Tab move focus
 // on, which stops listening too, as does any other loss of focus or its
 // window hiding. While it listens a clear button records an empty shortcut.
+// A key with no name in a combination (a modifier, Caps Lock) records what
+// keyAlone returns for it when it is the last key pressed and is let go.
 // Where something else picks the keys (recordsKeys false), clicking it only
 // emits clicked. emptyText, listeningText and clearText are the words it shows.
 T.AbstractButton {
@@ -21,7 +23,17 @@ T.AbstractButton {
     property bool listening: false
     property bool escapeRecords: false
     property bool recordsKeys: true
+    // A function the caller gives that returns what recorded brings back for
+    // the key just pressed on its own, or [] when it can't stand alone. Only
+    // the caller can tell Right Alt from Left; unset, such a key records
+    // nothing.
+    property var keyAlone: null
     signal recorded(var keys)
+
+    // The nameless key pressed last, and keyAlone's answer for it, recorded
+    // when it is let go.
+    property int _aloneKey: 0
+    property var _alone: []
 
     // The name Qt's key sequences give a key ("Esc", "PgUp", "F1", "A"), or
     // nothing for a key that has none, such as a modifier on its own.
@@ -46,7 +58,7 @@ T.AbstractButton {
     focusPolicy: Qt.StrongFocus
     opacity: enabled ? 1 : Theme.disabledOpacity
     Behavior on opacity { Ease {} }
-    onClicked: if (recordsKeys) { listening = true; forceActiveFocus() }
+    onClicked: if (recordsKeys) { listening = true; _alone = []; forceActiveFocus() }
 
     // While listening, a combination such as Ctrl+K goes to the field rather
     // than to the window's shortcuts.
@@ -59,7 +71,11 @@ T.AbstractButton {
         event.accepted = true
         if (event.key === Qt.Key_Escape && !escapeRecords) { listening = false; return }
         const name = keyName(event.key)
-        if (!name) return
+        if (!name) {
+            _aloneKey = event.key
+            _alone = keyAlone ? keyAlone() : []
+            return
+        }
         const mods = []
         if (event.modifiers & Qt.ControlModifier) mods.push("Ctrl")
         if (event.modifiers & Qt.AltModifier) mods.push("Alt")
@@ -67,6 +83,12 @@ T.AbstractButton {
         if (event.modifiers & Qt.MetaModifier) mods.push("Meta")
         listening = false
         recorded(mods.concat([name]))
+    }
+    Keys.onReleased: event => {
+        if (!listening || event.key !== _aloneKey || _alone.length === 0) return
+        event.accepted = true
+        listening = false
+        recorded(_alone)
     }
     onActiveFocusChanged: if (!activeFocus) listening = false
     // Closing a window hides it, and a hidden window keeps its focus item.

@@ -100,7 +100,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   shortcut rows go to the controller, which binds and keeps them, and show
   the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
-  the bound shortcuts let go of their keys. Where the desktop picks the keys
+  the bound shortcuts let go of their keys, and `Settings.pressedKeyAlone()`
+  names the physical key just pressed (Right Alt, not Alt), which a
+  modifier let go on its own records. Where the desktop picks the keys
   (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
   `Settings.act(id)` opens the desktop's chooser.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
@@ -537,7 +539,7 @@ Choosing:
 Input:
 
 - `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth`, and `Select`, `SuggestField` and `ShortcutField` to `Theme.selectWidth`, so choosers line up in a column of rows; leave them at that in settings rows.
-- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
+- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; keyAlone; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
 
 Actions and menus:
 
