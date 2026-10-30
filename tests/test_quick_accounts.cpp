@@ -595,14 +595,15 @@ private slots:
         ApplicationController controller(true);
         SettingsStore *store = controller.settings();
         store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
-        store->raw().setValue(SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
         QuickAccounts accounts(&controller);
         QuickAccounts::create(nullptr, nullptr);
         QTRY_VERIFY(accounts.savedSecrets().contains(QStringLiteral("speechEndpointApiKey")));
         QVERIFY(!accounts.savedSecrets().contains(QStringLiteral("cliproxyApiKey")));
 
-        // The keyring is out of the way now: Speecher no longer looks there.
+        // The keyring is out of the way now: Speecher no longer looks there,
+        // and the key is in the settings file.
         store->raw().remove(SettingsKeys::SecretsInKeyring);
+        store->raw().setValue(SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
         accounts.recheck(QStringLiteral("cliproxy"));
         QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
     }

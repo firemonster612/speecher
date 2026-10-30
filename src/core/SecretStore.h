@@ -6,6 +6,7 @@
 #include <QString>
 
 #include <array>
+#include <optional>
 #include <utility>
 
 namespace speecher {
@@ -45,10 +46,20 @@ public:
     // reads as empty meanwhile.
     bool deletionPending(Secret secret) const;
     // Saves to the keychain, or to the settings file when no keychain works,
-    // so a custom endpoint keeps working without one. An empty value for a
-    // secret that was never read leaves the stored one alone: it came from a
-    // skipped or failed read, not from the person. Failed deletions leave a
-    // persisted marker that suppresses reads until deletion succeeds.
+    // so a custom endpoint keeps working without one. A key kept in the
+    // settings file is what every read finds until a keyring takes it. An
+    // empty value for a secret that was never read leaves the stored one
+    // alone: it came from a skipped or failed read, not from the person.
+    // Failed deletions leave a persisted marker that suppresses reads until
+    // deletion succeeds.
+    //
+    // A save that waits for the keyring runs the event loop, where the same
+    // secret can be saved again. That save waits for the one in flight and
+    // then applies, so the value asked for last is the one kept; it returns
+    // true at once, and the save in flight returns how the last one went.
+    // Meanwhile every read returns the value asked for last, and a save of
+    // that same value asks for nothing new. The same holds for clearSecret
+    // and saveApiKey.
     bool saveSecret(Secret secret, const QString &value);
     // saveSecret for each, in order. A save that waits for the keyring runs
     // the event loop, where an edit can save one of these secrets too; that
@@ -75,13 +86,29 @@ private:
     // Startup migration belongs to the controller, not temporary settings stores.
     friend class ApplicationController;
 
+    struct SaveRequest {
+        QString value;
+        // Whether the settings file keeps the value when the keyring refuses it.
+        bool fallBack = true;
+    };
+
     struct CachedSecret {
         QString value;
         bool known = false;
         QElapsedTimer retryTimer;
-        // Counts the saves that reached for the keyring, so one that waited
-        // can tell whether a newer one ran meanwhile.
+        // Counts the saves that asked for a new value, so saveSecrets can tell
+        // whether one came meanwhile.
         unsigned saves = 0;
+        // While a save is in flight: the value it writes, and the latest save
+        // asked for meanwhile, which goes next.
+        std::optional<QString> writing;
+        std::optional<SaveRequest> queued;
+
+        // The value asked for last, while a save is in flight.
+        std::optional<QString> asked() const
+        {
+            return queued ? queued->value : writing;
+        }
     };
 
     CachedSecret &cached(Secret secret) const;
@@ -92,7 +119,8 @@ private:
     QString keyringSecret(Secret secret) const;
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
-    bool saveToKeyring(Secret secret, const QString &value);
+    bool save(Secret secret, const SaveRequest &request);
+    bool saveToKeyring(Secret secret, const QString &cleaned);
     bool storeSecret(Secret secret, const QString &cleaned);
     void migrateSettingsFallbacks();
 

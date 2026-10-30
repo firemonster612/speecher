@@ -174,7 +174,7 @@ void SecretStore::prefetch()
 #ifdef SPEECHER_WITH_QKEYCHAIN
     for (const SecretEntry &row : secretEntries) {
         if (row.secret == Secret::OpenAiApiKey || deletionPending(row.secret) || !mayBeInKeyring(row.secret) || cached(row.secret).known
-            || keyringReadsTimeOut()) {
+            || !settingsFallback(row.secret).isEmpty() || keyringReadsTimeOut()) {
             continue;
         }
         auto *job = new QKeychain::ReadPasswordJob(keyringService(), this);
@@ -233,13 +233,14 @@ bool SecretStore::deletionPending(Secret secret) const
 
 bool SecretStore::isSecretKnown(Secret secret) const
 {
-    return deletionPending(secret) || cached(secret).known;
+    return deletionPending(secret) || cached(secret).known || cached(secret).asked();
 }
 
 QString SecretStore::secret(Secret secret) const
 {
-    if (deletionPending(secret)) return {};
     CachedSecret &entry = cached(secret);
+    if (const std::optional<QString> asked = entry.asked()) return *asked;
+    if (deletionPending(secret)) return {};
     if (entry.known) {
         return entry.value;
     }
@@ -247,9 +248,11 @@ QString SecretStore::secret(Secret secret) const
         return entry.value;
     }
     m_lastError.clear();
-    entry.value = mayBeInKeyring(secret) ? keyringSecret(secret) : QString();
-    if (entry.value.isEmpty()) {
-        entry.value = settingsFallback(secret);
+    // A key the settings file keeps is newer than any the keyring holds: a
+    // save that reaches the keyring removes it.
+    entry.value = settingsFallback(secret);
+    if (entry.value.isEmpty() && mayBeInKeyring(secret)) {
+        entry.value = keyringSecret(secret);
     }
     if (m_lastError.isEmpty()) {
         cacheValue(secret, entry.value);
@@ -261,32 +264,56 @@ QString SecretStore::secret(Secret secret) const
 
 QString SecretStore::cachedSecret(Secret secret) const
 {
-    if (deletionPending(secret)) return {};
     const CachedSecret &entry = cached(secret);
-    if (entry.known || mayBeInKeyring(secret)) return entry.value;
-    // Not in the keyring, so the settings file is the whole answer.
-    cacheValue(secret, settingsFallback(secret));
+    if (const std::optional<QString> asked = entry.asked()) return *asked;
+    if (deletionPending(secret)) return {};
+    if (entry.known) return entry.value;
+    // The settings file's copy outranks the keyring's, and without one a
+    // secret not in the keyring has no value: either way that is the answer.
+    const QString fallback = settingsFallback(secret);
+    if (fallback.isEmpty() && mayBeInKeyring(secret)) return entry.value;
+    cacheValue(secret, fallback);
     return entry.value;
 }
 
-bool SecretStore::saveToKeyring(Secret secret, const QString &value)
+// Applies saves of a secret one at a time. The keyring's wait runs the event
+// loop, where the secret can be saved again: that save is queued, replacing
+// any queued before it, and applied once the one in flight is done. Only then
+// is it checked against the cache, which until then holds a value the save in
+// flight is replacing.
+bool SecretStore::save(Secret secret, const SaveRequest &request)
+{
+    CachedSecret &entry = cached(secret);
+    if (const std::optional<QString> asked = entry.asked()) {
+        if (request.value != *asked) {
+            ++entry.saves;
+            entry.queued = request;
+        }
+        return true;
+    }
+    if (!entry.known || request.value != entry.value) {
+        ++entry.saves;
+    }
+    bool saved = false;
+    for (std::optional<SaveRequest> next = request; next; next = std::exchange(entry.queued, std::nullopt)) {
+        entry.writing = next->value;
+        saved = next->fallBack ? storeSecret(secret, next->value) : saveToKeyring(secret, next->value);
+    }
+    entry.writing.reset();
+    return saved;
+}
+
+bool SecretStore::saveToKeyring(Secret secret, const QString &cleaned)
 {
     m_lastError.clear();
-    const QString cleaned = value.trimmed();
-    CachedSecret &entry = cached(secret);
+    const CachedSecret &entry = cached(secret);
     if (entry.known && cleaned == entry.value && settingsFallback(secret).isEmpty() && !deletionPending(secret)) {
         return true;
     }
-    const unsigned save = ++entry.saves;
     // Clearing a key that was never written to the keyring needs no keyring.
     const bool ok = cleaned.isEmpty()
         ? !mayBeInKeyring(secret) || deleteKeyringSecret(secret)
         : writeKeyringSecret(secret, cleaned);
-    // A save made while the keyring answered reached it after this one and
-    // has already recorded its value, which is the newer.
-    if (entry.saves != save) {
-        return true;
-    }
     if (!ok) {
         return false;
     }
@@ -301,10 +328,10 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
 bool SecretStore::saveSecret(Secret secret, const QString &value)
 {
     const QString cleaned = value.trimmed();
-    if (!cached(secret).known && cleaned.isEmpty()) {
+    if (!cached(secret).known && !cached(secret).asked() && cleaned.isEmpty()) {
         return true;
     }
-    return storeSecret(secret, cleaned);
+    return save(secret, {cleaned});
 }
 
 void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
@@ -323,7 +350,7 @@ void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
 
 bool SecretStore::clearSecret(Secret secret)
 {
-    return storeSecret(secret, {}) && !deletionPending(secret);
+    return save(secret, {}) && !deletionPending(secret);
 }
 
 bool SecretStore::storeSecret(Secret secret, const QString &cleaned)
@@ -362,7 +389,7 @@ QString SecretStore::apiKey() const
 
 bool SecretStore::saveApiKey(const QString &apiKey)
 {
-    return saveToKeyring(Secret::OpenAiApiKey, apiKey);
+    return save(Secret::OpenAiApiKey, {apiKey.trimmed(), false});
 }
 
 QString SecretStore::status() const

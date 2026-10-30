@@ -1124,6 +1124,30 @@ private slots:
         settings.raw().clear();
     }
 
+    // An edit made during the wait reads the key being saved, so leaving it
+    // alone does not save the key it replaces back over it.
+    void anEditDuringAKeyringWaitKeepsTheKeyBeingSaved()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
+        QTimer::singleShot(0, &settings, [&settings] {
+            settings.edit([](AppSettings &nested) {
+                nested.refinement.openAiModel = QStringLiteral("nested-model");
+                return true;
+            });
+        });
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
+        QCOMPARE(SettingsStore().openAiModel(), QStringLiteral("nested-model"));
+        settings.raw().clear();
+    }
+
     void settingsBindingRulesRoundTrip()
     {
         SettingsStore settings;
