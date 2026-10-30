@@ -320,11 +320,14 @@ internal constructor(
 
     // Data frames are bounded: on a stalled connection the queue cannot grow without limit the way
     // a
-    // blocking write once bounded it. Over the cap the send is refused so the caller fails fast.
+    // blocking write once bounded it. Over the cap the send is refused and the connection fails,
+    // since what it would have carried is lost; a send after a close or cancel is simply dropped.
     private fun enqueue(opcode: Int, bytes: ByteArray): Boolean {
         if (cancelled || closing.get() || !opened) return false
         if (queuedBytes.addAndGet(bytes.size.toLong()) > MAX_QUEUED_BYTES) {
             queuedBytes.addAndGet(-bytes.size.toLong())
+            deliverFailure(IOException("send queue full"), null)
+            cancel()
             return false
         }
         try {

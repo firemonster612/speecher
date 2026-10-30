@@ -144,6 +144,16 @@ class WebSocketWireTest {
     }
 
     @Test
+    fun `a send over the queue cap fails the connection`() {
+        withPeer { transport, peer, events ->
+            acceptUpgrade(java.io.DataInputStream(peer.getInputStream()), peer.getOutputStream())
+            assertEquals("open", events.poll(3, TimeUnit.SECONDS))
+            assertEquals(false, transport.sendBinary(ByteArray(8 * 1024 * 1024 + 1)))
+            assertEquals("failure:null", events.poll(3, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun `upgrade errors carry status and invalid accept is rejected`() {
         withPeer { _, peer, events ->
             readHeaders(java.io.DataInputStream(peer.getInputStream()))
