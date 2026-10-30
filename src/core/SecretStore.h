@@ -32,16 +32,19 @@ public:
     // for last is the one kept, and only the call that settles a request
     // knows how it went.
     enum class SaveResult {
-        // Storage holds what this call asked for.
+        // Storage holds what this call asked for, where a new process reads
+        // it too.
         Stored,
-        // Storage refused what this call asked for, and lastError() says
-        // why. A refused clear still hides the key (deletionPending).
+        // Storage refused what this call asked for, or Speecher's secrets are
+        // being removed (deleteKeyringSecrets), and lastError() says why. A
+        // refused clear still hides the key (deletionPending).
         Refused,
         // This call didn't settle its request: it came while another call
-        // waited on the keyring for the same secret, which writes it next, or
-        // a newer request came during this call's wait and this call wrote
-        // that one instead. saveFinished says how the newest went, possibly
-        // before this call returns.
+        // waited on the keyring for the same secret, which writes it next, a
+        // newer request came during this call's wait and this call wrote
+        // that one instead, or a removal of Speecher's secrets dropped it.
+        // saveFinished says how the newest went, possibly before this call
+        // returns.
         Pending,
     };
     Q_ENUM(SaveResult)
@@ -76,12 +79,20 @@ public:
     // leaves a marker in the settings file that hides the key until a
     // deletion goes through.
     SaveResult saveSecret(Secret secret, const QString &value);
+    // The number the secret's next save or clear gets, which saveFinished
+    // carries. saveFinished can come during the save, so a caller that waits
+    // for its own answer reads this right before saving.
+    quint64 nextRequest(Secret secret) const;
     // saveSecret for each, all asked for before the first keyring wait, so a
-    // save made during one is newer and stands. A key the keyring refused is
-    // logged with why.
+    // save made during one is newer and stands. A refusal is logged with why
+    // when the request settles, as every save's is.
     void saveSecrets(const QList<std::pair<Secret, QString>> &values);
-    // Removes every Speecher entry from the keychain.
-    bool deleteKeyringSecrets() const;
+    // Removes every Speecher entry from the keychain, once any write the
+    // keychain is taking lands. Every save asked for and not yet settled is
+    // dropped, refused for that reason in saveFinished, and none is written
+    // afterwards; a save asked for meanwhile is refused. The settings file's
+    // copies stay: SettingsStore::deleteAll removes them.
+    bool deleteKeyringSecrets();
 
     QString apiKey() const;
     // Unlike saveSecret, refuses to fall back to the settings file.
@@ -94,9 +105,11 @@ public:
     bool usesInsecureSettingsFallback() const;
 
 signals:
-    // A save or clear of the secret settled: storage holds the one asked for
-    // last, or refused it. cleared says it was a clear.
-    void saveFinished(SecretStore::Secret secret, bool cleared, bool stored);
+    // A save or clear of the secret settled: request is its number
+    // (nextRequest), and storage holds it, or refused it for error's reason.
+    // cleared says it was a clear. A request replaced before it settled has
+    // no saveFinished of its own: one with a higher number settled it.
+    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
 
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
@@ -137,10 +150,16 @@ private:
     SaveResult settle(Secret secret, quint64 own);
     bool holds(Secret secret, const Request &request) const;
     bool write(Secret secret, const Request &request);
+    bool saveSettingsFile() const;
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;
     mutable QString m_lastError;
+    // Whether deleteKeyringSecrets runs, refusing every save.
+    bool m_removing = false;
+    // Counts the removals, so a write that waited on the keyring can tell
+    // whether one ran meanwhile.
+    quint64 m_removals = 0;
     mutable std::array<SecretState, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
 };
 

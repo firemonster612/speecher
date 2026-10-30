@@ -587,6 +587,35 @@ private slots:
         QCOMPARE(row.field->property("text").toString(), QStringLiteral("row-key"));
     }
 
+    // A row's save that a save from elsewhere replaced before it was written
+    // was never the row's: the keyring's answer to the newer one neither
+    // lets go of the field's key nor shows an error on it.
+    void aRowSaveReplacedFromElsewhereKeepsItsKey()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine);
+        QVERIFY(row.field);
+        SecretStore *secrets = controller.settings()->secrets();
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        for (int save = 0; save < 2; ++save) {
+            QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
+        }
+        row.field->setProperty("text", QStringLiteral("row-key"));
+        QMetaObject::invokeMethod(row.field, "editingFinished", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            secrets, [secrets, proxy] { secrets->saveSecret(proxy, QStringLiteral("other-key")); },
+            Qt::QueuedConnection);
+
+        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("outer-key")), SecretStore::SaveResult::Pending);
+
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("other-key"));
+        QCOMPARE(row.field->property("text").toString(), QStringLiteral("row-key"));
+        QVERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
+    }
+
     // A keyring that does not answer leaves a sign-in that needs it unknown,
     // in the keyring's words, rather than "not found".
     void aKeyringTimeoutShowsTheKeyringsError()

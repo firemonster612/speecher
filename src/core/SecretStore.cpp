@@ -80,6 +80,13 @@ bool testKeyringRefuses(const char *failureVariable)
             || qEnvironmentVariableIntValue(failureVariable) == 1);
 }
 
+// Why a save asked for while Speecher's secrets are removed, or waiting its
+// turn when the removal began, was not written.
+QString removalRefusal()
+{
+    return QStringLiteral("Speecher's secrets are being removed");
+}
+
 // A refused read stands in for a keyring that does not answer.
 bool keyringReadsTimeOut()
 {
@@ -296,6 +303,11 @@ SecretStore::SaveResult SecretStore::saveSecret(Secret secret, const QString &va
     return save(secret, {value.trimmed()});
 }
 
+quint64 SecretStore::nextRequest(Secret secret) const
+{
+    return state(secret).requests + 1;
+}
+
 void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
 {
     QList<quint64> requests;
@@ -303,31 +315,38 @@ void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
         requests.append(ask(secret, {value.trimmed()}));
     }
     for (qsizetype i = 0; i < values.size(); ++i) {
-        const auto &[secret, value] = values.at(i);
+        const Secret secret = values.at(i).first;
         const SecretState &entry = state(secret);
-        // A newer request, or the write under way, settles this one.
-        if (entry.requests != requests.at(i) || entry.writing) {
+        // A newer request, the write under way or a removal settles this one.
+        if (entry.requests != requests.at(i) || entry.writing || !entry.requested) {
             continue;
         }
-        if (settle(secret, requests.at(i)) == SaveResult::Refused) {
-            qWarning().noquote() << "Settings: the keyring refused to" << (value.trimmed().isEmpty() ? "clear" : "save")
-                                 << keyringEntry(secret) + QLatin1Char(':') << m_lastError;
-        }
+        settle(secret, requests.at(i));
     }
 }
 
 // Makes the request the secret's requested state, which every read returns
-// until it settles. Returns its number.
+// until it settles, and returns its number. While Speecher's secrets are
+// being removed, it settles the request unwritten instead.
 quint64 SecretStore::ask(Secret secret, const Request &request)
 {
     SecretState &entry = state(secret);
-    entry.requested = request;
-    return ++entry.requests;
+    const quint64 number = ++entry.requests;
+    if (m_removing) {
+        emit saveFinished(secret, number, request.value.isEmpty(), false, removalRefusal());
+    } else {
+        entry.requested = request;
+    }
+    return number;
 }
 
 SecretStore::SaveResult SecretStore::save(Secret secret, const Request &request)
 {
     const quint64 number = ask(secret, request);
+    if (m_removing) {
+        m_lastError = removalRefusal();
+        return SaveResult::Refused;
+    }
     // The write under way writes this next.
     if (state(secret).writing) {
         return SaveResult::Pending;
@@ -337,7 +356,8 @@ SecretStore::SaveResult SecretStore::save(Secret secret, const Request &request)
 
 // Writes the secret's requested state, and again after each write during
 // whose wait a newer request came, until one finishes with none. Returns how
-// request number own went, or Pending when a newer one replaced it.
+// request number own went, or Pending when a newer one replaced it or a
+// removal of Speecher's secrets dropped it. Logs a refusal with why.
 SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
 {
     SecretState &entry = state(secret);
@@ -349,10 +369,22 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
         written = entry.requests;
         request = *entry.requested;
         stored = holds(secret, request) || write(secret, request);
-    } while (entry.requests != written);
+    } while (entry.requested && entry.requests != written);
     entry.writing = false;
+    // The removal already answered for what was asked.
+    if (!entry.requested) {
+        return SaveResult::Pending;
+    }
     entry.requested.reset();
-    emit saveFinished(secret, request.value.isEmpty(), stored);
+    const bool cleared = request.value.isEmpty();
+    const QString error = m_lastError;
+    if (!stored) {
+        qWarning().noquote() << "Could not" << (cleared ? "clear" : "save") << keyringEntry(secret) + QLatin1Char(':')
+                             << error;
+    }
+    emit saveFinished(secret, written, cleared, stored, stored ? QString() : error);
+    // A saveFinished handler may have saved another secret, which sets lastError().
+    m_lastError = error;
     if (written != own) {
         return SaveResult::Pending;
     }
@@ -375,27 +407,41 @@ bool SecretStore::holds(Secret secret, const Request &request) const
 bool SecretStore::write(Secret secret, const Request &request)
 {
     m_lastError.clear();
+    const quint64 removals = m_removals;
     const QString &value = request.value;
     // Clearing a key that was never written to the keyring needs no keyring.
     const bool inKeyring = value.isEmpty() ? !mayBeInKeyring(secret) || deleteKeyringSecret(secret)
                                            : writeKeyringSecret(secret, value);
+    // A removal during the wait dropped this request, and its deletions came
+    // after whatever the keyring took.
+    if (m_removals != removals) {
+        return false;
+    }
     if (inKeyring) {
+        if (!value.isEmpty()) {
+            recordKeyringEntry(secret, true);
+        }
         if (m_settings) {
             m_settings->raw().remove(settingsKey(secret));
             m_settings->raw().remove(pendingDeletionKey(secret));
         }
         cacheValue(secret, value);
-        return true;
+        return saveSettingsFile();
     }
-    if (!request.fallBack || !m_settings) {
+    if (!m_settings) {
         return false;
     }
     if (value.isEmpty()) {
-        // Hides the old key across restarts until a deletion goes through.
+        // Hides the old key across restarts until a deletion goes through,
+        // even a key the request keeps out of the settings file: an older
+        // copy may be there.
         m_settings->raw().setValue(pendingDeletionKey(secret), true);
         m_settings->raw().remove(settingsKey(secret));
         m_settings->raw().sync();
         cacheValue(secret, {});
+        return false;
+    }
+    if (!request.fallBack) {
         return false;
     }
     m_settings->raw().remove(pendingDeletionKey(secret));
@@ -403,7 +449,26 @@ bool SecretStore::write(Secret secret, const Request &request)
                          << "in the settings file:" << m_lastError;
     m_settings->raw().setValue(settingsKey(secret), value);
     cacheValue(secret, value);
-    return true;
+    return saveSettingsFile();
+}
+
+// Writes the settings file now: a key is stored only once another process
+// reads it. Returns false, with why in lastError(), when the file won't save.
+// QSettings keeps the first error it meets, so once the file failed to save,
+// every later save says so too.
+bool SecretStore::saveSettingsFile() const
+{
+    if (!m_settings) {
+        return true;
+    }
+    m_settings->raw().sync();
+    // Not FormatError, which says a line read earlier was malformed: the
+    // file still saved.
+    if (m_settings->raw().status() != QSettings::AccessError) {
+        return true;
+    }
+    m_lastError = QStringLiteral("Could not save the settings file %1").arg(m_settings->raw().fileName());
+    return false;
 }
 
 QString SecretStore::apiKey() const
@@ -497,11 +562,7 @@ bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
     auto job = makeKeychainJob<QKeychain::WritePasswordJob>();
     job->setKey(keyringEntry(secret));
     job->setTextData(value);
-    const bool ok = runKeychainJob(job, &m_lastError) == QKeychain::NoError;
-    if (ok) {
-        recordKeyringEntry(secret, true);
-    }
-    return ok;
+    return runKeychainJob(job, &m_lastError) == QKeychain::NoError;
 #else
     Q_UNUSED(secret);
     Q_UNUSED(value);
@@ -535,8 +596,23 @@ bool SecretStore::deleteKeyringSecret(Secret secret) const
 #endif
 }
 
-bool SecretStore::deleteKeyringSecrets() const
+// QtKeychain runs one job at a time, in the order they start, so a write the
+// keyring was taking when the removal began lands before its deletions.
+bool SecretStore::deleteKeyringSecrets()
 {
+    m_removing = true;
+    ++m_removals;
+    // Drops every request under way or waiting its turn, so none is written
+    // after the deletions.
+    for (const SecretEntry &row : secretEntries) {
+        SecretState &entry = state(row.secret);
+        const quint64 dropped = entry.requests;
+        // A keyring read under way drops its answer, as for a request.
+        ++entry.requests;
+        if (const std::optional<Request> request = std::exchange(entry.requested, std::nullopt)) {
+            emit saveFinished(row.secret, dropped, request->value.isEmpty(), false, removalRefusal());
+        }
+    }
     bool ok = true;
     QString firstError;
     for (const SecretEntry &row : secretEntries) {
@@ -546,11 +622,13 @@ bool SecretStore::deleteKeyringSecrets() const
         }
     }
     m_lastError = firstError;
-    // What storage held is gone; requests under way still settle.
+    // What storage held is gone, and so is what a read during the deletions
+    // found.
     for (SecretState &entry : m_cache) {
         entry.stored.reset();
         entry.retryTimer.invalidate();
     }
+    m_removing = false;
     return ok;
 }
 
@@ -573,6 +651,7 @@ void SecretStore::migrateSettingsFallbacks()
         }
         m_lastError.clear();
         if (writeKeyringSecret(row.secret, legacy)) {
+            recordKeyringEntry(row.secret, true);
             m_settings->raw().remove(row.settingsKey);
             // The value is in hand, so this run never needs to read it back.
             cacheValue(row.secret, legacy);
