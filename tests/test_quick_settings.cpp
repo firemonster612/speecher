@@ -193,28 +193,28 @@ private slots:
     }
 
     // Show the result for is core's completionStatusDurationMs: how long a
-    // receipt stays up.
+    // receipt stays up, any value core stores.
     void theResultDurationIsHowLongAReceiptStays()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QCOMPARE(settings.values().value(QStringLiteral("resultDuration")).toString(), QStringLiteral("500"));
+        QCOMPARE(settings.values().value(QStringLiteral("resultDuration")).toInt(), 500);
 
-        settings.set(QStringLiteral("resultDuration"), QStringLiteral("2000"));
-        QCOMPARE(SettingsStore().completionStatusDurationMs(), 2000);
+        settings.set(QStringLiteral("resultDuration"), 1500.0);
+        QCOMPARE(SettingsStore().completionStatusDurationMs(), 1500);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> duration = schemaRow(engine, "resultDuration");
         QVERIFY(duration->property("enabled").toBool());
         QVERIFY(duration->property("shown").toBool());
-        const QObject *select = nullptr;
+        const QObject *slider = nullptr;
         for (const QObject *child : duration->findChildren<QObject *>()) {
-            if (QByteArray(child->metaObject()->className()).startsWith("Select_")) {
-                select = child;
+            if (QByteArray(child->metaObject()->className()).startsWith("Slider_")) {
+                slider = child;
             }
         }
-        QVERIFY(select);
-        QCOMPARE(select->property("currentId").toString(), QStringLiteral("2000"));
+        QVERIFY(slider);
+        QCOMPARE(slider->property("value").toInt(), 1500);
     }
 
     // The Local Model is a choice once picked; a new acceleration starts on

@@ -19,6 +19,7 @@
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/ScatterRibbon.h"
 
+#include <QAccessible>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
@@ -29,6 +30,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSGRendererInterface>
 #include <QSignalSpy>
 
@@ -535,10 +537,13 @@ private slots:
         QTRY_VERIFY(helpShown(QStringLiteral("Live text off, sounds on")));
     }
 
-    // Clicking another profile saves the field being edited to the profile
-    // it was edited for, before the editor shows the other one.
+    // Clicking another profile, or pressing it with an assistive technology,
+    // saves the field being edited to the profile it was edited for, before
+    // the editor shows the other one.
     void choosingAProfileSavesTheEditInProgress()
     {
+        QAccessible::setActive(true);
+        const auto inactive = qScopeGuard([] { QAccessible::setActive(false); });
         ApplicationController controller(true);
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
@@ -592,6 +597,17 @@ private slots:
         QTRY_VERIFY(email->property("selected").toBool());
         QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
         QCOMPARE(instructionsOf(QStringLiteral("email")), QString());
+
+        instructions->forceActiveFocus(Qt::MouseFocusReason);
+        for (const char *key = "Sign off."; *key; ++key) {
+            QTest::keyClick(main, *key);
+        }
+        QQuickItem *work = profileRow(QStringLiteral("work"));
+        QAccessible::queryAccessibleInterface(work)->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+
+        QTRY_VERIFY(work->property("selected").toBool());
+        QCOMPARE(instructionsOf(QStringLiteral("email")), QStringLiteral("Sign off."));
+        QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
     }
 
     // Undo after deleting an app's paste rule puts it back, even once the
