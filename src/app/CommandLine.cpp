@@ -996,7 +996,7 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
 bool printRecordingProblems(const RecordingStatus &status)
 {
     QStringList problems;
-    for (const RecordingStream &stream : status.streams) {
+    for (const RecordingStreamStatus &stream : status.streams) {
         problems << recordingStreamProblemText(stream);
     }
     problems << recordingWriteProblemText(status);

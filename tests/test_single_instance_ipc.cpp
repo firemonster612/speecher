@@ -504,18 +504,19 @@ private slots:
         QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
         const RecordingStatus reconnecting{
             true, QStringLiteral("/tmp/call.md"), 3723000,
-            {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
+            {{QStringLiteral("me"), RecordingStreamStatus::State::Reconnecting, QStringLiteral("Connection reset"),
+              2000}}};
         const RecordingStatus stoppedIncomplete{true,
                                                 QStringLiteral("/tmp/call.md"),
                                                 3723000,
-                                                {{QStringLiteral("me"), RecordingStream::State::Stopped}},
+                                                {{QStringLiteral("me"), RecordingStreamStatus::State::Stopped}},
                                                 2,
                                                 QStringLiteral("Could not write /tmp/call.md: No space left on device")};
         const RecordingStatus started{true,
                                       QStringLiteral("/tmp/call.md"),
                                       0,
-                                      {{QStringLiteral("me"), RecordingStream::State::Paused},
-                                       {QStringLiteral("them"), RecordingStream::State::Stopped,
+                                      {{QStringLiteral("me"), RecordingStreamStatus::State::Paused},
+                                       {QStringLiteral("them"), RecordingStreamStatus::State::Stopped,
                                         QStringLiteral("No default output.")}},
                                       0,
                                       {},
@@ -588,7 +589,7 @@ private slots:
         const QJsonObject startedJson = recordingStatusJson(started);
         QCOMPARE(startedJson.value(QStringLiteral("echoCancellationWarning")).toString(),
                  echoCancellationNotBuiltText());
-        QCOMPARE(recordingStatusFromJson(startedJson).streams.first().state, RecordingStream::State::Paused);
+        QCOMPARE(recordingStatusFromJson(startedJson).streams.first().state, RecordingStreamStatus::State::Paused);
         QCOMPARE(recordingStatusFromJson(startedJson).echoCancellationWarning, echoCancellationNotBuiltText());
 
         QCOMPARE(run(IpcCommand::RecordStatus, true), 0);
@@ -1035,7 +1036,8 @@ private slots:
         IpcResponse recording{true, QStringLiteral("idle"), {}};
         recording.recording = RecordingStatus{
             true, QStringLiteral("/tmp/call.md"), 3723000,
-            {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
+            {{QStringLiteral("me"), RecordingStreamStatus::State::Reconnecting, QStringLiteral("Connection reset"),
+              2000}}};
         ipc->publishStatus(recording);
         recording.state = QStringLiteral("listening");
         ipc->publishStatus(recording);

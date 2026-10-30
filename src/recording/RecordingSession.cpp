@@ -3,9 +3,11 @@
 #include "core/EchoCanceller.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
+#include "dictation/TranscriptPipeline.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
+#include "recording/RecordingStream.h"
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QDebug>
@@ -24,6 +26,21 @@ constexpr int kUtterancePauseMs = 800;
 // 30 s max_utterance_duration_ms. Counted in audio, as the service counts it:
 // 16 kHz mono s16.
 constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
+
+// The settings a recording's streams run with: its speech provider as a
+// Transcribe batch with the Other profile runs it, and the recording's terms
+// added to the vocabulary.
+AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistry &providers,
+                              const QStringList &vocabulary)
+{
+    TranscribeOptions options;
+    options.speechProviderId = settings.speech.providerId;
+    AppSettings recording = withBatchChoices(settings, providers, options);
+    recording.refinement.sessionWritingProfile = WritingProfile::Other;
+    recording.sessionVocabulary = vocabulary;
+    recording.speech.vocabulary = TranscriptPipeline::speechVocabulary(recording, Target{});
+    return recording;
+}
 
 } // namespace
 
@@ -224,7 +241,7 @@ RecordingSession::RecordingSession(SettingsStore *settings,
     connectStream(m_them);
 }
 
-// The transcriptions stop the inputs as they go, so they go first, and say
+// The streams stop the inputs as they go, so they go first, and say
 // nothing more to this half-destroyed session.
 RecordingSession::~RecordingSession()
 {
@@ -238,41 +255,35 @@ RecordingSession::~RecordingSession()
 
 void RecordingSession::connectStream(Stream &stream)
 {
-    stream.transcription = new FileTranscriptionSession(m_settings, m_providers, this);
+    stream.transcription = new RecordingStream(m_providers, this);
     stream.pauseTimer.setSingleShot(true);
     stream.pauseTimer.setInterval(kUtterancePauseMs);
     connect(&stream.pauseTimer, &QTimer::timeout, this, [this, &stream] { endUtterance(stream); });
-    connect(stream.transcription, &FileTranscriptionSession::speechConnected, this,
+    connect(stream.transcription, &RecordingStream::connected, this,
             [this, &stream] { handleStreamConnected(stream); });
-    connect(stream.transcription, &FileTranscriptionSession::speechReconnecting, this,
-            [this, &stream](int, const QString &reason) {
-                stream.status.state = RecordingStream::State::Reconnecting;
-                stream.status.problem = reason;
-                emit problemChanged();
-            });
-    connect(stream.transcription, &FileTranscriptionSession::microphoneAudioLost, this,
-            [this, &stream](int, qint64 durationMs) {
-                const bool firstLoss = stream.status.lostAudioMs == 0;
-                stream.status.lostAudioMs += durationMs;
-                if (firstLoss) {
-                    emit problemChanged();
-                }
-            });
-    connect(stream.transcription, &FileTranscriptionSession::utteranceFailed, this,
-            [this, &stream](int, const QString &reason) {
-                stream.status.problem = recordingUtteranceFailedText(reason);
-                emit problemChanged();
-                extendStop();
-            });
-    connect(stream.transcription, &FileTranscriptionSession::fileTextFinalized, this,
-            [this, &stream](int, const QString &text) {
-                writeLine(stream.status.speaker, text);
-                extendStop();
-            });
-    connect(stream.transcription, &FileTranscriptionSession::batchFinished, this,
-            [this, &stream](const QList<TranscribeFileResult> &results) {
-                handleTranscriptionFinished(stream, results);
-            });
+    connect(stream.transcription, &RecordingStream::reconnecting, this, [this, &stream](const QString &reason) {
+        stream.status.state = RecordingStreamStatus::State::Reconnecting;
+        stream.status.problem = reason;
+        emit problemChanged();
+    });
+    connect(stream.transcription, &RecordingStream::audioLost, this, [this, &stream](qint64 durationMs) {
+        const bool firstLoss = stream.status.lostAudioMs == 0;
+        stream.status.lostAudioMs += durationMs;
+        if (firstLoss) {
+            emit problemChanged();
+        }
+    });
+    connect(stream.transcription, &RecordingStream::utteranceFailed, this, [this, &stream](const QString &reason) {
+        stream.status.problem = recordingUtteranceFailedText(reason);
+        emit problemChanged();
+        extendStop();
+    });
+    connect(stream.transcription, &RecordingStream::textFinalized, this, [this, &stream](const QString &text) {
+        writeLine(stream.status.speaker, text);
+        extendStop();
+    });
+    connect(stream.transcription, &RecordingStream::finished, this,
+            [this, &stream](const QString &error) { handleTranscriptionFinished(stream, error); });
 }
 
 bool RecordingSession::isRecording() const
@@ -285,7 +296,7 @@ RecordingStatus RecordingSession::status() const
     if (!isRecording()) {
         return {};
     }
-    QList<RecordingStream> streams{m_me.status};
+    QList<RecordingStreamStatus> streams{m_me.status};
     if (m_systemAudio) {
         streams << m_them.status;
     }
@@ -307,7 +318,8 @@ void RecordingSession::start(const QString &path,
         done(alreadyRecordingText(m_transcript.path()));
         return;
     }
-    const SpeechSettings speech = m_settings->snapshot().speech;
+    const AppSettings settings = m_settings->snapshot();
+    const SpeechSettings &speech = settings.speech;
     const SpeechTranscriber *provider = m_providers->speechProvider(speech.providerId);
     // Local Models finalize runs of words rather than utterances, and their
     // tail only in a whole-attempt transcript, so they say no.
@@ -321,10 +333,7 @@ void RecordingSession::start(const QString &path,
         done(error);
         return;
     }
-    TranscribeOptions options;
-    options.speechProviderId = speech.providerId;
-    options.streamedFinalsOnly = true;
-    options.addedVocabulary = vocabulary;
+    const AppSettings streamSettings = recordingSettings(settings, *m_providers, vocabulary);
     m_me.status = {recordingMicrophoneSpeaker()};
     m_them.status = {recordingSystemAudioSpeaker()};
     m_unwrittenLines = 0;
@@ -348,21 +357,21 @@ void RecordingSession::start(const QString &path,
     m_phase = Phase::Starting;
     m_startDone = std::move(done);
     m_clock.start();
-    startStream(m_me, m_microphone, options);
+    startStream(m_me, m_microphone, streamSettings);
     // A microphone that cannot start has failed the start already.
     if (m_phase == Phase::Off) {
         return;
     }
     if (m_systemAudio) {
-        startStream(m_them, m_systemAudio, options);
+        startStream(m_them, m_systemAudio, streamSettings);
     }
 }
 
-void RecordingSession::startStream(Stream &stream, AudioInput *input, const TranscribeOptions &options)
+void RecordingSession::startStream(Stream &stream, AudioInput *input, const AppSettings &settings)
 {
     forgetUtterance(stream);
-    stream.transcription->startListening(input, options);
-    // After the transcription's own connection, so the audio that ends an
+    stream.transcription->start(input, settings);
+    // After the stream's own connection, so the audio that ends an
     // utterance is already queued for the provider. An input that could not
     // start has finished its stream already.
     if (stream.transcription->isRunning()) {
@@ -428,7 +437,7 @@ void RecordingSession::discard()
     m_phase = Phase::Stopping;
     m_me.pauseTimer.stop();
     m_them.pauseTimer.stop();
-    // Cancelling finishes the transcriptions, the last of which finishes the
+    // Cancelling finishes the streams, the last of which finishes the
     // recording.
     if (m_me.transcription->isRunning() || m_them.transcription->isRunning()) {
         m_me.transcription->cancel();
@@ -450,8 +459,8 @@ void RecordingSession::setDictating(bool dictating)
     }
     // While starting too: a stream that connected already shows it once the
     // recording runs.
-    if (m_me.status.state != RecordingStream::State::Recording
-        && m_me.status.state != RecordingStream::State::Paused) {
+    if (m_me.status.state != RecordingStreamStatus::State::Recording
+        && m_me.status.state != RecordingStreamStatus::State::Paused) {
         return;
     }
     m_me.status.state = liveState(m_me);
@@ -565,18 +574,17 @@ void RecordingSession::writeLine(const QString &speaker, const QString &text)
 // reconnect cannot mend, or the input went away. The microphone's failing to
 // connect fails the start; otherwise the recording stays open, with the other
 // stream if it runs, so status says why, until it is stopped.
-void RecordingSession::handleTranscriptionFinished(Stream &stream, const QList<TranscribeFileResult> &results)
+void RecordingSession::handleTranscriptionFinished(Stream &stream, const QString &error)
 {
     forgetUtterance(stream);
     if (m_phase == Phase::Off) {
         return;
     }
-    const QString error = results.isEmpty() ? QString() : results.first().error;
     if (m_phase == Phase::Starting && &stream == &m_me) {
         abandon(error.isEmpty() ? recordingStreamEndedText() : error);
         return;
     }
-    stream.status.state = RecordingStream::State::Stopped;
+    stream.status.state = RecordingStreamStatus::State::Stopped;
     if (m_phase == Phase::Stopping) {
         if (!error.isEmpty()) {
             stream.status.problem = error;
@@ -618,9 +626,10 @@ void RecordingSession::stopCancellingEcho()
     }
 }
 
-RecordingStream::State RecordingSession::liveState(const Stream &stream) const
+RecordingStreamStatus::State RecordingSession::liveState(const Stream &stream) const
 {
-    return &stream == &m_me && m_dictating ? RecordingStream::State::Paused : RecordingStream::State::Recording;
+    return &stream == &m_me && m_dictating ? RecordingStreamStatus::State::Paused
+                                           : RecordingStreamStatus::State::Recording;
 }
 
 void RecordingSession::releaseInputs()

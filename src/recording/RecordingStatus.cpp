@@ -4,16 +4,16 @@
 
 namespace speecher {
 
-QString recordingStreamStateName(RecordingStream::State state)
+QString recordingStreamStateName(RecordingStreamStatus::State state)
 {
     switch (state) {
-    case RecordingStream::State::Recording:
+    case RecordingStreamStatus::State::Recording:
         return QStringLiteral("recording");
-    case RecordingStream::State::Paused:
+    case RecordingStreamStatus::State::Paused:
         return QStringLiteral("paused");
-    case RecordingStream::State::Reconnecting:
+    case RecordingStreamStatus::State::Reconnecting:
         return QStringLiteral("reconnecting");
-    case RecordingStream::State::Stopped:
+    case RecordingStreamStatus::State::Stopped:
         break;
     }
     return QStringLiteral("stopped");
@@ -25,7 +25,7 @@ QJsonObject recordingStatusJson(const RecordingStatus &status)
         return {{QStringLiteral("recording"), false}};
     }
     QJsonArray streams;
-    for (const RecordingStream &stream : status.streams) {
+    for (const RecordingStreamStatus &stream : status.streams) {
         QJsonObject object{{QStringLiteral("speaker"), stream.speaker},
                            {QStringLiteral("state"), recordingStreamStateName(stream.state)}};
         if (!stream.problem.isEmpty()) {
@@ -59,11 +59,11 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
     for (const QJsonValue &value : object.value(QStringLiteral("streams")).toArray()) {
         const QJsonObject stream = value.toObject();
         const QString state = stream.value(QStringLiteral("state")).toString();
-        RecordingStream read{stream.value(QStringLiteral("speaker")).toString()};
-        for (const RecordingStream::State known : {RecordingStream::State::Recording,
-                                                   RecordingStream::State::Paused,
-                                                   RecordingStream::State::Reconnecting,
-                                                   RecordingStream::State::Stopped}) {
+        RecordingStreamStatus read{stream.value(QStringLiteral("speaker")).toString()};
+        for (const RecordingStreamStatus::State known : {RecordingStreamStatus::State::Recording,
+                                                         RecordingStreamStatus::State::Paused,
+                                                         RecordingStreamStatus::State::Reconnecting,
+                                                         RecordingStreamStatus::State::Stopped}) {
             if (state == recordingStreamStateName(known)) {
                 read.state = known;
             }

@@ -64,7 +64,7 @@ public:
     // Prepares the current provider, or the first after it that can take the
     // audio, with settings: ends in ready() or exhausted(), at once or later.
     // refiner, when given, renews its sign-in alongside, unless it already
-    // has in this walk.
+    // has in this walk. Cancels a preparation or renewal still running.
     void prepare(const AppSettings &settings, TranscriptRefiner *refiner = nullptr);
     // Passes the current provider over and prepares from the next.
     void prepareNext(const AppSettings &settings, TranscriptRefiner *refiner = nullptr);

@@ -10,7 +10,7 @@ namespace speecher {
 namespace {
 
 // People name a stream by its source; its speaker belongs to the file's lines.
-QString streamSource(const RecordingStream &stream)
+QString streamSource(const RecordingStreamStatus &stream)
 {
     return stream.speaker == recordingSystemAudioSpeaker() ? QStringLiteral("system audio")
                                                            : QStringLiteral("microphone");
@@ -55,7 +55,7 @@ QString recordingStatusText(const RecordingStatus &status)
     }
     QStringList lines{QStringLiteral("path: %1").arg(status.path),
                       QStringLiteral("duration: %1").arg(recordingClock(status.durationMs))};
-    for (const RecordingStream &stream : status.streams) {
+    for (const RecordingStreamStatus &stream : status.streams) {
         QStringList parts{recordingStreamStateName(stream.state)};
         if (!stream.problem.isEmpty()) {
             parts << stream.problem;
@@ -71,20 +71,20 @@ QString recordingStatusText(const RecordingStatus &status)
     return lines.join(QLatin1Char('\n'));
 }
 
-QString recordingStreamProblemText(const RecordingStream &stream)
+QString recordingStreamProblemText(const RecordingStreamStatus &stream)
 {
     const QString source = streamSource(stream);
     QStringList problems;
     if (!stream.problem.isEmpty()) {
         switch (stream.state) {
-        case RecordingStream::State::Recording:
-        case RecordingStream::State::Paused:
+        case RecordingStreamStatus::State::Recording:
+        case RecordingStreamStatus::State::Paused:
             problems << QStringLiteral("The %1 stream has a problem: %2").arg(source, stream.problem);
             break;
-        case RecordingStream::State::Reconnecting:
+        case RecordingStreamStatus::State::Reconnecting:
             problems << QStringLiteral("The %1 stream is reconnecting: %2").arg(source, stream.problem);
             break;
-        case RecordingStream::State::Stopped:
+        case RecordingStreamStatus::State::Stopped:
             problems << QStringLiteral("The %1 stream stopped: %2").arg(source, stream.problem);
             break;
         }
@@ -118,8 +118,8 @@ QString statusWatchText(const QString &dictationState, const RecordingStatus &re
         parts << dictationState;
     }
     parts << QStringLiteral("recording %1").arg(recordingClock(recording.durationMs));
-    for (const RecordingStream &stream : recording.streams) {
-        if (stream.state != RecordingStream::State::Recording) {
+    for (const RecordingStreamStatus &stream : recording.streams) {
+        if (stream.state != RecordingStreamStatus::State::Recording) {
             parts << QStringLiteral("%1 %2").arg(streamSource(stream), recordingStreamStateName(stream.state));
         }
     }

@@ -10,6 +10,7 @@
 #include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
 #include "providers/EndpointSpeechTranscriber.h"
+#include "providers/SpeechChain.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "recording/SystemAudioPresentation.h"
@@ -461,6 +462,43 @@ private slots:
         QCOMPARE(readFile(results.first().savedPath), QStringLiteral("Heard it."));
     }
 
+    // A refiner that cannot reach its service makes way for the saved
+    // fallback, which refines the file.
+    void aRefinerThatCannotReachItsServiceHandsTheFileToTheFallback()
+    {
+        FakeRefiner *primary = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&primary](QObject *parent) {
+                                                   primary = new FakeRefiner(parent);
+                                                   return primary;
+                                               });
+        m_registry->registerRefinementProvider({QStringLiteral("local"), QStringLiteral("Local Runner")},
+                                               [](QObject *parent) {
+                                                   auto *fallback = new FakeRefiner(parent);
+                                                   fallback->autoComplete = true;
+                                                   fallback->autoCompleteText = QStringLiteral("Tidied.");
+                                                   return fallback;
+                                               });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
+        primary->emitFailure(QStringLiteral("offline"), ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QCOMPARE(result.refined, QStringLiteral("Tidied."));
+        QCOMPARE(result.error, QString());
+    }
+
     // A batch set to None still refines, at Light, when its profile
     // translates, and says so.
     void anExplicitNoneStillTranslates()
@@ -848,10 +886,11 @@ private slots:
         options.speechProviderId = QStringLiteral("codex");
         options.refinementProviderId = QStringLiteral("openai");
         options.cleanupStrength = QStringLiteral("balanced");
-        // Read while the file's refiner still exists: it goes once the file is done.
+        // Read while the file's refiner still exists: it goes once the file is
+        // done. A file no speech provider took never makes one.
         int refreshes = -1;
         connect(&session, &FileTranscriptionSession::fileFinished, this,
-                [&refiner, &refreshes] { refreshes = refiner->refreshRuns; });
+                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns : 0; });
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -1364,7 +1403,7 @@ private slots:
         QCOMPARE(recording.status().streams.first().problem,
                  QStringLiteral("An utterance could not be transcribed: Speech endpoint failed: overloaded"));
         QCOMPARE(problems.count(), 1);
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Recording);
 
         microphone->pushAudio(microphoneChunk(8000));
         recording.stop();
@@ -1462,18 +1501,19 @@ private slots:
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
 
         microphone->pushAudio(microphoneChunk(8000));
-        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStream::State::Stopped, 3000);
+        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStreamStatus::State::Stopped,
+                                  3000);
         QVERIFY2(recording.status().streams.first().problem.startsWith(QStringLiteral("Speech endpoint failed: ")),
                  qPrintable(recording.status().streams.first().problem));
         QVERIFY(recording.isRecording());
         microphone->pushAudio(microphoneChunk(8000));
         QTest::qWait(1200);
         QCOMPARE(server.requests.size(), 1);
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Stopped);
 
         recording.stop();
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
-        const RecordingStream stream = stopped.first().first().value<RecordingStatus>().streams.first();
+        const RecordingStreamStatus stream = stopped.first().first().value<RecordingStatus>().streams.first();
         QVERIFY2(stream.problem.startsWith(QStringLiteral("Speech endpoint failed: ")), qPrintable(stream.problem));
         QVERIFY(!recordingStreamProblemText(stream).isEmpty());
     }
@@ -1587,7 +1627,7 @@ private slots:
         QCOMPARE(status.path, path);
         QCOMPARE(status.streams.size(), 1);
         QCOMPARE(status.streams.first().speaker, QStringLiteral("me"));
-        QCOMPARE(status.streams.first().state, RecordingStream::State::Stopped);
+        QCOMPARE(status.streams.first().state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(status.streams.first().problem, QStringLiteral("Unsupported audio"));
 
         recording.stop();
@@ -1655,14 +1695,14 @@ private slots:
         };
         m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Reconnecting);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Reconnecting);
         QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Connection reset"));
         QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Before the drop")});
         m_codex->audioChunks.clear();
         const QByteArray spoken = microphoneChunk(1234);
         microphone->pushAudio(spoken);
 
-        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStream::State::Recording,
+        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStreamStatus::State::Recording,
                                   10000);
         QCOMPARE(connects, 2);
         QVERIFY(recording.status().streams.first().problem.isEmpty());
@@ -1798,23 +1838,43 @@ private slots:
         m_codex->refreshRequired = true;
         m_codex->emitCompletion();
         QTRY_COMPARE_WITH_TIMEOUT(preparedAtStarts, QList<int>{2}, 5000);
-        QCOMPARE(streamState(), RecordingStream::State::Recording);
+        QCOMPARE(streamState(), RecordingStreamStatus::State::Recording);
 
         m_codex->refreshRequired = false;
         expiredUpTo = 2;
         m_codex->emitFailure(QStringLiteral("Unauthorized"), false, SpeechPhase::Streaming,
                              ProviderFailureKind::Authentication);
-        QCOMPARE(streamState(), RecordingStream::State::Reconnecting);
+        QCOMPARE(streamState(), RecordingStreamStatus::State::Reconnecting);
         QTRY_COMPARE_WITH_TIMEOUT(preparedAtStarts, QList<int>({2, 3}), 5000);
-        QCOMPARE(streamState(), RecordingStream::State::Recording);
+        QCOMPARE(streamState(), RecordingStreamStatus::State::Recording);
 
         // Signed out for good.
         expiredUpTo = 100;
         m_codex->emitFailure(QStringLiteral("Unauthorized"), false, SpeechPhase::Streaming,
                              ProviderFailureKind::Authentication);
-        QTRY_COMPARE_WITH_TIMEOUT(streamState(), RecordingStream::State::Stopped, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(streamState(), RecordingStreamStatus::State::Stopped, 5000);
         QCOMPARE(preparedAtStarts, QList<int>({2, 3, 4}));
         QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Unauthorized"));
+    }
+
+    // A walk started while a sign-in renews replaces the renewal: it ends in
+    // ready(), never in the renewal's answer.
+    void aWalkStartedDuringARenewalEndsReady()
+    {
+        FakeSpeechTranscriber transcriber;
+        transcriber.backgroundPrepare = true;
+        SpeechChain chain(m_registry.get(), [&transcriber](const QString &) { return &transcriber; });
+        QSignalSpy ready(&chain, &SpeechChain::ready);
+        QSignalSpy renewed(&chain, &SpeechChain::signInRenewed);
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("claude");
+
+        chain.begin(settings.speech.providerId, {});
+        chain.renewSignIn(&transcriber, settings.speech, settings.accounts);
+        chain.prepare(settings);
+
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 5000);
+        QCOMPARE(renewed.count(), 0);
     }
 
     // A dropped stream is cancelled once its partial is written: whatever it
@@ -1913,8 +1973,8 @@ private slots:
         recording.stop();
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 2000);
         QCOMPARE(m_codex->startCalls, startsBefore + 1);
-        const RecordingStream stream = stopped.first().first().value<RecordingStatus>().streams.first();
-        QCOMPARE(stream.state, RecordingStream::State::Stopped);
+        const RecordingStreamStatus stream = stopped.first().first().value<RecordingStatus>().streams.first();
+        QCOMPARE(stream.state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(stream.problem, QStringLiteral("Host unreachable"));
     }
 
@@ -2060,7 +2120,7 @@ private slots:
         recording.setDictating(true);
         recording.setDictating(true);
         recording.setDictationListening(true);
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Paused);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Paused);
         QCOMPARE(problems.count(), 1);
         microphone->pushAudio(microphoneChunk(8000));
         systemAudio->pushAudio(microphoneChunk(4000));
@@ -2071,7 +2131,7 @@ private slots:
 
         recording.setDictating(false);
         recording.setDictationListening(false);
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Recording);
         me->audioChunks.clear();
         microphone->pushAudio(microphoneChunk(8000));
         QTRY_VERIFY_WITH_TIMEOUT(!me->audioChunks.isEmpty(), 5000);
@@ -2155,8 +2215,8 @@ private slots:
         QString error;
         const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
-        const RecordingStream them = recording.status().streams.at(1);
-        QCOMPARE(them.state, RecordingStream::State::Stopped);
+        const RecordingStreamStatus them = recording.status().streams.at(1);
+        QCOMPARE(them.state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(them.problem, QStringLiteral("No default output."));
         streamingCodexes().first()->emitFinalText(QStringLiteral("Still here."));
         recording.stop();
@@ -2169,9 +2229,9 @@ private slots:
         streamingCodexes().last()->emitFailure(QStringLiteral("Unsupported audio"), false, SpeechPhase::Streaming,
                                       ProviderFailureKind::Other);
         QVERIFY(recording.isRecording());
-        QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.at(1).state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(recording.status().streams.at(1).problem, QStringLiteral("Unsupported audio"));
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Recording);
         QCOMPARE(problems.count(), 1);
     }
 
@@ -2262,7 +2322,7 @@ private slots:
         systemAudio->pushAudio(microphoneChunk(8000));
         streamingCodexes().at(1)->emitFailure(QStringLiteral("Unsupported audio"), false, SpeechPhase::Streaming,
                                               ProviderFailureKind::Other);
-        QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.at(1).state, RecordingStreamStatus::State::Stopped);
         recording.stop();
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
 
@@ -2303,7 +2363,7 @@ private slots:
         systemAudio->emitFailure(QStringLiteral("The sound server went away."));
         QCOMPARE(log.flushes, 1);
         QCOMPARE(recording.status().echoCancellationWarning, echoCancellationWithoutSystemAudioText());
-        QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.at(1).state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(recording.status().streams.at(1).problem, QStringLiteral("The sound server went away."));
         QCOMPARE(problems.count(), 1);
         microphone->pushAudio(microphoneChunk(2000));
@@ -2342,7 +2402,7 @@ private slots:
         streamingCodexes().at(1)->emitFailure(QStringLiteral("Too many sessions"), false, SpeechPhase::Connect,
                                               ProviderFailureKind::Other);
         QCOMPARE(outcome, std::optional<QString>(QString()));
-        QCOMPARE(recording.status().streams.at(1).state, RecordingStream::State::Stopped);
+        QCOMPARE(recording.status().streams.at(1).state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(recording.status().streams.at(1).problem, QStringLiteral("Too many sessions"));
         QVERIFY(recording.status().echoCancellationWarning.isEmpty());
         QVERIFY(systemAudio->active);
@@ -2376,7 +2436,7 @@ private slots:
         recording.setDictating(true);
         streamingCodexes().at(1)->emitConnected();
         QCOMPARE(outcome, std::optional<QString>(QString()));
-        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Paused);
+        QCOMPARE(recording.status().streams.first().state, RecordingStreamStatus::State::Paused);
     }
 
     // One line per dictation that listens while a recording runs: one that
