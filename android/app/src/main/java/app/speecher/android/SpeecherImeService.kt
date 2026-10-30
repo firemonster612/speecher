@@ -207,6 +207,8 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(dismiss)
+        // Without its panel nothing can insert or cancel the dictation, so it ends with the IME.
+        ActiveDictation.end()
         ActiveDictation.observe = null
         ActiveDictation.onInserted = null
         panel = null
