@@ -356,20 +356,6 @@ void ApplicationController::startRecording(const QString &path,
     });
 }
 
-bool ApplicationController::startFileTranscription(const QStringList &paths,
-                                                   const TranscribeOptions &options,
-                                                   QString *error)
-{
-    const QString refusal = fileTranscriptionRefusal();
-    if (!refusal.isEmpty()) {
-        if (error) {
-            *error = refusal;
-        }
-        return false;
-    }
-    return m_fileTranscription->start(paths, options);
-}
-
 InsightsLog *ApplicationController::insightsLog() const
 {
     return m_insightsLog;
