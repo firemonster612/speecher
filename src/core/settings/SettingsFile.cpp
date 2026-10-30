@@ -41,6 +41,20 @@ void SettingsFile::sync()
     }
 }
 
+bool SettingsFile::save()
+{
+    if (m_deleted) {
+        return false;
+    }
+    // A QSettings opened now starts without an error. It shares this one's
+    // unsaved changes (Qt keeps one copy of an open file), so the save its
+    // sync makes is the one that writes them, and its status judges that
+    // save alone.
+    QSettings saving(format(), scope(), organizationName(), applicationName());
+    saving.sync();
+    return saving.status() == QSettings::NoError;
+}
+
 bool SettingsFile::deleteFile()
 {
     if (!m_deleted) {
