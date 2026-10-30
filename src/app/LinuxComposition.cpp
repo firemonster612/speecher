@@ -66,10 +66,16 @@ QString LinuxComposition::ipcListenName() const
 
 QStringList LinuxComposition::ipcConnectCandidates() const
 {
-    if (isRunningFromOwnAppImage()) {
-        return {appImageSocketName()};
+    const QStringList names = isRunningFromOwnAppImage() ? QStringList{appImageSocketName()}
+                                                         : QStringList{appSocketName(), executablePathSocketName()};
+    // Then the same names in /tmp, where a Speecher from before the sockets
+    // moved to the runtime directory still listens.
+    QStringList candidates = names;
+    for (const QString &name : names) {
+        candidates.append(QFileInfo(name).fileName());
     }
-    return {appSocketName(), executablePathSocketName()};
+    candidates.removeDuplicates();
+    return candidates;
 }
 
 QString LinuxComposition::detachedExecutablePath() const

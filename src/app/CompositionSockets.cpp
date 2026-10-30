@@ -4,7 +4,9 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 #ifdef Q_OS_UNIX
 #include <unistd.h>
@@ -28,7 +30,15 @@ QString userToken()
 QString appSocketName(const QString &suffix)
 {
     const QString base = SettingsKeys::application() + QLatin1Char('-') + userToken();
-    return suffix.isEmpty() ? base : base + QLatin1Char('-') + suffix;
+    const QString name = suffix.isEmpty() ? base : base + QLatin1Char('-') + suffix;
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    // A bare name would be a socket in the shared /tmp, where another user
+    // can take it first or, with a loose umask, connect to it. The runtime
+    // directory is this user's alone.
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)).filePath(name);
+#else
+    return name;
+#endif
 }
 
 QString executablePathSocketName()

@@ -9,6 +9,10 @@
 #include <QScopeGuard>
 #include <qt_windows.h>
 #endif
+#ifdef Q_OS_LINUX
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <utility>
@@ -29,11 +33,28 @@ constexpr int maximumStatusWatchers = 32;
 // rather than buffered for without end.
 constexpr qint64 maximumStatusBacklogBytes = 256 * 1024;
 
+// Whether the process at the other end of a connected socket runs as this
+// user. A socket in /tmp, where Speecher listened before, can be another
+// user's. Elsewhere the socket's folder or the pipe's permissions keep other
+// users out.
+bool peerIsThisUser(const QLocalSocket &socket)
+{
+#ifdef Q_OS_LINUX
+    ucred peer{};
+    socklen_t size = sizeof(peer);
+    return getsockopt(int(socket.socketDescriptor()), SOL_SOCKET, SO_PEERCRED, &peer, &size) == 0
+        && peer.uid == getuid();
+#else
+    Q_UNUSED(socket);
+    return true;
+#endif
+}
+
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
     QLocalSocket socket;
     socket.connectToServer(name);
-    if (!socket.waitForConnected(timeoutMs)) {
+    if (!socket.waitForConnected(timeoutMs) || !peerIsThisUser(socket)) {
         return false;
     }
     socket.disconnectFromServer();
@@ -59,7 +80,7 @@ IpcCommandResult connectAndWrite(QLocalSocket &socket,
     const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
         socket.connectToServer(candidate);
-        if (!socket.waitForConnected(timeoutMs)) {
+        if (!socket.waitForConnected(timeoutMs) || !peerIsThisUser(socket)) {
             socket.abort();
             continue;
         }
@@ -107,6 +128,10 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
     : QObject(parent)
     , m_platform(platform ? std::move(platform) : platformComposition())
 {
+#ifdef Q_OS_WIN
+    // A pipe's default permissions let every user open it to read.
+    m_server.setSocketOptions(QLocalServer::UserAccessOption);
+#endif
     m_expirySweep.setInterval(expirySweepIntervalMs);
     connect(&m_expirySweep, &QTimer::timeout, this, [this] {
         // Keys are copied: disconnecting re-enters the disconnected handler,
@@ -123,7 +148,7 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
     });
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
-            if (m_acceptedSockets.size() >= maximumAcceptedSockets) {
+            if (m_acceptedSockets.size() >= maximumAcceptedSockets || !peerIsThisUser(*socket)) {
                 socket->disconnectFromServer();
                 socket->deleteLater();
                 continue;

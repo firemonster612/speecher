@@ -10,7 +10,9 @@ namespace speecher {
 // reaching the running one.
 
 // "speecher-<user>", plus "-<suffix>" when one is given; an isolated
-// instance's name stands in for "speecher".
+// instance's name stands in for "speecher". Linux puts it in the user's
+// runtime directory; elsewhere it is a bare name, which macOS keeps in the
+// user's own temporary folder and Windows makes a pipe.
 QString appSocketName(const QString &suffix = {});
 
 // Distinguishes builds installed at different paths for the same user.

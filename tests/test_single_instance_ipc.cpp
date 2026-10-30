@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "app/CliClient.h"
+#include "app/CompositionSockets.h"
 #include "app/ProvidersCommand.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
@@ -27,6 +28,9 @@
 #ifdef Q_OS_WIN
 #include <QSemaphore>
 #include <functional>
+#endif
+#ifdef Q_OS_LINUX
+#include <unistd.h>
 #endif
 
 #include <iostream>
@@ -254,6 +258,31 @@ private slots:
         QLocalServer::removeServer(listenName);
         QLocalServer::removeServer(legacyName);
     }
+
+#ifdef Q_OS_LINUX
+    // The socket's folder is this user's alone, unlike the shared /tmp.
+    void theSocketsFolderIsTheUsersAlone()
+    {
+        const QFileInfo folder(QFileInfo(appSocketName()).absolutePath());
+        QCOMPARE(folder.ownerId(), uint(getuid()));
+        const QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
+            | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
+        QCOMPARE((folder.permissions() & openToOthers).toInt(), 0);
+    }
+
+    // A Speecher from before the socket moved there listens in /tmp, and a
+    // command still reaches it.
+    void aCommandReachesASpeecherOnThePreviousSocket()
+    {
+        qputenv("SPEECHER_INSTANCE", uniqueIpcName().toUtf8());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSTANCE"); });
+        QLocalServer older;
+        QVERIFY(older.listen(QFileInfo(appSocketName()).fileName()));
+
+        IpcResponse response;
+        QCOMPARE(SingleInstanceIpc::sendRequest({IpcCommand::Status}, &response, 75), IpcCommandResult::NoResponse);
+    }
+#endif
 
     void singleInstanceIpcRemovesStaleSocketFile()
     {
