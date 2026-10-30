@@ -100,9 +100,13 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   shortcut rows go to the controller, which binds and keeps them, and show
   the keys the controller displays. While one records,
   `Settings.startRecordingShortcut(id)` and `stopRecordingShortcut(id)` make
-  the bound shortcuts let go of their keys. Where the desktop picks the keys
-  (`Settings.desktopPicksKeys(id)`, the portal), the row records nothing and
-  `Settings.act(id)` opens the desktop's chooser.
+  the bound shortcuts let go of their keys, and `Settings.lastKeyAlone()`
+  names the physical key just pressed or let go (Right Alt, not Alt), which
+  a modifier let go on its own records. `Settings.takesKeyAlone(id, keys)`
+  refuses Shift and Left Ctrl on their own, which typing presses all the
+  time: the row says why in `errors` and keeps listening. Where the desktop
+  picks the keys (`Settings.desktopPicksKeys(id)`, the portal), the row
+  records nothing and `Settings.act(id)` opens the desktop's chooser.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
@@ -471,10 +475,12 @@ curve: `Behavior on opacity { Ease {} }`, `Ease { duration: Theme.slow;
 curve: Theme.springy }`. A height or width that opens, closes or follows
 its content uses `Grow on implicitHeight {}`, which skips the first
 layout. Durations come from `Theme.fast`, `Theme.base`,
-`Theme.slow`, `Theme.page` or `Theme.ms(n)`; curves from `Theme.easeOut`
-(the default), `Theme.easeInOut`, `Theme.springy`, `Theme.easeIn`,
-`Theme.breathe` (loops that pulse) or `Theme.steady` (motion that never
-settles, such as a sweep). Timer intervals use `Theme.ms(n)` too.
+`Theme.slow`, `Theme.page` or `Theme.ms(n)`, except a countdown's, which is
+the real time it counts (the popup error's `error.dismissMs`); curves from
+`Theme.easeOut` (the default), `Theme.easeInOut`, `Theme.springy`,
+`Theme.easeIn`, `Theme.breathe` (loops that pulse) or `Theme.steady` (motion
+that never settles, such as a sweep, and a countdown draining). Timer
+intervals use `Theme.ms(n)` too.
 
 The shared controls already move; use them rather than animating by hand:
 
@@ -535,7 +541,7 @@ Choosing:
 Input:
 
 - `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth`, and `Select`, `SuggestField` and `ShortcutField` to `Theme.selectWidth`, so choosers line up in a column of rows; leave them at that in settings rows.
-- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
+- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; keyAlone; takesAlone; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
 
 Actions and menus:
 

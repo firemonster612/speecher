@@ -9,7 +9,9 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QmlValues.h"
 
+#include <QCoreApplication>
 #include <QDebug>
+#include <QKeyEvent>
 
 #include <type_traits>
 
@@ -480,6 +482,7 @@ void QuickSettings::startRecordingShortcut(const QString &id)
     m_recordingShortcut = id;
     if (!suspended) {
         m_controller->suspendGlobalShortcut();
+        QCoreApplication::instance()->installEventFilter(this);
     }
 }
 
@@ -489,11 +492,39 @@ void QuickSettings::stopRecordingShortcut(const QString &id)
         return;
     }
     m_recordingShortcut.clear();
+    QCoreApplication::instance()->removeEventFilter(this);
+    m_lastKeyCode.clear();
     GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
     const QString error = m_controller->resumeGlobalShortcut(&failedRole);
     if (!error.isEmpty()) {
         setError(shortcutRowId(failedRole), error);
     }
+}
+
+QStringList QuickSettings::lastKeyAlone() const
+{
+    const ShortcutBinding key = ShortcutBinding::singleKey(m_lastKeyCode);
+    return key.isEmpty() ? QStringList() : QStringList{key.toString()};
+}
+
+bool QuickSettings::takesKeyAlone(const QString &id, const QStringList &keys)
+{
+    const QString refusal = singleKeyRecordingRefusal(ShortcutBinding::fromString(keys.join(QLatin1Char('+'))));
+    if (!refusal.isEmpty()) {
+        setError(id, refusal);
+    }
+    return refusal.isEmpty();
+}
+
+// Sees each key press and release before the field does, with the native
+// codes QML leaves out.
+bool QuickSettings::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
+        const PhysicalKey *key = physicalKeyOf(*static_cast<QKeyEvent *>(event));
+        m_lastKeyCode = key ? QString::fromLatin1(key->code) : QString();
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void QuickSettings::setShortcut(const QString &id, GlobalShortcutRole role, const QStringList &keys)

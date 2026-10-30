@@ -168,15 +168,24 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
 {
     SettingsStore *settings = controller->settings();
     connect(controller->insightsLog(), &InsightsLog::changed, this, &QuickInsights::refresh);
-    // Keep insights, and the profile names the apps and profiles go by.
-    connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::refresh);
+    // Summarizing every record is too much for every save: only Keep
+    // insights, and the profile names the apps and profiles go by, change
+    // what shows. The latest dictation's profile goes by its current name.
+    connect(settings, &SettingsStore::snapshotApplied, this, [this, settings](const AppSettings &previous) {
+        const AppSettings current = settings->dictationSnapshot();
+        const bool profilesChanged = current.refinement.writingProfiles != previous.refinement.writingProfiles;
+        if (profilesChanged || current.insightsEnabled != previous.insightsEnabled) {
+            refresh();
+        }
+        if (profilesChanged) {
+            emit latestChanged();
+        }
+    });
     connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::refreshCorrections);
     connect(settings, &SettingsStore::learnedCorrectionsChanged, this, &QuickInsights::refreshCorrections);
     connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickInsights::refreshCorrections);
     connect(controller, &ApplicationController::lastTranscriptChanged, this, &QuickInsights::latestChanged);
     connect(controller, &ApplicationController::lastRecordChanged, this, &QuickInsights::latestChanged);
-    // The latest dictation's profile goes by its current name.
-    connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::latestChanged);
     connect(this, &QuickInsights::changed, this, &QuickInsights::heatLevelsChanged);
     connect(this, &QuickInsights::heatMeasureChanged, this, &QuickInsights::heatLevelsChanged);
 
@@ -382,13 +391,18 @@ void QuickInsights::refreshCorrections()
         recent.append(QVariantMap{{QStringLiteral("heard"), correction.original},
                                   {QStringLiteral("fixed"), correction.corrected}});
     }
-    m_corrections = {
+    const QVariantMap corrections = {
         {QStringLiteral("count"), int(learned.size())},
         {QStringLiteral("learning"), settings.correctionLearningEnabled},
         {QStringLiteral("accessible"),
          !m_controller->accessibility()->supported() || m_controller->accessibility()->enabled()},
         {QStringLiteral("recent"), recent},
     };
+    // Every settings save comes here.
+    if (corrections == m_corrections) {
+        return;
+    }
+    m_corrections = corrections;
     emit correctionsChanged();
 }
 

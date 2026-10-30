@@ -3,6 +3,8 @@
 #include <QKeySequence>
 #include <QString>
 
+class QKeyEvent;
+
 namespace speecher {
 
 // One row of the physical-key vocabulary: the W3C KeyboardEvent.code name,
@@ -29,6 +31,9 @@ const PhysicalKey *physicalKeyForEvdev(int evdev);
 const PhysicalKey *physicalKeyForMac(int mac);
 // The row for a Windows scancode, or nullptr when the vocabulary lacks it.
 const PhysicalKey *physicalKeyForWin(int win);
+// The row for the key a key event came from, by this platform's native code
+// for it, or nullptr when the vocabulary lacks it or the event carries none.
+const PhysicalKey *physicalKeyOf(const QKeyEvent &event);
 
 // The Global Shortcuts: the one that toggles dictation, and the optional
 // Cancel Shortcut and Pause Shortcut.
@@ -81,5 +86,10 @@ private:
 // that types keeps typing after it is bound, which the user has to be told.
 // Inline and non-blocking on every platform's recorder.
 QString singleKeyTypingWarning(const ShortcutBinding &binding);
+
+// Why the shortcut recorder refuses this key on its own, or empty: Shift,
+// either side, and Left Ctrl are pressed all the time while typing. Only the
+// recorder asks, so a binding saved before stays.
+QString singleKeyRecordingRefusal(const ShortcutBinding &binding);
 
 } // namespace speecher

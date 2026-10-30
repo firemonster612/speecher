@@ -19,6 +19,8 @@ function inlineMarkdown(s, monoFamily, linkColor) {
         parts.push(parts.pop() + "`" + tail)
     }
     return parts.map((part, i) => i % 2 ? "<span style=\"font-family: '" + monoFamily + "'\">" + part + "</span>"
-        : part.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, "<a href=\"$2\" style=\"color: " + linkColor + "\">$1</a>")
+        : part.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (link, text, url) =>
+              // A quote in the link would end its href early.
+              "<a href=\"" + url.replace(/"/g, "&quot;") + "\" style=\"color: " + linkColor + "\">" + text + "</a>")
               .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")).join("")
 }

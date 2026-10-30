@@ -26,11 +26,8 @@ Page {
     function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 }
     // Where a service stands in the chain, for its section's caption.
     function role(id) { return ModelText.roleText(id === primary ? 0 : fallbacks.indexOf(id) + 1) }
-    // A new primary leaves the fallback list.
-    function choose(id) {
-        Settings.set("speechProvider", id)
-        Settings.set("speechFallbackList", fallbacks.filter(f => f !== id))
-    }
+    // The row takes a new primary out of the fallback list, in one save.
+    function choose(id) { Settings.set("speechProvider", id) }
     // The models behind the service; a Local Model lists the rated catalog,
     // suggestion first.
     readonly property var serviceModels: {

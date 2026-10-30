@@ -11,7 +11,6 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QDesktopServices>
-#include <QDir>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QSysInfo>
@@ -359,6 +358,9 @@ void QuickSystem::clearFailures(const QString &id)
 
 void QuickSystem::disableVirtualKeyboard()
 {
+    if (m_removal->running()) {
+        return;
+    }
     clearFailures(keyboardId);
     m_virtualKeyboard->disable();
 }
@@ -398,9 +400,11 @@ void QuickSystem::copy(const QString &text)
 
 void QuickSystem::open(const QString &target)
 {
-    const QUrl url = QDir::isAbsolutePath(target) ? QUrl::fromLocalFile(target) : QUrl(target, QUrl::StrictMode);
-    if (!url.isValid() || url.scheme().isEmpty()) {
-        qWarning().noquote() << "System.open: not a link or an absolute path:" << target;
+    // Release notes come from the network, so a link in them must not reach
+    // a file, a file share (//server/share) or another app's scheme.
+    const QUrl url(target, QUrl::StrictMode);
+    if (!url.isValid() || (url.scheme() != u"https" && url.scheme() != u"http") || url.host().isEmpty()) {
+        qWarning().noquote() << "System.open: not a web link:" << target;
         return;
     }
     if (!QDesktopServices::openUrl(url)) {

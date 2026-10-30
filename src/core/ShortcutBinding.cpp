@@ -1,6 +1,7 @@
 #include "core/ShortcutBinding.h"
 
 
+#include <QKeyEvent>
 #include <QLatin1StringView>
 
 #ifdef Q_OS_LINUX
@@ -166,6 +167,22 @@ const PhysicalKey *physicalKeyForWin(int win)
     return nullptr;
 }
 
+const PhysicalKey *physicalKeyOf(const QKeyEvent &event)
+{
+#if defined(Q_OS_MACOS)
+    // macOS has no scancode to give; the virtual keycode is positional.
+    return physicalKeyForMac(int(event.nativeVirtualKey()));
+#elif defined(Q_OS_WIN)
+    // Qt keeps the extended-key flag as 0x100, which the vocabulary spells as
+    // an 0xE0 high byte.
+    const quint32 scancode = event.nativeScanCode();
+    return physicalKeyForWin(int(scancode & 0x100 ? 0xE000 | (scancode & 0xFF) : scancode));
+#else
+    // X11 and Wayland both report XKB keycodes, which are evdev + 8.
+    return physicalKeyForEvdev(int(event.nativeScanCode()) - 8);
+#endif
+}
+
 ShortcutBinding::ShortcutBinding(const QKeySequence &combination)
     : m_combination(combination)
 {
@@ -265,6 +282,19 @@ QString singleKeyTypingWarning(const ShortcutBinding &binding)
         "Heads up: %1 still does its normal job and now also starts dictation, "
         "so pressing it types as well.")
         .arg(binding.displayText());
+}
+
+QString singleKeyRecordingRefusal(const ShortcutBinding &binding)
+{
+    static const char *const refused[] = {"ShiftLeft", "ShiftRight", "ControlLeft"};
+    for (const char *code : refused) {
+        if (binding.keyCode() == QLatin1StringView(code)) {
+            return QStringLiteral("%1 is pressed all the time while typing. Use another key, such as %2, "
+                                  "or a key combination.")
+                .arg(binding.displayText(), QString::fromLatin1(physicalKey(QStringLiteral("ControlRight"))->label));
+        }
+    }
+    return QString();
 }
 
 } // namespace speecher

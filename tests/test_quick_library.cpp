@@ -389,6 +389,25 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.size(), 1);
     }
 
+    // Only the newest removal can be undone, as the window's one toast offers.
+    void aNewerRemovalRetiresTheOlderUndo()
+    {
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.vocabulary = {termEntry(QStringLiteral("Grafana")), termEntry(QStringLiteral("Kafka"))};
+            return true;
+        });
+        ApplicationController controller(true);
+        QuickLibrary library(&controller);
+
+        const int older = library.remove(QStringLiteral("terms"), QStringLiteral("Grafana"));
+        const int newer = library.remove(QStringLiteral("terms"), QStringLiteral("Kafka"));
+        library.undo(older);
+        QVERIFY(SettingsStore().dictationSnapshot().vocabulary.isEmpty());
+        library.undo(newer);
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().term, QStringLiteral("Kafka"));
+    }
+
     void appMatchesTakeOverTheOldPerAppOverrides()
     {
         SettingsStore().edit([](AppSettings &draft) {
@@ -470,6 +489,10 @@ private slots:
         QCOMPARE(grafana->context, QStringLiteral("Our dashboards"));
         QCOMPARE(grafana->frequency, 9);
         QCOMPARE(findTerm(stored, QStringLiteral("Priya Raman"))->source, QStringLiteral("csv"));
+        // The same file again changes nothing, so nothing is saved.
+        QSignalSpy saves(controller.settings(), &SettingsStore::snapshotApplied);
+        QCOMPARE(library.importTerms(csv).value(QStringLiteral("added")).toInt(), 0);
+        QCOMPARE(saves.count(), 0);
 
         const QVariantMap broken = library.importTerms(QUrl::fromLocalFile(writeFile(dir, "broken.csv", "term\n\"Unclosed\n")));
         QVERIFY(!broken.value(QStringLiteral("error")).toString().isEmpty());

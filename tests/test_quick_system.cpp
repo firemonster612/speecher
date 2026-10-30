@@ -14,6 +14,8 @@
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
 
+#include <QDesktopServices>
+#include <QDir>
 #include <QFile>
 #include <QHash>
 #include <QJSValue>
@@ -23,6 +25,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopeGuard>
 #include <QSignalSpy>
 
 #include <memory>
@@ -163,6 +166,17 @@ QVariant plain(const QVariant &value)
 {
     return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
 }
+
+// Takes the links handed to the desktop, in place of the browser.
+class OpenedLinks : public QObject {
+    Q_OBJECT
+
+public:
+    QList<QUrl> urls;
+
+public slots:
+    void open(const QUrl &url) { urls.append(url); }
+};
 
 std::unique_ptr<QObject> createQml(QQmlEngine &engine, const QByteArray &qml, const char *url = "")
 {
@@ -502,6 +516,21 @@ private slots:
         QVERIFY(!QFile::exists(file));
     }
 
+    // While removal runs, turning the keyboard off saves nothing.
+    void theKeyboardStaysOnDuringRemoval()
+    {
+        ApplicationController controller(true);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        controller.settings()->setYdotoolEnabled(true);
+
+        standIn.removal.start(true);
+        standIn.system.disableVirtualKeyboard();
+
+        QVERIFY(controller.settings()->dictationSnapshot().output.ydotoolEnabled);
+        QTRY_VERIFY(!standIn.removal.running());
+    }
+
     // Closing Main while removal runs quits once removal has deleted the
     // settings, and from then on Main holds only the report.
     void closingMainBeforeRemovalFinishesQuits()
@@ -714,6 +743,37 @@ private slots:
         QVERIFY(!system.canRemove());
     }
 #endif
+
+    // Only a web link reaches the desktop, never a path, a file share or
+    // another scheme: release notes come from the network.
+    void openTakesWebLinksOnly()
+    {
+        ApplicationController controller(true);
+        SystemSingletons onThisComputer(&controller);
+        OpenedLinks opened;
+        const QStringList schemes{QStringLiteral("https"), QStringLiteral("file"), QStringLiteral("smb"),
+                                  QStringLiteral("c"), QStringLiteral("speecher-test")};
+        for (const QString &scheme : schemes) {
+            QDesktopServices::setUrlHandler(scheme, &opened, "open");
+        }
+        const auto restore = qScopeGuard([&schemes] {
+            for (const QString &scheme : schemes) {
+                QDesktopServices::unsetUrlHandler(scheme);
+            }
+        });
+        const QString path = QDir::homePath() + QStringLiteral("/notes.txt");
+
+        onThisComputer.system.open(QStringLiteral("https://example.com/notes"));
+        for (const QString &refused : {path, QStringLiteral("//server/share/payload"),
+                                       QStringLiteral("C:/Windows/System32/cmd.exe"), QStringLiteral("smb://host/share"),
+                                       QStringLiteral("file:///etc/hosts"), QStringLiteral("speecher-test:run"),
+                                       QStringLiteral("https:no-host")}) {
+            QTest::ignoreMessage(QtWarningMsg, qPrintable(QStringLiteral("System.open: not a web link: ") + refused));
+            onThisComputer.system.open(refused);
+        }
+
+        QCOMPARE(opened.urls, QList<QUrl>{QUrl(QStringLiteral("https://example.com/notes"))});
+    }
 
     // What this computer lacks, the virtual keyboard and removal off Linux,
     // is gone alike from its pages, search and setup: General's keyboard

@@ -353,6 +353,6 @@ QtObject {
     // Soft at both ends: pulses and breathing that loop.
     readonly property var breathe: [0.37, 0, 0.63, 1, 1, 1]
     // Constant speed: only for motion that never settles, such as a
-    // spinner's turn or a sweep that loops.
+    // spinner's turn or a sweep that loops, and a countdown draining.
     readonly property var steady: [0, 0, 1, 1, 1, 1]
 }

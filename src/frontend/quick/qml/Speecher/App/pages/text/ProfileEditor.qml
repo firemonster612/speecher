@@ -82,7 +82,10 @@ Column {
                     // Back to the saved name, which a blank or taken one never replaces.
                     onEditingFinished: { editor.edited({ name: text }); text = Qt.binding(() => editor.profile.name || "") }
                 }
-                Txt { visible: text.length > 0; text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
+                Reveal {
+                    open: editor.refusal.length > 0
+                    Txt { text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
+                }
                 Txt { text: editor.usedIn; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
             }
             Button {

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <utility>
 
 namespace speecher {
 
@@ -419,10 +420,10 @@ int QuickLibrary::undoLastCorrection()
 
 void QuickLibrary::undo(int token)
 {
-    const SettingsEdit edit = m_undos.take(token);
-    if (!edit) {
+    if (token != m_lastUndo || !m_undo) {
         return;
     }
+    const SettingsEdit edit = std::exchange(m_undo, {});
     save([&](AppSettings &s) {
         edit(s);
         return true;
@@ -442,8 +443,11 @@ QVariantMap QuickLibrary::importTerms(const QUrl &file)
     }
     int added = 0;
     save([&](AppSettings &s) {
+        const QList<VocabularyEntry> before = s.vocabulary;
         added = importVocabularyEntries(s, incoming);
-        return true;
+        // A term listed already can take a context it lacked, so a file that
+        // adds none may still change the list.
+        return s.vocabulary != before;
     });
     return importResult(added, {});
 }
@@ -481,8 +485,8 @@ int QuickLibrary::keepUndo(const SettingsEdit &undo)
     if (!undo) {
         return -1;
     }
-    m_undos.insert(++m_lastUndo, undo);
-    return m_lastUndo;
+    m_undo = undo;
+    return ++m_lastUndo;
 }
 
 void QuickLibrary::refresh()
