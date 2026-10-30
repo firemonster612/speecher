@@ -216,8 +216,9 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
-        navigation->setProperty("current", QStringLiteral("speech"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
         QQuickItem *picker = nullptr;
         QTRY_VERIFY((picker = findItem(main->contentItem(), QStringLiteral("fallbackLanguage_claude"))));
         const QVariantMap first =
