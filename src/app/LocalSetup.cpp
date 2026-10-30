@@ -325,12 +325,12 @@ const LocalModel &LocalSetup::suggestedModel(const AppSettings &settings) const
     return suggestedLocalModel(m_hardware.profile, settings.speech.language);
 }
 
-std::optional<ModelFit> LocalSetup::fit(const LocalModel &model, const AppSettings &settings) const
+std::optional<ModelFit> LocalSetup::fit(const LocalModel &model, const LocalSpeechSettings &local) const
 {
     if (!m_hardwareKnown) {
         return std::nullopt;
     }
-    return modelFit(model, runsOnProfile(m_hardware, settings.speech.local.runsOn));
+    return modelFit(model, runsOnProfile(m_hardware, local.runsOn));
 }
 
 void LocalSetup::setDownloadPending(const QString &id, bool pending)
@@ -422,11 +422,6 @@ void LocalSetup::runSpeedTest(const QString &modelId)
 bool LocalSetup::speedTestRunning(const QString &modelId) const
 {
     return m_speedTestModel == modelId || m_speedTestQueue.contains(modelId);
-}
-
-std::optional<double> LocalSetup::measuredSeconds(const QString &modelId, const AppSettings &settings) const
-{
-    return measuredSpeedTestSeconds(settings.speech.local, modelId);
 }
 
 const LocalModel &LocalSetup::speechModelChoice(const AppSettings &settings) const
@@ -603,7 +598,8 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     const QString local = providerKey(ProviderId::Local);
     if (role == ProviderRole::Speech) {
         const LocalModel &model = suggestedModel(settings);
-        if (fit(model, settings) != ModelFit::Fits || !localModelListensFor(model, settings.speech.language)) {
+        if (fit(model, settings.speech.local) != ModelFit::Fits
+            || !localModelListensFor(model, settings.speech.language)) {
             return std::nullopt;
         }
         return SetupFallbackOffer{local, model.id, model.name};

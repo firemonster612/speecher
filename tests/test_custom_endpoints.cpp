@@ -555,7 +555,7 @@ private slots:
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
 
         RefinementContext context;
-        refiner.refine(QStringLiteral("hello there"), {QStringLiteral("Qt")}, {}, QStringLiteral("key"),
+        refiner.refine(QStringLiteral("hello there"), {QStringLiteral("Qt")}, QStringLiteral("key"),
                        server.origin() + QStringLiteral("/v1/"), QStringLiteral("gemma4:e4b"),
                        QStringLiteral("balanced"), context);
 
@@ -596,7 +596,7 @@ private slots:
         for (int index = 0; index < 150; ++index) {
             vocabulary << QStringLiteral("term%1").arg(index);
         }
-        refiner.refine(QStringLiteral("um hello there"), vocabulary, {}, {},
+        refiner.refine(QStringLiteral("um hello there"), vocabulary, {},
                        server.origin() + QStringLiteral("/v1"), QStringLiteral("lfm2.5"),
                        QStringLiteral("balanced"), context);
 
@@ -629,7 +629,7 @@ private slots:
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
         RefinementContext context;
         const auto refine = [&] {
-            refiner.refine(QStringLiteral("fine"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
+            refiner.refine(QStringLiteral("fine"), {}, {}, server.origin() + QStringLiteral("/v1"),
                            QStringLiteral("m"), QStringLiteral("balanced"), context);
         };
 
@@ -690,7 +690,7 @@ private slots:
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
         QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
         const auto refine = [&] {
-            refiner.refine(QStringLiteral("x"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
+            refiner.refine(QStringLiteral("x"), {}, {}, server.origin() + QStringLiteral("/v1"),
                            QStringLiteral("m"), QStringLiteral("balanced"), {});
         };
         refine();

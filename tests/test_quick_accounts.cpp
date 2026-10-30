@@ -590,6 +590,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine, QStringLiteral("openAiApiKey"));
         QVERIFY(row.field);
@@ -613,6 +614,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const SecretRowWindow row = showSecretRow(engine);
         QVERIFY(row.field);

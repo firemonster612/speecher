@@ -27,7 +27,6 @@ QString refinementSystemPrompt(const QString &style, const RefinementContext &co
 QString compactRefinementSystemPrompt(const QString &style, const RefinementContext &context);
 QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                         const QStringList &vocabulary,
-                                        const QStringList &bindingVocabulary,
                                         const RefinementContext &context = {});
 
 } // namespace speecher

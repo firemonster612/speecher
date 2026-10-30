@@ -375,11 +375,6 @@ void FileTranscriptionSession::refine(const QString &raw)
     // The page's choices stand in for what a target app would have implied.
     m_pipeline.refinementSettings.style = m_options.cleanupStrength;
     m_pipeline.refinementContext.tone = m_options.tone;
-    m_pipeline.refinementContext.writingProfile = writingProfileFromName(m_options.writingProfile);
-    TranscriptPipeline::fillUserInstructions(
-        m_pipeline.refinementContext, m_pipeline.refinementSettings,
-        writingProfileSettingsFor(m_pipeline.refinementSettings.writingProfiles,
-                                  m_pipeline.refinementContext.writingProfile));
     TranscriptPipeline::resolveCustomChoices(m_pipeline);
     // Even a page or command line set to None translates for a profile with
     // an output language.

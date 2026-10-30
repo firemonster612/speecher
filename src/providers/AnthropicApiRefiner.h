@@ -20,7 +20,6 @@ public:
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
-                const QStringList &bindingVocabulary,
                 const QString &bearerToken,
                 const QString &endpointBase,
                 const QString &model,
@@ -32,7 +31,6 @@ public:
     // identity, OAuth headers, thinking or fast mode.
     void refineWithApiKey(const QString &rawTranscript,
                           const QStringList &vocabulary,
-                          const QStringList &bindingVocabulary,
                           const QString &apiKey,
                           const QString &endpointBase,
                           const QString &model,

@@ -34,7 +34,6 @@ public:
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
-                const QStringList &bindingVocabulary,
                 const QString &apiKey,
                 const QString &endpointBase,
                 const QString &model,

@@ -136,11 +136,11 @@ QList<BindingRule> activeBindings(const AppSettings &settings, const Target &tar
     return rules;
 }
 
-} // namespace
-
-void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
-                                              const RefinementSettings &refinement,
-                                              const WritingProfileSettings &profile)
+// The user's instructions, the profile's output language and the custom
+// system prompt for a refinement run with this profile.
+void fillUserInstructions(RefinementContext &context,
+                          const RefinementSettings &refinement,
+                          const WritingProfileSettings &profile)
 {
     context.additionalInstructions = refinement.additionalInstructions;
     context.profileInstructions = profile.instructions;
@@ -148,6 +148,8 @@ void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
     context.customSystemPrompt =
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
+
+} // namespace
 
 void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline)
 {

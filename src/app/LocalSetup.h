@@ -91,9 +91,9 @@ public:
     // several reads the settings once: on Windows a read is many registry
     // lookups.
     const LocalModel &suggestedModel(const AppSettings &settings) const;
-    // Against the memory of where Runs on puts models. Empty until the
-    // hardware probe answers: nothing is too large before anyone knows.
-    std::optional<ModelFit> fit(const LocalModel &model, const AppSettings &settings) const;
+    // Against the memory of where local's Runs on puts models. Empty until
+    // the hardware probe answers: nothing is too large before anyone knows.
+    std::optional<ModelFit> fit(const LocalModel &model, const LocalSpeechSettings &local) const;
 
     // Downloads go through here so the failure a person has not seen yet can be
     // shown by whichever window opens next.
@@ -109,7 +109,6 @@ public:
     void runSpeedTest(const QString &modelId);
     // Running or waiting its turn.
     bool speedTestRunning(const QString &modelId) const;
-    std::optional<double> measuredSeconds(const QString &modelId, const AppSettings &settings) const;
 
     // Saves the hardware default once known, without marking a user choice.
     // The hardware probe settles deferred initialization for every front end.

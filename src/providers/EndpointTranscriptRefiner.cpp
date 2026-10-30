@@ -51,12 +51,12 @@ void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
     }
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
     if (endpoint.format == QStringLiteral("anthropic")) {
-        m_messages->refineWithApiKey(rawTranscript, vocabulary, context.bindingVocabulary,
+        m_messages->refineWithApiKey(rawTranscript, vocabulary,
                                      endpoint.apiKey, endpoint.apiBase, endpoint.model,
                                      settings.style, context);
         return;
     }
-    m_chat->refine(rawTranscript, vocabulary, context.bindingVocabulary, endpoint.apiKey,
+    m_chat->refine(rawTranscript, vocabulary, endpoint.apiKey,
                    endpoint.apiBase, endpoint.model, settings.style, context);
 }
 

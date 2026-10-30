@@ -216,9 +216,8 @@ private:
     void startSession(const SessionOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     // The live UI settings, which apply the moment a save changes them,
-    // mid-session too; the defaults without a store. Kept from the saves, not
-    // read for every preview repaint: on Windows a read is many registry
-    // lookups.
+    // mid-session too; the defaults without a store. Kept here so previews
+    // and streamed refinement never read a whole snapshot per word.
     UiSettings m_ui;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;

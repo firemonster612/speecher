@@ -172,7 +172,6 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::refresh);
     connect(settings, &SettingsStore::snapshotApplied, this, &QuickInsights::refreshCorrections);
     connect(settings, &SettingsStore::learnedCorrectionsChanged, this, &QuickInsights::refreshCorrections);
-    connect(settings, &SettingsStore::correctionLearningEnabledChanged, this, &QuickInsights::refreshCorrections);
     connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickInsights::refreshCorrections);
     connect(controller, &ApplicationController::lastTranscriptChanged, this, &QuickInsights::latestChanged);
     connect(controller, &ApplicationController::lastRecordChanged, this, &QuickInsights::latestChanged);

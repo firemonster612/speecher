@@ -589,7 +589,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const QString message = transcriptRefinementUserMessage(
             QStringLiteral("raw"),
             {},
-            {},
             context);
         QVERIFY(message.contains(QStringLiteral("\"raw_transcript\":\"raw\"")));
         QVERIFY(!message.contains(QStringLiteral("Write: Project update")));
@@ -673,7 +672,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
         const QString message = transcriptRefinementUserMessage(
             pipeline.refinementInput,
-            {},
             {},
             pipeline.refinementContext);
         QVERIFY(message.contains(QStringLiteral("\"mode\":\"edit_selected_document\"")));
