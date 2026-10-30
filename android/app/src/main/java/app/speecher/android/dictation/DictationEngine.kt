@@ -197,7 +197,7 @@ class DictationEngine(
                         if (!recording || finishingPause) opened.stop()
                     } else opened.cancel()
                 }
-            } catch (e: SpokenLanguageUnsupported) {
+            } catch (e: CannotListen) {
                 fail(current, e.reason, e.message.orEmpty())
             } catch (e: Exception) {
                 synchronized(this) {
@@ -690,5 +690,8 @@ private const val PCM_BYTES_PER_MILLI = 16 * 2
  */
 private const val MAX_RETRANSCRIBE_BYTES = 80_000 * PCM_BYTES_PER_MILLI
 
-/** The provider can't listen for the saved spoken language, as [reason] says. */
-class SpokenLanguageUnsupported(val reason: FailureReason.SpokenLanguage) : Exception("$reason")
+/**
+ * The speech stream can't open, as [reason] says: the provider can't listen for the saved spoken
+ * language, or Android keeps Speecher from reaching the server. Retrying would not change that.
+ */
+class CannotListen(val reason: FailureReason) : Exception("$reason")

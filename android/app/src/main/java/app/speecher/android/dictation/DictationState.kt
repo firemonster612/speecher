@@ -97,6 +97,13 @@ sealed interface FailureReason {
     data object SelectionChanged : FailureReason
 
     /**
+     * The speech Custom Endpoint is on the local network, which Android keeps Speecher from
+     * reaching until the person allows it. Recovery: open the Transcription settings, whose
+     * connection test asks.
+     */
+    data object LocalNetworkDenied : FailureReason
+
+    /**
      * A speech or cleanup provider could not do its part, as [kind]. Recovery: sign in to [account]
      * again when the sign-in is the problem, or fix a server's settings, otherwise retry.
      */
@@ -150,7 +157,7 @@ sealed interface Recovery : Serializable {
 
     data object ChooseSpokenLanguage : OpenApp
 
-    /** Check a Custom Endpoint's key and address. */
+    /** Check a Custom Endpoint's key and address, or test it to allow the local network. */
     data object CheckSpeechServer : OpenApp
 
     /** Choose a cleanup level for the Writing Profile. */
@@ -166,6 +173,7 @@ val FailureReason.recovery: Recovery
             FailureReason.MicrophoneDenied -> Recovery.AllowMicrophone
             is FailureReason.SpokenLanguage -> Recovery.ChooseSpokenLanguage
             FailureReason.SelectionNeedsCleanup -> Recovery.ChooseCleanup
+            FailureReason.LocalNetworkDenied -> Recovery.CheckSpeechServer
             is FailureReason.ProviderFailed ->
                 if (!kind.needsSignIn) Recovery.Retry
                 // A server the person chose has no sign-in; its settings hold the key.

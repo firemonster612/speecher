@@ -301,7 +301,7 @@ class DictationEngineTest {
     @Test
     fun `a spoken language the provider can't listen for fails in the panel`() {
         val reason = FailureReason.SpokenLanguage(SpeechProvider.Claude, "cy")
-        val run = Reconnects { throw SpokenLanguageUnsupported(reason) }
+        val run = Reconnects { throw CannotListen(reason) }
         run.engine.start(SpeechProvider.Claude)
         run.tasks.removeFirst().run() // The microphone.
         run.tasks.removeFirst().run() // The connection.

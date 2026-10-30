@@ -1,5 +1,8 @@
 package app.speecher.android.ui
 
+import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,6 +32,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.mayUseLocalNetwork
+import app.speecher.android.onLocalNetwork
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.sharedHttp
 import app.speecher.protocol.EndpointCheck
@@ -40,7 +45,7 @@ import kotlinx.coroutines.withContext
 /**
  * The speech Custom Endpoint's server, path, key and model, and a test of its connection that lists
  * the server's models. A test that finds models while none is set picks the first, as on the
- * desktop.
+ * desktop. Testing a server on the local network first asks Android to let Speecher reach it.
  */
 @Composable
 internal fun SpeechEndpointSettings(
@@ -50,12 +55,31 @@ internal fun SpeechEndpointSettings(
     val endpoint = settings.speechEndpoint
     val latest by rememberUpdatedState(settings)
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val store = remember(context) { TokenStore(context) }
     var key by remember { mutableStateOf(store.apiKey(ApiKey.SpeechEndpoint)) }
     // The verdict on this server and key; changing either makes it stale.
     var check by remember(endpoint.server, key) { mutableStateOf<EndpointCheck?>(null) }
     var checking by remember(endpoint.server, key) { mutableStateOf(false) }
+    var localNetworkRefused by remember(endpoint.server) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    fun test() {
+        checking = true
+        localNetworkRefused = false
+        scope.launch {
+            val result =
+                withContext(Dispatchers.IO) { checkSpeechEndpoint(sharedHttp, endpoint, key) }
+            check = result
+            checking = false
+            val now = latest.speechEndpoint
+            if (now.server == endpoint.server && now.model.isEmpty() && result.models.isNotEmpty())
+                onChange(latest.copy(speechEndpoint = now.copy(model = result.models.first())))
+        }
+    }
+    val localNetwork =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) test() else localNetworkRefused = true
+        }
     Section("Custom Endpoint")
     EndpointField(
         "Server URL",
@@ -72,19 +96,27 @@ internal fun SpeechEndpointSettings(
     ModelField(endpoint.model, check?.models.orEmpty()) {
         onChange(settings.copy(speechEndpoint = endpoint.copy(model = it)))
     }
-    ConnectionTest(if (checking) "Checking…" else check?.message ?: "Not tested yet.") {
+    val verdict =
+        when {
+            checking -> "Checking…"
+            localNetworkRefused -> LOCAL_NETWORK_REFUSED
+            else -> check?.message ?: "Not tested yet."
+        }
+    ConnectionTest(verdict) {
         checking = true
         scope.launch {
-            val result =
-                withContext(Dispatchers.IO) { checkSpeechEndpoint(sharedHttp, endpoint, key) }
-            check = result
-            checking = false
-            val now = latest.speechEndpoint
-            if (now.server == endpoint.server && now.model.isEmpty() && result.models.isNotEmpty())
-                onChange(latest.copy(speechEndpoint = now.copy(model = result.models.first())))
+            val local = withContext(Dispatchers.IO) { onLocalNetwork(endpoint.server) }
+            val allowed =
+                !local || activity?.mayUseLocalNetwork(localNetwork, localNetworkRefused) ?: true
+            if (allowed) test() else checking = false
         }
     }
 }
+
+private const val LOCAL_NETWORK_REFUSED =
+    "Speecher can't reach your network. Test again and allow Speecher to find nearby devices. If " +
+        "Android no longer asks, Test connection opens Speecher's settings, where Nearby devices " +
+        "is under Permissions."
 
 /** A one-line field under its [title] and what it is for. */
 @Composable

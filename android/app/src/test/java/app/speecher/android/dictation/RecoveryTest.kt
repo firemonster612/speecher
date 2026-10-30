@@ -22,6 +22,7 @@ class RecoveryTest {
                 FailureReason.SpokenLanguage(SpeechProvider.Claude, "cy") to
                     Recovery.ChooseSpokenLanguage,
                 FailureReason.SelectionNeedsCleanup to Recovery.ChooseCleanup,
+                FailureReason.LocalNetworkDenied to Recovery.CheckSpeechServer,
                 FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.Unavailable) to
                     Recovery.SignIn(Provider.Claude),
                 FailureReason.Speech(SpeechProvider.ChatGpt, auth) to
