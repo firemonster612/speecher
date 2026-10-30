@@ -3,9 +3,6 @@
 #include "core/ProviderReadiness.h"
 #include "core/ProviderTable.h"
 
-#include <algorithm>
-#include <iterator>
-
 namespace speecher {
 
 namespace {
@@ -62,14 +59,6 @@ QString joinedWithAnd(const QStringList &items)
         return items.value(0);
     }
     return items.first(items.size() - 1).join(QStringLiteral(", ")) + QStringLiteral(" and ") + items.last();
-}
-
-QList<ProviderAttemptIssue> issuesWhere(const QList<ProviderAttemptIssue> &issues,
-                                        const std::function<bool(const ProviderAttemptIssue &)> &keep)
-{
-    QList<ProviderAttemptIssue> kept;
-    std::copy_if(issues.cbegin(), issues.cend(), std::back_inserter(kept), keep);
-    return kept;
 }
 
 bool rejectedSignIn(const ProviderAttemptIssue &issue)
