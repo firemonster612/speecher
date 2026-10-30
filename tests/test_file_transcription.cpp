@@ -462,6 +462,43 @@ private slots:
         QCOMPARE(readFile(results.first().savedPath), QStringLiteral("Heard it."));
     }
 
+    // A refiner that cannot reach its service makes way for the saved
+    // fallback, which refines the file.
+    void aRefinerThatCannotReachItsServiceHandsTheFileToTheFallback()
+    {
+        FakeRefiner *primary = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&primary](QObject *parent) {
+                                                   primary = new FakeRefiner(parent);
+                                                   return primary;
+                                               });
+        m_registry->registerRefinementProvider({QStringLiteral("local"), QStringLiteral("Local Runner")},
+                                               [](QObject *parent) {
+                                                   auto *fallback = new FakeRefiner(parent);
+                                                   fallback->autoComplete = true;
+                                                   fallback->autoCompleteText = QStringLiteral("Tidied.");
+                                                   return fallback;
+                                               });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
+        primary->emitFailure(QStringLiteral("offline"), ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QCOMPARE(result.refined, QStringLiteral("Tidied."));
+        QCOMPARE(result.error, QString());
+    }
+
     // A batch set to None still refines, at Light, when its profile
     // translates, and says so.
     void anExplicitNoneStillTranslates()
@@ -849,10 +886,11 @@ private slots:
         options.speechProviderId = QStringLiteral("codex");
         options.refinementProviderId = QStringLiteral("openai");
         options.cleanupStrength = QStringLiteral("balanced");
-        // Read while the file's refiner still exists: it goes once the file is done.
+        // Read while the file's refiner still exists: it goes once the file is
+        // done. A file no speech provider took never makes one.
         int refreshes = -1;
         connect(&session, &FileTranscriptionSession::fileFinished, this,
-                [&refiner, &refreshes] { refreshes = refiner->refreshRuns; });
+                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns : 0; });
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);

@@ -4,7 +4,6 @@
 #include "core/TranscriptState.h"
 #include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
-#include "dictation/PreparationRunner.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/TranscribePresentation.h"
@@ -172,8 +171,9 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     , m_providers(providers)
     , m_speechChain(new SpeechChain(
           providers, [this](const QString &providerId) { return acquireTranscriber(providerId); }, this))
+    , m_refinementChain(new RefinementChain(
+          [this](const QString &providerId) { return acquireRefiner(providerId); }, this))
     , m_transcript(new TranscriptState(this))
-    , m_refinerPreparation(new PreparationRunner(this))
 {
     qRegisterMetaType<TranscribeFileResult>();
     // The provider starts once the worker reports, never inside start().
@@ -190,15 +190,12 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     connect(m_speechChain, &SpeechChain::ready, this, &FileTranscriptionSession::beginStreaming);
     connect(m_speechChain, &SpeechChain::exhausted, this,
             [this] { failFile(speechFailureText(m_speechIssues.value(0).message)); });
-    connect(m_refinerPreparation, &PreparationRunner::refinerPrepared, this,
-            [this](const std::optional<ProviderFailure> &failure) {
-                if (failure) {
-                    m_current.error = failure->message;
-                    completeFile(m_pipeline.deliveryFallback);
-                    return;
-                }
-                startRefiner();
-            });
+    connect(m_refinementChain, &RefinementChain::passedOver, this,
+            [this](const QString &, Stage, const ProviderFailure &failure) { m_refinementFailure = failure.message; });
+    connect(m_refinementChain, &RefinementChain::secretsResolved, this,
+            [this](const AppSettings &settings) { m_batchSettings = settings; });
+    connect(m_refinementChain, &RefinementChain::ready, this, &FileTranscriptionSession::startRefiner);
+    connect(m_refinementChain, &RefinementChain::exhausted, this, &FileTranscriptionSession::completeUnrefined);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
         if (m_running) {
             emit filePartialText(m_index, text);
@@ -371,9 +368,6 @@ void FileTranscriptionSession::startMicrophone()
 // gone to one, the file stays with it.
 void FileTranscriptionSession::prepareProviders()
 {
-    if (m_options.refinementProviderId != kNoRefinementProvider) {
-        m_refiner = m_providers->createRefinementProvider(m_options.refinementProviderId, this);
-    }
     m_speechIssues.clear();
     m_speechChain->begin(m_options.speechProviderId, m_batchSettings.speech.fallbackProviderIds);
     // The page's own provider fails the file, as before.
@@ -617,43 +611,77 @@ void FileTranscriptionSession::refine(const QString &raw)
     m_pipeline.refinementSettings.style =
         refinedCleanupLevel(m_pipeline.refinementSettings.style, m_pipeline.refinementContext.outputLanguage);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
-    if (!m_refiner || refinement.style == QStringLiteral("none")
+    if (m_options.refinementProviderId == kNoRefinementProvider || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {
         completeFile(m_pipeline.deliveryFallback);
         return;
     }
-    // An expired sign-in renews on the worker, as for a dictation: never on
-    // this thread, where prepare() would wait on the network and a cancel
-    // could run meanwhile. A cancel drops the renewal unanswered.
-    if (std::optional<PreparationJob> refresh = m_refiner->createRefreshJob(refinement, m_batchSettings.accounts)) {
-        m_refinerPreparation->prepareRefiner(std::move(*refresh));
+    // Keys and an expired sign-in load on the worker, as for a dictation:
+    // never on this thread, where a cancel could run meanwhile. A cancel
+    // drops them unanswered.
+    m_refinementFailure.clear();
+    emit fileRefining(m_index);
+    m_refinementChain->begin(m_options.refinementProviderId, m_batchSettings.refinement.fallbackProviderIds);
+    m_refinementChain->prepare(m_batchSettings, refinement);
+}
+
+// A fresh refiner for each one the file tries, never live dictation's.
+TranscriptRefiner *FileTranscriptionSession::acquireRefiner(const QString &providerId)
+{
+    releaseRefiner();
+    m_refiner = m_providers->createRefinementProvider(providerId, this);
+    if (!m_refiner) {
+        return nullptr;
+    }
+    connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
+        completeFile(TranscriptPipeline::restoreRefinedResult(m_pipeline, text).value_or(m_pipeline.deliveryFallback));
+    });
+    connect(m_refiner, &TranscriptRefiner::failed, this, &FileTranscriptionSession::handleRefinementFailure);
+    return m_refiner;
+}
+
+void FileTranscriptionSession::releaseRefiner()
+{
+    if (!m_refiner) {
         return;
     }
-    startRefiner();
+    disconnect(m_refiner, nullptr, this, nullptr);
+    m_refiner->cancel();
+    m_refiner->deleteLater();
+    m_refiner = nullptr;
 }
 
 void FileTranscriptionSession::startRefiner()
 {
-    const RefinementSettings &refinement = m_pipeline.refinementSettings;
-    if (const std::optional<ProviderFailure> failure = m_refiner->prepare(refinement, m_batchSettings.accounts)) {
-        m_current.error = failure->message;
-        completeFile(m_pipeline.deliveryFallback);
+    // A cancel that ran while the refiner prepared has let it go.
+    if (!m_refiner) {
         return;
     }
-    connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
-        completeFile(TranscriptPipeline::restoreRefinedResult(m_pipeline, text)
-                         .value_or(m_pipeline.deliveryFallback));
-    });
-    connect(m_refiner, &TranscriptRefiner::failed, this, [this](const ProviderFailure &failure) {
-        m_current.error = QStringLiteral("Refinement failed: %1").arg(failure.message);
-        completeFile(m_pipeline.deliveryFallback);
-    });
-    emit fileRefining(m_index);
     m_refiner->refine(m_pipeline.refinementInput,
                       m_pipeline.refinementVocabulary,
                       m_pipeline.refinementContext,
-                      refinement,
+                      m_refinementChain->currentSettings(),
                       m_batchSettings.accounts);
+}
+
+// A refiner that fails to answer for want of a service makes way for the
+// next, as in a dictation; one that answers unusably or fails otherwise ends
+// refinement.
+void FileTranscriptionSession::handleRefinementFailure(const ProviderFailure &failure)
+{
+    m_refinementFailure = QStringLiteral("Refinement failed: %1").arg(failure.message);
+    if (permitsProviderFallback(failure.kind)) {
+        m_refinementChain->prepareNext(m_batchSettings, m_pipeline.refinementSettings);
+        return;
+    }
+    completeUnrefined();
+}
+
+// No refiner refined the file: it keeps the text as heard, and says why.
+void FileTranscriptionSession::completeUnrefined()
+{
+    m_current.error = m_refinementFailure;
+    completeFile(m_pipeline.deliveryFallback);
 }
 
 void FileTranscriptionSession::completeFile(const QString &text)
@@ -716,7 +744,7 @@ void FileTranscriptionSession::releaseFileResources()
 {
     m_sendTimer.stop();
     m_speechChain->cancel();
-    m_refinerPreparation->cancel();
+    m_refinementChain->cancel();
     // Signals from a retired provider must not reach the next file.
     if (m_decoder) {
         disconnect(m_decoder, nullptr, this, nullptr);
@@ -730,11 +758,7 @@ void FileTranscriptionSession::releaseFileResources()
             m_input->stop();
         }
     }
-    if (m_refiner) {
-        disconnect(m_refiner, nullptr, this, nullptr);
-        m_refiner->cancel();
-        m_refiner->deleteLater();
-    }
+    releaseRefiner();
     m_pcm.clear();
     m_pcmDropped = 0;
 }

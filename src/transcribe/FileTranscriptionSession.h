@@ -4,6 +4,7 @@
 #include "core/ProviderTable.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
+#include "providers/RefinementChain.h"
 #include "providers/SpeechChain.h"
 #include "transcribe/Subtitles.h"
 
@@ -25,7 +26,6 @@ namespace speecher {
 
 class ProviderRegistry;
 class SettingsStore;
-class PreparationRunner;
 class TranscriptState;
 
 enum class TranscriptDestination {
@@ -141,6 +141,7 @@ signals:
     void fileDecoded(int index, const QVector<float> &peaks, qint64 durationMs);
     void fileProgress(int index, qreal fractionOfAudioSent);
     void filePartialText(int index, const QString &text);
+    // From when the file's refiners start preparing.
     void fileRefining(int index);
     void fileFinished(int index, const speecher::TranscribeFileResult &result);
     // Every file that finished or failed; a cancelled one is left out.
@@ -165,7 +166,11 @@ private:
     QString speechFailureText(const QString &providerMessage) const;
     void finishTranscription();
     void refine(const QString &raw);
+    TranscriptRefiner *acquireRefiner(const QString &providerId);
+    void releaseRefiner();
     void startRefiner();
+    void handleRefinementFailure(const ProviderFailure &failure);
+    void completeUnrefined();
     void completeFile(const QString &text);
     void failFile(const QString &message);
     void finishFile();
@@ -179,6 +184,9 @@ private:
     // it from the start.
     SpeechChain *m_speechChain;
     SpeechAttemptPolicy m_attempts;
+    // The page's refiner, then the saved fallbacks; each file walks it from
+    // the start.
+    RefinementChain *m_refinementChain;
     TranscriptState *m_transcript;
     QTimer m_sendTimer;
     QStringList m_paths;
@@ -196,8 +204,8 @@ private:
     Microphone m_microphone = Microphone::Off;
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
-    // Renews m_refiner's sign-in on a worker before the file refines.
-    PreparationRunner *m_refinerPreparation;
+    // Why the last refiner the file tried could not refine it.
+    QString m_refinementFailure;
     QByteArray m_pcm;
     // Microphone audio dropped from the front of m_pcm once a connected
     // stream took it, so a long listen does not keep all it heard.
