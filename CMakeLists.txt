@@ -1448,6 +1448,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_silence_gate.cpp
     tests/test_echo_canceller.cpp
     tests/test_local_models.cpp
     tests/test_custom_endpoints.cpp
@@ -1552,6 +1553,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    silence_gate
     echo_canceller
     local_models
     custom_endpoints
