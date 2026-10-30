@@ -83,6 +83,7 @@ int runMigrationTests(int argc, char **argv);
 #ifdef Q_OS_LINUX
 int runKeywatchTests(int argc, char **argv);
 int runHelperInstallTests(int argc, char **argv);
+int runPortalTests(int argc, char **argv);
 #endif
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);
