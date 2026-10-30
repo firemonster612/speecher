@@ -361,6 +361,30 @@ private slots:
         QVERIFY2(binder.setShortcut({}, &error), qPrintable(error));
     }
 
+    // A press and release dispatched late, as when the event loop was busy,
+    // still report the hold between their WM_INPUT messages.
+    void singleKeyBinderTimesTheHoldByItsMessages()
+    {
+        SettingsStore settings;
+        WinSingleKeyShortcutBinder binder(&settings);
+        QString error;
+        QVERIFY2(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("F13")), &error),
+                 qPrintable(error));
+        QSignalSpy deactivated(&binder, &GlobalShortcutBinder::deactivated);
+
+        RAWINPUT input{};
+        input.header.dwType = RIM_TYPEKEYBOARD;
+        input.data.keyboard.MakeCode = 0x64;
+        input.data.keyboard.VKey = VK_F13;
+        binder.handleRawInput(input, 1000);
+        input.data.keyboard.Flags = RI_KEY_BREAK;
+        binder.handleRawInput(input, 1080);
+
+        QCOMPARE(deactivated.count(), 1);
+        QCOMPARE(deactivated.first().at(0).toLongLong(), 80);
+        QVERIFY2(binder.setShortcut({}, &error), qPrintable(error));
+    }
+
     // Raw input spells NumLock as a bare 0x45 and Pause as an E1-flagged
     // 0x1D plus a fake VKey-255 half; the binder normalizes both to the
     // vocabulary's message-level spelling.

@@ -10,7 +10,7 @@ constexpr auto windowClassName = L"SpeecherRawKeyboard";
 
 struct Listener {
     QPointer<QObject> context;
-    std::function<void(const RAWINPUT &)> deliver;
+    std::function<void(const RAWINPUT &, qint64)> deliver;
 };
 
 QList<Listener> &listeners()
@@ -22,6 +22,10 @@ QList<Listener> &listeners()
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_INPUT) {
+        // Read before any listener runs: one that spins an event loop makes
+        // a later message the last one retrieved. GetMessageTime() is the
+        // DWORD tick count cast to LONG.
+        const qint64 messageTimeMs = DWORD(GetMessageTime());
         RAWINPUT input{};
         UINT size = sizeof(input);
         if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &input, &size,
@@ -31,7 +35,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             const QList<Listener> current = listeners();
             for (const Listener &listener : current) {
                 if (listener.context) {
-                    listener.deliver(input);
+                    listener.deliver(input, messageTimeMs);
                 }
             }
         }
@@ -79,7 +83,7 @@ bool ensureRegistered(QString *error)
 } // namespace
 
 bool listenToRawKeyboard(QObject *context,
-                         std::function<void(const RAWINPUT &)> listener,
+                         std::function<void(const RAWINPUT &, qint64 messageTimeMs)> listener,
                          QString *error)
 {
     if (!ensureRegistered(error)) {

@@ -37,7 +37,7 @@ protected:
 
 private:
     friend class ::WinPlatformTests;
-    void handleRawInput(const RAWINPUT &input);
+    void handleRawInput(const RAWINPUT &input, qint64 messageTimeMs = -1);
 
     // The vocabulary's win value while watching, 0 while not.
     int m_scancode = 0;

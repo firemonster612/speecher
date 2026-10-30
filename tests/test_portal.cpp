@@ -136,17 +136,28 @@ public:
         respond(path, response, results);
     }
 
-    void activate(const QString &session, const QString &shortcutId)
+    // The desktop's keys press and release a bound shortcut; `timestamp` is
+    // the portal's, in milliseconds, or zero for a backend that sends none.
+    void activate(const QString &session, const QString &shortcutId, qulonglong timestamp = 0)
     {
-        QDBusMessage signal = QDBusMessage::createSignal(
-            QString::fromLatin1(portalPath), QString::fromLatin1(shortcutInterface),
-            QStringLiteral("Activated"));
-        signal << QVariant::fromValue(QDBusObjectPath(session)) << shortcutId << qulonglong(0)
-               << QVariantMap();
-        m_bus.send(signal);
+        sendShortcutSignal(QStringLiteral("Activated"), session, shortcutId, timestamp);
+    }
+
+    void deactivate(const QString &session, const QString &shortcutId, qulonglong timestamp = 0)
+    {
+        sendShortcutSignal(QStringLiteral("Deactivated"), session, shortcutId, timestamp);
     }
 
 private:
+    void sendShortcutSignal(const QString &name, const QString &session, const QString &shortcutId,
+                            qulonglong timestamp)
+    {
+        QDBusMessage signal = QDBusMessage::createSignal(
+            QString::fromLatin1(portalPath), QString::fromLatin1(shortcutInterface), name);
+        signal << QVariant::fromValue(QDBusObjectPath(session)) << shortcutId << timestamp << QVariantMap();
+        m_bus.send(signal);
+    }
+
     QDBusConnection m_bus;
     QList<QDBusMessage> m_calls;
 };
@@ -298,15 +309,74 @@ private slots:
         QCOMPARE(binder.shortcutDisplay(), QStringLiteral("Ctrl+Alt+D"));
     }
 
+    // The portal stamps Activated and Deactivated itself, so a release handled
+    // late still reports the physical hold, measured from the first press
+    // when the key repeats. A backend that sends no timestamp leaves the
+    // controller to time it.
+    void releaseReportsThePhysicalHold()
+    {
+        SettingsStore settings;
+        PortalGlobalShortcutBinder binder(&settings);
+        chooseShortcut(binder, QStringLiteral("/session/1"), QStringLiteral("Ctrl+Alt+D"));
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+
+        m_portal.activate(QStringLiteral("/session/1"), binder.action().id, 5000);
+        m_portal.activate(QStringLiteral("/session/1"), binder.action().id, 5040);
+        m_portal.deactivate(QStringLiteral("/session/1"), binder.action().id, 5080);
+        QTRY_COMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+
+        m_portal.activate(QStringLiteral("/session/1"), binder.action().id);
+        m_portal.deactivate(QStringLiteral("/session/1"), binder.action().id);
+        QTRY_COMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
+    }
+
+    // A session replaced or removed while its key is held never sends that
+    // release, and the press must not stretch the next hold.
+    void holdEndsWithItsSession()
+    {
+        SettingsStore settings;
+        PortalGlobalShortcutBinder binder(&settings);
+        chooseShortcut(binder, QStringLiteral("/session/1"), QStringLiteral("Ctrl+Alt+D"));
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+
+        m_portal.activate(QStringLiteral("/session/1"), binder.action().id, 5000);
+        m_portal.sync();
+        binder.registerShortcut();
+        bindInNewSession(binder, QStringLiteral("/session/2"), QStringLiteral("Ctrl+Alt+D"));
+        m_portal.activate(QStringLiteral("/session/2"), binder.action().id, 20000);
+        m_portal.deactivate(QStringLiteral("/session/2"), binder.action().id, 20080);
+        QTRY_COMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+
+        m_portal.activate(QStringLiteral("/session/2"), binder.action().id, 30000);
+        m_portal.sync();
+        QVERIFY(binder.removeRegistration());
+        binder.registerShortcut();
+        bindInNewSession(binder, QStringLiteral("/session/3"), QStringLiteral("Ctrl+Alt+D"));
+        m_portal.activate(QStringLiteral("/session/3"), binder.action().id, 40000);
+        m_portal.deactivate(QStringLiteral("/session/3"), binder.action().id, 40080);
+        QTRY_COMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+    }
+
 private:
     // Takes a new binder through Choose shortcut, where the desktop assigns
     // `trigger` in `session`.
     void chooseShortcut(PortalGlobalShortcutBinder &binder, const QString &session, const QString &trigger)
     {
-        QSignalSpy finished(&binder, &GlobalShortcutBinder::registrationFinished);
         QTRY_VERIFY(binder.supportKnown());
         binder.registerShortcut();
         m_portal.reply(m_portal.take(QStringLiteral("Register")));
+        bindInNewSession(binder, session, trigger);
+    }
+
+    // Answers the chooser registerShortcut() opened: the desktop assigns
+    // `trigger` in `session`.
+    void bindInNewSession(PortalGlobalShortcutBinder &binder, const QString &session, const QString &trigger)
+    {
+        QSignalSpy finished(&binder, &GlobalShortcutBinder::registrationFinished);
         m_portal.answer(m_portal.take(QStringLiteral("CreateSession")), 0, sessionResults(session));
         m_portal.answer(m_portal.take(QStringLiteral("BindShortcuts")), 0,
                         shortcutResults(binder.action().id, trigger));

@@ -222,6 +222,8 @@ bool PortalGlobalShortcutBinder::removeRegistration(QString *)
             QStringLiteral("Close")));
         m_sessionPath = {};
     }
+    // A press held in the closed session never gets its Deactivated.
+    m_activatedAtMs = 0;
     m_triggerDescription.clear();
     emit bindingChanged();
     return true;
@@ -480,12 +482,16 @@ void PortalGlobalShortcutBinder::activatePendingSession(const QString &trigger)
     m_sessionPath = m_pendingSessionPath;
     m_pendingSessionPath = {};
     m_triggerDescription = trigger;
-    if (!previous.path().isEmpty() && previous.path() != m_sessionPath.path()) {
-        QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
-            QString::fromLatin1(portalService),
-            previous.path(),
-            QString::fromLatin1(sessionInterface),
-            QStringLiteral("Close")));
+    if (previous.path() != m_sessionPath.path()) {
+        // A press held in the replaced session never gets its Deactivated.
+        m_activatedAtMs = 0;
+        if (!previous.path().isEmpty()) {
+            QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+                QString::fromLatin1(portalService),
+                previous.path(),
+                QString::fromLatin1(sessionInterface),
+                QStringLiteral("Close")));
+        }
     }
     emit bindingChanged();
 }
