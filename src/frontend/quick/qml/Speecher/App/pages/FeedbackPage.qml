@@ -56,8 +56,8 @@ Page {
                 id: loop
                 ScriptAction { script: demo.state = "refining" }
                 PauseAnimation { duration: Theme.ms(1600) }
-                ScriptAction { script: demo.state = Settings.values.resultDuration === "0" ? "idle" : "delivered" }
-                PauseAnimation { duration: Theme.ms(2200) }
+                ScriptAction { script: demo.state = Settings.values.resultDuration === 0 ? "idle" : "delivered" }
+                PauseAnimation { duration: Theme.ms(Settings.values.resultDuration) }
                 ScriptAction { script: demo.state = "idle" }
                 PauseAnimation { duration: Theme.ms(700) }
                 ScriptAction { script: { stage.fed = 0; demo.words = ""; demo.elapsed = 0; demo.state = "listening" } }

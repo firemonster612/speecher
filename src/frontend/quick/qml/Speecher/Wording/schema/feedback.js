@@ -11,17 +11,10 @@ var rows = [
       label: "Live text length", help: "Words the popup keeps in view: up to 8 fit on one line, up to 20 on two, more on three.",
       min: 4, max: 30, step: 1, unit: "words", keywords: "words count", enabledWhen: { id: "showLiveText", equals: true },
       disabledHelp: "Turn on live text above to set its length." },
-    { id: "resultDuration", page: "feedback", section: "Popup", kind: "choice", control: "select",
+    // Core stores 0 to 5 seconds; 0 doesn't show it.
+    { id: "resultDuration", page: "feedback", section: "Popup", kind: "slider",
       label: "Show the result for", help: "How long the popup stays after pasting.",
-      keywords: "receipt dismiss timeout",
-      // Milliseconds, which core stores up to 5 seconds.
-      options: [
-          { id: "0", label: "Don't show it" },
-          { id: "500", label: "Half a second" },
-          { id: "1000", label: "1 second" },
-          { id: "2000", label: "2 seconds" },
-          { id: "5000", label: "5 seconds" }
-      ] },
+      min: 0, max: 5000, step: 50, unit: "ms", keywords: "receipt dismiss timeout" },
     { id: "reviewSelectionEdits", page: "feedback", section: "Popup", kind: "toggle",
       label: "Review edits to selected text", help: "When you dictate over a selection, see what will change and press Replace to apply it.",
       keywords: "diff selection edit confirm" },
