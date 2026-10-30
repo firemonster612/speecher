@@ -318,7 +318,10 @@ private slots:
         if (!keysFree()) {
             QSKIP("Another app holds Ctrl+Alt+D");
         }
+        // The settings outlast each test, and an earlier one saves another
+        // combination.
         SettingsStore settings;
+        settings.setGlobalShortcut(GlobalShortcutRole::Dictation, QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D));
         const std::unique_ptr<GlobalShortcutBinder> binder(
             platformComposition()->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, &settings, nullptr));
         binder->bind();
