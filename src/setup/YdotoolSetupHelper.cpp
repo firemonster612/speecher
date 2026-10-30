@@ -194,8 +194,11 @@ bool install(const std::string &user, std::string &error)
             return run("gpasswd", {"-d", user, std::string(groupName)}, ignored);
         });
     }
+    // The group alone grants the device. TAG+="uaccess" would also hand it to
+    // whoever holds the seat, which makes the group, and removing the user
+    // from it, pointless.
     if (!writeSetupFile(std::string(udevRulePath),
-                        "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+                        "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\"\n",
                         transaction,
                         error)) {
         return failed();
