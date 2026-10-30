@@ -14,12 +14,13 @@ var rows = [
     { id: "resultDuration", page: "feedback", section: "Popup", kind: "choice", control: "select",
       label: "Show the result for", help: "How long the popup stays after pasting.",
       keywords: "receipt dismiss timeout",
+      // Milliseconds, which core stores up to 5 seconds.
       options: [
           { id: "0", label: "Don't show it" },
-          { id: "2", label: "2 seconds" },
-          { id: "4", label: "4 seconds" },
-          { id: "8", label: "8 seconds" },
-          { id: "sticky", label: "Until dismissed" }
+          { id: "500", label: "Half a second" },
+          { id: "1000", label: "1 second" },
+          { id: "2000", label: "2 seconds" },
+          { id: "5000", label: "5 seconds" }
       ] },
     { id: "reviewSelectionEdits", page: "feedback", section: "Popup", kind: "toggle",
       label: "Review edits to selected text", help: "When you dictate over a selection, see what will change and press Replace to apply it.",

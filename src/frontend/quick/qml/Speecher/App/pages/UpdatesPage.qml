@@ -87,7 +87,7 @@ Page {
         // Only a copy that can replace itself installs in the background.
         SchemaRow {
             rowId: "autoInstallUpdates"
-            enabled: Settings.saves(rowId) && Updates.automaticDownloads
+            enabled: Updates.automaticDownloads
             note: Updates.automaticDownloads ? spec.help : page.t.noAutomaticDownloads
         }
     }
@@ -122,7 +122,7 @@ Page {
                     help: spec.help || ""
                     clickable: true
                     trailingText: Schema.page(spec.page).title
-                    onClicked: Navigation.goToRow(key)
+                    onClicked: Navigation.goToRow(spec.page, key)
                 }
             }
         }

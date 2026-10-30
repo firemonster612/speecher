@@ -233,7 +233,7 @@ Page {
                     opacity: learned.action.label ? 1 : 0
                     enabled: learned.action.label !== ""
                     Behavior on opacity { Ease {} }
-                    onClicked: Navigation.goToRow(learned.action.row)
+                    onClicked: Navigation.goToRow(Schema.row(learned.action.row).page, learned.action.row)
                 }
                 // Learning needs accessibility; the notice turns it on.
                 AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can learn your corrections." }

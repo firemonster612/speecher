@@ -118,9 +118,7 @@ struct SettingRow {
      }}
 
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
-// save. A row missing here, such as the result duration, is not saved, so the
-// UI does not show it; launch at login is saved only where the platform can
-// start Speecher at login.
+// save.
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
@@ -179,6 +177,9 @@ const SettingRow settingRows[] = {
     FIELD_ROW("showLiveText", ui.transcriptionPreviewEnabled),
     FIELD_ROW("showRefinementText", ui.refinementPreviewEnabled),
     FIELD_ROW("previewWords", ui.previewWords),
+    {"resultDuration",
+     [](const AppSettings &s) { return QVariant(QString::number(s.output.completionStatusDurationMs)); },
+     [](AppSettings &s, const QVariant &v) { s.output.completionStatusDurationMs = v.toString().toInt(); }},
     FIELD_ROW("reviewSelectionEdits", ui.selectionEditReviewEnabled),
     FIELD_ROW("playSounds", ui.soundsEnabled),
     FIELD_ROW("pauseMedia", ui.pauseMediaDuringTranscription),
@@ -297,11 +298,9 @@ const SettingRow settingRows[] = {
     FIELD_ROW("translucency", ui.translucency),
     FIELD_ROW("windowLayout", ui.windowLayout),
     FIELD_ROW("roundedCorners", ui.roundedCorners),
-    // Only macOS and Windows can start Speecher at login, so only there does
-    // General show this row.
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+    // General shows it only where Speecher can start at login
+    // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),
-#endif
     FIELD_ROW("insightsEnabled", insightsEnabled),
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
@@ -480,9 +479,9 @@ void QuickSettings::act(const QString &id)
     qWarning().noquote() << "Settings.act:" << id << "is not an action the UI runs yet";
 }
 
-bool QuickSettings::saves(const QString &id) const
+void QuickSettings::completeSetup()
 {
-    return findRow(settingRows, id) || findRow(shortcutRows, id) || id == runSetupAction;
+    m_controller->completeSetup();
 }
 
 bool QuickSettings::desktopPicksKeys(const QString &id) const

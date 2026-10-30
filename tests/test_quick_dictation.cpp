@@ -164,6 +164,18 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
+    // A page's demo plays phases by name; a name that is no phase, such as
+    // the session's own "stopping", changes nothing.
+    void aDemoSetsPhasesByName()
+    {
+        QuickDictationState demo;
+        demo.setProperty("state", QStringLiteral("delivered"));
+        QCOMPARE(demo.property("state").toString(), QStringLiteral("delivered"));
+        QTest::ignoreMessage(QtWarningMsg, "DictationState: no popup phase is called stopping");
+        demo.setProperty("state", QStringLiteral("stopping"));
+        QCOMPARE(demo.property("state").toString(), QStringLiteral("delivered"));
+    }
+
     void liveWordsLevelAndRefinementPassThrough()
     {
         ApplicationController controller(true);

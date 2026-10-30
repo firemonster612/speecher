@@ -21,10 +21,7 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    // Rows this build can't set are left out, as their pages leave them out.
-    readonly property var results: query.trim().length
-        ? Schema.search(query, 40, need => System[need]).filter(r => r.type !== "row" || Schema.settable(Schema.row(r.id), id => Settings.saves(id)))
-        : _suggestions
+    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need]) : _suggestions
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
@@ -72,7 +69,7 @@ FocusScope {
         // closes on the way can take it from.
         close()
         if (r.type === "page") Navigation.go(r.id)
-        else Navigation.goToRow(r.id)
+        else Navigation.goToRow(r.page, r.id)
     }
 
     visible: opacity > 0
@@ -229,7 +226,7 @@ FocusScope {
                             readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
                             visible: !!hit.spec && hit.spec.kind === "toggle"
                             checked: blurs && !!Settings.values[hit.modelData.id]
-                            enabled: blurs && Settings.saves(hit.modelData.id)
+                            enabled: blurs
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {

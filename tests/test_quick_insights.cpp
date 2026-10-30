@@ -7,6 +7,7 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/QuickDictation.h"
@@ -344,6 +345,7 @@ private slots:
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello there."));
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
@@ -406,6 +408,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickSystem system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -435,10 +438,8 @@ private slots:
             if (item->objectName() == QLatin1String("blocker_microphone")) row = item;
         }
         QVERIFY(row);
-        auto *navigation = engine.singletonInstance<QObject *>("Speecher.App", "Navigation");
-        QVERIFY(navigation);
         QVERIFY(QMetaObject::invokeMethod(row, "clicked"));
-        QCOMPARE(navigation->property("current").toString(), QStringLiteral("microphone"));
+        QCOMPARE(navigation.current(), QStringLiteral("microphone"));
     }
 
     // A speech service that isn't signed in is listed but doesn't stop
@@ -449,6 +450,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickSystem system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
@@ -486,6 +488,7 @@ private slots:
                                                                QStringLiteral("org.kde.kate")));
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
@@ -504,20 +507,18 @@ private slots:
         auto *home = window->property("home").value<QQuickItem *>();
         auto *action = home->findChild<QObject *>(QStringLiteral("learnedCorrectionsAction"));
         QVERIFY(action);
-        auto *navigation = engine.singletonInstance<QObject *>("Speecher.App", "Navigation");
-        QVERIFY(navigation);
 
         QCOMPARE(action->property("text").toString(), QStringLiteral("Review learned corrections"));
         QVERIFY(QMetaObject::invokeMethod(action, "clicked"));
-        QCOMPARE(navigation->property("current").toString(), QStringLiteral("vocabulary"));
-        QCOMPARE(navigation->property("pendingRow").toString(), QStringLiteral("learnedCorrections"));
+        QCOMPARE(navigation.current(), QStringLiteral("vocabulary"));
+        QCOMPARE(navigation.pendingRow(), QStringLiteral("learnedCorrections"));
 
         AppSettings off = controller.settings()->snapshot();
         off.correctionLearningEnabled = false;
         controller.settings()->applySnapshot(off);
         QCOMPARE(action->property("text").toString(), QStringLiteral("Turn on learning"));
         QVERIFY(QMetaObject::invokeMethod(action, "clicked"));
-        QCOMPARE(navigation->property("pendingRow").toString(), QStringLiteral("correctionLearningControl"));
+        QCOMPARE(navigation.pendingRow(), QStringLiteral("correctionLearningControl"));
     }
 };
 

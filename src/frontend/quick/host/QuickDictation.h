@@ -12,6 +12,21 @@ namespace speecher {
 class ApplicationController;
 struct SelectionEditReview;
 
+// What the popup shows of a dictation. Delivered is a receipt on show, a
+// cancel's too.
+enum class PopupPhase {
+    Idle,
+    Starting,
+    Listening,
+    Paused,
+    Transcribing,
+    Refining,
+    Delivering,
+    Delivered,
+    Review,
+    Error,
+};
+
 // The UI's DictationState: a dictation as the popup shows it, in plain
 // values and with the popup's commands as signals. Dictation, the live one,
 // fills it from the session; a page makes its own to play a made-up
@@ -20,10 +35,10 @@ struct SelectionEditReview;
 class QuickDictationState : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(DictationState)
-    // idle (no popup), starting, listening, paused, transcribing, refining,
-    // delivering, delivered (a receipt on show, a cancel's too), review or
-    // error.
-    Q_PROPERTY(QString state MEMBER m_state NOTIFY stateChanged)
+    // The PopupPhase by name: idle (no popup), starting, listening, paused,
+    // transcribing, refining, delivering, delivered, review or error. A page's
+    // demo sets it; an unknown name is refused with a warning in the log.
+    Q_PROPERTY(QString state READ state WRITE setState NOTIFY stateChanged)
     // A sign-in renews before the dictation can go on, until the next state.
     Q_PROPERTY(bool renewing MEMBER m_renewing NOTIFY renewingChanged)
     // The input level, 0 to 1.
@@ -56,6 +71,9 @@ class QuickDictationState : public QObject {
 public:
     explicit QuickDictationState(QObject *parent = nullptr);
 
+    QString state() const;
+    void setState(const QString &name);
+
 signals:
     void stateChanged();
     void renewingChanged();
@@ -86,7 +104,11 @@ signals:
     void errorHoldRequested(bool held);
 
 protected:
-    QString m_state = QStringLiteral("idle");
+    // Moves the popup to phase. The live Dictation also starts and stops an
+    // error's countdown here.
+    virtual void setPhase(PopupPhase phase);
+
+    PopupPhase m_phase = PopupPhase::Idle;
     bool m_renewing = false;
     qreal m_level = 0;
     int m_elapsed = 0;
@@ -136,7 +158,7 @@ private:
     void openFix();
     void cancel();
     void updateElapsed();
-    void setState(const QString &state);
+    void setPhase(PopupPhase phase) override;
     template <typename T>
     void update(T &member, const T &value, void (QuickDictationState::*changed)());
 

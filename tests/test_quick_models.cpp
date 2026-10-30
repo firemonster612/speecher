@@ -12,6 +12,7 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "providers/LocalModelStore.h"
@@ -434,6 +435,7 @@ private slots:
                                          {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
                                            QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
         settings.set(QStringLiteral("refinementProvider"), QStringLiteral("anthropic"));
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(choicesComponent.create());
@@ -480,6 +482,7 @@ private slots:
         const QString ratedModel =
             models.refinementRatings().value(QStringLiteral("local")).toMap().value(QStringLiteral("ratedModel")).toString();
         QVERIFY(!ratedModel.isEmpty());
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(choicesComponent.create());
@@ -527,6 +530,7 @@ private slots:
         });
         placeDownloaded(controller, QStringLiteral("moonshine-small"));
         settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(choicesComponent.create());
@@ -613,6 +617,7 @@ private slots:
         settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("endpoint")});
         settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});
         LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(choicesComponent.create());

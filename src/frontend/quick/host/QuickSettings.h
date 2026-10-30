@@ -17,8 +17,8 @@ QStringList shortcutKeys(const QString &display);
 
 // The UI's Settings singleton: the saved settings by the schema's row ids,
 // read from and written through the daemon's SettingsStore, so the UI, the
-// daemon and every CLI run see the same values. A row the table in the .cpp
-// does not save yet reads as absent, and the UI greys it out (saves).
+// daemon and every CLI run see the same values. Every schema row with a
+// value has an entry in the table in the .cpp.
 class QuickSettings final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Settings)
@@ -46,9 +46,9 @@ public:
     // Runs an action row, such as runSetup. On a shortcut row whose keys the
     // desktop picks (desktopPicksKeys), it opens the desktop's chooser.
     Q_INVOKABLE void act(const QString &id);
-    // Whether set saves this row, or act runs it. A constant, so QML may call
-    // it in a binding.
-    Q_INVOKABLE bool saves(const QString &id) const;
+    // Records that the setup assistant finished, so it does not run again,
+    // and opens any files that arrived while it was up.
+    Q_INVOKABLE void completeSetup();
     // Whether the desktop picks this shortcut row's keys itself (the portal),
     // so the row opens its chooser through act instead of recording keys. A
     // constant, so QML may call it in a binding.

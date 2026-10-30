@@ -1,6 +1,7 @@
 import QtQuick
 import Speecher.Theme
 import Speecher.Controls
+import Speecher.Backend
 
 // Where a search jump to schema rows lands, for rows a page builds itself.
 // Once the page has loaded it scrolls target into view and emits landed, so

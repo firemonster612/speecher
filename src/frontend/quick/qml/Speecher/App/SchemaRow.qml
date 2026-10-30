@@ -19,9 +19,6 @@ SettingRow {
     // in effect instead.
     property var value: _blurs ? Settings.values[rowId] : false
 
-    // Shown only where this build saves the row or runs its action; elsewhere
-    // it isn't offered at all, here or in search.
-    readonly property bool _saves: Schema.settable(spec, id => Settings.saves(id))
     // Whether the row that turns this one on is on (enabledWhen).
     readonly property bool _turnedOn: !spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals
     // The row's help; a page may give its own. Why the row's last save was
@@ -35,11 +32,11 @@ SettingRow {
     iconName: spec.icon || ""
     // _turnedOn reads Settings.values in its binding, so the row
     // follows that value.
-    enabled: _blurs && _saves && _turnedOn
+    enabled: _blurs && _turnedOn
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
     readonly property var _options: Schema.options(spec, need => System[need])
-    shown: _saves && Schema.available(spec, need => System[need])
+    shown: Schema.available(spec, need => System[need])
            && (!spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals)
     stacked: spec.kind === "choice" && spec.control === "cards"
 

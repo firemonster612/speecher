@@ -65,10 +65,10 @@ public slots:
 QString mainPage()
 {
     QQuickWindow *main = openWindow("Main");
-    QObject *navigation = main ? qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"),
-                                                                               QStringLiteral("Navigation"))
+    QuickNavigation *navigation = main ? qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                       QStringLiteral("Navigation"))
                                : nullptr;
-    return navigation ? navigation->property("current").toString() : QString();
+    return navigation ? navigation->current() : QString();
 }
 
 } // namespace

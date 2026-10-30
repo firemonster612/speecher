@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickTranscription.h"
 
@@ -533,6 +534,7 @@ private slots:
         // Library's key-term line names Models' speech service, and the host
         // always has Models.
         QuickModels models(&controller);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
         const std::unique_ptr<QObject> section(component.create());

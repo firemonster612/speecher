@@ -6,6 +6,7 @@
 #include "core/PasteRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QJSEngine>
@@ -25,7 +26,8 @@ using namespace speecher;
 
 namespace {
 
-// A SchemaRow for one schema row, or null with the reason in the log.
+// A SchemaRow for one schema row, or null with the reason in the log. The
+// caller makes the Settings and Navigation it reads, as the host does.
 std::unique_ptr<QObject> schemaRow(QQmlEngine &engine, const char *rowId)
 {
     QQmlComponent component(&engine);
@@ -161,20 +163,58 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
 
+        // Accounts saves the secrets.
         QTest::ignoreMessage(QtWarningMsg, "Settings.set: speechEndpointApiKey is not saved from the UI yet");
         settings.set(QStringLiteral("speechEndpointApiKey"), QStringLiteral("sk-made-up"));
         QVERIFY(!settings.values().contains(QStringLiteral("speechEndpointApiKey")));
+    }
 
-        // Accounts saves the secrets.
-        for (const char *id : {"speechEndpointApiKey"}) {
-            QVERIFY2(!settings.saves(QLatin1String(id)), id);
+    // SchemaRow shows every row with a value as a setting, so each one has
+    // to save. Custom rows draw their own content, secrets go to Accounts and
+    // actions run.
+    void everySchemaRowWithAValueSaves()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QQmlEngine engine;
+        auto *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        const QVariantList rows = schema->property("rows").value<QJSValue>().toVariant().toList();
+        QVERIFY(!rows.isEmpty());
+        for (const QVariant &entry : rows) {
+            const QVariantMap row = entry.toMap();
+            const QString id = row.value(QStringLiteral("id")).toString();
+            if (QStringList{QStringLiteral("custom"), QStringLiteral("secret"), QStringLiteral("action")}.contains(
+                    row.value(QStringLiteral("kind")).toString())) {
+                continue;
+            }
+            QVERIFY2(settings.values().contains(id), qPrintable(id));
         }
-        for (const char *id : {"pauseMedia", "audioDevice", "globalShortcut", "cancelShortcut", "pauseShortcut", "runSetup",
-                               "globalPasteRule", "categoryPasteRule_ai_coding", "applicationPasteRules",
-                               "speechLocalModel", "localRunner", "localAcceleration", "localGraphicsCard",
-                               "openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
-            QVERIFY2(settings.saves(QLatin1String(id)), id);
+    }
+
+    // Show the result for is core's completionStatusDurationMs: how long a
+    // receipt stays up.
+    void theResultDurationIsHowLongAReceiptStays()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QCOMPARE(settings.values().value(QStringLiteral("resultDuration")).toString(), QStringLiteral("500"));
+
+        settings.set(QStringLiteral("resultDuration"), QStringLiteral("2000"));
+        QCOMPARE(SettingsStore().completionStatusDurationMs(), 2000);
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        const std::unique_ptr<QObject> duration = schemaRow(engine, "resultDuration");
+        QVERIFY(duration->property("enabled").toBool());
+        QVERIFY(duration->property("shown").toBool());
+        const QObject *select = nullptr;
+        for (const QObject *child : duration->findChildren<QObject *>()) {
+            if (QByteArray(child->metaObject()->className()).startsWith("Select_")) {
+                select = child;
+            }
         }
+        QVERIFY(select);
+        QCOMPARE(select->property("currentId").toString(), QStringLiteral("2000"));
     }
 
     // The Local Model is a choice once picked; a new acceleration starts on
@@ -224,11 +264,12 @@ private slots:
 
     // SchemaRow decides in QML, so its binding follows Settings.values:
     // turning voice detection on enables its threshold with the page still up.
-    void schemaRowsGreyOutWhatIsNotSaved()
+    void schemaRowsGreyOutUntilTurnedOn()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("vadEnabled"), false);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
 
         const std::unique_ptr<QObject> threshold = schemaRow(engine, "vadThresholdPercent");
@@ -238,17 +279,6 @@ private slots:
         QVERIFY(threshold->property("enabled").toBool());
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
-        // A greyed choice the backend does not save shows no choice at all.
-        const std::unique_ptr<QObject> duration = schemaRow(engine, "resultDuration");
-        QVERIFY(!duration->property("enabled").toBool());
-        const QObject *select = nullptr;
-        for (const QObject *child : duration->findChildren<QObject *>()) {
-            if (QByteArray(child->metaObject()->className()).startsWith("Select_")) {
-                select = child;
-            }
-        }
-        QVERIFY(select);
-        QCOMPARE(select->property("currentIndex").toInt(), -1);
         // A custom row with a value is a setting; one without draws the page's own content.
         QVERIFY(schemaRow(engine, "defaultWritingProfile")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
@@ -310,6 +340,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("preRollMs"), 0);
+        QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent component(&engine);
         component.setData(R"(

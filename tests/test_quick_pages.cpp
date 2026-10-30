@@ -148,7 +148,7 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(main));
         QCOMPARE(themeIsDark(main), theme == QLatin1String("dark"));
         QQmlEngine *engine = qmlEngine(main);
-        auto *navigation = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         auto *schema = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
         auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
         QVERIFY(navigation && schema && search);
@@ -159,8 +159,8 @@ private slots:
         for (const QVariant &page : pages) {
             const QString id = page.toMap().value(QStringLiteral("id")).toString();
             steps.append({QStringLiteral("page ") + id, [navigation, id] {
-                              navigation->setProperty("current", id);
-                              QCOMPARE(navigation->property("current").toString(), id);
+                              navigation->go(id);
+                              QCOMPARE(navigation->current(), id);
                           }});
         }
         // Rows moved to a subpage land there.
@@ -168,8 +168,8 @@ private slots:
                                         std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("permissions")},
                                         std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRules")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
-                              QMetaObject::invokeMethod(navigation, "goToRow", Q_ARG(QVariant, row));
-                              QCOMPARE(navigation->property("current").toString(), page);
+                              navigation->goToRow(page, row);
+                              QCOMPARE(navigation->current(), page);
                           }});
         }
         for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"), QStringLiteral("refinement"),
@@ -216,8 +216,9 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
-        navigation->setProperty("current", QStringLiteral("speech"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
         QQuickItem *picker = nullptr;
         QTRY_VERIFY((picker = findItem(main->contentItem(), QStringLiteral("fallbackLanguage_claude"))));
         const QVariantMap first =
@@ -250,7 +251,7 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         const auto language = [&controller] { return controller.settings()->snapshot().speech.language; };
         const auto service = [&controller] { return controller.settings()->snapshot().speech.providerId; };
@@ -280,7 +281,7 @@ private slots:
         QObject *serviceLanguages = nullptr;
 
         runSteps({
-            {QStringLiteral("speech page"), [navigation] { navigation->setProperty("current", QStringLiteral("speech")); }},
+            {QStringLiteral("speech page"), [navigation] { navigation->go(QStringLiteral("speech")); }},
             {QStringLiteral("open the picker"), [&] {
                  picker = main->findChild<QObject *>(QStringLiteral("languageSelect_spokenLanguage"));
                  QVERIFY(picker);
@@ -440,9 +441,9 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        navigation->go(QStringLiteral("profiles"));
         QQuickItem *refinement = sidebarEntry(main, QStringLiteral("refinement"));
         QQuickItem *profiles = sidebarEntry(main, QStringLiteral("profiles"));
         QVERIFY(refinement && profiles);
@@ -455,13 +456,13 @@ private slots:
         QVERIFY(!refinement->property("open").toBool());
         QVERIFY(refinement->hasActiveFocus());
 
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        navigation->go(QStringLiteral("profiles"));
         QVERIFY(refinement->property("open").toBool());
 
         QMetaObject::invokeMethod(refinement, "openRequested", Q_ARG(bool, false));
-        QMetaObject::invokeMethod(navigation, "goToRow", Q_ARG(QVariant, QStringLiteral("defaultWritingProfile")));
+        navigation->goToRow(QStringLiteral("profiles"), QStringLiteral("defaultWritingProfile"));
         QVERIFY(refinement->property("open").toBool());
-        QCOMPARE(navigation->property("current").toString(), QStringLiteral("profiles"));
+        QCOMPARE(navigation->current(), QStringLiteral("profiles"));
 
         // One group open at a time: going to a page opens its group and
         // closes the others, and so does opening a group by hand, which
@@ -469,7 +470,7 @@ private slots:
         QQuickItem *general = sidebarEntry(main, QStringLiteral("general"));
         QQuickItem *dictation = sidebarEntry(main, QStringLiteral("dictation"));
         QVERIFY(general && dictation);
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("accounts")));
+        navigation->go(QStringLiteral("accounts"));
         QVERIFY(general->property("open").toBool());
         QVERIFY(!refinement->property("open").toBool());
         QTest::qWait(kSettleMs);
@@ -478,12 +479,12 @@ private slots:
         QVERIFY(dictation->property("open").toBool());
         QVERIFY(!general->property("open").toBool());
         QVERIFY(general->hasActiveFocus());
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("home")));
+        navigation->go(QStringLiteral("home"));
         QVERIFY(!dictation->property("open").toBool());
 
         // A search that goes to another group from a subpage leaves focus on
         // the subpage's parent, not on the subpage it folded away.
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        navigation->go(QStringLiteral("profiles"));
         QTRY_VERIFY(refinement->property("open").toBool());
         QTest::qWait(kSettleMs);
         profiles->forceActiveFocus(Qt::TabFocusReason);
@@ -495,7 +496,7 @@ private slots:
                                            [](const auto &result) { return result.first == QStringLiteral("accounts"); });
         QVERIFY(accounts != results.cend());
         QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, int(accounts - results.cbegin())));
-        QCOMPARE(navigation->property("current").toString(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
         QVERIFY(!refinement->property("open").toBool());
         QVERIFY(!profiles->hasActiveFocus());
         QVERIFY(refinement->hasActiveFocus());
@@ -517,9 +518,9 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("dictation")));
+        navigation->go(QStringLiteral("dictation"));
         const auto helpShown = [main](const QString &help) {
             QList<QQuickItem *> items{main->contentItem()};
             while (!items.isEmpty()) {
@@ -545,9 +546,9 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        navigation->go(QStringLiteral("profiles"));
         QQuickItem *instructions = nullptr;
         QTRY_VERIFY((instructions = findItem(main->contentItem(), QStringLiteral("profileInstructions"))));
         // The page stack drops presses while the page is still coming in,
@@ -619,18 +620,18 @@ private slots:
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
         QQmlEngine *engine = qmlEngine(main);
-        auto *navigation = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
         QVERIFY(navigation && toaster);
         QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("appRules")));
+        navigation->go(QStringLiteral("appRules"));
         QPointer<QQuickItem> section;
         QTRY_VERIFY((section = findItem(main->contentItem(), QStringLiteral("appPasteRules"))));
 
         QMetaObject::invokeMethod(section, "remove", Q_ARG(QVariant, 0));
         QCOMPARE(posted.count(), 1);
         QVERIFY(appRules().isEmpty());
-        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("home")));
+        navigation->go(QStringLiteral("home"));
         QTRY_VERIFY(!section);
 
         const QJSValue undone = posted.first().first().value<QJSValue>().property(QStringLiteral("action")).call();
@@ -659,6 +660,20 @@ private slots:
             steps.append({QStringLiteral("step %1").arg(step), [setup, step] { setup->setProperty("step", step); }});
         }
         runSteps(steps);
+    }
+
+    // Finishing the assistant records setup as done, so it does not run again.
+    void finishingSetupRecordsItDone()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        QVERIFY(!controller.settings()->setupCompleted());
+        QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
+        QVERIFY(controller.settings()->setupCompleted());
     }
 
     void everyPopupStateLoads_data() { themes(); }

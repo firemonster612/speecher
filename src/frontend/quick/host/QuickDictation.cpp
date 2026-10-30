@@ -3,7 +3,10 @@
 #include "app/ApplicationController.h"
 #include "dictation/DictationSession.h"
 #include "dictation/SelectionEditPresentation.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "frontend/quick/host/QuickSettings.h"
+
+#include <QDebug>
 
 #include <utility>
 
@@ -15,24 +18,38 @@ QuickDictation *g_instance = nullptr;
 constexpr int msPerSecond = 1000;
 int g_errorDismissMs = 0;
 
+// Each phase by the name QML reads.
+const struct PhaseName {
+    const char *id;
+    PopupPhase phase;
+} phaseNames[] = {
+    {"idle", PopupPhase::Idle},
+    {"starting", PopupPhase::Starting},
+    {"listening", PopupPhase::Listening},
+    {"paused", PopupPhase::Paused},
+    {"transcribing", PopupPhase::Transcribing},
+    {"refining", PopupPhase::Refining},
+    {"delivering", PopupPhase::Delivering},
+    {"delivered", PopupPhase::Delivered},
+    {"review", PopupPhase::Review},
+    {"error", PopupPhase::Error},
+};
+
 // The popup's phase for a session state.
-QString phaseFor(DictationState state)
+PopupPhase phaseFor(DictationState state)
 {
     switch (state) {
-    case DictationState::Stopping:
-        return QStringLiteral("transcribing");
-    case DictationState::Reviewing:
-        return QStringLiteral("review");
-    case DictationState::Idle:
-    case DictationState::Starting:
-    case DictationState::Listening:
-    case DictationState::Paused:
-    case DictationState::Refining:
-    case DictationState::Delivering:
-    case DictationState::Error:
-        break;
+    case DictationState::Idle: return PopupPhase::Idle;
+    case DictationState::Starting: return PopupPhase::Starting;
+    case DictationState::Listening: return PopupPhase::Listening;
+    case DictationState::Paused: return PopupPhase::Paused;
+    case DictationState::Stopping: return PopupPhase::Transcribing;
+    case DictationState::Refining: return PopupPhase::Refining;
+    case DictationState::Delivering: return PopupPhase::Delivering;
+    case DictationState::Reviewing: return PopupPhase::Review;
+    case DictationState::Error: break;
     }
-    return dictationStateName(state);
+    return PopupPhase::Error;
 }
 
 QString outcomeName(PopupOutcome outcome)
@@ -124,6 +141,35 @@ QuickDictationState::QuickDictationState(QObject *parent)
 {
 }
 
+QString QuickDictationState::state() const
+{
+    for (const PhaseName &name : phaseNames) {
+        if (name.phase == m_phase) {
+            return QLatin1String(name.id);
+        }
+    }
+    return {};
+}
+
+void QuickDictationState::setState(const QString &name)
+{
+    const PhaseName *found = findRow(phaseNames, name);
+    if (!found) {
+        qWarning().noquote() << "DictationState: no popup phase is called" << name;
+        return;
+    }
+    setPhase(found->phase);
+}
+
+void QuickDictationState::setPhase(PopupPhase phase)
+{
+    if (m_phase == phase) {
+        return;
+    }
+    m_phase = phase;
+    emit stateChanged();
+}
+
 QuickDictation::QuickDictation(ApplicationController *controller, QObject *parent)
     : QuickDictationState(parent)
     , m_controller(controller)
@@ -154,7 +200,7 @@ QuickDictation::QuickDictation(ApplicationController *controller, QObject *paren
     connect(session, &DictationSession::popupMessageRequested, this, &QuickDictation::showReceipt);
     connect(session, &DictationSession::popupErrorRequested, this, &QuickDictation::showError);
     connect(session, &DictationSession::popupSelectionEditReviewRequested, this, &QuickDictation::setReview);
-    connect(session, &DictationSession::popupHideRequested, this, [this] { setState(QStringLiteral("idle")); });
+    connect(session, &DictationSession::popupHideRequested, this, [this] { setPhase(PopupPhase::Idle); });
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickDictation::showConfiguredReviewKeys);
     showConfiguredReviewKeys();
 
@@ -188,13 +234,13 @@ QuickDictation *QuickDictation::create(QQmlEngine *, QJSEngine *)
 // the start; errorChanged always fires so the popup's bar starts over too.
 void QuickDictation::showError(const QString &text, const PopupErrorAction &fix)
 {
-    const bool showing = m_state == QLatin1String("error");
+    const bool showing = m_phase == PopupPhase::Error;
     m_error = errorMessage(text, fix);
     emit errorChanged();
     if (showing) {
         startErrorDismissal();
     }
-    setState(QStringLiteral("error"));
+    setPhase(PopupPhase::Error);
 }
 
 void QuickDictation::setErrorDismissMs(int ms)
@@ -211,10 +257,10 @@ void QuickDictation::followSession(DictationState state)
     }
     // A cancel's receipt follows the session going idle, and a receipt or an
     // error stays up until the session hides the popup.
-    if (state == DictationState::Idle && (m_state == QLatin1String("delivered") || m_state == QLatin1String("error"))) {
+    if (state == DictationState::Idle && (m_phase == PopupPhase::Delivered || m_phase == PopupPhase::Error)) {
         return;
     }
-    setState(phaseFor(state));
+    setPhase(phaseFor(state));
 }
 
 void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, const PopupErrorAction &fix)
@@ -226,7 +272,7 @@ void QuickDictation::showReceipt(const QString &text, PopupOutcome outcome, cons
     QVariantMap receipt = message(text, fix);
     receipt.insert(QStringLiteral("outcome"), outcomeName(outcome));
     update(m_receipt, receipt, &QuickDictationState::receiptChanged);
-    setState(QStringLiteral("delivered"));
+    setPhase(PopupPhase::Delivered);
 }
 
 void QuickDictation::setReview(const SelectionEditReview &review)
@@ -248,7 +294,7 @@ void QuickDictation::setReview(const SelectionEditReview &review)
 // does not widen, moving the capsule, when a review comes.
 void QuickDictation::showConfiguredReviewKeys()
 {
-    if (m_state != QLatin1String("idle")) {
+    if (m_phase != PopupPhase::Idle) {
         return;
     }
     QVariantMap value = m_review;
@@ -271,7 +317,7 @@ void QuickDictation::startErrorDismissal()
 
 void QuickDictation::holdError(bool held)
 {
-    if (std::exchange(m_errorHeld, held) == held || m_state != QLatin1String("error")) {
+    if (std::exchange(m_errorHeld, held) == held || m_phase != PopupPhase::Error) {
         return;
     }
     if (held) {
@@ -291,14 +337,14 @@ void QuickDictation::dismissError()
         session->stopListening();
         return;
     }
-    setState(QStringLiteral("idle"));
+    setPhase(PopupPhase::Idle);
 }
 
 // The fix leaves the popup for the page: an error is dismissed, a receipt
 // goes before its time.
 void QuickDictation::openFix()
 {
-    const bool error = m_state == QLatin1String("error");
+    const bool error = m_phase == PopupPhase::Error;
     const QString page = (error ? m_error : m_receipt).value(QStringLiteral("page")).toString();
     if (page.isEmpty()) {
         return;
@@ -306,14 +352,14 @@ void QuickDictation::openFix()
     if (error) {
         dismissError();
     } else {
-        setState(QStringLiteral("idle"));
+        setPhase(PopupPhase::Idle);
     }
     emit pageRequested(page);
 }
 
 void QuickDictation::cancel()
 {
-    if (m_state == QLatin1String("error")) {
+    if (m_phase == PopupPhase::Error) {
         dismissError();
         return;
     }
@@ -326,31 +372,31 @@ void QuickDictation::updateElapsed()
 {
     const int listenedMs = m_controller->session()->listeningMs();
     update(m_elapsed, listenedMs / msPerSecond, &QuickDictationState::elapsedChanged);
-    if (m_state == QLatin1String("listening")) {
+    if (m_phase == PopupPhase::Listening) {
         m_clock.start(msPerSecond - listenedMs % msPerSecond);
     } else {
         m_clock.stop();
     }
 }
 
-void QuickDictation::setState(const QString &state)
+void QuickDictation::setPhase(PopupPhase phase)
 {
-    const bool error = state == QLatin1String("error");
+    const bool error = phase == PopupPhase::Error;
     // However the state turned to error, a session's error with no words too.
-    if (error && m_state != QLatin1String("error")) {
+    if (error && m_phase != PopupPhase::Error) {
         startErrorDismissal();
     }
     if (!error) {
         m_errorDismissal.stop();
         m_errorHeld = false;
     }
-    if (state != m_state) {
+    if (phase != m_phase) {
         update(m_renewing, false, &QuickDictationState::renewingChanged);
     }
-    if (state == QLatin1String("idle")) {
+    if (phase == PopupPhase::Idle) {
         update(m_level, qreal(0), &QuickDictationState::levelChanged);
     }
-    update(m_state, state, &QuickDictationState::stateChanged);
+    update(m_phase, phase, &QuickDictationState::stateChanged);
     showConfiguredReviewKeys();
     updateElapsed();
 }

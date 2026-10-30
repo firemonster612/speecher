@@ -5,11 +5,11 @@
 #include <QObject>
 
 class QQmlEngine;
-class QQuickWindow;
 
 namespace speecher {
 
 class PopupPositioner;
+class PopupWindowBase;
 
 // The dictation popup's window in the daemon: Speecher.Popup's PopupWindow,
 // placed by the platform's positioner (an overlay layer-shell surface at the
@@ -35,12 +35,11 @@ public:
 signals:
     void presented(quint64 generation);
 
-private slots:
+private:
     // Follow PopupWindow's properties of the same names.
     void applyInputRegion();
     void hideOnceEmpty();
 
-private:
     QSize preferredSize() const override;
     void resizeTo(const QSize &size) override;
     void moveTo(const QPoint &topLeft) override;
@@ -50,7 +49,7 @@ private:
     void framePresented(quint64 generation);
     void captureWhenAsked();
 
-    QQuickWindow *m_window = nullptr;
+    PopupWindowBase *m_window = nullptr;
     PopupPositioner *m_positioner;
     // The show waiting for its first frame, 0 for none.
     quint64 m_pendingGeneration = 0;

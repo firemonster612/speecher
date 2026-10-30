@@ -52,9 +52,11 @@ speecher_add_qml_module(speecher_quick_demo Speecher.Demo "${SPEECHER_QUICK_DIR}
 speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUICK_DIR}/qml/Speecher/Wording")
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
-# The popup's level animation is C++, for its cost per frame.
+# The popup's level animation is C++, for its cost per frame, and so is the
+# base of its window, which the host follows.
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup"
   SOURCES
+    "${SPEECHER_QUICK_DIR}/host/PopupWindowBase.h"
     "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.cpp"
     "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.h"
   LIBRARIES Qt6::Quick
@@ -78,6 +80,8 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QuickInsights.h"
     "${SPEECHER_QUICK_DIR}/host/QuickLibrary.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickLibrary.h"
+    "${SPEECHER_QUICK_DIR}/host/QuickNavigation.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickNavigation.h"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickSettings.h"
     "${SPEECHER_QUICK_DIR}/host/QuickUpdates.cpp"
