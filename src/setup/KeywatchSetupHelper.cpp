@@ -5,8 +5,9 @@
 // the unit's SupplementaryGroups=. The login user can reach the socket but no
 // process they run gains access to input devices. See keywatch-security-design.md.
 //
-// Modelled on YdotoolSetupHelper.cpp, including its rollback transaction and
-// --user validation against the passwd database.
+// Modelled on YdotoolSetupHelper.cpp, including its --user validation against
+// the passwd database. A failed install is not rolled back: it reports what it
+// changed, and --remove takes all of it off again.
 
 #include "HelperCommands.h"
 #include "KeywatchPayloadDigests.h"
@@ -212,6 +213,14 @@ bool removeSelinuxPolicy(std::string &error)
     return false;
 }
 
+// Whether systemd still runs the unit, or listens on it for a socket. False
+// without systemctl, where nothing can be running under systemd either.
+bool unitActive(std::string_view unit)
+{
+    std::string ignored;
+    return run("systemctl", {"is-active", "--quiet", std::string(unit)}, ignored);
+}
+
 bool ensureSystemUser(bool &created, std::string &error)
 {
     if (getpwnam(userName.data())) {
@@ -260,6 +269,10 @@ bool copyDaemon(std::string &error)
                                      | std::filesystem::perms::others_read
                                      | std::filesystem::perms::others_exec,
                                  directoryError);
+    if (directoryError) {
+        error = "Could not set the permissions of " + std::string(daemonInstallPath);
+        return false;
+    }
     return true;
 }
 
@@ -346,31 +359,21 @@ bool remove(const std::string &user, std::string &error)
         }
     };
 
-    // A daemon that cannot be stopped keeps reading keyboards, so when the
-    // unit file exists a failed stop is a problem, not "removed". When the
-    // unit file never existed (removal after a failed install), systemctl's
-    // complaint about an unknown unit is expected; ignoring it keeps remove
+    // A daemon that cannot be stopped keeps reading keyboards, so a unit
+    // still active afterwards is a problem, not "removed". Whether it is comes
+    // from systemd, not the unit files: a unit keeps running after its file
+    // is gone. A failed stop alone is not: after a failed install systemctl
+    // complains about a unit it never knew, and ignoring that keeps remove
     // idempotent.
-    std::string ignored;
-    if (std::filesystem::exists(socketUnitPath)) {
-        std::string stopError;
-        attempt("could not stop the key helper socket",
-                run("systemctl", {"disable", "--now", std::string(socketName)}, stopError, true),
-                stopError);
-    } else {
-        run("systemctl", {"disable", "--now", std::string(socketName)}, ignored, true, true);
-    }
+    std::string socketStopError;
+    run("systemctl", {"disable", "--now", std::string(socketName)}, socketStopError, true);
+    attempt("could not stop the key helper socket", !unitActive(socketName), socketStopError);
     // Stopping the socket does not stop its already-running service: a client
     // holding a connection would keep the daemon reading keyboards after
     // "removed" was reported. Stop the daemon itself too.
-    if (std::filesystem::exists(serviceUnitPath)) {
-        std::string stopError;
-        attempt("could not stop the key helper daemon",
-                run("systemctl", {"stop", std::string(serviceName)}, stopError, true),
-                stopError);
-    } else {
-        run("systemctl", {"stop", std::string(serviceName)}, ignored, true, true);
-    }
+    std::string serviceStopError;
+    run("systemctl", {"stop", std::string(serviceName)}, serviceStopError, true);
+    attempt("could not stop the key helper daemon", !unitActive(serviceName), serviceStopError);
     for (const std::string_view path : {socketUnitPath, serviceUnitPath, daemonInstallPath}) {
         std::string stepError;
         attempt(std::string(),
@@ -382,6 +385,7 @@ bool remove(const std::string &user, std::string &error)
             removeSelinuxPolicy(selinuxError),
             selinuxError);
     // One-release cleanup for users added to the old socket-access group.
+    std::string ignored;
     run("gpasswd", {"-d", user, std::string(userName)}, ignored, true, true);
     run("systemctl", {"daemon-reload"}, ignored, true, true);
 
