@@ -339,9 +339,9 @@ private slots:
         // The first Metal device init compiles ggml's shaders, which took
         // about 45 s on a CI runner; the suite has 120 s.
         QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
-        QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
+        QCOMPARE(settings.dictationSnapshot().speech.local.modelId, setup.suggestedModel().id);
         QCOMPARE(setup.speechModelChoice().id, setup.suggestedModel().id);
-        QVERIFY(!settings.localSpeechSettings().modelChosen);
+        QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
 #endif
         setup.chooseSpeechModel("cohere");
         QVERIFY(settings.dictationSnapshot().speech.local.modelChosen);

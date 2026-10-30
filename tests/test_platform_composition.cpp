@@ -699,7 +699,7 @@ private slots:
         platform->volume = 0.4f;
         ApplicationController controller(true, platform);
         SettingsStore *settings = controller.settings();
-        const bool setupCompleted = settings->setupCompleted();
+        const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
         const auto restore = qScopeGuard([&] {
             settings->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
         });

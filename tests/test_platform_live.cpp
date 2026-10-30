@@ -646,7 +646,7 @@ private slots:
             QSKIP("Live recording microphone check is opt-in");
         }
         SettingsStore settings;
-        const int postRollMs = settings.audioCaptureSettings().postRollMs;
+        const int postRollMs = settings.dictationSnapshot().audio.postRollMs;
         std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
         QByteArray recorded;
         connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
