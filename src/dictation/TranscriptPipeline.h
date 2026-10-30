@@ -56,11 +56,6 @@ public:
                                             const RunChoices &choices,
                                             const Target &target,
                                             const QString &spokenLanguage);
-    // The user's instructions, the profile's output language and the custom
-    // system prompt for a refinement run with this profile.
-    static void fillUserInstructions(RefinementContext &context,
-                                     const RefinementSettings &refinement,
-                                     const WritingProfileSettings &profile);
     // A tone or cleanup level the user defined goes on the context, and the
     // style becomes the level's base, which is what the prompt builds on.
     static void resolveCustomChoices(TranscriptPipelineResult &pipeline);
