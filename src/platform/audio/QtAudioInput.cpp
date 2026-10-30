@@ -31,22 +31,6 @@ int bytesForMs(int milliseconds)
     return std::max(0, milliseconds) * kOutputBytesPerMs;
 }
 
-void appendLimited(QByteArray &buffer, const QByteArray &chunk, int maxBytes)
-{
-    if (maxBytes <= 0) {
-        buffer.clear();
-        return;
-    }
-    if (chunk.size() >= maxBytes) {
-        buffer = chunk.right(maxBytes);
-        return;
-    }
-    buffer.append(chunk);
-    if (buffer.size() > maxBytes) {
-        buffer.remove(0, buffer.size() - maxBytes);
-    }
-}
-
 QAudioFormat outputFormat()
 {
     QAudioFormat format;
@@ -248,12 +232,12 @@ bool QtAudioInput::start(QString *error)
 
     const AudioCaptureSettings settings = currentSettings();
     const bool keepWarmPreRoll = settings.mode == QStringLiteral("warm") && sourceMatches(settings);
-    const QByteArray preservedPreRoll = keepWarmPreRoll ? m_preRollBuffer : QByteArray();
+    const QByteArray preservedPreRoll = keepWarmPreRoll ? m_gate.preRoll : QByteArray();
 
-    resetCaptureGate(false);
+    m_gate = {};
     m_captureSettings = settings;
     if (keepWarmPreRoll) {
-        m_preRollBuffer = preservedPreRoll;
+        m_gate.preRoll = preservedPreRoll;
     }
 
     m_captureActive = true;
@@ -295,7 +279,7 @@ void QtAudioInput::stop()
     }
 
     m_captureActive = false;
-    resetCaptureGate(false);
+    m_gate = {};
     emit levelChanged(0.0f);
 
     const AudioCaptureSettings nextSettings = currentSettings();
@@ -312,7 +296,7 @@ void QtAudioInput::stop()
 
 void QtAudioInput::clearPreRoll()
 {
-    m_preRollBuffer.clear();
+    m_gate.preRoll.clear();
 }
 
 bool QtAudioInput::isActive() const
@@ -533,15 +517,6 @@ void QtAudioInput::stopSource()
     m_converter.reset({});
 }
 
-void QtAudioInput::resetCaptureGate(bool keepPreRoll)
-{
-    if (!keepPreRoll) {
-        m_preRollBuffer.clear();
-    }
-    m_pendingPostRoll.clear();
-    m_vadSpeaking = false;
-}
-
 void QtAudioInput::onReadyRead()
 {
     if (!m_device) {
@@ -600,7 +575,7 @@ void QtAudioInput::failCapture(const QString &message)
 {
     const bool wasActive = m_captureActive;
     m_captureActive = false;
-    resetCaptureGate(false);
+    m_gate = {};
     stopSource();
     emit levelChanged(0.0f);
     if (wasActive) {
@@ -615,80 +590,40 @@ void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
         return;
     }
 
-    const bool voiced = isVoiced(rms, m_captureSettings.vadThresholdPercent);
-    if (!m_vadSpeaking) {
-        if (!voiced) {
-            appendPreRoll(pcm);
-            return;
-        }
-
-        m_vadSpeaking = true;
-        // The buffered lead-in first, then the whole voiced chunk. Folding the
-        // chunk into the size-capped pre-roll buffer before this check used to
-        // truncate the start of any voiced chunk longer than the pre-roll
-        // window.
-        if (!m_preRollBuffer.isEmpty()) {
-            emit audioChunk(m_preRollBuffer);
-            m_preRollBuffer.clear();
-        }
-        emit audioChunk(pcm);
-        m_pendingPostRoll.clear();
-        return;
-    }
-
-    if (voiced) {
-        if (!m_pendingPostRoll.isEmpty()) {
-            emit audioChunk(m_pendingPostRoll);
-            m_pendingPostRoll.clear();
-        }
-        emit audioChunk(pcm);
-        return;
-    }
-
-    const int postRollBytes = bytesForMs(m_captureSettings.postRollMs);
-    if (postRollBytes <= 0) {
-        m_pendingPostRoll.clear();
-        m_preRollBuffer.clear();
-        m_vadSpeaking = false;
-        return;
-    }
-
-    m_pendingPostRoll.append(pcm);
-    if (m_pendingPostRoll.size() >= postRollBytes) {
-        emit audioChunk(m_pendingPostRoll.left(postRollBytes));
-        const int keepBytes = std::min(int(m_pendingPostRoll.size()), bytesForMs(m_captureSettings.preRollMs));
-        m_preRollBuffer = m_pendingPostRoll.right(keepBytes);
-        m_pendingPostRoll.clear();
-        m_vadSpeaking = false;
+    const QList<QByteArray> chunks = m_gate.pass(pcm, isVoiced(rms, m_captureSettings.vadThresholdPercent),
+                                                 bytesForMs(m_captureSettings.preRollMs),
+                                                 bytesForMs(m_captureSettings.postRollMs));
+    for (const QByteArray &chunk : chunks) {
+        emit audioChunk(chunk);
     }
 }
 
 void QtAudioInput::appendPreRoll(const QByteArray &pcm)
 {
-    appendLimited(m_preRollBuffer, pcm, bytesForMs(m_captureSettings.preRollMs));
+    m_gate.holdQuiet(pcm, bytesForMs(m_captureSettings.preRollMs));
 }
 
 void QtAudioInput::flushPreRoll()
 {
-    if (!m_captureActive || m_preRollBuffer.isEmpty()) {
-        m_preRollBuffer.clear();
+    if (!m_captureActive || m_gate.preRoll.isEmpty()) {
+        m_gate.preRoll.clear();
         return;
     }
 
-    emit audioChunk(m_preRollBuffer);
-    m_preRollBuffer.clear();
+    emit audioChunk(m_gate.preRoll);
+    m_gate.preRoll.clear();
 }
 
 void QtAudioInput::flushPendingPostRoll()
 {
-    if (!m_captureActive || m_pendingPostRoll.isEmpty()) {
-        m_pendingPostRoll.clear();
+    if (!m_captureActive || m_gate.pendingPostRoll.isEmpty()) {
+        m_gate.pendingPostRoll.clear();
         return;
     }
 
     const int postRollBytes = bytesForMs(m_captureSettings.postRollMs);
-    emit audioChunk(postRollBytes > 0 ? m_pendingPostRoll.left(postRollBytes) : m_pendingPostRoll);
-    m_pendingPostRoll.clear();
+    emit audioChunk(postRollBytes > 0 ? m_gate.pendingPostRoll.left(postRollBytes) : m_gate.pendingPostRoll);
+    m_gate.pendingPostRoll.clear();
 }
 
 bool QtAudioInput::sourceMatches(const AudioCaptureSettings &settings) const
