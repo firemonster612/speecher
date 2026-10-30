@@ -39,7 +39,7 @@ Item {
     Accessible.role: clickable ? Accessible.Button : Accessible.ListItem
     Accessible.name: title
     Accessible.description: detail
-    Accessible.onPressAction: if (clickable) clicked()
+    Accessible.onPressAction: if (clickable) { row.forceActiveFocus(); clicked() }
     Keys.onReturnPressed: { focusVisible.keyed(); if (clickable) clicked() }
     Keys.onSpacePressed: { focusVisible.keyed(); if (clickable) clicked() }
     FocusVisible { id: focusVisible }
@@ -124,7 +124,7 @@ Item {
     }
 
     HoverHandler { id: hover; cursorShape: row.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-    // Taking focus first ends an edit in progress, so a field commits before
-    // a selection rebinds it.
+    // Taking focus first, here and in the press action, ends an edit in
+    // progress, so a field commits before a selection rebinds it.
     TapHandler { id: tap; enabled: row.clickable; onTapped: { focusVisible.pointed(); row.forceActiveFocus(); row.clicked() } }
 }
