@@ -309,15 +309,15 @@ private slots:
     void liveClaudeVoiceProvider()
     {
         const QString pcmPath = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLAUDE_PCM");
-        if (pcmPath.isEmpty()) {
-            QSKIP("Live Claude Voice check is opt-in");
+        // Tests run with empty Claude homes, so the sign-in is named outright.
+        const QString credentialsPath = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLAUDE_CREDENTIALS");
+        if (pcmPath.isEmpty() || credentialsPath.isEmpty()) {
+            QSKIP("Live Claude Voice check is opt-in: set SPEECHER_TEST_LIVE_CLAUDE_PCM to the audio and "
+                  "SPEECHER_TEST_LIVE_CLAUDE_CREDENTIALS to a Claude .credentials.json");
         }
 
-        const AppSettings settings = SettingsStore().snapshot();
-        const SpeechSettings &speech = settings.speech;
-        const ClaudeCredentialResult credentials = ClaudeCredentials::load(
-            settings.accounts.claudeCredentialsPath,
-            true);
+        const SpeechSettings speech = SettingsStore().snapshot().speech;
+        const ClaudeCredentialResult credentials = ClaudeCredentials::load(credentialsPath, true);
         QVERIFY2(credentials.ok, qPrintable(credentials.error));
 
         QFile pcmFile(pcmPath);

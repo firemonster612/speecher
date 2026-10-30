@@ -9,12 +9,14 @@
 
 using namespace speecher::test;
 
-// Runs one transcript through the real Anthropic refiner using CLI Proxy
-// API account files (balanced style), the way the opt-in live robustness
-// checks do. Mirrors the settings codec's oauth-dir default (prefer the
-// candidate that holds account files) so the checks run on a machine whose
-// logins live in CLI Proxy API's auth directory. Only the Anthropic path
-// is verified live; the default OpenAI refiner shares this prompt but its
+// The opt-in live robustness checks sign in with the CLI Proxy API account
+// files in the directory this names. Tests run with an empty HOME, so they
+// never look for one there.
+static const char kLiveCliproxyDir[] = "SPEECHER_TEST_LIVE_CLIPROXY_DIR";
+
+// Runs one transcript through the real Anthropic refiner using the CLI Proxy
+// API account files in kLiveCliproxyDir (balanced style). Only the Anthropic
+// path is verified live; the default OpenAI refiner shares this prompt but its
 // Codex account cannot currently be exercised from the test machines.
 // Returns the refined text, or an empty string with the reason in *error.
 static QString liveRefine(const QString &rawTranscript,
@@ -24,17 +26,7 @@ static QString liveRefine(const QString &rawTranscript,
     RefinementSettings settings;
     AccountSettings accounts;
     accounts.anthropicAuthMode = QStringLiteral("cliproxy");
-    const QStringList oauthDirCandidates{
-        QDir::homePath() + QStringLiteral("/.cli-proxy-api"),
-        QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth"),
-    };
-    accounts.cliproxyOauthDir = oauthDirCandidates.first();
-    for (const QString &candidate : oauthDirCandidates) {
-        if (!QDir(candidate).entryList({QStringLiteral("claude-*.json")}, QDir::Files).isEmpty()) {
-            accounts.cliproxyOauthDir = candidate;
-            break;
-        }
-    }
+    accounts.cliproxyOauthDir = qEnvironmentVariable(kLiveCliproxyDir);
     RefinementContext context;
     AnthropicTranscriptRefiner refiner;
     if (const std::optional<PreparationJob> renewal = refiner.createRefreshJob(settings, accounts)) {
@@ -1908,8 +1900,9 @@ private slots:
     // answers, deliberate discourse words, and censored profanity.
     void liveDictatedListNumbersSurviveRefinement()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -1926,8 +1919,9 @@ private slots:
 
     void liveVocabularyCorrectsMisheardHomophone()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -1944,8 +1938,9 @@ private slots:
 
     void liveSpokenSelfCorrectionReplacesEarlierWord()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -1960,8 +1955,9 @@ private slots:
 
     void livePlainOrKeepsBothAlternatives()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -1977,8 +1973,9 @@ private slots:
 
     void liveNegationsSurviveRefinement()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -2000,8 +1997,9 @@ private slots:
 
     void liveShortAnswersSurviveRefinement()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -2023,8 +2021,9 @@ private slots:
 
     void liveDeliberateLikeSurvivesBalancedCleanup()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
@@ -2040,8 +2039,9 @@ private slots:
 
     void liveProfanityIsNotCensored()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
-            QSKIP("Live refinement robustness checks are opt-in");
+        if (qEnvironmentVariable(kLiveCliproxyDir).isEmpty()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory");
         }
         QString error;
         const QString text = liveRefine(
