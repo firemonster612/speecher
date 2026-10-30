@@ -307,6 +307,10 @@ private slots:
 
         QTRY_COMPARE(activated.count(), 1);
         QCOMPARE(binder.shortcutDisplay(), QStringLiteral("Ctrl+Alt+D"));
+        // The portal names its keys only in words. A stand-in combination
+        // would reach the overlap check between shortcuts and the Cancel
+        // Shortcut's label in a review.
+        QVERIFY(binder.shortcut().isEmpty());
     }
 
     // The portal stamps Activated and Deactivated itself, so a release handled

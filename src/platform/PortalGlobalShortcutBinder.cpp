@@ -176,10 +176,11 @@ void PortalGlobalShortcutBinder::registerShortcut()
     createSession(true);
 }
 
+// The portal describes the keys it assigned only in words (shortcutDisplay),
+// so no keys are known to compare or show.
 ShortcutBinding PortalGlobalShortcutBinder::shortcut() const
 {
-    return m_triggerDescription.isEmpty() ? ShortcutBinding()
-                                          : ShortcutBinding(GlobalShortcutBinder::defaultShortcut());
+    return {};
 }
 
 QString PortalGlobalShortcutBinder::shortcutDisplay() const
