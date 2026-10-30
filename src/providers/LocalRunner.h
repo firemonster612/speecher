@@ -50,10 +50,9 @@ class LocalRunnerRefiner final : public TranscriptRefiner {
     Q_OBJECT
 
 public:
-    explicit LocalRunnerRefiner(QObject *parent = nullptr);
+    // label names the runner in failure messages.
+    explicit LocalRunnerRefiner(const QString &label, QObject *parent = nullptr);
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const override;
     void refresh(const RefinementSettings &settings, const AccountSettings &accounts) override;
     RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) override;

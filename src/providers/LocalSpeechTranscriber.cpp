@@ -1,7 +1,6 @@
 #include "providers/LocalSpeechTranscriber.h"
 
 #include "core/LocalModelCatalog.h"
-#include "core/ProviderTable.h"
 #include "providers/LocalModelStore.h"
 
 #include <algorithm>
@@ -60,16 +59,6 @@ LocalSpeechTranscriber::~LocalSpeechTranscriber()
     m_liveAttempt = 0;
     m_thread.quit();
     m_thread.wait();
-}
-
-QString LocalSpeechTranscriber::id() const
-{
-    return providerKey(ProviderId::Local);
-}
-
-QString LocalSpeechTranscriber::label() const
-{
-    return QStringLiteral("Local Model");
 }
 
 bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &) const

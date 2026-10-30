@@ -14,10 +14,7 @@ class OpenAiTranscriptRefiner final : public TranscriptRefiner {
 public:
     explicit OpenAiTranscriptRefiner(SecretStore *secretStore, QObject *parent = nullptr);
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const override;
-    bool supportsScreenshotContext(const RefinementSettings &settings) const override;
     std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings,
                                                          const AccountSettings &accounts) override;
     void refresh(const RefinementSettings &settings, const AccountSettings &accounts) override;

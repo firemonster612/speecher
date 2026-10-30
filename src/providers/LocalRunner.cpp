@@ -1,6 +1,5 @@
 #include "providers/LocalRunner.h"
 
-#include "core/ProviderTable.h"
 #include "providers/EndpointRequest.h"
 
 #include "providers/BlockingHttp.h"
@@ -151,24 +150,13 @@ QList<DetectedRunner> detectLocalRunners(int timeoutMs)
     return found;
 }
 
-LocalRunnerRefiner::LocalRunnerRefiner(QObject *parent)
+LocalRunnerRefiner::LocalRunnerRefiner(const QString &label, QObject *parent)
     : TranscriptRefiner(parent)
-    , m_chat(new ChatCompletionsRefiner(label(),
-                                        ChatCompletionsRefiner::Audience::SmallLocalModel, this))
+    , m_chat(new ChatCompletionsRefiner(label, ChatCompletionsRefiner::Audience::SmallLocalModel, this))
 {
     connect(m_chat, &ChatCompletionsRefiner::delta, this, &TranscriptRefiner::delta);
     connect(m_chat, &ChatCompletionsRefiner::completed, this, &TranscriptRefiner::completed);
     connect(m_chat, &ChatCompletionsRefiner::failed, this, &TranscriptRefiner::failed);
-}
-
-QString LocalRunnerRefiner::id() const
-{
-    return providerKey(ProviderId::Local);
-}
-
-QString LocalRunnerRefiner::label() const
-{
-    return QStringLiteral("Local Runner");
 }
 
 bool LocalRunnerRefiner::requiresRefresh(const RefinementSettings &, const AccountSettings &) const

@@ -29,7 +29,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
         // providers' bars beside them.
         registry.registerSpeechProvider({QStringLiteral("e2e-stub"), QStringLiteral("E2E stub")},
                                         createE2ESpeechTranscriber);
-        registry.registerRefinementProvider({QStringLiteral("e2e-stub"), QStringLiteral("E2E stub")},
+        registry.registerRefinementProvider({QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), true},
                                             createE2ETranscriptRefiner);
     }
 #endif
@@ -61,12 +61,14 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerSpeechProvider(
         {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
-    registry.registerRefinementProvider(
-        {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
-        [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
-    registry.registerRefinementProvider(
-        {providerKey(ProviderId::Local), QStringLiteral("Local Runner")},
-        [](QObject *parent) { return new LocalRunnerRefiner(parent); });
+    const ProviderDescriptor endpointRefiner{providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")};
+    registry.registerRefinementProvider(endpointRefiner, [label = endpointRefiner.label](QObject *parent) {
+        return new EndpointTranscriptRefiner(label, parent);
+    });
+    const ProviderDescriptor localRunner{providerKey(ProviderId::Local), QStringLiteral("Local Runner")};
+    registry.registerRefinementProvider(localRunner, [label = localRunner.label](QObject *parent) {
+        return new LocalRunnerRefiner(label, parent);
+    });
 }
 
 } // namespace speecher

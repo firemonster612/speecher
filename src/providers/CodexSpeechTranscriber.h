@@ -17,8 +17,6 @@ class CodexSpeechTranscriber final : public SpeechTranscriber {
 public:
     explicit CodexSpeechTranscriber(QObject *parent = nullptr);
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
     std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings,
                                                      const AccountSettings &accounts) override;

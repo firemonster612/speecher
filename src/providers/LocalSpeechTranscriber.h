@@ -39,8 +39,6 @@ public:
     LocalSpeechTranscriber(const LocalModelStore &store, QObject *parent = nullptr);
     ~LocalSpeechTranscriber() override;
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
     SpeechPrepareResult prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;

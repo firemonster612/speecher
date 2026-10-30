@@ -13,10 +13,9 @@ class EndpointTranscriptRefiner final : public TranscriptRefiner {
     Q_OBJECT
 
 public:
-    explicit EndpointTranscriptRefiner(QObject *parent = nullptr);
+    // label names the endpoint in failure messages.
+    explicit EndpointTranscriptRefiner(const QString &label, QObject *parent = nullptr);
 
-    QString id() const override;
-    QString label() const override;
     bool requiresRefresh(const RefinementSettings &settings, const AccountSettings &accounts) const override;
     void refresh(const RefinementSettings &settings, const AccountSettings &accounts) override;
     RefinementPrepareResult prepare(const RefinementSettings &settings, const AccountSettings &accounts) override;

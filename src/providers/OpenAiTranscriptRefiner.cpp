@@ -1,6 +1,5 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 
-#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "providers/OpenAiRefiner.h"
 
@@ -21,25 +20,10 @@ OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObje
     connect(m_refiner, &OpenAiRefiner::failed, this, &OpenAiTranscriptRefiner::failed);
 }
 
-QString OpenAiTranscriptRefiner::id() const
-{
-    return providerKey(ProviderId::OpenAi);
-}
-
-QString OpenAiTranscriptRefiner::label() const
-{
-    return QStringLiteral("ChatGPT");
-}
-
 bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings,
                                               const AccountSettings &accounts) const
 {
     return OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).requiresCodexOauthRefresh();
-}
-
-bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
-{
-    return !settings.openAiModel.trimmed().isEmpty();
 }
 
 std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,

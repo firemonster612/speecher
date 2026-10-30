@@ -210,16 +210,6 @@ public:
     {
     }
 
-    QString id() const override
-    {
-        return providerId;
-    }
-
-    QString label() const override
-    {
-        return QStringLiteral("Fake Speech");
-    }
-
     bool requiresRefresh(const SpeechSettings &, const AccountSettings &) const override
     {
         return refreshRequired;
@@ -391,16 +381,6 @@ public:
     {
     }
 
-    QString id() const override
-    {
-        return providerId;
-    }
-
-    QString label() const override
-    {
-        return QStringLiteral("Fake Refiner");
-    }
-
     bool requiresRefresh(const RefinementSettings &, const AccountSettings &) const override
     {
         return refreshRequired;
@@ -436,11 +416,6 @@ public:
     {
         ++prepareCalls;
         return prepareResult;
-    }
-
-    bool supportsScreenshotContext(const RefinementSettings &) const override
-    {
-        return screenshotCapable;
     }
 
     void refine(const QString &rawTranscript,
@@ -487,7 +462,6 @@ public:
     bool backgroundRefresh = false;
     unsigned long backgroundRefreshDelayMs = 0;
     bool autoComplete = false;
-    bool screenshotCapable = true;
     QString autoCompleteText;
     RefinementRefreshResult refreshResult{true, {}};
     RefinementPrepareResult prepareResult{true, {}};
@@ -547,9 +521,10 @@ inline void registerFakeSpeechProvider(ProviderRegistry &registry,
 inline void registerFakeRefiner(ProviderRegistry &registry,
                                 FakeRefiner **refiner,
                                 const QString &id = QStringLiteral("openai"),
-                                const QString &label = QStringLiteral("Fake Refiner"))
+                                const QString &label = QStringLiteral("Fake Refiner"),
+                                bool readsScreenshots = true)
 {
-    registry.registerRefinementProvider({id, label}, [refiner, id](QObject *parent) {
+    registry.registerRefinementProvider({id, label, readsScreenshots}, [refiner, id](QObject *parent) {
         *refiner = new FakeRefiner(parent);
         (*refiner)->providerId = id;
         return *refiner;

@@ -1,7 +1,5 @@
 #include "providers/CodexSpeechTranscriber.h"
 
-#include "core/ProviderTable.h"
-
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/PcmWav.h"
@@ -55,16 +53,6 @@ SpeechPrepareResult prepareCodex(const AccountSettings &accounts, QString *acces
 CodexSpeechTranscriber::CodexSpeechTranscriber(QObject *parent)
     : SpeechTranscriber(parent)
 {
-}
-
-QString CodexSpeechTranscriber::id() const
-{
-    return providerKey(ProviderId::Codex);
-}
-
-QString CodexSpeechTranscriber::label() const
-{
-    return QStringLiteral("ChatGPT");
 }
 
 bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const

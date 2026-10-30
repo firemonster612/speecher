@@ -634,7 +634,7 @@ private slots:
         settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
         settings.endpoint.model = QStringLiteral("qwen3.5:4b");
         settings.endpoint.apiKey = QStringLiteral("endpoint-key");
-        EndpointTranscriptRefiner refiner;
+        EndpointTranscriptRefiner refiner(QStringLiteral("Custom Endpoint"));
         QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         RefinementContext context;
@@ -676,7 +676,7 @@ private slots:
         settings.endpoint.format = QStringLiteral("anthropic");
         settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
         settings.endpoint.model = QStringLiteral("m");
-        EndpointTranscriptRefiner refiner;
+        EndpointTranscriptRefiner refiner(QStringLiteral("Custom Endpoint"));
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         refiner.refine(QStringLiteral("x"), {}, {}, settings, {});
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);

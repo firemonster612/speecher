@@ -1078,10 +1078,14 @@ private slots:
         QFETCH(bool, primaryReads);
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
         rig.settings.setIncludeScreenshotContext(true);
+        // Registered again with whether each reads it.
+        for (const QString &id : {QStringLiteral("openai"), QStringLiteral("local")}) {
+            registerFakeRefiner(rig.registry, &rig.refiners[id], id, testLabel(ProviderRole::Refinement, id),
+                                (id == QStringLiteral("openai")) == primaryReads);
+            rig.registry.refinementProvider(id);
+        }
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
         FakeRefiner *local = rig.refiners[QStringLiteral("local")];
-        openai->screenshotCapable = primaryReads;
-        local->screenshotCapable = !primaryReads;
         rig.listen();
         QCOMPARE(rig.screenshots.captureCalls, 1);
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));

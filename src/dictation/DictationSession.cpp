@@ -396,11 +396,8 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
     // Once, for whichever refiner in the chain reads it.
     const bool chainReadsScreenshots =
-        std::any_of(m_refinementChain.cbegin(), m_refinementChain.cend(), [&settings, this](const QString &id) {
-            TranscriptRefiner *refiner = m_providers->refinementProvider(id);
-            RefinementSettings refinement = settings.refinement;
-            refinement.providerId = id;
-            return refiner && refiner->supportsScreenshotContext(refinement);
+        std::any_of(m_refinementChain.cbegin(), m_refinementChain.cend(), [this](const QString &id) {
+            return m_providers->refinementProviderReadsScreenshots(id);
         });
     if (settings.refinement.includeScreenshotContext
         && effectiveRefinement.style != QStringLiteral("none")
@@ -1215,7 +1212,7 @@ void DictationSession::startRefiner()
     m_refinementStream.clear();
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     TranscriptPipeline::includeScreenshotContext(pipeline,
-                                                 m_refiner->supportsScreenshotContext(refinement),
+                                                 m_providers->refinementProviderReadsScreenshots(refinement.providerId),
                                                  m_screenshotData,
                                                  m_screenshotMediaType);
     qInfo() << "refinement started provider=" << refinement.providerId

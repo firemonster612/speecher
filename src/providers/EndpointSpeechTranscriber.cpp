@@ -1,7 +1,6 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointRequest.h"
 
-#include "core/ProviderTable.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/PcmWav.h"
@@ -157,16 +156,6 @@ EndpointSpeechTranscriber::EndpointSpeechTranscriber(QObject *parent,
     connect(&m_deadlineTimer, &QTimer::timeout, this, [this, timeout] {
         timeout(QStringLiteral("no complete answer within %1 s").arg(m_deadlineMs / 1000));
     });
-}
-
-QString EndpointSpeechTranscriber::id() const
-{
-    return providerKey(ProviderId::Endpoint);
-}
-
-QString EndpointSpeechTranscriber::label() const
-{
-    return QStringLiteral("Custom Endpoint");
 }
 
 bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &) const

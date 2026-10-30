@@ -40,6 +40,9 @@ public:
     QList<ProviderDescriptor> refinementProviders() const;
     // The id itself for one this registry does not offer.
     QString refinementProviderLabel(const QString &id) const;
+    // ProviderDescriptor::supportsScreenshotContext; false for one this
+    // registry does not offer.
+    bool refinementProviderReadsScreenshots(const QString &id) const;
     // Both, by role, for as long as the registry lives.
     ProviderLabels labels() const;
     // withWritingProfileProviders, passing over a profile's speech service
