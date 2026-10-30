@@ -126,7 +126,7 @@ QString useExpiredCodexAccount(SettingsStore &store, const QString &directory)
         return {};
     }
     store.setCliproxyOauthDir(directory);
-    store.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+    store.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
     store.setOpenAiCliproxyAccount(fileName);
     return fileName;
 }
@@ -188,9 +188,9 @@ private slots:
         tokenless.close();
         SettingsStore *store = controller.settings();
         store->setCliproxyOauthDir(dir.path());
-        store->setOpenAiAuthMode(QStringLiteral("env"));
+        store->setOpenAiAuthMode(OpenAiAuthMode::Env);
         store->setOpenAiCliproxyAccount(QStringLiteral("codex-gone@example.com.json"));
-        store->setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        store->setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
         store->setAnthropicCliproxyAccount(QStringLiteral("claude-a@example.com.json"));
 
         QuickAccounts accounts(&controller);
@@ -242,7 +242,7 @@ private slots:
     void theDaemonChecksSignInsWithoutTheUi()
     {
         ApplicationController controller(true);
-        controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
         Accounts *accounts = controller.accounts();
         accounts->start();
         QTRY_VERIFY(accounts->signIn(SignInService::OpenAi));
@@ -255,7 +255,7 @@ private slots:
     void aServiceCardFollowsItsChecks()
     {
         ApplicationController controller(true);
-        controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
         QuickSettings settings(&controller);
         // The card asks Library which services the profiles use.
         const QuickLibrary::ControllerScope library(&controller);
@@ -414,7 +414,7 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("token"), QDateTime::currentDateTimeUtc().addSecs(3600)));
         controller.settings()->setCliproxyOauthDir(dir.path());
-        controller.settings()->setOpenAiAuthMode(QStringLiteral("env"));
+        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
         QuickAccounts::create(nullptr, nullptr);
@@ -570,7 +570,7 @@ private slots:
     {
         ApplicationController controller(true);
         SettingsStore *store = controller.settings();
-        store->setOpenAiAuthMode(QStringLiteral("settings"));
+        store->setOpenAiAuthMode(OpenAiAuthMode::Settings);
         store->setCliproxyBaseUrl(QStringLiteral("http://127.0.0.1:8317"));
         store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         QuickAccounts accounts(&controller);

@@ -75,7 +75,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
 {
     // CLI Proxy API rewrites its token files as it refreshes them, so a cached
     // token can go stale while the file stays valid; reload on every request.
-    if (!m_auth.ok || accounts.openAiAuthMode == QStringLiteral("cliproxy")) {
+    if (!m_auth.ok || accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy) {
         if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
             emit failed(*failure);
             return;

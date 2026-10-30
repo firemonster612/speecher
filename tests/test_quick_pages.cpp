@@ -504,6 +504,28 @@ private slots:
         QVERIFY(refinement->hasActiveFocus());
     }
 
+    // Accounts shows the API key row only while the OpenAI auth mode is the
+    // key saved in Speecher.
+    void accountsShowsTheApiKeyRowForItsAuthMode()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("accounts"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("openAiApiKeyRow"))));
+        QVERIFY(!row->property("shown").toBool());
+        QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("settings"));
+        QTRY_VERIFY(row->property("shown").toBool());
+        QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("cliproxy"));
+        QTRY_VERIFY(!row->property("shown").toBool());
+    }
+
     // Dictation's page says how each of its subpages is set now. The test
     // sets Popup & sounds' toggles, so that line is the same on every
     // platform; macOS and Windows bind a default shortcut where Linux has

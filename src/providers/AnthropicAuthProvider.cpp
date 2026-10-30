@@ -8,7 +8,6 @@ namespace speecher {
 
 namespace {
 
-const QString cliproxyMode = QStringLiteral("cliproxy");
 const QString cliproxyAccountType = QStringLiteral("claude");
 
 } // namespace
@@ -35,7 +34,7 @@ AnthropicAuthProvider AnthropicAuthProvider::forRefinement(const AccountSettings
 
 AnthropicAuth AnthropicAuthProvider::resolve(bool refreshExpired) const
 {
-    if (m_accounts.anthropicAuthMode != cliproxyMode) {
+    if (m_accounts.anthropicAuthMode != AnthropicAuthMode::Cliproxy) {
         const ClaudeCredentialResult credentials =
             ClaudeCredentials::load(m_accounts.claudeCredentialsPath, refreshExpired);
         SignInExpiry::record(signInKey(), credentials.expiresAt);
@@ -64,7 +63,7 @@ AnthropicAuth AnthropicAuthProvider::resolve(bool refreshExpired) const
 
 bool AnthropicAuthProvider::requiresRefresh() const
 {
-    if (m_accounts.anthropicAuthMode != cliproxyMode) {
+    if (m_accounts.anthropicAuthMode != AnthropicAuthMode::Cliproxy) {
         return ClaudeCredentials::requiresRefresh(m_accounts.claudeCredentialsPath);
     }
     if (!m_serverBase.isEmpty()) {
@@ -82,7 +81,7 @@ bool AnthropicAuthProvider::expiredAsLastRead() const
 // Empty for a CLI Proxy API server, which renews its own accounts.
 QString AnthropicAuthProvider::signInKey() const
 {
-    if (m_accounts.anthropicAuthMode != cliproxyMode) {
+    if (m_accounts.anthropicAuthMode != AnthropicAuthMode::Cliproxy) {
         return QStringLiteral("claude:") + m_accounts.claudeCredentialsPath;
     }
     if (!m_serverBase.isEmpty()) {

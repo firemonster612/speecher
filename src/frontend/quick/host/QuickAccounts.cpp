@@ -175,6 +175,22 @@ QVariantMap QuickAccounts::secretErrors() const
     });
 }
 
+QVariantMap QuickAccounts::authModes() const
+{
+    return {
+        {QStringLiteral("openAi"),
+         QVariantMap{{QStringLiteral("auto"), openAiAuthModeName(OpenAiAuthMode::Auto)},
+                     {QStringLiteral("codexOauth"), openAiAuthModeName(OpenAiAuthMode::CodexOauth)},
+                     {QStringLiteral("codexApiKey"), openAiAuthModeName(OpenAiAuthMode::CodexApiKey)},
+                     {QStringLiteral("env"), openAiAuthModeName(OpenAiAuthMode::Env)},
+                     {QStringLiteral("settings"), openAiAuthModeName(OpenAiAuthMode::Settings)},
+                     {QStringLiteral("cliproxy"), openAiAuthModeName(OpenAiAuthMode::Cliproxy)}}},
+        {QStringLiteral("anthropic"),
+         QVariantMap{{QStringLiteral("oauth"), anthropicAuthModeName(AnthropicAuthMode::Oauth)},
+                     {QStringLiteral("cliproxy"), anthropicAuthModeName(AnthropicAuthMode::Cliproxy)}}},
+    };
+}
+
 void QuickAccounts::recheck(const QString &id)
 {
     if (const ServiceRow *row = findRow(serviceRows, id)) {

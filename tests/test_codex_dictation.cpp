@@ -423,7 +423,7 @@ private slots:
         settings.raw().clear();
         settings.setRefinementProvider(QStringLiteral("none"));
         settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        settings.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
         settings.setCliproxyOauthDir(credentials.path());
         settings.setCodexFinalRetranscribe(retranscribe);
         FakeAudioInput audio;
@@ -513,8 +513,8 @@ private slots:
 
         const SpeechSettings speech;
         AccountSettings accounts;
-        accounts.anthropicAuthMode = QStringLiteral("cliproxy");
-        accounts.openAiAuthMode = QStringLiteral("cliproxy");
+        accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
+        accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
         accounts.cliproxyOauthDir = dir.path();
 
         CodexSpeechTranscriber codex;

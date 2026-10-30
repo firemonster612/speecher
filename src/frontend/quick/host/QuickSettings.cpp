@@ -269,8 +269,11 @@ const SettingRow settingRows[] = {
      },
      [](const QVariant &v) { return validatePasteRules(applicationPasteRules(v)).join(QLatin1Char(' ')); }},
 
-    FIELD_ROW("openAiAuthMode", accounts.openAiAuthMode),
-    FIELD_ROW("anthropicAuthMode", accounts.anthropicAuthMode),
+    {"openAiAuthMode", [](const AppSettings &s) { return QVariant(openAiAuthModeName(s.accounts.openAiAuthMode)); },
+     [](AppSettings &s, const QVariant &v) { s.accounts.openAiAuthMode = openAiAuthModeFromName(v.toString()); }},
+    {"anthropicAuthMode",
+     [](const AppSettings &s) { return QVariant(anthropicAuthModeName(s.accounts.anthropicAuthMode)); },
+     [](AppSettings &s, const QVariant &v) { s.accounts.anthropicAuthMode = anthropicAuthModeFromName(v.toString()); }},
     // A file name from Accounts.cliproxyAccounts.
     FIELD_ROW("openAiCliproxyAccount", accounts.openAiCliproxyAccount),
     FIELD_ROW("anthropicCliproxyAccount", accounts.anthropicCliproxyAccount),

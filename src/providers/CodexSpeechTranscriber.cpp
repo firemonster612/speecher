@@ -42,7 +42,7 @@ std::optional<ProviderFailure> prepareCodex(const AccountSettings &accounts, QSt
     }
     // A CLI Proxy API account's error says which account; the Codex app's
     // sign-in needs saying where to sign in.
-    const QString message = auth.source == QStringLiteral("cliproxy")
+    const QString message = accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy
         ? auth.status
         : QStringLiteral("%1. Sign in with ChatGPT in the ChatGPT app or Codex CLI.").arg(auth.status);
     return ProviderFailure{auth.kind, message, auth.httpStatus};

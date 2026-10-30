@@ -1011,8 +1011,8 @@ private slots:
         SettingsStore settings;
         settings.setRefinementProvider(refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner);
         settings.setSpeechProvider(speechProvider);
-        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
-        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        settings.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
+        settings.setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
         settings.setCliproxyBaseUrl(remote ? QStringLiteral("http://proxy.example:8317") : QString());
         settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
                                 refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));

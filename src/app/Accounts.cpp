@@ -83,7 +83,8 @@ void noteSignIn(ProviderAvailability &availability, std::optional<ProviderId> pr
 QStringList signInSettings(const AppSettings &settings)
 {
     const AccountSettings &accounts = settings.accounts;
-    return {accounts.openAiAuthMode,   accounts.openAiCliproxyAccount, accounts.anthropicAuthMode,
+    return {openAiAuthModeName(accounts.openAiAuthMode), accounts.openAiCliproxyAccount,
+            anthropicAuthModeName(accounts.anthropicAuthMode),
             accounts.anthropicCliproxyAccount, accounts.cliproxyOauthDir, settings.refinement.cliproxyBaseUrl,
             accounts.claudeCredentialsPath};
 }
