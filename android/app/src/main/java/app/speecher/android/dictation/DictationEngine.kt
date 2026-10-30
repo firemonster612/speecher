@@ -230,8 +230,9 @@ class DictationEngine(
                         client = opened
                         // One at a time: a client can fail as it is sent audio, replacing itself or
                         // ending the dictation, and what is left is not its to send.
-                        while (client === opened && unsent.isNotEmpty())
+                        while (client === opened && unsent.isNotEmpty()) {
                             opened.sendAudio(unsent.removeAt(0))
+                        }
                         // Paused while it connected, or opened only for what a resume heard: it
                         // ends as it opens, whether or not the microphone is back on.
                         if (client === opened && (now.mic != Mic.On || now.finishingPause))
