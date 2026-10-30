@@ -101,7 +101,6 @@ ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
 
 void ChatCompletionsRefiner::refine(const QString &rawTranscript,
                                     const QStringList &vocabulary,
-                                    const QStringList &bindingVocabulary,
                                     const QString &apiKey,
                                     const QString &endpointBase,
                                     const QString &model,
@@ -129,7 +128,7 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
                             {QStringLiteral("content"), systemPrompt}},
                 QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
                             {QStringLiteral("content"), transcriptRefinementUserMessage(
-                                 rawTranscript, sentVocabulary, bindingVocabulary, context)}},
+                                 rawTranscript, sentVocabulary, context)}},
             }},
         };
         if (smallModel) {

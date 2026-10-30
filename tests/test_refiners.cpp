@@ -190,8 +190,8 @@ private slots:
         connect(&openAi, &OpenAiRefiner::delta, this, waitForFailure);
         connect(&claude, &AnthropicApiRefiner::delta, this, waitForFailure);
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
-        if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+        if (anthropic) claude.refine("hello", {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -233,8 +233,8 @@ private slots:
         QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
-        if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+        if (anthropic) claude.refine("hello", {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -275,7 +275,7 @@ private slots:
                                 "event: response.completed\ndata: {}\n\n";
         QTcpSocket *socket = nullptr;
         const auto refine = [&] {
-            refiner.refine("hi", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+            refiner.refine("hi", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
             QTRY_VERIFY(server.hasPendingConnections() || (socket && socket->bytesAvailable()));
             if (server.hasPendingConnections()) socket = server.nextPendingConnection();
             QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -314,8 +314,8 @@ private slots:
         QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
-            if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-opus-5", "low", true, "balanced", {});
-            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, "acct-id", "gpt-test", "low", "fast", "balanced", {});
+            if (anthropic) claude.refine("hello", {}, "token", endpoint, "claude-opus-5", "low", true, "balanced", {});
+            else openAi.refine("hello", {}, "token", {}, {}, endpoint, "acct-id", "gpt-test", "low", "fast", "balanced", {});
         };
         start();
         for (int attempt = 0; attempt < 3; ++attempt) {
@@ -367,8 +367,8 @@ private slots:
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
-            if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+            if (anthropic) claude.refine("hello", {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+            else openAi.refine("hello", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         };
         const auto cancel = [&] {
             if (anthropic) claude.cancel();
@@ -438,8 +438,8 @@ private slots:
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
         RefinementContext context;
         context.editSelection = true;
-        if (anthropic) claude.refine("edit", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", context);
-        else openAi.refine("edit", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", context);
+        if (anthropic) claude.refine("edit", {}, "token", endpoint, "claude-test", "low", false, "balanced", context);
+        else openAi.refine("edit", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", context);
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -498,7 +498,7 @@ private slots:
         });
         OpenAiRefiner refiner;
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
-        refiner.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+        refiner.refine("hello", {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         // Windows retries a refused connection for a few seconds before it
         // reports it; the 10 s connect budget is not what fails it.
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 8000);
@@ -783,7 +783,6 @@ private slots:
         context.vocabularyContext.insert(QStringLiteral("Kubernetes"), QStringLiteral("The container platform."));
         QCOMPARE(transcriptRefinementUserMessage(QStringLiteral("deploy to cube"),
                                                  {QStringLiteral("Kubernetes"), QStringLiteral("Speecher")},
-                                                 {},
                                                  context),
                  QStringLiteral("Dictation refinement input. Refine raw_transcript using the system instructions and "
                                 "return only the final refined transcript. preferred_vocabulary and binding_aliases "
@@ -933,9 +932,9 @@ private slots:
         context.target.nearbyTextAfter = QStringLiteral("Shopping list");
         context.screenshotData = QByteArrayLiteral("png-bytes");
         context.screenshotMediaType = QStringLiteral("image/png");
+        context.bindingVocabulary = QStringList{QStringLiteral("my email"), QStringLiteral("speecher repo")};
         refiner.refine(rawTranscript,
                        QStringList{QStringLiteral("Qt"), QStringLiteral("Pie crust")},
-                       QStringList{QStringLiteral("my email"), QStringLiteral("speecher repo")},
                        QStringLiteral("test-token"),
                        QStringLiteral("org-id"),
                        QStringLiteral("project-id"),
@@ -1051,7 +1050,6 @@ private slots:
 
         refiner.refine(QStringLiteral("Make this formal"),
                        {},
-                       {},
                        QStringLiteral("test-token"),
                        {},
                        {},
@@ -1105,9 +1103,9 @@ private slots:
         context.target.selectionEnd = context.target.selectedText.size();
         context.screenshotData = QByteArrayLiteral("png-bytes");
         context.screenshotMediaType = QStringLiteral("image/png");
+        context.bindingVocabulary = QStringList{QStringLiteral("my email")};
         refiner.refine(rawTranscript,
                        QStringList{QStringLiteral("Qt")},
-                       QStringList{QStringLiteral("my email")},
                        QStringLiteral("test-token"),
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("claude-sonnet-5"),
@@ -1215,7 +1213,6 @@ private slots:
 
         refiner.refine(QStringLiteral("Make this formal"),
                        {},
-                       {},
                        QStringLiteral("test-token"),
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("claude-sonnet-5"),
@@ -1284,7 +1281,7 @@ private slots:
         connect(&openAi, &OpenAiRefiner::failed, this, [] {
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         });
-        openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
+        openAi.refine(QStringLiteral("test"), {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("standard"),
                       QStringLiteral("balanced"), {});
@@ -1321,7 +1318,7 @@ private slots:
         connect(&anthropic, &AnthropicApiRefiner::failed, this, [] {
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         });
-        anthropic.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"),
+        anthropic.refine(QStringLiteral("test"), {}, QStringLiteral("token"),
                          QStringLiteral("http://127.0.0.1:%1/v1").arg(anthropicServer.serverPort()),
                          QStringLiteral("claude-sonnet-5"), QStringLiteral("low"), false,
                          QStringLiteral("balanced"), {});
@@ -1358,7 +1355,7 @@ private slots:
         OpenAiRefiner openAi;
         QSignalSpy openAiCompleted(&openAi, &OpenAiRefiner::completed);
         QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
-        openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
+        openAi.refine(QStringLiteral("test"), {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("standard"),
                       QStringLiteral("balanced"), {});
@@ -1387,7 +1384,7 @@ private slots:
         AnthropicApiRefiner anthropic;
         QSignalSpy anthropicCompleted(&anthropic, &AnthropicApiRefiner::completed);
         QSignalSpy anthropicFailed(&anthropic, &AnthropicApiRefiner::failed);
-        anthropic.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"),
+        anthropic.refine(QStringLiteral("test"), {}, QStringLiteral("token"),
                          QStringLiteral("http://127.0.0.1:%1/v1").arg(anthropicServer.serverPort()),
                          QStringLiteral("claude-sonnet-5"), QStringLiteral("low"), false,
                          QStringLiteral("balanced"), {});
@@ -1418,7 +1415,6 @@ private slots:
 
         AnthropicApiRefiner refiner;
         refiner.refine(QStringLiteral("please clean this up"),
-                       {},
                        {},
                        QStringLiteral("test-token"),
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
@@ -1481,7 +1477,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
         AnthropicApiRefiner refiner;
-        refiner.refine(QStringLiteral("please clean this up"), {}, {}, QStringLiteral("test-token"),
+        refiner.refine(QStringLiteral("please clean this up"), {}, QStringLiteral("test-token"),
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()), model,
                        QStringLiteral("xhigh"), false, QStringLiteral("balanced"), {});
 
@@ -1522,7 +1518,7 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner refiner;
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QString(), model, QStringLiteral("none"), speed,
                        QStringLiteral("balanced"), {});
@@ -1556,7 +1552,7 @@ private slots:
         QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("acct-id"), QStringLiteral("gpt-6-astra"), QStringLiteral("low"), QStringLiteral("ultrafast"),
                        QStringLiteral("balanced"), {});
@@ -1606,7 +1602,7 @@ private slots:
         QCOMPARE(failed.size(), 0);
 
         // Ultrafast was refused, not Fast, so Fast is still asked for.
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("acct-id"), QStringLiteral("gpt-6-astra"), QStringLiteral("low"),
                        QStringLiteral("fast"), QStringLiteral("balanced"), {});
@@ -1629,7 +1625,7 @@ private slots:
 
         QElapsedTimer elapsed;
         elapsed.start();
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("fast"),
                        QStringLiteral("balanced"), {});
@@ -1655,7 +1651,7 @@ private slots:
         QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-opus-5"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
@@ -1712,7 +1708,7 @@ private slots:
 
         // The rejection latches: the next request skips the per-dictation
         // fast-mode probe instead of paying a failed round trip again.
-        refiner.refine(QStringLiteral("hello again"), {}, {}, QStringLiteral("token"),
+        refiner.refine(QStringLiteral("hello again"), {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-opus-5"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
@@ -1735,7 +1731,7 @@ private slots:
 
         QElapsedTimer elapsed;
         elapsed.start();
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-opus-5"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
@@ -1761,7 +1757,7 @@ private slots:
         QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("fast"),
                        QStringLiteral("balanced"), {});
@@ -1803,7 +1799,7 @@ private slots:
         QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-opus-5"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
@@ -1841,7 +1837,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
         AnthropicApiRefiner refiner;
-        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+        refiner.refine(QStringLiteral("hello"), {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-sonnet-5"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});

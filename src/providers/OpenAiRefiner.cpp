@@ -76,7 +76,6 @@ bool isPublicOpenAiApi(const QUrl &endpoint)
 
 void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QStringList &vocabulary,
-                           const QStringList &bindingVocabulary,
                            const QString &bearerToken,
                            const QString &organization,
                            const QString &project,
@@ -135,7 +134,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         }
         QJsonObject user;
         user.insert(QStringLiteral("role"), QStringLiteral("user"));
-        const QString userMessage = transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context);
+        const QString userMessage = transcriptRefinementUserMessage(rawTranscript, vocabulary, context);
         if (context.hasScreenshot() && !context.editSelection) {
             const QString imageUrl = QStringLiteral("data:%1;base64,%2").arg(context.screenshotMediaType, QString::fromLatin1(context.screenshotData.toBase64()));
             user.insert(QStringLiteral("content"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("input_text")}, {QStringLiteral("text"), userMessage}}, QJsonObject{{QStringLiteral("type"), QStringLiteral("input_image")}, {QStringLiteral("image_url"), imageUrl}, {QStringLiteral("detail"), QStringLiteral("low")}}});

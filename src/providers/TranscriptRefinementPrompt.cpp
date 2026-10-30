@@ -597,7 +597,6 @@ QString compactRefinementSystemPrompt(const QString &style, const RefinementCont
 
 QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                         const QStringList &vocabulary,
-                                        const QStringList &bindingVocabulary,
                                         const RefinementContext &context)
 {
     // Vocabulary and aliases ride inside the task JSON as arrays. Joined
@@ -614,7 +613,7 @@ QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                   : QJsonValue(QJsonObject{{QStringLiteral("term"), term},
                                                            {QStringLiteral("context"), termContext}}));
     }
-    const QJsonArray aliasesJson = QJsonArray::fromStringList(bindingVocabulary);
+    const QJsonArray aliasesJson = QJsonArray::fromStringList(context.bindingVocabulary);
     if (context.editSelection && context.target.hasSelection()) {
         const QJsonObject selectionTask{
             {QStringLiteral("mode"), QStringLiteral("edit_selected_document")},

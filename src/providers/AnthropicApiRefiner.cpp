@@ -112,13 +112,11 @@ QUrl messagesEndpoint(const QString &endpointBase)
 
 QJsonArray userMessages(const QString &rawTranscript,
                         const QStringList &vocabulary,
-                        const QStringList &bindingVocabulary,
                         const RefinementContext &context)
 {
     const QString userMessage = transcriptRefinementUserMessage(
         rawTranscript,
         vocabulary,
-        bindingVocabulary,
         context);
     QJsonValue content = userMessage;
     if (context.hasScreenshot() && !context.editSelection) {
@@ -188,7 +186,6 @@ AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent,
 
 void AnthropicApiRefiner::refine(const QString &rawTranscript,
                                  const QStringList &vocabulary,
-                                 const QStringList &bindingVocabulary,
                                  const QString &bearerToken,
                                  const QString &endpointBase,
                                  const QString &model,
@@ -233,14 +230,13 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                           << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
         body.insert(QStringLiteral("system"), claudeCodeSystemBlocks(refinementStyle, context));
         body.insert(QStringLiteral("messages"),
-                    userMessages(rawTranscript, vocabulary, bindingVocabulary, context));
+                    userMessages(rawTranscript, vocabulary, context));
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
     }, fastMode && modelSupportsFastMode(model) ? QStringLiteral("fast") : QString());
 }
 
 void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
                                            const QStringList &vocabulary,
-                                           const QStringList &bindingVocabulary,
                                            const QString &apiKey,
                                            const QString &endpointBase,
                                            const QString &model,
@@ -259,7 +255,7 @@ void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
             {QStringLiteral("max_tokens"), 4096},
             {QStringLiteral("stream"), true},
             {QStringLiteral("system"), refinementSystemPrompt(refinementStyle, context)},
-            {QStringLiteral("messages"), userMessages(rawTranscript, vocabulary, bindingVocabulary, context)},
+            {QStringLiteral("messages"), userMessages(rawTranscript, vocabulary, context)},
         };
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
     }, QString());
