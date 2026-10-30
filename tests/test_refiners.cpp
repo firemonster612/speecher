@@ -2243,6 +2243,47 @@ private slots:
         QVERIFY2(!prepared, qPrintable(prepared ? prepared->message : QString()));
     }
 
+    // A refinement abandoned after its job handed over the Codex sign-in
+    // leaves nothing behind: the next one reads the sign-in its mode chooses.
+    void openAiRefinerReadsTheNewlyChosenSignInAfterAnAbandonedRefinement()
+    {
+        QTemporaryDir dir;
+        const QString authPath = dir.filePath(QStringLiteral("auth.json"));
+        QFile auth(authPath);
+        QVERIFY(auth.open(QIODevice::WriteOnly));
+        auth.write(QJsonDocument(QJsonObject{
+                                     {QStringLiteral("auth_mode"), QStringLiteral("chatgpt")},
+                                     {QStringLiteral("tokens"),
+                                      QJsonObject{
+                                          {QStringLiteral("access_token"),
+                                           jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(3600))},
+                                          {QStringLiteral("refresh_token"), QStringLiteral("codex-refresh-token")},
+                                      }},
+                                 })
+                       .toJson());
+        auth.close();
+        const QByteArray previousKey = qgetenv("OPENAI_API_KEY");
+        qunsetenv("OPENAI_API_KEY");
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(authPath));
+        const auto restoreEnv = qScopeGuard([&] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+            if (!previousKey.isNull()) qputenv("OPENAI_API_KEY", previousKey);
+        });
+
+        const RefinementSettings settings;
+        AccountSettings accounts;
+        OpenAiTranscriptRefiner refiner(nullptr);
+        std::optional<PreparationJob> job = refiner.createRefreshJob(settings, accounts);
+        QVERIFY(job.has_value());
+        job->apply(job->run());
+
+        accounts.openAiAuthMode = QStringLiteral("env");
+        QVERIFY(!refiner.createRefreshJob(settings, accounts));
+        const std::optional<ProviderFailure> prepared = refiner.prepare(settings, accounts);
+        QVERIFY(prepared);
+        QVERIFY2(prepared->message.contains(QStringLiteral("OPENAI_API_KEY")), qPrintable(prepared->message));
+    }
+
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;
