@@ -113,7 +113,10 @@ fun refineTranscript(
 fun modelSupportsFastMode(model: String): Boolean =
     model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
 
-/** Anthropic models that take adaptive thinking and an effort; the rest are sent neither. */
+/**
+ * Anthropic models that take adaptive thinking and an effort; the rest are sent neither. Adaptive
+ * thinking starts with the 4.6 models: Opus 4.5 rejects it, as the desktop has it.
+ */
 private fun modelSupportsAdaptiveEffort(model: String): Boolean =
     model.lowercase().let { id ->
         listOf(
@@ -124,7 +127,6 @@ private fun modelSupportsAdaptiveEffort(model: String): Boolean =
                 "opus-4-8",
                 "opus-4-7",
                 "opus-4-6",
-                "opus-4-5",
             )
             .any { it in id }
     }

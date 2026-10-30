@@ -81,20 +81,22 @@ class SignInTest {
         main.idle()
     }
 
-    /** The browser's request to the sign-in listener for [path], once the listener is up. */
-    private fun browserRedirect(path: String): Socket {
+    /** The browser's connection to the sign-in listener, once the listener is up. */
+    private fun browser(): Socket {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (true) {
             try {
-                return Socket(InetAddress.getLoopbackAddress(), CLAUDE_LISTENER_PORT).apply {
-                    getOutputStream().write("GET $path HTTP/1.1\r\n\r\n".toByteArray())
-                }
+                return Socket(InetAddress.getLoopbackAddress(), CLAUDE_LISTENER_PORT)
             } catch (_: ConnectException) {
                 assertTrue(System.nanoTime() < deadline)
                 Thread.sleep(10)
             }
         }
     }
+
+    /** The browser's redirect to [path], which the sign-in page answers. */
+    private fun Socket.redirect(path: String) =
+        getOutputStream().write("GET $path HTTP/1.1\r\n\r\n".toByteArray())
 
     private fun awaitRequests(count: Int) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
@@ -118,7 +120,8 @@ class SignInTest {
     @Test
     fun `a code pasted while the browser's code is exchanged is not exchanged again`() {
         val attempt = signIn.start(OAuthProvider.Claude, "Claude") { results += it }
-        browserRedirect("/callback?code=browser&state=${attempt.state}").use {
+        browser().use {
+            it.redirect("/callback?code=browser&state=${attempt.state}")
             awaitRequests(1)
             signIn.completePastedCode("code") { results += it }
             answer.countDown()
@@ -128,6 +131,30 @@ class SignInTest {
         assertEquals(1, requests.get())
         assertEquals(listOf("access"), results.map { it.getOrThrow().accessToken })
         assertEquals("access", tokens.load(OAuthProvider.Claude)?.accessToken)
+    }
+
+    @Test
+    fun `a browser callback for a replaced attempt leaves the newer attempt's exchange alone`() {
+        answer.countDown()
+        val stale = signIn.start(OAuthProvider.Claude, "Claude") {}
+        browser().use { browser ->
+            // Long enough for the stale attempt's listener to accept the browser before the
+            // newer attempt closes it.
+            Thread.sleep(ACCEPT_MILLIS)
+            signIn.start(OAuthProvider.Claude, "Claude") {}
+            signIn.completePastedCode("code") { results += it }
+            awaitExchange()
+
+            browser.redirect("/callback?code=stale&state=${stale.state}")
+            assertEquals(
+                "HTTP/1.1 400 Bad Request",
+                browser.getInputStream().bufferedReader().readLine(),
+            )
+        }
+        signIn.completePastedCode("code") { results += it }
+
+        assertEquals(1, requests.get())
+        assertEquals(1, results.size)
     }
 
     @Test
@@ -145,3 +172,5 @@ class SignInTest {
 
 /** The port Claude's sign-in redirect comes back to. */
 private const val CLAUDE_LISTENER_PORT = 54545
+
+private const val ACCEPT_MILLIS = 300L

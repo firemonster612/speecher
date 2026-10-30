@@ -43,7 +43,7 @@ class SignIn(
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var listener: ServerSocket? = null
     private var listenerClosed: CountDownLatch? = null
-    private var attempt: OAuthAttempt? = restoredPending()
+    @Volatile private var attempt: OAuthAttempt? = restoredPending()
     private var provider: OAuthProvider? = restoredProvider()
     /**
      * The attempt whose code is being exchanged, from the browser's redirect or a paste: a code
@@ -127,7 +127,8 @@ class SignIn(
                                     respond(it, label, false)
                                     continue
                                 }
-                                // A pasted code got there first and replaced this attempt.
+                                // A pasted code got there first, or a newer attempt replaced this
+                                // one.
                                 if (!claimExchange(current)) {
                                     respond(it, label, false)
                                     error("Sign-in attempt was replaced")
@@ -219,10 +220,13 @@ class SignIn(
             )
     }
 
-    /** Claims [attempt]'s one exchange; false when it was claimed already. */
+    /**
+     * Claims [attempt]'s one exchange; false when it was claimed already, or a newer attempt
+     * replaced it, as when a stale browser callback arrives.
+     */
     @Synchronized
     private fun claimExchange(attempt: OAuthAttempt): Boolean {
-        if (exchanging === attempt) return false
+        if (attempt !== this.attempt || exchanging === attempt) return false
         exchanging = attempt
         return true
     }

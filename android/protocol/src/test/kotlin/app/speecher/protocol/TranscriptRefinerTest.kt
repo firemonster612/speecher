@@ -213,13 +213,14 @@ class TranscriptRefinerTest {
         MockWebServer().use { server ->
             val ok =
                 "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-            repeat(4) { server.enqueue(MockResponse.Builder().body(ok).build()) }
+            repeat(5) { server.enqueue(MockResponse.Builder().body(ok).build()) }
             server.start()
             for (model in
                 listOf(
                     "claude-opus-5-5",
                     "claude-haiku-5-5",
                     "claude-opus-4-6",
+                    "claude-opus-4-5",
                     "claude-sonnet-4-5",
                 )) {
                 refineTranscript(
@@ -235,17 +236,19 @@ class TranscriptRefinerTest {
                 )
             }
             val bodies =
-                List(4) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+                List(5) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
             assertEquals(
                 listOf(
                     "{\"effort\":\"xhigh\"}",
                     "{\"effort\":\"xhigh\"}",
                     "{\"effort\":\"max\"}",
                     null,
+                    null,
                 ),
                 bodies.map { it["output_config"]?.toString() },
             )
-            assertEquals(listOf(true, true, true, false), bodies.map { "thinking" in it })
+            // Adaptive thinking starts with the 4.6 models, so Opus 4.5 is sent none.
+            assertEquals(listOf(true, true, true, false, false), bodies.map { "thinking" in it })
         }
     }
 
