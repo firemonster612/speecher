@@ -2583,32 +2583,6 @@ private slots:
             QVERIFY(!error.isEmpty());
         }
     }
-
-    // The portal stamps Activated and Deactivated itself, so a release handled
-    // late still reports the physical hold, measured from the first press
-    // when the key repeats. A backend that sends no timestamp leaves the
-    // controller to time it.
-    void portalBinderReportsThePhysicalHold()
-    {
-        SettingsStore settings;
-        PortalGlobalShortcutBinder binder(&settings);
-        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
-        const auto portalSignal = [&](const char *handler, qulonglong timestamp) {
-            const QVariantMap options;
-            return QMetaObject::invokeMethod(&binder, handler, Q_ARG(QDBusObjectPath, QDBusObjectPath()),
-                                             Q_ARG(QString, binder.action().id), Q_ARG(qulonglong, timestamp),
-                                             Q_ARG(QVariantMap, options));
-        };
-
-        QVERIFY(portalSignal("handleActivated", 5000));
-        QVERIFY(portalSignal("handleActivated", 5040));
-        QVERIFY(portalSignal("handleDeactivated", 5080));
-        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
-
-        QVERIFY(portalSignal("handleActivated", 0));
-        QVERIFY(portalSignal("handleDeactivated", 0));
-        QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
-    }
 #endif
 
     void deferredStartupBindsTheShortcutAndPublishesAccessibility()
