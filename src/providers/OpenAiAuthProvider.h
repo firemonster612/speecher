@@ -63,7 +63,15 @@ public:
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     OpenAiAuthStatus status() const;
+    // Whether the mode's ChatGPT sign-in has expired and a refresh could
+    // renew it. Reads the credentials, so worker threads only.
     bool requiresCodexOauthRefresh() const;
+    // Whether the mode may use a ChatGPT sign-in, which can expire and renew;
+    // decided from the settings alone.
+    bool mayUseCodexOauth() const;
+    // Whether the ChatGPT sign-in last read for the mode has expired
+    // by now, without reading anything: what the GUI thread asks.
+    bool codexOauthExpiredAsLastRead() const;
     OpenAiAuth refreshCodexOauth() const;
 
 private:

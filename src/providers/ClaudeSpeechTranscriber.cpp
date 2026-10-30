@@ -31,7 +31,7 @@ ClaudeSpeechTranscriber::ClaudeSpeechTranscriber(QObject *parent)
 
 bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const
 {
-    return AnthropicAuthProvider::forSpeech(accounts).requiresRefresh();
+    return AnthropicAuthProvider::forSpeech(accounts).expiredAsLastRead();
 }
 
 std::optional<PreparationJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings,

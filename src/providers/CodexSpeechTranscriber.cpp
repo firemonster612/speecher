@@ -57,7 +57,7 @@ CodexSpeechTranscriber::CodexSpeechTranscriber(QObject *parent)
 
 bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &, const AccountSettings &accounts) const
 {
-    return OpenAiAuthProvider::forSpeech(accounts).requiresCodexOauthRefresh();
+    return OpenAiAuthProvider::forSpeech(accounts).codexOauthExpiredAsLastRead();
 }
 
 std::optional<PreparationJob> CodexSpeechTranscriber::createPrepareJob(

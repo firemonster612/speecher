@@ -17,6 +17,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribeQueue.h"
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
@@ -709,9 +710,13 @@ private slots:
         }
         TranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
+        TranscribeQueue queue(controller.settings(), controller.providerRegistry(), controller.fileTranscription(),
+                              [&controller] { return controller.fileTranscriptionRefusal(); });
+        queue.addFiles({audio});
+        queue.setOptions(options);
 
         // A batch in flight turns the dictation shortcut away.
-        QVERIFY(controller.startFileTranscription({audio}, options));
+        QVERIFY(queue.start());
         controller.toggle();
         QVERIFY(!platform->microphoneAnswer);
         controller.fileTranscription()->cancel();
@@ -719,9 +724,8 @@ private slots:
         // A dictation waiting on the microphone turns a batch away.
         controller.toggle();
         QVERIFY(platform->microphoneAnswer);
-        QString error;
-        QVERIFY(!controller.startFileTranscription({audio}, options, &error));
-        QVERIFY(!error.isEmpty());
+        QVERIFY(!queue.start());
+        QVERIFY(!queue.problem().isEmpty());
         controller.stopListening();
     }
 

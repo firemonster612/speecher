@@ -43,10 +43,16 @@ public:
     // token is renewed over the network first, so only a worker thread may
     // ask for that.
     AnthropicAuth resolve(bool refreshExpired) const;
-    // Whether that token has expired and a refresh could renew it.
+    // Whether that token has expired and a refresh could renew it. Reads the
+    // credentials, so worker threads only.
     bool requiresRefresh() const;
+    // Whether the token last resolved for this sign-in has expired
+    // by now, without reading anything: what the GUI thread asks.
+    bool expiredAsLastRead() const;
 
 private:
+    QString signInKey() const;
+
     AnthropicAuthProvider(const AccountSettings &accounts, const QString &serverBase, const QString &serverKey);
 
     AccountSettings m_accounts;

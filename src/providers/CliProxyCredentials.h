@@ -2,6 +2,7 @@
 
 #include "core/ProviderFailure.h"
 
+#include <QDateTime>
 #include <QList>
 #include <QString>
 
@@ -28,6 +29,8 @@ struct CliProxyCredentialResult {
     // A missing, disabled or expired account unless a refresh said otherwise.
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
+    // When the account's token runs out, once its file was read.
+    QDateTime expiresAt;
 };
 
 struct OauthRefreshResult {

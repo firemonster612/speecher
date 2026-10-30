@@ -155,8 +155,8 @@ void SpeechChain::walk()
         // Applied only once a speech provider prepared; then not again this
         // walk.
         if (refinerJob) {
-            refinerJob->apply =[this, apply = std::move(refinerJob->apply)](
-                                    const std::optional<ProviderFailure> &failure) {
+            refinerJob->apply = [this, apply = std::move(refinerJob->apply)](
+                                     const std::optional<ProviderFailure> &failure) {
                 m_refinerRefreshed = true;
                 if (failure) {
                     qWarning().noquote() << "refinement oauth refresh unavailable status=" + failure->message;

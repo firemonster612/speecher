@@ -339,7 +339,7 @@ private slots:
         };
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
-        QCOMPARE(openai->refreshRuns, 1);
+        QCOMPARE(openai->refreshRuns(), 1);
     }
 
     // A fallback that can't listen for the Spoken Language, by its Local
@@ -1132,7 +1132,7 @@ private slots:
             return;
         }
         QTRY_COMPARE(openai->refineCalls, 1);
-        QCOMPARE(openai->refreshRuns, 1);
+        QCOMPARE(openai->refreshRuns(), 1);
         QCOMPARE(openai->refreshCalls, 1);
     }
 
@@ -1352,7 +1352,7 @@ private slots:
         session.stopListening();
         QCOMPARE(session.state(), DictationState::Refining);
         QTRY_COMPARE(delivery.calls, 1);
-        QCOMPARE(refiner->refreshRuns, 1);
+        QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->prepareCalls, 0);
         QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
     }

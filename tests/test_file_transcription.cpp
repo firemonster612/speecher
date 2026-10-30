@@ -890,7 +890,7 @@ private slots:
         // done. A file no speech provider took never makes one.
         int refreshes = -1;
         connect(&session, &FileTranscriptionSession::fileFinished, this,
-                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns : 0; });
+                [&refiner, &refreshes] { refreshes = refiner ? refiner->refreshRuns() : 0; });
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -923,7 +923,7 @@ private slots:
         options.cleanupStrength = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
-        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns : 0, 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns() : 0, 1, 10000);
         session.cancel();
         QTest::qWait(400);
 
@@ -3317,6 +3317,27 @@ private slots:
         const QString dictating = QStringLiteral("Finish the dictation in progress, then transcribe the files.");
         TranscribeQueue queue(&settings, m_registry.get(), &session, [&dictating] { return dictating; });
         queue.addFiles({audio});
+
+        QVERIFY(!queue.start());
+
+        QCOMPARE(queue.problem(), dictating);
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Configure);
+        QVERIFY(!session.isRunning());
+    }
+
+    // A dictation that starts while the queue announces its batch still stops
+    // the batch from running.
+    void aDictationStartedDuringStartRefusesTheBatch()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QString refusal;
+        TranscribeQueue queue(&settings, m_registry.get(), &session, [&refusal] { return refusal; });
+        queue.addFiles({audio});
+        const QString dictating = QStringLiteral("Finish the dictation in progress, then transcribe the files.");
+        connect(&queue, &TranscribeQueue::stepChanged, &queue, [&] { refusal = dictating; });
 
         QVERIFY(!queue.start());
 

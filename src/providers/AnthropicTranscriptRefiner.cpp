@@ -27,7 +27,9 @@ std::optional<PreparationJob> AnthropicTranscriptRefiner::createRefreshJob(const
     const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts, settings);
     auto accessToken = std::make_shared<QString>();
     PreparationJob job;
-    job.showRefreshIndicator = signIn.requiresRefresh();
+    // Whether the token is due is read on the worker, which renews it; this
+    // thread only guesses, for the indicator.
+    job.showRefreshIndicator = signIn.expiredAsLastRead();
     job.run = [signIn, accessToken] {
         const AnthropicAuth auth = signIn.resolve(true);
         ClaudeCredentials::installedVersion();

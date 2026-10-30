@@ -9,7 +9,9 @@
 #include "providers/ClaudeCredentialStorage.h"
 #include "providers/NativeCredentialStorage.h"
 #include "providers/CodexCredentialStorage.h"
+#include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexSpeechTranscriber.h"
+#include "providers/OpenAiTranscriptRefiner.h"
 #include <QCryptographicHash>
 #include <QProcess>
 
@@ -1349,6 +1351,61 @@ private slots:
         QVERIFY(auth.chatgptBackend);
         QCOMPARE(auth.endpointBase, QStringLiteral("https://chatgpt.com/backend-api/codex"));
         QCOMPARE(auth.accountId, QStringLiteral("acct"));
+    }
+
+    // Whether a sign-in is due to renew is read where it is prepared, on the
+    // worker. What the GUI thread asks answers from that read, never from the
+    // credentials, which on macOS can mean the Keychain; files stand in for it
+    // here. Without refresh tokens nothing renews.
+    void theGuiThreadSeesASignInDueOnlyOnceAPreparationReadIt()
+    {
+        QTemporaryDir dir;
+        const QByteArray oldCodexPath = qgetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+        const auto restoreEnv = qScopeGuard([&oldCodexPath] {
+            oldCodexPath.isNull() ? qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH")
+                                  : qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", oldCodexPath);
+        });
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(dir.filePath(QStringLiteral("codex.json"))));
+        AccountSettings accounts;
+        accounts.claudeCredentialsPath = dir.filePath(QStringLiteral("claude.json"));
+        const auto writeSignIns = [&](const QDateTime &expiresAt) {
+            QFile claude(accounts.claudeCredentialsPath);
+            QFile codex(dir.filePath(QStringLiteral("codex.json")));
+            QVERIFY(claude.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QVERIFY(codex.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            claude.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"),
+                                                    QJsonObject{{QStringLiteral("accessToken"), QStringLiteral("token")},
+                                                                {QStringLiteral("expiresAt"),
+                                                                 double(expiresAt.toMSecsSinceEpoch())}}}})
+                             .toJson());
+            codex.write(QJsonDocument(QJsonObject{{QStringLiteral("auth_mode"), QStringLiteral("chatgpt")},
+                                                  {QStringLiteral("tokens"),
+                                                   QJsonObject{{QStringLiteral("access_token"),
+                                                                jwtWithExpiry(expiresAt)}}}})
+                            .toJson());
+        };
+        const SpeechSettings speech;
+        ClaudeSpeechTranscriber claude;
+        CodexSpeechTranscriber codex;
+        AnthropicTranscriptRefiner anthropic;
+        OpenAiTranscriptRefiner openAi(nullptr);
+        const auto prepareOnTheWorker = [&] {
+            claude.createPrepareJob(speech, accounts)->run();
+            codex.createPrepareJob(speech, accounts)->run();
+        };
+        const auto dueAsTheGuiThreadSees = [&] {
+            return QList<bool>{claude.requiresRefresh(speech, accounts), codex.requiresRefresh(speech, accounts),
+                               anthropic.createRefreshJob({}, accounts)->showRefreshIndicator,
+                               openAi.createRefreshJob({}, accounts)->showRefreshIndicator};
+        };
+
+        writeSignIns(QDateTime::currentDateTimeUtc().addSecs(3600));
+        prepareOnTheWorker();
+        writeSignIns(QDateTime::currentDateTimeUtc().addSecs(-60));
+        QCOMPARE(dueAsTheGuiThreadSees(), QList<bool>(4, false));
+
+        prepareOnTheWorker();
+        QCOMPARE(dueAsTheGuiThreadSees(), QList<bool>(4, true));
     }
 
     void anthropicRefinerCliproxyPrepare()

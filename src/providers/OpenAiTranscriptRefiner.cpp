@@ -23,23 +23,30 @@ OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObje
 std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings,
                                                                         const AccountSettings &accounts)
 {
-    if (!OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).requiresCodexOauthRefresh()) {
+    const OpenAiAuthProvider signIn = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings);
+    if (!signIn.mayUseCodexOauth()) {
         return std::nullopt;
     }
 
+    // Whether the sign-in is due is read on the worker, which renews it; this
+    // thread only guesses, for the indicator. A sign-in not due leaves
+    // prepare() to resolve as it would without a job.
     auto resolved = std::make_shared<OpenAiAuth>();
     PreparationJob job;
-    job.showRefreshIndicator = true;
+    job.showRefreshIndicator = signIn.codexOauthExpiredAsLastRead();
     // Every source the mode allows, as prepare() resolves them, so a sign-in
     // that can't renew still leaves an API key to use. The worker reads the
     // keyring through a SecretStore of its own, never the GUI thread's.
-    job.run = [settings, accounts, resolved] {
+    job.run = [settings, accounts, resolved]() -> std::optional<ProviderFailure> {
+        if (!OpenAiAuthProvider::forRefinement(nullptr, accounts, settings).requiresCodexOauthRefresh()) {
+            return std::nullopt;
+        }
         SettingsStore source;
         *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts, settings).resolve();
         return resolved->failure();
     };
     job.apply = [this, resolved](const std::optional<ProviderFailure> &failure) {
-        if (!failure) {
+        if (!failure && resolved->ok) {
             m_auth = *resolved;
             m_authResolvedByJob = true;
         }
@@ -53,11 +60,10 @@ std::optional<ProviderFailure> OpenAiTranscriptRefiner::prepare(const Refinement
     if (std::exchange(m_authResolvedByJob, false)) {
         return std::nullopt;
     }
-    // Refresh an expired token here rather than reporting it expired: a token
-    // valid when the user started speaking can lapse before refinement, and
-    // refusing then would drop the refinement the user asked for. resolve()
-    // takes the same one-second credential lock the speech path uses.
-    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).resolve();
+    // Renewing an expired sign-in is the refresh job's, on the worker: a
+    // renewal here would block this thread on the network and the credential
+    // lock. Without a job's answer, prepare() reads the sign-in as it stands.
+    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).resolve(false);
     return m_auth.failure();
 }
 

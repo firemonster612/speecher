@@ -17,8 +17,8 @@ class PreparationRunner;
 // only: preparing finds the first refiner from the current one on that
 // prepares, passing over one that needs the internet while the system says it
 // is offline, is unknown, or fails to prepare. Its keys come from the keyring,
-// and an expired sign-in renews, off this thread: never on this one, where the
-// refiner's prepare() would do both.
+// and an expired sign-in renews, off this thread; the refiner's prepare() on
+// this one never renews.
 class RefinementChain : public QObject {
     Q_OBJECT
 

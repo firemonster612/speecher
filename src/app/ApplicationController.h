@@ -21,7 +21,6 @@ enum class SetupAssistantPage;
 class DictationSession;
 enum class DictationState;
 class FileTranscriptionSession;
-struct TranscribeOptions;
 class Accounts;
 class AudioInput;
 class SessionKeyGrab;
@@ -71,9 +70,6 @@ public:
                         const QStringList &vocabulary,
                         bool microphoneOnly,
                         std::function<void(const QString &error)> done);
-    bool startFileTranscription(const QStringList &paths,
-                                const TranscribeOptions &options,
-                                QString *error = nullptr);
     // Whether the setup assistant still has to run before dictation, recording
     // or a window opens. Onboarding happens in the front end, so with none
     // attached nothing waits for it; each start still checks its provider and

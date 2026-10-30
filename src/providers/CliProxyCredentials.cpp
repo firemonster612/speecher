@@ -56,10 +56,26 @@ QString accountLabel(const QString &fileName, const QString &type)
     return label;
 }
 
+QDateTime accountExpiry(const QJsonObject &account)
+{
+    return QDateTime::fromString(account.value(QStringLiteral("expired")).toString(), Qt::ISODate);
+}
+
 bool accountExpired(const QJsonObject &account)
 {
-    const QDateTime expiry = QDateTime::fromString(account.value(QStringLiteral("expired")).toString(), Qt::ISODate);
+    const QDateTime expiry = accountExpiry(account);
     return expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc();
+}
+
+CliProxyCredentialResult accountToken(const QJsonObject &account)
+{
+    return {true,
+            account.value(QStringLiteral("access_token")).toString().trimmed(),
+            account.value(QStringLiteral("account_id")).toString(),
+            {},
+            ProviderFailureKind::Unavailable,
+            0,
+            accountExpiry(account)};
 }
 
 QString accountValidationError(const QString &directory,
@@ -273,10 +289,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
         return {false, {}, {}, initialError};
     }
     if (!accountExpired(account)) {
-        return {true,
-                account.value(QStringLiteral("access_token")).toString().trimmed(),
-                account.value(QStringLiteral("account_id")).toString(),
-                {}};
+        return accountToken(account);
     }
 
     QLockFile lock(QDir(directory).filePath(resolved) + QStringLiteral(".lock"));
@@ -290,10 +303,7 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
         return {false, {}, {}, lockedError};
     }
     if (!accountExpired(account)) {
-        return {true,
-                account.value(QStringLiteral("access_token")).toString().trimmed(),
-                account.value(QStringLiteral("account_id")).toString(),
-                {}};
+        return accountToken(account);
     }
     if (const std::optional<ProviderFailure> failure = refreshAccountFile(directory, type, resolved, account)) {
         return {false, {}, {}, failure->message, failure->kind, failure->httpStatus};
@@ -338,16 +348,12 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
     }
     // CLI Proxy API and Speecher may both refresh these rotating tokens. The
     // refresh path serializes its read-network-write sequence with the account lock.
-    const QString expiredValue = account.value(QStringLiteral("expired")).toString();
-    const QDateTime expiry = QDateTime::fromString(expiredValue, Qt::ISODate);
-    if (expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc()) {
+    if (accountExpired(account)) {
         return {false, {}, {},
-                QStringLiteral("CLI Proxy API token for %1 is expired; run CLI Proxy API to refresh it").arg(resolvedFileName)};
+                QStringLiteral("CLI Proxy API token for %1 is expired; run CLI Proxy API to refresh it").arg(resolvedFileName),
+                ProviderFailureKind::Unavailable, 0, accountExpiry(account)};
     }
-    return {true,
-            account.value(QStringLiteral("access_token")).toString().trimmed(),
-            account.value(QStringLiteral("account_id")).toString(),
-            {}};
+    return accountToken(account);
 }
 
 } // namespace speecher

@@ -2,6 +2,7 @@
 
 #include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
+#include "providers/SignInExpiry.h"
 
 namespace speecher {
 
@@ -37,6 +38,7 @@ AnthropicAuth AnthropicAuthProvider::resolve(bool refreshExpired) const
     if (m_accounts.anthropicAuthMode != cliproxyMode) {
         const ClaudeCredentialResult credentials =
             ClaudeCredentials::load(m_accounts.claudeCredentialsPath, refreshExpired);
+        SignInExpiry::record(signInKey(), credentials.expiresAt);
         if (!credentials.ok) {
             return {false, {}, credentials.error, credentials.kind, credentials.httpStatus};
         }
@@ -55,6 +57,7 @@ AnthropicAuth AnthropicAuthProvider::resolve(bool refreshExpired) const
                                                m_accounts.anthropicCliproxyAccount)
         : CliProxyCredentials::load(m_accounts.cliproxyOauthDir, cliproxyAccountType,
                                     m_accounts.anthropicCliproxyAccount);
+    SignInExpiry::record(signInKey(), credentials.expiresAt);
     return {credentials.ok, credentials.ok ? credentials.accessToken : QString(), credentials.error, credentials.kind,
             credentials.httpStatus};
 }
@@ -69,6 +72,23 @@ bool AnthropicAuthProvider::requiresRefresh() const
     }
     return CliProxyCredentials::accountNeedsRefresh(m_accounts.cliproxyOauthDir, cliproxyAccountType,
                                                     m_accounts.anthropicCliproxyAccount);
+}
+
+bool AnthropicAuthProvider::expiredAsLastRead() const
+{
+    return SignInExpiry::lapsed(signInKey());
+}
+
+// Empty for a CLI Proxy API server, which renews its own accounts.
+QString AnthropicAuthProvider::signInKey() const
+{
+    if (m_accounts.anthropicAuthMode != cliproxyMode) {
+        return QStringLiteral("claude:") + m_accounts.claudeCredentialsPath;
+    }
+    if (!m_serverBase.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("cliproxy:claude:%1/%2").arg(m_accounts.cliproxyOauthDir, m_accounts.anthropicCliproxyAccount);
 }
 
 } // namespace speecher
