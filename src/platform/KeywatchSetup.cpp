@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 
 #include <unistd.h>
 
@@ -31,7 +32,7 @@ constexpr int answerCacheMs = 20000;
 
 // The probe runs on the UI thread while the exchange with the daemon and the
 // pkexec'd removal run on workers, so the cache is atomics rather than a timer
-// object. The answer and its protocol flag are one value on purpose: written
+// object, read without a lock and written under answerMutex. The answer and its protocol flag are one value on purpose: written
 // once per exchange and read with one load, so a probe can never pair a stale
 // answer with a newer exchange's protocol flag.
 enum DaemonAnswerState : int {
@@ -43,9 +44,13 @@ enum DaemonAnswerState : int {
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
 std::atomic<int> cachedAnswerState{NoAnswer};
 std::atomic<bool> askInFlight{false};
-// Bumped by forgetDaemonAnswer(), so an exchange that started before it
-// cannot cache what the helper said before it changed.
-std::atomic<int> answerGeneration{0};
+// Held while the cache is written. An exchange stores its answer only if no
+// forgetDaemonAnswer() came after it started, checked and stored as one step,
+// so an invalidation can't land between the check and the stores and be
+// overwritten.
+std::mutex answerMutex;
+// Bumped by forgetDaemonAnswer(); guarded by answerMutex.
+int answerGeneration = 0;
 
 std::int64_t monotonicMs()
 {
@@ -100,12 +105,18 @@ void askDaemonInBackground()
     // Create the notifier here so it belongs to the thread that probes, not to
     // whichever pool thread happens to finish the exchange.
     KeywatchSetup::daemonAnswer();
-    const int generation = answerGeneration.load();
+    const int generation = [] {
+        const std::lock_guard lock(answerMutex);
+        return answerGeneration;
+    }();
     QThreadPool::globalInstance()->start([generation] {
         const DaemonAnswerState answer = askDaemon();
-        if (generation == answerGeneration.load()) {
-            cachedAnswerState.store(answer);
-            cachedAnswerAtMs.store(monotonicMs());
+        {
+            const std::lock_guard lock(answerMutex);
+            if (generation == answerGeneration) {
+                cachedAnswerState.store(answer);
+                cachedAnswerAtMs.store(monotonicMs());
+            }
         }
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
@@ -198,6 +209,7 @@ KeywatchDaemonAnswer *KeywatchSetup::daemonAnswer()
 
 void KeywatchSetup::forgetDaemonAnswer()
 {
+    const std::lock_guard lock(answerMutex);
     ++answerGeneration;
     cachedAnswerAtMs.store(0);
     cachedAnswerState.store(NoAnswer);
