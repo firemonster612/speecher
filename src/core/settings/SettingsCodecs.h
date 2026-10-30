@@ -98,6 +98,9 @@ public:
     // clearing just after the other side set a binding keeps that binding.
     void forgetGlobalShortcutCombination(GlobalShortcutRole role);
     void forgetGlobalShortcutSingleKey(GlobalShortcutRole role);
+    // The person cleared the binding: one is stored, and it is empty. A
+    // binder with a default binds the default only when nothing is stored.
+    bool globalShortcutCleared(GlobalShortcutRole role) const;
     // The person let the portal's shortcut go. The portal hands an app's
     // shortcuts back whenever a session is restored, so until a new one is
     // bound, Speecher restores none.

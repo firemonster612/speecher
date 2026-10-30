@@ -23,6 +23,7 @@
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/HotKeyShortcutBinder.h"
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
@@ -211,6 +212,24 @@ public:
 protected:
     QString watch(const PhysicalKey &) override { return {}; }
     void unwatch() override {}
+};
+
+// The macOS and Windows hot-key bookkeeping over a registration that only
+// remembers which keys it holds.
+class FakeHotKeyShortcutBinder final : public HotKeyShortcutBinder {
+public:
+    using HotKeyShortcutBinder::HotKeyShortcutBinder;
+
+    QKeySequence registeredKeys;
+
+protected:
+    bool registerKeys(const QKeySequence &keys, QString *) override
+    {
+        registeredKeys = keys;
+        return true;
+    }
+    void unregisterKeys() override { registeredKeys = {}; }
+    bool registered() const override { return !registeredKeys.isEmpty(); }
 };
 
 // Answers for itself everything the seam added, and delegates the ports it does
@@ -1272,6 +1291,28 @@ private slots:
         QCOMPARE(restored.shortcut(), f13);
         QVERIFY(restored.setShortcut({}));
         QVERIFY(!settings.raw().contains(QStringLiteral("shortcuts/cancelDictation")));
+    }
+
+    // On macOS and Windows the Dictation shortcut lives in settings. One never
+    // set binds the default; one the person cleared stays cleared at the next
+    // launch instead of coming back as the default.
+    void clearedHotKeyStaysClearedAfterRestart()
+    {
+        SettingsStore settings;
+        settings.raw().remove(QStringLiteral("shortcuts/toggleDictation"));
+        const auto forget = qScopeGuard([&] { settings.raw().remove(QStringLiteral("shortcuts/toggleDictation")); });
+        const GlobalShortcutAction dictation = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation);
+
+        FakeHotKeyShortcutBinder first(&settings, dictation);
+        first.bind();
+        QCOMPARE(first.registeredKeys, GlobalShortcutBinder::defaultShortcut());
+        QVERIFY(first.setShortcut({}));
+        QVERIFY(first.registeredKeys.isEmpty());
+
+        FakeHotKeyShortcutBinder relaunched(&settings, dictation);
+        relaunched.bind();
+        QVERIFY(relaunched.shortcut().isEmpty());
+        QVERIFY(relaunched.registeredKeys.isEmpty());
     }
 
     // An isolated instance has settings and a socket of its own, and leaves
@@ -2541,6 +2582,32 @@ private slots:
             QVERIFY(!binder->setShortcut(rightAlt, &error));
             QVERIFY(!error.isEmpty());
         }
+    }
+
+    // The portal stamps Activated and Deactivated itself, so a release handled
+    // late still reports the physical hold, measured from the first press
+    // when the key repeats. A backend that sends no timestamp leaves the
+    // controller to time it.
+    void portalBinderReportsThePhysicalHold()
+    {
+        SettingsStore settings;
+        PortalGlobalShortcutBinder binder(&settings);
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+        const auto portalSignal = [&](const char *handler, qulonglong timestamp) {
+            const QVariantMap options;
+            return QMetaObject::invokeMethod(&binder, handler, Q_ARG(QDBusObjectPath, QDBusObjectPath()),
+                                             Q_ARG(QString, binder.action().id), Q_ARG(qulonglong, timestamp),
+                                             Q_ARG(QVariantMap, options));
+        };
+
+        QVERIFY(portalSignal("handleActivated", 5000));
+        QVERIFY(portalSignal("handleActivated", 5040));
+        QVERIFY(portalSignal("handleDeactivated", 5080));
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+
+        QVERIFY(portalSignal("handleActivated", 0));
+        QVERIFY(portalSignal("handleDeactivated", 0));
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
     }
 #endif
 

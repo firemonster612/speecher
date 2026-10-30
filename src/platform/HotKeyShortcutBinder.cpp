@@ -7,10 +7,14 @@
 namespace speecher {
 namespace {
 
-// The stored value can be a single key, which belongs to the single-key
-// binder and leaves this one with the default.
+// Nothing stored means the default. The stored value can be a single key,
+// which belongs to the single-key binder and leaves this one with the default
+// too, but a stored empty binding means the person cleared it.
 QKeySequence savedShortcut(const SettingsStore &settings, const GlobalShortcutAction &action)
 {
+    if (settings.globalShortcutCleared(action.role)) {
+        return {};
+    }
     const QKeySequence stored = settings.globalShortcut(action.role).combination();
     return stored.isEmpty() ? action.defaultShortcut : stored;
 }

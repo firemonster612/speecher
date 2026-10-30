@@ -166,12 +166,15 @@ void XInput2ShortcutBinder::processQueuedEvents(bool processPresses)
         const auto *raw = static_cast<const XIRawEvent *>(cookie->data);
         if (raw->detail == m_keycode && !(raw->flags & XIKeyRepeat)
             && !m_injectionDeviceIds.contains(raw->sourceid)) {
+            // The server's own event time, so a release this loop reaches
+            // late still reports how long the key was physically held.
+            const qint64 eventTimeMs = qint64(raw->time);
             if (cookie->evtype == XI_RawKeyPress) {
                 if (processPresses) {
-                    keyDown();
+                    keyDown(eventTimeMs);
                 }
             } else if (cookie->evtype == XI_RawKeyRelease) {
-                keyUp();
+                keyUp(eventTimeMs);
             }
         }
         XFreeEventData(m_display, cookie);

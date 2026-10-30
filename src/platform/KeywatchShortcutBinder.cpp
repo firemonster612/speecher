@@ -30,8 +30,12 @@ const char *refusalText(keywatch::Refusal refusal)
 
 } // namespace
 
-KeywatchShortcutBinder::KeywatchShortcutBinder(SettingsStore *settings, GlobalShortcutAction action, QObject *parent)
+KeywatchShortcutBinder::KeywatchShortcutBinder(SettingsStore *settings,
+                                               GlobalShortcutAction action,
+                                               QObject *parent,
+                                               QString socketPath)
     : SingleKeyShortcutBinder(settings, std::move(action), parent)
+    , m_socketPath(std::move(socketPath))
     , m_socket(new QLocalSocket(this))
 {
     // The async slots serve reconnects after the daemon restarts; the initial
@@ -111,17 +115,31 @@ void KeywatchShortcutBinder::startRecoveryPoll()
     m_recoveryPoll->start();
 }
 
+// A refused replacement leaves the binding on the previous key, so the watch
+// goes back to it too. Its connection is already closed, so it reconnects as
+// after a daemon restart, which also releases the key if it was held.
+QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
+{
+    const quint8 previousKeyId = m_keyId;
+    const QString error = exchangeWatch(key);
+    if (!error.isEmpty() && previousKeyId != 0) {
+        m_keyId = previousKeyId;
+        reconnectLater(0);
+    }
+    return error;
+}
+
 // The synchronous exchange with the daemon: its OK is what commits the
 // binding. A shortcut must never look bound while the helper refused it or
 // never answered (design property 9), so a refusal comes back as the error
 // the UI shows instead of a stored binding.
-QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
+QString KeywatchShortcutBinder::exchangeWatch(const PhysicalKey &key)
 {
     unwatch();
     m_helperBusy = false;
     m_keyId = keywatch::permittedKeyByCode(key.code)->id;
     const QSignalBlocker blocker(m_socket);
-    m_socket->connectToServer(QString::fromLatin1(keywatch::socketPath));
+    m_socket->connectToServer(m_socketPath);
     if (!m_socket->waitForConnected(replyTimeoutMs)) {
         unwatch();
         const KeywatchSetupStatus status = KeywatchSetup::probe();
@@ -180,7 +198,7 @@ void KeywatchShortcutBinder::reconnectLater(int delayMs)
     QTimer::singleShot(delayMs, this, [this] {
         m_reconnectPending = false;
         if (m_keyId != 0 && m_socket->state() == QLocalSocket::UnconnectedState) {
-            m_socket->connectToServer(QString::fromLatin1(keywatch::socketPath));
+            m_socket->connectToServer(m_socketPath);
         }
     });
 }
@@ -210,7 +228,10 @@ void KeywatchShortcutBinder::readFromDaemon()
     while (m_socket->bytesAvailable() >= qint64(sizeof(keywatch::KeyEvent))) {
         keywatch::KeyEvent event{};
         m_socket->read(reinterpret_cast<char *>(&event), sizeof(event));
-        event.down ? keyDown() : keyUp();
+        // The daemon stamps each transition as it reads it, so the hold is
+        // measured there, not from when this loop got round to it.
+        const qint64 eventTimeMs = qint64(event.monotonicUsec / 1000);
+        event.down ? keyDown(eventTimeMs) : keyUp(eventTimeMs);
     }
 }
 
