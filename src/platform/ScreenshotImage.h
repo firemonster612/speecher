@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QImage>
 #include <QString>
 
 #include <functional>
@@ -14,6 +15,9 @@ namespace speecher {
 // screenshot provider hands its capture through here so the transcription
 // providers see one format and one size ceiling.
 QByteArray normalizedScreenshot(const QByteArray &source);
+// The same for a capture that is already an image, as a native capture API
+// hands over. Empty when the PNG could not be written.
+QByteArray normalizedScreenshot(QImage image);
 
 struct ScreenshotResult {
     QByteArray png;

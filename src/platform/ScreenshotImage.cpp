@@ -3,7 +3,6 @@
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QFile>
-#include <QImage>
 #include <QImageReader>
 #include <QThread>
 
@@ -52,11 +51,15 @@ QByteArray normalizedScreenshot(const QByteArray &source)
         || qint64(size.width()) * size.height() > maximumSourcePixels) {
         return {};
     }
-    QImage image = reader.read();
+    const QImage image = reader.read();
     if (image.isNull()) {
         return {};
     }
+    return normalizedScreenshot(image);
+}
 
+QByteArray normalizedScreenshot(QImage image)
+{
     constexpr int maximumEdge = 2560;
     if (image.width() > maximumEdge || image.height() > maximumEdge) {
         image = image.scaled(maximumEdge,
