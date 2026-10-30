@@ -21,7 +21,7 @@ constexpr qsizetype kMostKeptBytes = qsizetype(10) * 60 * kSpeechBytesPerSecond;
 RecordingStream::RecordingStream(ProviderRegistry *providers, QObject *parent)
     : QObject(parent)
     , m_transcript(new TranscriptState(this))
-    , m_stream(new SpeechStream(providers, m_transcript, this))
+    , m_stream(new SpeechStream(providers, m_transcript, {.cutIntoUtterances = true}, this))
 {
     SpeechAttempts *speech = m_stream->attempts();
     // The provider starts once the worker reports, never inside start().
@@ -65,7 +65,6 @@ void RecordingStream::start(AudioInput *input, const AppSettings &settings)
 {
     AppSettings streamed = settings;
     streamed.speech.codexFinalRetranscribe = false;
-    streamed.speech.cutIntoUtterances = true;
     m_running = true;
     m_error.clear();
     m_stream->reset();

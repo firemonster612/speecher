@@ -20,7 +20,7 @@ public:
     std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool renewsSignIn() const override { return true; }
     bool streamsFinalText(const SpeechSettings &) const override { return true; }
-    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;

@@ -44,7 +44,6 @@ public:
     SpeechEndpointSettings speechEndpointSettings() const; void setSpeechEndpointSettings(const SpeechEndpointSettings &value);
     RefinementEndpointSettings refinementEndpointSettings() const; void setRefinementEndpointSettings(const RefinementEndpointSettings &value);
     LocalRunnerSettings localRunnerSettings() const; void setLocalRunnerSettings(const LocalRunnerSettings &value);
-    QStringList customVocabulary() const; void setCustomVocabulary(const QStringList &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     bool recordVocabularyUsage(const QString &text);
     // Saves each term the list does not hold yet, ignoring case, as a manual
@@ -57,12 +56,11 @@ public:
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     bool insightsEnabled() const; void setInsightsEnabled(bool value);
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
-    void setLearnedCorrectionEnabled(const QString &id, bool enabled); void removeLearnedCorrection(const QString &id);
     QString refinementProvider() const; void setRefinementProvider(const QString &value);
     QStringList refinementFallbackProviders() const; void setRefinementFallbackProviders(const QStringList &value);
-    // A provider was saved, as opposed to the default read from installed CLIs.
-    bool refinementProviderChosen() const;
-    QString refinementStyle() const; void setRefinementStyle(const QString &value);
+    // The cleanup level an older release saved, which seeds the Writing
+    // Profiles until they are saved. Nothing writes it now.
+    QString refinementStyle() const;
     QString defaultWritingProfile() const; void setDefaultWritingProfile(const QString &value);
     QList<WritingProfileSettings> writingProfileSettings() const; void setWritingProfileSettings(const QList<WritingProfileSettings> &value);
     QList<WritingProfileOverride> writingProfileOverrides() const; void setWritingProfileOverrides(const QList<WritingProfileOverride> &value);
@@ -126,7 +124,6 @@ public:
     QString updatesPendingWhatsNewVersion() const; void setUpdatesPendingWhatsNewVersion(const QString &value);
     bool recordingConsentNoticeShown() const; void setRecordingConsentNoticeShown(bool value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
-    QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();
     // Every field fields() reads, from the file. The keyring keys stay empty.
     AppSettings snapshot() const;
     // Saves every stored field of draft, and nothing else.

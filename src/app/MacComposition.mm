@@ -149,7 +149,7 @@ AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *p
         return new E2EAudioInput(parent);
     }
 #endif
-    auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
+    auto *input = new QtAudioInput(settings->dictationSnapshot().audio, parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
                      input,

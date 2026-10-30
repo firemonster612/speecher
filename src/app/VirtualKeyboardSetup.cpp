@@ -43,7 +43,7 @@ VirtualKeyboardSetup::VirtualKeyboardSetup(SettingsStore *settings, System syste
     m_arrival.setSingleShot(true);
     m_arrival.setInterval(testArrivalMs);
     connect(&m_arrival, &QTimer::timeout, this, [this] { setTest(Test::Missed); });
-    m_status = m_system.probe(m_settings->ydotoolEnabled());
+    m_status = m_system.probe(m_settings->dictationSnapshot().output.ydotoolEnabled);
 }
 
 VirtualKeyboardSetup::~VirtualKeyboardSetup() = default;
@@ -55,7 +55,7 @@ QString VirtualKeyboardSetup::testText()
 
 void VirtualKeyboardSetup::refresh()
 {
-    const YdotoolSetupStatus status = m_system.probe(m_settings->ydotoolEnabled());
+    const YdotoolSetupStatus status = m_system.probe(m_settings->dictationSnapshot().output.ydotoolEnabled);
     if (status.state == m_status.state && status.speecherManagedSetupInstalled == m_status.speecherManagedSetupInstalled) {
         return;
     }
@@ -93,7 +93,10 @@ void VirtualKeyboardSetup::setUp(AfterSetUp after)
                 return;
             }
             if (after == AfterSetUp::PasteAutomatically) {
-                m_settings->setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
+                m_settings->edit([](AppSettings &settings) {
+                    settings.output.method = QString::fromLatin1(OutputMethod::Automatic);
+                    return true;
+                });
             }
             if (!result->serviceError.isEmpty()) {
                 emit failed(Failure::Start, result->serviceError);
@@ -219,7 +222,7 @@ void VirtualKeyboardSetup::runOffThread(Operation operation, std::function<void(
     connect(thread, &QThread::finished, this, [this, done = std::move(done)] {
         m_operation = Operation::None;
         done();
-        m_status = m_system.probe(m_settings->ydotoolEnabled());
+        m_status = m_system.probe(m_settings->dictationSnapshot().output.ydotoolEnabled);
         emit changed();
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);

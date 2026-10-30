@@ -51,7 +51,7 @@ public:
     std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
     bool streamsFinalText(const SpeechSettings &settings) const override;
     int utteranceAnswerTimeoutMs() const override;
-    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &options) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;
@@ -84,7 +84,7 @@ private:
     // The open utterance's audio, or outside one the lead-in for the next.
     QByteArray m_pcm;
     // The caller marks the attempt's utterances, so its text comes an
-    // utterance at a time; see SpeechSettings::cutIntoUtterances.
+    // utterance at a time; see SpeechAttemptOptions::cutIntoUtterances.
     bool m_cutIntoUtterances = false;
     // Between beginUtterance() and endUtterance().
     bool m_utteranceOpen = false;

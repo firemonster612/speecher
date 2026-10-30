@@ -846,7 +846,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setCustomVocabulary({QStringLiteral("KWin")});
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("KWin")}}; return true; });
         settings.raw().sync();
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
@@ -859,7 +859,7 @@ private slots:
         QCOMPARE(runCliCommand(decision, std::make_shared<FakeSingleInstancePlatform>(uniqueIpcName())), 0);
         QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("Already in the vocabulary: kwin\n"));
         settings.raw().sync();
-        QCOMPARE(settings.customVocabulary(),
+        QCOMPARE(settings.dictationSnapshot().speech.vocabulary,
                  QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("KWin")}));
     }
 

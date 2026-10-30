@@ -139,34 +139,37 @@ private slots:
         LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
                                                   QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
                                                   {QStringLiteral("gemma4:e4b")}}});
-        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("anthropic");
+            return true;
+        });
 
         const QString anthropic = QStringLiteral("anthropic");
         const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
-        settings.setRefinementFallbackProviders(full);
+        settings.edit([&](AppSettings &draft) { draft.refinement.fallbackProviderIds = full; return true; });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.refinementFallbackProviders(), full);
-        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, full);
+        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
 
-        settings.setRefinementFallbackProviders({});
+        settings.edit([](AppSettings &draft) { draft.refinement.fallbackProviderIds = {}; return true; });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.refinementProvider(), anthropic);
-        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(settings.dictationSnapshot().refinement.providerId, anthropic);
+        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.dictationSnapshot().refinement.localRunner.model, QStringLiteral("gemma4:e4b"));
 
         // Already a fallback.
-        settings.setLocalRunnerSettings({});
+        settings.edit([](AppSettings &draft) { draft.refinement.localRunner = {}; return true; });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
 
         // Setup's choice, saved with the fallback: with None saved, a chain
         // behind it could hold no fallback at all.
-        settings.setRefinementProvider(QStringLiteral("none"));
-        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
-        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
-        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
     }
 
     void endpointChecksDiscardSupersededResults_data()
@@ -250,7 +253,7 @@ private slots:
         QTRY_VERIFY(server.hasPendingConnections());
         QVERIFY(serveOnce(server, "200 OK", R"({"data":[{"id":"first"},{"id":"second"}]})")
                     .startsWith("GET /v1/models"));
-        QTRY_COMPARE(settings.refinementEndpointSettings().model, QString("first"));
+        QTRY_COMPARE(settings.dictationSnapshot().refinement.endpoint.model, QString("first"));
         QCOMPARE(setup.liveFacts().refinementEndpointStatus, QString("Connected. Models available: 2."));
         QCOMPARE(setup.liveFacts().refinementEndpointModels, QStringList({"first", "second"}));
         QVERIFY(!server.waitForNewConnection(1000));
@@ -322,40 +325,41 @@ private slots:
             [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
 #endif
         LocalSetup setup(settings, providers, models);
-        QVERIFY(!settings.localSpeechSettings().modelChosen);
-        auto unchanged = settings.localSpeechSettings();
+        QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
+        auto unchanged = settings.dictationSnapshot().speech.local;
         unchanged.idleUnloadMinutes = 60;
-        settings.setLocalSpeechSettings(unchanged);
-        QVERIFY(!settings.localSpeechSettings().modelChosen);
-        const auto beforeProbe = settings.localSpeechSettings().modelId;
+        settings.edit([&](AppSettings &draft) { draft.speech.local = unchanged; return true; });
+        QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
+        const auto beforeProbe = settings.dictationSnapshot().speech.local.modelId;
         setup.initializeSpeechModel();
-        QVERIFY(!settings.localSpeechSettings().modelChosen);
-        QCOMPARE(settings.localSpeechSettings().modelId, beforeProbe);
+        QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
+        QCOMPARE(settings.dictationSnapshot().speech.local.modelId, beforeProbe);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
         // The first Metal device init compiles ggml's shaders, which took
         // about 45 s on a CI runner; the suite has 120 s.
         QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
-        QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
-        QCOMPARE(setup.speechModelChoice().id, setup.suggestedModel().id);
-        QVERIFY(!settings.localSpeechSettings().modelChosen);
+        const AppSettings probed = settings.dictationSnapshot();
+        QCOMPARE(probed.speech.local.modelId, setup.suggestedModel(probed).id);
+        QCOMPARE(setup.speechModelChoice(probed).id, setup.suggestedModel(probed).id);
+        QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
 #endif
         setup.chooseSpeechModel("cohere");
-        QVERIFY(settings.localSpeechSettings().modelChosen);
+        QVERIFY(settings.dictationSnapshot().speech.local.modelChosen);
         setup.initializeSpeechModel();
-        QCOMPARE(setup.speechModelChoice().id, QString("cohere"));
+        QCOMPARE(setup.speechModelChoice(settings.dictationSnapshot()).id, QString("cohere"));
         const auto &model = *findLocalModel("cohere");
         auto speech = settings.snapshot().speech;
         QVERIFY(!setup.modelState(model, speech).inUse);
         // A result belongs to where it ran, so switching Runs on leaves the
         // model unmeasured until it is tested there.
-        auto local = settings.localSpeechSettings();
+        auto local = settings.dictationSnapshot().speech.local;
         local.speedTestSeconds.insert(localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}}), 0.8);
-        settings.setLocalSpeechSettings(local);
-        QCOMPARE(setup.measuredSeconds(model.id), std::nullopt);
+        settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        QCOMPARE(setup.measuredSeconds(model.id, settings.dictationSnapshot()), std::nullopt);
         local.runsOn = {QStringLiteral("cpu"), {}};
-        settings.setLocalSpeechSettings(local);
-        QCOMPARE(setup.measuredSeconds(model.id), std::optional(0.8));
+        settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        QCOMPARE(setup.measuredSeconds(model.id, settings.dictationSnapshot()), std::optional(0.8));
         {
             QFile file(models.modelPath(model));
             QVERIFY(file.open(QIODevice::WriteOnly));
@@ -396,7 +400,7 @@ private slots:
         // A card saved before backends could be chosen is still that card.
         QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {QStringLiteral("auto"), card.id})), ModelFit::TooLarge);
 
-        // LocalSetup re-reads the choice, so the page follows a change.
+        // LocalSetup answers for the Runs on choice in the settings it is given.
         QTemporaryDir directory;
         SettingsStore settings;
         settings.raw().clear();
@@ -404,11 +408,11 @@ private slots:
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
         LocalSetup setup(settings, providers, models);
         LocalSetupTestAccess::setHardware(setup, hardware);
-        QCOMPARE(setup.fit(qwen), std::optional(ModelFit::TooLarge));
-        LocalSpeechSettings local = settings.localSpeechSettings();
+        QCOMPARE(setup.fit(qwen, settings.dictationSnapshot()), std::optional(ModelFit::TooLarge));
+        LocalSpeechSettings local = settings.dictationSnapshot().speech.local;
         local.runsOn = {QStringLiteral("cpu"), {}};
-        settings.setLocalSpeechSettings(local);
-        QCOMPARE(setup.fit(qwen), std::optional(ModelFit::Fits));
+        settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        QCOMPARE(setup.fit(qwen, settings.dictationSnapshot()), std::optional(ModelFit::Fits));
     }
 
     // Acceleration offers Automatic, the CPU and each backend a card here
@@ -770,7 +774,7 @@ private slots:
         QVERIFY(clip.open(QIODevice::ReadOnly));
         const QByteArray pcm = clip.readAll();
 
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {});
         // 100 ms chunks at the pace the microphone delivers them.
         constexpr qsizetype chunkBytes = 3200;
         for (qsizetype offset = 0; offset < pcm.size(); offset += chunkBytes) {
@@ -795,8 +799,7 @@ private slots:
 
         // Transcribe does; models that time their segments do so within the
         // clip, in order.
-        settings.timedSegments = true;
-        transcriber.startAttempt(2, settings);
+        transcriber.startAttempt(2, settings, {.timedSegments = true});
         transcriber.sendAudio(2, pcm);
         transcriber.finishInput(2);
         QVERIFY(completed.wait(120000));
@@ -869,10 +872,10 @@ private slots:
         const QByteArray pcm = clip.readAll();
 
         transcriber.runSpeedTest(modelId, {});
-        transcriber.startAttempt(1, settings);
+        transcriber.startAttempt(1, settings, {});
         transcriber.sendAudio(1, pcm.left(3200));
         transcriber.cancelAttempt(1);
-        transcriber.startAttempt(2, settings);
+        transcriber.startAttempt(2, settings, {});
         transcriber.sendAudio(2, pcm);
         transcriber.finishInput(2);
 
@@ -944,7 +947,7 @@ private slots:
         const std::optional<ProviderFailure> prepared = transcriber.prepare(settings, {});
         QVERIFY(prepared);
         QCOMPARE(prepared->kind, ProviderFailureKind::Unavailable);
-        transcriber.startAttempt(7, settings);
+        transcriber.startAttempt(7, settings, {});
         QVERIFY(failed.wait(2000));
         const SpeechFailure failure = failed.first().at(0).value<SpeechFailure>();
         QCOMPARE(failure.attemptId, quint64(7));

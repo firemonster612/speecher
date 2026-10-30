@@ -33,6 +33,18 @@ struct TranscriptSegment {
     bool operator==(const TranscriptSegment &) const = default;
 };
 
+// What the run starting an attempt asks of it beyond the speech settings.
+// Never stored.
+struct SpeechAttemptOptions {
+    // Transcribe sets it so a provider that can time its transcript does;
+    // dictation leaves it off, because asking a model for timings slows it
+    // and can change the text it returns.
+    bool timedSegments = false;
+    // A recording sets it: it marks where each utterance begins and ends
+    // (see beginUtterance), and the audio outside them is quiet.
+    bool cutIntoUtterances = false;
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -69,7 +81,8 @@ public:
         Q_UNUSED(settings);
         return false;
     }
-    virtual void startAttempt(quint64 attemptId, const SpeechSettings &settings) = 0;
+    virtual void startAttempt(quint64 attemptId, const SpeechSettings &settings,
+                              const SpeechAttemptOptions &options) = 0;
     virtual void sendAudio(quint64 attemptId, const QByteArray &pcm) = 0;
     virtual void finishInput(quint64 attemptId) = 0;
     virtual void cancelAttempt(quint64 attemptId) = 0;
@@ -77,7 +90,7 @@ public:
     // provider that does not end one at a silence by itself. Providers that do
     // ignore it.
     virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
-    // With SpeechSettings::cutIntoUtterances, the audio from here on is the
+    // With SpeechAttemptOptions::cutIntoUtterances, the audio from here on is the
     // next utterance, and what came since the last ended was quiet. Providers
     // that take the quiet too ignore it.
     virtual void beginUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }

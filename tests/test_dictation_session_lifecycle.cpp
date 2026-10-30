@@ -337,13 +337,16 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setDefaultWritingProfile(WritingProfile::Work);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.defaultWritingProfile = WritingProfile::Work;
+            return true;
+        });
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.profiles = {WritingProfile::Work};
         VocabularyEntry lucia{QStringLiteral("Lúcia")};
         lucia.profiles = {WritingProfile::Personal};
-        settings.setVocabularyEntries({kubernetes, lucia});
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = {kubernetes, lucia}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -362,10 +365,13 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setPreviewWords(7);
-        settings.setPauseMediaDuringTranscription(true);
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+        settings.edit([](AppSettings &draft) {
+            draft.ui.previewWords = 7;
+            draft.ui.pauseMediaDuringTranscription = true;
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -407,7 +413,7 @@ private slots:
         // transcriber; its destructor must not call into the freed object.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -437,7 +443,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -462,7 +468,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -487,8 +493,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setCompletionStatusDurationMs(900);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.output.completionStatusDurationMs = 900;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -550,8 +559,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setOutputFormat(OutputFormat::PlainText);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.output.format = OutputFormat::PlainText;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -574,7 +586,7 @@ private slots:
         session.toggle();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastSettings.format, OutputFormat::Html);
-        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+        QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
 
         session.stopListening();
         QCOMPARE(delivery->calls, 1);
@@ -588,8 +600,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setPauseMediaDuringTranscription(true);
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) {
+            draft.ui.pauseMediaDuringTranscription = true;
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -627,8 +642,11 @@ private slots:
         // dropped.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setPauseMediaDuringTranscription(true);
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) {
+            draft.ui.pauseMediaDuringTranscription = true;
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -652,7 +670,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -683,7 +701,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -715,8 +733,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setOutputFormat(OutputFormat::PlainText);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.output.format = OutputFormat::PlainText;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -736,17 +757,20 @@ private slots:
         QCOMPARE(delivery->lastContent.plainText, QStringLiteral("<hello>"));
         QVERIFY(delivery->lastContent.html);
         QCOMPARE(*delivery->lastContent.html, QStringLiteral("<p>&lt;hello&gt;</p>"));
-        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+        QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
     }
 
     void dictationSessionCapturesTargetAtStart()
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
         // The person's own rule outranks Kate's built-in Code editor match.
-        settings.setAppRecognitionRules({
-            {QStringLiteral("org.kde.kate"), AppCategory::Terminal, std::nullopt},
+        settings.edit([](AppSettings &draft) {
+            draft.appRecognitionRules = {
+                {QStringLiteral("org.kde.kate"), AppCategory::Terminal, std::nullopt},
+            };
+            return true;
         });
 
         auto audio = std::make_unique<FakeAudioInput>();
@@ -795,8 +819,11 @@ private slots:
         QFETCH(bool, delivered);
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setInsightsEnabled(enabled);
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.insightsEnabled = enabled;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -837,8 +864,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setSpokenLanguage(QStringLiteral("cy"));
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.speech.language = QStringLiteral("cy");
+            return true;
+        });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -860,7 +890,7 @@ private slots:
         session.startListeningWith({std::nullopt, std::nullopt, QStringLiteral("de")});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(speech->lastLanguage, QStringLiteral("de"));
-        QCOMPARE(settings.spokenLanguage(), QStringLiteral("cy"));
+        QCOMPARE(settings.dictationSnapshot().speech.language, QStringLiteral("cy"));
         settings.raw().clear();
     }
 
@@ -868,7 +898,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
                                                  QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
@@ -908,8 +938,11 @@ private slots:
         // what was dictated, not that.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
-        settings.setInsightsEnabled(true);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("openai");
+            draft.insightsEnabled = true;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -946,8 +979,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setInsightsEnabled(true);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.insightsEnabled = true;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -961,7 +997,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("Hello"));
-        settings.setInsightsEnabled(false);
+        settings.edit([](AppSettings &draft) { draft.insightsEnabled = false; return true; });
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
 
@@ -972,7 +1008,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1014,7 +1050,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1046,7 +1082,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
 
-        settings.setIncludeScreenshotContext(true);
+        settings.edit([](AppSettings &draft) { draft.refinement.includeScreenshotContext = true; return true; });
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(screenshots->captureCalls, 1, 250);
         QCOMPARE(int(session.state()), int(DictationState::Listening));
@@ -1074,8 +1110,11 @@ private slots:
         // into whatever window has focus, during shutdown.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setPauseMediaDuringTranscription(true);
-        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.edit([](AppSettings &draft) {
+            draft.ui.pauseMediaDuringTranscription = true;
+            draft.refinement.providerId = QStringLiteral("openai");
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1119,10 +1158,13 @@ private slots:
                                             DictationState::Refining}) {
             SettingsStore settings;
             settings.raw().clear();
-            settings.setPauseMediaDuringTranscription(true);
-            settings.setInsightsEnabled(true);
-            settings.setRefinementProvider(QStringLiteral("openai"));
-            settings.setCompletionStatusDurationMs(300);
+            settings.edit([](AppSettings &draft) {
+                draft.ui.pauseMediaDuringTranscription = true;
+                draft.insightsEnabled = true;
+                draft.refinement.providerId = QStringLiteral("openai");
+                draft.output.completionStatusDurationMs = 300;
+                return true;
+            });
             auto audio = std::make_unique<FakeAudioInput>();
             auto media = std::make_unique<FakeMediaController>();
             auto delivery = std::make_unique<FakeDelivery>();
@@ -1183,7 +1225,7 @@ private slots:
             // of slack for the timer, which still fails a hide straight away.
             if (target == DictationState::Listening) {
                 QTRY_COMPARE(hidden.count(), 1);
-                QVERIFY2(hiddenAfterMs >= settings.completionStatusDurationMs() - 50,
+                QVERIFY2(hiddenAfterMs >= settings.dictationSnapshot().output.completionStatusDurationMs - 50,
                          qPrintable(QString::number(hiddenAfterMs)));
             }
         }
@@ -1235,7 +1277,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setPauseMediaDuringTranscription(true);
+        settings.edit([](AppSettings &draft) { draft.ui.pauseMediaDuringTranscription = true; return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -1281,7 +1323,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setInsightsEnabled(true);
+        settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -1562,7 +1604,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -1674,8 +1716,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
-        settings.setIncludeScreenshotContext(true);
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.includeScreenshotContext = true;
+            return true;
+        });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1745,7 +1790,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1772,7 +1817,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1810,7 +1855,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1855,7 +1900,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();

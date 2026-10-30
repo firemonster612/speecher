@@ -200,6 +200,9 @@ struct RefinementContext {
     Target target;
     QString writingProfile = WritingProfile::Other;
     QString tone = QStringLiteral("none");
+    // The spoken phrases of the replacements that apply, which refinement
+    // must leave for the replacements to find.
+    QStringList bindingVocabulary;
     // The user's own instructions, from settings: every refinement's, then
     // the writing profile's.
     QString additionalInstructions;

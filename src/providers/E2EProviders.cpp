@@ -21,7 +21,7 @@ public:
     }
 
     // A couple of words every 200 ms, so the live preview visibly grows.
-    void startAttempt(quint64 attemptId, const SpeechSettings &) override
+    void startAttempt(quint64 attemptId, const SpeechSettings &, const SpeechAttemptOptions &) override
     {
         m_attemptId = attemptId;
         m_finalSent = false;

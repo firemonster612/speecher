@@ -183,7 +183,7 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
     if (runner.runner == QStringLiteral("ollama")) {
         keepOllamaModelLoaded(runner.model);
     }
-    m_chat->refine(rawTranscript, vocabulary, settings.bindingVocabulary, {},
+    m_chat->refine(rawTranscript, vocabulary, context.bindingVocabulary, {},
                    localRunnerOrigin(runner.runner) + QStringLiteral("/v1"), runner.model,
                    settings.style, context);
 }

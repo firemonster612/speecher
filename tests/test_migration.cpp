@@ -519,7 +519,7 @@ private:
         QCOMPARE(settings.output.method, QStringLiteral("automatic"));
         QCOMPARE(resolvePasteRule(settings.output.pasteRules, Target{}).method, PasteMethod::DirectInsert);
         // 45 days, which the interval now caps at 30.
-        QCOMPARE(store.updateCheckIntervalMinutes(), 30 * 24 * 60);
+        QCOMPARE(store.dictationSnapshot().updates.checkIntervalMinutes, 30 * 24 * 60);
     }
 };
 

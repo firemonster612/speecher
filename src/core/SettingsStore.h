@@ -78,13 +78,13 @@ public:
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
-    bool launchAtLogin() const;
-    void setLaunchAtLogin(bool enabled);
+    // Starts Speecher at login, or stops it, as the saved launchAtLogin says.
+    // applySnapshot runs it after every save.
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
     void reconcileLaunchAtLogin();
-    void setCorrectionLearningEnabled(bool enabled);
     // Announces learnedCorrectionsChanged when the evidence learned a
-    // correction or strengthened one.
+    // correction or strengthened one. Records nothing while correction
+    // learning is off.
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
     // SettingsCodecs::recordVocabularyUsage, announcing the uses it counted.
@@ -93,124 +93,10 @@ public:
     // Saves nothing, returning nullopt, once deleteAll ran.
     std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
 
-    using SettingsCodecs::anthropicAuthMode;
-    using SettingsCodecs::autoCheckUpdates;
-    using SettingsCodecs::autoInstallUpdates;
-    using SettingsCodecs::anthropicCliproxyAccount;
-    using SettingsCodecs::anthropicEffort;
-    using SettingsCodecs::anthropicFastMode;
-    using SettingsCodecs::anthropicModel;
-    using SettingsCodecs::cliproxyOauthDir;
-    using SettingsCodecs::configuredCliproxyOauthDir;
-    using SettingsCodecs::setCliproxyOauthDir;
-    using SettingsCodecs::cliproxyBaseUrl;
-    using SettingsCodecs::setCliproxyBaseUrl;
-    using SettingsCodecs::appRecognitionRules;
-    using SettingsCodecs::audioCaptureSettings;
-    using SettingsCodecs::bindingRules;
-    using SettingsCodecs::claudeCredentialsPath;
-    using SettingsCodecs::claudeEndpointBase;
-    using SettingsCodecs::claudeVoicePath;
-    using SettingsCodecs::clearStoredApiKeyFallback;
-    using SettingsCodecs::completionStatusDurationMs;
-    using SettingsCodecs::correctionLearningEnabled;
-    using SettingsCodecs::customCleanupLevels;
-    using SettingsCodecs::customTones;
-    using SettingsCodecs::customVocabulary;
-    using SettingsCodecs::defaultWritingProfile;
-    using SettingsCodecs::includeScreenshotContext;
-    using SettingsCodecs::insightsEnabled;
-    using SettingsCodecs::learnedCorrections;
-    using SettingsCodecs::openAiAuthMode;
-    using SettingsCodecs::openAiCliproxyAccount;
-    using SettingsCodecs::openAiEffort;
-    using SettingsCodecs::openAiSpeed;
-    using SettingsCodecs::openAiModel;
-    using SettingsCodecs::outputFormat;
-    using SettingsCodecs::outputMethod;
-    using SettingsCodecs::pasteRules;
-    using SettingsCodecs::pauseMediaDuringTranscription;
-    using SettingsCodecs::previewWords;
-    using SettingsCodecs::refinementPreviewEnabled;
-    using SettingsCodecs::selectionEditReviewEnabled;
-    using SettingsCodecs::refinementProvider;
-    using SettingsCodecs::refinementFallbackProviders;
-    using SettingsCodecs::refinementProviderChosen;
-    using SettingsCodecs::refinementStyle;
-    using SettingsCodecs::transcriptionPreviewEnabled;
-    using SettingsCodecs::removeLearnedCorrection;
-    using SettingsCodecs::restoreClipboardAfterTyping;
-    using SettingsCodecs::setAnthropicAuthMode;
-    using SettingsCodecs::setAnthropicCliproxyAccount;
-    using SettingsCodecs::setAnthropicEffort;
-    using SettingsCodecs::setAnthropicFastMode;
-    using SettingsCodecs::setAnthropicModel;
-    using SettingsCodecs::setAppRecognitionRules;
-    using SettingsCodecs::setBindingRules;
-    using SettingsCodecs::setCompletionStatusDurationMs;
-    using SettingsCodecs::setCustomVocabulary;
-    using SettingsCodecs::setDefaultWritingProfile;
-    using SettingsCodecs::setIncludeScreenshotContext;
-    using SettingsCodecs::setInsightsEnabled;
-    using SettingsCodecs::setLearnedCorrectionEnabled;
-    using SettingsCodecs::setLearnedCorrections;
-    using SettingsCodecs::setOpenAiAuthMode;
-    using SettingsCodecs::setOpenAiCliproxyAccount;
-    using SettingsCodecs::setOpenAiEffort;
-    using SettingsCodecs::setOpenAiSpeed;
-    using SettingsCodecs::setOpenAiModel;
-    using SettingsCodecs::setOutputFormat;
-    using SettingsCodecs::setOutputMethod;
-    using SettingsCodecs::setPasteRules;
-    using SettingsCodecs::setPauseMediaDuringTranscription;
-    using SettingsCodecs::setPreviewWords;
-    using SettingsCodecs::setRefinementPreviewEnabled;
-    using SettingsCodecs::setSelectionEditReviewEnabled;
-    using SettingsCodecs::setRefinementProvider;
-    using SettingsCodecs::setRefinementFallbackProviders;
-    using SettingsCodecs::setRefinementStyle;
-    using SettingsCodecs::setRestoreClipboardAfterTyping;
-    using SettingsCodecs::setSoundsEnabled;
-    using SettingsCodecs::setSpeechProvider;
-    using SettingsCodecs::setSpeechFallbackProviders;
-    using SettingsCodecs::setSpeechFallbackLanguages;
-    using SettingsCodecs::localSpeechSettings;
-    using SettingsCodecs::setLocalSpeechSettings;
-    using SettingsCodecs::localRunnerSettings;
-    using SettingsCodecs::setLocalRunnerSettings;
-    using SettingsCodecs::speechEndpointSettings;
-    using SettingsCodecs::setSpeechEndpointSettings;
-    using SettingsCodecs::refinementEndpointSettings;
-    using SettingsCodecs::setRefinementEndpointSettings;
-    using SettingsCodecs::setCodexFinalRetranscribe;
-    using SettingsCodecs::setSpokenLanguage;
-    using SettingsCodecs::setSetupCompleted;
-    using SettingsCodecs::recordingConsentNoticeShown;
-    using SettingsCodecs::setRecordingConsentNoticeShown;
-    using SettingsCodecs::setStoredApiKeyFallback;
-    using SettingsCodecs::setTheme;
-    using SettingsCodecs::setColorScheme;
-    using SettingsCodecs::setTranslucency;
-    using SettingsCodecs::setWindowLayout;
-    using SettingsCodecs::setTranscriptionPreviewEnabled;
-    using SettingsCodecs::setUseTargetContext;
-    using SettingsCodecs::setVocabularyEntries;
-    using SettingsCodecs::setWritingProfileOverrides;
-    using SettingsCodecs::setWritingProfileSettings;
-    using SettingsCodecs::setYdotoolEnabled;
-    using SettingsCodecs::setUpdatesDismissedVersion;
-    using SettingsCodecs::setUpdatesLastRunVersion;
-    using SettingsCodecs::setUpdatesLastRunBuildNumber;
-    using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
-    using SettingsCodecs::setUpdatesLastCheckTime;
-    using SettingsCodecs::soundsEnabled;
-    using SettingsCodecs::speechProvider;
-    using SettingsCodecs::speechFallbackProviders;
-    using SettingsCodecs::codexFinalRetranscribe;
-    using SettingsCodecs::spokenLanguage;
-    using SettingsCodecs::setShortcutActivationMode;
-    using SettingsCodecs::setupCompleted;
-    using SettingsCodecs::shortcutActivationMode;
+    // Keys outside AppSettings, each read and written by the code that owns
+    // it: the Global Shortcut binders' bindings, the updaters' bookkeeping,
+    // the recording consent notice. None announces a change. The rest of the
+    // settings go through snapshot() and edit().
     using SettingsCodecs::globalShortcut;
     using SettingsCodecs::setGlobalShortcut;
     using SettingsCodecs::forgetGlobalShortcutCombination;
@@ -218,46 +104,36 @@ public:
     using SettingsCodecs::globalShortcutCleared;
     using SettingsCodecs::portalShortcutCleared;
     using SettingsCodecs::setPortalShortcutCleared;
-    using SettingsCodecs::storedApiKeyFallback;
-    using SettingsCodecs::theme;
-    using SettingsCodecs::colorScheme;
-    using SettingsCodecs::translucency;
-    using SettingsCodecs::windowLayout;
-    using SettingsCodecs::roundedCorners;
-    using SettingsCodecs::useTargetContext;
-    using SettingsCodecs::vocabularyEntries;
-    using SettingsCodecs::writingProfileOverrides;
-    using SettingsCodecs::writingProfileSettings;
-    using SettingsCodecs::ydotoolEnabled;
-    using SettingsCodecs::updateChannel;
-    using SettingsCodecs::updateCheckIntervalMinutes;
-    using SettingsCodecs::updateCheckIntervalUnit;
-    using SettingsCodecs::setUpdateCheckIntervalUnit;
+    using SettingsCodecs::updatesLastCheckTime;
+    using SettingsCodecs::setUpdatesLastCheckTime;
+    using SettingsCodecs::updatesDismissedVersion;
+    using SettingsCodecs::setUpdatesDismissedVersion;
     using SettingsCodecs::updatesReopenMainWindow;
     using SettingsCodecs::updatesReopenMainWindowTime;
     using SettingsCodecs::setUpdatesReopenMainWindow;
-    using SettingsCodecs::updatesDismissedVersion;
     using SettingsCodecs::updatesLastRunVersion;
+    using SettingsCodecs::setUpdatesLastRunVersion;
     using SettingsCodecs::updatesLastRunBuildNumber;
+    using SettingsCodecs::setUpdatesLastRunBuildNumber;
     using SettingsCodecs::updatesPendingWhatsNewVersion;
-    using SettingsCodecs::updatesLastCheckTime;
-
-    QString audioInputDeviceId() const;
-    void setAudioCaptureSettings(const AudioCaptureSettings &value);
-    void setUpdateChannel(UpdateChannel value);
-    void setAutoCheckUpdates(bool value);
-    void setAutoInstallUpdates(bool value);
-    void setUpdateCheckIntervalMinutes(int value);
+    using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
+    using SettingsCodecs::recordingConsentNoticeShown;
+    using SettingsCodecs::setRecordingConsentNoticeShown;
+    // output.ydotoolEnabled, which edit() can't change: only
+    // VirtualKeyboardSetup knows ydotool is set up.
+    using SettingsCodecs::setYdotoolEnabled;
 
     SettingsFile &raw();
 
 signals:
     // After applySnapshot, with what dictationSnapshot read just before it.
     void snapshotApplied(const AppSettings &previous);
+    // Before snapshotApplied, when the save changed these settings.
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
     // After recordCorrectionEvidence saved a learned correction.
     void learnedCorrectionsChanged();
+    // Before snapshotApplied, when the save changed the update settings.
     void updateSettingsChanged();
     // After addVocabularyTerms saved terms no settings surface has drawn yet.
     void vocabularyAdded();
@@ -266,7 +142,6 @@ signals:
 private:
     // previous is what dictationSnapshot read before the draft was made.
     void applySnapshot(const AppSettings &draft, const AppSettings &previous);
-    void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
     AppSettings snapshotReading(bool waitForKeyring) const;
     // Clears every setting but the deletion markers, marks the identity

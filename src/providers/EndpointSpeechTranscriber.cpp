@@ -183,7 +183,8 @@ int EndpointSpeechTranscriber::utteranceAnswerTimeoutMs() const
     return uploadAllowanceMs + m_inactivityTimeoutMs;
 }
 
-void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
+void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings,
+                                             const SpeechAttemptOptions &options)
 {
     cancelAttempt(m_attemptId);
     m_attemptId = attemptId;
@@ -193,7 +194,7 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     m_vocabularyPrompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
     m_inputFinished = false;
     m_pcm.clear();
-    m_cutIntoUtterances = settings.cutIntoUtterances;
+    m_cutIntoUtterances = options.cutIntoUtterances;
     m_utteranceOpen = false;
     m_utterances.clear();
     m_heardTail.clear();

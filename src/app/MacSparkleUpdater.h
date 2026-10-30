@@ -10,6 +10,7 @@ class QTimer;
 namespace speecher {
 
 class SettingsStore;
+struct UpdateSettings;
 
 class MacSparkleUpdater final : public UpdateController {
     Q_OBJECT
@@ -67,6 +68,8 @@ protected:
 private:
     struct Native;
     void applySettings();
+    // The saved update settings, read without waiting for the keyring.
+    UpdateSettings updateSettings() const;
     void updateSettingsChanged();
     void beginBackgroundCheck();
     void checkIfDue();

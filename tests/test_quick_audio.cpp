@@ -138,7 +138,7 @@ private slots:
 
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("audioDevice"), yeti);
-        QCOMPARE(SettingsStore().audioInputDeviceId(), yeti);
+        QCOMPARE(SettingsStore().dictationSnapshot().audio.deviceId, yeti);
         QVERIFY(!rig.audio.heard());
         // Not inside the settings store's signal: opening a device can wait.
         QCOMPARE(rig.inputs.size(), 1);
@@ -162,9 +162,9 @@ private slots:
         QCOMPARE(rig.audio.testError(), rig.startError);
         // Not tried again and again, nor for a setting that isn't the device.
         QCoreApplication::processEvents();
-        AudioCaptureSettings capture = controller.settings()->audioCaptureSettings();
+        AudioCaptureSettings capture = controller.settings()->dictationSnapshot().audio;
         capture.preRollMs += 100;
-        controller.settings()->setAudioCaptureSettings(capture);
+        controller.settings()->edit([&](AppSettings &draft) { draft.audio = capture; return true; });
         QCoreApplication::processEvents();
         QCOMPARE(rig.inputs.size(), 1);
 

@@ -215,6 +215,11 @@ private:
     void toggleSession(const SessionOverrides &overrides);
     void startSession(const SessionOverrides &overrides);
     SettingsStore *m_settings = nullptr;
+    // The live UI settings, which apply the moment a save changes them,
+    // mid-session too; the defaults without a store. Kept from the saves, not
+    // read for every preview repaint: on Windows a read is many registry
+    // lookups.
+    UiSettings m_ui;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;
     TargetProvider *m_targetProvider = nullptr;
@@ -239,6 +244,8 @@ private:
     quint64 m_audioGeneration = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
+    // What the session chose for itself: a forced Writing Profile.
+    RunChoices m_runChoices;
     Target m_target;
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;

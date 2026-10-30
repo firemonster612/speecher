@@ -167,7 +167,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
-    targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
+    targetProvider->setCorrectionObservationEnabled(m_settings->dictationSnapshot().correctionLearningEnabled);
     connect(m_settings,
             &SettingsStore::correctionLearningEnabledChanged,
             targetProvider,
@@ -181,10 +181,8 @@ ApplicationController::ApplicationController(bool popupOnly,
                    const QString &corrected,
                    const QString &applicationId,
                    double confidence) {
-                if (m_settings->correctionLearningEnabled()) {
-                    m_settings->recordCorrectionEvidence(
-                        {original, corrected, confidence}, applicationId);
-                }
+                // It records nothing while correction learning is off.
+                m_settings->recordCorrectionEvidence({original, corrected, confidence}, applicationId);
             });
     m_audio = m_platform->createAudioInput(m_settings, this);
     m_session = new DictationSession(m_settings,
@@ -309,8 +307,10 @@ ApplicationController::ApplicationController(bool popupOnly,
         const DictationState state = m_session->state();
         const bool resumed = std::exchange(wasPaused, state == DictationState::Paused)
             && state == DictationState::Listening;
-        if (m_settings->soundsEnabled() && !resumed
-            && (state == DictationState::Listening || state == DictationState::Stopping)) {
+        // Read last: on Windows a settings read is many registry lookups, and
+        // most state changes make no sound anyway.
+        if (!resumed && (state == DictationState::Listening || state == DictationState::Stopping)
+            && m_settings->dictationSnapshot().ui.soundsEnabled) {
             if (m_frontEnd) {
                 m_frontEnd->alert();
             }
@@ -508,8 +508,8 @@ void ApplicationController::notifyModelReady(const QString &modelId)
     if (!m_frontEnd || !model) {
         return;
     }
-    const bool inUse = parseProviderId(m_settings->speechProvider()) == ProviderId::Local
-        && m_settings->localSpeechSettings().modelId == modelId;
+    const SpeechSettings speech = m_settings->dictationSnapshot().speech;
+    const bool inUse = parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == modelId;
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
@@ -754,7 +754,7 @@ bool ApplicationController::filesOpened() const
 
 bool ApplicationController::heldFilesOpening() const
 {
-    return m_settings->setupCompleted() && !m_pendingTranscribeFiles.isEmpty();
+    return m_settings->dictationSnapshot().setupCompleted && !m_pendingTranscribeFiles.isEmpty();
 }
 
 // macOS answers the microphone grant asynchronously the first time, so a
@@ -936,7 +936,10 @@ ApplicationController::~ApplicationController()
 
 void ApplicationController::completeSetup()
 {
-    m_settings->setSetupCompleted(true);
+    m_settings->edit([](AppSettings &settings) {
+        settings.setupCompleted = true;
+        return true;
+    });
     if (m_pendingTranscribeFiles.isEmpty()) {
         return;
     }
@@ -956,7 +959,7 @@ void ApplicationController::setupAssistantClosed()
 
 bool ApplicationController::setupPending() const
 {
-    return m_frontEnd && !m_settings->setupCompleted();
+    return m_frontEnd && !m_settings->dictationSnapshot().setupCompleted;
 }
 
 bool ApplicationController::ensureSetupCompleted()

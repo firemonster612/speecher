@@ -162,7 +162,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     , m_settings(settings)
     , m_providers(providers)
     , m_transcript(new TranscriptState(this))
-    , m_stream(new SpeechStream(providers, m_transcript, this))
+    , m_stream(new SpeechStream(providers, m_transcript, {.timedSegments = true}, this))
     , m_refinementChain(new RefinementChain(
           [this](const QString &providerId) { return acquireRefiner(providerId); }, this))
 {
@@ -257,17 +257,15 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     // Never waits for the keyring, so a caller's refusal check still holds
     // when the batch starts; the chains read keys on their worker.
     m_batchSettings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, options);
-    m_batchSettings.speech.timedSegments = true;
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
-    m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);
+    m_runChoices = {writingProfileFromName(options.writingProfile), options.addedVocabulary};
     if (!options.applyVocabulary) {
         m_batchSettings.vocabulary.clear();
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }
-    m_batchSettings.sessionVocabulary = options.addedVocabulary;
-    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
+    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, m_runChoices, Target{});
     m_results.clear();
     m_running = true;
     m_index = -1;
@@ -372,10 +370,10 @@ void FileTranscriptionSession::finishTranscription()
 
 void FileTranscriptionSession::refine(const QString &raw)
 {
-    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, Target{}, m_stream->speechSettings().language);
+    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, m_runChoices, Target{},
+                                             m_stream->speechSettings().language);
     // The page's choices stand in for what a target app would have implied.
     m_pipeline.refinementSettings.style = m_options.cleanupStrength;
-    m_pipeline.refinementSettings.tone = m_options.tone;
     m_pipeline.refinementContext.tone = m_options.tone;
     m_pipeline.refinementContext.writingProfile = writingProfileFromName(m_options.writingProfile);
     TranscriptPipeline::fillUserInstructions(

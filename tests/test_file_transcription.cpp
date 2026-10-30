@@ -85,12 +85,12 @@ public:
         return std::nullopt;
     }
 
-    void startAttempt(quint64, const SpeechSettings &settings) override
+    void startAttempt(quint64, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
     {
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
         m_script->language = settings.language;
-        m_script->timedSegments = settings.timedSegments;
+        m_script->timedSegments = options.timedSegments;
         m_bytes = 0;
     }
 
@@ -482,7 +482,10 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options = speechOnly();
@@ -520,7 +523,10 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options = speechOnly();
@@ -739,8 +745,11 @@ private slots:
         writeWav(first);
         writeWav(second);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("endpoint"));
-        settings.setSpeechFallbackProviders({QStringLiteral("codex"), QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("endpoint");
+            draft.speech.fallbackProviderIds = {QStringLiteral("codex"), QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -774,8 +783,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -806,8 +818,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -836,8 +851,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -885,10 +903,16 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         if (!chosen.isEmpty()) {
-            settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), chosen}});
+            settings.edit([&](AppSettings &draft) {
+                draft.speech.fallbackLanguages = {{QStringLiteral("claude"), chosen}};
+                return true;
+            });
         }
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
@@ -948,8 +972,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -1022,8 +1049,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -1061,8 +1091,11 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("endpoint")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("endpoint")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options;
@@ -1089,8 +1122,11 @@ private slots:
                                                return codex;
                                            });
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
@@ -1276,7 +1312,7 @@ private slots:
         const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         bool microphoneStopped = false;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
@@ -1326,9 +1362,12 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
-        const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.vocabulary = {{QStringLiteral("Speecher")}};
+            return true;
+        });
+        const QList<VocabularyEntry> saved = settings.dictationSnapshot().vocabulary;
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1337,7 +1376,7 @@ private slots:
                  qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         QCOMPARE(m_codex->lastVocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
-        QCOMPARE(settings.vocabularyEntries(), saved);
+        QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
     // The Other profile's speech model applies where that profile keeps the
@@ -1378,7 +1417,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1413,7 +1452,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1447,7 +1486,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1625,7 +1664,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1691,7 +1730,7 @@ private slots:
     void aRecordingRefusesWhatCannotRecordAndReportsAStoppedStream()
     {
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("claude"); return true; });
         bool microphoneStarts = true;
         RecordingSession recording(&settings, m_registry.get(), [&microphoneStarts](QObject *parent) {
             auto *microphone = new FakeAudioInput(parent);
@@ -1708,7 +1747,7 @@ private slots:
         QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         microphoneStarts = false;
         const QString deaf = m_dir.filePath(QStringLiteral("deaf.md"));
         QVERIFY(startRecording(recording, deaf, &error).isEmpty());
@@ -1745,7 +1784,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1772,7 +1811,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1818,7 +1857,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1866,7 +1905,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         bool microphoneStopped = false;
         bool systemAudioStopped = false;
         RecordingSession recording(
@@ -1914,7 +1953,7 @@ private slots:
         const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1984,7 +2023,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -2018,8 +2057,11 @@ private slots:
                                                return claude.data();
                                            });
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2060,8 +2102,11 @@ private slots:
                                                return claude.data();
                                            });
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            return true;
+        });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2089,7 +2134,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2121,7 +2166,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2156,7 +2201,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
@@ -2196,7 +2241,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         int systemAudioInputs = 0;
         QPointer<FakeAudioInput> microphone;
         EchoCancellerLog log;
@@ -2232,7 +2277,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
@@ -2289,7 +2334,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
@@ -2337,7 +2382,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         bool systemAudioStarts = false;
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
@@ -2380,7 +2425,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         EchoCancellerLog log;
         RecordingSession recording(
@@ -2448,7 +2493,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
@@ -2476,7 +2521,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
@@ -2524,7 +2569,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
         RecordingSession recording(
@@ -2562,7 +2607,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2585,7 +2630,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2630,7 +2675,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2662,7 +2707,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2688,7 +2733,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2764,7 +2809,7 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
         QVERIFY(!settings.snapshot().speech.vocabulary.isEmpty());
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
@@ -2785,8 +2830,8 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
-        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
-        const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
+        const QList<VocabularyEntry> saved = settings.dictationSnapshot().vocabulary;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options = speechOnly();
@@ -2799,7 +2844,7 @@ private slots:
 
         QCOMPARE(m_script.vocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
         QVERIFY(m_refinedVocabulary.contains(QStringLiteral("readSharedChoice")));
-        QCOMPARE(settings.vocabularyEntries(), saved);
+        QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
     // A long file's terms lead the speech request and refinement in the
@@ -2813,7 +2858,7 @@ private slots:
         VocabularyEntry favourite{QStringLiteral("Speecher")};
         favourite.starred = true;
         favourite.frequency = 5;
-        settings.setVocabularyEntries({favourite});
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = {favourite}; return true; });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options = speechOnly();
@@ -2850,7 +2895,7 @@ private slots:
         VocabularyEntry shorter{words(QStringLiteral("short"), 250)};
         shorter.frequency = 1;
         SettingsStore settings;
-        settings.setVocabularyEntries({longer, shorter});
+        settings.edit([&](AppSettings &draft) { draft.vocabulary = {longer, shorter}; return true; });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         TranscribeOptions options = speechOnly();
@@ -2873,7 +2918,10 @@ private slots:
         VocabularyEntry elsewhere{QStringLiteral("readSharedChoice")};
         elsewhere.profiles = {WritingProfile::Email};
         elsewhere.keyTerm = false;
-        settings.setVocabularyEntries({{QStringLiteral("Speecher")}, elsewhere});
+        settings.edit([&](AppSettings &draft) {
+            draft.vocabulary = {{QStringLiteral("Speecher")}, elsewhere};
+            return true;
+        });
         TranscribeOptions options = speechOnly();
         options.refinementProviderId = QStringLiteral("openai");
         options.cleanupStrength = QStringLiteral("balanced");
@@ -3760,7 +3808,7 @@ private:
     {
         m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
                                            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
-        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("endpoint"); return true; });
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
     }
 

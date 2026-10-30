@@ -41,7 +41,7 @@ QString writeFile(const QTemporaryDir &dir, const char *name, const QByteArray &
 
 QString toneOf(const QString &profile)
 {
-    return writingProfileSettingsFor(SettingsStore().writingProfileSettings(), profile).tone;
+    return writingProfileSettingsFor(SettingsStore().dictationSnapshot().refinement.writingProfiles, profile).tone;
 }
 
 // What add and update return when they save.
@@ -86,13 +86,13 @@ private slots:
         QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(id, QStringLiteral("Spanish replies"))), saved);
         QCOMPARE(library.update(QStringLiteral("profiles"), id, {{QStringLiteral("language"), QStringLiteral(" Spanish ")}}), saved);
 
-        const WritingProfileSettings stored = writingProfileSettingsFor(SettingsStore().writingProfileSettings(), id);
+        const WritingProfileSettings stored = writingProfileSettingsFor(SettingsStore().dictationSnapshot().refinement.writingProfiles, id);
         QCOMPARE(stored.name, QStringLiteral("Spanish replies"));
         QCOMPARE(stored.outputLanguage, QStringLiteral("Spanish"));
         const QVariantMap shown = library.profiles().last().toMap();
         QCOMPARE(shown.value(QStringLiteral("id")).toString(), id);
         QVERIFY(!shown.value(QStringLiteral("builtIn")).toBool());
-        QCOMPARE(SettingsStore().writingProfileSettings().size(), 6);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
     }
 
     // A form's save is refused with the reason it shows.
@@ -149,9 +149,9 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("^Library\\.update\\(terms\\)")));
         QCOMPARE(library.update(QStringLiteral("terms"), QStringLiteral("Wayland"), {{QStringLiteral("uses"), 99}}),
                  QStringLiteral("invalid"));
-        QCOMPARE(SettingsStore().writingProfileSettings().size(), 6);
-        QCOMPARE(SettingsStore().bindingRules().size(), 1);
-        QVERIFY(SettingsStore().appRecognitionRules().isEmpty());
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
+        QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
+        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
     }
 
     void removingAToneMovesItsProfilesUntilUndone()
@@ -168,15 +168,15 @@ private slots:
 
         const int undo = library.removeTone(tone);
         QVERIFY(undo >= 0);
-        QVERIFY(SettingsStore().customTones().isEmpty());
+        QVERIFY(SettingsStore().dictationSnapshot().refinement.customTones.isEmpty());
         QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
 
         library.undo(undo);
-        QCOMPARE(SettingsStore().customTones().size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
         QCOMPARE(toneOf(WritingProfile::Work), tone);
         // A token works once.
         library.undo(undo);
-        QCOMPARE(SettingsStore().customTones().size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
         QCOMPARE(library.removeTone(QStringLiteral("custom_tone_gone")), -1);
     }
 
@@ -208,8 +208,8 @@ private slots:
                  saved);
         QCOMPARE(library.update(levels, level, {{QStringLiteral("name"), QStringLiteral("MEDIUM")}}, {QStringLiteral("Medium")}),
                  QStringLiteral("taken"));
-        QCOMPARE(SettingsStore().customTones().first().name, QStringLiteral("Dry"));
-        QCOMPARE(SettingsStore().customCleanupLevels().first().name, QStringLiteral("Notes"));
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.first().name, QStringLiteral("Dry"));
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customCleanupLevels.first().name, QStringLiteral("Notes"));
     }
 
     // Undoing a tone's removal after another tone took its name keeps the
@@ -231,8 +231,8 @@ private slots:
                  saved);
 
         library.undo(undo);
-        QCOMPARE(SettingsStore().customTones().size(), 1);
-        QCOMPARE(SettingsStore().customTones().first().id, again);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.first().id, again);
         QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
     }
 
@@ -247,12 +247,12 @@ private slots:
         QCOMPARE(library.add(QStringLiteral("recognitionRules"),
                              {{QStringLiteral("match"), QStringLiteral("obsidian")}, {QStringLiteral("profile"), id}}),
                  saved);
-        QCOMPARE(SettingsStore().defaultWritingProfile(), id);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, id);
 
         library.removeProfile(id);
-        QCOMPARE(SettingsStore().defaultWritingProfile(), WritingProfile::Other);
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, WritingProfile::Other);
         QCOMPARE(settings.values().value(QStringLiteral("defaultWritingProfile")).toString(), WritingProfile::Other);
-        QVERIFY(SettingsStore().appRecognitionRules().isEmpty());
+        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
         QCOMPARE(library.profiles().size(), 5);
     }
 
@@ -302,7 +302,7 @@ private slots:
             VocabularyEntry learned{QStringLiteral("Ngozi"), QStringLiteral("learned")};
             learned.frequency = 17;
             learned.lastUsedMs = 1700000000000;
-            store.setVocabularyEntries({learned});
+            store.edit([&](AppSettings &draft) { draft.vocabulary = {learned}; return true; });
         }
         ApplicationController controller(true);
         QuickLibrary library(&controller);
@@ -312,7 +312,7 @@ private slots:
                                 {{QStringLiteral("keyTerm"), false}, {QStringLiteral("context"), QStringLiteral("A name.")},
                                  {QStringLiteral("profiles"), QStringList{QStringLiteral("work"), QStringLiteral("gone")}}}),
                  saved);
-        const VocabularyEntry stored = SettingsStore().vocabularyEntries().first();
+        const VocabularyEntry stored = SettingsStore().dictationSnapshot().vocabulary.first();
         QCOMPARE(stored.frequency, 17);
         QCOMPARE(stored.lastUsedMs, qint64(1700000000000));
         QCOMPARE(stored.source, QStringLiteral("learned"));
@@ -322,17 +322,20 @@ private slots:
         QCOMPARE(library.add(QStringLiteral("terms"), {{QStringLiteral("term"), QStringLiteral(" ngozi ")}}), QStringLiteral("taken"));
 
         const int undo = library.remove(QStringLiteral("terms"), QStringLiteral("Ngozi"));
-        QVERIFY(SettingsStore().vocabularyEntries().isEmpty());
+        QVERIFY(SettingsStore().dictationSnapshot().vocabulary.isEmpty());
         QCOMPARE(library.remove(QStringLiteral("terms"), QStringLiteral("Ngozi")), -1);
         library.undo(undo);
-        QCOMPARE(SettingsStore().vocabularyEntries().first().frequency, 17);
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().frequency, 17);
     }
 
     // A form names the term it opened on. Dictation counting a use reorders
     // the list meanwhile, and the save still changes that term alone.
     void anEditAfterDictationReordersChangesOnlyItsTerm()
     {
-        SettingsStore().setVocabularyEntries({termEntry(QStringLiteral("Alpha")), termEntry(QStringLiteral("Zulu"))});
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.vocabulary = {termEntry(QStringLiteral("Alpha")), termEntry(QStringLiteral("Zulu"))};
+            return true;
+        });
         ApplicationController controller(true);
         QuickLibrary library(&controller);
         QCOMPARE(library.terms().first().toMap().value(QStringLiteral("term")).toString(), QStringLiteral("Alpha"));
@@ -343,7 +346,7 @@ private slots:
         QCOMPARE(library.update(QStringLiteral("terms"), QStringLiteral("Alpha"),
                                 {{QStringLiteral("term"), QStringLiteral("Alpha")}, {QStringLiteral("context"), QStringLiteral("The first.")}}),
                  saved);
-        const QList<VocabularyEntry> stored = SettingsStore().vocabularyEntries();
+        const QList<VocabularyEntry> stored = SettingsStore().dictationSnapshot().vocabulary;
         QCOMPARE(stored.size(), 2);
         QCOMPARE(findTerm(stored, QStringLiteral("Alpha"))->context, QStringLiteral("The first."));
         QVERIFY(findTerm(stored, QStringLiteral("Zulu")));
@@ -354,7 +357,7 @@ private slots:
         QVERIFY(library.remove(QStringLiteral("terms"), QStringLiteral("Alpha")) >= 0);
         QCOMPARE(library.update(QStringLiteral("terms"), QStringLiteral("Alpha"), {{QStringLiteral("context"), QStringLiteral("x")}}),
                  QStringLiteral("missing"));
-        QCOMPARE(SettingsStore().vocabularyEntries().first().context, QString());
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().context, QString());
     }
 
     // Undo puts back what was deleted only while nothing by its name has
@@ -362,7 +365,10 @@ private slots:
     // learned again is not listed twice.
     void undoKeepsWhatCameBackMeanwhile()
     {
-        SettingsStore().setVocabularyEntries({termEntry(QStringLiteral("Grafana"), QStringLiteral("Old."))});
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.vocabulary = {termEntry(QStringLiteral("Grafana"), QStringLiteral("Old."))};
+            return true;
+        });
         ApplicationController controller(true);
         QuickLibrary library(&controller);
 
@@ -371,8 +377,8 @@ private slots:
                              {{QStringLiteral("term"), QStringLiteral("grafana")}, {QStringLiteral("context"), QStringLiteral("New.")}}),
                  saved);
         library.undo(termUndo);
-        QCOMPARE(SettingsStore().vocabularyEntries().size(), 1);
-        QCOMPARE(SettingsStore().vocabularyEntries().first().context, QStringLiteral("New."));
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().context, QStringLiteral("New."));
 
         const CorrectionEvidence evidence{QStringLiteral("speaker"), QStringLiteral("Speecher"), 0.95};
         QVERIFY(controller.settings()->recordCorrectionEvidence(evidence, QStringLiteral("slack")));
@@ -380,12 +386,15 @@ private slots:
         QVERIFY(correctionUndo >= 0);
         QVERIFY(controller.settings()->recordCorrectionEvidence(evidence, QStringLiteral("slack")));
         library.undo(correctionUndo);
-        QCOMPARE(SettingsStore().learnedCorrections().size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.size(), 1);
     }
 
     void appMatchesTakeOverTheOldPerAppOverrides()
     {
-        SettingsStore().setWritingProfileOverrides({{QStringLiteral("org.kde.kate"), WritingProfile::Email, true}});
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email, true}};
+            return true;
+        });
         ApplicationController controller(true);
         QuickLibrary library(&controller);
         QCOMPARE(library.recognitionRules().size(), 1);
@@ -396,9 +405,9 @@ private slots:
                              {{QStringLiteral("match"), QStringLiteral("konsole")}, {QStringLiteral("category"), QStringLiteral("terminal")}}),
                  saved);
         SettingsStore another;
-        QVERIFY(another.writingProfileOverrides().isEmpty());
-        QCOMPARE(another.appRecognitionRules().size(), 2);
-        QCOMPARE(another.appRecognitionRules().last().category, AppCategory::Terminal);
+        QVERIFY(another.dictationSnapshot().refinement.writingProfileOverrides.isEmpty());
+        QCOMPARE(another.dictationSnapshot().appRecognitionRules.size(), 2);
+        QCOMPARE(another.dictationSnapshot().appRecognitionRules.last().category, AppCategory::Terminal);
 
         QCOMPARE(library.add(QStringLiteral("recognitionRules"), {{QStringLiteral("match"), QStringLiteral("Konsole")},
                                                                    {QStringLiteral("profile"), WritingProfile::Work}}),
@@ -410,15 +419,18 @@ private slots:
     // Renaming a match keeps its place and what it sets.
     void anAppMatchCanBeRenamedInPlace()
     {
-        SettingsStore().setAppRecognitionRules({{QStringLiteral("obsidian"), AppCategory::Office, WritingProfile::Personal},
-                                                {QStringLiteral("neochat"), std::nullopt, WritingProfile::Personal}});
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, WritingProfile::Personal},
+                                                    {QStringLiteral("neochat"), std::nullopt, WritingProfile::Personal}};
+            return true;
+        });
         ApplicationController controller(true);
         QuickLibrary library(&controller);
 
         QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("Obsidian"),
                                 {{QStringLiteral("match"), QStringLiteral(" md.obsidian ")}}),
                  saved);
-        const QList<AppRecognitionRule> rules = SettingsStore().appRecognitionRules();
+        const QList<AppRecognitionRule> rules = SettingsStore().dictationSnapshot().appRecognitionRules;
         QCOMPARE(rules.size(), 2);
         QCOMPARE(rules.first().match, QStringLiteral("md.obsidian"));
         QCOMPARE(rules.first().category, AppCategory::Office);
@@ -438,7 +450,7 @@ private slots:
             VocabularyEntry grafana = termEntry(QStringLiteral("Grafana"));
             grafana.keyTerm = false;
             grafana.frequency = 2;
-            SettingsStore().setVocabularyEntries({grafana});
+            SettingsStore().edit([&](AppSettings &draft) { draft.vocabulary = {grafana}; return true; });
         }
         ApplicationController controller(true);
         QuickLibrary library(&controller);
@@ -450,7 +462,7 @@ private slots:
         const QVariantMap terms = library.importTerms(csv);
         QCOMPARE(terms.value(QStringLiteral("added")).toInt(), 1);
         QCOMPARE(terms.value(QStringLiteral("error")).toString(), QString());
-        const QList<VocabularyEntry> stored = SettingsStore().vocabularyEntries();
+        const QList<VocabularyEntry> stored = SettingsStore().dictationSnapshot().vocabulary;
         QCOMPARE(stored.size(), 2);
         const VocabularyEntry *grafana = findTerm(stored, QStringLiteral("Grafana"));
         QVERIFY(grafana);
@@ -467,7 +479,7 @@ private slots:
         const QUrl json = QUrl::fromLocalFile(writeFile(dir, "snippets.json", R"([{"phrase": "sign off", "replacement": "Thanks"}])"));
         QCOMPARE(library.importReplacements(json).value(QStringLiteral("added")).toInt(), 1);
         QCOMPARE(library.importReplacements(json).value(QStringLiteral("added")).toInt(), 0);
-        QCOMPARE(SettingsStore().bindingRules().size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
     }
 
     void learnedCorrectionsShowAsTheyAreLearnedAndCanBeTakenBack()
@@ -482,13 +494,13 @@ private slots:
         QCOMPARE(library.corrections().first().toMap().value(QStringLiteral("corrected")).toString(), QStringLiteral("Speecher"));
 
         QCOMPARE(library.update(QStringLiteral("corrections"), id, {{QStringLiteral("enabled"), false}}), saved);
-        QVERIFY(!SettingsStore().learnedCorrections().first().enabled);
+        QVERIFY(!SettingsStore().dictationSnapshot().learnedCorrections.first().enabled);
 
         const int undo = library.undoLastCorrection();
-        QVERIFY(SettingsStore().learnedCorrections().isEmpty());
+        QVERIFY(SettingsStore().dictationSnapshot().learnedCorrections.isEmpty());
         QCOMPARE(library.undoLastCorrection(), -1);
         library.undo(undo);
-        QCOMPARE(SettingsStore().learnedCorrections().first().original, QStringLiteral("speaker"));
+        QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.first().original, QStringLiteral("speaker"));
     }
 
     // A correction's words can be fixed by hand, keeping what it was learned
@@ -499,14 +511,14 @@ private slots:
                                   QStringLiteral("org.kde.konsole"), 1700000000000, 0.88, true, 3, 1700000001000};
         LearnedCorrection other{QStringLiteral("c2"), QStringLiteral("get hub"), QStringLiteral("GitHub"),
                                 QStringLiteral("org.kde.konsole"), 1700000000000, 0.7, true, 2, 1700000002000};
-        SettingsStore().setLearnedCorrections({other, learned});
+        SettingsStore().edit([&](AppSettings &draft) { draft.learnedCorrections = {other, learned}; return true; });
         ApplicationController controller(true);
         QuickLibrary library(&controller);
 
         QCOMPARE(library.update(QStringLiteral("corrections"), QStringLiteral("c1"),
                                 {{QStringLiteral("heard"), QStringLiteral(" cube CTL ")}, {QStringLiteral("corrected"), QStringLiteral("kubectl")}}),
                  saved);
-        const LearnedCorrection edited = SettingsStore().learnedCorrections().last();
+        const LearnedCorrection edited = SettingsStore().dictationSnapshot().learnedCorrections.last();
         QCOMPARE(edited.original, QStringLiteral("cube CTL"));
         QCOMPARE(edited.evidenceCount, 3);
         QCOMPARE(edited.confidence, 0.88);
@@ -517,17 +529,20 @@ private slots:
                  QStringLiteral("incomplete"));
 
         const int undo = library.remove(QStringLiteral("corrections"), QStringLiteral("c1"));
-        QCOMPARE(SettingsStore().learnedCorrections().size(), 1);
-        QCOMPARE(SettingsStore().learnedCorrections().first().id, QStringLiteral("c2"));
+        QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.size(), 1);
+        QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.first().id, QStringLiteral("c2"));
         library.undo(undo);
-        QCOMPARE(SettingsStore().learnedCorrections().last(), edited);
+        QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.last(), edited);
     }
 
     // A choice in a match's row that core refuses, such as clearing the
     // only thing a match sets, is said in a toast and saves nothing.
     void anAppMatchRowSaysWhyAChoiceWasRefused()
     {
-        SettingsStore().setAppRecognitionRules({{QStringLiteral("obsidian"), AppCategory::Office, std::nullopt}});
+        SettingsStore().edit([](AppSettings &draft) {
+            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, std::nullopt}};
+            return true;
+        });
         ApplicationController controller(true);
         const QuickLibrary::ControllerScope scope(&controller);
         QuickSettings settings(&controller);
@@ -558,7 +573,7 @@ private slots:
         QCOMPARE(posted.count(), 1);
         QCOMPARE(posted.first().first().toMap().value(QStringLiteral("text")).toString(),
                  QStringLiteral("Choose an app type, a profile or both."));
-        QCOMPARE(SettingsStore().appRecognitionRules().first().category, std::optional(AppCategory::Office));
+        QCOMPARE(SettingsStore().dictationSnapshot().appRecognitionRules.first().category, std::optional(AppCategory::Office));
     }
 
     // The app's Library is Library.qml over this type: its wording reads the
@@ -587,7 +602,7 @@ private slots:
         QVariant refused;
         QMetaObject::invokeMethod(probe.get(), "addTerm", Q_RETURN_ARG(QVariant, refused));
         QCOMPARE(refused.toString(), saved);
-        QCOMPARE(SettingsStore().vocabularyEntries().first().term, QStringLiteral("Wayland"));
+        QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().term, QStringLiteral("Wayland"));
     }
 };
 

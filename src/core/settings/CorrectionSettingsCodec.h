@@ -12,7 +12,5 @@ QList<LearnedCorrection> load(const QSettings &settings);
 void store(QSettings &settings, const QList<LearnedCorrection> &corrections);
 bool recordEvidence(QSettings &settings, const CorrectionEvidence &evidence,
                     const QString &applicationId);
-void setEnabled(QSettings &settings, const QString &id, bool enabled);
-void remove(QSettings &settings, const QString &id);
 
 } // namespace speecher::CorrectionSettingsCodec

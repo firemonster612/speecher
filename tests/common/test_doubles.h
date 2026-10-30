@@ -266,7 +266,7 @@ public:
         return streamsFinals;
     }
 
-    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &) override
     {
         ++startCalls;
         currentAttemptId = attemptId;
@@ -439,9 +439,9 @@ public:
         lastRawTranscript = rawTranscript;
         lastVocabulary = vocabulary;
         lastContext = context;
-        lastBindingVocabulary = settings.bindingVocabulary;
+        lastBindingVocabulary = context.bindingVocabulary;
         lastStyle = settings.style;
-        lastTone = settings.tone;
+        lastTone = context.tone;
         lastAnthropicModel = settings.anthropicModel;
         if (autoComplete) {
             emit completed(autoCompleteText);

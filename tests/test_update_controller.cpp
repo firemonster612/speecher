@@ -317,7 +317,7 @@ private slots:
     void nightlyChannelChecksOfferTheNewestStableRelease()
     {
         UpdateTestContext context;
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         TestManifestUpdater updater(&context.settings);
         const qint64 current = updater.currentBuildNumber();
 
@@ -345,8 +345,8 @@ private slots:
         QVERIFY(!updater.stableReplacementAvailable());
 
         // With the nightly ahead, the check offers the nightly as before.
-        context.settings.setUpdateChannel(UpdateChannel::Stable);
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Stable; return true; });
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         QTcpServer *newerNightly = manifestServer(
             &updater,
             manifestJson(QStringLiteral("0.2.2-nightly.20260922+gdef5678"), current + 3));
@@ -363,7 +363,7 @@ private slots:
     void nightlyChecksSurviveTheirOwnFeedFailing()
     {
         UpdateTestContext context;
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         TestManifestUpdater updater(&context.settings);
         const qint64 current = updater.currentBuildNumber();
 
@@ -385,8 +385,8 @@ private slots:
 
         // With nothing to offer from either leg, the failure is reported
         // rather than papered over as "up to date".
-        context.settings.setUpdateChannel(UpdateChannel::Stable);
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Stable; return true; });
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         QTcpServer *oldStable =
             manifestServer(&updater, manifestJson(QStringLiteral("0.1.0"), 1));
         qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(oldStable));
@@ -398,7 +398,7 @@ private slots:
     void singleManifestOverrideFetchesExactlyOnce()
     {
         UpdateTestContext context;
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         TestManifestUpdater updater(&context.settings);
 
         // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
@@ -446,7 +446,7 @@ private slots:
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::UpdateAvailable);
 
-        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
 
         QCOMPARE(updater.state(), UpdateController::State::Idle);
         QVERIFY(updater.availableVersion().isEmpty());
@@ -455,7 +455,7 @@ private slots:
             updater, QStringLiteral("nightly"), UpdateChannel::Nightly);
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::Downloading);
-        context.settings.setUpdateChannel(UpdateChannel::Stable);
+        context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Stable; return true; });
         QCOMPARE(updater.state(), UpdateController::State::Idle);
         QVERIFY(updater.availableVersion().isEmpty());
     }
@@ -629,7 +629,7 @@ private slots:
         UpdateTestContext context;
         AppImageUpdater updater(&context.settings);
         ManifestUpdaterTestAccess::setAvailableVersion(
-            updater, QStringLiteral("0.1.1"), context.settings.updateChannel());
+            updater, QStringLiteral("0.1.1"), context.settings.dictationSnapshot().updates.channel);
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::UpdateAvailable);
         QSignalSpy releasePage(&updater, &UpdateController::openReleasePageRequested);
@@ -821,7 +821,7 @@ private slots:
         QVERIFY(!updater.repeatedAutomaticCheckFailure());
 
         // Changing the configured interval reschedules the timer immediately.
-        context.settings.setUpdateCheckIntervalMinutes(60);
+        context.settings.edit([](AppSettings &draft) { draft.updates.checkIntervalMinutes = 60; return true; });
         QVERIFY(qAbs(ManifestUpdaterTestAccess::nextCheckDelay(updater) - 60 * minuteMs) < 1000);
     }
 
@@ -830,16 +830,16 @@ private slots:
         UpdateTestContext context;
         context.settings.setUpdatesLastCheckTime(0);
         TestManifestUpdater updater(&context.settings);
-        context.settings.setAutoCheckUpdates(false);
+        context.settings.edit([](AppSettings &draft) { draft.updates.autoCheck = false; return true; });
         QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
-        context.settings.setAutoCheckUpdates(true);
+        context.settings.edit([](AppSettings &draft) { draft.updates.autoCheck = true; return true; });
         QVERIFY(ManifestUpdaterTestAccess::checkTimerActive(updater));
 
         // The off switch stops a failed check's retry, and the on switch restarts it.
         ManifestUpdaterTestAccess::setAutomaticCheckFailures(updater, 1);
-        context.settings.setAutoCheckUpdates(false);
+        context.settings.edit([](AppSettings &draft) { draft.updates.autoCheck = false; return true; });
         QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
-        context.settings.setAutoCheckUpdates(true);
+        context.settings.edit([](AppSettings &draft) { draft.updates.autoCheck = true; return true; });
         QVERIFY(ManifestUpdaterTestAccess::checkTimerActive(updater));
     }
 

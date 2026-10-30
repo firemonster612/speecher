@@ -421,11 +421,14 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        settings.setSpeechProvider(QStringLiteral("codex"));
-        settings.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
-        settings.setCliproxyOauthDir(credentials.path());
-        settings.setCodexFinalRetranscribe(retranscribe);
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
+            draft.accounts.cliproxyOauthDirConfigured = credentials.path();
+            draft.speech.codexFinalRetranscribe = retranscribe;
+            return true;
+        });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -563,7 +566,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(peer, 1000);
         peer->sendTextMessage(QStringLiteral(
@@ -623,7 +626,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -674,7 +677,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -725,7 +728,7 @@ private slots:
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
         settings.codexFinalRetranscribe = true;
-        transcriber.startAttempt(9, settings);
+        transcriber.startAttempt(9, settings, {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
@@ -767,7 +770,7 @@ private slots:
         QSignalSpy attemptText(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
-        transcriber.startAttempt(7, settings);
+        transcriber.startAttempt(7, settings, {});
 
         QTimer sender;
         sender.setInterval(100);

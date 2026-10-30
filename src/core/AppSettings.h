@@ -282,14 +282,6 @@ struct SpeechSettings {
     QString claudeVoicePath;
     LocalSpeechSettings local;
     SpeechEndpointSettings endpoint;
-    // Never stored. Transcribe sets it so a provider that can time its
-    // transcript does; dictation leaves it off, because asking a model for
-    // timings slows it and can change the text it returns.
-    bool timedSegments = false;
-    // Never stored. A recording sets it: it marks where each utterance
-    // begins and ends (see SpeechTranscriber::beginUtterance), and the audio
-    // outside them is quiet.
-    bool cutIntoUtterances = false;
 
     bool operator==(const SpeechSettings &other) const = default;
 };
@@ -380,14 +372,9 @@ struct RefinementSettings {
     RefinementEndpointSettings endpoint;
     LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    QStringList bindingVocabulary;
     QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
     QList<WritingProfileOverride> writingProfileOverrides;
-    // The profile `toggle --profile` or `start --profile` forces for one
-    // Dictation Session, ahead of every other rule; empty otherwise. Never saved.
-    QString sessionWritingProfile;
-    QString tone = QStringLiteral("none");
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
     // Added to every refinement prompt.
@@ -453,8 +440,9 @@ struct UpdateSettings {
 };
 
 // SettingsCodecs::fields() says which of these are stored. SettingsStore::edit
-// refuses a change to any other: a run sets those on its own copy, and a
-// snapshot derives the rest.
+// refuses a change to any other: a snapshot derives or detects those, or
+// their owner writes them. What one run chooses for itself travels apart
+// (RunChoices, SpeechAttemptOptions, RefinementContext).
 struct AppSettings {
     // Empty secret fields in this draft were unread, not cleared by the user.
     QStringList unreadSecretKeys;
@@ -476,9 +464,6 @@ struct AppSettings {
     QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
-    // Terms one run adds, such as --vocab-file's, in order. They lead the
-    // speech request and refinement whatever the saved list says. Never saved.
-    QStringList sessionVocabulary;
     bool correctionLearningEnabled = true;
     bool insightsEnabled = true;
 };

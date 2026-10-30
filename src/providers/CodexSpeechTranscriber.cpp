@@ -80,7 +80,8 @@ std::optional<ProviderFailure> CodexSpeechTranscriber::prepare(const SpeechSetti
 }
 
 void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
-                                          const SpeechSettings &settings)
+                                          const SpeechSettings &settings,
+                                          const SpeechAttemptOptions &)
 {
     if (m_client) {
         m_client->cancel();

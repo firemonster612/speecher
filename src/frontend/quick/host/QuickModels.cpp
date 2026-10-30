@@ -144,7 +144,7 @@ QVariantMap catalogEntry(const LocalModel &model, const LocalSetup &local, const
         {QStringLiteral("rating"), ratingName(model.rating)},
         {QStringLiteral("bestFor"), model.bestFor},
         {QStringLiteral("sizeBytes"), double(model.sizeBytes)},
-        {QStringLiteral("fit"), fitName(local.fit(model))},
+        {QStringLiteral("fit"), fitName(local.fit(model, settings))},
         {QStringLiteral("werClear"), model.librispeechCleanWer},
         {QStringLiteral("werEveryday"), model.fleursEnglishWer},
         {QStringLiteral("streams"), model.streams},
@@ -154,7 +154,7 @@ QVariantMap catalogEntry(const LocalModel &model, const LocalSetup &local, const
         {QStringLiteral("fileName"), model.fileName},
         {QStringLiteral("estimatedSeconds"),
          optionalNumber(estimate ? std::optional(estimate->secondsFor10sSpeech) : std::nullopt)},
-        {QStringLiteral("measuredSeconds"), optionalNumber(local.measuredSeconds(model.id))},
+        {QStringLiteral("measuredSeconds"), optionalNumber(local.measuredSeconds(model.id, settings))},
         {QStringLiteral("bars"), barList(localModelRating(model, hardware, settings.speech.local))},
         {QStringLiteral("pros"), model.pros},
         {QStringLiteral("cons"), model.cons},
@@ -194,15 +194,16 @@ QVariantMap computerEntry(const LocalSetup &local)
     };
 }
 
-QVariantMap fallbackOffer(const LocalSetup &local, ProviderRole role, const QStringList &primaries)
+QVariantMap fallbackOffer(const LocalSetup &local, ProviderRole role, const QStringList &primaries,
+                          const AppSettings &settings)
 {
-    const std::optional<SetupFallbackOffer> offer = local.setupFallbackOffer(role);
+    const std::optional<SetupFallbackOffer> offer = local.setupFallbackOffer(role, settings);
     if (!offer) {
         return {};
     }
     QStringList joins;
     for (const QString &primary : primaries) {
-        if (local.setupFallbackOfferJoins(role, primary)) {
+        if (local.setupFallbackOfferJoins(role, primary, settings)) {
             joins.append(primary);
         }
     }
@@ -344,8 +345,8 @@ void QuickModels::refresh()
     assign(m_catalog, catalog);
     assign(m_downloaded, facts.downloadedModels);
     assign(m_speedTests, speedTests);
-    assign(m_localModelChoice, local.speechModelChoice().id);
-    assign(m_suggestedModel, local.hardwareKnown() ? local.suggestedModel().id : QString());
+    assign(m_localModelChoice, local.speechModelChoice(settings).id);
+    assign(m_suggestedModel, local.hardwareKnown() ? local.suggestedModel(settings).id : QString());
     assign(m_inUse, inUse);
     assign(m_speechEndpoint, endpointEntry(facts.speechEndpointStatus, facts.speechEndpointChecking,
                                            facts.speechEndpointOk, facts.speechEndpointModels));
@@ -355,10 +356,11 @@ void QuickModels::refresh()
     assign(m_detectingRunners, facts.detectingRunners);
     assign(m_runnersChecked, facts.runnersChecked);
     assign(m_cleanupSuggestion, cleanupSuggestion);
-    assign(m_offerPull, local.runnerChoice().offerPull);
+    assign(m_offerPull, local.runnerChoice(settings).offerPull);
     assign(m_fallbackOffers,
-           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local, ProviderRole::Speech, speechIds)},
-                        {QStringLiteral("refinement"), fallbackOffer(local, ProviderRole::Refinement, refinementIds)}}));
+           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local, ProviderRole::Speech, speechIds, settings)},
+                        {QStringLiteral("refinement"),
+                         fallbackOffer(local, ProviderRole::Refinement, refinementIds, settings)}}));
     if (dirty) {
         emit changed();
     }

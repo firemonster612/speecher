@@ -59,7 +59,8 @@ std::optional<ProviderFailure> ClaudeSpeechTranscriber::prepare(const SpeechSett
     return loadClaudeAccessToken(accounts, &m_accessToken);
 }
 
-void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
+void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings,
+                                           const SpeechAttemptOptions &)
 {
     createClient(attemptId, settings);
 }

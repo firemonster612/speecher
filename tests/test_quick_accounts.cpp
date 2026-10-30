@@ -125,9 +125,12 @@ QString useExpiredCodexAccount(SettingsStore &store, const QString &directory)
                               QDateTime::currentDateTimeUtc().addSecs(-60))) {
         return {};
     }
-    store.setCliproxyOauthDir(directory);
-    store.setOpenAiAuthMode(OpenAiAuthMode::Cliproxy);
-    store.setOpenAiCliproxyAccount(fileName);
+    store.edit([&](AppSettings &draft) {
+        draft.accounts.cliproxyOauthDirConfigured = directory;
+        draft.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
+        draft.accounts.openAiCliproxyAccount = fileName;
+        return true;
+    });
     return fileName;
 }
 
@@ -187,11 +190,14 @@ private slots:
         tokenless.write(R"({"type": "codex"})");
         tokenless.close();
         SettingsStore *store = controller.settings();
-        store->setCliproxyOauthDir(dir.path());
-        store->setOpenAiAuthMode(OpenAiAuthMode::Env);
-        store->setOpenAiCliproxyAccount(QStringLiteral("codex-gone@example.com.json"));
-        store->setAnthropicAuthMode(AnthropicAuthMode::Cliproxy);
-        store->setAnthropicCliproxyAccount(QStringLiteral("claude-a@example.com.json"));
+        store->edit([&](AppSettings &draft) {
+            draft.accounts.cliproxyOauthDirConfigured = dir.path();
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+            draft.accounts.openAiCliproxyAccount = QStringLiteral("codex-gone@example.com.json");
+            draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
+            draft.accounts.anthropicCliproxyAccount = QStringLiteral("claude-a@example.com.json");
+            return true;
+        });
 
         QuickAccounts accounts(&controller);
         // Nothing is read until a page asks.
@@ -242,7 +248,10 @@ private slots:
     void theDaemonChecksSignInsWithoutTheUi()
     {
         ApplicationController controller(true);
-        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+            return true;
+        });
         Accounts *accounts = controller.accounts();
         accounts->start();
         QTRY_VERIFY(accounts->signIn(SignInService::OpenAi));
@@ -255,7 +264,10 @@ private slots:
     void aServiceCardFollowsItsChecks()
     {
         ApplicationController controller(true);
-        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+            return true;
+        });
         QuickSettings settings(&controller);
         // The card asks Library which services the profiles use.
         const QuickLibrary::ControllerScope library(&controller);
@@ -340,10 +352,13 @@ private slots:
     {
         ApplicationController controller(true);
         SettingsStore *store = controller.settings();
-        store->setSpeechProvider(QStringLiteral("local"));
-        store->setSpeechFallbackProviders({});
-        store->setRefinementProvider(QStringLiteral("none"));
-        store->setRefinementFallbackProviders({});
+        store->edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("local");
+            draft.speech.fallbackProviderIds = {};
+            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.fallbackProviderIds = {};
+            return true;
+        });
         QuickAccounts accounts(&controller);
         const auto inUse = [&accounts] {
             return service(accounts, QStringLiteral("anthropic")).value(QStringLiteral("inUse")).toBool();
@@ -355,7 +370,7 @@ private slots:
 
         QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
         controller.localSetup()->acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("anthropic"));
-        QCOMPARE(store->refinementProvider(), QStringLiteral("anthropic"));
+        QCOMPARE(store->dictationSnapshot().refinement.providerId, QStringLiteral("anthropic"));
         QVERIFY(changed.count() > 0);
         QVERIFY(inUse());
     }
@@ -413,8 +428,11 @@ private slots:
         QTemporaryDir dir;
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("token"), QDateTime::currentDateTimeUtc().addSecs(3600)));
-        controller.settings()->setCliproxyOauthDir(dir.path());
-        controller.settings()->setOpenAiAuthMode(OpenAiAuthMode::Env);
+        controller.settings()->edit([&](AppSettings &draft) {
+            draft.accounts.cliproxyOauthDirConfigured = dir.path();
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+            return true;
+        });
         QuickSettings settings(&controller);
         QuickAccounts accounts(&controller);
         QuickAccounts::create(nullptr, nullptr);
@@ -622,8 +640,11 @@ private slots:
     {
         ApplicationController controller(true);
         SettingsStore *store = controller.settings();
-        store->setOpenAiAuthMode(OpenAiAuthMode::Settings);
-        store->setCliproxyBaseUrl(QStringLiteral("http://127.0.0.1:8317"));
+        store->edit([](AppSettings &draft) {
+            draft.accounts.openAiAuthMode = OpenAiAuthMode::Settings;
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+            return true;
+        });
         store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         QuickAccounts accounts(&controller);
         QuickAccounts::create(nullptr, nullptr);
@@ -666,6 +687,9 @@ private slots:
     {
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+        // Before the controller's first read of the settings, which keeps
+        // what it finds for each key.
+        SettingsStore().raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         ApplicationController controller(true);
         QuickAccounts accounts(&controller);
         const QVariant refused(QVariantMap{{QStringLiteral("action"), QStringLiteral("clear")},
@@ -674,8 +698,6 @@ private slots:
         accounts.clearSecret(QStringLiteral("openAiApiKey"));
         QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")), refused);
 
-        controller.settings()->raw().setValue(SettingsKeys::SecretsInKeyring,
-                                              QStringList{QStringLiteral("cliproxy-api-key")});
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
         QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refused);
     }

@@ -63,6 +63,11 @@ DictationSession::DictationSession(SettingsStore *settings,
           this))
     , m_completionTimer(new QTimer(this))
 {
+    if (m_settings) {
+        m_ui = m_settings->dictationSnapshot().ui;
+        connect(m_settings, &SettingsStore::snapshotApplied, this,
+                [this] { m_ui = m_settings->dictationSnapshot().ui; });
+    }
     m_completionTimer->setSingleShot(true);
     m_completionTimer->setTimerType(Qt::PreciseTimer);
     connect(m_completionTimer, &QTimer::timeout, this, [this] {
@@ -99,9 +104,8 @@ DictationSession::DictationSession(SettingsStore *settings,
     connect(speechChain, &SpeechChain::ready, this, &DictationSession::speechProviderReady);
     connect(speechChain, &SpeechChain::exhausted, this, &DictationSession::speechChainExhausted);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        const int words = m_settings ? m_settings->previewWords() : 7;
-        const bool showPreview = !m_settings || m_settings->transcriptionPreviewEnabled();
-        emit previewDisplayChanged(showPreview ? WordPreview::lastWords(text, words) : QString());
+        const int words = m_ui.previewWords;
+        emit previewDisplayChanged(m_ui.transcriptionPreviewEnabled ? WordPreview::lastWords(text, words) : QString());
         qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
         emit previewChanged(text);
     });
@@ -305,11 +309,12 @@ void DictationSession::startSession(const SessionOverrides &overrides)
 
     // A follow-up keeps the settings the edit was made with.
     AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
+    RunChoices choices = followUp ? m_review.revision().choices : RunChoices{};
     if (overrides.outputFormat) {
         settings.output.format = *overrides.outputFormat;
     }
     if (overrides.writingProfile) {
-        settings.refinement.sessionWritingProfile = *overrides.writingProfile;
+        choices.writingProfile = *overrides.writingProfile;
     }
     if (overrides.spokenLanguage) {
         settings.speech.language = *overrides.spokenLanguage;
@@ -320,6 +325,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_speech->forgetAttempt();
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
+    m_runChoices = choices;
     m_heardSpeech = false;
     m_target = {};
     m_between = {.awaitingProvider = true};
@@ -392,10 +398,10 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         return;
     }
     m_sessionSettings->speech.vocabulary =
-        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_target);
+        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_runChoices, m_target);
     const AppSettings settings = *m_sessionSettings;
     const RefinementSettings effectiveRefinement =
-        TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
+        TranscriptPipeline::effectiveRefinementSettings(settings, m_runChoices, m_target);
     // Once, for whichever refiner in the chain reads it.
     const QStringList &refiners = m_refinementChain->providerIds();
     const bool chainReadsScreenshots = std::any_of(refiners.cbegin(), refiners.cend(), [this](const QString &id) {
@@ -423,7 +429,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 bool DictationSession::selectProviders()
 {
     m_sessionSettings = m_providers->withProfileProviders(
-        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_target));
+        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_runChoices, m_target));
     const AppSettings &settings = *m_sessionSettings;
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "refinementProvider=" + settings.refinement.providerId;
@@ -766,7 +772,7 @@ void DictationSession::cancel()
     emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
     const quint64 generation = m_generation;
     // The live setting: discard() has already dropped the session snapshot.
-    QTimer::singleShot(m_settings->completionStatusDurationMs(), Qt::PreciseTimer, this, [this, generation] {
+    QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this, [this, generation] {
         if (generation == m_generation && m_state == DictationState::Idle) {
             emit popupHideRequested();
         }
@@ -1021,7 +1027,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     // A provider can fail inside startAttempt(), or as the audio that waited
     // goes to it: the session has moved on to the next one, or ended, and
     // must not open the microphone for this one.
-    if (!m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId))) {
+    if (!m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId), {})) {
         return;
     }
     const quint64 attemptId = m_speech->currentId();
@@ -1107,7 +1113,7 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review.revision().edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, target,
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, m_runChoices, target,
                                                         m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
@@ -1233,7 +1239,7 @@ void DictationSession::failSelectionEdit(const QString &message)
 void DictationSession::reviewSelectionEdit(const QString &revised)
 {
     const QString spoken = m_transcript->text();
-    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_transcriptPipeline, m_speechWarning,
+    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
     m_refinementGeneration = 0;
     enterReview();
@@ -1256,6 +1262,7 @@ void DictationSession::returnToReview()
     const EditReview::Revision &revision = m_review.revision();
     m_target = revision.target;
     m_sessionSettings = revision.settings;
+    m_runChoices = revision.choices;
     m_transcriptPipeline = revision.pipeline;
     // Nothing the follow-up met belongs in the receipt of the revision kept.
     m_usedRawTranscript = false;
@@ -1366,7 +1373,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         emit transcriptDelivered(text);
         // The live setting, not the session snapshot: turning insights off
         // mid-session must stop this one being recorded.
-        if (m_settings->insightsEnabled()) {
+        if (m_settings->dictationSnapshot().insightsEnabled) {
             DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName};
             record.speechProviders = m_providerHistory.speechRan;
             record.refinementProviders = m_providerHistory.refinementRan;
@@ -1541,7 +1548,7 @@ void DictationSession::startNextAttempt()
 {
     const QString providerId = m_speech->chain()->currentId();
     noteRan(ProviderRole::Speech, providerId);
-    m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId));
+    m_speech->startAttempt(chainSpeechSettings(m_sessionSettings->speech, providerId), {});
 }
 
 bool DictationSession::selectTranscriptRefiner(const QString &providerId)
@@ -1595,7 +1602,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             return;
         }
         m_refinementStream += text;
-        if (m_settings && !m_settings->refinementPreviewEnabled()) {
+        if (!m_ui.refinementPreviewEnabled) {
             emit popupRefinementPreviewChanged({});
             return;
         }
@@ -1639,8 +1646,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
         restored += preview.mid(cursor);
         preview = std::move(restored);
-        const int words = m_settings ? m_settings->previewWords() : 7;
-        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
+        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, m_ui.previewWords));
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this, current](const QString &text) {
         if (!current()) {

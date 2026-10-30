@@ -356,11 +356,11 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        AudioCaptureSettings audio = settings.audioCaptureSettings();
+        AudioCaptureSettings audio = settings.dictationSnapshot().audio;
         audio.deviceId = QStringLiteral("missing-live-test-device");
         audio.mode = QStringLiteral("on_demand");
         audio.vadEnabled = false;
-        settings.setAudioCaptureSettings(audio);
+        settings.edit([&](AppSettings &draft) { draft.audio = audio; return true; });
 
         QtAudioInput capture(audio);
         QSignalSpy chunks(&capture, &AudioInput::audioChunk);
@@ -646,7 +646,7 @@ private slots:
             QSKIP("Live recording microphone check is opt-in");
         }
         SettingsStore settings;
-        const int postRollMs = settings.audioCaptureSettings().postRollMs;
+        const int postRollMs = settings.dictationSnapshot().audio.postRollMs;
         std::unique_ptr<AudioInput> microphone(platformComposition()->createRecordingAudioInput(&settings, nullptr));
         QByteArray recorded;
         connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {

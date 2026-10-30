@@ -97,7 +97,7 @@ AudioInput *WindowsComposition::createAudioInput(SettingsStore *settings, QObjec
     if (AudioInput *stub = stubAudioInput(parent)) {
         return stub;
     }
-    auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
+    auto *input = new QtAudioInput(settings->dictationSnapshot().audio, parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
                      input,
@@ -110,7 +110,7 @@ AudioInput *WindowsComposition::createRecordingAudioInput(SettingsStore *setting
     if (AudioInput *stub = stubAudioInput(parent)) {
         return stub;
     }
-    return new WinCommunicationsAudioInput(settings->audioCaptureSettings(), streamEchoControl, parent);
+    return new WinCommunicationsAudioInput(settings->dictationSnapshot().audio, streamEchoControl, parent);
 }
 
 // WASAPI loopback captures system audio, and Windows cancels its echo in the

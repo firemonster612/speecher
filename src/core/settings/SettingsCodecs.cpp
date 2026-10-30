@@ -461,26 +461,6 @@ void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
 // The terms a transcription request carries. Everything a person typed is
 // stored; only this list is capped, taking entries in the priority order
 // normalizeVocabularyEntries already put them in.
-QStringList SettingsCodecs::customVocabulary() const
-{
-    QStringList terms;
-    for (const VocabularyEntry &entry : vocabularyEntries()) {
-        if (entry.keyTerm) {
-            terms.append(entry.term);
-        }
-    }
-    return VocabularyLimit::limited(terms);
-}
-
-void SettingsCodecs::setCustomVocabulary(const QStringList &value)
-{
-    QList<VocabularyEntry> entries;
-    for (const QString &term : value) {
-        entries.append({term, QStringLiteral("manual"), false, 0, 0});
-    }
-    setVocabularyEntries(entries);
-}
-
 // Terms lose the profiles the settings no longer hold, on the way in and out,
 // so a profile recreated under a deleted one's id does not inherit its terms.
 static QList<VocabularyEntry> withOfferedProfiles(QList<VocabularyEntry> entries,
@@ -718,16 +698,6 @@ void SettingsCodecs::setLearnedCorrections(const QList<LearnedCorrection> &corre
     CorrectionSettingsCodec::store(m_settings, corrections);
 }
 
-void SettingsCodecs::setLearnedCorrectionEnabled(const QString &id, bool enabled)
-{
-    CorrectionSettingsCodec::setEnabled(m_settings, id, enabled);
-}
-
-void SettingsCodecs::removeLearnedCorrection(const QString &id)
-{
-    CorrectionSettingsCodec::remove(m_settings, id);
-}
-
 QString SettingsCodecs::refinementProvider() const
 {
     const QString key = SettingsKeys::RefinementProvider;
@@ -747,18 +717,13 @@ QString SettingsCodecs::refinementProvider() const
     return providerKey(ProviderId::OpenAi);
 }
 
-bool SettingsCodecs::refinementProviderChosen() const
-{
-    return m_settings.contains(SettingsKeys::RefinementProvider);
-}
-
 void SettingsCodecs::setRefinementProvider(const QString &value)
 {
     const QString provider = isRefinementProviderId(value) ? value : providerKey(ProviderId::OpenAi);
     // Saving a snapshot that still holds the default leaves it a default,
     // which the setup assistant may replace; only a different provider is a
     // choice.
-    if (!refinementProviderChosen() && provider == refinementProvider()) return;
+    if (!m_settings.contains(SettingsKeys::RefinementProvider) && provider == refinementProvider()) return;
     const QStringList fallbacks = refinementFallbackProviders();
     m_settings.setValue(SettingsKeys::RefinementProvider, provider);
     // A new primary leaves the fallbacks, and None clears them.
@@ -784,15 +749,6 @@ QString SettingsCodecs::refinementStyle() const
         return style;
     }
     return QStringLiteral("balanced");
-}
-
-void SettingsCodecs::setRefinementStyle(const QString &value)
-{
-    if (value == QStringLiteral("strong_polish") || value == QStringLiteral("light_cleanup")) {
-        m_settings.setValue(SettingsKeys::RefinementStyle, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::RefinementStyle, QStringLiteral("balanced"));
 }
 
 QString SettingsCodecs::defaultWritingProfile() const
@@ -1606,21 +1562,6 @@ QString SettingsCodecs::claudeEndpointBase() const
 QString SettingsCodecs::claudeVoicePath() const
 {
     return value(SettingsKeys::ClaudeVoicePath, QStringLiteral("/api/ws/speech_to_text/voice_stream")).toString();
-}
-
-QString SettingsCodecs::storedApiKeyFallback() const
-{
-    return value(SettingsKeys::OpenAiApiKey, QString()).toString();
-}
-
-void SettingsCodecs::setStoredApiKeyFallback(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::OpenAiApiKey, value);
-}
-
-void SettingsCodecs::clearStoredApiKeyFallback()
-{
-    m_settings.remove(SettingsKeys::OpenAiApiKey);
 }
 
 } // namespace speecher

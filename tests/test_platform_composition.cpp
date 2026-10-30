@@ -620,9 +620,11 @@ private slots:
         QFETCH(bool, grantBeforeRelease);
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
         QCOMPARE(controller.session()->state(), DictationState::Idle);
@@ -643,17 +645,23 @@ private slots:
         platform->audioInputs = [](QObject *parent) { return new FakeAudioInput(parent); };
         ApplicationController controller(true, platform);
         SettingsStore *settings = controller.settings();
-        const bool setupCompleted = settings->setupCompleted();
-        const ShortcutActivationMode mode = settings->shortcutActivationMode();
-        const QString refinementProvider = settings->refinementProvider();
+        const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
+        const ShortcutActivationMode mode = settings->dictationSnapshot().shortcutActivationMode;
+        const QString refinementProvider = settings->dictationSnapshot().refinement.providerId;
         const auto restore = qScopeGuard([&] {
-            settings->setSetupCompleted(setupCompleted);
-            settings->setShortcutActivationMode(mode);
-            settings->setRefinementProvider(refinementProvider);
+            settings->edit([&](AppSettings &draft) {
+                draft.setupCompleted = setupCompleted;
+                draft.shortcutActivationMode = mode;
+                draft.refinement.providerId = refinementProvider;
+                return true;
+            });
         });
-        settings->setSetupCompleted(true);
-        settings->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
-        settings->setRefinementProvider(QStringLiteral("openai"));
+        settings->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
+            draft.refinement.providerId = QStringLiteral("openai");
+            return true;
+        });
         FakeSpeechTranscriber *speech = nullptr;
         FakeRefiner *refiner = nullptr;
         registerFakeSpeechProvider(*controller.providerRegistry(), &speech);
@@ -691,9 +699,11 @@ private slots:
         platform->volume = 0.4f;
         ApplicationController controller(true, platform);
         SettingsStore *settings = controller.settings();
-        const bool setupCompleted = settings->setupCompleted();
-        const auto restore = qScopeGuard([&] { settings->setSetupCompleted(setupCompleted); });
-        settings->setSetupCompleted(true);
+        const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            settings->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        settings->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(*controller.providerRegistry(), &speech);
         QTest::ignoreMessage(QtInfoMsg, "macOS default input volume=40%");
@@ -707,9 +717,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
@@ -740,9 +752,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(false);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = false; return true; });
 
         controller.startListening();
         QVERIFY(platform->microphoneAnswer);
@@ -760,9 +774,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
         platform->microphoneAnswer(true);
@@ -795,14 +811,20 @@ private slots:
         QFETCH(bool, keepsDictating);
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const ShortcutActivationMode mode = controller.settings()->dictationSnapshot().shortcutActivationMode;
         const auto restore = qScopeGuard([&] {
-            controller.settings()->setSetupCompleted(setupCompleted);
-            controller.settings()->setShortcutActivationMode(mode);
+            controller.settings()->edit([&](AppSettings &draft) {
+                draft.setupCompleted = setupCompleted;
+                draft.shortcutActivationMode = mode;
+                return true;
+            });
         });
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.shortcutActivationMode = ShortcutActivationMode::Hybrid;
+            return true;
+        });
 
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
@@ -847,9 +869,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
 
         // A completed tap teaches the controller that releases arrive here.
         emit platform->binder->activated();
@@ -883,9 +907,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
         platform->microphoneAnswer(true);
@@ -900,14 +926,20 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const ShortcutActivationMode mode = controller.settings()->dictationSnapshot().shortcutActivationMode;
         const auto restore = qScopeGuard([&] {
-            controller.settings()->setSetupCompleted(setupCompleted);
-            controller.settings()->setShortcutActivationMode(mode);
+            controller.settings()->edit([&](AppSettings &draft) {
+                draft.setupCompleted = setupCompleted;
+                draft.shortcutActivationMode = mode;
+                return true;
+            });
         });
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
+            return true;
+        });
 
         emit platform->binder->activated();
         QTest::qSleep(50);
@@ -928,14 +960,20 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const ShortcutActivationMode mode = controller.settings()->dictationSnapshot().shortcutActivationMode;
         const auto restore = qScopeGuard([&] {
-            controller.settings()->setSetupCompleted(setupCompleted);
-            controller.settings()->setShortcutActivationMode(mode);
+            controller.settings()->edit([&](AppSettings &draft) {
+                draft.setupCompleted = setupCompleted;
+                draft.shortcutActivationMode = mode;
+                return true;
+            });
         });
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Toggle);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.shortcutActivationMode = ShortcutActivationMode::Toggle;
+            return true;
+        });
 
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
@@ -953,9 +991,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         controller.startListening();
         QVERIFY(platform->microphoneAnswer);
         controller.stopListening();
@@ -969,9 +1009,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         controller.startListening();
         QVERIFY(platform->microphoneAnswer);
         emit platform->cancelBinder->activated();
@@ -985,14 +1027,20 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const ShortcutActivationMode mode = controller.settings()->dictationSnapshot().shortcutActivationMode;
         const auto restore = qScopeGuard([&] {
-            controller.settings()->setSetupCompleted(setupCompleted);
-            controller.settings()->setShortcutActivationMode(mode);
+            controller.settings()->edit([&](AppSettings &draft) {
+                draft.setupCompleted = setupCompleted;
+                draft.shortcutActivationMode = mode;
+                return true;
+            });
         });
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
+            return true;
+        });
 
         emit platform->binder->activated();
         controller.cancel();
@@ -1222,9 +1270,11 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        const bool setupCompleted = controller.settings()->setupCompleted();
-        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
-        controller.settings()->setSetupCompleted(true);
+        const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
+        });
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         QVERIFY(!platform->cancelBinder->armed);
         QVERIFY(!platform->pauseBinder->armed);
 
@@ -1341,7 +1391,7 @@ private slots:
 
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
-        controller.settings()->setLaunchAtLogin(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.launchAtLogin = true; return true; });
         QCOMPARE(platform->launchAtLoginRequests, 0);
     }
 
@@ -2675,7 +2725,7 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
 
         controller.showMain();
         controller.showSettings();
@@ -2693,10 +2743,13 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        LocalSpeechSettings local = controller.settings()->localSpeechSettings();
+        LocalSpeechSettings local = controller.settings()->dictationSnapshot().speech.local;
         local.modelId = QStringLiteral("moonshine-small");
-        controller.settings()->setLocalSpeechSettings(local);
-        controller.settings()->setSpeechProvider(QStringLiteral("local"));
+        controller.settings()->edit([&](AppSettings &draft) {
+            draft.speech.local = local;
+            draft.speech.providerId = QStringLiteral("local");
+            return true;
+        });
 
         emit controller.localModelStore()->downloadFinished(QStringLiteral("moonshine-small"));
 
@@ -2711,7 +2764,7 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        controller.settings()->setSetupCompleted(false);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = false; return true; });
 
         controller.showMain();
         controller.showSettings();
@@ -2727,7 +2780,7 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
 
         controller.ipcCommands()->handle(
             {IpcCommand::Transcribe, {}, {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")}}, nullptr);
@@ -2825,7 +2878,10 @@ private slots:
         QTRY_VERIFY(watcher.canReadLine());
         watcher.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
         // An unknown speech provider fails the session as it starts.
-        controller.settings()->setSpeechProvider(QStringLiteral("missing"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("missing");
+            return true;
+        });
         controller.session()->startListening();
         QTRY_COMPARE(controller.session()->stateName(), QStringLiteral("error"));
 
@@ -2849,8 +2905,11 @@ private slots:
             return microphone.data();
         };
         ApplicationController controller(true, platform);
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.providerId = QStringLiteral("codex");
+            return true;
+        });
         QPointer<test::FakeSpeechTranscriber> codex;
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&codex](QObject *parent) {
@@ -2909,8 +2968,11 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
         ApplicationController controller(true, platform);
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.providerId = QStringLiteral("codex");
+            return true;
+        });
         bool connected = false;
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&connected](QObject *parent) {
@@ -2954,8 +3016,11 @@ private slots:
         if (!updater) {
             QSKIP("Only the AppImage updater's restart can be watched without quitting");
         }
-        controller.settings()->setSetupCompleted(true);
-        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.providerId = QStringLiteral("codex");
+            return true;
+        });
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
                 auto *codex = new test::FakeSpeechTranscriber(parent);
@@ -3009,7 +3074,7 @@ private slots:
         if (!updater) {
             QSKIP("Only the AppImage updater's restart can be watched without quitting");
         }
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         emit platform->binder->activated();
         platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), DictationState::Starting);
@@ -3036,7 +3101,7 @@ private slots:
         if (!updater) {
             QSKIP("Only the AppImage updater's restart can be watched without quitting");
         }
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
@@ -3076,7 +3141,7 @@ private slots:
         if (!updater) {
             QSKIP("Only the AppImage updater's restart can be watched without quitting");
         }
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         controller.providerRegistry()->registerSpeechProvider(
             {QStringLiteral("claude"), QStringLiteral("Claude")}, [](QObject *parent) {
                 auto *claude = new test::FakeSpeechTranscriber(parent);
@@ -3125,7 +3190,7 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        controller.settings()->setSetupCompleted(true);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
         controller.settings()->raw().setValue(SettingsKeys::UpdatesRestoreState, QStringLiteral("listening,settings"));
         controller.settings()->raw().setValue(SettingsKeys::UpdatesRestoreStateTime,
                                               QDateTime::currentMSecsSinceEpoch());
@@ -3143,7 +3208,7 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        controller.settings()->setSetupCompleted(false);
+        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = false; return true; });
 
         controller.showTranscribeFiles({QStringLiteral("/a.wav")});
         controller.ipcCommands()->handle({IpcCommand::Transcribe, {}, {QStringLiteral("/b.wav")}}, nullptr);
