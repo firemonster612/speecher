@@ -341,9 +341,9 @@ private slots:
         QCOMPARE(openai->backgroundRefreshCalls, 1);
     }
 
-    // A fallback that can't listen for the Spoken Language chosen for it, by
-    // its Local Model's catalog entry, is passed over; one with no model is
-    // tried and fails as unavailable.
+    // A fallback that can't listen for the Spoken Language, by its Local
+    // Model's catalog entry, is passed over; one with no model is tried and
+    // fails as unavailable.
     void aFallbackThatCantListenForTheSpokenLanguageIsPassedOver_data()
     {
         QTest::addColumn<QString>("modelId");
@@ -358,7 +358,6 @@ private slots:
         QFETCH(int, localPrepares);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("de"));
-        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("local"), QStringLiteral("fr")}});
         LocalSpeechSettings local = rig.settings.localSpeechSettings();
         local.modelId = modelId;
         rig.settings.setLocalSpeechSettings(local);
@@ -392,12 +391,11 @@ private slots:
 
     // The session and fallbackProblem() decide a language skip the same way,
     // from the provider's own language list: Claude Voice can't listen for
-    // Afrikaans chosen for it, which a Custom Endpoint can.
+    // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
     void theSessionAndFallbackProblemAgreeOnALanguageSkip()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
         rig.settings.setSpokenLanguage(QStringLiteral("af"));
-        rig.settings.setSpeechFallbackLanguages({{QStringLiteral("claude"), QStringLiteral("af")}});
         rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
         rig.listen();
         QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);

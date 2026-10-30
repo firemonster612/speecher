@@ -13,7 +13,7 @@ A call recorded into a transcript file, started and stopped with `speecher recor
 _Avoid_: Call session, meeting mode
 
 **Spoken Language**:
-The language the speech service listens for, one setting for every Dictation Session, or Automatic where the service detects it. Each speech fallback has its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English where it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
+The language the speech service listens for, one setting for every Dictation Session, or Automatic where the service detects it. Each speech fallback has its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English while the main one is Automatic and it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
 _Avoid_: Dictation language, input language, locale
 
 **Raw Transcript**:

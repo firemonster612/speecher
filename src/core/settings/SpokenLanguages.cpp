@@ -112,7 +112,9 @@ SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &
         candidate.language = *chosen;
         return candidate;
     }
-    if (listensForSpokenLanguage(candidate)) {
+    // Only Automatic falls back to English: a language the person named
+    // that the fallback lacks skips it rather than mishearing them.
+    if (listensForSpokenLanguage(candidate) || speech.language != QLatin1String(kAutomaticSpokenLanguage)) {
         return candidate;
     }
     SpeechSettings english = candidate;

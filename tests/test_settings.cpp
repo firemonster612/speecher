@@ -688,7 +688,7 @@ private slots:
         QTest::newRow("takes the Spoken Language") << QStringLiteral("de") << QStringLiteral("claude") << QString()
                                                    << QStringLiteral("de") << true;
         QTest::newRow("lacks the Spoken Language") << QStringLiteral("af") << QStringLiteral("claude") << QString()
-                                                   << QStringLiteral("en") << true;
+                                                   << QStringLiteral("af") << false;
         QTest::newRow("chosen") << QStringLiteral("auto") << QStringLiteral("claude") << QStringLiteral("fr")
                                 << QStringLiteral("fr") << true;
         QTest::newRow("chosen, can't listen") << QStringLiteral("auto") << QStringLiteral("local")
@@ -696,8 +696,8 @@ private slots:
     }
 
     // A fallback listens for the language chosen for it; with none, for the
-    // Spoken Language where it can, otherwise English. The primary keeps the
-    // Spoken Language.
+    // Spoken Language where it can, otherwise English behind Automatic. The
+    // primary keeps the Spoken Language.
     void aFallbackListensForItsOwnSpokenLanguage()
     {
         QFETCH(QString, spoken);
