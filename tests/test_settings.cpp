@@ -405,7 +405,7 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().ui.pauseMediaDuringTranscription, true);
         QCOMPARE(settings.dictationSnapshot().ui.soundsEnabled, false);
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        QCOMPARE(settings.launchAtLogin(), true);
+        QCOMPARE(settings.dictationSnapshot().launchAtLogin, true);
 #else
         QCOMPARE(settings.dictationSnapshot().launchAtLogin, false);
 #endif
@@ -678,7 +678,6 @@ private slots:
 #else
         // Only Linux has the virtual keyboard; elsewhere Speecher pastes
         // Automatically, rather than only copying every dictation.
-        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
 #endif
         settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("wtype"); return true; });
