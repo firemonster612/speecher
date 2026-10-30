@@ -2207,6 +2207,42 @@ private slots:
         QCOMPARE(tokenRequests, 1);
     }
 
+    // A Codex sign-in that is still valid is read by the refresh job too, so
+    // prepare() on the GUI thread never reads the credentials after a job.
+    void openAiRefreshJobHandsOverAValidSignIn()
+    {
+        QTemporaryDir dir;
+        const QString authPath = dir.filePath(QStringLiteral("auth.json"));
+        QFile auth(authPath);
+        QVERIFY(auth.open(QIODevice::WriteOnly));
+        auth.write(QJsonDocument(QJsonObject{
+                                     {QStringLiteral("auth_mode"), QStringLiteral("chatgpt")},
+                                     {QStringLiteral("tokens"),
+                                      QJsonObject{
+                                          {QStringLiteral("access_token"),
+                                           jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(3600))},
+                                          {QStringLiteral("refresh_token"), QStringLiteral("codex-refresh-token")},
+                                      }},
+                                 })
+                       .toJson());
+        auth.close();
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(authPath));
+        const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH"); });
+
+        const RefinementSettings settings;
+        const AccountSettings accounts;
+        OpenAiTranscriptRefiner refiner(nullptr);
+        std::optional<PreparationJob> job = refiner.createRefreshJob(settings, accounts);
+        QVERIFY(job.has_value());
+        const std::optional<ProviderFailure> result = job->run();
+        QVERIFY2(!result, qPrintable(result ? result->message : QString()));
+        job->apply(result);
+
+        QVERIFY(QFile::remove(authPath));
+        const std::optional<ProviderFailure> prepared = refiner.prepare(settings, accounts);
+        QVERIFY2(!prepared, qPrintable(prepared ? prepared->message : QString()));
+    }
+
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;
