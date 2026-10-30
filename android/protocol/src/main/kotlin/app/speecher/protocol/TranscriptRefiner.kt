@@ -114,8 +114,8 @@ fun modelSupportsFastMode(model: String): Boolean =
     model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
 
 /**
- * Anthropic models that take adaptive thinking and an effort; the rest are sent neither. Adaptive
- * thinking starts with the 4.6 models: Opus 4.5 rejects it, as the desktop has it.
+ * Anthropic models that take adaptive thinking and an effort; the rest are sent neither, apart from
+ * Opus 4.5. Adaptive thinking starts with the 4.6 models.
  */
 private fun modelSupportsAdaptiveEffort(model: String): Boolean =
     model.lowercase().let { id ->
@@ -131,14 +131,22 @@ private fun modelSupportsAdaptiveEffort(model: String): Boolean =
             .any { it in id }
     }
 
+/** Opus 4.5 takes an effort of low, medium or high, but rejects adaptive thinking. */
+private fun modelTakesEffortWithoutThinking(model: String): Boolean =
+    "opus-4-5" in model.lowercase()
+
 private fun modelSupportsExtraHighEffort(model: String): Boolean =
     model.lowercase().let { id ->
         listOf("opus-5", "sonnet-5", "haiku-5", "opus-4-8", "opus-4-7").any { it in id }
     }
 
-/** The effort Anthropic is sent: max for xhigh on a model without it, high for an unknown one. */
+/**
+ * The effort Anthropic is sent: high for xhigh or max on Opus 4.5, max for xhigh on a model without
+ * it, high for an unknown one.
+ */
 private fun anthropicEffort(model: String, effort: String): String =
     when {
+        effort in setOf("xhigh", "max") && modelTakesEffortWithoutThinking(model) -> "high"
         effort == "xhigh" && !modelSupportsExtraHighEffort(model) -> "max"
         effort in setOf("low", "medium", "high", "xhigh", "max") -> effort
         else -> "high"
@@ -315,6 +323,8 @@ private fun claudeRequest(
                     put("display", JsonPrimitive("omitted"))
                 },
             )
+        }
+        if (modelSupportsAdaptiveEffort(model) || modelTakesEffortWithoutThinking(model)) {
             put(
                 "output_config",
                 buildJsonObject { put("effort", JsonPrimitive(anthropicEffort(model, effort))) },

@@ -51,6 +51,8 @@ class SignInTest {
             }
             .build()
     private val results = mutableListOf<Result<OAuthTokens>>()
+    /** Opens when a sign-in listener accepts the browser. */
+    private val accepted = CountDownLatch(1)
     private lateinit var signIn: SignIn
 
     /** A Claude attempt left waiting for its code by an earlier run of the app. */
@@ -61,7 +63,7 @@ class SignInTest {
             putString("verifier", "verifier")
             putString("state", "state")
         }
-        signIn = SignIn(app, tokenEndpoint, tokens)
+        signIn = SignIn(app, tokenEndpoint, tokens) { accepted.countDown() }
     }
 
     @After
@@ -138,9 +140,8 @@ class SignInTest {
         answer.countDown()
         val stale = signIn.start(OAuthProvider.Claude, "Claude") {}
         browser().use { browser ->
-            // Long enough for the stale attempt's listener to accept the browser before the
-            // newer attempt closes it.
-            Thread.sleep(ACCEPT_MILLIS)
+            // The stale attempt's listener holds the browser before the newer attempt closes it.
+            assertTrue(accepted.await(5, TimeUnit.SECONDS))
             signIn.start(OAuthProvider.Claude, "Claude") {}
             signIn.completePastedCode("code") { results += it }
             awaitExchange()
@@ -172,5 +173,3 @@ class SignInTest {
 
 /** The port Claude's sign-in redirect comes back to. */
 private const val CLAUDE_LISTENER_PORT = 54545
-
-private const val ACCEPT_MILLIS = 300L

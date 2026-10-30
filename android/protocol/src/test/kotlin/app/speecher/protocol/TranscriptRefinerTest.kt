@@ -242,12 +242,13 @@ class TranscriptRefinerTest {
                     "{\"effort\":\"xhigh\"}",
                     "{\"effort\":\"xhigh\"}",
                     "{\"effort\":\"max\"}",
-                    null,
+                    "{\"effort\":\"high\"}",
                     null,
                 ),
                 bodies.map { it["output_config"]?.toString() },
             )
-            // Adaptive thinking starts with the 4.6 models, so Opus 4.5 is sent none.
+            // Adaptive thinking starts with the 4.6 models; Opus 4.5 takes an effort up to high
+            // without it.
             assertEquals(listOf(true, true, true, false, false), bodies.map { "thinking" in it })
         }
     }

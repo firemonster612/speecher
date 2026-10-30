@@ -32,12 +32,14 @@ import okhttp3.OkHttpClient
 
 /**
  * Owns one browser sign-in attempt, persisted so a pasted callback survives the app being killed.
- * Its tokens are exchanged over [http] and saved in [tokenStore].
+ * Its tokens are exchanged over [http] and saved in [tokenStore]; [accepted] runs on the listener's
+ * thread each time it accepts a connection from this device.
  */
 class SignIn(
     context: Context,
     private val http: OkHttpClient = sharedHttp,
     private val tokenStore: TokenStore = TokenStore(context),
+    private val accepted: () -> Unit = {},
 ) : AutoCloseable {
     private val pending = context.getSharedPreferences("pending-signin", Context.MODE_PRIVATE)
     private val main = Handler(Looper.getMainLooper())
@@ -82,8 +84,7 @@ class SignIn(
                     val port = if (provider == OAuthProvider.Claude) 54545 else 1455
                     val deadline = System.currentTimeMillis() + 180_000
                     // Wildcard bind so the browser reaches us on either 127.0.0.1 or ::1; the
-                    // accept
-                    // loop rejects anything that is not from this device's loopback.
+                    // accept loop rejects anything that is not from this device's loopback.
                     ServerSocket(port, 1).use { socket ->
                         synchronized(this) {
                             if (id != sequence) {
@@ -105,6 +106,7 @@ class SignIn(
                                 }
                             client.use {
                                 if (!it.inetAddress.isLoopbackAddress) return@use
+                                accepted()
                                 it.soTimeout = 2_000
                                 val requestLine =
                                     try {
