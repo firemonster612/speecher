@@ -146,33 +146,42 @@ Card {
                 Row {
                     spacing: 7
                     Txt { text: row.term.term; variant: "transcript"; strong: true }
-                    Icon {
-                        visible: row.term.keyTerm
-                        name: "mic"
-                        size: 13
-                        color: Theme.textTertiary
+                    Reveal {
+                        sideways: true
+                        open: row.term.keyTerm
                         anchors.verticalCenter: parent.verticalCenter
-                        Tip { text: Library.vocabularyText.keyTermTip; shown: tipHover.hovered }
-                        HoverHandler { id: tipHover }
+                        Icon {
+                            name: "mic"
+                            size: 13
+                            color: Theme.textTertiary
+                            Tip { text: Library.vocabularyText.keyTermTip; shown: tipHover.hovered }
+                            HoverHandler { id: tipHover }
+                        }
                     }
                 }
-                Txt {
-                    visible: text.length > 0
-                    text: Library.termDetail(row.term)
-                    variant: "small"
-                    tone: "secondary"
-                    width: parent.width
-                    elide: Text.ElideRight
+                Reveal {
+                    open: detailText.text.length > 0
+                    Txt {
+                        id: detailText
+                        text: Library.termDetail(row.term)
+                        variant: "small"
+                        tone: "secondary"
+                        width: parent.width
+                        elide: Text.ElideRight
+                    }
                 }
             }
             trailing: Row {
                 spacing: 14
-                Txt {
-                    visible: row.term.profiles.length > 0
-                    text: Library.termProfilesText(row.term.profiles)
-                    variant: "small"
-                    tone: "secondary"
+                Reveal {
+                    sideways: true
+                    open: row.term.profiles.length > 0
                     anchors.verticalCenter: parent.verticalCenter
+                    Txt {
+                        text: Library.termProfilesText(row.term.profiles)
+                        variant: "small"
+                        tone: "secondary"
+                    }
                 }
                 Txt {
                     text: Library.termUsesText(row.term.uses)

@@ -417,11 +417,13 @@ Item {
                 opacity: popup.phase === "error" ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: Theme.slow } }
-                NumberAnimation on remaining {
+                // Core's real dismiss time, so not a Theme duration.
+                Ease on remaining {
                     id: drain
                     from: 1
                     to: 0
                     duration: popup.source.error.dismissMs || 0
+                    curve: Theme.steady
                     running: popup.phase === "error"
                     paused: running && hover.hovered
                 }

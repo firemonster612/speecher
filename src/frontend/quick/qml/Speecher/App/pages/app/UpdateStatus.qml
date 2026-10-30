@@ -166,11 +166,19 @@ Item {
                 spacing: 3
                 Row {
                     spacing: Theme.space2
-                    Spinner { visible: line.busy; size: 14; anchors.verticalCenter: parent.verticalCenter }
-                    StatusDot { visible: line.dot.a > 0; pulse: false; size: 7; color: line.dot; anchors.verticalCenter: parent.verticalCenter }
+                    Reveal { sideways: true; open: line.busy; anchors.verticalCenter: parent.verticalCenter; Spinner { size: 14 } }
+                    Reveal {
+                        sideways: true
+                        open: line.dot.a > 0
+                        anchors.verticalCenter: parent.verticalCenter
+                        StatusDot { pulse: false; size: 7; color: line.dot }
+                    }
                     Txt { text: line.title; variant: "label" }
                 }
-                Txt { visible: text.length > 0; width: parent.width; text: line.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+                Reveal {
+                    open: line.detail.length > 0
+                    Txt { width: parent.width; text: line.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+                }
             }
             Column { id: extraColumn; width: parent.width; visible: children.length > 0 }
         }

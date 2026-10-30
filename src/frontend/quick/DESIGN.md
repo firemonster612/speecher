@@ -471,10 +471,12 @@ curve: `Behavior on opacity { Ease {} }`, `Ease { duration: Theme.slow;
 curve: Theme.springy }`. A height or width that opens, closes or follows
 its content uses `Grow on implicitHeight {}`, which skips the first
 layout. Durations come from `Theme.fast`, `Theme.base`,
-`Theme.slow`, `Theme.page` or `Theme.ms(n)`; curves from `Theme.easeOut`
-(the default), `Theme.easeInOut`, `Theme.springy`, `Theme.easeIn`,
-`Theme.breathe` (loops that pulse) or `Theme.steady` (motion that never
-settles, such as a sweep). Timer intervals use `Theme.ms(n)` too.
+`Theme.slow`, `Theme.page` or `Theme.ms(n)`, except a countdown's, which is
+the real time it counts (the popup error's `error.dismissMs`); curves from
+`Theme.easeOut` (the default), `Theme.easeInOut`, `Theme.springy`,
+`Theme.easeIn`, `Theme.breathe` (loops that pulse) or `Theme.steady` (motion
+that never settles, such as a sweep, and a countdown draining). Timer
+intervals use `Theme.ms(n)` too.
 
 The shared controls already move; use them rather than animating by hand:
 
