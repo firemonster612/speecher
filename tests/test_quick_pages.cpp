@@ -196,11 +196,6 @@ private slots:
         runSteps(steps);
     }
 
-    // The Spoken language's picker opens with every language, narrows as you
-    // type by English name, own name or code, closes on Escape and chooses
-    // with the arrows and Return. A service card's count of languages opens
-    // the same list of only that service's, without choosing the card, and
-    // it stays open while Models' changes make the cards again.
     // A fallback's picker offers "Same as main language" first and checks it
     // while the fallback has no language chosen, its button showing the
     // language the fallback listens for; choosing it drops the choice.
@@ -235,6 +230,11 @@ private slots:
         QCOMPARE(picker->property("shownId").toString(), QStringLiteral("de"));
     }
 
+    // The Spoken language's picker opens with every language, narrows as you
+    // type by English name, own name or code, closes on Escape and chooses
+    // with the arrows and Return. A service card's count of languages opens
+    // the same list of only that service's, without choosing the card, and
+    // it stays open while Models' changes make the cards again.
     void languagePickerChoosesAndShowsLanguages_data() { themes(); }
     void languagePickerChoosesAndShowsLanguages()
     {
