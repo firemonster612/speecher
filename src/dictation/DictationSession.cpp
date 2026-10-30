@@ -63,6 +63,11 @@ DictationSession::DictationSession(SettingsStore *settings,
           this))
     , m_completionTimer(new QTimer(this))
 {
+    if (m_settings) {
+        m_ui = m_settings->dictationSnapshot().ui;
+        connect(m_settings, &SettingsStore::snapshotApplied, this,
+                [this] { m_ui = m_settings->dictationSnapshot().ui; });
+    }
     m_completionTimer->setSingleShot(true);
     m_completionTimer->setTimerType(Qt::PreciseTimer);
     connect(m_completionTimer, &QTimer::timeout, this, [this] {
@@ -99,9 +104,8 @@ DictationSession::DictationSession(SettingsStore *settings,
     connect(speechChain, &SpeechChain::ready, this, &DictationSession::speechProviderReady);
     connect(speechChain, &SpeechChain::exhausted, this, &DictationSession::speechChainExhausted);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        const UiSettings ui = uiSettings();
-        const int words = ui.previewWords;
-        emit previewDisplayChanged(ui.transcriptionPreviewEnabled ? WordPreview::lastWords(text, words) : QString());
+        const int words = m_ui.previewWords;
+        emit previewDisplayChanged(m_ui.transcriptionPreviewEnabled ? WordPreview::lastWords(text, words) : QString());
         qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
         emit previewChanged(text);
     });
@@ -1411,11 +1415,6 @@ void DictationSession::resumePausedMedia()
     m_mediaController->resumePaused();
 }
 
-UiSettings DictationSession::uiSettings() const
-{
-    return m_settings ? m_settings->dictationSnapshot().ui : UiSettings{};
-}
-
 void DictationSession::clearScreenshotContext()
 {
     if (m_screenshotProvider) {
@@ -1603,7 +1602,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             return;
         }
         m_refinementStream += text;
-        if (!uiSettings().refinementPreviewEnabled) {
+        if (!m_ui.refinementPreviewEnabled) {
             emit popupRefinementPreviewChanged({});
             return;
         }
@@ -1647,7 +1646,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
         restored += preview.mid(cursor);
         preview = std::move(restored);
-        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, uiSettings().previewWords));
+        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, m_ui.previewWords));
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this, current](const QString &text) {
         if (!current()) {

@@ -87,10 +87,13 @@ public:
     void probeHardware();
     bool hardwareKnown() const;
     const HardwareSummary &hardware() const;
-    const LocalModel &suggestedModel() const;
+    // The queries that take settings answer for those, so a caller asking
+    // several reads the settings once: on Windows a read is many registry
+    // lookups.
+    const LocalModel &suggestedModel(const AppSettings &settings) const;
     // Against the memory of where Runs on puts models. Empty until the
     // hardware probe answers: nothing is too large before anyone knows.
-    std::optional<ModelFit> fit(const LocalModel &model) const;
+    std::optional<ModelFit> fit(const LocalModel &model, const AppSettings &settings) const;
 
     // Downloads go through here so the failure a person has not seen yet can be
     // shown by whichever window opens next.
@@ -106,15 +109,15 @@ public:
     void runSpeedTest(const QString &modelId);
     // Running or waiting its turn.
     bool speedTestRunning(const QString &modelId) const;
-    std::optional<double> measuredSeconds(const QString &modelId) const;
+    std::optional<double> measuredSeconds(const QString &modelId, const AppSettings &settings) const;
 
     // Saves the hardware default once known, without marking a user choice.
     // The hardware probe settles deferred initialization for every front end.
     void initializeSpeechModel();
     void chooseSpeechModel(const QString &id);
-    const LocalModel &speechModelChoice() const;
+    const LocalModel &speechModelChoice(const AppSettings &settings) const;
     void initializeRunner();
-    RunnerChoice runnerChoice() const;
+    RunnerChoice runnerChoice(const AppSettings &settings) const;
 
     // What the Local models page reads about a model beyond the catalog.
     struct ModelState {
@@ -153,11 +156,11 @@ public:
     // The local fallback setup suggests for a role: the suggested Local Model
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
-    std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role) const;
+    std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role, const AppSettings &settings) const;
     // Whether accepting that offer behind primary would add it: not when
     // there is none, the chain behind primary is full, or the offer is
     // already primary or one of its fallbacks.
-    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary) const;
+    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary, const AppSettings &settings) const;
     // Adds that fallback after the others, behind primary, setup's choice for
     // the role, which is saved with it: the saved chain is kept in step with
     // its primary, so a fallback behind a primary not yet saved would be
@@ -185,7 +188,8 @@ private:
     friend class LocalSetupTestAccess;
     // The saved fallbacks behind primary with setup's offer added, or none
     // where the chain would drop it.
-    std::optional<QStringList> fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const;
+    std::optional<QStringList> fallbacksWithSetupOffer(ProviderRole role, const QString &primary,
+                                                       const AppSettings &settings) const;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;

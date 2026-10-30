@@ -320,17 +320,17 @@ const HardwareSummary &LocalSetup::hardware() const
     return m_hardware;
 }
 
-const LocalModel &LocalSetup::suggestedModel() const
+const LocalModel &LocalSetup::suggestedModel(const AppSettings &settings) const
 {
-    return suggestedLocalModel(m_hardware.profile, m_settings.dictationSnapshot().speech.language);
+    return suggestedLocalModel(m_hardware.profile, settings.speech.language);
 }
 
-std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
+std::optional<ModelFit> LocalSetup::fit(const LocalModel &model, const AppSettings &settings) const
 {
     if (!m_hardwareKnown) {
         return std::nullopt;
     }
-    return modelFit(model, runsOnProfile(m_hardware, m_settings.dictationSnapshot().speech.local.runsOn));
+    return modelFit(model, runsOnProfile(m_hardware, settings.speech.local.runsOn));
 }
 
 void LocalSetup::setDownloadPending(const QString &id, bool pending)
@@ -424,24 +424,25 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
     return m_speedTestModel == modelId || m_speedTestQueue.contains(modelId);
 }
 
-std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const
+std::optional<double> LocalSetup::measuredSeconds(const QString &modelId, const AppSettings &settings) const
 {
-    return measuredSpeedTestSeconds(m_settings.dictationSnapshot().speech.local, modelId);
+    return measuredSpeedTestSeconds(settings.speech.local, modelId);
 }
 
-const LocalModel &LocalSetup::speechModelChoice() const
+const LocalModel &LocalSetup::speechModelChoice(const AppSettings &settings) const
 {
-    const LocalSpeechSettings saved = m_settings.dictationSnapshot().speech.local;
+    const LocalSpeechSettings &saved = settings.speech.local;
     const auto *model = findLocalModel(saved.modelId);
-    return saved.modelChosen && model ? *model : suggestedModel();
+    return saved.modelChosen && model ? *model : suggestedModel(settings);
 }
 
 void LocalSetup::initializeSpeechModel()
 {
-    if (!m_hardwareKnown || m_settings.dictationSnapshot().speech.local.modelChosen) return;
+    const AppSettings settings = m_settings.dictationSnapshot();
+    if (!m_hardwareKnown || settings.speech.local.modelChosen) return;
     // The general settings setter treats a changed model as a user choice.
     // A hardware default must remain replaceable until the person chooses.
-    m_settings.raw().setValue(SettingsKeys::LocalModel, suggestedModel().id);
+    m_settings.raw().setValue(SettingsKeys::LocalModel, suggestedModel(settings).id);
     m_settings.raw().setValue(SettingsKeys::LocalModelChosen, false);
 }
 
@@ -456,17 +457,17 @@ void LocalSetup::chooseSpeechModel(const QString &id)
     emit changed();
 }
 
-RunnerChoice LocalSetup::runnerChoice() const
+RunnerChoice LocalSetup::runnerChoice(const AppSettings &settings) const
 {
-    return resolveRunnerChoice(m_settings.dictationSnapshot().refinement.localRunner, m_runners,
-                               suggestedCleanupModel());
+    return resolveRunnerChoice(settings.refinement.localRunner, m_runners, suggestedCleanupModel());
 }
 
 void LocalSetup::initializeRunner()
 {
-    const LocalRunnerSettings saved = m_settings.dictationSnapshot().refinement.localRunner;
+    const AppSettings settings = m_settings.dictationSnapshot();
+    const LocalRunnerSettings &saved = settings.refinement.localRunner;
     if (!saved.runner.isEmpty() || !saved.model.isEmpty()) return;
-    const auto choice = runnerChoice();
+    const auto choice = runnerChoice(settings);
     if (!choice.available) return;
     m_settings.edit([&choice](AppSettings &settings) {
         settings.refinement.localRunner = choice.selection;
@@ -597,32 +598,31 @@ QString LocalSetup::endpointStatus(const EndpointState &state)
     return state.checking ? QStringLiteral("Checking…") : state.result.message;
 }
 
-std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole role) const
+std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole role, const AppSettings &settings) const
 {
     const QString local = providerKey(ProviderId::Local);
     if (role == ProviderRole::Speech) {
-        const LocalModel &model = suggestedModel();
-        if (fit(model) != ModelFit::Fits
-            || !localModelListensFor(model, m_settings.dictationSnapshot().speech.language)) {
+        const LocalModel &model = suggestedModel(settings);
+        if (fit(model, settings) != ModelFit::Fits || !localModelListensFor(model, settings.speech.language)) {
             return std::nullopt;
         }
         return SetupFallbackOffer{local, model.id, model.name};
     }
-    const RunnerChoice choice = runnerChoice();
+    const RunnerChoice choice = runnerChoice(settings);
     if (!choice.available || !choice.available->models.contains(choice.selection.model)) {
         return std::nullopt;
     }
     return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
 }
 
-std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role, const QString &primary) const
+std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role, const QString &primary,
+                                                               const AppSettings &settings) const
 {
-    const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role);
+    const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role, settings);
     if (!offer) {
         return std::nullopt;
     }
     // A full chain, or the offer already the primary or a fallback, would drop it.
-    const AppSettings settings = m_settings.dictationSnapshot();
     const QStringList kept = normalizedFallbackProviders(role, primary,
                                                          role == ProviderRole::Speech
                                                              ? settings.speech.fallbackProviderIds
@@ -634,35 +634,37 @@ std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role
     return fallbacks;
 }
 
-bool LocalSetup::setupFallbackOfferJoins(ProviderRole role, const QString &primary) const
+bool LocalSetup::setupFallbackOfferJoins(ProviderRole role, const QString &primary,
+                                         const AppSettings &settings) const
 {
-    return fallbacksWithSetupOffer(role, primary).has_value();
+    return fallbacksWithSetupOffer(role, primary, settings).has_value();
 }
 
 void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
 {
     // Where the chain would drop the offer, nothing changes, not even the
     // model or the runner it names.
-    const std::optional<QStringList> fallbacks = fallbacksWithSetupOffer(role, primary);
+    const AppSettings settings = m_settings.dictationSnapshot();
+    const std::optional<QStringList> fallbacks = fallbacksWithSetupOffer(role, primary, settings);
     if (!fallbacks) {
         return;
     }
-    const SetupFallbackOffer offer = *setupFallbackOffer(role);
+    const SetupFallbackOffer offer = *setupFallbackOffer(role, settings);
     if (role == ProviderRole::Speech) {
-        m_settings.edit([&](AppSettings &settings) {
-            settings.speech.providerId = primary;
-            settings.speech.fallbackProviderIds = *fallbacks;
+        m_settings.edit([&](AppSettings &draft) {
+            draft.speech.providerId = primary;
+            draft.speech.fallbackProviderIds = *fallbacks;
             return true;
         });
         chooseSpeechModel(offer.modelId);
         download(*findLocalModel(offer.modelId));
         return;
     }
-    const LocalRunnerSettings runner = runnerChoice().selection;
-    m_settings.edit([&](AppSettings &settings) {
-        settings.refinement.localRunner = runner;
-        settings.refinement.providerId = primary;
-        settings.refinement.fallbackProviderIds = *fallbacks;
+    const LocalRunnerSettings runner = runnerChoice(settings).selection;
+    m_settings.edit([&](AppSettings &draft) {
+        draft.refinement.localRunner = runner;
+        draft.refinement.providerId = primary;
+        draft.refinement.fallbackProviderIds = *fallbacks;
         return true;
     });
     emit changed();

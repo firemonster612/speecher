@@ -56,10 +56,13 @@ void ShortcutGesture::press()
         m_pressedWhileDown = true;
     }
     m_down = true;
-    m_press.start();
     m_startedSession = !m_sessionActive();
-    if (m_startedSession && reportsRelease()
-        && m_settings.dictationSnapshot().shortcutActivationMode == ShortcutActivationMode::PushToTalk) {
+    const bool pushToTalk = m_startedSession && reportsRelease()
+        && m_settings.dictationSnapshot().shortcutActivationMode == ShortcutActivationMode::PushToTalk;
+    // Timed from after the settings read, which on Windows is many registry
+    // lookups: the hold is the person's, not the read's.
+    m_press.start();
+    if (pushToTalk) {
         // Deferred rather than started and cancelled: cancelling a Starting
         // session still opens the microphone and shows the popup for an
         // instant, which is a trace. The very first gesture on a desktop that
@@ -116,6 +119,8 @@ void ShortcutGesture::release(qint64 heldMs)
     // begins after the key is already up is push-to-talk's misfire, not a tap.
     const bool deferredStartPending = m_pushToTalkStart->isActive();
     m_pushToTalkStart->stop();
+    // Timed before the settings read, as press() is after it.
+    const qint64 elapsed = m_press.elapsed();
     switch (m_settings.dictationSnapshot().shortcutActivationMode) {
     case ShortcutActivationMode::Toggle:
         return;
@@ -130,7 +135,7 @@ void ShortcutGesture::release(qint64 heldMs)
         // tap's release is handled well past hybridHoldMs. Timed here it read
         // as a hold and cancelled the dictation it had just started; the
         // binder's physical hold says what the key actually did.
-        const qint64 held = heldMs >= 0 ? heldMs : m_press.elapsed();
+        const qint64 held = heldMs >= 0 ? heldMs : elapsed;
         if (starting && held > hybridHoldMs) {
             emit stopRequested();
         }

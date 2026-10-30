@@ -189,7 +189,7 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
 
 QString QuickInsights::state() const
 {
-    if (!m_controller->settings()->dictationSnapshot().insightsEnabled) {
+    if (!m_enabled) {
         return QStringLiteral("off");
     }
     return m_controller->insightsLog()->records().isEmpty() ? QStringLiteral("empty") : QStringLiteral("ready");
@@ -352,10 +352,12 @@ void QuickInsights::copyLatest()
 
 void QuickInsights::refresh()
 {
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    m_enabled = settings.insightsEnabled;
     m_today = m_controller->insightsToday();
     const bool ready = hasData();
     m_summary = ready ? summarize(m_controller->insightsLog()->records(), m_range, m_today,
-                                  m_controller->settings()->dictationSnapshot().refinement.writingProfiles)
+                                  settings.refinement.writingProfiles)
                       : InsightsSummary{};
     m_summaryMap = ready ? QVariant(summaryMap(m_summary)) : QVariant();
     m_heatmap.clear();

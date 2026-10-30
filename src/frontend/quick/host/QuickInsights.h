@@ -109,6 +109,8 @@ private:
     InsightsRange m_range = InsightsRange::Last30Days;
     HeatMeasure m_measure = HeatMeasure::Dictations;
     QDate m_today;
+    // As refresh() last read it, since QML asks for state() often.
+    bool m_enabled = true;
     InsightsSummary m_summary;
     QVariant m_summaryMap;
     QVariantList m_heatmap;

@@ -307,8 +307,10 @@ ApplicationController::ApplicationController(bool popupOnly,
         const DictationState state = m_session->state();
         const bool resumed = std::exchange(wasPaused, state == DictationState::Paused)
             && state == DictationState::Listening;
-        if (m_settings->dictationSnapshot().ui.soundsEnabled && !resumed
-            && (state == DictationState::Listening || state == DictationState::Stopping)) {
+        // Read last: on Windows a settings read is many registry lookups, and
+        // most state changes make no sound anyway.
+        if (!resumed && (state == DictationState::Listening || state == DictationState::Stopping)
+            && m_settings->dictationSnapshot().ui.soundsEnabled) {
             if (m_frontEnd) {
                 m_frontEnd->alert();
             }
