@@ -1,6 +1,7 @@
 #include "app/ApplicationController.h"
 
 #include "app/AccessibilityMonitor.h"
+#include "app/Accounts.h"
 #include "app/AppFrontEnd.h"
 #include "app/IpcCommandHandler.h"
 #include "app/LocalSetup.h"
@@ -157,6 +158,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_reachability->watchSystem();
     m_availability = new ProviderAvailability(*m_reachability, this);
     m_localSetup->setProviderAvailability(*m_availability);
+    m_accounts = new Accounts(*m_settings, *m_availability, *m_providers, this);
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
@@ -474,6 +476,11 @@ NetworkReachability *ApplicationController::networkReachability() const
 ProviderAvailability *ApplicationController::providerAvailability() const
 {
     return m_availability;
+}
+
+Accounts *ApplicationController::accounts() const
+{
+    return m_accounts;
 }
 
 // A download the setup assistant left running finishes long after its window

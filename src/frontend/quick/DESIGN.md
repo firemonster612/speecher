@@ -80,7 +80,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   sign-ins.
 - `Insights` carries core's summary for Home's period and the history
   General clears; `pages/home/words.js` words it.
-- `Accounts`: each service's sign-in is core's check, run on a worker; a
+- `Accounts` shows the daemon's `Accounts` (`app/Accounts`), which runs
+  each service's sign-in check on a worker and queues secret writes; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
   through the daemon's `SecretStore`, and QML sees only whether a key is
   saved and why a save or clear failed. Each service's `inUse`, core's

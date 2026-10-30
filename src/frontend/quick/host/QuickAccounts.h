@@ -1,26 +1,20 @@
 #pragma once
 
-#include "providers/SignInCheck.h"
-
-#include <QHash>
 #include <QObject>
 #include <QQmlEngine>
-#include <QSet>
-#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
-#include <optional>
-
 namespace speecher {
 
+class Accounts;
 class ApplicationController;
+struct AppSettings;
 
-// The UI's Accounts singleton: each service's sign-in as core finds it, CLI
-// Proxy API's account files, and which secrets are saved. It saves and clears
-// secrets through the daemon's SecretStore but never hands one to QML. Its
-// wording is the UI's (Words, the Accounts page); a service's detail is
-// core's status line.
+// The UI's Accounts singleton: the daemon's Accounts as QML values, by the
+// schema's row ids. It saves and clears secrets through them but never hands
+// one to QML. Its wording is the UI's (Words, the Accounts page); a service's
+// detail is core's status line.
 class QuickAccounts final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(Accounts)
@@ -67,16 +61,9 @@ public:
     QVariantMap pendingClears() const;
     QVariantMap secretErrors() const;
 
-    // Checks the service's sign-in again on a worker, for CLI Proxy API with
-    // its account files, and reads which secrets are saved again. Only the
-    // latest check of a service counts.
+    // Accounts::recheck, renew, saveSecret and clearSecret by id.
     Q_INVOKABLE void recheck(const QString &id);
-    // Renews an expired sign-in with its refresh token, then checks it and,
-    // since renewing rewrites credentials they may share, the other services.
     Q_INVOKABLE void renew(const QString &id);
-    // Saves a secret row's value (trimmed; an empty one changes nothing) to
-    // the keychain, or for all but the OpenAI key to the settings file when
-    // no keychain works, then checks the sign-ins again.
     Q_INVOKABLE void saveSecret(const QString &rowId, const QString &value);
     Q_INVOKABLE void clearSecret(const QString &rowId);
 
@@ -89,45 +76,12 @@ signals:
     void secretSaved(const QString &rowId);
 
 private:
-    using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
-
-    void start();
     // One of services by id, or an empty map.
     QVariantMap service(const QString &id) const;
-    void run(const QString &id, SignInRun signIn);
-    void recheckAll();
-    // Asks ProviderAvailability for the speech providers' sign-ins, which
-    // share credentials with these services.
-    void checkSpeechSignIns();
-    void readSavedSecrets();
-    void showCliproxyAccounts(const QVariantList &accounts);
-    // Saves value, or clears the secret when it is empty, once any write of
-    // the same secret in progress is done.
-    void writeSecret(const QString &rowId, const QString &value);
-    void finishSecretChange(const QString &rowId, bool done, bool saved);
     void settingsSaved(const AppSettings &previous);
 
     ApplicationController *m_controller;
-    bool m_started = false;
-    QHash<QString, SignInCheck> m_checks;
-    // The check each service waits for, by its number.
-    QHash<QString, quint64> m_pending;
-    quint64 m_lastCheck = 0;
-    QVariantList m_cliproxyAccounts;
-    QVariantMap m_savedSecrets;
-    QVariantMap m_pendingClears;
-    QVariantMap m_secretErrors;
-    // The latest read of which secrets are saved; an earlier one's answer is
-    // dropped.
-    quint64 m_lastSecretRead = 0;
-    // Secrets saved or cleared here since that read began, which it must not
-    // overwrite.
-    QSet<QString> m_secretsChanged;
-    // Secrets being written, by row id, each with the value asked for while
-    // it was (empty to clear), if any.
-    QHash<QString, std::optional<QString>> m_writes;
-    // The settings the sign-ins depend on, as last checked.
-    QStringList m_signInSettings;
+    Accounts *m_accounts;
 };
 
 } // namespace speecher

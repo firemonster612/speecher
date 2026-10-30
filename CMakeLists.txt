@@ -586,6 +586,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 
 set(SPEECHER_APP_SOURCES
   src/app/AccessibilityMonitor.cpp
+  src/app/Accounts.cpp
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
@@ -619,6 +620,7 @@ set(SPEECHER_APP_SOURCES
 
 set(SPEECHER_APP_HEADERS
   src/app/AccessibilityMonitor.h
+  src/app/Accounts.h
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
