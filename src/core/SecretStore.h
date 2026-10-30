@@ -4,6 +4,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <array>
 #include <optional>
@@ -13,6 +14,12 @@ namespace speecher {
 
 class SettingsStore;
 
+// Speecher's API keys: in the desktop keyring, or in the settings file when
+// no keyring takes one. Only one store per settings file saves keys, the
+// running app's: every store on the file sees another's changes before the
+// file saves them (QSettings keeps one copy of an open file), so a second
+// store that saved a key it read that way could report Stored for a key the
+// file never saved.
 class SecretStore : public QObject {
     Q_OBJECT
 
@@ -93,10 +100,14 @@ public:
     // keychain is taking lands. Every save asked for and not yet settled is
     // dropped, refused for that reason in saveFinished, and none is written
     // afterwards; a save asked for meanwhile is refused, also during a
-    // removal started while this one waits. The settings file's copies
+    // removal started while this one waits. A deleted entry's deletion
+    // marker goes, having nothing left to hide. The settings file's copies
     // stay: SettingsStore::deleteAll removes them, after which every save
     // is refused.
     bool deleteKeyringSecrets();
+    // The settings keys of the deletion markers (deletionPending) in the
+    // settings file, each hiding a key the keyring kept.
+    QStringList deletionMarkers() const;
 
     QString apiKey() const;
     // Unlike saveSecret, refuses to fall back to the settings file.
@@ -138,9 +149,10 @@ private:
         quint64 requests = 0;
         // Whether a keyring write of the secret is under way.
         bool writing = false;
-        // Whether the settings file may not have saved a change of what it
-        // says about the secret: nothing of it counts as stored until it does.
-        bool unsaved = false;
+        // The count of settings file saves (SettingsFile::saves) at which the
+        // file holds its last change of what it says about the secret:
+        // nothing of that change counts as stored before.
+        quint64 savedBy = 0;
     };
 
     SecretState &state(Secret secret) const;
@@ -153,13 +165,15 @@ private:
     bool writeKeyringSecret(Secret secret, const QString &value) const;
     bool deleteKeyringSecret(Secret secret) const;
     QString writeRefusal() const;
+    bool refusesWrites() const;
     quint64 ask(Secret secret, const Request &request);
     SaveResult save(Secret secret, const Request &request);
     SaveResult settle(Secret secret, quint64 own);
     void refuse(Secret secret, quint64 request, bool cleared, const QString &error);
     bool holds(Secret secret, const Request &request) const;
     bool write(Secret secret, const Request &request);
-    bool saveSettingsFile() const;
+    void changedInFile(Secret secret) const;
+    bool fileSaved(Secret secret) const;
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;

@@ -111,6 +111,7 @@ SpeecherRemoval::Steps quietRemoval()
     steps.keyHelperInstalled = [] { return false; };
     steps.removeKeyHelper = [](QString *) { return true; };
     steps.deleteSecrets = [](QString *) { return true; };
+    steps.settingsHideKeys = [] { return false; };
     steps.deleteSettings = [](QString *) { return true; };
     return steps;
 }

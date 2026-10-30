@@ -136,6 +136,26 @@ bool SettingsStore::deleteAll(QString *path)
     return false;
 }
 
+bool SettingsStore::deleteAllButDeletionMarkers(QString *path)
+{
+    // The identity migration's version stays too, so the next start doesn't
+    // take the markers for settings an older Speecher left.
+    QStringList kept = m_secrets->deletionMarkers();
+    kept.append(SettingsKeys::IdentityMigrationVersion);
+    for (const QString &key : m_settings.allKeys()) {
+        if (!kept.contains(key)) {
+            m_settings.remove(key);
+        }
+    }
+    if (m_settings.save()) {
+        return true;
+    }
+    if (path) {
+        *path = m_settings.fileName();
+    }
+    return false;
+}
+
 SecretStore *SettingsStore::secrets() const
 {
     return m_secrets;

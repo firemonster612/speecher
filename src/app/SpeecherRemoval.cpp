@@ -29,12 +29,15 @@ namespace {
 using Part = RemovalStep::Part;
 using Outcome = RemovalStep::Outcome;
 
-// Runs a step that says why it failed, and records how it went.
-void record(QList<RemovalStep> &steps, Part part, const std::function<bool(QString *error)> &run)
+// Runs a step that says why it failed, records how it went, done when it
+// went through, and returns whether it did.
+bool record(QList<RemovalStep> &steps, Part part, const std::function<bool(QString *error)> &run,
+            Outcome done = Outcome::Removed)
 {
     QString error;
-    const bool removed = run(&error);
-    steps.append({part, removed ? Outcome::Removed : Outcome::Failed, removed ? QString() : error});
+    const bool ran = run(&error);
+    steps.append({part, ran ? done : Outcome::Failed, ran ? QString() : error});
+    return ran;
 }
 
 } // namespace
@@ -67,7 +70,11 @@ std::optional<SpeecherRemoval::Steps> SpeecherRemoval::onThisComputer(Applicatio
         *error = controller->secretStore()->lastError();
         return false;
     };
+    steps.settingsHideKeys = [controller] { return !controller->secretStore()->deletionMarkers().isEmpty(); };
     steps.deleteSettings = [controller](QString *error) { return controller->settings()->deleteAll(error); };
+    steps.deleteSettingsButMarkers = [controller](QString *error) {
+        return controller->settings()->deleteAllButDeletionMarkers(error);
+    };
     steps.programFile = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
     return steps;
 #endif
@@ -114,15 +121,14 @@ void SpeecherRemoval::start(bool deleteSettings)
 
 void SpeecherRemoval::finish(RemovalReport report, bool deleteSettings)
 {
-    if (deleteSettings) {
-        record(report.steps, Part::Keyring, m_steps.deleteSecrets);
-    }
-    // A key whose deletion the keyring refused is hidden by a marker in the
-    // settings, so they go only once the keyring's deletions went through.
-    if (deleteSettings && report.steps.last().outcome == Outcome::Removed) {
+    if (!deleteSettings) {
+        report.steps.append({Part::Settings, Outcome::Kept, QString()});
+    } else if (record(report.steps, Part::Keyring, m_steps.deleteSecrets) || !m_steps.settingsHideKeys()) {
         record(report.steps, Part::Settings, m_steps.deleteSettings);
     } else {
-        report.steps.append({Part::Settings, Outcome::Kept, QString()});
+        // A key whose deletion the keyring refused stays hidden only while
+        // its deletion marker does.
+        record(report.steps, Part::Settings, m_steps.deleteSettingsButMarkers, Outcome::KeptHidingKeys);
     }
     m_running = false;
     emit finished(report);

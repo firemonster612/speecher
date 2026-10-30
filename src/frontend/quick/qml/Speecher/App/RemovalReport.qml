@@ -28,6 +28,7 @@ Notice {
         keyring: { removed: "Deleted your API keys from the desktop keyring.",
             failed: e => "Could not delete your API keys from the desktop keyring" + (e ? ": " + e : ".") },
         settings: { removed: "Deleted your settings.", kept: "Kept your settings.",
+            keptHidingKeys: "Deleted your settings, except a note that stops Speecher from using the API keys the keyring couldn't delete.",
             failed: e => "Could not delete the settings file at " + e + "." }
     })
     function failed(removal) { return removal.files.failed.length > 0 || removal.steps.some(s => s.outcome === "failed") }

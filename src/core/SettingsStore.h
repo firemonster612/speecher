@@ -66,6 +66,12 @@ public:
     // (SettingsFile), so an edit made before Speecher quits can't bring the
     // file back. A file that won't go puts its path in path.
     bool deleteAll(QString *path);
+    // Clears every setting but SecretStore's deletion markers, which hide
+    // keys the keyring kept, and saves that: what removing Speecher with its
+    // settings does when deleting the file would show such a key. Changes
+    // made afterwards are saved. A file that won't save puts its path in
+    // path.
+    bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
     bool launchAtLogin() const;

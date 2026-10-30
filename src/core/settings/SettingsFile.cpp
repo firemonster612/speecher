@@ -5,6 +5,8 @@
 #include <QEvent>
 #include <QFile>
 
+#include <memory>
+
 namespace speecher {
 
 namespace {
@@ -37,6 +39,7 @@ SettingsFile::~SettingsFile()
 void SettingsFile::sync()
 {
     if (!m_deleted) {
+        save();
         QSettings::sync();
     }
 }
@@ -49,10 +52,24 @@ bool SettingsFile::save()
     // A QSettings opened now starts without an error. It shares this one's
     // unsaved changes (Qt keeps one copy of an open file), so the save its
     // sync makes is the one that writes them, and its status judges that
-    // save alone.
-    QSettings saving(format(), scope(), organizationName(), applicationName());
-    saving.sync();
-    return saving.status() == QSettings::NoError;
+    // save alone. It opens this object's own file by name: deleteFile on
+    // another SettingsFile points the organization and application at a
+    // throwaway folder. macOS keeps native settings in a preferences domain,
+    // which deleteFile never moves and a file name would open as a bare
+    // plist, around the preferences daemon.
+#ifdef Q_OS_MACOS
+    const bool domain = format() == NativeFormat;
+#else
+    const bool domain = false;
+#endif
+    const auto saving = domain ? std::make_unique<QSettings>(format(), scope(), organizationName(), applicationName())
+                               : std::make_unique<QSettings>(fileName(), format());
+    saving->sync();
+    if (saving->status() != QSettings::NoError) {
+        return false;
+    }
+    ++m_saves;
+    return true;
 }
 
 bool SettingsFile::deleteFile()
@@ -74,8 +91,12 @@ bool SettingsFile::event(QEvent *event)
 {
     // QSettings saves on this event, posted after the first unsaved change.
     // Swallowed, it leaves the change unsaved, and QSettings posts no other.
-    if (m_deleted && event->type() == QEvent::UpdateRequest) {
-        return true;
+    // Otherwise save makes that save first, so saves() counts it.
+    if (event->type() == QEvent::UpdateRequest) {
+        if (m_deleted) {
+            return true;
+        }
+        save();
     }
     return QSettings::event(event);
 }

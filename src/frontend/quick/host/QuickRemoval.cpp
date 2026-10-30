@@ -36,6 +36,8 @@ QString outcomeName(RemovalStep::Outcome outcome)
         return QStringLiteral("removed");
     case RemovalStep::Outcome::Failed:
         return QStringLiteral("failed");
+    case RemovalStep::Outcome::KeptHidingKeys:
+        return QStringLiteral("keptHidingKeys");
     case RemovalStep::Outcome::Kept:
         break;
     }
