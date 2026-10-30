@@ -14,7 +14,7 @@
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 #include "platform/win/WinSystemAudioInput.h"
 #include "platform/win/WinTargetProvider.h"
-#include "recording/RecordingPresentation.h"
+#include "recording/SystemAudioPresentation.h"
 
 #include <QApplication>
 #include <QClipboard>

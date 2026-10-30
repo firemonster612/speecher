@@ -12,6 +12,7 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
+#include "recording/SystemAudioPresentation.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/Subtitles.h"
 #include "transcribe/TranscribePresentation.h"
