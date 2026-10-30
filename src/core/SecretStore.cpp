@@ -682,7 +682,7 @@ bool SecretStore::deleteKeyringSecrets()
             // the keyring kept would come back after a reinstall; a marker
             // hides it. A keyring that can't be read either, as where there
             // is none, gets no marker, so removal still deletes every setting.
-            if (row.secret == Secret::OpenAiApiKey && !keyringSecret(row.secret).isEmpty()) {
+            if (m_settings && row.secret == Secret::OpenAiApiKey && !keyringSecret(row.secret).isEmpty()) {
                 m_settings->raw().setValue(pendingDeletionKey(row.secret), true);
                 changedInFile(row.secret);
             }
