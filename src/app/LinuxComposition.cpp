@@ -100,7 +100,7 @@ AudioInput *LinuxComposition::createAudioInput(SettingsStore *settings, QObject 
     if (!wavSeam.isEmpty()) {
         return new WavFileAudioInput(wavSeam, parent);
     }
-    auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
+    auto *input = new QtAudioInput(settings->dictationSnapshot().audio, parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
                      input,

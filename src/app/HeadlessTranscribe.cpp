@@ -462,7 +462,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
 
     // Speech by Skip silence's threshold restarts the clock, which is not
     // running until the first.
-    const int voiceThreshold = settings->audioCaptureSettings().vadThresholdPercent;
+    const int voiceThreshold = settings->dictationSnapshot().audio.vadThresholdPercent;
     QElapsedTimer sinceSpeech;
     QObject::connect(microphone, &AudioInput::audioChunk, &loop, [&](const QByteArray &pcm) {
         if (isVoiced(rmsForPcm16(pcm), voiceThreshold)) {

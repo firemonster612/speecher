@@ -205,10 +205,11 @@ LocalSetup::LocalSetup(SettingsStore &settings,
             });
     connect(&m_ollamaPull, &OllamaPull::finished, this, [this] {
         m_pull.running = false;
-        LocalRunnerSettings runner = m_settings.localRunnerSettings();
-        runner.runner = QStringLiteral("ollama");
-        runner.model = ollamaListedName(m_pull.tag);
-        m_settings.setLocalRunnerSettings(runner);
+        m_settings.edit([this](AppSettings &settings) {
+            settings.refinement.localRunner.runner = QStringLiteral("ollama");
+            settings.refinement.localRunner.model = ollamaListedName(m_pull.tag);
+            return true;
+        });
         detectRunners();
     });
     connect(&m_ollamaPull, &OllamaPull::failed, this, [this](const QString &message) {
@@ -229,9 +230,11 @@ LocalSetup::LocalSetup(SettingsStore &settings,
                     }
                     if (error.isEmpty()) {
                         m_speedTestErrors.remove(modelId);
-                        LocalSpeechSettings local = m_settings.localSpeechSettings();
-                        local.speedTestSeconds.insert(localSpeedTestKey(modelId, m_speedTestRunsOn), seconds);
-                        m_settings.setLocalSpeechSettings(local);
+                        m_settings.edit([&](AppSettings &settings) {
+                            settings.speech.local.speedTestSeconds.insert(
+                                localSpeedTestKey(modelId, m_speedTestRunsOn), seconds);
+                            return true;
+                        });
                     } else {
                         m_speedTestErrors.insert(modelId, error);
                     }
@@ -319,7 +322,7 @@ const HardwareSummary &LocalSetup::hardware() const
 
 const LocalModel &LocalSetup::suggestedModel() const
 {
-    return suggestedLocalModel(m_hardware.profile, m_settings.spokenLanguage());
+    return suggestedLocalModel(m_hardware.profile, m_settings.dictationSnapshot().speech.language);
 }
 
 std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
@@ -327,7 +330,7 @@ std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
     if (!m_hardwareKnown) {
         return std::nullopt;
     }
-    return modelFit(model, runsOnProfile(m_hardware, m_settings.localSpeechSettings().runsOn));
+    return modelFit(model, runsOnProfile(m_hardware, m_settings.dictationSnapshot().speech.local.runsOn));
 }
 
 void LocalSetup::setDownloadPending(const QString &id, bool pending)
@@ -363,21 +366,23 @@ bool LocalSetup::removeModel(const LocalModel &model)
     const bool removed = m_models.remove(model);
     m_progress.remove(model.id);
     m_speedTestQueue.removeAll(model.id);
-    LocalSpeechSettings local = m_settings.localSpeechSettings();
-    local.speedTestSeconds.removeIf([&model](const auto &result) {
-        return result.key().startsWith(model.id + QLatin1Char('/'));
-    });
-    // Dictation moves to another downloaded model rather than a missing file.
-    // With none left it stays, and dictating says to download one.
-    if (local.modelId == model.id) {
-        for (const LocalModel &other : localModelCatalog()) {
-            if (m_models.isDownloaded(other)) {
-                local.modelId = other.id;
-                break;
+    m_settings.edit([this, &model](AppSettings &settings) {
+        LocalSpeechSettings &local = settings.speech.local;
+        local.speedTestSeconds.removeIf([&model](const auto &result) {
+            return result.key().startsWith(model.id + QLatin1Char('/'));
+        });
+        // Dictation moves to another downloaded model rather than a missing
+        // file. With none left it stays, and dictating says to download one.
+        if (local.modelId == model.id) {
+            for (const LocalModel &other : localModelCatalog()) {
+                if (m_models.isDownloaded(other)) {
+                    local.modelId = other.id;
+                    break;
+                }
             }
         }
-    }
-    m_settings.setLocalSpeechSettings(local);
+        return true;
+    });
     emit changed();
     return removed;
 }
@@ -405,7 +410,7 @@ void LocalSetup::runSpeedTest(const QString &modelId)
         return;
     }
     m_speedTestModel = modelId;
-    m_speedTestRunsOn = m_settings.localSpeechSettings().runsOn;
+    m_speedTestRunsOn = m_settings.dictationSnapshot().speech.local.runsOn;
     m_speedTestErrors.remove(modelId);
     emit changed();
     local->runSpeedTest(modelId, m_speedTestRunsOn);
@@ -421,19 +426,19 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
 
 std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const
 {
-    return measuredSpeedTestSeconds(m_settings.localSpeechSettings(), modelId);
+    return measuredSpeedTestSeconds(m_settings.dictationSnapshot().speech.local, modelId);
 }
 
 const LocalModel &LocalSetup::speechModelChoice() const
 {
-    const auto saved = m_settings.localSpeechSettings();
+    const LocalSpeechSettings saved = m_settings.dictationSnapshot().speech.local;
     const auto *model = findLocalModel(saved.modelId);
     return saved.modelChosen && model ? *model : suggestedModel();
 }
 
 void LocalSetup::initializeSpeechModel()
 {
-    if (!m_hardwareKnown || m_settings.localSpeechSettings().modelChosen) return;
+    if (!m_hardwareKnown || m_settings.dictationSnapshot().speech.local.modelChosen) return;
     // The general settings setter treats a changed model as a user choice.
     // A hardware default must remain replaceable until the person chooses.
     m_settings.raw().setValue(SettingsKeys::LocalModel, suggestedModel().id);
@@ -443,32 +448,35 @@ void LocalSetup::initializeSpeechModel()
 void LocalSetup::chooseSpeechModel(const QString &id)
 {
     if (!findLocalModel(id)) return;
-    auto local = m_settings.localSpeechSettings();
-    local.modelId = id;
-    local.modelChosen = true;
-    m_settings.setLocalSpeechSettings(local);
+    m_settings.edit([&id](AppSettings &settings) {
+        settings.speech.local.modelId = id;
+        settings.speech.local.modelChosen = true;
+        return true;
+    });
     emit changed();
 }
 
 RunnerChoice LocalSetup::runnerChoice() const
 {
-    return resolveRunnerChoice(m_settings.localRunnerSettings(), m_runners, suggestedCleanupModel());
+    return resolveRunnerChoice(m_settings.dictationSnapshot().refinement.localRunner, m_runners,
+                               suggestedCleanupModel());
 }
 
 void LocalSetup::initializeRunner()
 {
-    const auto saved = m_settings.localRunnerSettings();
+    const LocalRunnerSettings saved = m_settings.dictationSnapshot().refinement.localRunner;
     if (!saved.runner.isEmpty() || !saved.model.isEmpty()) return;
     const auto choice = runnerChoice();
-    if (choice.available) m_settings.setLocalRunnerSettings(choice.selection);
+    if (!choice.available) return;
+    m_settings.edit([&choice](AppSettings &settings) {
+        settings.refinement.localRunner = choice.selection;
+        return true;
+    });
 }
 
 LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::optional<SpeechSettings> draft) const
 {
-    SpeechSettings speech;
-    speech.providerId = m_settings.speechProvider();
-    speech.local = m_settings.localSpeechSettings();
-    if (draft) speech = *draft;
+    const SpeechSettings speech = draft ? *draft : m_settings.dictationSnapshot().speech;
     ModelState state;
     state.inUse = !m_models.isDownloading(model.id) && m_models.isDownloaded(model)
         && parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == model.id;
@@ -546,11 +554,13 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
                                         m_speechEndpoint.checking = false;
                                         m_speechEndpoint.result = check;
                                         // Only for the server that is saved, not one still being typed.
-                                        SpeechEndpointSettings saved = m_settings.dictationSnapshot().speech.endpoint;
+                                        const SpeechEndpointSettings saved = m_settings.dictationSnapshot().speech.endpoint;
                                         if (saved.model.isEmpty() && !check.models.isEmpty()
                                             && connection(saved) == m_checkedSpeech) {
-                                            saved.model = check.models.first();
-                                            m_settings.setSpeechEndpointSettings(saved);
+                                            m_settings.edit([&check](AppSettings &settings) {
+                                                settings.speech.endpoint.model = check.models.first();
+                                                return true;
+                                            });
                                         }
                                         emit changed();
                                     });
@@ -573,9 +583,10 @@ void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
                                         const RefinementSettings saved = m_settings.dictationSnapshot().refinement;
                                         if (saved.endpoint.model.isEmpty() && !check.models.isEmpty()
                                             && connection(resolvedRefinementEndpoint(saved)) == m_checkedRefinement) {
-                                            RefinementEndpointSettings endpoint = saved.endpoint;
-                                            endpoint.model = check.models.first();
-                                            m_settings.setRefinementEndpointSettings(endpoint);
+                                            m_settings.edit([&check](AppSettings &settings) {
+                                                settings.refinement.endpoint.model = check.models.first();
+                                                return true;
+                                            });
                                         }
                                         emit changed();
                                     });
@@ -591,7 +602,8 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     const QString local = providerKey(ProviderId::Local);
     if (role == ProviderRole::Speech) {
         const LocalModel &model = suggestedModel();
-        if (fit(model) != ModelFit::Fits || !localModelListensFor(model, m_settings.spokenLanguage())) {
+        if (fit(model) != ModelFit::Fits
+            || !localModelListensFor(model, m_settings.dictationSnapshot().speech.language)) {
             return std::nullopt;
         }
         return SetupFallbackOffer{local, model.id, model.name};
@@ -637,15 +649,22 @@ void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &prim
     }
     const SetupFallbackOffer offer = *setupFallbackOffer(role);
     if (role == ProviderRole::Speech) {
-        m_settings.setSpeechProvider(primary);
-        m_settings.setSpeechFallbackProviders(*fallbacks);
+        m_settings.edit([&](AppSettings &settings) {
+            settings.speech.providerId = primary;
+            settings.speech.fallbackProviderIds = *fallbacks;
+            return true;
+        });
         chooseSpeechModel(offer.modelId);
         download(*findLocalModel(offer.modelId));
         return;
     }
-    m_settings.setLocalRunnerSettings(runnerChoice().selection);
-    m_settings.setRefinementProvider(primary);
-    m_settings.setRefinementFallbackProviders(*fallbacks);
+    const LocalRunnerSettings runner = runnerChoice().selection;
+    m_settings.edit([&](AppSettings &settings) {
+        settings.refinement.localRunner = runner;
+        settings.refinement.providerId = primary;
+        settings.refinement.fallbackProviderIds = *fallbacks;
+        return true;
+    });
     emit changed();
 }
 

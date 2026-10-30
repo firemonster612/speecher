@@ -98,7 +98,7 @@ void IpcCommandHandler::handle(const IpcRequest &request, QLocalSocket *socket)
     SettingsStore *settings = m_controller.settings();
     const SessionOverrides &overrides = request.overrides;
     if (overrides.writingProfile
-        && offeredWritingProfile(*overrides.writingProfile, settings->writingProfileSettings(), {}).isEmpty()) {
+        && offeredWritingProfile(*overrides.writingProfile, settings->dictationSnapshot().refinement.writingProfiles, {}).isEmpty()) {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
         return;
     }
@@ -144,7 +144,7 @@ void IpcCommandHandler::handle(const IpcRequest &request, QLocalSocket *socket)
         return;
 #ifdef SPEECHER_E2E_HOOKS
     case IpcCommand::E2eUpdateCheck:
-        m_controller.updates()->checkForUpdates(settings->updateChannel());
+        m_controller.updates()->checkForUpdates(settings->dictationSnapshot().updates.channel);
         SingleInstanceIpc::writeResponse(socket, response());
         return;
     case IpcCommand::E2eUpdateStatus: {
