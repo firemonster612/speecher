@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 
 #include <unistd.h>
 
@@ -30,8 +31,8 @@ constexpr int answerCacheMs = 20000;
 #endif
 
 // The probe runs on the UI thread while the exchange with the daemon and the
-// pkexec'd install run on workers, so the cache is atomics rather than a timer
-// object. The answer and its protocol flag are one value on purpose: written
+// pkexec'd removal run on workers, so the cache is atomics rather than a timer
+// object, read without a lock and written under answerMutex. The answer and its protocol flag are one value on purpose: written
 // once per exchange and read with one load, so a probe can never pair a stale
 // answer with a newer exchange's protocol flag.
 enum DaemonAnswerState : int {
@@ -43,6 +44,13 @@ enum DaemonAnswerState : int {
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
 std::atomic<int> cachedAnswerState{NoAnswer};
 std::atomic<bool> askInFlight{false};
+// Held while the cache is written. An exchange stores its answer only if no
+// forgetDaemonAnswer() came after it started, checked and stored as one step,
+// so an invalidation can't land between the check and the stores and be
+// overwritten.
+std::mutex answerMutex;
+// Bumped by forgetDaemonAnswer(); guarded by answerMutex.
+int answerGeneration = 0;
 
 std::int64_t monotonicMs()
 {
@@ -97,9 +105,19 @@ void askDaemonInBackground()
     // Create the notifier here so it belongs to the thread that probes, not to
     // whichever pool thread happens to finish the exchange.
     KeywatchSetup::daemonAnswer();
-    QThreadPool::globalInstance()->start([] {
-        cachedAnswerState.store(askDaemon());
-        cachedAnswerAtMs.store(monotonicMs());
+    const int generation = [] {
+        const std::lock_guard lock(answerMutex);
+        return answerGeneration;
+    }();
+    QThreadPool::globalInstance()->start([generation] {
+        const DaemonAnswerState answer = askDaemon();
+        {
+            const std::lock_guard lock(answerMutex);
+            if (generation == answerGeneration) {
+                cachedAnswerState.store(answer);
+                cachedAnswerAtMs.store(monotonicMs());
+            }
+        }
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
                                   "changed",
@@ -138,21 +156,20 @@ KeywatchSetupStatus KeywatchSetup::evaluate(const KeywatchProbeFacts &facts)
     if (!facts.daemonAnswers) {
         return {KeywatchSetupState::DaemonNotRunning,
                 QStringLiteral("Installed, not answering"),
-                QStringLiteral("The key helper is installed but does not answer. "
-                               "Set it up again to repair it.")};
+                QStringLiteral("The key helper is installed but does not answer.")};
     }
     if (facts.daemonOutdated) {
         return {KeywatchSetupState::Outdated,
                 QStringLiteral("Ready, needs an update"),
                 QStringLiteral("The key helper is from an older version of Speecher and watches "
-                               "only one key. Set it up again to use single keys for the Cancel "
-                               "and Pause Shortcuts too.")};
+                               "only one key, so the Cancel and Pause Shortcuts need a key "
+                               "combination.")};
     }
     if (!facts.daemonProtocolMatches) {
         return {KeywatchSetupState::NeedsReinstall,
                 QStringLiteral("Installed, needs an update"),
                 QStringLiteral("The installed key helper is from another version of "
-                               "Speecher. Set it up again to update it.")};
+                               "Speecher and can't watch keys for this one.")};
     }
     return {KeywatchSetupState::Ready,
             QStringLiteral("Ready"),
@@ -192,19 +209,10 @@ KeywatchDaemonAnswer *KeywatchSetup::daemonAnswer()
 
 void KeywatchSetup::forgetDaemonAnswer()
 {
+    const std::lock_guard lock(answerMutex);
+    ++answerGeneration;
     cachedAnswerAtMs.store(0);
     cachedAnswerState.store(NoAnswer);
-}
-
-bool KeywatchSetup::install(QString *error)
-{
-    const bool installed = helpers::runSetupHelper(SPEECHER_KEYWATCH_HELPER_PATH,
-                                                   {QLatin1StringView(daemonFileName),
-                                                    QLatin1StringView(policyFileName)},
-                                                   helpers::HelperAction::Install,
-                                                   error);
-    forgetDaemonAnswer();
-    return installed;
 }
 
 bool KeywatchSetup::remove(QString *error)

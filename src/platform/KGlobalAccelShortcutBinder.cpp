@@ -132,10 +132,21 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
     if (!m_action) {
         makeShortcutAction();
     }
+    const QList<QKeySequence> previous = KGlobalAccel::self()->shortcut(m_action);
     if (!KGlobalAccel::self()->setShortcut(
             m_action, keyList(shortcut.combination()), KGlobalAccel::NoAutoloading)) {
         if (error) {
             *error = QStringLiteral("The desktop global-shortcut service rejected the key sequence");
+        }
+        return false;
+    }
+    // The daemon reports success but stores no key when another component
+    // owns it, so the keys it kept are the answer. The previous ones go back.
+    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
+    if (!shortcut.isEmpty() && (active.isEmpty() || active.first() != shortcut.combination())) {
+        KGlobalAccel::self()->setShortcut(m_action, previous, KGlobalAccel::NoAutoloading);
+        if (error) {
+            *error = ownedElsewhereText(shortcut);
         }
         return false;
     }

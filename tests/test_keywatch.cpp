@@ -180,7 +180,7 @@ private slots:
 
         // A writable socket is systemd's, not the daemon's: a daemon that
         // cannot read keyboards leaves exactly this state behind, so it is not
-        // ready, and the setup button it re-enables is the repair.
+        // ready.
         KeywatchProbeFacts writable = listening;
         writable.socketWritable = true;
         const KeywatchSetupStatus silent = KeywatchSetup::evaluate(writable);
@@ -188,24 +188,20 @@ private slots:
         QVERIFY(!silent.ready());
 
         // A daemon that answers with another protocol version is alive but
-        // cannot serve this build: the verdict says to run setup again, and
-        // not being ready keeps the setup button enabled as the repair.
+        // cannot serve this build.
         KeywatchProbeFacts mismatched = writable;
         mismatched.daemonAnswers = true;
         const KeywatchSetupStatus stale = KeywatchSetup::evaluate(mismatched);
         QCOMPARE(stale.state, KeywatchSetupState::NeedsReinstall);
         QVERIFY(!stale.ready());
-        QVERIFY(stale.detail.contains(QStringLiteral("Set it up again")));
 
         // A version 1 daemon still watches one key, so a single-key dictation
-        // shortcut keeps working; the verdict asks for the update the
-        // session shortcuts need.
+        // shortcut keeps working.
         KeywatchProbeFacts older = mismatched;
         older.daemonOutdated = true;
         const KeywatchSetupStatus outdated = KeywatchSetup::evaluate(older);
         QCOMPARE(outdated.state, KeywatchSetupState::Outdated);
         QVERIFY(outdated.ready());
-        QVERIFY(outdated.detail.contains(QStringLiteral("Set it up again")));
 
         // The owner-only socket needs no group or sign-out: once the daemon
         // answers on it with this build's protocol, the helper is ready
@@ -266,6 +262,17 @@ private slots:
         QTRY_COMPARE(released.count(), 1);
         QCOMPARE(pressed.count(), 1);
         QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+    }
+
+    // supported() reads the helper's last reply, which lands after the probe
+    // that asked for it, so a reply has to tell the settings page to look again.
+    void keywatchSupportChangesWhenTheHelperAnswers()
+    {
+        SettingsStore settings;
+        KeywatchShortcutBinder binder(&settings);
+        QSignalSpy supportChanged(&binder, &GlobalShortcutBinder::supportChanged);
+        emit KeywatchSetup::daemonAnswer()->changed();
+        QCOMPARE(supportChanged.count(), 1);
     }
 
     // The router sends a combination to the desktop service and a single key to

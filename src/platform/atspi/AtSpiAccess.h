@@ -8,11 +8,19 @@
 #include <atspi/atspi.h>
 #endif
 
+namespace speecher {
+struct DesktopIntegrationRemoval;
+}
+
 namespace speecher::atspi {
 
 AccessibilityState accessibilityState();
 bool requestAccessibility(QString *error = nullptr);
 bool enableAccessibilityPermanently(QString *error = nullptr);
+// Undoes enableAccessibilityPermanently() for removal: deletes its
+// environment.d file unless someone changed it, and records the outcome in
+// removal as the "accessibility setting".
+void removePermanentAccessibility(DesktopIntegrationRemoval &removal);
 
 class AccessibleHandle {
 public:

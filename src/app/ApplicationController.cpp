@@ -664,7 +664,7 @@ void ApplicationController::updateSessionShortcuts()
     }
     m_cancelShortcutBinder->setArmed(dictationCancelable(state));
     m_pauseShortcutBinder->setArmed(dictationPausable(state));
-    m_session->setReviewKeys(reviewKeysFor(escapeHeld, enterHeld, cancelShortcut.displayText(),
+    m_session->setReviewKeys(reviewKeysFor(escapeHeld, enterHeld, globalShortcutDisplay(GlobalShortcutRole::Cancel),
                                            globalShortcutDisplay()));
 }
 

@@ -4,11 +4,41 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 
 namespace speecher {
 namespace {
 
 constexpr int kOutputSampleRate = 16000;
+
+// A windowed-sinc low-pass for audio about to be resampled down to 16 kHz:
+// interpolation alone folds everything above 8 kHz (sibilants, a monitor's
+// whine) back into the speech band. Blackman-windowed, it is flat to about
+// 6 kHz and down more than 70 dB from 8 kHz; the taps grow with the rate to
+// keep that transition the same width in hertz. Unity gain at DC.
+QVector<float> lowPassTaps(int sampleRate)
+{
+    constexpr double cutoffHz = 7000.0;
+    const int half = int(std::lround(24.0 * sampleRate / kOutputSampleRate));
+    const int count = 2 * half + 1;
+    const double cutoff = cutoffHz / sampleRate;
+    QVector<float> taps(count);
+    double sum = 0.0;
+    for (int i = 0; i < count; ++i) {
+        const int offset = i - half;
+        const double sinc = offset == 0
+            ? 2.0 * cutoff
+            : std::sin(2.0 * std::numbers::pi * cutoff * offset) / (std::numbers::pi * offset);
+        const double phase = 2.0 * std::numbers::pi * i / (count - 1);
+        const double window = 0.42 - 0.5 * std::cos(phase) + 0.08 * std::cos(2.0 * phase);
+        taps[i] = float(sinc * window);
+        sum += taps[i];
+    }
+    for (float &tap : taps) {
+        tap = float(tap / sum);
+    }
+    return taps;
+}
 
 bool usableFormat(const QAudioFormat &format)
 {
@@ -126,6 +156,8 @@ void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
     m_pendingInput.clear();
     m_resampleBuffer.clear();
     m_nextInputPosition = 0.0;
+    m_lowPassTaps = sourceFormat.sampleRate() > kOutputSampleRate ? lowPassTaps(sourceFormat.sampleRate())
+                                                                  : QVector<float>();
 }
 
 AudioPcmConversion AudioPcmConverter::convert(const QByteArray &chunk)
@@ -164,23 +196,45 @@ QByteArray AudioPcmConverter::encodeOutputSamples(const QVector<float> &samples)
         return pcm;
     }
 
+    // With the low-pass, the buffer opens with the taps' width less one of
+    // samples before the first one the interpolation reads, and only the
+    // samples it reads are filtered: two per output sample, where filtering
+    // every input sample costs three at 48 kHz and six at 96 kHz. Before the
+    // first chunk, the stream
+    // is taken to have held its first sample, so a level it starts at passes
+    // from the first sample instead of rising from silence.
+    const qsizetype lead = m_lowPassTaps.isEmpty() ? 0 : m_lowPassTaps.size() - 1;
+    if (lead > 0 && m_resampleBuffer.isEmpty()) {
+        m_resampleBuffer.fill(samples.first(), lead);
+    }
     m_resampleBuffer += samples;
-    if (m_resampleBuffer.size() < 2) {
+    const qsizetype readable = m_resampleBuffer.size() - lead;
+    if (readable < 2) {
         return {};
     }
 
+    const auto sampleAt = [this, lead](qsizetype index) {
+        if (lead == 0) {
+            return double(m_resampleBuffer.at(index));
+        }
+        const float *window = m_resampleBuffer.constData() + index;
+        const float *taps = m_lowPassTaps.constData();
+        double sum = 0.0;
+        for (qsizetype tap = 0; tap <= lead; ++tap) {
+            sum += double(taps[tap]) * window[tap];
+        }
+        return sum;
+    };
     const double inputStep = double(m_sourceFormat.sampleRate()) / double(kOutputSampleRate);
     QByteArray pcm;
-    while (m_nextInputPosition + 1.0 < double(m_resampleBuffer.size())) {
+    while (m_nextInputPosition + 1.0 < double(readable)) {
         const int index = int(std::floor(m_nextInputPosition));
         const double fraction = m_nextInputPosition - double(index);
-        const float sample = float(double(m_resampleBuffer.at(index)) * (1.0 - fraction)
-                                   + double(m_resampleBuffer.at(index + 1)) * fraction);
-        appendInt16(pcm, sample);
+        appendInt16(pcm, float(sampleAt(index) * (1.0 - fraction) + sampleAt(index + 1) * fraction));
         m_nextInputPosition += inputStep;
     }
 
-    const int removable = std::min(int(std::floor(m_nextInputPosition)), int(m_resampleBuffer.size()) - 1);
+    const int removable = std::min(int(std::floor(m_nextInputPosition)), int(readable) - 1);
     if (removable > 0) {
         m_resampleBuffer.remove(0, removable);
         m_nextInputPosition -= removable;

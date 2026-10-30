@@ -33,6 +33,8 @@ private:
     QByteArray m_pendingInput;
     QVector<float> m_resampleBuffer;
     double m_nextInputPosition = 0.0;
+    // Empty unless the source rate is above 16 kHz.
+    QVector<float> m_lowPassTaps;
 };
 
 } // namespace speecher

@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QImage>
+#include <QMutex>
 #include <QThread>
 
 #include <windows.h>
@@ -13,16 +14,31 @@
 namespace speecher {
 namespace {
 
-ScreenshotResult captureWindow(HWND window)
+// What a capture's worker and the quitting application share. The worker can
+// sit in PrintWindow for as long as the target window doesn't answer, so
+// quitting must not wait for it there. It waits only while the worker
+// normalizes: smooth scaling runs on Qt's shared thread pool, which
+// application teardown destroys.
+struct CaptureState {
+    QMutex mutex;
+    bool quitting = false;
+    ScreenshotResult result;
+};
+
+// The window's pixels, or a null image with error. PrintWindow has the
+// window's own thread paint them, so this blocks while that thread hangs.
+QImage printWindow(HWND window, QString *error)
 {
     RECT bounds{};
     if (!window || !GetWindowRect(window, &bounds)) {
-        return {{}, QStringLiteral("Could not find the target window to capture")};
+        *error = QStringLiteral("Could not find the target window to capture");
+        return {};
     }
     const int width = bounds.right - bounds.left;
     const int height = bounds.bottom - bounds.top;
     if (width <= 0 || height <= 0) {
-        return {{}, QStringLiteral("The target window has no visible area to capture")};
+        *error = QStringLiteral("The target window has no visible area to capture");
+        return {};
     }
 
     BITMAPINFO info{};
@@ -46,20 +62,29 @@ ScreenshotResult captureWindow(HWND window)
         if (memory) {
             DeleteDC(memory);
         }
-        return {{}, QStringLiteral("Windows could not create the screenshot buffer")};
+        *error = QStringLiteral("Windows could not create the screenshot buffer");
+        return {};
     }
 
     const HGDIOBJ previous = SelectObject(memory, bitmap);
     const BOOL printed = PrintWindow(window, memory, PW_RENDERFULLCONTENT);
     SelectObject(memory, previous);
-    // The image borrows the bitmap's pixels, so it is normalized before the
+    // The image borrows the bitmap's pixels, so it is copied before the
     // bitmap goes.
-    const QByteArray png = printed
-        ? normalizedScreenshot(QImage(static_cast<uchar *>(bits), width, height, width * 4, QImage::Format_RGB32))
-        : QByteArray();
+    const QImage image = printed
+        ? QImage(static_cast<uchar *>(bits), width, height, width * 4, QImage::Format_RGB32).copy()
+        : QImage();
     DeleteObject(bitmap);
     DeleteDC(memory);
+    if (image.isNull()) {
+        *error = QStringLiteral("Windows could not capture the target window");
+    }
+    return image;
+}
 
+ScreenshotResult normalizedCapture(const QImage &image)
+{
+    const QByteArray png = normalizedScreenshot(image);
     if (png.isEmpty()) {
         return {{}, QStringLiteral("Windows could not capture the target window")};
     }
@@ -73,46 +98,51 @@ WinScreenshotContextProvider::WinScreenshotContextProvider(QObject *parent)
 {
 }
 
-WinScreenshotContextProvider::~WinScreenshotContextProvider()
-{
-    cancel();
-}
-
 void WinScreenshotContextProvider::capture()
 {
     cancel();
+    // A worker that hasn't finished, perhaps waiting on a window that doesn't
+    // answer, is left to; starting another for every Dictation Session would
+    // pile them up.
+    if (m_worker && m_worker->isRunning()) {
+        emit failed(QStringLiteral("Windows is still capturing an earlier window"));
+        return;
+    }
     const HWND window = GetForegroundWindow();
-    auto result = std::make_shared<ScreenshotResult>();
-    QThread *thread = QThread::create([window, result] {
-        *result = captureWindow(window);
+    auto state = std::make_shared<CaptureState>();
+    QThread *thread = QThread::create([window, state] {
+        QString error;
+        const QImage image = printWindow(window, &error);
+        const QMutexLocker locker(&state->mutex);
+        if (state->quitting) {
+            return;
+        }
+        state->result = image.isNull() ? ScreenshotResult{{}, error} : normalizedCapture(image);
     });
-    m_capture = thread;
+    m_worker = thread;
+    m_wanted = true;
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    // Smooth scaling runs on Qt's shared thread pool, which application
-    // teardown destroys, so the worker has to finish first.
-    connect(qApp, &QCoreApplication::aboutToQuit, thread, [thread] { thread->wait(); });
-    connect(thread, &QThread::finished, this, [this, thread, result] {
-        if (m_capture != thread) {
+    connect(qApp, &QCoreApplication::aboutToQuit, thread, [state] {
+        const QMutexLocker locker(&state->mutex);
+        state->quitting = true;
+    });
+    connect(thread, &QThread::finished, this, [this, thread, state] {
+        if (m_worker != thread || !m_wanted) {
             return;
         }
-        m_capture = nullptr;
-        if (!result->error.isEmpty()) {
-            emit failed(result->error);
+        m_wanted = false;
+        if (!state->result.error.isEmpty()) {
+            emit failed(state->result.error);
             return;
         }
-        emit captured(result->png, QStringLiteral("image/png"));
+        emit captured(state->result.png, QStringLiteral("image/png"));
     });
     thread->start();
 }
 
 void WinScreenshotContextProvider::cancel()
 {
-    if (!m_capture) {
-        return;
-    }
-    m_capture->disconnect(this);
-    m_capture->requestInterruption();
-    m_capture = nullptr;
+    m_wanted = false;
 }
 
 } // namespace speecher

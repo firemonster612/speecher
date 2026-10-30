@@ -491,7 +491,11 @@ void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
     GError *error = nullptr;
     const int childCount = atspi_accessible_get_child_count(object, &error);
     clearError(&error);
-    for (int index = 0; index < childCount; ++index) {
+    // Each child is a synchronous round trip to the application, so the
+    // limits stop the fetching itself, not only the visits it leads to.
+    for (int index = 0; index < childCount && !deadline.hasExpired()
+         && *visited < maximumVisitedObjects;
+         ++index) {
         AtspiAccessible *child = atspi_accessible_get_child_at_index(object, index, &error);
         clearError(&error);
         if (child) {
@@ -583,10 +587,7 @@ void populateAncestorContext(Target *target,
     AtspiAccessible *current = focused ? ATSPI_ACCESSIBLE(g_object_ref(focused)) : nullptr;
     for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
         if (shouldSkipAccessible(current, identities)) break;
-        if (isApplicationRoot(current)) {
-            g_object_unref(current);
-            break;
-        }
+        if (isApplicationRoot(current)) break;
         GError *error = nullptr;
         const QString role = takeString(atspi_accessible_get_role_name(current, &error)).toLower();
         clearError(&error);
@@ -608,7 +609,6 @@ void populateAncestorContext(Target *target,
             || role.contains(QStringLiteral("frame"))
             || role.contains(QStringLiteral("window"))
             || role.contains(QStringLiteral("dialog"))) {
-            g_object_unref(current);
             break;
         }
         AtspiAccessible *parent = atspi_accessible_get_parent(current, &error);
@@ -616,6 +616,7 @@ void populateAncestorContext(Target *target,
         g_object_unref(current);
         current = parent;
     }
+    if (current) g_object_unref(current);
 }
 
 QString processName(qint64 processId)

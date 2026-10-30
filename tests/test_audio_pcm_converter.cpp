@@ -5,7 +5,9 @@
 
 using namespace speecher;
 
+#include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace {
 
@@ -85,7 +87,27 @@ private slots:
         actual += split.convert(input.mid(2 * int(sizeof(float)))).pcm16Mono16k;
 
         QCOMPARE(actual, expected);
-        QCOMPARE(actual, bytes<qint16>({0, 32767}));
+        QCOMPARE(actual.size(), 2 * int(sizeof(qint16)));
+    }
+
+    // Downsampling filters first: sampled at 48 kHz, a 10 kHz tone would
+    // fold to 6 kHz, inside the speech band, while a 1 kHz one passes whole.
+    void downsamplingKeepsTonesAbove8kHzOutOfTheBand()
+    {
+        const auto outputRms = [](double hz) {
+            QByteArray input;
+            for (int i = 0; i < 24000; ++i) {
+                const float sample = float(0.5 * std::sin(2.0 * std::numbers::pi * hz * i / 48000.0));
+                input.append(reinterpret_cast<const char *>(&sample), int(sizeof(sample)));
+            }
+            AudioPcmConverter converter;
+            converter.reset(format(48000, 1, QAudioFormat::Float));
+            // Past the first 10 ms: the tone's onset is a click in every band.
+            return rmsForPcm16(converter.convert(input).pcm16Mono16k.mid(160 * int(sizeof(qint16))));
+        };
+        // A sine of amplitude 0.5 has an RMS of 0.5 / sqrt(2).
+        QVERIFY(qAbs(outputRms(1000.0) - 0.35355f) < 0.01f);
+        QVERIFY(outputRms(10000.0) < 0.001f);
     }
 
     void preservesPartialFramesAcrossChunks()

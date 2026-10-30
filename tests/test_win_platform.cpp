@@ -314,12 +314,40 @@ private slots:
         input.header.dwType = RIM_TYPEKEYBOARD;
         input.data.keyboard.VKey = 'D';
         input.data.keyboard.Flags = RI_KEY_BREAK;
-        shortcut.handleRawInput(input);
+        shortcut.handleRawInput(input, 0);
 
         QCOMPARE(deactivated.count(), 1);
-        shortcut.handleRawInput(input);
+        shortcut.handleRawInput(input, 0);
         QCOMPARE(deactivated.count(), 1);
         QCOMPARE(shortcut.resume(), QString());
+    }
+
+    // A combination's press and release dispatched late, as when the event
+    // loop was busy opening the microphone, still report the hold between
+    // the WM_HOTKEY and the release's WM_INPUT, across the tick count's wrap.
+    void combinationShortcutTimesTheHoldByItsMessages()
+    {
+        SettingsStore settings;
+        WinGlobalShortcutBinder shortcut(&settings);
+        QSignalSpy deactivated(&shortcut, &GlobalShortcutBinder::deactivated);
+        shortcut.m_hotKeyId = 0x7000;
+
+        MSG hotKey{};
+        hotKey.message = WM_HOTKEY;
+        hotKey.wParam = 0x7000;
+        hotKey.lParam = MAKELPARAM(MOD_CONTROL | MOD_ALT, 'D');
+        hotKey.time = 0xFFFFFFF0;
+        shortcut.nativeEventFilter(QByteArrayLiteral("windows_generic_MSG"), &hotKey, nullptr);
+
+        RAWINPUT input{};
+        input.header.dwType = RIM_TYPEKEYBOARD;
+        input.data.keyboard.VKey = 'D';
+        input.data.keyboard.Flags = RI_KEY_BREAK;
+        shortcut.handleRawInput(input, 0x40);
+
+        QCOMPARE(deactivated.count(), 1);
+        QCOMPARE(deactivated.first().at(0).toLongLong(), 80);
+        shortcut.m_hotKeyId = 0;
     }
 
     // The physical identity is the scancode plus the E0 byte: on AltGr
