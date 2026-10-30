@@ -1513,11 +1513,15 @@ private slots:
         QTest::addColumn<QByteArray>("malformedLine");
         QTest::addColumn<bool>("olderStay");
         QTest::addColumn<bool>("currentStays");
-        QTest::newRow("deleted") << false << QByteArray() << false << false;
-        QTest::newRow("read-only") << true << QByteArray() << false << false;
-        QTest::newRow("malformed") << false << QByteArrayLiteral("[unterminated\n") << false << false;
-        QTest::newRow("won't go") << false << QByteArray() << true << false;
-        QTest::newRow("won't go, nor the current") << false << QByteArray() << true << true;
+        QTest::addColumn<bool>("folderHidden");
+        QTest::newRow("deleted") << false << QByteArray() << false << false << false;
+        QTest::newRow("read-only") << true << QByteArray() << false << false << false;
+        QTest::newRow("malformed") << false << QByteArrayLiteral("[unterminated\n") << false << false << false;
+        QTest::newRow("won't go") << false << QByteArray() << true << false << false;
+        QTest::newRow("won't go, nor the current") << false << QByteArray() << true << true << false;
+#ifdef Q_OS_UNIX
+        QTest::newRow("folder can't be searched") << false << QByteArray() << true << false << true;
+#endif
     }
 
     void removalLeavesNoOlderSettingsToImport()
@@ -1526,6 +1530,7 @@ private slots:
         QFETCH(QByteArray, malformedLine);
         QFETCH(bool, olderStay);
         QFETCH(bool, currentStays);
+        QFETCH(bool, folderHidden);
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
@@ -1558,7 +1563,9 @@ private slots:
             QVERIFY(QFile::setPermissions(olderFile, QFileDevice::ReadOwner));
         }
         if (olderStay) {
-            QVERIFY(QFile::setPermissions(olderFolder, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+            QVERIFY(QFile::setPermissions(olderFolder, QFileDevice::ReadOwner
+                                                           | (folderHidden ? QFileDevice::WriteOwner
+                                                                           : QFileDevice::ExeOwner)));
         }
         if (currentStays) {
             QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));

@@ -42,8 +42,15 @@ bool deleteOlderSettings(QString *path)
         file = older->fileName();
     }
     // Judged by the file alone: QSettings keeps the error a read-only or
-    // malformed file gave it, though the folder lets the file go.
-    if (QFile::exists(file) && !QFile::remove(file)) {
+    // malformed file gave it, though the folder lets the file go. A folder
+    // that can't be searched hides whether the file is still there.
+#ifdef Q_OS_UNIX
+    const QFileInfo folder(QFileInfo(file).absolutePath());
+    const bool hidden = folder.exists() && !folder.isExecutable();
+#else
+    const bool hidden = false;
+#endif
+    if (hidden || (QFile::exists(file) && !QFile::remove(file))) {
         if (path) {
             *path = file;
         }
