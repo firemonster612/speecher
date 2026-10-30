@@ -1946,6 +1946,42 @@ private slots:
         QCOMPARE(outcome, std::optional<QString>(QString()));
     }
 
+    // A provider that never connected hands the audio that waited to the
+    // next, even once so much waited that the oldest was dropped.
+    void aRecordingFallbackTakesAudioThatOutgrewTheWait()
+    {
+        registerStreamingCodex(false);
+        QPointer<FakeSpeechTranscriber> claude;
+        m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                           [&claude](QObject *parent) {
+                                               claude = new FakeSpeechTranscriber(parent);
+                                               claude->streamsFinals = true;
+                                               return claude.data();
+                                           });
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        recording.start(QString(), {}, m_dir.path(), false, [](const QString &) {});
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        // 2 seconds, then 10 minutes, before Codex connects.
+        microphone->pushAudio(QByteArray(2 * 32000, '\1'));
+        const QByteArray minute(60 * 32000, '\0');
+        for (int i = 0; i < 10; ++i) {
+            microphone->pushAudio(minute);
+        }
+        m_codex->emitFailure(QStringLiteral("Timed out"), true, SpeechPhase::Connect,
+                             ProviderFailureKind::Timeout);
+
+        QTRY_VERIFY_WITH_TIMEOUT(claude && claude->startCalls == 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!claude->audioChunks.isEmpty(), 5000);
+        QCOMPARE(claude->audioChunks.first(), QByteArray(3200, '\0'));
+    }
+
     // A stop while the stream is down tries once more at once for the audio
     // that waits; when that fails, the stopped recording says why.
     void aRecordingStoppedWhileDownSaysWhatItMissed()
