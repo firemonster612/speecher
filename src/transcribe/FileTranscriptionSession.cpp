@@ -653,10 +653,6 @@ void FileTranscriptionSession::releaseRefiner()
 
 void FileTranscriptionSession::startRefiner()
 {
-    // A cancel that ran while the refiner prepared has let it go.
-    if (!m_refiner) {
-        return;
-    }
     m_refiner->refine(m_pipeline.refinementInput,
                       m_pipeline.refinementVocabulary,
                       m_pipeline.refinementContext,

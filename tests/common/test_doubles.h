@@ -405,6 +405,9 @@ public:
     std::optional<ProviderFailure> prepare(const RefinementSettings &, const AccountSettings &) override
     {
         ++prepareCalls;
+        if (onPrepare) {
+            onPrepare();
+        }
         return prepareFailure;
     }
 
@@ -455,6 +458,8 @@ public:
     QString autoCompleteText;
     std::optional<ProviderFailure> refreshFailure;
     std::optional<ProviderFailure> prepareFailure;
+    // Runs inside prepare(), as the event loop a sign-in renewed there spins.
+    std::function<void()> onPrepare;
     // Refresh jobs run on the worker, and applied back on this thread.
     int refreshRuns = 0;
     int refreshCalls = 0;

@@ -82,6 +82,8 @@ private:
     AppSettings m_settings;
     RefinementSettings m_refinement;
     QPointer<TranscriptRefiner> m_refiner;
+    // Moves on at each cancel, so a walk that one ended stops.
+    quint64 m_walk = 0;
 };
 
 } // namespace speecher
