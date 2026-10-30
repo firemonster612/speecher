@@ -1,13 +1,14 @@
 #include "platform/PopupInputRegion.h"
 
-#ifdef Q_OS_MACOS
-#include "platform/mac/MacClickThrough.h"
-#endif
-
 #include <QGuiApplication>
 #include <QRect>
 #include <QRegion>
 #include <QWindow>
+
+// After Qt's headers, which define Q_OS_MACOS.
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacClickThrough.h"
+#endif
 
 #ifdef SPEECHER_WITH_X11
 // Last: Xlib's macros (None, Status, Bool) would clash with Qt's headers.
