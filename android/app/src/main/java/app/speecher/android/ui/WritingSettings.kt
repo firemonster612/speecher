@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -390,23 +389,6 @@ private fun AddInSheet(action: String, form: @Composable ColumnScope.(close: () 
             )
             form(close)
         }
-    }
-}
-
-/** Cancel and the sheet's [confirm] action, which is enabled once the form [canConfirm]. */
-@Composable
-internal fun SheetActions(
-    canConfirm: Boolean,
-    onCancel: () -> Unit,
-    confirm: String = "Add",
-    onConfirm: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-    ) {
-        TextButton(onCancel) { Text("Cancel") }
-        Button(onConfirm, enabled = canConfirm) { Text(confirm) }
     }
 }
 
