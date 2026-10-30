@@ -101,10 +101,11 @@ WinScreenshotContextProvider::WinScreenshotContextProvider(QObject *parent)
 void WinScreenshotContextProvider::capture()
 {
     cancel();
-    // A worker still waiting on a window that doesn't answer is left to
-    // finish; starting another for every Dictation Session would pile them up.
+    // A worker that hasn't finished, perhaps waiting on a window that doesn't
+    // answer, is left to; starting another for every Dictation Session would
+    // pile them up.
     if (m_worker && m_worker->isRunning()) {
-        emit failed(QStringLiteral("Windows is still capturing an earlier window, which isn't responding"));
+        emit failed(QStringLiteral("Windows is still capturing an earlier window"));
         return;
     }
     const HWND window = GetForegroundWindow();
