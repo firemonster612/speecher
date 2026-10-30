@@ -38,7 +38,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Computers short on memory"),
         .pros = {QStringLiteral("Smallest download"),
                  QStringLiteral("Words appear as you speak")},
-        .cons = {QStringLiteral("About twice the mistakes of Parakeet on everyday speech")},
+        .cons = {QStringLiteral("About twice the mistakes of Parakeet 0.6B on everyday speech")},
     },
     {
         .id = QStringLiteral("moonshine-medium"),
@@ -59,7 +59,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Computers short on memory"),
         .pros = {QStringLiteral("Words appear as you speak"),
                  QStringLiteral("Fewer mistakes than Moonshine Small")},
-        .cons = {QStringLiteral("About twice the mistakes of Parakeet on everyday speech")},
+        .cons = {QStringLiteral("About twice the mistakes of Parakeet 0.6B on everyday speech")},
     },
     {
         .id = QStringLiteral("parakeet"),
@@ -136,7 +136,7 @@ const QList<LocalModel> catalog{
         .bestFor = QStringLiteral("Few mistakes in under 1 GB, if you can wait"),
         .pros = {QStringLiteral("Fewer mistakes than the Moonshine models on everyday speech")},
         .cons = {QStringLiteral("Text appears after you stop"),
-                 QStringLiteral("More mistakes than Parakeet on everyday speech"),
+                 QStringLiteral("More mistakes than Parakeet 0.6B on everyday speech"),
                  QStringLiteral("Now and then leaves out punctuation"),
                  QStringLiteral("A few seconds' wait on older laptops")},
     },
@@ -187,7 +187,7 @@ const QList<LocalModel> catalog{
         .pros = {QStringLiteral("Fewest mistakes on clear speech")},
         .cons = {QStringLiteral("2.4 GB download"),
                  QStringLiteral("Text appears after you stop"),
-                 QStringLiteral("More mistakes than Parakeet on everyday speech")},
+                 QStringLiteral("More mistakes than Parakeet 0.6B on everyday speech")},
     },
     {
         // Q5_K_M: Q4_K_M loses half a point of WER and would be no better than

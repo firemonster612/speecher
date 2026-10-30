@@ -38,6 +38,8 @@ struct LocalModel {
     bool streams = false;
     // transcribe.cpp's catalog/<variant>.json: the language codes the model
     // takes as a hint, and whether it detects the language when given none.
+    // detectsLanguage is false where it detects among only a few languages,
+    // so Automatic isn't offered with it.
     QStringList languages;
     bool detectsLanguage = false;
     // Languages it takes but is never suggested for, because another model
