@@ -386,6 +386,20 @@ private:
     std::optional<QStringList> m_spooled;
 };
 
+
+// The queue as the Transcribe page builds it, over the controller's own
+// settings, providers and session.
+class ControllerQueue : public TranscribeQueue {
+public:
+    explicit ControllerQueue(ApplicationController &controller)
+        : TranscribeQueue(controller.settings(),
+                          controller.providerRegistry(),
+                          controller.fileTranscription(),
+                          [&controller] { return controller.fileTranscriptionRefusal(); })
+    {
+    }
+};
+
 class FileTranscriptionTests : public QObject {
     Q_OBJECT
 
@@ -3163,7 +3177,7 @@ private slots:
         file.write("not audio");
         file.close();
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
 
         queue.addFiles({audio, m_dir.path() + QStringLiteral("/./memo.wav"), notes});
 
@@ -3182,7 +3196,7 @@ private slots:
         writeWav(first);
         writeWav(second);
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({first, second});
         queue.setOptions(queueOptions());
@@ -3211,7 +3225,7 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({audio});
         queue.setOptions(queueOptions());
@@ -3226,6 +3240,25 @@ private slots:
         QCOMPARE(queue.results().size(), 1);
     }
 
+    // While the refusal it is given holds, as during a dictation, a start
+    // runs nothing and says why.
+    void aRefusedQueueStartsNothing()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        const QString dictating = QStringLiteral("Finish the dictation in progress, then transcribe the files.");
+        TranscribeQueue queue(&settings, m_registry.get(), &session, [&dictating] { return dictating; });
+        queue.addFiles({audio});
+
+        QVERIFY(!queue.start());
+
+        QCOMPARE(queue.problem(), dictating);
+        QCOMPARE(queue.step(), TranscribeQueue::Step::Configure);
+        QVERIFY(!session.isRunning());
+    }
+
     // Cancelled after a file finished, the batch shows that file's result;
     // back at setup, the file it never reached is still listed.
     void aCancelledBatchKeepsTheFilesItFinished()
@@ -3235,7 +3268,7 @@ private slots:
         writeWav(first);
         writeWav(second);
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({first, second});
         queue.setOptions(queueOptions());
@@ -3263,7 +3296,7 @@ private slots:
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({audio});
         queue.setOptions(queueOptions());
@@ -3290,7 +3323,7 @@ private slots:
         const QString good = m_dir.filePath(QStringLiteral("good.wav"));
         writeWav(good);
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         // Listed by name, as a dropped file the decoder may still read.
         queue.addFiles({broken, good});
@@ -3335,7 +3368,7 @@ private slots:
             }
         }
         controller.settings()->applySnapshot(settings);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
 
         queue.chooseProfile(WritingProfile::Work);
         QCOMPARE(queue.options().cleanupStrength, QStringLiteral("strong_polish"));
@@ -3356,7 +3389,7 @@ private slots:
         settings.refinement.anthropicModel = QStringLiteral("claude-sonnet-5-5");
         controller.settings()->applySnapshot(settings);
         settings = controller.settings()->snapshot();
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
 
         TranscribeOptions chosen = queue.options();
         chosen.speechProviderId = QStringLiteral("local");
@@ -3380,7 +3413,7 @@ private slots:
     void untouchedChoicesFollowTheSettings()
     {
         ApplicationController controller(true);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         AppSettings settings = controller.settings()->snapshot();
         settings.speech.providerId = QStringLiteral("codex");
         controller.settings()->applySnapshot(settings);
@@ -3416,7 +3449,7 @@ private slots:
             }
         }
         controller.settings()->applySnapshot(settings);
-        TranscribeQueue queue(&controller);
+        ControllerQueue queue(controller);
         queue.chooseProfile(WritingProfile::Work);
         TranscribeOptions chosen = queue.options();
         chosen.cleanupStrength = QStringLiteral("custom_terse");

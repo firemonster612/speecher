@@ -9,15 +9,18 @@
 #include <QStringList>
 #include <QVector>
 
+#include <functional>
+
 namespace speecher {
 
-class ApplicationController;
+class ProviderRegistry;
+class SettingsStore;
 
 // The Transcribe page's work: the files listed for the next batch and its
-// choices, the batch while it runs, and its results. A batch starts through
-// the controller, so it and dictation never run at once, and its files,
-// choices and labels are copied when it starts, so a later change describes
-// the next batch, not this one.
+// choices, the batch while it runs, and its results. A batch starts only when
+// the refusal it is given has none, so it and dictation never run at once,
+// and its files, choices and labels are copied when it starts, so a later
+// change describes the next batch, not this one.
 class TranscribeQueue : public QObject {
     Q_OBJECT
 
@@ -26,7 +29,17 @@ public:
     enum class Step { Configure, Transcribe, Export };
     enum class FileState { Waiting, Current, Done, Failed };
 
-    explicit TranscribeQueue(ApplicationController *controller, QObject *parent = nullptr);
+    // Why a batch or retry cannot start now, such as a dictation in
+    // progress; empty when it can.
+    using Refusal = std::function<QString()>;
+
+    // Batches run on session, which outlives the queue, as settings and
+    // providers do.
+    TranscribeQueue(SettingsStore *settings,
+                    ProviderRegistry *providers,
+                    FileTranscriptionSession *session,
+                    Refusal refusal,
+                    QObject *parent = nullptr);
 
     Step step() const;
 
@@ -114,7 +127,10 @@ private:
     // reports on its result instead.
     bool followsBatch() const;
 
-    ApplicationController *m_controller;
+    SettingsStore *m_settings;
+    ProviderRegistry *m_providers;
+    FileTranscriptionSession *m_session;
+    Refusal m_refusal;
     Step m_step = Step::Configure;
     QStringList m_files;
     QHash<QString, qint64> m_durationsMs;

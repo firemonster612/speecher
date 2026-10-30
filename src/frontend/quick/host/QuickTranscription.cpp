@@ -94,7 +94,10 @@ int wordCount(const QString &text)
 QuickTranscription::QuickTranscription(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
-    , m_queue(controller)
+    , m_queue(controller->settings(),
+              controller->providerRegistry(),
+              controller->fileTranscription(),
+              [controller] { return controller->fileTranscriptionRefusal(); })
 {
     m_progressClock.setInterval(kProgressTickMs);
     const auto followProgress = [this] {
