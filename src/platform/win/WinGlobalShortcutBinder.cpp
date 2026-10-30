@@ -238,6 +238,7 @@ bool WinGlobalShortcutBinder::nativeEventFilter(const QByteArray &eventType,
         qInfo() << "Global Shortcut pressed";
         m_pressed = true;
         m_pressedKey = HIWORD(hotKey->lParam);
+        m_pressedAtMs = hotKey->time;
         emit activated();
     }
     return false;
@@ -249,8 +250,10 @@ bool WinGlobalShortcutBinder::registerKeys(const QKeySequence &keys, QString *er
         return false;
     }
     // The release, which WM_HOTKEY never reports, arrives as raw input.
-    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input, qint64) { handleRawInput(input); },
-                                  error)) {
+    const auto deliver = [this](const RAWINPUT &input, qint64 messageTimeMs) {
+        handleRawInput(input, messageTimeMs);
+    };
+    if (!win::listenToRawKeyboard(this, deliver, error)) {
         return false;
     }
     if (m_hotKeyId && keys == shortcut().combination()) {
@@ -282,7 +285,7 @@ bool WinGlobalShortcutBinder::registered() const
     return m_hotKeyId != 0;
 }
 
-void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)
+void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input, qint64 messageTimeMs)
 {
     if (input.header.dwType != RIM_TYPEKEYBOARD
         || !(input.data.keyboard.Flags & RI_KEY_BREAK)
@@ -291,7 +294,10 @@ void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)
         return;
     }
     m_pressed = false;
-    emit deactivated();
+    // The two messages' times, not when Qt got round to dispatching them,
+    // time the physical hold. Both are the tick count, which wraps every
+    // 49.7 days, so the difference is taken in its own unsigned width.
+    emit deactivated(qint64(DWORD(messageTimeMs) - m_pressedAtMs));
 }
 
 WinSessionShortcutBinder::WinSessionShortcutBinder(SettingsStore *settings,

@@ -53,12 +53,15 @@ protected:
 
 private:
     friend class ::WinPlatformTests;
-    void handleRawInput(const RAWINPUT &input);
+    // messageTimeMs is the WM_INPUT's time, as listenToRawKeyboard delivers it.
+    void handleRawInput(const RAWINPUT &input, qint64 messageTimeMs);
 
     // This binder's two hot-key ids are this and the next.
     int m_firstHotKeyId = 0;
     int m_hotKeyId = 0;
     quint32 m_pressedKey = 0;
+    // The WM_HOTKEY's time, in the tick count's milliseconds.
+    DWORD m_pressedAtMs = 0;
     bool m_pressed = false;
 };
 
