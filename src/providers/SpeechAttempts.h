@@ -48,9 +48,10 @@ public:
     // Prepares each provider through acquire(); once one is ready() it has a
     // full set of reconnects and has not connected yet.
     SpeechChain *chain() const;
-    // Lets go of the transcriber held, without cancelling its attempt, and
-    // takes providerId's, connected; null, and none held, for an id the
-    // registry does not offer.
+    // Lets go of the transcriber held and takes providerId's, connected; null,
+    // and none held, for an id the registry does not offer. A fresh one let
+    // go has its attempt cancelled; a shared one is only disconnected, as the
+    // session may take it again for the same attempt.
     SpeechTranscriber *acquire(const QString &providerId);
     // Cancels the current attempt and lets the transcriber go.
     void release();
