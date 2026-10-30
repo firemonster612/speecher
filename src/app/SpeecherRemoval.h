@@ -79,10 +79,10 @@ public:
         // Whether the settings hold a deletion marker, which hides a key the
         // keyring kept (SecretStore::deletionMarkers).
         std::function<bool()> settingsHideKeys;
-        // On failure, the settings file's path in error.
+        // On failure, the paths of the settings files that stayed in error.
         std::function<bool(QString *error)> deleteSettings;
         // Deletes every setting but the deletion markers; on failure, the
-        // settings file's path in error.
+        // paths of the settings files that stayed in error.
         std::function<bool(QString *error)> deleteSettingsButMarkers;
         QString programFile;
     };

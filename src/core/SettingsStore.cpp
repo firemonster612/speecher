@@ -6,7 +6,9 @@
 #include "core/settings/SettingsKeys.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 
 #include <memory>
 #include <utility>
@@ -28,21 +30,35 @@ std::unique_ptr<QSettings> olderSettings()
 }
 
 // Deletes those settings, which a start that finds no settings of its own
-// imports again, keys and all. Returns false, with their file in path, when
-// they won't go.
+// imports again, keys and all, and their emptied folder. Returns false, with
+// their file in path, when they won't go.
 bool deleteOlderSettings(QString *path)
 {
-    const std::unique_ptr<QSettings> older = olderSettings();
-    older->clear();
-    older->sync();
-    const QString file = older->fileName();
-    if (older->status() == QSettings::NoError && (!QFile::exists(file) || QFile::remove(file))) {
-        return true;
+    QString file;
+    {
+        const std::unique_ptr<QSettings> older = olderSettings();
+        older->clear();
+        older->sync();
+        file = older->fileName();
     }
-    if (path) {
-        *path = file;
+    // Judged by the file alone: QSettings keeps the error a read-only or
+    // malformed file gave it, though the folder lets the file go.
+    if (QFile::exists(file) && !QFile::remove(file)) {
+        if (path) {
+            *path = file;
+        }
+        return false;
     }
-    return false;
+    QDir().rmdir(QFileInfo(file).absolutePath());
+    return true;
+}
+
+// The files that wouldn't go or save, for a removal's error: the older
+// settings' file, then the current one's.
+QString failedFiles(const QString &olderFile, const QString &file)
+{
+    return olderFile.isEmpty() || file.isEmpty() ? olderFile + file
+                                                 : olderFile + QStringLiteral(" or the one at ") + file;
 }
 
 } // namespace
@@ -158,8 +174,13 @@ bool SettingsStore::deleteAll(QString *path)
 {
     // Before deleteFile, which points every QSettings made afterwards at a
     // throwaway folder.
-    if (!deleteOlderSettings(path)) {
-        keepOnlyDeletionMarkers(nullptr);
+    QString olderFile;
+    if (!deleteOlderSettings(&olderFile)) {
+        QString file;
+        keepOnlyDeletionMarkers(&file);
+        if (path) {
+            *path = failedFiles(olderFile, file);
+        }
         return false;
     }
     if (m_settings.deleteFile()) {
@@ -173,8 +194,14 @@ bool SettingsStore::deleteAll(QString *path)
 
 bool SettingsStore::deleteAllButDeletionMarkers(QString *path)
 {
-    const bool olderDeleted = deleteOlderSettings(path);
-    return keepOnlyDeletionMarkers(path) && olderDeleted;
+    QString olderFile;
+    const bool olderDeleted = deleteOlderSettings(&olderFile);
+    QString file;
+    const bool kept = keepOnlyDeletionMarkers(&file);
+    if (path) {
+        *path = failedFiles(olderFile, file);
+    }
+    return kept && olderDeleted;
 }
 
 bool SettingsStore::keepOnlyDeletionMarkers(QString *path)

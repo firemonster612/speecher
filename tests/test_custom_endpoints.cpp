@@ -1502,22 +1502,36 @@ private slots:
     }
 
     // Removal deletes the settings an older Speecher left under its old app
-    // id too, which the next start would import again, keys and all. When
-    // they won't go, it says so and keeps the next start from importing
-    // them: either way, Speecher starting again reads none of their keys.
+    // id too, which the next start would import again, keys and all, and
+    // their emptied folder, though QSettings can't write their file. When
+    // they won't go, it says so, naming the current file too when that won't
+    // keep only its markers, and keeps the next start from importing them:
+    // either way, Speecher starting again reads none of their keys.
     void removalLeavesNoOlderSettingsToImport_data()
     {
+        QTest::addColumn<bool>("olderReadOnly");
+        QTest::addColumn<QByteArray>("malformedLine");
         QTest::addColumn<bool>("olderStay");
-        QTest::newRow("deleted") << false;
-        QTest::newRow("won't go") << true;
+        QTest::addColumn<bool>("currentStays");
+        QTest::newRow("deleted") << false << QByteArray() << false << false;
+        QTest::newRow("read-only") << true << QByteArray() << false << false;
+        QTest::newRow("malformed") << false << QByteArrayLiteral("[unterminated\n") << false << false;
+        QTest::newRow("won't go") << false << QByteArray() << true << false;
+        QTest::newRow("won't go, nor the current") << false << QByteArray() << true << true;
     }
 
     void removalLeavesNoOlderSettingsToImport()
     {
+        QFETCH(bool, olderReadOnly);
+        QFETCH(QByteArray, malformedLine);
         QFETCH(bool, olderStay);
+        QFETCH(bool, currentStays);
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
+        settings.raw().setValue(SecretStore::settingsKey(proxy), QStringLiteral("key"));
+        settings.raw().sync();
+        const QString file = settings.raw().fileName();
         const auto kept = keepSettingsHere(settings);
         QString olderFile;
         {
@@ -1527,14 +1541,27 @@ private slots:
             older.sync();
             olderFile = older.fileName();
         }
+        QFile appended(olderFile);
+        QVERIFY(appended.open(QIODevice::Append));
+        appended.write(malformedLine);
+        appended.close();
         const QString olderFolder = QFileInfo(olderFile).absolutePath();
         const QFileDevice::Permissions permissions = QFile::permissions(olderFolder);
+        const QFileDevice::Permissions filePermissions = QFile::permissions(file);
         const auto restore = qScopeGuard([&] {
             QFile::setPermissions(olderFolder, permissions);
+            QFile::setPermissions(file, filePermissions);
             QFile::remove(olderFile);
+            QDir().rmdir(olderFolder);
         });
+        if (olderReadOnly) {
+            QVERIFY(QFile::setPermissions(olderFile, QFileDevice::ReadOwner));
+        }
         if (olderStay) {
             QVERIFY(QFile::setPermissions(olderFolder, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        }
+        if (currentStays) {
+            QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
         }
         SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
@@ -1544,8 +1571,12 @@ private slots:
         QTRY_COMPARE(finished.count(), 1);
         const RemovalStep step = finished.first().first().value<RemovalReport>().steps.last();
         QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : RemovalStep::Outcome::Removed);
-        QCOMPARE(step.error, olderStay ? olderFile : QString());
-        comparePeerRead(settings, proxy, QString(), true);
+        const QString error = currentStays ? olderFile + QStringLiteral(" or the one at ") + file : olderFile;
+        QCOMPARE(step.error, olderStay ? error : QString());
+        QCOMPARE(QFileInfo::exists(olderFolder), olderStay);
+        if (!currentStays) {
+            comparePeerRead(settings, proxy, QString(), true);
+        }
     }
 
     // An OpenAI key the keyring kept when removal couldn't delete it stays
