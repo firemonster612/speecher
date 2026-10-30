@@ -19,13 +19,13 @@ SettingRow {
     // in effect instead.
     property var value: _blurs ? Settings.values[rowId] : false
 
-    // Shown once this build saves the row or runs its action; until then it
-    // isn't offered at all, here or in search.
+    // Shown only where this build saves the row or runs its action; elsewhere
+    // it isn't offered at all, here or in search.
     readonly property bool _saves: Schema.settable(spec, id => Settings.saves(id))
-    // The row's help; a page may give its own. Why the row's last save was
-    // refused shows in its place, and a row nothing saves yet says so.
     // Whether the row that turns this one on is on (enabledWhen).
     readonly property bool _turnedOn: !spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals
+    // The row's help; a page may give its own. Why the row's last save was
+    // refused shows in its place.
     property string note: (!_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""

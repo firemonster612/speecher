@@ -267,15 +267,30 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
-    // The popup opens no system permission panel, so such an error has no
-    // button; cancel dismisses it.
-    void aPermissionErrorHasNoFixHereAndCancelDismissesIt()
+    // A refused microphone's fix is Permissions & health, on every platform.
+    void aMicrophonePermissionErrorOpensPermissions()
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
         QSignalSpy pages(&dictation, &QuickDictation::pageRequested);
 
         dictation.showError(QStringLiteral("Microphone access is off"), {ErrorFix::MicrophonePermission});
+        QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("page")).toString(),
+                 QStringLiteral("permissions"));
+        emit dictation.errorActionRequested();
+        QCOMPARE(pages.count(), 1);
+        QCOMPARE(pages.first().first().toString(), QStringLiteral("permissions"));
+        QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
+    }
+
+    // An error without a fix has no button; cancel dismisses it.
+    void anErrorWithoutAFixHasNoButtonAndCancelDismissesIt()
+    {
+        ApplicationController controller(true);
+        QuickDictation dictation(&controller);
+        QSignalSpy pages(&dictation, &QuickDictation::pageRequested);
+
+        dictation.showError(QStringLiteral("Couldn't start"));
         QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("page")).toString(), QString());
         emit dictation.errorActionRequested();
         QCOMPARE(pages.count(), 0);

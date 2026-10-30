@@ -8,7 +8,9 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
+#include "core/PasteRules.h"
 #include "core/SettingsStore.h"
+#include "core/Target.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupPresentation.h"
@@ -28,6 +30,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSGRendererInterface>
+#include <QSignalSpy>
 
 #include <algorithm>
 #include <functional>
@@ -529,6 +532,110 @@ private slots:
             return false;
         };
         QTRY_VERIFY(helpShown(QStringLiteral("Live text off, sounds on")));
+    }
+
+    // Clicking another profile saves the field being edited to the profile
+    // it was edited for, before the editor shows the other one.
+    void choosingAProfileSavesTheEditInProgress()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("profiles")));
+        QQuickItem *instructions = nullptr;
+        QTRY_VERIFY((instructions = findItem(main->contentItem(), QStringLiteral("profileInstructions"))));
+        // The page stack drops presses while the page is still coming in,
+        // which takes longer than any fixed wait on a slow runner.
+        QQuickItem *stack = instructions;
+        while (stack && !stack->inherits("QQuickStackView")) {
+            stack = stack->parentItem();
+        }
+        QVERIFY(stack);
+        QTRY_VERIFY(!stack->property("busy").toBool());
+        const auto profileRow = [main](const QString &id) -> QQuickItem * {
+            QList<QQuickItem *> items{main->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->property("clickable").toBool() && item->property("key").toString() == id) {
+                    return item;
+                }
+            }
+            return nullptr;
+        };
+        const auto instructionsOf = [&controller](const QString &id) {
+            for (const WritingProfileSettings &profile : controller.settings()->snapshot().refinement.writingProfiles) {
+                if (profile.profile == id) {
+                    return profile.instructions;
+                }
+            }
+            return QString();
+        };
+        QQuickItem *email = profileRow(QStringLiteral("email"));
+        QVERIFY(email);
+        QVERIFY(profileRow(QStringLiteral("work"))->property("selected").toBool());
+
+        instructions->forceActiveFocus(Qt::MouseFocusReason);
+        for (const char *key = "Keep it short."; *key; ++key) {
+            QTest::keyClick(main, *key);
+        }
+        QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier,
+                          email->mapToScene(QPointF(email->width() / 2, email->height() / 2)).toPoint());
+
+        QTRY_VERIFY(email->property("selected").toBool());
+        QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
+        QCOMPARE(instructionsOf(QStringLiteral("email")), QString());
+    }
+
+    // Undo after deleting an app's paste rule puts it back, even once the
+    // page it was deleted on is gone.
+    void pasteRuleUndoOutlivesItsPage()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller)
+            .set(QStringLiteral("applicationPasteRules"),
+                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
+                                          {QStringLiteral("method"), QStringLiteral("standard_paste")},
+                                          {QStringLiteral("enabled"), true}}});
+        const auto appRules = [&controller] {
+            QStringList apps;
+            for (const PasteRule &rule : controller.settings()->snapshot().output.pasteRules) {
+                if (rule.scope == PasteRuleScope::Application) {
+                    apps.append(rule.match);
+                }
+            }
+            return apps;
+        };
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.App"), QStringLiteral("Navigation"));
+        auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
+        QVERIFY(navigation && toaster);
+        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("appRules")));
+        QPointer<QQuickItem> section;
+        QTRY_VERIFY((section = findItem(main->contentItem(), QStringLiteral("appPasteRules"))));
+
+        QMetaObject::invokeMethod(section, "remove", Q_ARG(QVariant, 0));
+        QCOMPARE(posted.count(), 1);
+        QVERIFY(appRules().isEmpty());
+        QMetaObject::invokeMethod(navigation, "go", Q_ARG(QVariant, QStringLiteral("home")));
+        QTRY_VERIFY(!section);
+
+        const QJSValue undone = posted.first().first().value<QJSValue>().property(QStringLiteral("action")).call();
+        QVERIFY2(!undone.isError(), qPrintable(undone.toString()));
+        QCOMPARE(appRules(), QStringList{QStringLiteral("org.kde.konsole")});
     }
 
     void everySetupStepLoads_data() { themes(); }

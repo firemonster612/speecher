@@ -118,9 +118,9 @@ struct SettingRow {
      }}
 
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
-// save. Rows missing here (the result duration) wait for the PR that wires
-// their page; launch at login is saved only where the platform can start
-// Speecher at login.
+// save. A row missing here, such as the result duration, is not saved, so the
+// UI does not show it; launch at login is saved only where the platform can
+// start Speecher at login.
 const SettingRow settingRows[] = {
     {"shortcutBehavior",
      [](const AppSettings &s) { return QVariant(shortcutActivationModeName(s.shortcutActivationMode)); },
@@ -297,9 +297,8 @@ const SettingRow settingRows[] = {
     FIELD_ROW("translucency", ui.translucency),
     FIELD_ROW("windowLayout", ui.windowLayout),
     FIELD_ROW("roundedCorners", ui.roundedCorners),
-    // Only macOS and Windows can start Speecher at login. The Quick UI builds
-    // only on Linux for now; the macOS and Windows PR in this stack builds it
-    // there, where General shows this row.
+    // Only macOS and Windows can start Speecher at login, so only there does
+    // General show this row.
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     FIELD_ROW("launchAtLogin", launchAtLogin),
 #endif

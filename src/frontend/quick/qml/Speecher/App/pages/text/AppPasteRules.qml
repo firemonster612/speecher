@@ -12,6 +12,7 @@ import Speecher.App
 // --pasting-form=rule opens the form.
 Section {
     id: section
+    objectName: "appPasteRules"
 
     readonly property var methods: Schema.row("globalPasteRule").options
     readonly property var rules: Settings.values.applicationPasteRules || []
@@ -33,14 +34,15 @@ Section {
         next[index] = Object.assign({}, next[index], change)
         save(next)
     }
-    // Undo puts the rule back where it was, keeping edits made since.
+    // Undo puts the rule back where it was, keeping edits made since. The
+    // toast outlives this page, so Undo goes to Settings, not to the page.
     function remove(index) {
         const gone = rules[index]
         save(rules.filter((r, i) => i !== index))
         Toaster.show(Words.deleted(appName(gone.app)), { icon: "trash-2", actionText: Words.undo, action: () => {
-            const back = section.rules.slice()
+            const back = (Settings.values.applicationPasteRules || []).slice()
             back.splice(Math.min(index, back.length), 0, gone)
-            section.save(back)
+            Settings.set("applicationPasteRules", back)
         } })
     }
     // The last part of a desktop ID, which is how most apps are known.

@@ -124,5 +124,7 @@ Item {
     }
 
     HoverHandler { id: hover; cursorShape: row.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-    TapHandler { id: tap; enabled: row.clickable; onTapped: { focusVisible.pointed(); row.clicked() } }
+    // Taking focus first ends an edit in progress, so a field commits before
+    // a selection rebinds it.
+    TapHandler { id: tap; enabled: row.clickable; onTapped: { focusVisible.pointed(); row.forceActiveFocus(); row.clicked() } }
 }

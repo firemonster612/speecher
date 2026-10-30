@@ -47,11 +47,17 @@ QString outcomeName(PopupOutcome outcome)
     return {};
 }
 
-// Linux has no system permission panels to open, so only a settings page is
-// a fix the popup offers.
+// The page the popup's fix opens. A refused permission opens Permissions &
+// health, whose row opens the system's own settings where it has them.
 QString fixPage(const PopupErrorAction &fix)
 {
-    return fix.fix == ErrorFix::SettingsPage ? fix.pageId : QString();
+    switch (fix.fix) {
+    case ErrorFix::SettingsPage: return fix.pageId;
+    case ErrorFix::MicrophonePermission:
+    case ErrorFix::AccessibilityPermission: return QStringLiteral("permissions");
+    case ErrorFix::None: break;
+    }
+    return {};
 }
 
 // A receipt or an error as the popup's title and detail: what happened, then
