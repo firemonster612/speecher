@@ -1,7 +1,8 @@
 package app.speecher.protocol
 
 import java.io.BufferedReader
-import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlinx.serialization.json.Json
@@ -13,7 +14,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
+import okio.BufferedSink
+import okio.source
 
 /**
  * The speech Custom Endpoint: an OpenAI-style audio transcriptions server the person runs or chose.
@@ -60,10 +63,11 @@ val endpointSpeechLanguages: List<String> =
 
 /**
  * Transcription through the speech Custom Endpoint: the whole recording, as a WAV file, POSTed to
- * the server once [stop] is called. A server that streams answers with server-sent events, shown as
- * they arrive. The audio is sent once, so a failure ends the dictation, keeping any text the stream
- * already produced. [prompt] goes in the OpenAI `prompt` field, left out when empty, and [language]
- * in `language`, left out for Automatic.
+ * the server once [stop] is called. The recording waits in a temporary file, deleted once sent or
+ * cancelled, so a long dictation does not sit in memory. A server that streams answers with
+ * server-sent events, shown as they arrive. The audio is sent once, so a failure ends the
+ * dictation, keeping any text the stream already produced. [prompt] goes in the OpenAI `prompt`
+ * field, left out when empty, and [language] in `language`, left out for Automatic.
  *
  * A batch server sends nothing while it transcribes, so [inactivityMillis] allows a long recording
  * on a slow machine; [deadlineMillis] caps a server that keeps trickling.
@@ -78,38 +82,65 @@ class EndpointSpeechClient(
     private val inactivityMillis: Long = 60_000,
     private val deadlineMillis: Long = 300_000,
 ) : SpeechClient {
-    private val audio = ByteArrayOutputStream()
+    private val recordingFile = File.createTempFile("speech-endpoint", ".pcm")
+    private val recording = recordingFile.outputStream().buffered()
+    /** Why the recording could not be written, as when the disk is full; reported at [stop]. */
+    private var writeFailure: IOException? = null
     private val cancellation = Cancellation()
     private val streamed = StringBuilder()
     private var stopped = false
     @Volatile private var cancelled = false
 
     override fun sendAudio(pcm: ByteArray) {
-        synchronized(audio) { if (!stopped) audio.write(pcm) }
+        synchronized(recording) {
+            if (stopped || writeFailure != null) return
+            try {
+                recording.write(pcm)
+            } catch (error: IOException) {
+                writeFailure = error
+            }
+        }
     }
 
     override fun stop() {
-        val pcm =
-            synchronized(audio) {
-                if (stopped) return
-                stopped = true
-                audio.toByteArray()
+        if (!endRecording()) return
+        thread(isDaemon = true, name = "speech-endpoint") {
+            try {
+                transcribe()
+            } finally {
+                recordingFile.delete()
             }
-        thread(isDaemon = true, name = "speech-endpoint") { transcribe(pcm) }
+        }
     }
 
     override fun cancel() {
         cancelled = true
         cancellation.cancel()
+        // Once stopped, the upload deletes the recording as it ends.
+        if (endRecording()) recordingFile.delete()
     }
 
-    private fun transcribe(pcm: ByteArray) {
-        if (pcm.isEmpty()) {
+    /** Closes the recording; false when it was closed already. */
+    private fun endRecording(): Boolean =
+        synchronized(recording) {
+            if (stopped) return false
+            stopped = true
+            try {
+                recording.close()
+            } catch (error: IOException) {
+                writeFailure = error
+            }
+            true
+        }
+
+    private fun transcribe() {
+        if (writeFailure == null && recordingFile.length() == 0L) {
             emit(SpeechEvent.Completed)
             return
         }
         try {
-            val text = upload(pcm).trim()
+            writeFailure?.let { throw it }
+            val text = upload().trim()
             if (text.isNotEmpty()) emit(SpeechEvent.Final(text))
             emit(SpeechEvent.Completed)
         } catch (error: Exception) {
@@ -125,15 +156,11 @@ class EndpointSpeechClient(
         if (!cancelled) events(event)
     }
 
-    private fun upload(pcm: ByteArray): String {
+    private fun upload(): String {
         val form =
             MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "file",
-                    "dictation.wav",
-                    wavFromPcm16Mono(pcm, 16000).toRequestBody("audio/wav".toMediaType()),
-                )
+                .addFormDataPart("file", "dictation.wav", wavBody(recordingFile))
         val model = endpoint.model.trim()
         if (model.isNotEmpty()) form.addFormDataPart("model", model)
         form.addFormDataPart("response_format", "json")
@@ -201,6 +228,19 @@ class EndpointSpeechClient(
         return done.ifEmpty { streamed.toString() }
     }
 }
+
+/** [pcm], 16 kHz mono PCM16, as a WAV file read from disk as it is sent. */
+private fun wavBody(pcm: File): RequestBody =
+    object : RequestBody() {
+        override fun contentType() = "audio/wav".toMediaType()
+
+        override fun contentLength() = WAV_HEADER_BYTES + pcm.length()
+
+        override fun writeTo(sink: BufferedSink) {
+            sink.write(wavHeaderPcm16Mono(pcm.length().toInt(), 16000))
+            pcm.source().use(sink::writeAll)
+        }
+    }
 
 /** Calls [onEvent] with each complete event's name and data; an unfinished last one is dropped. */
 private fun forEachServerSentEvent(reader: BufferedReader, onEvent: (String, String) -> Unit) {

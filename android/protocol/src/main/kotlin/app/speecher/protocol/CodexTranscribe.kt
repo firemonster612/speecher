@@ -38,10 +38,16 @@ fun preferredTranscript(batch: String?, streamed: String): String =
     if (batch.isNullOrEmpty() || batch.length * 10 < streamed.length * 6) streamed else batch
 
 fun wavFromPcm16Mono(pcm: ByteArray, rateHz: Int): ByteArray =
-    ByteBuffer.allocate(44 + pcm.size)
+    wavHeaderPcm16Mono(pcm.size, rateHz) + pcm
+
+const val WAV_HEADER_BYTES = 44
+
+/** The header a WAV file of [pcmBytes] of 16-bit mono PCM at [rateHz] starts with. */
+fun wavHeaderPcm16Mono(pcmBytes: Int, rateHz: Int): ByteArray =
+    ByteBuffer.allocate(WAV_HEADER_BYTES)
         .order(ByteOrder.LITTLE_ENDIAN)
         .put("RIFF".toByteArray(Charsets.US_ASCII))
-        .putInt(36 + pcm.size)
+        .putInt(36 + pcmBytes)
         .put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
         .putInt(16)
         .putShort(1)
@@ -51,6 +57,5 @@ fun wavFromPcm16Mono(pcm: ByteArray, rateHz: Int): ByteArray =
         .putShort(2)
         .putShort(16)
         .put("data".toByteArray(Charsets.US_ASCII))
-        .putInt(pcm.size)
-        .put(pcm)
+        .putInt(pcmBytes)
         .array()

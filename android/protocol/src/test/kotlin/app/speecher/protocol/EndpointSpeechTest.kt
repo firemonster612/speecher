@@ -1,5 +1,6 @@
 package app.speecher.protocol
 
+import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
@@ -195,6 +196,33 @@ class EndpointSpeechTest {
             assertEquals(0, server.requestCount)
         }
     }
+
+    @Test
+    fun `the recording waits on disk until it is sent whole or cancelled`() {
+        val pcm = byteArrayOf(1, 2, -1, 127)
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().body("{\"text\":\"\"}").build())
+            server.start()
+            transcribe(SpeechEndpoint(server.url("/").toString()), pcm = pcm)
+            val body = server.takeRequest().body!!.string(Charsets.ISO_8859_1)
+            assertTrue(String(wavFromPcm16Mono(pcm, 16000), Charsets.ISO_8859_1) in body)
+        }
+        EndpointSpeechClient(http, SpeechEndpoint("http://unused"), "", "", "", {}).run {
+            sendAudio(pcm)
+            assertTrue(recordings().isNotEmpty())
+            cancel()
+        }
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (recordings().isNotEmpty()) {
+            assertTrue(System.nanoTime() < deadline)
+            Thread.sleep(10)
+        }
+    }
+
+    private fun recordings() =
+        File(System.getProperty("java.io.tmpdir")).listFiles { file ->
+            file.name.startsWith("speech-endpoint")
+        }!!
 
     @Test
     fun `the server base drops trailing slashes and v1 segments`() {
