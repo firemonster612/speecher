@@ -52,11 +52,14 @@ signals:
 
 private:
     void readSystemColors();
+    // Watches each data folder's color-schemes folder, or the data folder
+    // itself while it has none, so a schemes folder made later is followed.
+    void watchSchemeFolders();
     void readInstalledSchemes();
 
     WindowBackdrop *m_backdrop;
     DesktopColors *m_desktopColors;
-    // The folders installedSchemes is read from.
+    // The folders installedSchemes is read from, or where one would be made.
     QFileSystemWatcher m_schemeFolders;
     // The desktop's colours, as last read.
     QVariantMap m_systemColors;
