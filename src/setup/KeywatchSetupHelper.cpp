@@ -5,8 +5,10 @@
 // the unit's SupplementaryGroups=. The login user can reach the socket but no
 // process they run gains access to input devices. See keywatch-security-design.md.
 //
-// Modelled on YdotoolSetupHelper.cpp, including its rollback transaction and
-// --user validation against the passwd database.
+// Modelled on YdotoolSetupHelper.cpp, including its --user validation against
+// the passwd database. A failed install is not rolled back: it reports what it
+// changed, and --remove takes it off again, all but the speecher-keywatch
+// system account, which stays.
 
 #include "HelperCommands.h"
 #include "KeywatchPayloadDigests.h"
@@ -14,6 +16,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -212,6 +215,37 @@ bool removeSelinuxPolicy(std::string &error)
     return false;
 }
 
+// Whether systemd still runs the unit, or listens on it for a socket; nullopt,
+// with why in error, when systemd could not be asked. False where systemd is
+// not managing the machine (no systemctl, or a container, WSL or chroot
+// without /run/systemd/system): nothing runs under it there, and is-active
+// would only fail.
+std::optional<bool> unitActive(std::string_view unit, std::string &error)
+{
+    std::error_code ignored;
+    if (!findExecutable("systemctl") || !std::filesystem::is_directory("/run/systemd/system", ignored)) {
+        return false;
+    }
+    // is-active exits 3 for a unit that is not running and 4 for one systemd
+    // does not know; anything else non-zero means the query itself failed.
+    constexpr int inactive = 3;
+    constexpr int unknownUnit = 4;
+    std::string stderrText;
+    const std::optional<int> status =
+        exitStatus("systemctl", {"is-active", "--quiet", std::string(unit)}, stderrText, error);
+    if (!status) {
+        return std::nullopt;
+    }
+    if (*status == 0) {
+        return true;
+    }
+    if (*status == inactive || *status == unknownUnit) {
+        return false;
+    }
+    error = stderrText.empty() ? "systemctl is-active " + std::string(unit) + " failed" : stderrText;
+    return std::nullopt;
+}
+
 bool ensureSystemUser(bool &created, std::string &error)
 {
     if (getpwnam(userName.data())) {
@@ -227,6 +261,9 @@ bool ensureSystemUser(bool &created, std::string &error)
     return true;
 }
 
+// Copies the bundled daemon to its system path. Only the copy: the caller
+// records the installed file before making it executable, so a failure there
+// still reports it.
 bool copyDaemon(std::string &error)
 {
     const std::string source = bundledPath("speecher-keywatchd");
@@ -253,13 +290,23 @@ bool copyDaemon(std::string &error)
         error = "Could not install speecher-keywatchd";
         return false;
     }
+    return true;
+}
+
+bool makeDaemonExecutable(std::string &error)
+{
+    std::error_code permissionsError;
     std::filesystem::permissions(std::string(daemonInstallPath),
                                  std::filesystem::perms::owner_all
                                      | std::filesystem::perms::group_read
                                      | std::filesystem::perms::group_exec
                                      | std::filesystem::perms::others_read
                                      | std::filesystem::perms::others_exec,
-                                 directoryError);
+                                 permissionsError);
+    if (permissionsError) {
+        error = "Could not set the permissions of " + std::string(daemonInstallPath);
+        return false;
+    }
     return true;
 }
 
@@ -291,6 +338,9 @@ bool install(const std::string &user, std::string &error)
         return failed();
     }
     transaction.record("installed " + std::string(daemonInstallPath));
+    if (!makeDaemonExecutable(error)) {
+        return failed();
+    }
     if (selinuxEnabled()) {
         if (!run("semodule", {"-i", bundledPath(policyFileName)}, error)) {
             return failed();
@@ -346,31 +396,34 @@ bool remove(const std::string &user, std::string &error)
         }
     };
 
-    // A daemon that cannot be stopped keeps reading keyboards, so when the
-    // unit file exists a failed stop is a problem, not "removed". When the
-    // unit file never existed (removal after a failed install), systemctl's
-    // complaint about an unknown unit is expected; ignoring it keeps remove
-    // idempotent.
+    // A daemon that cannot be stopped keeps reading keyboards, so a unit
+    // still active afterwards, or one systemd can't say about, is a problem,
+    // not "removed". Whether it is comes from systemd, not the unit files: a
+    // unit keeps running after its file is gone. A failed stop alone is not:
+    // after a failed install systemctl complains about a unit it never knew,
+    // and ignoring that keeps remove idempotent.
+    const auto stopped = [&attempt](std::string_view unit, const std::string &label, const std::string &stopError) {
+        std::string queryError;
+        const std::optional<bool> active = unitActive(unit, queryError);
+        if (!active) {
+            attempt(label, false, "systemd could not say whether it stopped: " + queryError);
+        } else {
+            attempt(label, !*active, stopError);
+        }
+    };
+    // disable --now stops nothing once the unit file is gone: it fails first.
+    // So disabling is best effort, and the stop is its own step.
     std::string ignored;
-    if (std::filesystem::exists(socketUnitPath)) {
-        std::string stopError;
-        attempt("could not stop the key helper socket",
-                run("systemctl", {"disable", "--now", std::string(socketName)}, stopError, true),
-                stopError);
-    } else {
-        run("systemctl", {"disable", "--now", std::string(socketName)}, ignored, true, true);
-    }
+    run("systemctl", {"disable", std::string(socketName)}, ignored, true, true);
+    std::string socketStopError;
+    run("systemctl", {"stop", std::string(socketName)}, socketStopError, true);
+    stopped(socketName, "could not stop the key helper socket", socketStopError);
     // Stopping the socket does not stop its already-running service: a client
     // holding a connection would keep the daemon reading keyboards after
     // "removed" was reported. Stop the daemon itself too.
-    if (std::filesystem::exists(serviceUnitPath)) {
-        std::string stopError;
-        attempt("could not stop the key helper daemon",
-                run("systemctl", {"stop", std::string(serviceName)}, stopError, true),
-                stopError);
-    } else {
-        run("systemctl", {"stop", std::string(serviceName)}, ignored, true, true);
-    }
+    std::string serviceStopError;
+    run("systemctl", {"stop", std::string(serviceName)}, serviceStopError, true);
+    stopped(serviceName, "could not stop the key helper daemon", serviceStopError);
     for (const std::string_view path : {socketUnitPath, serviceUnitPath, daemonInstallPath}) {
         std::string stepError;
         attempt(std::string(),

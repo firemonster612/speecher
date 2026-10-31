@@ -9,6 +9,7 @@
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
 #include "app/IpcCommandHandler.h"
+#include "app/LogFile.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -1864,6 +1865,37 @@ private slots:
         const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
         QCOMPARE(parse({QStringLiteral("--follow")}).exitCode, 2);
         QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
+    }
+
+    // Past its limit the log is copied aside, replacing the older copy, and
+    // emptied in place, so every process writing it carries on at its new end.
+    void logIsCutPastItsLimit()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("speecher.log"));
+        const QString previous = path + QStringLiteral(".1");
+        // As text: Windows ends the log's lines with \r\n.
+        const auto read = [](const QString &file) {
+            QFile log(file);
+            return log.open(QIODevice::ReadOnly | QIODevice::Text) ? QString::fromUtf8(log.readAll()) : QString();
+        };
+        LogFile log(path, 100);
+        // Another Speecher process with the same log open.
+        LogFile otherProcess(path, 1000);
+        log.write(QtInfoMsg, QString(100, QLatin1Char('a')));
+        otherProcess.write(QtInfoMsg, QStringLiteral("second"));
+        log.write(QtInfoMsg, QStringLiteral("third"));
+        otherProcess.write(QtWarningMsg, QStringLiteral("fourth"));
+        QCOMPARE(read(path).count(QLatin1Char('\n')), 2);
+        QVERIFY(read(path).endsWith(QStringLiteral(" warning fourth\n")));
+        QVERIFY(!read(path).contains(QChar(0)));
+        QVERIFY(read(previous).contains(QStringLiteral("second")));
+
+        log.write(QtInfoMsg, QString(100, QLatin1Char('b')));
+        log.write(QtInfoMsg, QStringLiteral("fifth"));
+        QCOMPARE(read(path).count(QLatin1Char('\n')), 1);
+        QVERIFY(read(previous).contains(QStringLiteral("bbb")));
+        QVERIFY(!read(previous).contains(QStringLiteral("aaa")));
     }
 
     // Every usage mistake prints its message, then --help, and exits 2. An

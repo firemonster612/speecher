@@ -65,6 +65,40 @@ QString launchCommand()
         .arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
 }
 
+// The dictation shortcut in a test run: its keys are checked as Windows
+// would, but nothing takes them from the desktop. Test processes run side by
+// side, and only one of them could hold Ctrl+Alt+D.
+class UnregisteredGlobalShortcutBinder final : public WinGlobalShortcutBinder {
+public:
+    using WinGlobalShortcutBinder::WinGlobalShortcutBinder;
+
+protected:
+    bool registerKeys(const QKeySequence &keys, QString *error) override
+    {
+        if (!nativeHotKey(keys, error)) {
+            return false;
+        }
+        m_registered = true;
+        return true;
+    }
+    void unregisterKeys() override { m_registered = false; }
+    bool registered() const override { return m_registered; }
+
+private:
+    bool m_registered = false;
+};
+
+GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action, SettingsStore *settings)
+{
+    if (action.sessionOnly) {
+        return new WinSessionShortcutBinder(settings, action);
+    }
+    if (qEnvironmentVariableIntValue("SPEECHER_TEST_UNREGISTERED_GLOBAL_SHORTCUT") == 1) {
+        return new UnregisteredGlobalShortcutBinder(settings, action);
+    }
+    return new WinGlobalShortcutBinder(settings, action);
+}
+
 } // namespace
 
 QString WindowsComposition::outputSummary() const
@@ -180,10 +214,8 @@ GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShort
                                                                      QObject *parent) const
 {
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    GlobalShortcutBinder *combination = action.sessionOnly
-        ? static_cast<GlobalShortcutBinder *>(new WinSessionShortcutBinder(settings, action))
-        : new WinGlobalShortcutBinder(settings, action);
-    return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(settings, action), parent);
+    return new RoutingShortcutBinder(createCombinationBinder(action, settings),
+                                     new WinSingleKeyShortcutBinder(settings, action), parent);
 }
 
 SessionKeyGrab *WindowsComposition::createSessionKeyGrab(QObject *parent) const

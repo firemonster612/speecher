@@ -3146,6 +3146,12 @@ private slots:
         QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), in, out, err, false), 2);
         QVERIFY(!err.str().empty());
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
+
+        // Files a run never reached did not succeed.
+        out.str({});
+        options.speechProviderId = QStringLiteral("nonexistent");
+        QCOMPARE(runHeadlessTranscribe({audio, audio}, options, &settings, m_registry.get(), in, out, err, false), 2);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("succeeded")).toInt(), 0);
     }
 
     // `transcribe -` names the piped audio stdin, fails on empty stdin, and

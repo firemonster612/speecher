@@ -125,26 +125,26 @@ inline std::string readError(FILE *file)
     return result;
 }
 
-inline bool run(std::string_view program,
-         const std::vector<std::string> &arguments,
-         std::string &error,
-         bool ignoreMissing = false,
-         bool ignoreFailure = false,
-         std::chrono::seconds deadline = std::chrono::minutes(5))
+// Runs program without a shell and returns its exit status, or -1 when it
+// did not exit on its own (stopped past the deadline, or by a signal), with
+// what it printed to stderr in stderrText. Nullopt, with why in error, when
+// it is not installed or could not be started.
+inline std::optional<int> exitStatus(std::string_view program,
+                                     const std::vector<std::string> &arguments,
+                                     std::string &stderrText,
+                                     std::string &error,
+                                     std::chrono::seconds deadline = std::chrono::minutes(5))
 {
     const std::optional<std::string> executable = findExecutable(program);
     if (!executable) {
-        if (ignoreMissing) {
-            return true;
-        }
         error = std::string(program) + " is not installed";
-        return false;
+        return std::nullopt;
     }
 
     FILE *stderrFile = std::tmpfile();
     if (!stderrFile) {
         error = "Could not start " + std::string(program);
-        return false;
+        return std::nullopt;
     }
     const pid_t child = fork();
     if (child == 0) {
@@ -170,7 +170,7 @@ inline bool run(std::string_view program,
     if (child < 0) {
         std::fclose(stderrFile);
         error = "Could not start " + std::string(program);
-        return false;
+        return std::nullopt;
     }
 
     int status = 0;
@@ -192,12 +192,27 @@ inline bool run(std::string_view program,
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    const std::string stderrText = readError(stderrFile);
+    stderrText = readError(stderrFile);
     std::fclose(stderrFile);
-    if (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    return waited == child && WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+inline bool run(std::string_view program,
+         const std::vector<std::string> &arguments,
+         std::string &error,
+         bool ignoreMissing = false,
+         bool ignoreFailure = false,
+         std::chrono::seconds deadline = std::chrono::minutes(5))
+{
+    if (ignoreMissing && !findExecutable(program)) {
         return true;
     }
-    if (ignoreFailure) {
+    std::string stderrText;
+    const std::optional<int> status = exitStatus(program, arguments, stderrText, error, deadline);
+    if (!status) {
+        return false;
+    }
+    if (*status == 0 || ignoreFailure) {
         return true;
     }
     error = stderrText.empty() ? std::string(program) + " failed" : stderrText;

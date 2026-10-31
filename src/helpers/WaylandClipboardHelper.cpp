@@ -8,9 +8,13 @@
 #include <QJsonObject>
 
 #include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 #include <wayland-client.h>
 
@@ -27,8 +31,17 @@ struct ClipboardOwner {
     bool running = true;
 };
 
+// How long one paste may take to read the clipboard. The helper serves
+// pastes one at a time, so a reader that stops reading would otherwise keep
+// the clipboard from every later paste.
+constexpr std::chrono::seconds sendDeadline{5};
+
+// Writes data to a reader's pipe, giving up when it closes the pipe or misses
+// the deadline.
 void writeAll(int fd, const QByteArray &data)
 {
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    const auto deadline = std::chrono::steady_clock::now() + sendDeadline;
     qsizetype offset = 0;
     while (offset < data.size()) {
         const ssize_t written = ::write(fd, data.constData() + offset,
@@ -39,6 +52,14 @@ void writeAll(int fd, const QByteArray &data)
         }
         if (written < 0 && errno == EINTR) {
             continue;
+        }
+        if (written < 0 && errno == EAGAIN) {
+            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now());
+            pollfd writable{fd, POLLOUT, 0};
+            if (left.count() > 0 && (poll(&writable, 1, int(left.count())) >= 0 || errno == EINTR)) {
+                continue;
+            }
         }
         break;
     }
@@ -180,6 +201,9 @@ void cleanUp(ClipboardOwner *owner)
 
 int main()
 {
+    // A reader that closes its pipe early must not end the helper, and the
+    // clipboard with it; the write fails with EPIPE instead.
+    std::signal(SIGPIPE, SIG_IGN);
     ClipboardOwner owner;
     if (!readPayload(&owner)) {
         return EXIT_FAILURE;

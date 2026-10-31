@@ -567,7 +567,12 @@ private slots:
             });
             runner->start();
             // The instance answers on this thread, so wait with its events.
-            QTest::qWaitFor([runner] { return runner->isFinished(); }, 5000);
+            // A command still running after that never ends, and wait() would
+            // block until ctest's timeout; QVERIFY can't return from this
+            // lambda while the thread still writes to its captures, so stop.
+            if (!QTest::qWaitFor([runner] { return runner->isFinished(); }, 5000)) {
+                qFatal("The record command did not finish within 5 s");
+            }
             runner->wait();
             delete runner;
             return exitCode;

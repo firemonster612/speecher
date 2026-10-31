@@ -64,6 +64,9 @@ std::uint64_t monotonicUsec()
 struct Keyboard {
     std::string name; // The directory entry, such as "event3".
     int fd = -1;
+    // Set by SYN_DROPPED: the kernel's buffer overflowed and lost events, so
+    // what arrives up to the next SYN_REPORT is a fragment to discard.
+    bool resyncing = false;
 };
 
 struct Client {
@@ -87,11 +90,17 @@ struct RateBucket {
     std::uint64_t windowStartUsec = 0;
 };
 
+bool bitSet(const unsigned char *bits, int bit)
+{
+    return bits[bit / 8] & (1 << (bit % 8));
+}
+
 // Opens one /dev/input node if it is a real keyboard: EV_KEY with the letter
 // range (a mouse advertises EV_KEY without letters), and not a virtual
 // device — ydotoold's uinput keyboard is how Speecher's own text delivery
-// would otherwise loop back into the watch. Returns -1 for everything else.
-int openKeyboard(const std::string &name)
+// would otherwise loop back into the watch. Returns -1 for everything else,
+// with refused set when the node exists but this process may not open it.
+int openKeyboard(const std::string &name, bool *refused = nullptr)
 {
     if (name.compare(0, 5, "event") != 0) {
         return -1;
@@ -99,6 +108,9 @@ int openKeyboard(const std::string &name)
     const std::string path = std::string(inputDirectory) + "/" + name;
     const int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) {
+        if (refused) {
+            *refused = errno == EACCES;
+        }
         return -1;
     }
     unsigned long evBits = 0;
@@ -107,8 +119,8 @@ int openKeyboard(const std::string &name)
     const bool keyboard = ioctl(fd, EVIOCGBIT(0, sizeof(evBits)), &evBits) >= 0
         && (evBits & (1UL << EV_KEY))
         && ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits) >= 0
-        && (keyBits[KEY_A / 8] & (1 << (KEY_A % 8)))
-        && (keyBits[KEY_Z / 8] & (1 << (KEY_Z % 8)))
+        && bitSet(keyBits, KEY_A)
+        && bitSet(keyBits, KEY_Z)
         && ioctl(fd, EVIOCGID, &id) >= 0
         && id.bustype != BUS_VIRTUAL;
     if (!keyboard) {
@@ -138,10 +150,11 @@ public:
         int refused = 0;
         while (dirent *entry = readdir(dir)) {
             const std::string name = entry->d_name;
-            const int fd = openKeyboard(name);
+            bool deniedAccess = false;
+            const int fd = openKeyboard(name, &deniedAccess);
             if (fd >= 0) {
                 m_keyboards.push_back({name, fd});
-            } else if (errno == EACCES) {
+            } else if (deniedAccess) {
                 refused += 1;
             }
         }
@@ -421,6 +434,17 @@ private:
         input_event event{};
         ssize_t got = 0;
         while ((got = read(keyboard.fd, &event, sizeof(event))) == sizeof(event)) {
+            if (event.type == EV_SYN && event.code == SYN_DROPPED) {
+                keyboard.resyncing = true;
+                continue;
+            }
+            if (keyboard.resyncing) {
+                if (event.type == EV_SYN && event.code == SYN_REPORT) {
+                    keyboard.resyncing = false;
+                    reconcileHolds(keyboard.fd);
+                }
+                continue;
+            }
             if (event.type != EV_KEY || event.value == 2) {
                 continue; // value 2 is auto-repeat, which is not a transition.
             }
@@ -459,24 +483,52 @@ private:
         }
     }
 
+    // Key-down when the first keyboard takes hold of the key, and only then.
+    void takeHold(Client &client, int keyboardFd)
+    {
+        std::vector<int> &holders = client.holdingKeyboardFds;
+        if (std::find(holders.begin(), holders.end(), keyboardFd) != holders.end()) {
+            return;
+        }
+        const bool firstHolder = holders.empty();
+        holders.push_back(keyboardFd);
+        if (firstHolder) {
+            send(client, true);
+        }
+    }
+
     void report(int keyboardFd, std::uint16_t evdev, bool down)
     {
         for (Client &client : m_clients) {
             if (client.fd == -1 || client.evdev != evdev) {
                 continue;
             }
-            if (!down) {
+            if (down) {
+                takeHold(client, keyboardFd);
+            } else {
                 releaseHold(client, keyboardFd);
+            }
+        }
+    }
+
+    // After an overflow the lost events may include a key-up, which would
+    // leave push-to-talk recording. Read which keys are down now and bring
+    // every watched key in line; a keyboard that will not say is released.
+    void reconcileHolds(int keyboardFd)
+    {
+        unsigned char keyBits[(KEY_MAX / 8) + 1] = {};
+        if (ioctl(keyboardFd, EVIOCGKEY(sizeof(keyBits)), keyBits) < 0) {
+            releaseHeldKeys(keyboardFd);
+            return;
+        }
+        for (Client &client : m_clients) {
+            if (client.fd == -1 || client.evdev == 0) {
                 continue;
             }
-            std::vector<int> &holders = client.holdingKeyboardFds;
-            if (std::find(holders.begin(), holders.end(), keyboardFd) != holders.end()) {
-                continue;
-            }
-            const bool firstHolder = holders.empty();
-            holders.push_back(keyboardFd);
-            if (firstHolder) {
-                send(client, true);
+            if (bitSet(keyBits, client.evdev)) {
+                takeHold(client, keyboardFd);
+            } else {
+                releaseHold(client, keyboardFd);
             }
         }
     }

@@ -616,6 +616,7 @@ set(SPEECHER_APP_SOURCES
   src/app/HeadlessTranscribe.cpp
   src/app/IpcCommandHandler.cpp
   src/app/IpcMessages.cpp
+  src/app/LogFile.cpp
   src/app/ManifestUpdater.cpp
   src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
@@ -654,6 +655,7 @@ set(SPEECHER_APP_HEADERS
   src/app/HeadlessTranscribe.h
   src/app/IpcCommandHandler.h
   src/app/IpcMessages.h
+  src/app/LogFile.h
   src/app/ManifestUpdater.h
   src/app/ShortcutGesture.h
   src/app/ShortcutSuspendingDelivery.h
