@@ -217,7 +217,12 @@ std::optional<UpdateManifest> ManifestUpdater::parseManifest(
     manifest.sha256 = platform.value(QStringLiteral("sha256")).toString().toLatin1().toLower();
 
     const QRegularExpression shaPattern(QStringLiteral("^[0-9a-f]{64}$"));
-    if (manifest.version.isEmpty() || manifest.buildNumber < 0
+    // A release version, such as 0.1.1-nightly.20260901+gabc1234. The
+    // Windows updater names the downloaded installer after it, so it must
+    // never carry a path separator.
+    const QRegularExpression versionPattern(
+        QStringLiteral("^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"));
+    if (!versionPattern.match(manifest.version).hasMatch() || manifest.buildNumber < 0
         || !manifest.downloadUrl.isValid()
         || manifest.downloadUrl.scheme() != QStringLiteral("https")
         || !shaPattern.match(QString::fromLatin1(manifest.sha256)).hasMatch()) {

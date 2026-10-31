@@ -448,6 +448,11 @@ private slots:
             << validManifestJson().replace(
                    QByteArrayLiteral("\"version\": \"0.1.1-nightly.20260901+gabc1234\","),
                    QByteArray());
+        // The Windows updater names the installer it downloads after the
+        // version.
+        QTest::newRow("version with a path")
+            << manifestJson(QStringLiteral("0.1.1\\\\..\\\\..\\\\Startup\\\\evil"), 123);
+        QTest::newRow("version that is not a release's") << manifestJson(QStringLiteral("latest"), 123);
         QTest::newRow("negative build")
             << validManifestJson().replace(QByteArrayLiteral("\"buildNumber\": 123"),
                                            QByteArrayLiteral("\"buildNumber\": -1"));
