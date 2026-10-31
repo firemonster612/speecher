@@ -325,6 +325,33 @@ private slots:
     }
 #endif
 
+#ifdef Q_OS_WIN
+    // The pipe is named from the account's SID, so another account with the
+    // same user name (MACHINE\alice and DOMAIN\alice) gets a pipe of its own.
+    void thePipeNameDoesNotFollowTheUserName()
+    {
+        const QString pipe = appSocketName();
+        const QByteArray user = qgetenv("USERNAME");
+        qputenv("USERNAME", "someone-else");
+        const auto restore = qScopeGuard([user] { qputenv("USERNAME", user); });
+
+        QCOMPARE(appSocketName(), pipe);
+    }
+
+    // A Speecher from before listens on the pipe named from the user name,
+    // and a command still reaches it.
+    void aCommandReachesASpeecherOnTheUserNamePipe()
+    {
+        qputenv("SPEECHER_INSTANCE", uniqueIpcName().toUtf8());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSTANCE"); });
+        QLocalServer older;
+        QVERIFY(older.listen(legacyAppSocketName()));
+
+        IpcResponse response;
+        QCOMPARE(SingleInstanceIpc::sendRequest({IpcCommand::Status}, &response, 75), IpcCommandResult::NoResponse);
+    }
+#endif
+
     void singleInstanceIpcRemovesStaleSocketFile()
     {
         QTemporaryDir dir;

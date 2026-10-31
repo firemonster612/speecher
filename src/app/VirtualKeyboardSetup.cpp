@@ -200,7 +200,8 @@ void VirtualKeyboardSetup::remove()
         [this, result] {
             // Everything that did not come off is named: a service still
             // running, or files the helper left, is access the person asked
-            // to take away.
+            // to take away. Files another account still uses are not left:
+            // the probe counts them only while this account is in the group.
             if (!result->stopError.isEmpty()) {
                 emit failed(Failure::Stop, result->stopError);
             }

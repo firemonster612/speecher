@@ -71,6 +71,12 @@ To install somewhere else:
 make install PREFIX=/usr/local
 ```
 
+Packagers: install `libexec/speecher/speecher-keywatchd` and
+`speecher_keywatchd.cil` exactly as built. The key helper's installer checks
+both against SHA-256 digests compiled in at build time, so stripping or
+patching them (a package build's strip step, `patchelf`) makes key helper
+setup fail its integrity check. Exclude them from the strip step.
+
 On macOS `make install` puts `speecher.app` in `/Applications`. First launch runs a setup assistant that walks the microphone and Accessibility grants; Speecher restarts itself when setup finishes so macOS hands it the permissions.
 
 Portable packages:

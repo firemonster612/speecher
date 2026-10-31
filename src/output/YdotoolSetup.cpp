@@ -26,10 +26,25 @@ QString installedServicePath()
     return QStringLiteral("/lib/systemd/user/speecher-ydotoold.service");
 }
 
+// Whether the group has a member besides user.
+bool otherGroupMembers(const QString &user)
+{
+    const QByteArray name = user.toLocal8Bit();
+    const struct group *configured = getgrnam(groupName);
+    for (char **member = configured ? configured->gr_mem : nullptr; member && *member; ++member) {
+        if (name != *member) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 YdotoolSetupStatus YdotoolSetup::evaluate(const YdotoolProbeFacts &facts)
 {
+    const bool managed = facts.speecherSetupFilesInstalled
+        && (facts.userInConfiguredGroup || !facts.otherAccountsInConfiguredGroup);
     if (!facts.enabledInSpeecher
         && facts.ydotoolInstalled
         && facts.ydotooldInstalled
@@ -38,41 +53,41 @@ YdotoolSetupStatus YdotoolSetup::evaluate(const YdotoolProbeFacts &facts)
         && facts.socketExists
         && facts.socketWritable) {
         return {YdotoolSetupState::Disabled,
-                facts.speecherManagedSetupInstalled ? QStringLiteral("Disabled in Speecher") : QStringLiteral("Available outside Speecher"),
-                facts.speecherManagedSetupInstalled
+                managed ? QStringLiteral("Disabled in Speecher") : QStringLiteral("Available outside Speecher"),
+                managed
                     ? QStringLiteral("Speecher-managed virtual keyboard setup is installed but not enabled in Speecher.")
                     : QStringLiteral("System ydotool is available, but Speecher-managed setup is not installed."),
-                facts.speecherManagedSetupInstalled};
+                managed};
     }
 
     if (!facts.ydotoolInstalled || !facts.ydotooldInstalled) {
         return {YdotoolSetupState::NotInstalled,
                 QStringLiteral("Not installed"),
                 QStringLiteral("A required package is missing. Set up installs it."),
-                facts.speecherManagedSetupInstalled};
+                managed};
     }
     if (!facts.uinputExists || !facts.uinputReadWrite) {
         if (facts.userInConfiguredGroup && !facts.currentSessionInConfiguredGroup) {
             return {YdotoolSetupState::NeedsSignOut,
                     QStringLiteral("Needs sign out"),
                     QStringLiteral("Sign out and back in so this session picks up virtual keyboard permissions."),
-                    facts.speecherManagedSetupInstalled};
+                    managed};
         }
         return {YdotoolSetupState::NeedsUinputPermission,
                 QStringLiteral("Needs uinput permission"),
                 QStringLiteral("The ydotool daemon cannot access /dev/uinput yet."),
-                facts.speecherManagedSetupInstalled};
+                managed};
     }
     if (!facts.socketExists || !facts.socketWritable) {
         return {YdotoolSetupState::DaemonNotRunning,
                 QStringLiteral("Installed, daemon not running"),
                 QStringLiteral("The ydotool daemon socket is not available."),
-                facts.speecherManagedSetupInstalled};
+                managed};
     }
     return {YdotoolSetupState::Ready,
             QStringLiteral("Ready"),
             QStringLiteral("Speecher can use virtual keyboard input."),
-            facts.speecherManagedSetupInstalled};
+            managed};
 }
 
 YdotoolSetupStatus YdotoolSetup::probe(bool enabledInSpeecher)
@@ -85,10 +100,11 @@ YdotoolSetupStatus YdotoolSetup::probe(bool enabledInSpeecher)
     facts.uinputExists = uinput.exists();
     facts.uinputReadWrite = uinput.isReadable() && uinput.isWritable();
     facts.speecherGroupExists = getgrnam(groupName) != nullptr;
-    facts.speecherManagedSetupInstalled = QFileInfo::exists(QString::fromLatin1(setupStatePath))
+    facts.speecherSetupFilesInstalled = QFileInfo::exists(QString::fromLatin1(setupStatePath))
         || QFileInfo::exists(installedServicePath());
     const QString user = helpers::currentUserName();
     facts.userInConfiguredGroup = !user.isEmpty() && helpers::userInGroup(groupName, user);
+    facts.otherAccountsInConfiguredGroup = otherGroupMembers(user);
     facts.currentSessionInConfiguredGroup = helpers::currentSessionInGroup(groupName);
     const QFileInfo socket(YdotoolDelivery::socketPath());
     facts.socketExists = socket.exists();

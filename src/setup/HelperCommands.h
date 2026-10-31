@@ -4,6 +4,7 @@
 // without a shell, groups created and joined. Shared by the pkexec'd helpers
 // so each keeps only its own installation steps.
 
+#include <charconv>
 #include <chrono>
 #include <cerrno>
 #include <cstdio>
@@ -221,7 +222,7 @@ inline bool run(std::string_view program,
 
 inline bool ensureGroup(std::string_view groupName, bool &created, std::string &error)
 {
-    if (getgrnam(groupName.data())) {
+    if (getgrnam(std::string(groupName).c_str())) {
         return true;
     }
     if (!run("groupadd", {"--system", std::string(groupName)}, error)) {
@@ -234,7 +235,7 @@ inline bool ensureGroup(std::string_view groupName, bool &created, std::string &
 inline bool userInGroup(std::string_view groupName, const std::string &user)
 {
     const struct passwd *account = getpwnam(user.c_str());
-    const struct group *targetGroup = getgrnam(groupName.data());
+    const struct group *targetGroup = getgrnam(std::string(groupName).c_str());
     if (!account || !targetGroup) {
         return false;
     }
@@ -272,6 +273,32 @@ inline bool validateUser(const std::string &user, std::string &error)
         return false;
     }
     return true;
+}
+
+// The account a helper sets up, or empty with why in error. Under pkexec it is
+// the account that asked (pkexecUid, from PKEXEC_UID), so a request cannot
+// name another account's; a --user naming one is refused, not ignored. Run as
+// root some other way (sudo, a root shell), the --user given stands.
+inline std::string targetUser(const char *pkexecUid, const std::string &requested, std::string &error)
+{
+    if (!pkexecUid) {
+        return validateUser(requested, error) ? requested : std::string();
+    }
+    const std::string_view text(pkexecUid);
+    uid_t uid = 0;
+    const auto [end, failure] = std::from_chars(text.data(), text.data() + text.size(), uid);
+    const struct passwd *account = !text.empty() && failure == std::errc() && end == text.data() + text.size()
+        ? getpwuid(uid)
+        : nullptr;
+    if (!account) {
+        error = "pkexec did not name an account on this computer";
+        return {};
+    }
+    if (!requested.empty() && requested != account->pw_name) {
+        error = "--user " + requested + " is not " + account->pw_name + ", the account that asked for this setup";
+        return {};
+    }
+    return account->pw_name;
 }
 
 } // namespace speecher::helpers

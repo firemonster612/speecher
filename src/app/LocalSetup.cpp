@@ -366,6 +366,12 @@ bool LocalSetup::removeModel(const LocalModel &model)
     const bool removed = m_models.remove(model);
     m_progress.remove(model.id);
     m_speedTestQueue.removeAll(model.id);
+    // A model whose file could not be deleted is still there to dictate
+    // with, so it keeps its speed results and stays chosen.
+    if (m_models.isDownloaded(model)) {
+        emit changed();
+        return false;
+    }
     m_settings.edit([this, &model](AppSettings &settings) {
         LocalSpeechSettings &local = settings.speech.local;
         local.speedTestSeconds.removeIf([&model](const auto &result) {

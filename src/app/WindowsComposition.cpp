@@ -113,7 +113,7 @@ QString WindowsComposition::ipcListenName() const
 
 QStringList WindowsComposition::ipcConnectCandidates() const
 {
-    return {appSocketName(), executablePathSocketName()};
+    return {appSocketName(), executablePathSocketName(), legacyAppSocketName()};
 }
 
 QString WindowsComposition::detachedExecutablePath() const

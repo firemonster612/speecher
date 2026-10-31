@@ -2,12 +2,9 @@
 #include "common/test_doubles.h"
 #include "output/HelperPath.h"
 #include "platform/ScreenshotImage.h"
-#include "setup/YdotoolSetupState.h"
 #include "setup/YdotoolSetupTransaction.h"
 
 #include <QImage>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QScopeGuard>
 #include <QTimer>
 
@@ -234,23 +231,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  QStringLiteral("Could not write udev rule\nChanges left behind:\n"
                                 "- wrote /etc/modules-load.d/speecher-uinput.conf\n"
                                 "- added efox to speecher-uinput"));
-    }
-
-    void ydotoolSetupStateEscapesJsonStrings()
-    {
-        const std::string state = ydotoolSetupStateText(
-            true, R"(/usr/lib/systemd/user/service\"name)", "user\\name\n");
-        QJsonParseError error;
-        const QJsonDocument document = QJsonDocument::fromJson(
-            QByteArray::fromStdString(state), &error);
-
-        QCOMPARE(error.error, QJsonParseError::NoError);
-        QCOMPARE(document.object().value(QStringLiteral("packageInstalledBySpeecher")).toBool(),
-                 true);
-        QCOMPARE(document.object().value(QStringLiteral("serviceFile")).toString(),
-                 QStringLiteral("/usr/lib/systemd/user/service\\\"name"));
-        QCOMPARE(document.object().value(QStringLiteral("targetUser")).toString(),
-                 QStringLiteral("user\\name\n"));
     }
 
 #ifndef Q_OS_WIN
@@ -2017,6 +1997,23 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const YdotoolSetupStatus ready = YdotoolSetup::evaluate(facts);
         QCOMPARE(ready.state, YdotoolSetupState::Ready);
         QVERIFY(ready.ready());
+    }
+
+    // With two accounts set up, one that left the group has no setup left,
+    // though the files stay for the other. The last account's files count.
+    void ydotoolSetupIsGoneForAnAccountThatLeftTheGroup()
+    {
+        YdotoolProbeFacts facts;
+        facts.speecherSetupFilesInstalled = true;
+        facts.otherAccountsInConfiguredGroup = true;
+        facts.userInConfiguredGroup = true;
+        QVERIFY(YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
+
+        facts.userInConfiguredGroup = false;
+        QVERIFY(!YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
+
+        facts.otherAccountsInConfiguredGroup = false;
+        QVERIFY(YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
     }
 
 #endif // SPEECHER_WITH_WAYLAND

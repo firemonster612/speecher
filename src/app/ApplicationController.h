@@ -182,8 +182,6 @@ public:
 public slots:
     void toggle();
     // A toggle with the --format, --profile or --language it was given.
-    // Unlike toggle(), it checks setup before stopping an active session, as
-    // the IPC toggle always has.
     void toggleWith(const SessionOverrides &overrides);
     void startListening();
     // A start with the --format, --profile or --language it was given.

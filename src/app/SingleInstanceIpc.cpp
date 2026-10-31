@@ -1,5 +1,7 @@
 #include "app/SingleInstanceIpc.h"
 
+#include "app/CompositionSockets.h"
+
 #include <QDeadlineTimer>
 #include <QJsonDocument>
 #include <QJsonParseError>
@@ -8,10 +10,6 @@
 #include <QCryptographicHash>
 #include <QScopeGuard>
 #include <qt_windows.h>
-#endif
-#ifdef Q_OS_LINUX
-#include <sys/socket.h>
-#include <unistd.h>
 #endif
 
 #include <algorithm>
@@ -32,23 +30,6 @@ constexpr int maximumStatusWatchers = 32;
 // A watcher that stops reading is dropped once this much waits for it,
 // rather than buffered for without end.
 constexpr qint64 maximumStatusBacklogBytes = 256 * 1024;
-
-// Whether the process at the other end of a connected socket runs as this
-// user. A socket in /tmp, where Speecher listened before, can be another
-// user's. Elsewhere the socket's folder or the pipe's permissions keep other
-// users out.
-bool peerIsThisUser(const QLocalSocket &socket)
-{
-#ifdef Q_OS_LINUX
-    ucred peer{};
-    socklen_t size = sizeof(peer);
-    return getsockopt(int(socket.socketDescriptor()), SOL_SOCKET, SO_PEERCRED, &peer, &size) == 0
-        && peer.uid == getuid();
-#else
-    Q_UNUSED(socket);
-    return true;
-#endif
-}
 
 bool canConnectToServer(const QString &name, int timeoutMs)
 {

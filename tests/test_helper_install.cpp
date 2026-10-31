@@ -1,10 +1,14 @@
 #include "common/test_suites.h"
 
 #include "output/HelperInstall.h"
+#include "setup/HelperCommands.h"
 
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <pwd.h>
+#include <unistd.h>
 
 using namespace speecher;
 
@@ -127,6 +131,21 @@ private slots:
         QString error;
         QVERIFY(!helpers::runPkexecConversation(script, {}, &error, 10000));
         QVERIFY2(error.contains(QStringLiteral("canceled")), qPrintable(error));
+    }
+
+    // Under pkexec a setup helper sets up the account that asked, and refuses
+    // a --user naming any other.
+    void aSetupHelperTakesTheAccountFromPkexec()
+    {
+        const std::string self = getpwuid(getuid())->pw_name;
+        const std::string uid = std::to_string(getuid());
+        std::string error;
+
+        QCOMPARE(helpers::targetUser(uid.c_str(), {}, error), self);
+        QCOMPARE(helpers::targetUser(uid.c_str(), self, error), self);
+        QVERIFY(error.empty());
+        QCOMPARE(helpers::targetUser(uid.c_str(), "someone-else", error), std::string());
+        QVERIFY2(error.find("someone-else") != std::string::npos, error.c_str());
     }
 };
 

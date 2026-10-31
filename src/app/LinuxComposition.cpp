@@ -2,7 +2,6 @@
 
 #include "app/CompositionEchoCanceller.h"
 #include "app/CompositionSockets.h"
-#include "core/OwnerOnly.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
@@ -30,33 +29,9 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QStandardPaths>
-
-#include <unistd.h>
 
 namespace speecher {
 namespace {
-
-// Whether path is a folder of this user's that no one else may enter.
-bool privateFolder(const QString &path)
-{
-    return !path.isEmpty() && QFileInfo(path).isDir() && isOwnerOnly(path);
-}
-
-// Where the single-instance socket lives: $XDG_RUNTIME_DIR, or without it
-// systemd's /run/user/<uid>, which a shell lacking the variable (cron, su)
-// shares with the desktop session, or else Qt's fallback, each only while
-// it is this user's alone. A bare name would put the socket in the shared
-// /tmp, where another user can take it first, so without such a folder there
-// is no name, and listening fails.
-QString inRuntimeDirectory(const QString &name)
-{
-    const QString session = QStringLiteral("/run/user/%1").arg(getuid());
-    const QString directory = qEnvironmentVariableIsEmpty("XDG_RUNTIME_DIR") && privateFolder(session)
-        ? session
-        : QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
-    return privateFolder(directory) ? QDir(directory).filePath(name) : QString();
-}
 
 QString appImageSocketName()
 {
