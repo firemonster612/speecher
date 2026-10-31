@@ -1793,7 +1793,8 @@ private slots:
         session.startListening();
         QTRY_VERIFY_WITH_TIMEOUT(acted, 250);
         if (pausesFirst) {
-            QCOMPARE(int(session.state()), int(DictationState::Paused));
+            // Paused once the microphone has stopped, a turn of the loop later.
+            QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Paused), 250);
             session.stopListening();
         }
         QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);

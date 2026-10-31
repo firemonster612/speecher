@@ -671,8 +671,9 @@ private slots:
         QVERIFY(platform->microphoneAnswer);
         QCOMPARE(controller.session()->state(), DictationState::Idle);
         if (grantBeforeRelease) platform->microphoneAnswer(true);
-        if (hold) QTest::qSleep(410);
-        emit platform->binder->deactivated();
+        // The binder's hold, not the wall clock: a slow runner turns a tap
+        // timed from the press into a hold.
+        emit platform->binder->deactivated(hold ? 410 : 80);
         if (!grantBeforeRelease) platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), hold ? DictationState::Idle : DictationState::Starting);
         controller.stopListening();

@@ -1624,6 +1624,8 @@ private slots:
         refiner->refreshRequired = renews;
         speech->emitFinalText(QStringLiteral("rough text"));
         session.stopListening();
+        // Refinement begins once the microphone has stopped.
+        QTRY_VERIFY(!audio.active);
         QTest::qWait(100);
 
         QCOMPARE(refiner->refineCalls, 0);
