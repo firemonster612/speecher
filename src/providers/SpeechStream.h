@@ -65,6 +65,8 @@ public:
     void append(const QByteArray &pcm);
     // Whether any audio was appended since reset().
     bool hasAudio() const;
+    // How much appended audio has yet to go to a provider.
+    qsizetype unsentBytes() const;
     // The input heard all it will; once it is all sent the provider is told.
     void endInput();
     // Has the provider begin an utterance with the last voicedBytes appended,
@@ -95,7 +97,9 @@ signals:
     // A provider takes the input from the start of the audio kept; the text
     // so far is gone.
     void startedOver();
-    void progress(qreal fractionOfAudioSent);
+    // How much of the input has gone to the provider, from its start; less
+    // than before once a provider takes the input from the start.
+    void progress(qint64 bytesSent);
     // The stream could not take the oldest audio, this much of it, which
     // was dropped.
     void audioLost(qint64 durationMs);

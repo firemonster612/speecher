@@ -28,6 +28,8 @@
 #include <QScopeGuard>
 #include <QFile>
 #include <QPointer>
+
+#include <QAudioDecoder>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QAudioBufferInput>
 #include <QImage>
@@ -42,7 +44,9 @@
 #include <QJsonObject>
 #include <QtEndian>
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <csignal>
 #include <optional>
 #include <sstream>
@@ -67,6 +71,8 @@ struct Script {
     bool timedSegments = false;
     // Sent with each finished input, timed from the start of its attempt.
     QList<TranscriptSegment> segments;
+    // Called with each chunk of audio sent.
+    std::function<void()> audioSent;
 };
 
 // Answers a finished input with how many bytes of audio it received, and can
@@ -98,6 +104,9 @@ public:
     {
         m_script->bytes += pcm.size();
         m_bytes += pcm.size();
+        if (m_script->audioSent) {
+            m_script->audioSent();
+        }
         if (m_script->expireFirstStream && m_script->attempts == 1) {
             emit finalTranscript(attemptId, QStringLiteral("before"));
             emit attemptCompleted(attemptId);
@@ -120,14 +129,14 @@ private:
     qsizetype m_bytes = 0;
 };
 
-// Half a second of a 440 Hz tone as 44.1 kHz stereo s16, so the file has to
-// be downmixed and resampled on its way to the provider.
-void writeWav(const QString &path)
+// A 440 Hz tone, half a second unless ms says, as 44.1 kHz stereo s16, so
+// the file has to be downmixed and resampled on its way to the provider.
+void writeWav(const QString &path, int ms = 500)
 {
     constexpr int rate = 44100;
     constexpr int channels = 2;
     QByteArray data;
-    for (int i = 0; i < rate / 2; ++i) {
+    for (int i = 0; i < rate * ms / 1000; ++i) {
         const auto sample = qint16(8000 * std::sin(2 * M_PI * 440 * i / rate));
         for (int c = 0; c < channels; ++c) {
             data.append(reinterpret_cast<const char *>(&sample), 2);
@@ -460,6 +469,80 @@ private slots:
         QCOMPARE(results.first().refined, QStringLiteral("Heard it."));
         QCOMPARE(results.first().savedPath, m_dir.filePath(QStringLiteral("memo-transcribed.txt")));
         QCOMPARE(readFile(results.first().savedPath), QStringLiteral("Heard it."));
+    }
+
+    // The waveform and length come from a first pass over the file, before
+    // any progress; the bar then fills to the end before refinement.
+    void filesReportTheirPhasesInOrder()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QStringList seen;
+        QVector<float> peaks;
+        qint64 durationMs = 0;
+        QList<qreal> progress;
+        connect(&session, &FileTranscriptionSession::fileStarted, this, [&] { seen << QStringLiteral("started"); });
+        connect(&session, &FileTranscriptionSession::fileDecoded, this,
+                [&](int, const QVector<float> &levels, qint64 ms) {
+                    seen << QStringLiteral("decoded");
+                    peaks = levels;
+                    durationMs = ms;
+                });
+        connect(&session, &FileTranscriptionSession::fileProgress, this, [&](int, qreal fraction) {
+            if (seen.last() != QStringLiteral("progress")) {
+                seen << QStringLiteral("progress");
+            }
+            progress << fraction;
+        });
+        connect(&session, &FileTranscriptionSession::fileRefining, this, [&] { seen << QStringLiteral("refining"); });
+        connect(&session, &FileTranscriptionSession::fileFinished, this, [&] { seen << QStringLiteral("finished"); });
+        connect(&session, &FileTranscriptionSession::batchFinished, this, [&] { seen << QStringLiteral("batch"); });
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("strong_polish");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(seen.size(), 6, 10000);
+
+        QCOMPARE(seen,
+                 QStringList({QStringLiteral("started"), QStringLiteral("decoded"), QStringLiteral("progress"),
+                              QStringLiteral("refining"), QStringLiteral("finished"), QStringLiteral("batch")}));
+        QVERIFY(qAbs(durationMs - 500) <= 1);
+        // The tone's level, 8000 of 32768, across the whole length.
+        QCOMPARE(peaks.size(), 240);
+        for (qsizetype i = 1; i < peaks.size() - 1; ++i) {
+            QVERIFY2(qAbs(peaks.at(i) - 0.244f) < 0.01f, qPrintable(QString::number(i)));
+        }
+        QVERIFY(std::ranges::is_sorted(progress));
+        QCOMPARE(progress.last(), 1.0);
+    }
+
+    // A file's audio goes to the stream while the file still decodes, a few
+    // seconds ahead of what was sent, rather than once all of it decoded.
+    void aLongFileReachesTheProviderWhileItStillDecodes()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("talk.wav"));
+        writeWav(audio, 12000);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        int sentWhileDecoding = 0;
+        m_script.audioSent = [&] {
+            const QList<QAudioDecoder *> decoders = session.findChildren<QAudioDecoder *>();
+            if (std::ranges::any_of(decoders, &QAudioDecoder::isDecoding)) {
+                ++sentWhileDecoding;
+            }
+        };
+
+        QVERIFY(session.start({audio}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+
+        QVERIFY(qAbs(m_script.bytes - 12 * 32000) <= 8);
+        // Most of the file went out while the decoder still had the rest.
+        QVERIFY2(sentWhileDecoding > 60, qPrintable(QString::number(sentWhileDecoding)));
+        QVERIFY(finished.first().first().value<QList<TranscribeFileResult>>().first().error.isEmpty());
     }
 
     // A refiner that cannot reach its service makes way for the saved
