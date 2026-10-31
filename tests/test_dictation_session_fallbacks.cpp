@@ -1375,19 +1375,24 @@ private slots:
 
     // The microphone failing after words were heard delivers them, as it
     // always has: as the raw transcript, unless refinement then cleans them up.
+    // So does speech a provider holds without text until the input ends.
     void aCaptureFailureAfterWordsDeliversThem_data()
     {
         QTest::addColumn<bool>("refines");
+        QTest::addColumn<bool>("heldUntilTheEnd");
         QTest::addColumn<QString>("message");
         QTest::addColumn<int>("outcome");
         QTest::newRow("without refinement")
-            << false << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
-        QTest::newRow("refined") << true << QStringLiteral("Sent to the app") << int(PopupOutcome::Inserted);
+            << false << false << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
+        QTest::newRow("refined") << true << false << QStringLiteral("Sent to the app") << int(PopupOutcome::Inserted);
+        QTest::newRow("held by the provider")
+            << false << true << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
     }
 
     void aCaptureFailureAfterWordsDeliversThem()
     {
         QFETCH(bool, refines);
+        QFETCH(bool, heldUntilTheEnd);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")},
                      refines ? QStringList{QStringLiteral("openai")} : QStringList{QStringLiteral("none")});
         if (refines) {
@@ -1396,7 +1401,13 @@ private slots:
         }
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
-        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        if (heldUntilTheEnd) {
+            emit rig.audio.levelChanged(0.5f);
+            codex->onFinishInput = [codex] { codex->emitFinalText(QStringLiteral("spoken words")); };
+        } else {
+            codex->emitFinalText(QStringLiteral("spoken words"));
+        }
         rig.audio.emitFailure(QStringLiteral("The microphone was disconnected"));
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(rig.delivery.lastText, refines ? QStringLiteral("Spoken words.") : QStringLiteral("spoken words"));

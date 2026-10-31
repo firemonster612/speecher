@@ -138,8 +138,10 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
 
         qWarning().noquote() << "audio capture failed transcriptEmpty=" << m_transcript->isEmpty()
-                             << "message=" + message;
-        if (!m_transcript->isEmpty()) {
+                             << "heardSpeech=" << m_heardSpeech << "message=" + message;
+        // Speech heard may have no text yet: a provider that answers once the
+        // input ends, as an endpoint does, still holds it.
+        if (!m_transcript->isEmpty() || m_heardSpeech) {
             m_lastMessage = message;
             m_usedRawTranscript = true;
             stopListening();
