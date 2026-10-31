@@ -23,12 +23,12 @@ public:
     bool type(const QString &text, QString *error = nullptr);
     // Presses the paste keys over what is on the clipboard, and returns at
     // once: ydotool releases the modifiers first and after, and done runs
-    // once at the end, unless this is gone by then. clearToInject runs after
-    // the first release, immediately before the paste keystroke; false aborts
-    // without sending it.
+    // once at the end, unless this is gone by then. clearToInject is asked
+    // after the first release, and the paste keystroke goes out from its
+    // reply; a refusal aborts without sending it.
     void pasteFromClipboard(const QString &text,
                             PasteMethod method,
-                            const std::function<bool()> &clearToInject,
+                            const std::function<void(std::function<void(bool clear)>)> &clearToInject,
                             std::function<void(bool pasted, const QString &error)> done);
     static bool isAvailable();
     static QString socketPath();
@@ -37,6 +37,10 @@ public:
     static QString withoutTrailingWhitespace(const QString &text);
 
 private:
+    // The paste keystroke, then the release after it.
+    void pressPasteKeys(const ProcessCommand &paste,
+                        const ProcessCommand &release,
+                        std::function<void(bool, const QString &)> done);
     // The paste keystroke under way, and the release that must follow it.
     struct PasteUnderWay {
         std::function<void()> stop;

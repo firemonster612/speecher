@@ -428,6 +428,66 @@ private slots:
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 
+    void replaceWaitsForTheTargetToBeRead_data()
+    {
+        QTest::addColumn<QString>("meanwhile");
+        QTest::newRow("Replace again") << QStringLiteral("replace");
+        QTest::newRow("cancel") << QStringLiteral("cancel");
+    }
+
+    // Replace reads the Target before it delivers, and the answer can come
+    // later. Pressed again meanwhile, it still delivers once; a cancel
+    // meanwhile keeps the original, the late answer counting for nothing.
+    void replaceWaitsForTheTargetToBeRead()
+    {
+        QFETCH(QString, meanwhile);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 4;
+        target.target.selectionEnd = 34;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+
+        target.holdsFocusMatch = true;
+        session.replaceSelection();
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        QCOMPARE(delivery.calls, 0);
+        if (meanwhile == QLatin1String("replace")) {
+            session.replaceSelection();
+        } else {
+            session.cancel();
+            QCOMPARE(session.state(), DictationState::Idle);
+        }
+        target.answerFocusMatch();
+        QTest::qWait(20);
+        if (meanwhile == QLatin1String("replace")) {
+            QCOMPARE(delivery.calls, 1);
+            QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
+        } else {
+            QCOMPARE(delivery.calls, 0);
+            QCOMPARE(session.state(), DictationState::Idle);
+        }
+    }
+
     // A follow-up is dictated as a session of its own, edits the revision
     // under review rather than the selection, and comes back as a review
     // against the original selection.

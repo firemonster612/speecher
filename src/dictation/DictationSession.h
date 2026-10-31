@@ -150,6 +150,8 @@ private:
     quint64 setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
     using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
+    // The rest of the start, once the Target is known.
+    void continueStartupWithTarget(quint64 generation, const Target &target);
     bool selectProviders();
     void speechChainExhausted(const SpeechFailure &switchFailure);
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
@@ -175,7 +177,12 @@ private:
     void returnToReview();
     void enterReview();
     void emitReview();
-    bool selectionUnchanged();
+    // done hears whether the selection the edit was made from is still the
+    // focused one, as it was; false once the session moved past step.
+    void checkSelectionUnchanged(quint64 step, std::function<void(bool)> done);
+    // Ends the review, delivering the revision or, when the selection moved,
+    // leaving it on the clipboard.
+    void deliverRevision(bool selectionUnchanged);
     void endSpeechAfterFailure(const SpeechFailure &failure);
     // The microphone, which starts and stops in the background.
     enum class Microphone {

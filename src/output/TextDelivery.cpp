@@ -17,6 +17,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -34,7 +35,7 @@ public:
     }
 
     void deliver(const DeliveryContent &content,
-                 const std::function<bool()> &clearToInject,
+                 const PasteGate &clearToInject,
                  std::function<void(const Outcome &)> done) override
     {
         m_ydotool.pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject,
@@ -55,7 +56,7 @@ public:
     }
 
     void deliver(const DeliveryContent &content,
-                 const std::function<bool()> &,
+                 const PasteGate &,
                  std::function<void(const Outcome &)> done) override
     {
         m_clipboardDelivery->copyWayland(content, m_clipboardDelivery, std::move(done));
@@ -66,15 +67,32 @@ private:
 };
 #endif // SPEECHER_WITH_WAYLAND
 
+#if defined(SPEECHER_WITH_MAC) || defined(SPEECHER_WITH_WIN)
+// The macOS and Windows target providers answer focus checks before they
+// return, so their backends ask the gate as a plain question, immediately
+// before the keystroke. A reply still to come counts as a refusal.
+std::function<bool()> askedNow(const DeliveryBackend::PasteGate &gate)
+{
+    if (!gate) {
+        return {};
+    }
+    return [gate] {
+        const auto clear = std::make_shared<std::optional<bool>>();
+        gate([clear](bool given) { *clear = given; });
+        return clear->value_or(false);
+    };
+}
+#endif
+
 #ifdef SPEECHER_WITH_MAC
 class MacPasteBackend final : public DeliveryBackend {
 public:
     void deliver(const DeliveryContent &,
-                 const std::function<bool()> &clearToInject,
+                 const PasteGate &clearToInject,
                  std::function<void(const Outcome &)> done) override
     {
         Outcome outcome;
-        outcome.ok = MacPasteDelivery().paste(clearToInject, &outcome.error);
+        outcome.ok = MacPasteDelivery().paste(askedNow(clearToInject), &outcome.error);
         done(outcome);
     }
 };
@@ -89,11 +107,11 @@ public:
     }
 
     void deliver(const DeliveryContent &,
-                 const std::function<bool()> &clearToInject,
+                 const PasteGate &clearToInject,
                  std::function<void(const Outcome &)> done) override
     {
         Outcome outcome;
-        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, clearToInject, &outcome.error);
+        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, askedNow(clearToInject), &outcome.error);
         done(outcome);
     }
 
@@ -110,7 +128,7 @@ public:
     }
 
     void deliver(const DeliveryContent &content,
-                 const std::function<bool()> &,
+                 const PasteGate &,
                  std::function<void(const Outcome &)> done) override
     {
         m_clipboardDelivery->copyQt(content, m_clipboardDelivery, std::move(done));
@@ -289,7 +307,7 @@ private:
 // stop().
 class TextDelivery::Run final : public QObject {
     // One of this run's frames on the stack. The deadline can stop the run
-    // from a step's nested event loop, such as the KWin probe's; the run is
+    // from a step's nested event loop, such as verifyInsertion()'s; the run is
     // deleted only once no frame is left that would return into it, so the
     // backend it is in stays alive too.
     class Frame {
@@ -346,18 +364,13 @@ public:
         m_choice = choosePasteMethod(settings, m_request.target);
         m_pasteMethod = m_choice.method;
         m_insertion = directInsertion(OutputMethod::normalized(settings.method), m_pasteMethod);
-        m_focus = m_targetProvider ? m_targetProvider->focusMatch(m_request.target)
-                                   : TargetProvider::FocusMatch::Different;
-        // focusMatch() and verifyInsertion() can wait in a nested event loop,
-        // where the deadline, or delivery going, may stop this run: it goes
-        // no further.
-        if (!m_done) {
+        if (!m_targetProvider) {
+            focusChecked(TargetProvider::FocusMatch::Different);
             return;
         }
-        m_targetFocused = m_pasteMethod != PasteMethod::ClipboardOnly
-            && (m_choice.currentFocusFallback || m_focus == TargetProvider::FocusMatch::Same);
-        m_previousClipboard.save(m_pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping,
-                                 this, whileRunning([this] { copy(); }));
+        m_targetProvider->focusMatch(m_request.target, this, whileRunning([this](TargetProvider::FocusMatch focus) {
+            focusChecked(focus);
+        }));
     }
 
     // Drops the steps still to come; nothing is answered after. The run
@@ -371,6 +384,16 @@ public:
     }
 
 private:
+    void focusChecked(TargetProvider::FocusMatch focus)
+    {
+        m_focus = focus;
+        m_targetFocused = m_pasteMethod != PasteMethod::ClipboardOnly
+            && (m_choice.currentFocusFallback || m_focus == TargetProvider::FocusMatch::Same);
+        m_previousClipboard.save(
+            m_pasteMethod != PasteMethod::ClipboardOnly && m_request.settings.restoreClipboardAfterTyping, this,
+            whileRunning([this] { copy(); }));
+    }
+
     void finish(const DeliveryResult &result)
     {
         if (const auto done = std::exchange(m_done, {})) {
@@ -488,44 +511,56 @@ private:
         // currentFocusFallback is the blind paste into whatever is in front:
         // there is no target to still be focused on.
         const bool focusGated = virtualKeyboardInput && provider && !m_choice.currentFocusFallback;
+        // Kept for the whole run: a backend may still be on the stack when
+        // its answer moves on to the next.
+        m_backends.push_back(std::move(backend));
+        DeliveryBackend *const kept = m_backends.back().get();
         // The focus gate belongs here, immediately before the keystrokes go
         // out: preparePaste marks the edit for verification, it does not
         // decide whether to paste.
-        if (focusGated) {
-            const QString refusal = preparePasteInFocus();
-            if (!m_done) {
-                return;
-            }
+        if (!focusGated) {
+            pressThrough(kept, index, method, virtualKeyboardInput, false);
+            return;
+        }
+        preparePasteInFocus(whileRunning([this, kept, index, method](const QString &refusal) {
             if (!refusal.isEmpty()) {
                 m_firstError = refusal;
                 finishCopied();
                 return;
             }
-        }
+            pressThrough(kept, index, method, true, true);
+        }));
+    }
+
+    // Delivers through backend, the one at index - 1 in m_methods, and goes
+    // on to the next backend from a clipboard backend's failure.
+    void pressThrough(DeliveryBackend *backend, qsizetype index, const QString &method, bool virtualKeyboardInput,
+                      bool focusGated)
+    {
         // The keyboard backends wait again after the check above (modifier
-        // release), so they get a last-moment gate to call immediately before
+        // release), so they get a last-moment gate to ask immediately before
         // the keystroke goes out. It also refuses once this run was answered,
         // blind pastes included.
-        const std::function<bool()> clearToInject = virtualKeyboardInput
-            ? std::function<bool()>([self = QPointer<Run>(this), focusGated] {
-                  // Matters if a backend calls it from a later turn of the
-                  // event loop.
+        const DeliveryBackend::PasteGate clearToInject = virtualKeyboardInput
+            ? DeliveryBackend::PasteGate([self = QPointer<Run>(this), focusGated](std::function<void(bool)> reply) {
+                  // Matters once a backend asks it from a later turn of the
+                  // event loop, as ydotool does.
                   if (!self || !self->m_done) {
-                      return false;
+                      reply(false);
+                      return;
                   }
                   if (!focusGated) {
-                      return true;
+                      reply(true);
+                      return;
                   }
                   Frame frame(*self);
-                  const bool focused = self->m_targetProvider->focusMatch(self->m_request.target)
-                      == TargetProvider::FocusMatch::Same;
-                  return focused && self->m_done;
+                  self->m_targetProvider->focusMatch(
+                      self->m_request.target, self, [self, reply](TargetProvider::FocusMatch focus) {
+                          reply(focus == TargetProvider::FocusMatch::Same && self && self->m_done);
+                      });
               })
-            : std::function<bool()>();
-        // Kept for the whole run: a backend may still be on the stack when
-        // its answer moves on to the next.
-        m_backends.push_back(std::move(backend));
-        m_backends.back()->deliver(
+            : DeliveryBackend::PasteGate();
+        backend->deliver(
             m_request.content, clearToInject,
             whileRunning([this, index, method, virtualKeyboardInput](const DeliveryBackend::Outcome &outcome) {
                 if (outcome.ok) {
@@ -547,25 +582,23 @@ private:
     }
 
     // Checks that the Target still has focus and readies it for the paste.
-    // Returns why the paste keys must not go out, or nothing when they may.
-    QString preparePasteInFocus()
+    // next hears why the paste keys must not go out, or nothing when they may.
+    void preparePasteInFocus(std::function<void(const QString &refusal)> next)
     {
-        const Target &target = m_request.target;
-        const TargetProvider::FocusMatch atPasteTime = m_targetProvider->focusMatch(target);
-        if (!m_done) {
-            return {};
-        }
-        if (atPasteTime != TargetProvider::FocusMatch::Same) {
-            return !target.compositorActive
-                ? QStringLiteral("The target is no longer available for paste")
-                : atPasteTime == TargetProvider::FocusMatch::TitleChanged
-                    ? QStringLiteral("The window title changed")
-                    : QStringLiteral("The active window changed or could not be verified");
-        }
-        if (!m_targetProvider->preparePaste(target)) {
-            return QStringLiteral("The target is no longer available for paste");
-        }
-        return {};
+        const auto checked = [this, next](TargetProvider::FocusMatch atPasteTime) {
+            const Target &target = m_request.target;
+            if (atPasteTime != TargetProvider::FocusMatch::Same) {
+                next(!target.compositorActive
+                         ? QStringLiteral("The target is no longer available for paste")
+                         : atPasteTime == TargetProvider::FocusMatch::TitleChanged
+                             ? QStringLiteral("The window title changed")
+                             : QStringLiteral("The active window changed or could not be verified"));
+                return;
+            }
+            next(m_targetProvider->preparePaste(target) ? QString()
+                                                         : QStringLiteral("The target is no longer available for paste"));
+        };
+        m_targetProvider->focusMatch(m_request.target, this, whileRunning(checked));
     }
 
     void pasted(const QString &method, bool virtualKeyboardInput, bool htmlAvailable)
@@ -682,8 +715,8 @@ void TextDelivery::deliver(const OutputSettings &settings,
                            const Target &target)
 {
     m_requests.append({settings, content, target});
-    // Never inside this call: a step's nested event loop, to check focus or
-    // verify an insertion, could otherwise answer an earlier delivery here.
+    // Never inside this call: a step's nested event loop, verifying an
+    // insertion, could otherwise answer an earlier delivery here.
     QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);
 }
 

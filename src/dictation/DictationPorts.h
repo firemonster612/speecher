@@ -130,8 +130,12 @@ class TargetProvider : public QObject {
 public:
     using QObject::QObject;
     // What the platform sees of the focused target. Its category is core's
-    // to decide: see classifyTarget.
-    virtual Target capture() = 0;
+    // to decide: see classifyTarget. done runs once, unless context is gone
+    // by then: before this returns where the platform knows at once, later
+    // where it must ask the compositor.
+    virtual void capture(QObject *context, std::function<void(const Target &)> done) = 0;
+    // Whether the target still has focus, for a provider that knows at once;
+    // focusMatch() answers from it unless the provider asks otherwise.
     virtual bool stillFocused(const Target &target)
     {
         Q_UNUSED(target);
@@ -147,13 +151,11 @@ public:
         TitleChanged,
         Different,
     };
-    // focusMatch() and verifyInsertion() may wait in a nested event loop
-    // (asking the compositor which window is in front, or giving the app time
-    // to show the inserted text). Timers, IPC and D-Bus replies run
-    // meanwhile, so a caller may be re-entered before either returns.
-    virtual FocusMatch focusMatch(const Target &target)
+    // Answers through done as capture() does.
+    virtual void focusMatch(const Target &target, QObject *context, std::function<void(FocusMatch)> done)
     {
-        return stillFocused(target) ? FocusMatch::Same : FocusMatch::Different;
+        Q_UNUSED(context);
+        done(stillFocused(target) ? FocusMatch::Same : FocusMatch::Different);
     }
     virtual bool canInsertText(const Target &target)
     {
@@ -176,6 +178,9 @@ public:
         Q_UNUSED(target);
         return true;
     }
+    // May wait in a nested event loop, giving the app time to show the
+    // inserted text. Timers, IPC and D-Bus replies run meanwhile, so a caller
+    // may be re-entered before it returns.
     virtual bool verifyInsertion(const Target &target, const QString &plainText)
     {
         Q_UNUSED(target);

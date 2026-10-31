@@ -240,7 +240,13 @@ void MacTargetProvider::releaseFocusedElement()
     }
 }
 
-Target MacTargetProvider::capture()
+void MacTargetProvider::capture(QObject *context, std::function<void(const Target &)> done)
+{
+    Q_UNUSED(context);
+    done(captureNow());
+}
+
+Target MacTargetProvider::captureNow()
 {
     releaseFocusedElement();
 

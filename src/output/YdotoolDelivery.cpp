@@ -3,6 +3,7 @@
 #include "output/ProcessRunner.h"
 
 #include <QCoreApplication>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
@@ -177,7 +178,7 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
 
 void YdotoolDelivery::pasteFromClipboard(const QString &text,
                                          PasteMethod method,
-                                         const std::function<bool()> &clearToInject,
+                                         const std::function<void(std::function<void(bool)>)> &clearToInject,
                                          std::function<void(bool, const QString &)> done)
 {
     if (text.isEmpty()) {
@@ -208,28 +209,45 @@ void YdotoolDelivery::pasteFromClipboard(const QString &text,
     release.finishesAtShutdown = true;
     const ProcessCommand paste = ydotool(pasteShortcutArguments(method), shortcutTimeoutMs);
     runProcess(release, this, [this, clearToInject, paste, release, done](const ProcessResult &) {
+        const auto press = [self = QPointer<YdotoolDelivery>(this), paste, release, done](bool clear) {
+            if (!self) {
+                return;
+            }
+            if (!clear) {
+                done(false, QStringLiteral("The active window changed or could not be verified"));
+                return;
+            }
+            self->pressPasteKeys(paste, release, done);
+        };
         // The release took a turn of the event loop or more; the user may
         // have switched windows meanwhile. Last check before the keystroke,
         // because a paste into the wrong window cannot be undone.
-        if (clearToInject && !clearToInject()) {
-            done(false, QStringLiteral("The active window changed or could not be verified"));
-            return;
-        }
-        m_pasteUnderWay = PasteUnderWay{{}, release};
-        // The paste's own answer, once the modifiers are released after it.
-        auto stop = runProcess(paste, this, [this, release, done](const ProcessResult &pasted) {
-            // Nothing under way: the destructor stopped it and releases.
-            if (!m_pasteUnderWay) {
-                return;
-            }
-            m_pasteUnderWay.reset();
-            runProcess(release, this, [pasted, done](const ProcessResult &) { done(pasted.ok, pasted.error); });
-        });
-        // A command that failed to start has answered already.
-        if (m_pasteUnderWay) {
-            m_pasteUnderWay->stop = std::move(stop);
+        if (clearToInject) {
+            clearToInject(press);
+        } else {
+            press(true);
         }
     });
+}
+
+void YdotoolDelivery::pressPasteKeys(const ProcessCommand &paste,
+                                     const ProcessCommand &release,
+                                     std::function<void(bool, const QString &)> done)
+{
+    m_pasteUnderWay = PasteUnderWay{{}, release};
+    // The paste's own answer, once the modifiers are released after it.
+    auto stop = runProcess(paste, this, [this, release, done](const ProcessResult &pasted) {
+        // Nothing under way: the destructor stopped it and releases.
+        if (!m_pasteUnderWay) {
+            return;
+        }
+        m_pasteUnderWay.reset();
+        runProcess(release, this, [pasted, done](const ProcessResult &) { done(pasted.ok, pasted.error); });
+    });
+    // A command that failed to start has answered already.
+    if (m_pasteUnderWay) {
+        m_pasteUnderWay->stop = std::move(stop);
+    }
 }
 
 } // namespace speecher

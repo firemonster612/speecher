@@ -810,6 +810,59 @@ private slots:
         QCOMPARE(delivery->lastTarget.category, AppCategory::Terminal);
     }
 
+    void startupWaitsForATargetCapturedLater_data()
+    {
+        QTest::addColumn<bool>("stoppedMeanwhile");
+        QTest::newRow("the answer comes") << false;
+        QTest::newRow("a stop comes first") << true;
+    }
+
+    // A provider asking the compositor answers the capture later. The start
+    // waits for it: speech and the microphone start only once the Target is
+    // known, and a stop meanwhile ends the start, the late answer with it.
+    void startupWaitsForATargetCapturedLater()
+    {
+        QFETCH(bool, stoppedMeanwhile);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider targetProvider;
+        targetProvider.target.applicationId = QStringLiteral("org.kde.konsole");
+        targetProvider.holdsCapture = true;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &targetProvider, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(targetProvider.captureCalls, 1, 250);
+        QTest::qWait(20);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QVERIFY(!speech || speech->startCalls == 0);
+        QVERIFY(!audio.started);
+        if (stoppedMeanwhile) {
+            session.stopListening();
+            QCOMPARE(int(session.state()), int(DictationState::Idle));
+        }
+
+        targetProvider.answerCapture();
+        if (stoppedMeanwhile) {
+            QTest::qWait(20);
+            QCOMPARE(int(session.state()), int(DictationState::Idle));
+            QVERIFY(!speech || speech->startCalls == 0);
+            QVERIFY(!audio.started);
+            return;
+        }
+        QTRY_COMPARE(int(session.state()), int(DictationState::Listening));
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastTarget.applicationId, QStringLiteral("org.kde.konsole"));
+    }
+
     void deliveredDictationIsRecordedOnlyWhenInsightsAreOn_data()
     {
         QTest::addColumn<bool>("enabled");

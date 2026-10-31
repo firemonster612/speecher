@@ -25,7 +25,8 @@ public:
     explicit MacTargetProvider(QObject *parent = nullptr);
     ~MacTargetProvider() override;
 
-    Target capture() override;
+    // Answers at once: the native APIs answer before they return.
+    void capture(QObject *context, std::function<void(const Target &)> done) override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
@@ -34,6 +35,7 @@ public:
     void setCorrectionObservationEnabled(bool enabled) override;
 
 private:
+    Target captureNow();
     void releaseFocusedElement();
     void observeCorrections(const CorrectionWindow &window);
 
