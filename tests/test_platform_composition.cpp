@@ -35,6 +35,7 @@
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
+#include "platform/RoutingShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/atspi/AtSpiAccess.h"
@@ -107,7 +108,7 @@ bool writeSilentWav(const QString &path)
                       + le32(16000) + le32(32000) + le16(2) + le16(16) + "data" + le32(data.size()) + data) > 0;
 }
 
-class FakeGlobalShortcutBinder final : public GlobalShortcutBinder {
+class FakeGlobalShortcutBinder : public GlobalShortcutBinder {
 public:
     using GlobalShortcutBinder::GlobalShortcutBinder;
 
@@ -2991,6 +2992,33 @@ private slots:
         QCOMPARE(dictation.resumeCount, 0);
         inner.answer();
         QCOMPARE(dictation.resumeCount, 1);
+    }
+
+    // A binder that keeps its registration through delivery, as Plasma's
+    // combination binder does, is neither suspended nor resumed by it; the
+    // single key routed beside it still is, and recording suspends both.
+    void deliveryLeavesARegistrationKeepingBinderAlone()
+    {
+        struct RegistrationKeepingBinder final : FakeGlobalShortcutBinder {
+            void suspendForDelivery() override {}
+            void resumeAfterDelivery() override {}
+        };
+        auto *combination = new RegistrationKeepingBinder;
+        auto *singleKey = new FakeGlobalShortcutBinder;
+        RoutingShortcutBinder router(combination, singleKey);
+        FakeDelivery inner;
+        inner.holdsAnswer = true;
+        ShortcutSuspendingDelivery delivery(&inner, {&router});
+
+        delivery.deliver({}, {}, {});
+        inner.answer();
+        QCOMPARE(combination->suspendCount, 0);
+        QCOMPARE(combination->resumeCount, 0);
+        QCOMPARE(singleKey->suspendCount, 1);
+        QCOMPARE(singleKey->resumeCount, 1);
+
+        router.suspend();
+        QCOMPARE(combination->suspendCount, 1);
     }
 
 #ifdef Q_OS_LINUX

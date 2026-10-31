@@ -115,6 +115,12 @@ public:
     // deliver key events regardless and keep nothing to let go of.
     virtual void suspend() {}
     virtual QString resume() { return {}; }
+    // Text delivery injects keys, which a binder watching keys itself would
+    // take for the user's. Delivery holds each binder still from deliver()
+    // until delivered() through these, by default a suspension like the
+    // recorder's.
+    virtual void suspendForDelivery() { suspend(); }
+    virtual void resumeAfterDelivery() { resume(); }
     // Forgets the registration the desktop keeps for Speecher, where the
     // desktop keeps one. Portal shortcuts live with the session and need no
     // removal; the default says so.

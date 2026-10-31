@@ -32,6 +32,8 @@ public:
     void setArmed(bool armed) override;
     void suspend() override;
     QString resume() override;
+    void suspendForDelivery() override;
+    void resumeAfterDelivery() override;
     bool removeRegistration(QString *error = nullptr) override;
     void registerShortcut() override;
 

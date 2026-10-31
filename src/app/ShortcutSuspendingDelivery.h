@@ -29,7 +29,7 @@ public:
         connect(m_inner, &TextDeliveryAdapter::delivered, this, [this](const DeliveryResult &result) {
             if (--m_unanswered == 0) {
                 for (GlobalShortcutBinder *binder : m_binders) {
-                    binder->resume();
+                    binder->resumeAfterDelivery();
                 }
             }
             emit delivered(result);
@@ -42,7 +42,7 @@ public:
     {
         if (m_unanswered++ == 0) {
             for (GlobalShortcutBinder *binder : m_binders) {
-                binder->suspend();
+                binder->suspendForDelivery();
             }
         }
         m_inner->deliver(settings, content, target);
