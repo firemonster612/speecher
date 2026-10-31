@@ -256,45 +256,46 @@ FileTranscriptionSession::~FileTranscriptionSession()
 
 bool FileTranscriptionSession::isRunning() const
 {
-    return m_running || m_deferredStart;
+    return m_running;
 }
 
 bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeOptions &options)
 {
-    if (paths.isEmpty()) {
+    if (!canStart() || paths.isEmpty()) {
         return false;
     }
-    return startBatch([this, paths, options] {
-        m_input = nullptr;
-        beginBatch(paths, options);
-    });
+    m_input = nullptr;
+    beginBatch(paths, options);
+    return true;
 }
 
 bool FileTranscriptionSession::startListening(AudioInput *input, const TranscribeOptions &options)
 {
+    if (!canStart()) {
+        return false;
+    }
+    m_input = input;
     // There is no file to save the transcript beside.
     TranscribeOptions listening = options;
     listening.destination = TranscriptDestination::None;
-    return startBatch([this, input, listening] {
-        m_input = input;
-        beginBatch({QString()}, listening);
-    });
+    beginBatch({QString()}, listening);
+    return true;
 }
 
-// A start while a cancel cleans up, such as from inside the microphone's
-// stop, would have that stop close the new batch's microphone: it waits for
-// the cleanup to end instead, as a dictation's start does.
-bool FileTranscriptionSession::startBatch(std::function<void()> begin)
+// Not while a batch runs, nor while the session still lets go of one: a
+// start inside a cancel's cleanup, or inside an input's stop, would have
+// that stop close the new batch's microphone once it returns.
+bool FileTranscriptionSession::canStart() const
 {
-    if (isRunning()) {
-        return false;
-    }
-    if (m_cancelling) {
-        m_deferredStart = std::move(begin);
-        return true;
-    }
-    begin();
-    return true;
+    return !m_running && !m_cancelling && m_inputStopDepth == 0;
+}
+
+// The microphone's stop spins an event loop for the post-roll.
+void FileTranscriptionSession::stopInput()
+{
+    ++m_inputStopDepth;
+    m_input->stop();
+    --m_inputStopDepth;
 }
 
 // QtAudioInput::stop() spins an event loop for the post-roll; the audio it
@@ -306,7 +307,7 @@ void FileTranscriptionSession::finishListening()
     }
     m_microphone = Microphone::Stopping;
     const quint64 batch = m_batch;
-    m_input->stop();
+    stopInput();
     // The batch may have been cancelled meanwhile, and another started.
     if (batch != m_batch) {
         return;
@@ -340,8 +341,6 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
 
 void FileTranscriptionSession::cancel()
 {
-    // A cancel inside a cancel's cleanup drops the start waiting for it.
-    m_deferredStart = {};
     if (!m_running) {
         return;
     }
@@ -353,9 +352,6 @@ void FileTranscriptionSession::cancel()
     releaseFileResources();
     m_cancelling = false;
     emit batchFinished(m_results, true);
-    if (const std::function<void()> begin = std::exchange(m_deferredStart, {})) {
-        begin();
-    }
 }
 
 void FileTranscriptionSession::startFile()
@@ -713,7 +709,7 @@ void FileTranscriptionSession::releaseFileResources()
     if (m_input) {
         disconnect(m_input, nullptr, this, nullptr);
         if (std::exchange(m_microphone, Microphone::Off) == Microphone::Listening) {
-            m_input->stop();
+            stopInput();
         }
     }
     releaseRefiner();

@@ -3032,59 +3032,85 @@ private slots:
         QCOMPARE(m_script.attempts, 0);
     }
 
-    // A listening batch cancelled while its microphone stops, with another
-    // started as it reports the cancel: the stop that returns ends nothing
-    // of the new batch, which keeps listening.
-    void aBatchStartedAsAStoppingOneIsCancelledKeepsListening()
+    // A start inside an earlier stop of the same microphone, from the
+    // batchFinished of a cancel made there, is refused: the outer stop would
+    // close the new batch's microphone once it returns. That stop then ends
+    // nothing more.
+    void aStartInsideAnEarlierMicrophoneStopIsRefused_data()
     {
+        QTest::addColumn<bool>("failedFile");
+        QTest::newRow("while it finishes listening") << false;
+        QTest::newRow("while a failed file stops it") << true;
+    }
+
+    void aStartInsideAnEarlierMicrophoneStopIsRefused()
+    {
+        QFETCH(bool, failedFile);
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        FakeAudioInput first;
-        FakeAudioInput second;
-        first.onStop = [&session] { session.cancel(); };
+        FakeAudioInput microphone;
+        bool cancelled = false;
+        microphone.onStop = [&] {
+            if (!std::exchange(cancelled, true)) {
+                session.cancel();
+            }
+        };
+        std::optional<bool> accepted;
         QObject::connect(&session, &FileTranscriptionSession::batchFinished, &session, [&] {
-            QVERIFY(session.startListening(&second, speechOnly()));
+            accepted = session.startListening(&microphone, speechOnly());
         }, Qt::SingleShotConnection);
-        QVERIFY(session.startListening(&first, speechOnly()));
-        QTRY_COMPARE_WITH_TIMEOUT(m_script.attempts, 1, 10000);
+        QVERIFY(session.startListening(&microphone, speechOnly()));
 
-        session.finishListening();
-        QTest::qWait(200);
+        failedFile ? microphone.emitFailure(QStringLiteral("unplugged")) : session.finishListening();
+        QTest::qWait(100);
 
+        QVERIFY(cancelled);
+        QCOMPARE(accepted, std::optional<bool>(false));
         QCOMPARE(finished.count(), 1);
-        QVERIFY(session.isRunning());
-        QVERIFY(second.active);
-        session.cancel();
+        QCOMPARE(finished.first().at(1).toBool(), true);
+        QVERIFY(!session.isRunning());
+        QVERIFY(!microphone.active);
     }
 
-    // A listening batch started while a cancel stops the microphone begins
-    // once the cancel is done, so that stop leaves its capture on; a second
-    // cancel ends it once.
-    void aBatchStartedWhileACancelStopsTheMicrophoneWaitsForIt()
+    // A start inside a cancel's microphone stop is refused, and a finish
+    // there ends nothing: the microphone stays off once the cancel is done.
+    // Cancelling again does nothing more.
+    void aStartWhileACancelStopsTheMicrophoneIsRefused_data()
     {
+        QTest::addColumn<bool>("finishes");
+        QTest::newRow("start") << false;
+        QTest::newRow("start, then finish") << true;
+    }
+
+    void aStartWhileACancelStopsTheMicrophoneIsRefused()
+    {
+        QFETCH(bool, finishes);
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
         QVERIFY(session.startListening(&microphone, speechOnly()));
-        bool restarted = false;
+        std::optional<bool> accepted;
         microphone.onStop = [&] {
-            if (!std::exchange(restarted, true)) {
-                QVERIFY(session.startListening(&microphone, speechOnly()));
+            if (accepted) {
+                return;
+            }
+            accepted = session.startListening(&microphone, speechOnly());
+            if (finishes) {
+                session.finishListening();
             }
         };
 
         session.cancel();
         QTest::qWait(100);
 
-        QVERIFY(restarted);
+        QCOMPARE(accepted, std::optional<bool>(false));
         QCOMPARE(finished.count(), 1);
-        QVERIFY(session.isRunning());
-        QVERIFY(microphone.active);
+        QVERIFY(!session.isRunning());
+        QVERIFY(!microphone.active);
         session.cancel();
-        session.cancel();
-        QCOMPARE(finished.count(), 2);
+        QCOMPARE(finished.count(), 1);
     }
 
     // A batch cancelled as its stream clears the transcript for the provider

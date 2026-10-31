@@ -853,7 +853,10 @@ void DictationSession::stopAudio()
     if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
         restartMicrophone(step);
     }
-    startPendingLater();
+    // letGoOfMicrophone() starts it once its whole end is over.
+    if (!m_lettingGoOfMicrophone) {
+        startPendingLater();
+    }
 }
 
 // After the caller has settled the session it ended or stopped the
