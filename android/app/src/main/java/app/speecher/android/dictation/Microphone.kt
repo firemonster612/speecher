@@ -13,6 +13,12 @@ import kotlin.math.sqrt
 class Microphone(private val context: Context) {
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var active = false
+    /**
+     * Held by a capture until its recorder is released. A resume right after a pause starts a new
+     * capture while the paused one may still be reading, and a device that allows one recorder at a
+     * time refuses a second.
+     */
+    private val oneRecorder = Any()
 
     fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
         if (
@@ -20,6 +26,10 @@ class Microphone(private val context: Context) {
                 PackageManager.PERMISSION_GRANTED
         )
             throw SecurityException("Microphone permission is missing")
+        synchronized(oneRecorder) { record(shouldContinue, onAudio) }
+    }
+
+    private fun record(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
         if (!shouldContinue()) return
         active = true
         val rate = 16000
