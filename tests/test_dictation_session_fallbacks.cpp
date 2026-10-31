@@ -725,7 +725,8 @@ private slots:
 
     // The session holds no more than the connect budget's worth of audio,
     // ten seconds, for a provider still preparing: past it the speech ends
-    // with what was heard, and the provider is passed over.
+    // with what was heard, the provider is passed over, and the warning says
+    // it took too long.
     void aProviderPreparingPastTheConnectBudgetEndsTheSpeech()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
@@ -747,7 +748,8 @@ private slots:
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(outcome.first().at(0).toString(),
                  QStringLiteral("Used raw transcript • Sent to the app • ChatGPT Codex couldn't be reached and Local Model "
-                                "didn't answer. • Part of the dictation may be missing. The connection dropped."));
+                                "didn't answer. • Part of the dictation may be missing. A speech service took too long "
+                                "to start."));
         QTest::qWait(400);
         QCOMPARE(local->startCalls, 0);
     }

@@ -16,11 +16,18 @@
 
 namespace speecher {
 namespace {
+// A failure while finishing says what went wrong; a service that never took
+// the audio in time took too long to start; any other dropped the stream.
 QString partMissingWarning(const SpeechFailure &failure)
 {
-    return failure.phase == SpeechPhase::Finalize
-        ? QStringLiteral("Part of the dictation may be missing. ") + failure.message
-        : QStringLiteral("Part of the dictation may be missing. The connection dropped.");
+    const QString missing = QStringLiteral("Part of the dictation may be missing. ");
+    if (failure.phase == SpeechPhase::Finalize) {
+        return missing + failure.message;
+    }
+    if (failure.phase == SpeechPhase::Connect && failure.kind == ProviderFailureKind::Timeout) {
+        return missing + QStringLiteral("A speech service took too long to start.");
+    }
+    return missing + QStringLiteral("The connection dropped.");
 }
 }
 

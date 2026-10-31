@@ -185,8 +185,12 @@ void DictationSpeech::hold(const QByteArray &pcm)
     }
     qWarning() << "speech provider still preparing past the connect budget";
     m_attempts->chain()->cancel();
+    // Its slowness, not the failure that sent the speech on to it, is why
+    // what is held goes untranscribed.
+    m_switchFailure = {0, QStringLiteral("It took too long to start"), false, SpeechPhase::Connect,
+                       ProviderFailureKind::Timeout};
     emit passedOver(m_attempts->chain()->currentId(), Stage::Prepare,
-                    {ProviderFailureKind::Timeout, QStringLiteral("It took too long to start")});
+                    {m_switchFailure.kind, m_switchFailure.message});
     exhaust();
 }
 
