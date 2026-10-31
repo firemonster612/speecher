@@ -4,7 +4,6 @@
 #include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
-#include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/KeywatchShortcutBinder.h"
