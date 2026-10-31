@@ -320,8 +320,15 @@ const SettingRow settingRows[] = {
              s.updates.checkIntervalUnit = checkIntervalUnit(s.updates);
              return;
          }
+         bool isNumber = false;
+         const int minutes = v.toString().toInt(&isNumber);
+         if (!isNumber) {
+             qWarning().noquote() << "Settings.set(updateCheckInterval) got no number of minutes:" << v;
+             return;
+         }
          s.updates.checkIntervalUnit.clear();
-         s.updates.checkIntervalMinutes = v.toString().toInt();
+         s.updates.checkIntervalMinutes =
+             qBound(UpdateSettings::minimumCheckIntervalMinutes, minutes, UpdateSettings::maximumCheckIntervalMinutes);
      }},
     {"updateCheckCustomInterval",
      [](const AppSettings &s) {

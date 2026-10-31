@@ -293,7 +293,8 @@ LibraryLists {
                         incomplete: "Type what Speecher writes." },
         recognitionRules: { blank: "Type the app's name or ID.", taken: "You have a match for that app already.",
                             incomplete: "Choose an app type, a profile or both." },
-        any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names." }
+        any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names.",
+               invalid: "Speecher couldn't save this." }
     })
     function refusalText(list, reason) {
         return reason ? (_refusals[list] || {})[reason] || _refusals.any[reason] || "" : ""
