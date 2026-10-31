@@ -52,8 +52,19 @@ export function createStops({ reduced }) {
   const inserts = [native.querySelector(".slab.engine"), native.querySelector(".slab.script")];
   let rise = 0;
 
-  // 4. android: the phone rises, the pill is its keyboard's button, the text lands in the field
-  const android = sec[4];
+  // 4. cli: four commands are typed in turn and their output prints under each.
+  // The pill listens at the end of the first one, until its sentence prints.
+  const cli = sec[4];
+  const cliSlot = cli.querySelector(".slot");
+  const runLines = [...cli.querySelectorAll(".run")];
+  const runs = runLines.map((el) => createScrub(el.querySelector(".typed")));
+  const prints = [...cli.querySelectorAll(".print")];
+  const RUN_AT = [[0.02, 0.1], [0.34, 0.48], [0.56, 0.66], [0.74, 0.8]];
+  const PRINT_AT = [0.3, 0.52, 0.7, 0.86, 0.93];
+  let listening = false;
+
+  // 5. android: the phone rises, the pill is its keyboard's button, the text lands in the field
+  const android = sec[5];
   const phone = android.querySelector(".phone");
   const keys = android.querySelector(".keys");
   for (const n of [10, 9, 9, 3]) {
@@ -66,9 +77,9 @@ export function createStops({ reduced }) {
   const fieldText = createScrub(field);
   let phoneP = 1;
 
-  // 5. download: the pill becomes the button for this platform, the other platforms unfold under it.
+  // 6. download: the pill becomes the button for this platform, the other platforms unfold under it.
   // The button takes over this platform's row, so the row leaves the list.
-  const download = sec[5];
+  const download = sec[6];
   const mainDl = download.querySelector(".main-dl");
   const ua = navigator.userAgent;
   const os = /Android/.test(ua) ? "android" : /Mac/.test(ua) ? "mac" : /Win/.test(ua) ? "windows" : "linux";
@@ -131,6 +142,18 @@ export function createStops({ reduced }) {
       inserts[0].style.transform = down(1 - engine);
       inserts[1].style.transform = appSlab.style.transform = down(2 - page - engine);
     },
+    // cli: type, listen, print
+    (p) => {
+      if (reduced) p = 1;
+      listening = p > RUN_AT[0][1] && p < PRINT_AT[0];
+      const current = RUN_AT.findLastIndex(([a]) => p >= a);
+      runLines.forEach((el, j) => {
+        el.classList.toggle("on", p >= RUN_AT[j][0]);
+        const [a, b] = RUN_AT[j];
+        runs[j].set((p - a) / (b - a), j === Math.max(0, current));
+      });
+      prints.forEach((el, j) => el.classList.toggle("on", p >= PRINT_AT[j]));
+    },
     // android: rise and straighten, then type
     (p) => {
       if (reduced) p = 1;
@@ -155,6 +178,7 @@ export function createStops({ reduced }) {
     (t) => ({ el: planSlot, level: reduced ? 0.5 : Math.max(0.2 + talk(t) * 0.6, Math.sin(Math.PI * swap) * 0.95), caps: 1, swap }),
     (t) => ({ el: words.querySelector(".slot"), level: reduced ? 0.45 : sweeping ? speaking(t) : idle(t) }),
     (t) => ({ el: native.querySelector(".slot"), level: reduced ? 0.45 : idle(t) }),
+    (t) => ({ el: cliSlot, level: reduced ? 0.45 : listening ? speaking(t) : idle(t) }),
     (t) => {
       const tap = phoneP > 0.32 && phoneP < 0.42 ? 0.88 : 1;
       const live = phoneP > 0.36 && phoneP < 0.9;
