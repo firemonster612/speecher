@@ -25,8 +25,14 @@ import app.speecher.protocol.oauthAttempt
 import app.speecher.protocol.oauthCallback
 import app.speecher.protocol.pastedCode
 import app.speecher.protocol.restoredAttempt
-import java.net.ServerSocket
+import java.io.IOException
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.SocketTimeoutException
+import java.nio.channels.SelectionKey
+import java.nio.channels.Selector
+import java.nio.channels.ServerSocketChannel
 import java.util.concurrent.CountDownLatch
 import okhttp3.OkHttpClient
 
@@ -43,10 +49,10 @@ class SignIn(
 ) : AutoCloseable {
     private val pending = context.getSharedPreferences("pending-signin", Context.MODE_PRIVATE)
     private val main = Handler(Looper.getMainLooper())
-    @Volatile private var listener: ServerSocket? = null
+    @Volatile private var listener: LoopbackListener? = null
     private var listenerClosed: CountDownLatch? = null
     @Volatile private var attempt: OAuthAttempt? = restoredPending()
-    private var provider: OAuthProvider? = restoredProvider()
+    private var provider: OAuthProvider? = restoredProvider().takeIf { attempt != null }
     /**
      * The attempt whose code is being exchanged, from the browser's redirect or a paste: a code
      * works once, so each attempt exchanges once.
@@ -73,7 +79,8 @@ class SignIn(
         attempt = current
         pending.edit(commit = true) {
             putString("provider", provider.name)
-            putString("verifier", current.verifier)
+            // The verifier is what turns a code into tokens, so it is kept like them.
+            putString("verifier", tokenStore.encrypt(current.verifier))
             putString("state", current.state)
         }
         sharedExecutor.execute {
@@ -83,9 +90,7 @@ class SignIn(
                 val outcome = runCatching {
                     val port = if (provider == OAuthProvider.Claude) 54545 else 1455
                     val deadline = System.currentTimeMillis() + 180_000
-                    // Wildcard bind so the browser reaches us on either 127.0.0.1 or ::1; the
-                    // accept loop rejects anything that is not from this device's loopback.
-                    ServerSocket(port, 1).use { socket ->
+                    LoopbackListener(port).use { socket ->
                         synchronized(this) {
                             if (id != sequence) {
                                 socket.close()
@@ -93,19 +98,12 @@ class SignIn(
                             }
                             listener = socket
                         }
-                        while (System.currentTimeMillis() < deadline && !socket.isClosed) {
-                            socket.soTimeout =
-                                minOf(2_000L, deadline - System.currentTimeMillis())
-                                    .toInt()
-                                    .coerceAtLeast(1)
+                        while (System.currentTimeMillis() < deadline && socket.isOpen) {
                             val client =
-                                try {
-                                    socket.accept()
-                                } catch (_: SocketTimeoutException) {
-                                    continue
-                                }
+                                socket.accept(
+                                    (deadline - System.currentTimeMillis()).coerceAtLeast(1)
+                                ) ?: continue
                             client.use {
-                                if (!it.inetAddress.isLoopbackAddress) return@use
                                 accepted()
                                 it.soTimeout = 2_000
                                 val requestLine =
@@ -181,8 +179,12 @@ class SignIn(
         pending.edit(commit = true) { clear() }
     }
 
+    /** The saved attempt; null when there is none, or its verifier can no longer be decrypted. */
     private fun restoredPending(): OAuthAttempt? {
-        val verifier = pending.getString("verifier", null) ?: return null
+        val verifier =
+            pending.getString("verifier", null)?.let {
+                runCatching { tokenStore.decrypt(it) }.getOrNull()
+            } ?: return null
         val state = pending.getString("state", null) ?: return null
         return restoredAttempt(verifier, state)
     }
@@ -211,7 +213,7 @@ class SignIn(
         return saved
     }
 
-    private fun respond(client: java.net.Socket, label: String, success: Boolean) {
+    private fun respond(client: Socket, label: String, success: Boolean) {
         val status = if (success) "200 OK" else "400 Bad Request"
         client
             .getOutputStream()
@@ -246,6 +248,58 @@ class SignIn(
 
     override fun close() {
         replaceAttempt()
+    }
+}
+
+/**
+ * Listens for the sign-in redirect on [port] of both loopback addresses, as the browser may resolve
+ * `localhost` to either, so nothing off the device can connect or hold the one queued connection.
+ * Closing it from another thread ends a waiting [accept].
+ */
+private class LoopbackListener(port: Int) : AutoCloseable {
+    private val selector = Selector.open()
+    private val channels = mutableListOf<ServerSocketChannel>()
+
+    init {
+        try {
+            listen(InetAddress.getByName("127.0.0.1"), port)
+        } catch (error: IOException) {
+            close()
+            throw error
+        }
+        // Some network stacks have no IPv6; the browser then uses 127.0.0.1. Another app holding
+        // ::1 could only stall the sign-in: its code is useless without this attempt's verifier.
+        runCatching { listen(InetAddress.getByName("::1"), port) }
+    }
+
+    val isOpen: Boolean
+        get() = selector.isOpen
+
+    /** The next connection, blocking; null when none came within [timeoutMillis]. */
+    fun accept(timeoutMillis: Long): Socket? {
+        selector.select(timeoutMillis)
+        val key = selector.selectedKeys().firstOrNull() ?: return null
+        selector.selectedKeys().remove(key)
+        val client = (key.channel() as ServerSocketChannel).accept() ?: return null
+        return client.apply { configureBlocking(true) }.socket()
+    }
+
+    private fun listen(address: InetAddress, port: Int) {
+        val channel = ServerSocketChannel.open()
+        try {
+            channel.bind(InetSocketAddress(address, port), 1)
+            channel.configureBlocking(false)
+            channel.register(selector, SelectionKey.OP_ACCEPT)
+        } catch (error: IOException) {
+            channel.close()
+            throw error
+        }
+        channels += channel
+    }
+
+    override fun close() {
+        selector.close()
+        channels.forEach { it.close() }
     }
 }
 

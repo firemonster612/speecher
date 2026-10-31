@@ -2,6 +2,7 @@ package app.speecher.android.ui
 
 import android.content.pm.PackageInstaller
 import app.speecher.android.update.ApkUpdate
+import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.UpdateState
 import app.speecher.android.update.installFailure
@@ -92,6 +93,22 @@ class UpdateStatusTest {
                 "## Added\r\n\r\n- Check for updates from Settings, and read\r\n  these notes.\r\n" +
                     "- A Nightly channel.\r\n\r\nInstall and update instructions: https://example.com"
             ),
+        )
+    }
+
+    @Test
+    fun `a preset shows its name and a custom interval its count, without one for a single unit`() {
+        val intervals =
+            listOf(
+                10_080 to null,
+                10_080 to IntervalUnit.Days,
+                480 to IntervalUnit.Hours,
+                90 to IntervalUnit.Minutes,
+                1_440 to IntervalUnit.Days,
+            )
+        assertEquals(
+            listOf("Every week", "Every 7 days", "Every 8 hours", "Every 90 minutes", "Every day"),
+            intervals.map { (minutes, unit) -> updateCheckLabel(minutes, unit) },
         )
     }
 }

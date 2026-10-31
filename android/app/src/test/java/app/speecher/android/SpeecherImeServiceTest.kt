@@ -2,6 +2,7 @@ package app.speecher.android
 
 import android.content.Context
 import android.provider.Settings
+import android.view.inputmethod.EditorInfo
 import androidx.core.content.edit
 import app.speecher.android.dictation.ActiveDictation
 import org.junit.Assert.assertEquals
@@ -39,5 +40,19 @@ class SpeecherImeServiceTest {
         Robolectric.buildService(SpeecherImeService::class.java).create().destroy()
 
         assertEquals("com.example/.Keyboard", ImeSwap(app).previousId)
+    }
+
+    @Test
+    fun `the keyboard picked with nothing dictating switches back`() {
+        val app = RuntimeEnvironment.getApplication()
+        app.getSharedPreferences("previous-ime", Context.MODE_PRIVATE).edit(commit = true) {
+            putString("id", "com.example/.Keyboard")
+        }
+        val ime = Robolectric.buildService(SpeecherImeService::class.java).create().get()
+
+        ime.onStartInput(EditorInfo(), false)
+
+        // Switching back forgets the keyboard it returned to.
+        assertNull(ImeSwap(app).previousId)
     }
 }

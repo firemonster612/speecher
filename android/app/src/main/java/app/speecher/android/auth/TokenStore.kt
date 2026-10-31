@@ -96,14 +96,16 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
     private val ApiKey.preference: String
         get() = "api-key-$name"
 
-    private fun encrypt(plain: String): String {
+    /** [plain] encrypted with the store's key, for a secret kept outside it. */
+    internal fun encrypt(plain: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         val encrypted = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
         return Base64.getEncoder().encodeToString(cipher.iv + encrypted)
     }
 
-    private fun decrypt(stored: String): String {
+    /** What [encrypt] encrypted; throws when the key can't read [stored]. */
+    internal fun decrypt(stored: String): String {
         val bytes = Base64.getDecoder().decode(stored)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))

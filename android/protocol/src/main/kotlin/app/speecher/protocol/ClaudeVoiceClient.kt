@@ -16,7 +16,7 @@ class ClaudeVoiceClient(
             events,
             { transport.sendBinary(it) },
             { transport.sendText("{\"type\":\"CloseStream\"}") },
-            closeTimeoutSeconds = 5,
+            closeTimeoutMillis = 5_000,
         )
     private var lastInterim = ""
 

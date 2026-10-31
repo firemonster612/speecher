@@ -261,6 +261,7 @@ fun createDictationEngine(
                         store.apiKey(ApiKey.SpeechEndpoint),
                         terms.joinToString(", "),
                         settings.spokenLanguage,
+                        context.cacheDir,
                         events,
                     )
                 }

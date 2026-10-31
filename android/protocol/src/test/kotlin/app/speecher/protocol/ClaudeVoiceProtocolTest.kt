@@ -6,324 +6,148 @@ import app.speecher.protocol.ClaudeVoiceEvent.TranscriptError
 import app.speecher.protocol.ClaudeVoiceEvent.Unknown
 import app.speecher.protocol.ClaudeVoiceEvent.Working
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 class ClaudeVoiceProtocolTest {
+    private val english =
+        listOf(
+            "encoding" to "linear16",
+            "sample_rate" to "16000",
+            "channels" to "1",
+            "endpointing_ms" to "300",
+            "utterance_end_ms" to "1000",
+            "language" to "en",
+            "use_conversation_engine" to "true",
+            "forward_interims" to "typed",
+            "stt_provider" to "deepgram-nova3",
+        )
 
-    @Nested
-    inner class StreamQuery {
-        private val withTypedInterims =
+    @Test
+    fun `the stream query names the spoken language, and none for Automatic`() {
+        val german = english.map { if (it.first == "language") "language" to "de" else it }
+        assertEquals(german, claudeVoiceStreamQuery("de") { null })
+        assertEquals(english - ("language" to "en"), claudeVoiceStreamQuery("auto") { null })
+    }
+
+    @Test
+    fun `typed interims stay on unless Speecher's variable says false and Claude Code's not true`() {
+        val speecher = "SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED"
+        val claudeCode = "CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED"
+        // Spellings as Qt reads them: any case, trimmed of Unicode whitespace.
+        val off =
+            listOf("0", "false", "NO", "\t Off \n", "\u0085off\u00A0").map { mapOf(speecher to it) }
+        val on =
+            listOf(emptyMap(), mapOf(speecher to "disabled"), mapOf(speecher to "   ")) +
+                mapOf(claudeCode to "0") +
+                listOf("1", "true", "YES", "\u0085 On \u00A0").map {
+                    mapOf(speecher to "0", claudeCode to it)
+                }
+        val untyped = english - ("forward_interims" to "typed")
+        assertEquals(
+            off.map { untyped } + on.map { english },
+            (off + on).map { env -> claudeVoiceStreamQuery("en", env::get) },
+        )
+    }
+
+    @Test
+    fun `keyterms join trimmed, collapsed, first spellings of distinct terms, raw otherwise`() {
+        val cases =
             listOf(
-                "encoding" to "linear16",
-                "sample_rate" to "16000",
-                "channels" to "1",
-                "endpointing_ms" to "300",
-                "utterance_end_ms" to "1000",
-                "language" to "en",
-                "use_conversation_engine" to "true",
-                "forward_interims" to "typed",
-                "stt_provider" to "deepgram-nova3",
-            )
-        private val withoutTypedInterims = withTypedInterims - ("forward_interims" to "typed")
-
-        private fun query(vararg env: Pair<String, String>) =
-            claudeVoiceStreamQuery("en", env.toMap()::get)
-
-        @Test
-        fun `a fixed spoken language takes English's place`() {
-            assertEquals(
+                emptyList<String>() to "",
                 listOf(
-                    "encoding" to "linear16",
-                    "sample_rate" to "16000",
-                    "channels" to "1",
-                    "endpointing_ms" to "300",
-                    "utterance_end_ms" to "1000",
-                    "language" to "de",
-                    "use_conversation_engine" to "true",
-                    "forward_interims" to "typed",
-                    "stt_provider" to "deepgram-nova3",
-                ),
-                claudeVoiceStreamQuery("de") { null },
-            )
-        }
-
-        @Test
-        fun `Automatic sends no language`() {
-            assertEquals(
-                withTypedInterims - ("language" to "en"),
-                claudeVoiceStreamQuery("auto") { null },
-            )
-        }
-
-        @Test
-        fun `typed interims are on when no variable is set`() {
-            assertEquals(withTypedInterims, query())
-        }
-
-        @Test
-        fun `speecher variable turns typed interims off with any Qt-trimmed false spelling`() {
-            for (disabled in listOf("0", "false", "NO", "\t Off \n", "\u0085off ")) {
-                assertEquals(
-                    withoutTypedInterims,
-                    query("SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED" to disabled),
-                )
-            }
-        }
-
-        @Test
-        fun `unrecognised or blank values keep the default`() {
-            assertEquals(
-                withTypedInterims,
-                query("SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED" to "disabled"),
-            )
-            assertEquals(
-                withTypedInterims,
-                query("SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED" to "   "),
-            )
-        }
-
-        @Test
-        fun `claude code variable forces typed interims on with any Qt-trimmed true spelling`() {
-            for (enabled in listOf("1", "true", "YES", "\u0085 On  ")) {
-                assertEquals(
-                    withTypedInterims,
-                    query(
-                        "SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED" to "0",
-                        "CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED" to enabled,
-                    ),
-                )
-            }
-        }
-
-        @Test
-        fun `claude code variable cannot turn typed interims off`() {
-            assertEquals(
-                withTypedInterims,
-                query("CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED" to "0"),
-            )
-        }
-    }
-
-    @Nested
-    inner class KeytermsHeader {
-        @Test
-        fun `empty vocabulary gives an empty header`() {
-            assertEquals("", claudeVoiceKeytermsHeader(emptyList()))
-        }
-
-        @Test
-        fun `Qt whitespace is collapsed and blank terms are dropped`() {
-            assertEquals(
-                "Kotlin Coroutines,New York,a b,Gradle",
-                claudeVoiceKeytermsHeader(
-                    listOf("  Kotlin \t\n Coroutines\u0085", "", " ", " New York　", "a b", "Gradle")
-                ),
-            )
-        }
-
-        @Test
-        fun `commas and non-whitespace controls stay raw`() {
-            assertEquals(
-                "a,b,\u001CX\u001F,a\u0000b",
-                claudeVoiceKeytermsHeader(listOf("a,b", "\u001CX\u001F", "a\u0000b")),
-            )
-        }
-
-        @Test
-        fun `duplicates are case-insensitive and keep the first spelling`() {
-            assertEquals(
-                "Gradle,kotlin",
-                claudeVoiceKeytermsHeader(listOf("Gradle", "kotlin", "GRADLE", " Kotlin ")),
-            )
-        }
-
-        @Test
-        fun `only ASCII letters are case-folded`() {
-            assertEquals("Émile,émile", claudeVoiceKeytermsHeader(listOf("Émile", "émile")))
-        }
-
-        @Test
-        fun `terms outside Latin-1 are kept`() {
-            assertEquals(
-                "café,東京,Straße,€uro,emoji 😀",
-                claudeVoiceKeytermsHeader(listOf("café", "東京", "Straße", "€uro", "emoji 😀")),
-            )
-        }
-
-        @Test
-        fun `the terms are the ones the header carries`() {
-            assertEquals(
-                listOf("Gradle", "Kotlin Coroutines", "東京"),
-                claudeVoiceKeyterms(listOf("Gradle", "gradle", " Kotlin  Coroutines ", "東京")),
-            )
-        }
-
-        @Test
-        fun `a term exactly filling the limit is kept`() {
-            val term = "a".repeat(1024)
-            assertEquals(term, claudeVoiceKeytermsHeader(listOf(term, "b")))
-        }
-
-        @Test
-        fun `a term longer than the limit is skipped`() {
-            assertEquals("y", claudeVoiceKeytermsHeader(listOf("x".repeat(1025), "y")))
-        }
-
-        @Test
-        fun `the limit counts UTF-8 bytes`() {
-            // 342 characters, but 1026 bytes.
-            assertEquals("y", claudeVoiceKeytermsHeader(listOf("東".repeat(342), "y")))
-        }
-
-        @Test
-        fun `the separator counts towards the limit and later shorter terms still fit`() {
-            val first = "é".repeat(511) // 1022 bytes
-            assertEquals("$first,c", claudeVoiceKeytermsHeader(listOf(first, "bb", "c", "d")))
-        }
-    }
-
-    @Nested
-    inner class EventParser {
-        @Test
-        fun `interim and text transcripts are working events with raw data`() {
-            assertEquals(
-                Working("hel"),
-                parseClaudeVoiceEvent("""{"type":"TranscriptInterim","data":"hel"}"""),
-            )
-            assertEquals(
-                Working(" hi  there "),
-                parseClaudeVoiceEvent("""{"type":"TranscriptText","data":" hi  there "}"""),
-            )
-        }
-
-        @Test
-        fun `endpoint carries its data`() {
-            assertEquals(
-                Endpoint("done."),
-                parseClaudeVoiceEvent("""{"type":"TranscriptEndpoint","data":"done."}"""),
-            )
-        }
-
-        @Test
-        fun `missing or non-string data becomes empty text`() {
-            assertEquals(Endpoint(""), parseClaudeVoiceEvent("""{"type":"TranscriptEndpoint"}"""))
-            for (data in listOf("null", "42", "true", "{}", "[]")) {
-                assertEquals(
-                    Working(""),
-                    parseClaudeVoiceEvent("""{"type":"TranscriptText","data":$data}"""),
-                )
-            }
-        }
-
-        @Test
-        fun `leading UTF-8 BOM is ignored`() {
-            assertEquals(
-                Working("BOM"),
-                parseClaudeVoiceEvent("﻿{\"type\":\"TranscriptText\",\"data\":\"BOM\"}"),
-            )
-        }
-
-        @Test
-        fun `transcript type wins over an error field`() {
-            assertEquals(
-                Working("x"),
-                parseClaudeVoiceEvent("""{"type":"TranscriptText","data":"x","error":"e"}"""),
-            )
-        }
-
-        @Test
-        fun `transcript error summary includes its own type`() {
-            assertEquals(
-                TranscriptError("type=TranscriptError code=E1 message=boom"),
-                parseClaudeVoiceEvent(
-                    """{"type":"TranscriptError","error":{"message":"boom","code":"E1"}}"""
-                ),
-            )
-        }
-
-        @Test
-        fun `error summary keeps only known string fields, in fixed order`() {
-            assertEquals(
-                ServerError("type=error code=c error_code=ec message=m description=d"),
-                parseClaudeVoiceEvent(
-                    """{"description":"d","message":"m","error_code":"ec","code":"c","type":"error","status":401,"token":"secret"}"""
-                ),
-            )
-        }
-
-        @Test
-        fun `a string error field is the whole summary`() {
-            assertEquals(
-                ServerError("rate limited"),
-                parseClaudeVoiceEvent("""{"error":"rate limited","message":"ignored"}"""),
-            )
-            assertEquals(
-                ServerError(""),
-                parseClaudeVoiceEvent("""{"error":"","message":"ignored"}"""),
-            )
-        }
-
-        @Test
-        fun `a string error field and each summary field are cut to 240 UTF-16 units`() {
-            assertEquals(
-                ServerError("e".repeat(240)),
-                parseClaudeVoiceEvent("""{"error":"${"e".repeat(300)}"}"""),
-            )
-            assertEquals(
-                ServerError("type=error message=${"m".repeat(240)}"),
-                parseClaudeVoiceEvent("""{"type":"error","message":"${"m".repeat(241)}"}"""),
-            )
-            assertEquals(
-                ServerError("a".repeat(239) + '\uD83D'),
-                parseClaudeVoiceEvent("""{"error":"${"a".repeat(239)}😀"}"""),
-            )
-        }
-
-        @Test
-        fun `nested string fields win, even when empty`() {
-            assertEquals(
-                ServerError("type=invalid_request"),
-                parseClaudeVoiceEvent(
-                    """{"type":"error","error":{"type":"invalid_request","message":""},"message":"top"}"""
-                ),
-            )
-        }
-
-        @Test
-        fun `non-string nested fields fall back to the top level`() {
-            assertEquals(
-                ServerError("code=top error_code=quota"),
-                parseClaudeVoiceEvent(
-                    """{"error":{"code":500,"error_code":"quota"},"code":"top"}"""
-                ),
-            )
-        }
-
-        @Test
-        fun `an error field of any non-string kind marks an error summarised from the top level`() {
-            for (error in listOf("null", "false", "17", "[]", "{}")) {
-                assertEquals(
-                    ServerError("message=m"),
-                    parseClaudeVoiceEvent("""{"error":$error,"message":"m"}"""),
-                )
-            }
-        }
-
-        @Test
-        fun `anything else is unknown`() {
-            listOf(
-                    """{"type":"KeepAlive"}""",
-                    """{"type":"transcripttext","data":"ignored"}""",
-                    """{"type":5,"data":"x"}""",
-                    """{}""",
-                    """[{"error":"x"}]""",
-                    "\"error\"",
-                    "not json",
-                    "{'type':'error'}",
+                    "  Kotlin \t\n Coroutines\u0085",
                     "",
-                )
-                .forEach { assertEquals(Unknown, parseClaudeVoiceEvent(it), it) }
-        }
+                    "\u00A0",
+                    "\u2003New York\u3000",
+                    "a b",
+                    "Gradle",
+                ) to "Kotlin Coroutines,New York,a b,Gradle",
+                listOf("a,b", "\u001CX\u001F", "a\u0000b") to "a,b,\u001CX\u001F,a\u0000b",
+                // Duplicates differ only in ASCII case.
+                listOf("Gradle", "kotlin", "GRADLE", " Kotlin ", "Émile", "émile") to
+                    "Gradle,kotlin,Émile,émile",
+                listOf("café", "東京", "Straße", "€uro", "emoji 😀") to
+                    "café,東京,Straße,€uro,emoji 😀",
+            )
+        assertEquals(cases.map { it.second }, cases.map { claudeVoiceKeytermsHeader(it.first) })
+        assertEquals(
+            listOf("Gradle", "Kotlin Coroutines", "東京"),
+            claudeVoiceKeyterms(listOf("Gradle", "gradle", " Kotlin  Coroutines ", "東京")),
+        )
+    }
+
+    @Test
+    fun `keyterms fill 1024 UTF-8 bytes, separators included, skipping terms that don't fit`() {
+        val full = "a".repeat(1024)
+        val nearlyFull = "é".repeat(511) // 1022 bytes
+        val cases =
+            listOf(
+                listOf(full, "b") to full,
+                listOf("x".repeat(1025), "y") to "y",
+                // 342 characters, but 1026 bytes.
+                listOf("東".repeat(342), "y") to "y",
+                listOf(nearlyFull, "bb", "c", "d") to "$nearlyFull,c",
+            )
+        assertEquals(cases.map { it.second }, cases.map { claudeVoiceKeytermsHeader(it.first) })
+    }
+
+    @Test
+    fun `transcripts carry their raw data, empty when missing or not a string`() {
+        val cases =
+            listOf(
+                """{"type":"TranscriptInterim","data":"hel"}""" to Working("hel"),
+                """{"type":"TranscriptText","data":" hi  there "}""" to Working(" hi  there "),
+                """{"type":"TranscriptEndpoint","data":"done."}""" to Endpoint("done."),
+                """{"type":"TranscriptEndpoint"}""" to Endpoint(""),
+                "﻿{\"type\":\"TranscriptText\",\"data\":\"BOM\"}" to Working("BOM"),
+                // The transcript type wins over an error field.
+                """{"type":"TranscriptText","data":"x","error":"e"}""" to Working("x"),
+            ) +
+                listOf("null", "42", "true", "{}", "[]").map {
+                    """{"type":"TranscriptText","data":$it}""" to Working("")
+                }
+        assertEquals(cases.map { it.second }, cases.map { parseClaudeVoiceEvent(it.first) })
+    }
+
+    @Test
+    fun `errors are summarised from known string fields, nested first, each cut to 240 units`() {
+        val cases =
+            listOf(
+                """{"type":"TranscriptError","error":{"message":"boom","code":"E1"}}""" to
+                    TranscriptError("type=TranscriptError code=E1 message=boom"),
+                """{"description":"d","message":"m","error_code":"ec","code":"c","type":"error","status":401,"token":"secret"}""" to
+                    ServerError("type=error code=c error_code=ec message=m description=d"),
+                """{"error":"rate limited","message":"ignored"}""" to ServerError("rate limited"),
+                """{"error":"","message":"ignored"}""" to ServerError(""),
+                """{"error":"${"e".repeat(300)}"}""" to ServerError("e".repeat(240)),
+                """{"type":"error","message":"${"m".repeat(241)}"}""" to
+                    ServerError("type=error message=${"m".repeat(240)}"),
+                """{"error":"${"a".repeat(239)}😀"}""" to ServerError("a".repeat(239) + '\uD83D'),
+                """{"type":"error","error":{"type":"invalid_request","message":""},"message":"top"}""" to
+                    ServerError("type=invalid_request"),
+                """{"error":{"code":500,"error_code":"quota"},"code":"top"}""" to
+                    ServerError("code=top error_code=quota"),
+            ) +
+                listOf("null", "false", "17", "[]", "{}").map {
+                    """{"error":$it,"message":"m"}""" to ServerError("message=m")
+                }
+        assertEquals(cases.map { it.second }, cases.map { parseClaudeVoiceEvent(it.first) })
+    }
+
+    @Test
+    fun `anything else is unknown`() {
+        val others =
+            listOf(
+                """{"type":"KeepAlive"}""",
+                """{"type":"transcripttext","data":"ignored"}""",
+                """{"type":5,"data":"x"}""",
+                """{}""",
+                """[{"error":"x"}]""",
+                "\"error\"",
+                "not json",
+                "{'type':'error'}",
+                "",
+            )
+        assertEquals(others.map { Unknown }, others.map(::parseClaudeVoiceEvent))
     }
 }

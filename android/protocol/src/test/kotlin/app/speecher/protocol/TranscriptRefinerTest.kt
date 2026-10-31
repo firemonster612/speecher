@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
@@ -19,31 +20,71 @@ import org.junit.jupiter.api.Test
 class TranscriptRefinerTest {
     private val tokens = OAuthTokens("access", "refresh", "", 0, "")
 
+    /** Refines through [server], at /v1 for Claude and /codex for ChatGPT. */
+    private fun refine(
+        server: MockWebServer,
+        provider: OAuthProvider,
+        model: String = if (provider == OAuthProvider.Claude) "claude-opus-5" else "gpt-6-luna",
+        effort: String = "low",
+        context: RefinementContext = RefinementContext(),
+        fast: AtomicBoolean? = null,
+        ultrafast: Boolean = false,
+        transcript: String = "helo",
+        vocabulary: List<VocabularyWord> = emptyList(),
+        onText: (String) -> Unit = {},
+        cancellation: Cancellation = Cancellation(),
+        inactivityMillis: Int = 20_000,
+        deadlineMillis: Long = 120_000,
+    ) =
+        refineTranscript(
+            OkHttpClient(),
+            provider,
+            tokens,
+            transcript,
+            vocabulary,
+            model,
+            effort,
+            context,
+            server.url(if (provider == OAuthProvider.Claude) "/v1" else "/codex").toString(),
+            fast,
+            ultrafast,
+            onText,
+            cancellation = cancellation,
+            inactivityMillis = inactivityMillis,
+            deadlineMillis = deadlineMillis,
+        )
+
+    /** The bodies of the next [count] requests [server] took. */
+    private fun bodies(server: MockWebServer, count: Int) =
+        List(count) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+
+    /** [server] answering each of [responses] in turn, a body or an HTTP status. */
+    private fun serving(vararg responses: Any) =
+        MockWebServer().apply {
+            responses.forEach {
+                enqueue(
+                    if (it is Int) MockResponse.Builder().code(it).build()
+                    else MockResponse.Builder().body(it as String).build()
+                )
+            }
+            start()
+        }
+
     @Test
     fun `Claude streams refinement with CLI identity and the chosen model and effort`() {
-        MockWebServer().use { server ->
-            server.enqueue(
-                MockResponse.Builder()
-                    .body(
-                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-                    )
-                    .build()
-            )
-            server.start()
+        serving(CLAUDE_OK).use { server ->
             val result =
-                refineTranscript(
-                    OkHttpClient(),
+                refine(
+                    server,
                     OAuthProvider.Claude,
-                    tokens,
-                    "deploy to cube",
-                    listOf(
-                        VocabularyWord("Kubernetes", "The container platform."),
-                        VocabularyWord("Speecher"),
-                    ),
-                    "claude-opus-5",
-                    "medium",
-                    RefinementContext(bindingAliases = listOf("Sign off", "sign off")),
-                    server.url("/v1").toString().trimEnd('/'),
+                    effort = "medium",
+                    context = RefinementContext(bindingAliases = listOf("Sign off", "sign off")),
+                    transcript = "deploy to cube",
+                    vocabulary =
+                        listOf(
+                            VocabularyWord("Kubernetes", "The container platform."),
+                            VocabularyWord("Speecher"),
+                        ),
                 )
             assertEquals("Hello", result)
             val request = server.takeRequest()
@@ -65,28 +106,8 @@ class TranscriptRefinerTest {
 
     @Test
     fun `ChatGPT streams refinement with the chosen model and effort`() {
-        MockWebServer().use { server ->
-            server.enqueue(
-                MockResponse.Builder()
-                    .body(
-                        "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-                    )
-                    .build()
-            )
-            server.start()
-            val result =
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.ChatGpt,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    "gpt-6-luna",
-                    "none",
-                    RefinementContext(),
-                    server.url("/codex").toString().trimEnd('/'),
-                )
-            assertEquals("Hello", result)
+        serving(OK).use { server ->
+            assertEquals("Hello", refine(server, OAuthProvider.ChatGpt, effort = "none"))
             val request = server.takeRequest()
             assertEquals("/codex/responses", request.target)
             val body = Json.parseToJsonElement(request.body!!.utf8()).jsonObject
@@ -98,67 +119,27 @@ class TranscriptRefinerTest {
 
     @Test
     fun `ChatGPT fast mode asks for the fast tier and drops to standard speed once it is rejected`() {
-        MockWebServer().use { server ->
-            val ok =
-                "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-            server.enqueue(MockResponse.Builder().code(400).build())
-            server.enqueue(MockResponse.Builder().body(ok).build())
-            server.enqueue(MockResponse.Builder().body(ok).build())
-            server.start()
+        serving(400, OK, OK).use { server ->
             val fast = AtomicBoolean(true)
-            repeat(2) {
-                val result =
-                    refineTranscript(
-                        OkHttpClient(),
-                        OAuthProvider.ChatGpt,
-                        tokens,
-                        "helo",
-                        emptyList(),
-                        "gpt-6-luna",
-                        "none",
-                        RefinementContext(),
-                        server.url("/codex").toString(),
-                        fast,
-                    )
-                assertEquals("Hello", result)
-            }
-            fun tier() =
-                Json.parseToJsonElement(server.takeRequest().body!!.utf8())
-                    .jsonObject["service_tier"]
-                    ?.jsonPrimitive
-                    ?.content
-            assertEquals(listOf("priority", null, null), List(3) { tier() })
+            repeat(2) { assertEquals("Hello", refine(server, OAuthProvider.ChatGpt, fast = fast)) }
+            assertEquals(
+                listOf("priority", null, null),
+                bodies(server, 3).map { it["service_tier"]?.jsonPrimitive?.content },
+            )
             assertEquals(false, fast.get())
         }
     }
 
     @Test
     fun `ChatGPT ultrafast asks for the ultrafast tier only on GPT-6 Astra and Sol, and Sol never at none`() {
-        MockWebServer().use { server ->
-            val ok =
-                "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-            repeat(3) { server.enqueue(MockResponse.Builder().body(ok).build()) }
-            server.start()
+        serving(OK, OK, OK).use { server ->
             for (model in listOf("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna")) {
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.ChatGpt,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    model,
-                    "none",
-                    RefinementContext(),
-                    server.url("/codex").toString(),
-                    AtomicBoolean(true),
-                    ultrafast = true,
-                )
+                val fast = AtomicBoolean(true)
+                refine(server, OAuthProvider.ChatGpt, model, "none", fast = fast, ultrafast = true)
             }
             assertEquals(
                 listOf("ultrafast" to "none", "ultrafast" to "low", "priority" to "none"),
-                List(3) {
-                    val body =
-                        Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+                bodies(server, 3).map { body ->
                     body["service_tier"]?.jsonPrimitive?.content to
                         body["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content
                 },
@@ -168,25 +149,9 @@ class TranscriptRefinerTest {
 
     @Test
     fun `Claude fast mode is sent only for Opus models`() {
-        MockWebServer().use { server ->
-            val ok =
-                "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-            server.enqueue(MockResponse.Builder().body(ok).build())
-            server.enqueue(MockResponse.Builder().body(ok).build())
-            server.start()
+        serving(CLAUDE_OK, CLAUDE_OK).use { server ->
             for (model in listOf("claude-opus-5", "claude-sonnet-5-5")) {
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.Claude,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    model,
-                    "low",
-                    RefinementContext(),
-                    server.url("/v1").toString(),
-                    AtomicBoolean(true),
-                )
+                refine(server, OAuthProvider.Claude, model, fast = AtomicBoolean(true))
             }
             val requests = List(2) { server.takeRequest() }
             assertEquals(
@@ -210,33 +175,17 @@ class TranscriptRefinerTest {
 
     @Test
     fun `Claude sends the nearest effort the model takes, and none to older models`() {
-        MockWebServer().use { server ->
-            val ok =
-                "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-            repeat(5) { server.enqueue(MockResponse.Builder().body(ok).build()) }
-            server.start()
-            for (model in
-                listOf(
-                    "claude-opus-5-5",
-                    "claude-haiku-5-5",
-                    "claude-opus-4-6",
-                    "claude-opus-4-5",
-                    "claude-sonnet-4-5",
-                )) {
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.Claude,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    model,
-                    "xhigh",
-                    RefinementContext(),
-                    server.url("/v1").toString(),
-                )
-            }
-            val bodies =
-                List(5) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+        val models =
+            listOf(
+                "claude-opus-5-5",
+                "claude-haiku-5-5",
+                "claude-opus-4-6",
+                "claude-opus-4-5",
+                "claude-sonnet-4-5",
+            )
+        serving(*Array(models.size) { CLAUDE_OK }).use { server ->
+            models.forEach { refine(server, OAuthProvider.Claude, it, "xhigh") }
+            val bodies = bodies(server, models.size)
             assertEquals(
                 listOf(
                     "{\"effort\":\"xhigh\"}",
@@ -255,27 +204,13 @@ class TranscriptRefinerTest {
 
     @Test
     fun `Claude attaches a captured screenshot as a base64 image block after the text`() {
-        MockWebServer().use { server ->
-            server.enqueue(
-                MockResponse.Builder()
-                    .body(
-                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
-                    )
-                    .build()
-            )
-            server.start()
-            refineTranscript(
-                OkHttpClient(),
+        serving(CLAUDE_OK).use { server ->
+            refine(
+                server,
                 OAuthProvider.Claude,
-                tokens,
-                "helo",
-                emptyList(),
-                "claude-sonnet-5",
-                "low",
-                RefinementContext(screenshotJpeg = "AAAA"),
-                server.url("/v1").toString().trimEnd('/'),
+                context = RefinementContext(screenshotJpeg = "AAAA"),
             )
-            val body = Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+            val body = bodies(server, 1).single()
             val content = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
             assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
             assertEquals(
@@ -285,105 +220,43 @@ class TranscriptRefinerTest {
         }
     }
 
+    /** Each request's service tier, and whether its content is a list with the screenshot. */
+    private fun tiersAndImages(server: MockWebServer, count: Int) =
+        bodies(server, count).map { body ->
+            body["service_tier"]?.jsonPrimitive?.content to
+                (body["input"]!!.jsonArray[0].jsonObject["content"] !is JsonPrimitive)
+        }
+
     @Test
     fun `ChatGPT retries without the screenshot when the model rejects it`() {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse.Builder().code(400).build())
-            server.enqueue(
-                MockResponse.Builder()
-                    .body(
-                        "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-                    )
-                    .build()
-            )
-            server.start()
-            val result =
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.ChatGpt,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    "gpt-6-luna",
-                    "none",
-                    RefinementContext(screenshotJpeg = "AAAA"),
-                    server.url("/codex").toString().trimEnd('/'),
-                )
-            assertEquals("Hello", result)
-            fun content() =
-                Json.parseToJsonElement(server.takeRequest().body!!.utf8())
-                    .jsonObject["input"]!!
-                    .jsonArray[0]
-                    .jsonObject["content"]!!
+        serving(400, OK).use { server ->
+            val screenshot = RefinementContext(screenshotJpeg = "AAAA")
+            assertEquals("Hello", refine(server, OAuthProvider.ChatGpt, context = screenshot))
+            val content = bodies(server, 1).single()["input"]!!.jsonArray[0].jsonObject["content"]!!
             assertEquals(
                 "{\"type\":\"input_image\",\"image_url\":\"data:image/jpeg;base64,AAAA\",\"detail\":\"low\"}",
-                content().jsonArray[1].toString(),
+                content.jsonArray[1].toString(),
             )
-            assertEquals(true, content() is JsonPrimitive)
+            assertEquals(listOf(null to false), tiersAndImages(server, 1))
         }
     }
 
     @Test
     fun `a fast-mode refusal with a screenshot retries at standard speed with the image first`() {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse.Builder().code(400).build())
-            server.enqueue(
-                MockResponse.Builder()
-                    .body(
-                        "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
-                    )
-                    .build()
-            )
-            server.start()
-            refineTranscript(
-                OkHttpClient(),
-                OAuthProvider.ChatGpt,
-                tokens,
-                "helo",
-                emptyList(),
-                "gpt-6-luna",
-                "none",
-                RefinementContext(screenshotJpeg = "AAAA"),
-                server.url("/codex").toString(),
-                AtomicBoolean(true),
-            )
-            val requests =
-                List(2) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
-            assertEquals(
-                listOf("priority" to true, null to true),
-                requests.map { body ->
-                    body["service_tier"]?.jsonPrimitive?.content to
-                        (body["input"]!!.jsonArray[0].jsonObject["content"] !is JsonPrimitive)
-                },
-            )
+        serving(400, OK).use { server ->
+            val screenshot = RefinementContext(screenshotJpeg = "AAAA")
+            refine(server, OAuthProvider.ChatGpt, context = screenshot, fast = AtomicBoolean(true))
+            assertEquals(listOf("priority" to true, null to true), tiersAndImages(server, 2))
         }
     }
 
     @Test
     fun `fast mode is not retried once refined text has streamed`() {
-        MockWebServer().use { server ->
-            server.enqueue(
-                MockResponse.Builder()
-                    .body("event: response.output_text.delta\ndata: {\"delta\":\"Hel\"}\n\n")
-                    .build()
-            )
-            server.start()
+        serving("event: response.output_text.delta\ndata: {\"delta\":\"Hel\"}\n\n").use { server ->
             val fast = AtomicBoolean(true)
             val shown = mutableListOf<String>()
             assertThrows(ProviderFailure::class.java) {
-                refineTranscript(
-                    OkHttpClient(),
-                    OAuthProvider.ChatGpt,
-                    tokens,
-                    "helo",
-                    emptyList(),
-                    "gpt-6-luna",
-                    "none",
-                    RefinementContext(),
-                    server.url("/codex").toString(),
-                    fast,
-                    onText = shown::add,
-                )
+                refine(server, OAuthProvider.ChatGpt, fast = fast, onText = shown::add)
             }
             assertEquals(
                 Triple(listOf("Hel"), 1, true),
@@ -394,22 +267,11 @@ class TranscriptRefinerTest {
 
     @Test
     fun `a rate limit with a screenshot attached fails without a second request`() {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse.Builder().code(429).build())
-            server.start()
+        serving(429).use { server ->
             val failure =
                 assertThrows(ProviderFailure::class.java) {
-                    refineTranscript(
-                        OkHttpClient(),
-                        OAuthProvider.ChatGpt,
-                        tokens,
-                        "helo",
-                        emptyList(),
-                        "gpt-6-luna",
-                        "none",
-                        RefinementContext(screenshotJpeg = "AAAA"),
-                        server.url("/codex").toString().trimEnd('/'),
-                    )
+                    val screenshot = RefinementContext(screenshotJpeg = "AAAA")
+                    refine(server, OAuthProvider.ChatGpt, context = screenshot)
                 }
             assertEquals(
                 Triple(ProviderFailureKind.RateLimited, 429, 1),
@@ -419,55 +281,59 @@ class TranscriptRefinerTest {
     }
 
     @Test
-    fun `unfinished stream does not return partial refinement`() {
+    fun `refined text reaches onText as it streams, before the reply ends`() {
+        val firstShown = CountDownLatch(1)
+        var streamedBeforeEnd = false
+        fun chunk(event: String, delta: String) =
+            "event: $event\ndata: {\"delta\":\"$delta\"}\n\n"
+                .let { "${it.length.toString(16)}\r\n$it\r\n" }
+        val body =
+            object : MockResponseBody {
+                override val contentLength = -1L
+
+                override fun writeTo(sink: okio.BufferedSink) {
+                    sink.writeUtf8(chunk("response.output_text.delta", "Hello")).flush()
+                    // The rest waits for the first text, so a reader that takes the reply whole
+                    // leaves streamedBeforeEnd false.
+                    streamedBeforeEnd = firstShown.await(3, TimeUnit.SECONDS)
+                    sink
+                        .writeUtf8(chunk("response.output_text.delta", " there."))
+                        .writeUtf8(chunk("response.completed", ""))
+                        .writeUtf8("0\r\n\r\n")
+                        .flush()
+                }
+            }
         MockWebServer().use { server ->
             server.enqueue(
-                MockResponse.Builder()
-                    .body("event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n")
-                    .build()
+                MockResponse.Builder().addHeader("Transfer-Encoding", "chunked").body(body).build()
             )
             server.start()
-            val failure =
-                assertThrows(ProviderFailure::class.java) {
-                    refineTranscript(
-                        OkHttpClient(),
-                        OAuthProvider.ChatGpt,
-                        tokens,
-                        "raw",
-                        emptyList(),
-                        "gpt-6-luna",
-                        "none",
-                        RefinementContext(),
-                        server.url("/codex").toString().trimEnd('/'),
-                    )
-                }
-            assertEquals(ProviderFailureKind.InvalidResult, failure.kind)
+            val shown = mutableListOf<String>()
+            val result =
+                refine(
+                    server,
+                    OAuthProvider.ChatGpt,
+                    onText = {
+                        shown.add(it)
+                        firstShown.countDown()
+                    },
+                )
+            assertEquals(
+                Triple(true, listOf("Hello", "Hello there."), "Hello there."),
+                Triple(streamedBeforeEnd, shown, result),
+            )
         }
     }
 
-    private fun refine(
-        server: MockWebServer,
-        provider: OAuthProvider,
-        fast: AtomicBoolean? = null,
-        cancellation: Cancellation = Cancellation(),
-        inactivityMillis: Int = 20_000,
-        deadlineMillis: Long = 120_000,
-    ) =
-        refineTranscript(
-            OkHttpClient(),
-            provider,
-            tokens,
-            "helo",
-            emptyList(),
-            if (provider == OAuthProvider.Claude) "claude-opus-5" else "gpt-6-luna",
-            "low",
-            RefinementContext(),
-            server.url("/v1").toString(),
-            fast,
-            cancellation = cancellation,
-            inactivityMillis = inactivityMillis,
-            deadlineMillis = deadlineMillis,
-        )
+    @Test
+    fun `unfinished stream does not return partial refinement`() {
+        serving("event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n").use { server
+            ->
+            val failure =
+                assertThrows(ProviderFailure::class.java) { refine(server, OAuthProvider.ChatGpt) }
+            assertEquals(ProviderFailureKind.InvalidResult, failure.kind)
+        }
+    }
 
     @Test
     fun `errors streamed after a 200 are classified from the event`() {
@@ -529,7 +395,7 @@ class TranscriptRefinerTest {
             server.enqueue(MockResponse.Builder().body(OK).build())
             server.start()
             val fast = AtomicBoolean(true)
-            val result = refine(server, OAuthProvider.ChatGpt, fast, inactivityMillis = 200)
+            val result = refine(server, OAuthProvider.ChatGpt, fast = fast, inactivityMillis = 200)
             assertEquals(Triple("Hello", 2, true), Triple(result, server.requestCount, fast.get()))
         }
     }
@@ -565,7 +431,12 @@ class TranscriptRefinerTest {
             server.start()
             val failure =
                 assertThrows(ProviderFailure::class.java) {
-                    refine(server, OAuthProvider.ChatGpt, AtomicBoolean(true), deadlineMillis = 300)
+                    refine(
+                        server,
+                        OAuthProvider.ChatGpt,
+                        fast = AtomicBoolean(true),
+                        deadlineMillis = 300,
+                    )
                 }
             assertEquals(ProviderFailureKind.Timeout, failure.kind)
         }
@@ -580,7 +451,12 @@ class TranscriptRefinerTest {
             val cancellation = Cancellation()
             val failure = CompletableFuture.supplyAsync {
                 runCatching {
-                    refine(server, OAuthProvider.Claude, AtomicBoolean(true), cancellation)
+                    refine(
+                        server,
+                        OAuthProvider.Claude,
+                        fast = AtomicBoolean(true),
+                        cancellation = cancellation,
+                    )
                 }
                     .exceptionOrNull()
             }
@@ -622,3 +498,6 @@ class TranscriptRefinerTest {
 
 private const val OK =
     "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
+
+private const val CLAUDE_OK =
+    "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"

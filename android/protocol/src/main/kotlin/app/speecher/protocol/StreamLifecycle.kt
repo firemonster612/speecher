@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /** Audio held while a stream is not live yet, over which the stream fails. */
@@ -19,11 +20,13 @@ internal class StreamLifecycle(
     private val sendChunk: (ByteArray) -> Unit,
     private val requestClose: () -> Unit,
     /** How long the provider has to end the stream once asked to close. */
-    private val closeTimeoutSeconds: Long,
+    private val closeTimeoutMillis: Long,
 ) {
     private val lock = Any()
     private val pending = mutableListOf<ByteArray>()
     private var pendingBytes = 0
+    /** The wait for the provider to close, once asked; guarded by [lock]. */
+    private var closeWait: ScheduledFuture<*>? = null
     /** Whether the provider takes audio now: its socket opened, or its session started. */
     @Volatile
     var live = false
@@ -48,8 +51,11 @@ internal class StreamLifecycle(
         get() = cancelled || finished
 
     /** Fails the stream with a timeout unless it is live [seconds] from now. */
-    fun failUnlessLiveWithin(seconds: Long, detail: String, retryable: Boolean = false) =
-        schedule(seconds) { if (!live) fail(ProviderFailureKind.Timeout, detail, retryable) }
+    fun failUnlessLiveWithin(seconds: Long, detail: String, retryable: Boolean = false) {
+        schedule(TimeUnit.SECONDS.toMillis(seconds)) {
+            if (!live) fail(ProviderFailureKind.Timeout, detail, retryable)
+        }
+    }
 
     /** Runs [task] every [seconds] until the stream ends. */
     fun repeat(seconds: Long, task: () -> Unit) {
@@ -106,10 +112,20 @@ internal class StreamLifecycle(
 
     private fun close() {
         requestClose()
-        schedule(closeTimeoutSeconds) {
-            fail(ProviderFailureKind.Timeout, "no close in ${closeTimeoutSeconds}s")
-        }
+        synchronized(lock) { closeWait = waitForClose() }
     }
+
+    /**
+     * Restarts the wait for the provider to close, if it is waiting: a provider still sending
+     * results is finishing, not stuck, as the desktop's ChatGPT client treats it.
+     */
+    fun extendCloseWait() =
+        synchronized(lock) { if (closeWait?.cancel(false) == true) closeWait = waitForClose() }
+
+    private fun waitForClose() =
+        schedule(closeTimeoutMillis) {
+            fail(ProviderFailureKind.Timeout, "no close in ${closeTimeoutMillis / 1000}s")
+        }
 
     fun cancel() {
         cancelled = true
@@ -165,9 +181,10 @@ internal class StreamLifecycle(
     }
 
     // A timer set as the stream ends finds the executor shut down; it has nothing left to time.
-    private fun schedule(seconds: Long, task: () -> Unit) {
+    private fun schedule(millis: Long, task: () -> Unit): ScheduledFuture<*>? =
         try {
-            timer.schedule(task, seconds, TimeUnit.SECONDS)
-        } catch (_: RejectedExecutionException) {}
-    }
+            timer.schedule(task, millis, TimeUnit.MILLISECONDS)
+        } catch (_: RejectedExecutionException) {
+            null
+        }
 }

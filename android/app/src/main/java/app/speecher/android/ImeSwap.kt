@@ -40,17 +40,21 @@ class ImeSwap(private val context: Context) {
                 Settings.Secure.DEFAULT_INPUT_METHOD,
             ) == ownId
 
-    /** Switch back to the remembered keyboard from inside our IME. */
+    /**
+     * Switch back from inside our IME to the remembered keyboard, or to the one used before ours
+     * when none is remembered, as when the person picked ours from the system's keyboard picker.
+     */
     fun switchBack(service: SpeecherImeService) {
-        val previous = previousId ?: return
-        val savedSubtype = preferences.getInt("subtype", -1)
+        val previous = previousId
         val info = inputMethods.enabledInputMethodList.firstOrNull { it.id == previous }
-        val subtype =
-            info
-                ?.let { inputMethods.getEnabledInputMethodSubtypeList(it, true) }
-                ?.firstOrNull { it.hashCode() == savedSubtype }
-        if (info != null) service.switchInputMethod(previous, subtype)
-        else service.switchToPreviousInputMethod()
+        if (previous != null && info != null) {
+            val savedSubtype = preferences.getInt("subtype", -1)
+            val subtype =
+                inputMethods.getEnabledInputMethodSubtypeList(info, true).firstOrNull {
+                    it.hashCode() == savedSubtype
+                }
+            service.switchInputMethod(previous, subtype)
+        } else service.switchToPreviousInputMethod()
         clear()
     }
 

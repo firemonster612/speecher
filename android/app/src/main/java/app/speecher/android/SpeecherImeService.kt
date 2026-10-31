@@ -119,10 +119,15 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        ActiveDictation.session?.let { session ->
-            session.target = attribute?.let { targetApp(it, packageManager) }
-            session.startInput(currentInputConnection, restarting)
+        val session = ActiveDictation.session
+        // Picked from the system's keyboard picker, or left default by a dead process: with nothing
+        // dictating the panel could only show a listening that isn't happening.
+        if (session == null) {
+            switchBack()
+            return
         }
+        session.target = attribute?.let { targetApp(it, packageManager) }
+        session.startInput(currentInputConnection, restarting)
     }
 
     override fun onFinishInput() {

@@ -10,6 +10,8 @@ import app.speecher.protocol.CorrectionEvidence
 import app.speecher.protocol.CorrectionWindow
 import java.time.Duration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,10 +30,14 @@ class CorrectionObserverTest {
         }
     private val learned = mutableListOf<CorrectionEvidence>()
     private var learning = true
+    private var watchingTextChanges = false
     private val observer =
-        CorrectionObserver(Handler(Looper.getMainLooper()), { field }, { learning }, {}) {
-            evidence,
-            _ ->
+        CorrectionObserver(
+            Handler(Looper.getMainLooper()),
+            { field },
+            { learning },
+            { watchingTextChanges = it },
+        ) { evidence, _ ->
             learned += evidence
         }
 
@@ -51,6 +57,16 @@ class CorrectionObserverTest {
     fun `an edit to the field the words went into is learned`() {
         dictateAndCorrect()
         assertEquals(listOf(CorrectionEvidence("speaker", "Speecher", 0.75)), learned)
+    }
+
+    @Test
+    fun `the watch ends with its window`() {
+        observer.observe(CorrectionWindow("ping the team on speaker", "", ""), "com.Slack")
+        idle(1_000)
+        assertTrue(watchingTextChanges)
+
+        idle(CORRECTION_WINDOW_MS)
+        assertFalse(watchingTextChanges)
     }
 
     @Test
