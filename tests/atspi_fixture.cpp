@@ -24,6 +24,9 @@ int main(int argc, char **argv)
     } else {
         target->setCursorPosition(12);
     }
+    if (app.arguments().contains(QStringLiteral("--selection"))) {
+        target->setSelection(7, 4);
+    }
     layout->addWidget(target);
 
     window.resize(480, 100);

@@ -212,6 +212,7 @@ bool PortalGlobalShortcutBinder::removeRegistration(QString *)
 {
     m_settings->setPortalShortcutCleared(action().role, true);
     m_bindWhenSupported = false;
+    m_registerWhenSupported = false;
     // An in-flight host-identity Register keeps its watcher, whose
     // continuation would recreate the session this removal closes. Cancel
     // the continuation (the identity itself may still become ready); a

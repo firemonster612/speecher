@@ -716,6 +716,23 @@ bool terminalHasAiCodingTool(const Target &target)
     return false;
 }
 
+int textOffsetLength(const Target &target, const QString &text)
+{
+    return target.toolkit == QStringLiteral("Qt") ? text.size() : text.toUcs4().size();
+}
+
+// Where a toolkit offset falls in `text`, as a QString index: Qt counts UTF-16
+// units, other toolkits characters.
+int stringIndex(const Target &target, const QString &text, int offset)
+{
+    if (target.toolkit == QStringLiteral("Qt")) return qMin(offset, text.size());
+    int index = 0;
+    for (int character = 0; character < offset && index < text.size(); ++character) {
+        index += text.at(index).isHighSurrogate() ? 2 : 1;
+    }
+    return qMin(index, text.size());
+}
+
 void populateText(Target *target, AtspiAccessible *object)
 {
     if (!atspi_accessible_is_text(object)) return;
@@ -731,12 +748,6 @@ void populateText(Target *target, AtspiAccessible *object)
         return;
     }
     target->caretOffset = caret;
-    const int start = qMax(0, caret - nearbyTextChars);
-    const int end = qMin(count, caret + nearbyTextChars);
-    target->nearbyTextBefore = takeString(atspi_text_get_text(text, start, caret, &error));
-    clearError(&error);
-    target->nearbyTextAfter = takeString(atspi_text_get_text(text, caret, end, &error));
-    clearError(&error);
     if (atspi_text_get_n_selections(text, &error) > 0) {
         clearError(&error);
         AtspiRange *selection = atspi_text_get_selection(text, 0, &error);
@@ -756,14 +767,15 @@ void populateText(Target *target, AtspiAccessible *object)
     } else {
         clearError(&error);
     }
+    const bool selected = target->selectionStart >= 0 && target->selectionEnd > target->selectionStart;
+    const int start = selected ? target->selectionStart : caret;
+    const int end = selected ? target->selectionEnd : caret;
+    const int from = qMax(0, start - nearbyTextChars);
+    const QString around = takeString(atspi_text_get_text(text, from, qMin(count, end + nearbyTextChars), &error));
+    clearError(&error);
+    target->setNearbyText(around, stringIndex(*target, around, start - from),
+                          stringIndex(*target, around, end - from));
     g_object_unref(text);
-}
-
-// Qt's AT-SPI adapter exposes its QAccessible UTF-16 offsets directly.
-// Other AT-SPI toolkits count Unicode characters.
-int textOffsetLength(const Target &target, const QString &text)
-{
-    return target.toolkit == QStringLiteral("Qt") ? text.size() : text.toUcs4().size();
 }
 
 QString fingerprint(const Target &target)

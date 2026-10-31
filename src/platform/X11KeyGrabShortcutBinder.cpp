@@ -5,6 +5,8 @@
 
 #include <QSocketNotifier>
 
+#include <algorithm>
+
 // Xlib last: its macros (None, Bool, KeyPress) collide with Qt names.
 #include <X11/XKBlib.h>
 #include <X11/Xlib.h>
@@ -95,15 +97,20 @@ public:
     Display *display = nullptr;
     QList<X11KeyHold *> holds;
 
-    // Ends an active grab a held key left behind, so keys pressed while it is
-    // still down reach the focused app. The server may have started one whose
-    // press Speecher has not read yet, so this never asks whether one is on.
-    // The held key's release goes to the app too, so no hold may go on
-    // waiting for one.
-    void releaseKeyboard()
+    // Ends an active grab the leaving hold's key left behind, so keys pressed
+    // while it is still down reach the focused app. The server may have
+    // started one whose press Speecher has not read yet, so this never asks
+    // whether one is on. That key's release goes to the app too, so the
+    // leaving hold must not go on waiting for it.
+    //
+    // A grab another hold's key started is that hold's: its key is down and
+    // it still acts, and the key's own release ends the grab. Ending it here
+    // would let the server's key repeat start it again as a fresh press.
+    void releaseKeyboard(X11KeyHold *leaving)
     {
-        for (X11KeyHold *hold : std::as_const(holds)) {
-            hold->m_down = false;
+        leaving->m_down = false;
+        if (std::any_of(holds.cbegin(), holds.cend(), [](const X11KeyHold *hold) { return hold->m_down; })) {
+            return;
         }
         XUngrabKeyboard(display, CurrentTime);
     }
@@ -219,7 +226,7 @@ void X11KeyHold::letGo()
     }
     m_held = {};
     // Ungrabbing the key leaves an active grab its press started in place.
-    Connection::instance().releaseKeyboard();
+    Connection::instance().releaseKeyboard(this);
     XFlush(m_display);
 }
 

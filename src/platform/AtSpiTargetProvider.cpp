@@ -45,6 +45,7 @@ void AtSpiTargetProvider::clearAccessible()
 Target AtSpiTargetProvider::capture()
 {
     clearAccessible();
+    ++m_captures;
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
     if (!target.hasIdentity()) {
@@ -147,14 +148,14 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         || plainText.isEmpty()) {
         return false;
     }
-    const atspi::TargetSnapshot *snapshot = m_snapshot.get();
+    const quint64 capture = m_captures;
     std::optional<CorrectionWindow> window;
     const bool shown = awaitInsertion([&]() -> std::optional<bool> {
         // A capture during the wait replaces the snapshot being verified.
-        if (m_snapshot.get() != snapshot) {
+        if (m_captures != capture) {
             return std::nullopt;
         }
-        window = snapshot->verifiedInsertion(plainText);
+        window = m_snapshot->verifiedInsertion(plainText);
         return window.has_value();
     });
     if (!shown) {

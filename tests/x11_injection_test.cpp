@@ -1,7 +1,8 @@
 // Proves the X11 shortcut backends end to end through XTEST: the XInput2
-// single-key backend reports a right Alt press and release, and the key grab
+// single-key backend reports a right Alt press and release, the key grab
 // that serves the Cancel and Pause Shortcuts takes a bare C only while armed,
-// acting once per press however long the key is held.
+// acting once per press however long the key is held, and the session's
+// Enter is taken only while a Dictation Session wants it.
 // Runs under Xvfb in CI, never against a real session: XTEST here would type
 // into whatever the user has focused. CMake only registers this test where
 // Xvfb is present, and it is launched through xvfb-run on a private display.
@@ -9,6 +10,7 @@
 #include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/LinuxSessionKeyGrab.h"
 #include "platform/X11KeyGrabShortcutBinder.h"
 #include "platform/XInput2ShortcutBinder.h"
 
@@ -161,17 +163,70 @@ int checkKeysDuringAHeldGrab(SettingsStore *settings)
     const qsizetype cancelledDuringPause = cancelled.count() - cancelledBefore;
     cancel.setArmed(false);
     pause.setArmed(false);
+
+    // Hold P, and let Cancel alone go: P held on past the server's key
+    // repeat delay still pauses once.
+    QSignalSpy paused(&pause, &GlobalShortcutBinder::activated);
+    cancel.setArmed(true);
+    pause.setArmed(true);
+    press(XK_p, true);
+    cancel.setArmed(false);
+    QTest::qWait(1500);
+    press(XK_p, false);
+    pause.setArmed(false);
     XCloseDisplay(display);
     cancel.setShortcut({});
     pause.setShortcut({});
-    if (dReached != 1 || cancelledDuringPause != 1) {
+    if (dReached != 1 || cancelledDuringPause != 1 || paused.count() != 1) {
         std::fprintf(stderr, "D reached the app %d times after disarming mid-hold (want 1); C "
-                             "cancelled %lld times while P was held (want 1)\n",
-                     dReached, static_cast<long long>(cancelledDuringPause));
+                             "cancelled %lld times while P was held (want 1); a held P paused "
+                             "%lld times after Cancel let go (want 1)\n",
+                     dReached, static_cast<long long>(cancelledDuringPause),
+                     static_cast<long long>(paused.count()));
         return 1;
     }
-    std::puts("X11 key grab: disarming mid-hold hands the keyboard back, and Cancel acts while "
-              "Pause is held");
+    std::puts("X11 key grab: disarming mid-hold hands the keyboard back, Cancel acts while Pause "
+              "is held, and a held Pause acts once after Cancel lets go");
+    return 0;
+}
+
+// Enter is taken while a session wants it, from either Enter key, and a
+// keypad Enter another app holds leaves the main one working.
+int checkSessionKeyGrab()
+{
+    Display *display = XOpenDisplay(nullptr);
+    const Window root = DefaultRootWindow(display);
+    const int keypadEnter = XKeysymToKeycode(display, XK_KP_Enter);
+    // Owned by another app, under every lock state the session grab tries.
+    for (const unsigned int lock : {0U, unsigned(LockMask), unsigned(Mod2Mask), unsigned(LockMask | Mod2Mask)}) {
+        XGrabKey(display, keypadEnter, lock, root, False, GrabModeAsync, GrabModeAsync);
+    }
+    XSync(display, False);
+    const auto press = [display](KeySym keysym) {
+        const int keycode = XKeysymToKeycode(display, keysym);
+        XTestFakeKeyEvent(display, keycode, True, 0);
+        XTestFakeKeyEvent(display, keycode, False, 0);
+        XFlush(display);
+        QTest::qWait(150);
+    };
+
+    LinuxSessionKeyGrab grab;
+    QSignalSpy pressed(&grab, &SessionKeyGrab::pressed);
+    const bool held = grab.setGrabbed(SessionKeyGrab::Key::Enter, true);
+    press(XK_Return);
+    const qsizetype whileGrabbed = pressed.count();
+    grab.setGrabbed(SessionKeyGrab::Key::Enter, false);
+    press(XK_Return);
+    XCloseDisplay(display);
+    if (!held || whileGrabbed != 1 || pressed.count() != 1
+        || pressed.first().first().value<SessionKeyGrab::Key>() != SessionKeyGrab::Key::Enter) {
+        std::fprintf(stderr, "session Enter: held %d, %lld presses while grabbed and %lld in all "
+                             "(want held, 1 and 1)\n",
+                     held, static_cast<long long>(whileGrabbed), static_cast<long long>(pressed.count()));
+        return 1;
+    }
+    std::puts("X11 session keys: Enter is taken only while grabbed, and a keypad Enter another "
+              "app holds leaves it working");
     return 0;
 }
 
@@ -187,7 +242,8 @@ int main(int argc, char **argv)
     }
     QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences.path());
     SettingsStore settings;
-    const int keyGrab = checkKeyGrab(&settings) | checkKeysDuringAHeldGrab(&settings);
+    const int keyGrab = checkKeyGrab(&settings) | checkKeysDuringAHeldGrab(&settings)
+        | checkSessionKeyGrab();
 
     XInput2ShortcutBinder binder(&settings);
     if (!binder.supported()) {

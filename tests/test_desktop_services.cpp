@@ -1,5 +1,6 @@
 // The KWin active-window probe and media pausing against a fake KWin and a
 // fake media player on the suite's private session bus.
+#include "common/test_dbus_service.h"
 #include "common/test_suites.h"
 
 #include "platform/KWinActiveWindow.h"
@@ -9,11 +10,12 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusVariant>
-#include <QDBusVirtualObject>
 #include <QFile>
 #include <QRegularExpression>
 #include <QSet>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
 
@@ -21,34 +23,13 @@ using namespace speecher;
 
 namespace {
 
-// A service on a connection of its own, answering calls to `path` and below.
-class FakeService : public QDBusVirtualObject {
-public:
-    explicit FakeService(const QString &name)
-        : m_bus(QDBusConnection::connectToBus(QDBusConnection::SessionBus, name))
-    {
-    }
-    ~FakeService() override { QDBusConnection::disconnectFromBus(m_bus.name()); }
-
-    bool start(const QString &service, const QString &path)
-    {
-        return m_bus.registerService(service)
-            && m_bus.registerVirtualObject(path, this, QDBusConnection::SubPath);
-    }
-
-    QString introspect(const QString &) const override { return {}; }
-
-protected:
-    QDBusConnection m_bus;
-};
-
 // KWin's scripting interface. Running a loaded script calls back the probe it
 // names with a fixed window. The probe blocks on its calls, so this answers
 // from a thread of its own.
-class FakeKWin final : public FakeService {
+class FakeKWin final : public FakeDBusService {
 public:
     FakeKWin()
-        : FakeService(QStringLiteral("speecher-fake-kwin"))
+        : FakeDBusService(QStringLiteral("speecher-fake-kwin"))
     {
         m_thread.start();
         moveToThread(&m_thread);
@@ -105,10 +86,10 @@ private:
 };
 
 // An MPRIS media player that is playing until told to pause.
-class FakePlayer final : public FakeService {
+class FakePlayer final : public FakeDBusService {
 public:
     FakePlayer()
-        : FakeService(QStringLiteral("speecher-fake-player"))
+        : FakeDBusService(QStringLiteral("speecher-fake-player"))
     {
     }
 
@@ -139,6 +120,16 @@ private slots:
     // of the KWin session; the next probe must still get its answer.
     void kwinProbeReplacesAScriptLeftLoaded()
     {
+        // The probe writes its script to the runtime directory; keep it off
+        // the real one.
+        QTemporaryDir runtime;
+        QVERIFY(runtime.isValid());
+        const QByteArray previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(runtime.path()));
+        const auto restoreRuntime = qScopeGuard([&] {
+            previousRuntime.isNull() ? qunsetenv("XDG_RUNTIME_DIR")
+                                     : qputenv("XDG_RUNTIME_DIR", previousRuntime);
+        });
         FakeKWin kwin;
         kwin.leaveLoaded(QStringLiteral("speecher-active-window"));
         QVERIFY(kwin.start(QStringLiteral("org.kde.KWin"), QStringLiteral("/Scripting")));
@@ -148,6 +139,7 @@ private slots:
         QVERIFY(window);
         QCOMPARE(window->resourceClass, QStringLiteral("konsole"));
         QCOMPARE(window->internalId, QStringLiteral("{window}"));
+        QVERIFY(QFile::exists(runtime.filePath(QStringLiteral("speecher-kwin-active-window.js"))));
     }
 
     // Media paused for one dictation and again before it resumed is still
