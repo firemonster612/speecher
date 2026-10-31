@@ -3058,6 +3058,60 @@ private slots:
         session.cancel();
     }
 
+    // A listening batch started while a cancel stops the microphone begins
+    // once the cancel is done, so that stop leaves its capture on; a second
+    // cancel ends it once.
+    void aBatchStartedWhileACancelStopsTheMicrophoneWaitsForIt()
+    {
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        bool restarted = false;
+        microphone.onStop = [&] {
+            if (!std::exchange(restarted, true)) {
+                QVERIFY(session.startListening(&microphone, speechOnly()));
+            }
+        };
+
+        session.cancel();
+        QTest::qWait(100);
+
+        QVERIFY(restarted);
+        QCOMPARE(finished.count(), 1);
+        QVERIFY(session.isRunning());
+        QVERIFY(microphone.active);
+        session.cancel();
+        session.cancel();
+        QCOMPARE(finished.count(), 2);
+    }
+
+    // A batch cancelled as its stream clears the transcript for the provider
+    // that is ready starts no attempt on the provider it released.
+    void aCancelAsTheStreamBeginsStartsNoAttempt()
+    {
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        int partials = 0;
+        // The file's start clears the transcript first, then the stream as
+        // its provider is ready.
+        QObject::connect(&session, &FileTranscriptionSession::filePartialText, &session, [&] {
+            if (++partials == 2) {
+                session.cancel();
+            }
+        });
+        FakeAudioInput microphone;
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QTest::qWait(100);
+
+        QCOMPARE(finished.count(), 1);
+        QVERIFY(!session.isRunning());
+        QCOMPARE(m_script.attempts, 0);
+    }
+
     // A batch cancelled while a failed file stops the microphone finishes
     // once, cancelled, without reporting the file.
     void aCancelWhileAFailedFileStopsTheMicrophoneFinishesOnce()

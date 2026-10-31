@@ -256,29 +256,44 @@ FileTranscriptionSession::~FileTranscriptionSession()
 
 bool FileTranscriptionSession::isRunning() const
 {
-    return m_running;
+    return m_running || m_deferredStart;
 }
 
 bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeOptions &options)
 {
-    if (m_running || paths.isEmpty()) {
+    if (paths.isEmpty()) {
         return false;
     }
-    m_input = nullptr;
-    beginBatch(paths, options);
-    return true;
+    return startBatch([this, paths, options] {
+        m_input = nullptr;
+        beginBatch(paths, options);
+    });
 }
 
 bool FileTranscriptionSession::startListening(AudioInput *input, const TranscribeOptions &options)
 {
-    if (m_running) {
-        return false;
-    }
-    m_input = input;
     // There is no file to save the transcript beside.
     TranscribeOptions listening = options;
     listening.destination = TranscriptDestination::None;
-    beginBatch({QString()}, listening);
+    return startBatch([this, input, listening] {
+        m_input = input;
+        beginBatch({QString()}, listening);
+    });
+}
+
+// A start while a cancel cleans up, such as from inside the microphone's
+// stop, would have that stop close the new batch's microphone: it waits for
+// the cleanup to end instead, as a dictation's start does.
+bool FileTranscriptionSession::startBatch(std::function<void()> begin)
+{
+    if (isRunning()) {
+        return false;
+    }
+    if (m_cancelling) {
+        m_deferredStart = std::move(begin);
+        return true;
+    }
+    begin();
     return true;
 }
 
@@ -325,15 +340,22 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
 
 void FileTranscriptionSession::cancel()
 {
+    // A cancel inside a cancel's cleanup drops the start waiting for it.
+    m_deferredStart = {};
     if (!m_running) {
         return;
     }
     // Ended before the microphone's stop spins its event loop, so a cancel
-    // there finds nothing to cancel.
+    // there finds nothing more to cancel.
     m_running = false;
     ++m_batch;
+    m_cancelling = true;
     releaseFileResources();
+    m_cancelling = false;
     emit batchFinished(m_results, true);
+    if (const std::function<void()> begin = std::exchange(m_deferredStart, {})) {
+        begin();
+    }
 }
 
 void FileTranscriptionSession::startFile()

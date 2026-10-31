@@ -124,13 +124,18 @@ public:
     FileTranscriptionSession(SettingsStore *settings, ProviderRegistry *providers, QObject *parent = nullptr);
     ~FileTranscriptionSession() override;
 
+    // True from a start until batchFinished, a start that waits for a
+    // cancel's cleanup included.
     bool isRunning() const;
-    // False when a batch is already running or there is nothing to do.
+    // A start made while a cancel cleans up begins once the cleanup ends,
+    // after the cancelled batch's batchFinished. False when a batch is
+    // already running or waits, or there is nothing to do.
     bool start(const QStringList &paths, const TranscribeOptions &options);
     // Transcribes what input hears until finishListening(), as one file with
     // no path that is never saved. Audio heard while the providers prepare waits for them, and a
     // provider that fails before any reached it hands all of it to the next.
-    // False when a batch is already running.
+    // Waits for a cancel's cleanup as start() does; false when a batch is
+    // already running or waits.
     bool startListening(AudioInput *input, const TranscribeOptions &options);
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
@@ -153,6 +158,7 @@ private:
     // Where the microphone is, for a batch started with startListening().
     enum class Microphone { Off, Listening, Stopping };
 
+    bool startBatch(std::function<void()> begin);
     void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
     void measureFile();
@@ -197,6 +203,11 @@ private:
     // microphone spins, may do either: after each such call the batch checks
     // it and goes no further once it moved.
     quint64 m_batch = 0;
+    // A cancel releases the batch's resources; the microphone's stop spins
+    // an event loop meanwhile.
+    bool m_cancelling = false;
+    // The start made during that cleanup, which begins once it ends.
+    std::function<void()> m_deferredStart;
     int m_index = -1;
 
     // The current pass over the file: a first that measures it, then one
