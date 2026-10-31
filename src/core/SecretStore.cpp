@@ -231,6 +231,9 @@ QString SecretStore::secret(Secret secret)
         entry.retryTimer.start();
         return {};
     }
+    // A deletion marker that came during the wait hides the answer, as a
+    // save made then outranks it.
+    if (const std::optional<QString> value = readWithoutKeyring(secret)) return *value;
     cacheValue(secret, answer.value);
     return answer.value;
 }
@@ -271,7 +274,7 @@ void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
 // neither the keyring nor the settings file gets a key back.
 QString SecretStore::writeRefusal() const
 {
-    if (m_settings && m_settings->raw().deleted()) {
+    if (m_settings && m_settings->raw().closed()) {
         return QStringLiteral("Speecher's settings were deleted");
     }
     return m_removals.isEmpty() ? QString() : QStringLiteral("Speecher's secrets are being removed");

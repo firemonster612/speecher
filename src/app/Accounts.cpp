@@ -240,7 +240,7 @@ void Accounts::write(SecretStore::Secret secret, const QString &value)
     // A key entered while the CLI Proxy preset shows belongs to the proxy's
     // server, not the Custom server saved behind it. Deleted settings take
     // no edit; storeSecret refuses with why.
-    if (secret == SecretStore::Secret::RefinementEndpointKey && !m_settings.raw().deleted()) {
+    if (secret == SecretStore::Secret::RefinementEndpointKey && !m_settings.raw().closed()) {
         m_settings.edit([](AppSettings &draft) {
             if (draft.refinement.endpoint.preset != QStringLiteral("cliproxy")) {
                 return false;

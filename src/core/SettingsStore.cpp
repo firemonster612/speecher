@@ -191,7 +191,7 @@ SettingsStore::SettingsStore(QObject *parent)
 
 bool SettingsStore::deleteAll(QString *path)
 {
-    // Before deleteFile, which points every QSettings made afterwards at a
+    // Before close, which points every QSettings made afterwards at a
     // throwaway folder.
     QString olderFile;
     if (!deleteOlderSettings(&olderFile)) {
@@ -202,7 +202,7 @@ bool SettingsStore::deleteAll(QString *path)
         }
         return false;
     }
-    if (m_settings.deleteFile()) {
+    if (m_settings.close({})) {
         return true;
     }
     if (path) {
@@ -220,7 +220,17 @@ bool SettingsStore::deleteAllButDeletionMarkers(QString *path)
     if (path) {
         *path = failedFiles(olderFile, file);
     }
-    return kept && olderDeleted;
+    if (!kept || !olderDeleted) {
+        return false;
+    }
+    // As after deleteAll, nothing set from now on brings a setting or a key
+    // back. Only now: a removal tried again must find the files that stayed.
+    QVariantMap markers;
+    for (const QString &key : m_settings.allKeys()) {
+        markers.insert(key, m_settings.value(key));
+    }
+    m_settings.close(markers);
+    return true;
 }
 
 bool SettingsStore::keepOnlyDeletionMarkers(QString *path)
@@ -234,14 +244,13 @@ bool SettingsStore::keepOnlyDeletionMarkers(QString *path)
     // So the next start takes neither the markers nor older settings that
     // wouldn't go for settings to import.
     m_settings.setValue(SettingsKeys::IdentityMigrationVersion, identityMigrationVersion);
-    const bool saved = m_settings.save();
-    // As after deleteAll, nothing set from now on brings a setting or a key
-    // back; a file that didn't save gets the markers when the store goes.
-    m_settings.closeKeepingFile();
-    if (!saved && path) {
+    if (m_settings.save()) {
+        return true;
+    }
+    if (path) {
         *path = m_settings.fileName();
     }
-    return saved;
+    return false;
 }
 
 SecretStore *SettingsStore::secrets() const
@@ -373,7 +382,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
 
 void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &previous)
 {
-    if (m_settings.deleted()) {
+    if (m_settings.closed()) {
         qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
         return;
     }
@@ -434,7 +443,7 @@ std::optional<QStringList> SettingsStore::addVocabularyTerms(const QStringList &
 {
     // It saves through a QSettings of its own, which would save this one's
     // changes too.
-    if (m_settings.deleted()) {
+    if (m_settings.closed()) {
         return std::nullopt;
     }
     const std::optional<QStringList> held = SettingsCodecs::addVocabularyTerms(terms);

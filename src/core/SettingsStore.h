@@ -69,16 +69,18 @@ public:
     // snapshot, a setter, a codec's write or a sync of raw() (SettingsFile),
     // so an edit made before Speecher quits can't bring the file back. A file
     // that won't go puts its path in path; when the older settings won't, it
-    // keeps what deleteAllButDeletionMarkers keeps instead, so the next start
-    // doesn't import them again, and path names the settings file too when
-    // that won't save. Only the running app's store calls it (SettingsFile).
+    // keeps only the deletion markers instead, so the next start doesn't
+    // import them again, and goes on saving, so a removal tried again finds
+    // them; path names the settings file too when that won't save. Only the
+    // running app's store calls it (SettingsFile).
     bool deleteAll(QString *path);
     // Clears every setting but SecretStore's deletion markers, which hide
     // keys the keyring kept, saves that, and deletes the older settings
     // deleteAll does: what removing Speecher with its settings does when
-    // deleting the file would show such a key. As after deleteAll, nothing
-    // the store holds is saved afterwards, and the settings file keeps the
-    // markers. The files that won't save or go put their paths in path.
+    // deleting the file would show such a key. Once all of that went through,
+    // as after deleteAll, nothing the store holds is saved afterwards, and the
+    // settings file keeps the markers. The files that won't save or go put
+    // their paths in path.
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
     // Starts Speecher at login, or stops it, as the saved launchAtLogin says.

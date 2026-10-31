@@ -1492,6 +1492,47 @@ private slots:
         comparePeerRead(settings, key, enteredForB);
     }
 
+    // A deletion marker that comes while a worker waits on the keyring hides
+    // the key the keyring answers with, as removal's marker does from a
+    // worker that opened the settings before it (r382 Sol5).
+    void aMarkerDuringAWorkersKeyringReadHidesTheKey()
+    {
+        if (!privateKeyring()) {
+            QSKIP("Requires the private keyring suite");
+        }
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
+        QVERIFY(savedApiKey(settings.secrets(), QStringLiteral("hidden-key")));
+        settings.raw().sync();
+        // The worker's read reaches this thread only after it found no
+        // marker: the marker goes in right then, before the keyring answers.
+        struct MarkOnRead : QObject {
+            std::function<void()> mark;
+            bool eventFilter(QObject *watched, QEvent *event) override
+            {
+                if (watched == QCoreApplication::instance() && event->type() == QEvent::MetaCall && mark) {
+                    std::exchange(mark, {})();
+                }
+                return false;
+            }
+        } markOnRead;
+        markOnRead.mark = [&settings, openAi] {
+            settings.raw().setValue(SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion"), true);
+        };
+        QCoreApplication::instance()->installEventFilter(&markOnRead);
+        QString read = QStringLiteral("unread");
+        std::unique_ptr<QThread> worker(QThread::create([&read] { read = SettingsStore().secrets()->apiKey(); }));
+
+        worker->start();
+
+        QTRY_VERIFY(worker->isFinished());
+        QCoreApplication::instance()->removeEventFilter(&markOnRead);
+        QVERIFY(!markOnRead.mark);
+        QCOMPARE(read, QString());
+    }
+
     // A saveFinished handler's saves wait their turn behind the one it
     // started first, and the newest is the one kept and answered as stored
     // (r382 Sol 2).
@@ -1987,7 +2028,8 @@ private slots:
     // their emptied folder, though QSettings can't write their file. When
     // they won't go, it says so, naming the current file too when that won't
     // keep only its markers, and keeps the next start from importing them:
-    // either way, Speecher starting again reads none of their keys.
+    // either way, Speecher starting again reads none of their keys. Tried
+    // again once they can go, removal deletes them (r382 Opus5).
     void removalLeavesNoOlderSettingsToImport_data()
     {
         QTest::addColumn<bool>("olderReadOnly");
@@ -2069,6 +2111,20 @@ private slots:
         if (!currentStays) {
             comparePeerRead(settings, proxy, QString(), true);
         }
+        if (!olderStay) {
+            return;
+        }
+        QFile::setPermissions(olderFolder, permissions);
+        QFile::setPermissions(file, filePermissions);
+        SpeecherRemoval retry(removalSteps(settings));
+        QSignalSpy retried(&retry, &SpeecherRemoval::finished);
+
+        retry.start(true);
+
+        QTRY_COMPARE(retried.count(), 1);
+        QCOMPARE(retried.first().first().value<RemovalReport>().steps.last().outcome, removed);
+        QVERIFY(!QFileInfo::exists(olderFile));
+        comparePeerRead(settings, proxy, QString(), true);
     }
 
     // An OpenAI key the keyring kept when removal couldn't delete it stays
