@@ -14,6 +14,7 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
+#include "app/ShortcutGesture.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/TrayIcon.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
@@ -30,6 +31,7 @@
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/HotKeyShortcutBinder.h"
+#include "platform/SessionShortcutBinder.h"
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
@@ -228,12 +230,38 @@ public:
     using SingleKeyShortcutBinder::SingleKeyShortcutBinder;
     using SingleKeyShortcutBinder::keyDown;
     using SingleKeyShortcutBinder::keyUp;
+    using SingleKeyShortcutBinder::keyPressedWithoutRelease;
 
     bool supported() const override { return true; }
 
 protected:
     QString watch(const PhysicalKey &) override { return {}; }
     void unwatch() override {}
+};
+
+// SessionShortcutBinder over keys that are only remembered: take() holds
+// whatever no other app owns, and bare keys are allowed.
+class FakeSessionShortcutBinder final : public SessionShortcutBinder {
+public:
+    using SessionShortcutBinder::SessionShortcutBinder;
+
+    bool supported() const override { return true; }
+    QString unsupportedReason() const override { return {}; }
+    QString unsupportedBindingReason(const ShortcutBinding &) const override { return {}; }
+
+    QKeySequence held;
+    QKeySequence ownedElsewhere;
+
+protected:
+    bool take(const QKeySequence &keys) override
+    {
+        if (keys == ownedElsewhere) {
+            return false;
+        }
+        held = keys;
+        return true;
+    }
+    void letGo() override { held = {}; }
 };
 
 // The macOS and Windows hot-key bookkeeping over a registration that only
@@ -917,6 +945,51 @@ private slots:
         QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
     }
 
+    // A binding changed while its key is down no longer watches that key, so
+    // the change is its release: push-to-talk must not stay held.
+    void rebindingAHeldKeyReleasesIt()
+    {
+        SettingsStore settings;
+        FakeSingleKeyShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        QVERIFY(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("F13"))));
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+
+        binder.keyDown();
+        QVERIFY(binder.setShortcut(ShortcutBinding::singleKey(QStringLiteral("F14"))));
+        QCOMPARE(released.count(), 1);
+        binder.keyDown();
+        QVERIFY(binder.setShortcut({}));
+        QCOMPARE(released.count(), 2);
+    }
+
+    // macOS reports Caps Lock's presses but never a release. Under
+    // push-to-talk one press starts dictation and the next ends it.
+    void pushToTalkOnAKeyWithoutReleaseToggles()
+    {
+        SettingsStore settings;
+        const ShortcutActivationMode mode = settings.dictationSnapshot().shortcutActivationMode;
+        const auto restore = qScopeGuard([&] {
+            settings.edit([&](AppSettings &draft) { draft.shortcutActivationMode = mode; return true; });
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
+            return true;
+        });
+        FakeSingleKeyShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        bool dictating = false;
+        ShortcutGesture gesture(settings, [&dictating] { return dictating; });
+        connect(&binder, &GlobalShortcutBinder::activated, &gesture, &ShortcutGesture::press);
+        connect(&binder, &GlobalShortcutBinder::deactivated, &gesture, &ShortcutGesture::release);
+        QSignalSpy started(&gesture, &ShortcutGesture::startRequested);
+        QSignalSpy toggled(&gesture, &ShortcutGesture::toggleRequested);
+
+        binder.keyPressedWithoutRelease();
+        QTRY_COMPARE(started.count(), 1);
+        dictating = true;
+        binder.keyPressedWithoutRelease();
+        QCOMPARE(toggled.count(), 1);
+    }
+
     // A held key's auto-repeat presses arrive as extra activated() signals on
     // some Linux desktops. Once the platform has proven it reports releases,
     // repeats between a press and its release must not toggle the session off.
@@ -1492,6 +1565,47 @@ private slots:
         QCOMPARE(restored.shortcut(), f13);
         QVERIFY(restored.setShortcut({}));
         QVERIFY(!settings.raw().contains(QStringLiteral("shortcuts/cancelDictation")));
+    }
+
+    // A session shortcut holds its keys only while armed and not suspended,
+    // so a bare key types as usual between sessions. Keys another app owns
+    // are refused while they are chosen, suspended or not, and the binding
+    // stays as it was.
+    void sessionShortcutHoldsItsKeysOnlyWhileArmed()
+    {
+        SettingsStore settings;
+        FakeSessionShortcutBinder binder(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
+        const QKeySequence bare(Qt::Key_C);
+        QVERIFY(binder.setShortcut(ShortcutBinding(bare)));
+        QVERIFY(binder.held.isEmpty());
+        binder.setArmed(true);
+        QCOMPARE(binder.held, bare);
+        binder.suspend();
+        QVERIFY(binder.held.isEmpty());
+        QCOMPARE(binder.resume(), QString());
+        QCOMPARE(binder.held, bare);
+        binder.setArmed(false);
+        QVERIFY(binder.held.isEmpty());
+
+        binder.ownedElsewhere = QKeySequence(Qt::Key_X);
+        const ShortcutBinding owned{binder.ownedElsewhere};
+        QString error;
+        QVERIFY(!binder.setShortcut(owned, &error));
+        QCOMPARE(error, QStringLiteral("%1 is already a shortcut in another app.").arg(owned.displayText()));
+        binder.suspend();
+        QVERIFY(!binder.setShortcut(owned));
+        QCOMPARE(binder.resume(), QString());
+        QCOMPARE(binder.shortcut().combination(), bare);
+
+        // Arming takes the stored binding after a restart, and nothing once
+        // the binding is removed.
+        FakeSessionShortcutBinder restored(&settings, GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
+        restored.bind();
+        restored.setArmed(true);
+        QCOMPARE(restored.held, bare);
+        QVERIFY(restored.removeRegistration());
+        QVERIFY(restored.held.isEmpty());
+        QVERIFY(restored.shortcut().isEmpty());
     }
 
     // On macOS and Windows the Dictation shortcut lives in settings. One never

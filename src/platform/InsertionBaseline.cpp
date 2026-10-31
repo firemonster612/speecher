@@ -45,15 +45,26 @@ bool InsertionBaseline::verify(const QString &plainText,
     if (plainText.isEmpty() || expected == before) {
         return false;
     }
+    return awaitInsertion([&]() -> std::optional<bool> {
+        const std::optional<QString> value = read();
+        if (!value) {
+            return std::nullopt;
+        }
+        return *value == expected;
+    });
+}
+
+bool awaitInsertion(const std::function<std::optional<bool>()> &check)
+{
     for (int attempt = 0; attempt < verificationAttempts; ++attempt) {
         if (attempt > 0) {
             spinEventLoop(verificationPauseMs);
         }
-        const std::optional<QString> value = read();
-        if (!value) {
+        const std::optional<bool> shown = check();
+        if (!shown) {
             return false;
         }
-        if (*value == expected) {
+        if (*shown) {
             return true;
         }
     }

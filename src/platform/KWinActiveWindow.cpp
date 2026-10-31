@@ -5,7 +5,6 @@
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
 #include <QDBusReply>
-#include <QDir>
 #include <QEventLoop>
 #include <QFile>
 #include <QScopeGuard>
@@ -50,12 +49,13 @@ bool kwinAvailable()
 
 // KWin only loads scripts from a file path (there is no loadScriptFromText on
 // the shipping interface), so the templated source is written to a runtime file
-// KWin reads back. The path doubles as the plugin name for unloading.
+// KWin reads back. Only the private runtime directory will do: a fixed name in
+// a shared one such as /tmp lets another account plant the script KWin runs.
 QString writeScriptFile(const QString &source)
 {
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (dir.isEmpty()) {
-        dir = QDir::tempPath();
+        return {};
     }
     const QString path = dir + QStringLiteral("/speecher-kwin-active-window.js");
     QFile file(path);
@@ -152,6 +152,10 @@ std::optional<KWinWindowInfo> KWinActiveWindow::activeWindow(int timeoutMs)
     if (scriptPath.isEmpty()) {
         return std::nullopt;
     }
+    // KWin refuses to load a plugin name it already has, and a probe that
+    // never got to unload (Speecher was killed mid-probe) leaves its script
+    // loaded for the rest of the KWin session.
+    unloadKWinScript();
     const int scriptId = loadKWinScript(scriptPath);
     if (scriptId < 0) {
         return std::nullopt;

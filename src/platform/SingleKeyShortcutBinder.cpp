@@ -70,7 +70,7 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
 {
     if (shortcut.isEmpty()) {
         unwatch();
-        m_down = false;
+        keyUp();
         m_binding = {};
         // The combination binder may store its sequence under the same key,
         // and a router clearing the single key right after a combination was
@@ -89,7 +89,8 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         }
         return false;
     }
-    m_down = false;
+    // The held key is no longer watched, so its release will never arrive.
+    keyUp();
     m_binding = shortcut;
     m_settings->setGlobalShortcut(action().role, m_binding);
     emit bindingChanged();
@@ -118,6 +119,13 @@ void SingleKeyShortcutBinder::keyDown(qint64 eventTimeMs)
     m_down = true;
     m_downEventTimeMs = eventTimeMs;
     emit activated();
+}
+
+void SingleKeyShortcutBinder::keyPressedWithoutRelease()
+{
+    if (m_suspensionCount == 0) {
+        emit activated();
+    }
 }
 
 void SingleKeyShortcutBinder::keyUp(qint64 eventTimeMs)

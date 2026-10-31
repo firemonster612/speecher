@@ -8,10 +8,6 @@
 namespace speecher {
 namespace {
 
-// A span longer than this is a paragraph the user rewrote, not a correction of
-// what Speecher dictated.
-constexpr int maxEditedSpanChars = 500;
-
 std::optional<QString> editedSpan(const QString &text, const CorrectionWindow &window)
 {
     if (text.isEmpty() || window.prefix.size() < correctionMinContextChars
@@ -29,7 +25,7 @@ std::optional<QString> editedSpan(const QString &text, const CorrectionWindow &w
         return std::nullopt;
     }
     const QString span = text.mid(start, suffixAt - start);
-    return span.size() <= maxEditedSpanChars ? std::optional<QString>(span) : std::nullopt;
+    return span.size() <= correctionMaxEditedChars ? std::optional<QString>(span) : std::nullopt;
 }
 
 } // namespace

@@ -293,8 +293,7 @@ Target MacTargetProvider::capture()
 
                 const QString value = stringAttribute(focused, kAXValueAttribute);
                 if (start <= value.size() && length <= value.size() - start) {
-                    target.nearbyTextBefore = value.left(start).right(nearbyTextChars);
-                    target.nearbyTextAfter = value.mid(start, nearbyTextChars);
+                    target.setNearbyText(value, start, start + length);
                 }
             }
         }
@@ -323,10 +322,14 @@ bool MacTargetProvider::stillFocused(const Target &target)
 
 bool MacTargetProvider::canInsertText(const Target &target)
 {
+    const auto element = static_cast<AXUIElementRef>(m_focusedElement);
+    // WebKit lets the selected text of a read-only control be set too, so
+    // that alone does not make the control take the insertion.
     return !target.secure
         && stillFocused(target)
-        && selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement)).has_value()
-        && selectedTextIsSettable(static_cast<AXUIElementRef>(m_focusedElement));
+        && selectedTextOffset(element).has_value()
+        && selectedTextIsSettable(element)
+        && takesTyping(element);
 }
 
 bool MacTargetProvider::insertText(const Target &target, const QString &plainText, QString *error)

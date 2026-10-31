@@ -43,7 +43,8 @@ void MediaPauseController::pausePlaying()
 {
     const quint64 generation = ++m_generation;
     m_pauseRequested = true;
-    m_pausedPlayers.clear();
+    // Players an earlier pause stopped stay listed for resumePaused(); asked
+    // again, they read as paused and would not be listed a second time.
     QDBusMessage listNames = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.DBus"),
         QStringLiteral("/org/freedesktop/DBus"),

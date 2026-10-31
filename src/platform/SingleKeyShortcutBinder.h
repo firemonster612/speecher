@@ -31,7 +31,8 @@ protected:
     // whether a stored key is waiting to be bound.
     ShortcutBinding storedBinding() const;
     // Starts observing the key, replacing any earlier watch. Empty on success,
-    // otherwise what to tell the user.
+    // otherwise what to tell the user; a failed watch leaves the earlier one
+    // in place, since the binding stays on its key.
     virtual QString watch(const PhysicalKey &key) = 0;
     virtual void unwatch() = 0;
     // Runs before a suspension lifts, so a backend can throw away what its
@@ -44,6 +45,9 @@ protected:
     // hold with deactivated().
     void keyDown(qint64 eventTimeMs = -1);
     void keyUp(qint64 eventTimeMs = -1);
+    // For a key whose release is never observed: each press activates once
+    // and never deactivates, as on a desktop that reports no release.
+    void keyPressedWithoutRelease();
 
 private:
     SettingsStore *m_settings;

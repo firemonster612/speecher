@@ -26,9 +26,8 @@ struct InsertionBaseline {
 
     // Reads the control until it shows exactly expectedAfter(plainText), so a
     // background edit or an ignored paste never verifies. `read` returns
-    // nothing to give up, such as when focus has moved. Some controls publish a
-    // write only on their next event-loop turn, so between reads this runs a
-    // nested event loop, user input excluded. Text identical to the replaced
+    // nothing to give up, such as when focus has moved. Reads are spaced as
+    // awaitInsertion() spaces its checks. Text identical to the replaced
     // selection changes nothing and never verifies.
     bool verify(const QString &plainText, const std::function<std::optional<QString>()> &read) const;
 
@@ -37,5 +36,12 @@ struct InsertionBaseline {
     std::optional<CorrectionWindow> correctionWindow(const Target &target,
                                                      const QString &plainText) const;
 };
+
+// Asks `check` whether an insertion shows yet, a few times over about a tenth
+// of a second: some controls publish a write only on their next event-loop
+// turn. Between checks this runs a nested event loop, user input excluded, so
+// Speecher's own UI stays live; whatever that loop runs may change the
+// caller's state. `check` returns nothing to give up at once.
+bool awaitInsertion(const std::function<std::optional<bool>()> &check);
 
 } // namespace speecher

@@ -175,6 +175,11 @@ int main(int argc, char **argv)
         matched = true;
         result |= runPortalTests(argc, argv);
     }
+    // Only when named, for the same reason: it takes KWin's name.
+    if (selectedSuite == QLatin1String("desktop_services")) {
+        matched = true;
+        result |= runDesktopServicesTests(argc, argv);
+    }
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

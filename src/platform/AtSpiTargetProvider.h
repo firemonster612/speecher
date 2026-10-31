@@ -39,6 +39,9 @@ private:
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;
     std::unique_ptr<KWinActiveWindow> m_activeWindow;
+    // Counts captures. A new snapshot can take the freed one's address, so
+    // this, not the pointer, says whether the snapshot was replaced.
+    quint64 m_captures = 0;
     bool m_correctionObservationEnabled = true;
 };
 

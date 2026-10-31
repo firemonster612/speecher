@@ -534,6 +534,29 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
     }
 
+    // The text after a selection starts where the selection ends, however
+    // long the selection is.
+    void nearbyTextLiesEitherSideOfTheSelection()
+    {
+        Target target;
+        const QString selected(300, QLatin1Char('s'));
+        target.setNearbyText(QStringLiteral("before ") + selected + QStringLiteral(" after"), 7, 307);
+        QCOMPARE(target.nearbyTextBefore, QStringLiteral("before "));
+        QCOMPARE(target.nearbyTextAfter, QStringLiteral(" after"));
+    }
+
+    // A cut that falls inside an emoji drops the half it would keep.
+    void nearbyTextNeverSplitsACharacter()
+    {
+        Target target;
+        const QString emoji = QString::fromUtf8("\xF0\x9F\x98\x80");
+        const QString before = emoji + QString(nearbyTextChars - 1, QLatin1Char('b'));
+        const QString after = QString(nearbyTextChars - 1, QLatin1Char('a')) + emoji;
+        target.setNearbyText(before + after, before.size(), before.size());
+        QCOMPARE(target.nearbyTextBefore, QString(nearbyTextChars - 1, QLatin1Char('b')));
+        QCOMPARE(target.nearbyTextAfter, QString(nearbyTextChars - 1, QLatin1Char('a')));
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;

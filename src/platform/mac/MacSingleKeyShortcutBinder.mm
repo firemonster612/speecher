@@ -35,7 +35,8 @@ QString accessibilityRequiredReason()
 //
 // Caps Lock has no release event: its bit is the LOCK state, which flips once
 // per press and never on release, so it cannot be mapped to down/up like the
-// other modifiers; the observe block special-cases it as one press per event.
+// other modifiers; the observe block reports each event as a press that is
+// never released.
 std::optional<NSUInteger> modifierFlagBit(int macKeyCode)
 {
     switch (macKeyCode) {
@@ -128,9 +129,10 @@ QString MacSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
     return {};
 }
 
+// The previous key stays watched until the new monitors are in place, so a
+// refused replacement leaves the binding as it was.
 QString MacSingleKeyShortcutBinder::watch(const PhysicalKey &key)
 {
-    unwatch();
     // setShortcut() already refused an untrusted binding; this is the last
     // line of defence against installing a monitor that would never fire.
     if (!AXIsProcessTrusted()) {
@@ -148,17 +150,13 @@ QString MacSingleKeyShortcutBinder::watch(const PhysicalKey &key)
         }
         // Caps Lock's flag bit is the lock state: it flips on every press and
         // never on release, so the down/up mapping below would activate on
-        // every other press only. Treat each flags-changed event as one full
-        // press. A hold cannot be observed for a lock key, so push-to-talk
-        // degrades to a tap on Caps Lock.
+        // every other press only. A press with an instant release would read
+        // as a brush of the key and start nothing under push-to-talk, so each
+        // event is a press that is never released: push-to-talk on Caps Lock
+        // toggles, as on a desktop that reports no release.
         if (target == kVK_CapsLock) {
             QMetaObject::invokeMethod(
-                this,
-                [this] {
-                    keyDown();
-                    keyUp();
-                },
-                Qt::QueuedConnection);
+                this, [this] { keyPressedWithoutRelease(); }, Qt::QueuedConnection);
             return;
         }
         bool down;
@@ -201,6 +199,7 @@ QString MacSingleKeyShortcutBinder::watch(const PhysicalKey &key)
         return QStringLiteral("macOS refused the key-event monitor for %1.")
             .arg(QString::fromLatin1(key.label));
     }
+    unwatch();
     m_globalMonitor = [globalMonitor retain];
     m_localMonitor = [localMonitor retain];
     return {};

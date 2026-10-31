@@ -171,6 +171,9 @@ struct Target {
 
     bool hasIdentity() const;
     bool hasSelection() const;
+    // Sets the nearby text from the control's whole text, either side of the
+    // selection [start, end), which is the caret where the two meet.
+    void setNearbyText(const QString &text, int start, int end);
 };
 
 QList<AppRecognitionRule> builtInAppRecognitionRules();

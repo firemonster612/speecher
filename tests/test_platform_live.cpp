@@ -7,6 +7,7 @@
 #include <QBuffer>
 #include <QMediaDevices>
 #include <QScopeGuard>
+#include <QTimer>
 
 #include <cmath>
 #include <memory>
@@ -746,6 +747,26 @@ private slots:
         QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
     }
 
+    // A capture while verification waits starts the next dictation's
+    // target: the earlier insertion can no longer be verified, even when the
+    // control then shows the text it waited for.
+    void liveAtSpiCaptureDuringVerificationEndsIt()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_RECAPTURE") != QStringLiteral("1")) {
+            QSKIP("Live AT-SPI recapture fixture is opt-in");
+        }
+        AtSpiTargetProvider provider;
+        provider.setCorrectionObservationEnabled(false);
+        const Target target = provider.capture();
+        QVERIFY(provider.canInsertText(target));
+        const QString inserted = QStringLiteral("late text ");
+        QTimer::singleShot(0, &provider, [&provider, &inserted] {
+            const Target next = provider.capture();
+            provider.insertText(next, inserted);
+        });
+        QVERIFY(!provider.verifyInsertion(target, inserted));
+    }
+
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_EDIT") != QStringLiteral("1")) {
@@ -935,6 +956,36 @@ private slots:
         QString copiedText;
         QVERIFY2(WlClipboardDelivery::readText(&copiedText, &error), qPrintable(error));
         QCOMPARE(copiedText, QStringLiteral("Speecher clipboard probe"));
+    }
+
+    // The nearby text lies either side of the selection, not of the caret at
+    // one end of it.
+    void liveAtSpiNearbyTextSkipsTheSelection()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_SELECTION") != QStringLiteral("1")) {
+            QSKIP("Live AT-SPI selection fixture is opt-in");
+        }
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QCOMPARE(target.selectedText, QStringLiteral("text"));
+        QCOMPARE(target.nearbyTextBefore, QStringLiteral("prefix "));
+        QCOMPARE(target.nearbyTextAfter, QStringLiteral(" suffix text"));
+    }
+
+    // A read-only field still offers AT-SPI's editable-text interface.
+    void liveAtSpiReadOnlyTargetTakesNoInsertion()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_READONLY") != QStringLiteral("1")) {
+            QSKIP("Live AT-SPI read-only fixture is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused read-only target was found");
+        QVERIFY(!target.editable);
+        QVERIFY(!provider.canInsertText(target));
+        QString error;
+        QVERIFY(!provider.insertText(target, QStringLiteral("inserted"), &error));
     }
 
     void liveAtSpiPasswordTargetIsPrivate()

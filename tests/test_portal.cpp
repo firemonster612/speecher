@@ -1,5 +1,6 @@
 // Portal requests, the screenshot provider and the portal's Global Shortcut
 // binder against a fake desktop portal on the suite's private session bus.
+#include "common/test_dbus_service.h"
 #include "common/test_suites.h"
 
 #include "core/SettingsStore.h"
@@ -12,7 +13,6 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusVariant>
-#include <QDBusVirtualObject>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -27,24 +27,17 @@ constexpr auto screenshotInterface = "org.freedesktop.portal.Screenshot";
 
 // The desktop portal, on a connection of its own. It answers the version
 // query and Close itself and holds every other call until the test answers.
-class FakePortal final : public QDBusVirtualObject {
+class FakePortal final : public FakeDBusService {
 public:
     FakePortal()
-        : m_bus(QDBusConnection::connectToBus(QDBusConnection::SessionBus,
-                                              QStringLiteral("speecher-fake-portal")))
+        : FakeDBusService(QStringLiteral("speecher-fake-portal"))
     {
     }
-
-    ~FakePortal() override { QDBusConnection::disconnectFromBus(m_bus.name()); }
 
     bool start()
     {
-        return m_bus.registerService(QString::fromLatin1(portalService))
-            && m_bus.registerVirtualObject(QString::fromLatin1(portalPath), this,
-                                           QDBusConnection::SubPath);
+        return FakeDBusService::start(QString::fromLatin1(portalService), QString::fromLatin1(portalPath));
     }
-
-    QString introspect(const QString &) const override { return {}; }
 
     bool handleMessage(const QDBusMessage &message, const QDBusConnection &) override
     {
@@ -158,7 +151,6 @@ private:
         m_bus.send(signal);
     }
 
-    QDBusConnection m_bus;
     QList<QDBusMessage> m_calls;
 };
 
@@ -254,6 +246,27 @@ private slots:
         m_portal.activate(QStringLiteral("/session/1"), binder.action().id);
 
         QTRY_COMPARE(activated.count(), 1);
+    }
+
+    // Choose shortcut pressed before the portal said it supports shortcuts
+    // goes ahead once it has, unless the shortcut was removed meanwhile, as
+    // when the person picks a single key instead.
+    void choosingAShortcutWaitsForSupport()
+    {
+        SettingsStore settings;
+        PortalGlobalShortcutBinder removed(&settings);
+        QVERIFY(!removed.supportKnown());
+        removed.registerShortcut();
+        QVERIFY(removed.removeRegistration());
+        QTRY_VERIFY(removed.supportKnown());
+        m_portal.sync();
+        QVERIFY(!m_portal.received(QStringLiteral("Register")));
+
+        PortalGlobalShortcutBinder binder(&settings);
+        QVERIFY(!binder.supportKnown());
+        binder.registerShortcut();
+        m_portal.reply(m_portal.take(QStringLiteral("Register")));
+        bindInNewSession(binder, QStringLiteral("/session/1"), QStringLiteral("Ctrl+Alt+D"));
     }
 
     // Removing the shortcut while the host identity is still registering

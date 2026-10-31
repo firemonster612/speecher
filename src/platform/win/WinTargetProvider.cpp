@@ -309,8 +309,7 @@ Target WinTargetProvider::capture()
                         target.selectionEnd = end;
                         target.selectedText = value.mid(start, end - start);
                     }
-                    target.nearbyTextBefore = value.left(start).right(nearbyTextChars);
-                    target.nearbyTextAfter = value.mid(end, nearbyTextChars);
+                    target.setNearbyText(value, start, end);
                 }
             }
         }

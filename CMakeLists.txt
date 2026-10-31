@@ -1556,6 +1556,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_keywatch.cpp
       tests/test_helper_install.cpp
       tests/test_portal.cpp
+      tests/test_desktop_services.cpp
     )
     # The KWin blur test runs a compositor of its own.
     pkg_check_modules(WAYLAND_SERVER QUIET IMPORTED_TARGET wayland-server)
@@ -1678,6 +1679,11 @@ if(SPEECHER_BUILD_TESTS)
       add_test(NAME speecher_portal
         COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- $<TARGET_FILE:speecher_tests> --suite portal)
       set_tests_properties(speecher_portal PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+      # So does the desktop services suite, with KWin and a media player.
+      add_test(NAME speecher_desktop_services
+        COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- $<TARGET_FILE:speecher_tests> --suite desktop_services)
+      set_tests_properties(speecher_desktop_services PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
     endif()
     find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
