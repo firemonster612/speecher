@@ -239,7 +239,8 @@ void DictationSession::toggleWith(const SessionOverrides &overrides)
 void DictationSession::toggleSession(const SessionOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
-    if (m_state == DictationState::Idle || m_state == DictationState::Error) {
+    if (m_state == DictationState::Idle || m_state == DictationState::Error
+        || m_state == DictationState::Delivering) {
         startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
@@ -269,6 +270,14 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     if (m_state == DictationState::Reviewing && !m_review.followingUp()) {
         startFollowUp();
         return;
+    }
+    // A delivery that has answered only shows its receipt, which gives way to
+    // the next dictation; one still on its way holds the shortcut.
+    if (m_state == DictationState::Delivering && m_completionTimer->isActive()) {
+        m_completionTimer->stop();
+        if (setState(DictationState::Idle) != m_step) {
+            return;
+        }
     }
     const bool followUp = m_state == DictationState::Reviewing && m_review.followingUp();
     if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
