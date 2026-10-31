@@ -1,5 +1,6 @@
 #include "app/MacSparkleUpdater.h"
 
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 
 #include <QDateTime>
@@ -526,7 +527,8 @@ void MacSparkleUpdater::finishRestart()
     }
     setState(State::Restarting);
     auto install = std::exchange(m_installReply, nullptr);
-    install(Reply::Install);
+    // Sparkle quits the app once told to install: key saves settle first.
+    m_settings->secrets()->afterWrites([install] { install(Reply::Install); });
 }
 
 void MacSparkleUpdater::dismissAvailableVersion()

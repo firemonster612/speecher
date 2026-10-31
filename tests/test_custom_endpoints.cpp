@@ -1435,8 +1435,16 @@ private slots:
     // move's clear, in the same save of the settings file, so another
     // process reading before the clear answers finds no key for the new
     // server (r382 Sol2 1).
+    void aSaveLandingAfterTheEndpointMovesStaysHidden_data()
+    {
+        QTest::addColumn<QString>("enteredForB");
+        QTest::newRow("cleared") << QString();
+        QTest::newRow("a key entered for the new server") << QStringLiteral("b-key");
+    }
+
     void aSaveLandingAfterTheEndpointMovesStaysHidden()
     {
+        QFETCH(QString, enteredForB);
 #ifdef Q_OS_WIN
         QSKIP("Windows test processes each keep their settings apart");
 #endif
@@ -1462,6 +1470,10 @@ private slots:
             editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://server-b.example/v1")});
             return true;
         });
+        // A key entered for B replaces the clear waiting behind the older save.
+        if (!enteredForB.isEmpty()) {
+            secrets->saveSecret(key, enteredForB);
+        }
         bool read = false;
 
         // Answered in the order asked: after the older save lands, before
@@ -1472,9 +1484,12 @@ private slots:
         });
 
         QTRY_VERIFY(read);
-        QTRY_COMPARE(finished.count(), 1);
-        QVERIFY(finished.first().at(2).toBool());
-        comparePeerRead(settings, key, QString());
+        bool settled = false;
+        secrets->afterWrites([&settled] { settled = true; });
+        QTRY_VERIFY(settled);
+        // The last request asked for answers: the clear, or the key for B.
+        QCOMPARE(finished.last().at(2).toBool(), enteredForB.isEmpty());
+        comparePeerRead(settings, key, enteredForB);
     }
 
     // A saveFinished handler's saves wait their turn behind the one it

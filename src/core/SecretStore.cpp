@@ -399,9 +399,10 @@ bool SecretStore::store(Secret secret, const Request &request, const std::option
     const auto said = fileSays();
     m_lastError.clear();
     const bool kept = !answer || keep(secret, request, *answer);
-    // A clear waiting its turn keeps whatever this older request stored
+    // A newer request waiting its turn behind a hidden key, such as a clear
+    // or the key entered after it, keeps whatever this older request stored
     // hidden, in the same save of the settings file.
-    if (const std::optional<Request> &next = state(secret).waiting; next && next->value.isEmpty()) {
+    if (state(secret).waiting && std::get<1>(said)) {
         hide(secret);
     }
     const QString refusal = m_lastError;

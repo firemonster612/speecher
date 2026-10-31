@@ -673,10 +673,6 @@ void ManifestUpdater::setState(State state, const QString &error)
 
 void ManifestUpdater::quitAfterKeySaves()
 {
-    if (!m_settings) {
-        QCoreApplication::quit();
-        return;
-    }
     m_settings->secrets()->afterWrites(&QCoreApplication::quit);
 }
 
