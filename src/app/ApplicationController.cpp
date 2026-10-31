@@ -807,23 +807,17 @@ bool ApplicationController::sessionActive() const
 
 void ApplicationController::toggle()
 {
-    if (sessionActive()) {
-        stopListening();
-        return;
-    }
-    if (!ensureSetupCompleted()) {
-        return;
-    }
-    startWithMicrophone([this] { m_session->toggle(); });
+    toggleWith({});
 }
 
 void ApplicationController::toggleWith(const SessionOverrides &overrides)
 {
-    if (!ensureSetupCompleted()) {
-        return;
-    }
+    // Stop before the setup check: a session already listening always ends.
     if (sessionActive()) {
         stopListening();
+        return;
+    }
+    if (!ensureSetupCompleted()) {
         return;
     }
     startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
