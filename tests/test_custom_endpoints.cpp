@@ -10,6 +10,7 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointTranscriptRefiner.h"
 #include "providers/LocalRunner.h"
+#include "providers/SpeechAudio.h"
 #ifdef Q_OS_LINUX
 #include "app/SpeecherRemoval.h"
 #endif
@@ -549,6 +550,40 @@ private slots:
         QCOMPARE(transcript.size(), 0);
         QTest::qWait(100);
         QVERIFY(!server.hasPendingConnections());
+    }
+
+    // A server slower than the speech falls at most two minutes behind: past
+    // that the oldest utterance waiting goes, reported, and the next goes up.
+    void speechEndpointDropsTheOldestUtteranceWaitingPastTwoMinutes()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"Yes.\"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy dropped(&transcriber, &SpeechTranscriber::utteranceFailed);
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
+        // The first goes up at once; the rest wait for it to answer.
+        const auto utterance = [&transcriber](char fill, int seconds) {
+            transcriber.beginUtterance(1);
+            transcriber.sendAudio(1, QByteArray(seconds * kSpeechBytesPerSecond, fill));
+            transcriber.endUtterance(1);
+        };
+        utterance('a', 1);
+        utterance('b', 60);
+        utterance('c', 60);
+        QCOMPARE(dropped.size(), 0);
+        utterance('d', 1);
+        QCOMPARE(dropped.size(), 1);
+        QCOMPARE(dropped.first().first().value<SpeechFailure>().message,
+                 QStringLiteral("Speech endpoint fell behind the speech; 60 s of it went untranscribed"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(finals.size(), 3, 5000);
+        QCOMPARE(server.requests.size(), 3);
+        QVERIFY(server.requests.at(0).contains(QByteArray(640, 'a')));
+        QVERIFY(server.requests.at(1).contains(QByteArray(640, 'c')));
+        QVERIFY(server.requests.at(2).contains(QByteArray(640, 'd')));
     }
 
     // An utterance the server hears no words in is still answered: its final
