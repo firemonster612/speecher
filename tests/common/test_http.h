@@ -46,6 +46,36 @@ inline QByteArray readHttpRequest(QTcpSocket *socket, int timeoutMs)
     return socket->readAll();
 }
 
+// Whether request is for 127.0.0.1:port, the origin a test gives the app.
+// Another program may probe each new local port, as T3 Code does with a
+// GET / for localhost; its requests are not the test's.
+inline bool isRequestFor(const QByteArray &request, quint16 port)
+{
+    // Qt 6.7+ lowercases header names; older Qt sends them as written.
+    const QByteArray headers = request.left(request.indexOf("\r\n\r\n") + 2).toLower();
+    return headers.contains("\r\nhost: 127.0.0.1:" + QByteArray::number(port) + "\r\n");
+}
+
+// Whether the app has sent server a request, waiting up to waitMs with
+// events running. Every pending connection is read: one with a request for
+// another host (isRequestFor) is dropped, and the first from the app ends
+// the wait. For asserting that none came, as what it reads is gone.
+inline bool appRequestArrived(QTcpServer &server, int waitMs = 0)
+{
+    QElapsedTimer timer;
+    timer.start();
+    for (;;) {
+        while (QTcpSocket *socket = server.nextPendingConnection()) {
+            const QByteArray request = readHttpRequest(socket, 1000);
+            socket->deleteLater();
+            if (isRequestFor(request, server.serverPort())) return true;
+        }
+        if (timer.elapsed() >= waitMs) return false;
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        server.waitForNewConnection(20);
+    }
+}
+
 inline QByteArray httpResponse(const QByteArray &status, const QByteArray &contentType, const QByteArray &body)
 {
     return "HTTP/1.1 " + status + "\r\nContent-Type: " + contentType + "\r\nContent-Length: "
@@ -90,10 +120,9 @@ private:
     void answer(QTcpSocket *socket)
     {
         const QByteArray request = socket->readAll();
-        // Only a request for origin() is the test's. Another program may
-        // probe each new local port, as T3 Code does with a GET / for
-        // localhost; it is neither recorded nor given a canned response.
-        const bool forOrigin = addressedToOrigin(request);
+        // Only a request for origin() is the test's; another is neither
+        // recorded nor given a canned response.
+        const bool forOrigin = isRequestFor(request, m_server.serverPort());
         if (forOrigin) requests << request;
         const QByteArray line = request.left(request.indexOf("\r\n"));
         const QByteArray route = line.split(' ').value(0) + ' ' + line.split(' ').value(1);
@@ -107,13 +136,6 @@ private:
         socket->write(response);
         socket->flush();
         socket->disconnectFromHost();
-    }
-
-    bool addressedToOrigin(const QByteArray &request) const
-    {
-        // Qt 6.7+ lowercases header names; older Qt sends them as written.
-        const QByteArray headers = request.left(request.indexOf("\r\n\r\n") + 2).toLower();
-        return headers.contains("\r\nhost: 127.0.0.1:" + QByteArray::number(m_server.serverPort()) + "\r\n");
     }
 
     QTcpServer m_server;

@@ -467,7 +467,7 @@ private slots:
         QVERIFY(failure.message.contains(QStringLiteral("sent nothing")));
         QCOMPARE(failure.kind, ProviderFailureKind::Timeout);
         QVERIFY(!failure.retryable);
-        QVERIFY(!server.hasPendingConnections());
+        QVERIFY(!appRequestArrived(server));
         QCOMPARE(transcript.size(), 1);
         QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("One two three four"));
     }
@@ -525,8 +525,7 @@ private slots:
         QVERIFY(firstRequest.contains(QByteArray(640, 'a')));
         QVERIFY(!firstRequest.contains(QByteArray(640, 'b')));
         QVERIFY(firstRequest.contains("name=\"prompt\"\r\n\r\nSpeecher\r\n"));
-        QTest::qWait(100);
-        QVERIFY(!server.hasPendingConnections());
+        QVERIFY(!appRequestArrived(server, 100));
         // 282 characters: the tail starts 200 from the end, part way into a
         // "word", so at the next.
         const QString firstText = QStringLiteral("word ").repeated(50) + QStringLiteral("Can you look at the retry logic?");
@@ -548,8 +547,7 @@ private slots:
         QCOMPARE(finals.at(0).at(1).toString(), firstText);
         QCOMPARE(finals.at(1).at(1).toString(), QStringLiteral("It drops the last chunk."));
         QCOMPARE(transcript.size(), 0);
-        QTest::qWait(100);
-        QVERIFY(!server.hasPendingConnections());
+        QVERIFY(!appRequestArrived(server, 100));
     }
 
     // A server slower than the speech falls at most two minutes behind: past

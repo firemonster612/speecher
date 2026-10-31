@@ -1790,8 +1790,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QCOMPARE(completed.size(), 0);
-        QTest::qWait(100);
-        QVERIFY(!server.hasPendingConnections());
+        QVERIFY(!appRequestArrived(server, 100));
         QCOMPARE(failed.size(), 1);
     }
 
@@ -1833,8 +1832,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QCOMPARE(delta.size(), 1);
         QCOMPARE(completed.size(), 0);
-        QTest::qWait(100);
-        QVERIFY(!server.hasPendingConnections());
+        QVERIFY(!appRequestArrived(server, 100));
     }
 
     void anthropicApiRefinerOmitsFastModeForUnsupportedModels()

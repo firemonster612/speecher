@@ -480,7 +480,7 @@ private slots:
         QCOMPARE(session.state(), DictationState::Listening);
         QVERIFY(audio.isActive());
         // The accuracy pass belongs to the end of dictation, not to a rollover.
-        QVERIFY(!http.hasPendingConnections());
+        QVERIFY(!appRequestArrived(http));
 
         session.stopListening();
         peers.last()->sendTextMessage(QStringLiteral(
