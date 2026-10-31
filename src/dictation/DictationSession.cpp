@@ -1194,9 +1194,17 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         spokenWords.value_or(countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text));
     m_refinementGeneration = 0;
     m_lastTranscript = text;
+    // A handler of Delivering or of the vocabulary's change, such as a quit,
+    // may move the session on; it then delivers nothing.
     const quint64 step = setState(DictationState::Delivering);
+    if (step != m_step) {
+        return;
+    }
     qInfo() << "deliverFinal length=" << text.size();
     m_settings->recordVocabularyUsage(text);
+    if (step != m_step) {
+        return;
+    }
     m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, profile, profileName,
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;
