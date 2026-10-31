@@ -478,6 +478,7 @@ set(SPEECHER_PLATFORM_HEADERS
 
 set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/output/HelperInstall.cpp
+  src/output/ProcessRunner.cpp
   src/output/WaylandClipboardOwner.cpp
   src/output/WaylandClipboardProcess.cpp
   src/output/WlClipboardDelivery.cpp
@@ -507,6 +508,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
 set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/HelperInstall.h
   src/output/HelperPath.h
+  src/output/ProcessRunner.h
   src/output/WaylandClipboardOwner.h
   src/output/WaylandClipboardProcess.h
   src/output/WlClipboardDelivery.h

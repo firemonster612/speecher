@@ -1,5 +1,7 @@
 #include "output/YdotoolDelivery.h"
 
+#include "output/ProcessRunner.h"
+
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
@@ -47,19 +49,22 @@ bool runYdotool(const QString &executable,
     return false;
 }
 
+// Lets go of both Ctrl and both Shift keys, so a held one cannot turn the
+// keystrokes into another shortcut.
+QStringList modifierReleaseArguments()
+{
+    return {QStringLiteral("key"),
+            QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
+            QStringLiteral("29:0"),
+            QStringLiteral("97:0"),
+            QStringLiteral("42:0"),
+            QStringLiteral("54:0")};
+}
+
 bool releaseModifierKeys(const QString &executable, const QProcessEnvironment &env)
 {
     QString ignored;
-    return runYdotool(executable,
-                      env,
-                      {QStringLiteral("key"),
-                       QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
-                       QStringLiteral("29:0"),
-                       QStringLiteral("97:0"),
-                       QStringLiteral("42:0"),
-                       QStringLiteral("54:0")},
-                      modifierTimeoutMs,
-                      &ignored);
+    return runYdotool(executable, env, modifierReleaseArguments(), modifierTimeoutMs, &ignored);
 }
 
 } // namespace
@@ -154,21 +159,20 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
     return true;
 }
 
-bool YdotoolDelivery::pasteFromClipboard(const QString &text,
+void YdotoolDelivery::pasteFromClipboard(const QString &text,
                                          PasteMethod method,
                                          const std::function<bool()> &clearToInject,
-                                         QString *error)
+                                         std::function<void(bool, const QString &)> done)
 {
     if (text.isEmpty()) {
-        return true;
+        done(true, {});
+        return;
     }
 
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
     if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("ydotool is not installed");
-        }
-        return false;
+        done(false, QStringLiteral("ydotool is not installed"));
+        return;
     }
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -176,23 +180,26 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text,
     if (!socket.isEmpty()) {
         env.insert(QStringLiteral("YDOTOOL_SOCKET"), socket);
     }
-
-    releaseModifierKeys(executable, env);
-    // The modifier release above blocks; the user may have switched windows
-    // meanwhile. Last check before the keystroke, because a paste into the
-    // wrong window cannot be undone.
-    if (clearToInject && !clearToInject()) {
-        if (error) {
-            *error = QStringLiteral("The active window changed or could not be verified");
+    const auto ydotool = [executable, env](const QStringList &arguments, int timeoutMs) {
+        return ProcessCommand{executable, QStringLiteral("ydotool"), arguments, std::nullopt, false, timeoutMs,
+                              16 * 1024 * 1024, env};
+    };
+    const ProcessCommand release = ydotool(modifierReleaseArguments(), modifierTimeoutMs);
+    // The paste's own answer, once the modifiers are released after it.
+    const auto releaseThenAnswer = [this, release, done](const ProcessResult &paste) {
+        runProcess(release, this, [paste, done](const ProcessResult &) { done(paste.ok, paste.error); });
+    };
+    const ProcessCommand paste = ydotool(pasteShortcutArguments(method), shortcutTimeoutMs);
+    runProcess(release, this, [this, clearToInject, paste, releaseThenAnswer, done](const ProcessResult &) {
+        // The release took a turn of the event loop or more; the user may
+        // have switched windows meanwhile. Last check before the keystroke,
+        // because a paste into the wrong window cannot be undone.
+        if (clearToInject && !clearToInject()) {
+            done(false, QStringLiteral("The active window changed or could not be verified"));
+            return;
         }
-        return false;
-    }
-    if (!runYdotool(executable, env, pasteShortcutArguments(method), shortcutTimeoutMs, error)) {
-        releaseModifierKeys(executable, env);
-        return false;
-    }
-    releaseModifierKeys(executable, env);
-    return true;
+        runProcess(paste, this, releaseThenAnswer);
+    });
 }
 
 } // namespace speecher

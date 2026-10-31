@@ -60,6 +60,41 @@ static QString virtualKeyboardMethod()
 #endif
 }
 
+#ifdef SPEECHER_WITH_WAYLAND
+// A ydotool first on PATH for its lifetime, which logs each call's arguments
+// and takes releaseDelay seconds to let go of the modifiers.
+class FakeYdotool {
+public:
+    explicit FakeYdotool(const char *releaseDelay)
+        : m_path(qgetenv("PATH"))
+    {
+        QFile script(m_dir.filePath(QStringLiteral("ydotool")));
+        if (script.open(QIODevice::WriteOnly)) {
+            script.write("#!/bin/sh\necho \"$*\" >> '" + QFile::encodeName(log()) + "'\n"
+                         "case \"$*\" in *'29:0 97:0'*) /bin/sleep " + QByteArray(releaseDelay) + ";; esac\n");
+            script.close();
+            script.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        }
+        qputenv("PATH", QFile::encodeName(m_dir.path()) + ':' + m_path);
+    }
+    ~FakeYdotool() { qputenv("PATH", m_path); }
+
+    // Each call's arguments, in order.
+    QStringList calls() const
+    {
+        QFile file(log());
+        return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts)
+                                              : QStringList();
+    }
+
+private:
+    QString log() const { return m_dir.filePath(QStringLiteral("calls")); }
+
+    QTemporaryDir m_dir;
+    const QByteArray m_path;
+};
+#endif
+
 class DeliveryTests : public QObject {
     Q_OBJECT
 
@@ -1455,6 +1490,78 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 
 #ifdef SPEECHER_WITH_WAYLAND
+    void ydotoolPastesInTheBackgroundBehindTheGate_data()
+    {
+        QTest::addColumn<bool>("clear");
+        QTest::newRow("gate clears the paste") << true;
+        QTest::newRow("gate refuses it") << false;
+    }
+
+    // ydotool runs in the background: the event loop keeps turning while it
+    // lets go of the modifiers, and the gate is asked after that release and
+    // before the paste keys. A refused gate sends no paste keys.
+    void ydotoolPastesInTheBackgroundBehindTheGate()
+    {
+        QFETCH(bool, clear);
+        const FakeYdotool ydotool("0.2");
+        YdotoolDelivery delivery;
+        int turns = 0;
+        QTimer ticker;
+        connect(&ticker, &QTimer::timeout, this, [&turns] { ++turns; });
+        ticker.start(10);
+        qsizetype callsAtGate = -1;
+        std::optional<bool> pasted;
+        delivery.pasteFromClipboard(
+            QStringLiteral("hello"), PasteMethod::StandardPaste,
+            [&] {
+                callsAtGate = ydotool.calls().size();
+                return clear;
+            },
+            [&pasted](bool ok, const QString &) { pasted = ok; });
+        QTRY_VERIFY(pasted.has_value());
+        ticker.stop();
+
+        QVERIFY2(turns >= 5, qPrintable(QString::number(turns)));
+        QCOMPARE(*pasted, clear);
+        QCOMPARE(callsAtGate, 1);
+        const QStringList calls = ydotool.calls();
+        QCOMPARE(calls.size(), clear ? 3 : 1);
+        QVERIFY(calls.first().contains(QStringLiteral("29:0")));
+        if (clear) {
+            QVERIFY(calls.at(1).contains(QStringLiteral("47:1")));
+            QVERIFY(calls.at(2).contains(QStringLiteral("29:0")));
+        }
+    }
+
+    // The deadline can come while ydotool still lets go of the modifiers: the
+    // delivery is answered as unfinished, and the paste keys never follow.
+    void aDeliveryStoppedWhileYdotoolWorksPressesNoKeys()
+    {
+        const FakeYdotool ydotool("0.3");
+        class Focused final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override { return true; }
+        } targetProvider;
+        TextDelivery delivery(&targetProvider);
+        delivery.setAnswerDeadlineMs(50);
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QCOMPARE(result.message, QStringLiteral("Delivery did not finish in time"));
+        QTest::qWait(500);
+        const QStringList calls = ydotool.calls();
+        QVERIFY(!calls.isEmpty());
+        QVERIFY2(std::none_of(calls.cbegin(), calls.cend(),
+                              [](const QString &call) { return call.contains(QStringLiteral("47:1")); }),
+                 qPrintable(calls.join(QStringLiteral(" | "))));
+    }
+
     // Publishing replaces the helper serving the selection without waiting
     // for it: the new one's answer comes while the old one still runs, and
     // the old one is stopped soon after.

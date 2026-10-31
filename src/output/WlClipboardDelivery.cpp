@@ -2,6 +2,7 @@
 
 #include "dictation/DictationPorts.h"
 #include "output/WaylandClipboardOwner.h"
+#include "output/ProcessRunner.h"
 #include "output/WaylandClipboardProcess.h"
 
 #include <QElapsedTimer>
@@ -91,8 +92,8 @@ void copyBytes(const QByteArray &data,
     if (!mimeType.isEmpty()) {
         arguments << QStringLiteral("--type") << mimeType;
     }
-    WaylandClipboardProcess::run({executable, QStringLiteral("wl-copy"), arguments, data}, context,
-                                 [done](const WaylandClipboardProcess::CommandResult &result) {
+    runProcess({executable, QStringLiteral("wl-copy"), arguments, data}, context,
+                                 [done](const ProcessResult &result) {
                                      done(result.ok, result.error);
                                  });
 }
@@ -123,11 +124,11 @@ void captureParts(const QString &executable,
         return;
     }
     const QString mimeType = remaining.takeFirst();
-    WaylandClipboardProcess::run(
+    runProcess(
         {executable, QStringLiteral("wl-paste"), {QStringLiteral("--no-newline"), QStringLiteral("--type"), mimeType},
          std::nullopt, true, remainingMs, maximumFormatBytes},
         context,
-        [=](const WaylandClipboardProcess::CommandResult &result) mutable {
+        [=](const ProcessResult &result) mutable {
             if (!result.ok) {
                 done({false, {}, result.error});
                 return;
@@ -234,11 +235,11 @@ void WlClipboardDelivery::capture(QObject *context, std::function<void(const Cli
 
     QElapsedTimer deadline;
     deadline.start();
-    WaylandClipboardProcess::run(
+    runProcess(
         {executable, QStringLiteral("wl-paste"), {QStringLiteral("--list-types")}, std::nullopt, true,
          snapshotDeadlineMs, 64 * 1024},
         context,
-        [executable, deadline, context, done](const WaylandClipboardProcess::CommandResult &types) {
+        [executable, deadline, context, done](const ProcessResult &types) {
             if (!types.ok) {
                 if (WaylandClipboardProcess::looksLikeEmptyClipboardError(types.error)) {
                     done({true, {}, {}});
@@ -334,8 +335,8 @@ void WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
             answer(false, QStringLiteral("wl-copy is not installed"));
             return;
         }
-        WaylandClipboardProcess::run({executable, QStringLiteral("wl-copy"), {QStringLiteral("--clear")}}, context,
-                                     [answer](const WaylandClipboardProcess::CommandResult &result) {
+        runProcess({executable, QStringLiteral("wl-copy"), {QStringLiteral("--clear")}}, context,
+                                     [answer](const ProcessResult &result) {
                                          answer(result.ok, result.error);
                                      });
         return;
