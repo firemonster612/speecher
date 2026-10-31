@@ -22,6 +22,7 @@
 #endif
 
 #ifdef SPEECHER_WITH_PULSE
+#include <QLocalServer>
 #include <QProcess>
 
 #include <pulse/pulseaudio.h>
@@ -379,6 +380,37 @@ private slots:
         QVERIFY(!capture.isActive());
     }
 
+    // Warm, the microphone standing in for a missing one stays open from one
+    // capture to the next instead of reopening at every start.
+    void liveWarmAudioKeepsTheStandInForAMissingDevice()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_AUDIO") != QStringLiteral("1")) {
+            QSKIP("Live audio-capture check is opt-in");
+        }
+        static int opens = 0;
+        opens = 0;
+        const QtMessageHandler previous = qInstallMessageHandler(
+            [](QtMsgType, const QMessageLogContext &, const QString &message) {
+                if (message.startsWith(QLatin1String("audio capture source started"))) {
+                    ++opens;
+                }
+            });
+        const auto restore = qScopeGuard([previous] { qInstallMessageHandler(previous); });
+
+        AudioCaptureSettings audio;
+        audio.deviceId = QStringLiteral("missing-live-test-device");
+        audio.mode = QStringLiteral("warm");
+        audio.vadEnabled = false;
+        QtAudioInput capture(audio);
+        capture.warmUp();
+        for (int run = 0; run < 2; ++run) {
+            QString error;
+            QVERIFY2(test::startAndWait(capture, &error), qPrintable(error));
+            QVERIFY(test::stopAndWait(capture));
+        }
+        QCOMPARE(opens, 1);
+    }
+
 #ifdef SPEECHER_WITH_PULSE
     void systemAudioCaptureFailsWithoutSoundServer()
     {
@@ -399,6 +431,26 @@ private slots:
         // The failed start is reported once, by failed().
         QTest::qWait(100);
         QCOMPARE(failed.count(), 1);
+    }
+
+    // A sound server that takes the connection and never answers fails the
+    // start within open()'s deadline instead of holding the main thread.
+    void systemAudioCaptureGivesUpOnASilentSoundServer()
+    {
+        QTemporaryDir dir;
+        QLocalServer silent;
+        QVERIFY(silent.listen(dir.filePath(QStringLiteral("silent"))));
+        const QByteArray previousServer = qgetenv("PULSE_SERVER");
+        qputenv("PULSE_SERVER", "unix:" + QFile::encodeName(silent.fullServerName()));
+        const auto restoreServer = qScopeGuard([&] {
+            previousServer.isNull() ? qunsetenv("PULSE_SERVER") : qputenv("PULSE_SERVER", previousServer);
+        });
+
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QString error;
+        QVERIFY(!test::startAndWait(*capture, &error));
+        QCOMPARE(error, QStringLiteral("The sound server did not answer within 3 seconds."));
+        QVERIFY(!capture->isActive());
     }
 
     void systemAudioCaptureFollowsDefaultOutput()
