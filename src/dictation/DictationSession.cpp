@@ -343,23 +343,28 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         return;
     }
     m_continuedStartupGeneration = generation;
-    const quint64 step = m_step;
-
     clearScreenshotContext();
-    // Capturing can spin an event loop, where a stop or cancel ends this start
-    // and drops the session settings: the rules classification reads after it
-    // are a copy.
-    const QList<AppRecognitionRule> rules = m_sessionSettings->appRecognitionRules;
     // A follow-up edits the same selection, so the Target is the review's:
     // capturing again would also replace the control the provider tracks.
-    Target target = m_review.followingUp() ? m_review.revision().target
-        : m_targetProvider ? m_targetProvider->capture()
-                           : Target{};
-    if (step != m_step) {
+    if (m_review.followingUp() || !m_targetProvider) {
+        continueStartupWithTarget(generation, m_review.followingUp() ? m_review.revision().target : Target{});
         return;
     }
-    m_target = std::move(target);
-    m_target.category = classifyTarget(m_target, rules);
+    // The answer can come later, from the compositor: a stop, a cancel or a
+    // failure meanwhile ends this start, and the answer with it. A handler
+    // run inside capture() does the same.
+    const quint64 step = m_step;
+    m_targetProvider->capture(this, [this, generation, step](const Target &target) {
+        if (generation == m_generation && step == m_step) {
+            continueStartupWithTarget(generation, target);
+        }
+    });
+}
+
+void DictationSession::continueStartupWithTarget(quint64 generation, const Target &target)
+{
+    m_target = target;
+    m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -1121,18 +1126,24 @@ void DictationSession::replaceWithRevision()
     // The person may have clicked or typed in the Target while reading. The
     // edit replaces only the selection it was made from; any other goes
     // untouched and the edit waits on the clipboard. Read while the review is
-    // still up: reading can spin an event loop, where a cancel, a follow-up or
-    // another Replace acts on the review as it stands.
+    // still up: until the answer, a cancel or a follow-up acts on the review
+    // as it stands, and the answer then counts for nothing. Of two Replaces,
+    // the first answer delivers and so moves the session on past the other.
     const quint64 step = m_step;
-    const bool unchanged = selectionUnchanged();
-    if (step != m_step) {
-        return;
-    }
+    checkSelectionUnchanged(step, [this, step](bool unchanged) {
+        if (step == m_step) {
+            deliverRevision(unchanged);
+        }
+    });
+}
+
+void DictationSession::deliverRevision(bool selectionUnchanged)
+{
     const EditReview::Revision review = m_review.revision();
     m_review.end();
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
-    if (!unchanged) {
+    if (!selectionUnchanged) {
         m_sessionSettings->output.pasteRules = {{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}};
         deliverFinal(review.edit, selectionChangedNote(), review.spokenWords);
         return;
@@ -1143,19 +1154,24 @@ void DictationSession::replaceWithRevision()
 // The control the edit was made in must still be the focused one, holding the
 // same selection. Without a way to read the Target, the selection is taken as
 // it was.
-bool DictationSession::selectionUnchanged()
+void DictationSession::checkSelectionUnchanged(quint64 step, std::function<void(bool)> done)
 {
     if (!m_targetProvider) {
-        return true;
+        done(true);
+        return;
     }
     // Checked first: capturing again replaces the control the provider tracks
-    // with whichever is focused now.
-    if (m_targetProvider->focusMatch(m_target) != TargetProvider::FocusMatch::Same) {
-        return false;
-    }
-    const Target now = m_targetProvider->capture();
-    return now.selectedText == m_target.selectedText && now.selectionStart == m_target.selectionStart
-        && now.selectionEnd == m_target.selectionEnd;
+    // with whichever is focused now, which a session moved on must not.
+    m_targetProvider->focusMatch(m_target, this, [this, step, done](TargetProvider::FocusMatch focus) {
+        if (focus != TargetProvider::FocusMatch::Same || step != m_step) {
+            done(false);
+            return;
+        }
+        m_targetProvider->capture(this, [this, done](const Target &now) {
+            done(now.selectedText == m_target.selectedText && now.selectionStart == m_target.selectionStart
+                 && now.selectionEnd == m_target.selectionEnd);
+        });
+    });
 }
 
 void DictationSession::deliverFinal(const QString &text, const QString &note, std::optional<int> spokenWords)

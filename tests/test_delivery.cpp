@@ -30,7 +30,7 @@ public:
     }
 
     void deliver(const DeliveryContent &content,
-                 const std::function<bool()> &,
+                 const PasteGate &,
                  std::function<void(const Outcome &)> done) override
     {
         m_attempts->append(m_method);
@@ -1173,7 +1173,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         class TargetWithBaseline final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
             bool preparePaste(const Target &) override { prepared = true; return true; }
             bool prepared = false;
@@ -1182,7 +1182,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         public:
             explicit PasteBackend(bool &prepared) : prepared(prepared) {}
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &,
+                         const PasteGate &,
                          std::function<void(const Outcome &)> done) override
             {
                 done({prepared, false, {}});
@@ -1209,7 +1209,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         class FocusedTarget final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
         } targetProvider;
         std::function<void(const DeliveryBackend::Outcome &)> held;
@@ -1218,7 +1218,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         public:
             explicit Backend(std::function<void(const Outcome &)> &held) : held(held) {}
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &,
+                         const PasteGate &,
                          std::function<void(const Outcome &)> done) override
             {
                 if (!held) {
@@ -1260,7 +1260,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         class FocusedTarget final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
         } targetProvider;
         bool waiting = false;
@@ -1270,7 +1270,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             Backend(bool &waiting, bool &gone) : waiting(waiting), gone(gone) {}
             ~Backend() override { gone = true; }
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &,
+                         const PasteGate &,
                          std::function<void(const Outcome &)>) override
             {
                 waiting = true;
@@ -1315,7 +1315,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         class SlowFocus final : public TargetProvider {
         public:
             explicit SlowFocus(int waitingCheck) : waitingCheck(waitingCheck) {}
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override
             {
                 reentered = reentered || waiting;
@@ -1344,15 +1344,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         public:
             explicit GatedBackend(int &pressed) : pressed(pressed) {}
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &clearToInject,
+                         const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) override
             {
-                if (clearToInject && !clearToInject()) {
-                    done({false, false, QStringLiteral("refused")});
-                    return;
+                const auto press = [this, done](bool clear) {
+                    if (!clear) {
+                        done({false, false, QStringLiteral("refused")});
+                        return;
+                    }
+                    ++pressed;
+                    done({true, false, {}});
+                };
+                if (clearToInject) {
+                    clearToInject(press);
+                } else {
+                    press(true);
                 }
-                ++pressed;
-                done({true, false, {}});
             }
             int &pressed;
         };
@@ -1396,7 +1403,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QFETCH(bool, insertsDirectly);
         class SlowVerification final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
             bool canInsertText(const Target &) override { return insertsDirectly; }
             bool insertText(const Target &, const QString &, QString *) override { return true; }
@@ -1447,7 +1454,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QFETCH(bool, goesMidCheck);
         class Focus final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override
             {
                 if (const auto go = std::exchange(duringFirstCheck, {})) {
@@ -1465,15 +1472,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         public:
             explicit Backend(int &pressed) : pressed(pressed) {}
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &clearToInject,
+                         const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) override
             {
-                if (clearToInject && !clearToInject()) {
-                    done({false, false, {}});
-                    return;
+                const auto press = [this, done](bool clear) {
+                    if (!clear) {
+                        done({false, false, {}});
+                        return;
+                    }
+                    ++pressed;
+                    done({true, false, {}});
+                };
+                if (clearToInject) {
+                    clearToInject(press);
+                } else {
+                    press(true);
                 }
-                ++pressed;
-                done({true, false, {}});
             }
             int &pressed;
         };
@@ -1526,9 +1540,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         std::optional<bool> pasted;
         delivery.pasteFromClipboard(
             QStringLiteral("hello"), PasteMethod::StandardPaste,
-            [&] {
+            [&](std::function<void(bool)> reply) {
                 callsAtGate = ydotool.calls().size();
-                return clear;
+                reply(clear);
             },
             [&pasted](bool ok, const QString &) { pasted = ok; });
         QTRY_VERIFY(pasted.has_value());
@@ -1554,7 +1568,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(ydotool.ready());
         class Focused final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
         } targetProvider;
         TextDelivery delivery(&targetProvider);
@@ -1597,7 +1611,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const FakeYdotool ydotool("0.1", "5");
         QVERIFY(ydotool.ready());
         auto *delivery = new YdotoolDelivery;
-        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste, [] { return true; },
+        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste,
+                                     [](std::function<void(bool)> reply) { reply(true); },
                                      [](bool, const QString &) {});
         // The paste keys are going out.
         QTRY_COMPARE(ydotool.calls().size(), 2);
@@ -1616,7 +1631,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(ydotool.ready());
         class Focused final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
         } targetProvider;
         TextDelivery delivery(&targetProvider);
@@ -1692,6 +1707,68 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 #endif
 
+    void pasteKeysWaitForAFocusAnswerThatComesLater_data()
+    {
+        QTest::addColumn<bool>("stillFocused");
+        QTest::newRow("focus held") << true;
+        QTest::newRow("focus moved at the last moment") << false;
+    }
+
+    // Focus checks that ask the compositor answer on a later turn of the
+    // event loop: the paste is readied and the keys go out only from the
+    // answers, and not at all when the last one says focus moved.
+    void pasteKeysWaitForAFocusAnswerThatComesLater()
+    {
+        QFETCH(bool, stillFocused);
+        class LaterFocus final : public TargetProvider {
+        public:
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
+            void focusMatch(const Target &, QObject *context, std::function<void(FocusMatch)> done) override
+            {
+                const bool same = ++checks < 3 || lastCheckFocused;
+                QTimer::singleShot(10, context, [done, same] { done(same ? FocusMatch::Same : FocusMatch::Different); });
+            }
+            bool preparePaste(const Target &) override
+            {
+                ++prepared;
+                return true;
+            }
+            int checks = 0;
+            int prepared = 0;
+            bool lastCheckFocused = true;
+        } targetProvider;
+        targetProvider.lastCheckFocused = stillFocused;
+        int pressed = 0;
+        class GatedBackend final : public DeliveryBackend {
+        public:
+            explicit GatedBackend(int &pressed) : pressed(pressed) {}
+            void deliver(const DeliveryContent &, const PasteGate &clearToInject,
+                         std::function<void(const Outcome &)> done) override
+            {
+                clearToInject([this, done](bool clear) {
+                    pressed += clear ? 1 : 0;
+                    done({clear, false, clear ? QString() : QStringLiteral("refused")});
+                });
+            }
+            int &pressed;
+        };
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+            return std::make_unique<GatedBackend>(pressed);
+        }, &targetProvider);
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QCOMPARE(targetProvider.checks, 3);
+        QCOMPARE(targetProvider.prepared, 1);
+        QCOMPARE(pressed, stillFocused ? 1 : 0);
+        QCOMPARE(result.receipt, stillFocused ? DeliveryReceipt::InputSent : DeliveryReceipt::Copied);
+    }
+
     // A delivery asked for while another waits in a nested event loop, here
     // while the insertion is verified, waits its turn: the answers keep the
     // order the deliveries were asked in, and neither arrives inside the
@@ -1700,7 +1777,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         class ReenteringProvider final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool canInsertText(const Target &) override { return true; }
             bool insertText(const Target &, const QString &, QString *) override { return true; }
             bool verifyInsertion(const Target &, const QString &) override
@@ -1738,7 +1815,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         // the backend calls must refuse the keystroke.
         class ProviderLosingFocus final : public TargetProvider {
         public:
-            Target capture() override { return {}; }
+            void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return ++checks <= 2; }
             int checks = 0;
         } targetProvider;
@@ -1747,15 +1824,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         public:
             explicit GatedBackend(bool &pasted) : pasted(pasted) {}
             void deliver(const DeliveryContent &,
-                         const std::function<bool()> &clearToInject,
+                         const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) override
             {
-                if (clearToInject && !clearToInject()) {
-                    done({false, false, QStringLiteral("The active window changed or could not be verified")});
-                    return;
+                const auto press = [this, done](bool clear) {
+                    if (!clear) {
+                        done({false, false, QStringLiteral("The active window changed or could not be verified")});
+                        return;
+                    }
+                    pasted = true;
+                    done({true, false, {}});
+                };
+                if (clearToInject) {
+                    clearToInject(press);
+                } else {
+                    press(true);
                 }
-                pasted = true;
-                done({true, false, {}});
             }
             bool &pasted;
         };

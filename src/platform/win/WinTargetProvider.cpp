@@ -244,7 +244,13 @@ void WinTargetProvider::clearCapture()
     m_insertionBaseline.reset();
 }
 
-Target WinTargetProvider::capture()
+void WinTargetProvider::capture(QObject *context, std::function<void(const Target &)> done)
+{
+    Q_UNUSED(context);
+    done(captureNow());
+}
+
+Target WinTargetProvider::captureNow()
 {
     clearCapture();
     Target target;

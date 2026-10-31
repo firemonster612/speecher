@@ -17,7 +17,8 @@ public:
     explicit WinTargetProvider(QObject *parent = nullptr);
     ~WinTargetProvider() override;
 
-    Target capture() override;
+    // Answers at once: the native APIs answer before they return.
+    void capture(QObject *context, std::function<void(const Target &)> done) override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target,
@@ -28,6 +29,7 @@ public:
     void setCorrectionObservationEnabled(bool enabled) override;
 
 private:
+    Target captureNow();
     struct Native;
     void clearCapture();
     void observeCorrections(const CorrectionWindow &window);

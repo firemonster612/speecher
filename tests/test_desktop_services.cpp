@@ -135,11 +135,46 @@ private slots:
         QVERIFY(kwin.start(QStringLiteral("org.kde.KWin"), QStringLiteral("/Scripting")));
 
         KWinActiveWindow probe;
-        const std::optional<KWinWindowInfo> window = probe.activeWindow(2000);
+        bool answered = false;
+        std::optional<KWinWindowInfo> window;
+        probe.activeWindow(
+            [&](const std::optional<KWinWindowInfo> &active) {
+                answered = true;
+                window = active;
+            },
+            2000);
+        QTRY_VERIFY(answered);
         QVERIFY(window);
         QCOMPARE(window->resourceClass, QStringLiteral("konsole"));
         QCOMPARE(window->internalId, QStringLiteral("{window}"));
         QVERIFY(QFile::exists(runtime.filePath(QStringLiteral("speecher-kwin-active-window.js"))));
+    }
+
+    // The probe asks KWin without waiting in a nested event loop: it answers
+    // only after activeWindow() returns, and a second ask while the first is
+    // under way shares its answer.
+    void kwinProbeAnswersLaterAndSharesAProbeUnderWay()
+    {
+        QTemporaryDir runtime;
+        QVERIFY(runtime.isValid());
+        const QByteArray previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(runtime.path()));
+        const auto restoreRuntime = qScopeGuard([&] {
+            previousRuntime.isNull() ? qunsetenv("XDG_RUNTIME_DIR")
+                                     : qputenv("XDG_RUNTIME_DIR", previousRuntime);
+        });
+        FakeKWin kwin;
+        QVERIFY(kwin.start(QStringLiteral("org.kde.KWin"), QStringLiteral("/Scripting")));
+
+        KWinActiveWindow probe;
+        QStringList answers;
+        const auto record = [&answers](const std::optional<KWinWindowInfo> &window) {
+            answers << (window ? window->resourceClass : QStringLiteral("none"));
+        };
+        probe.activeWindow(record, 2000);
+        probe.activeWindow(record, 2000);
+        QVERIFY(answers.isEmpty());
+        QTRY_COMPARE(answers, (QStringList{QStringLiteral("konsole"), QStringLiteral("konsole")}));
     }
 
     // Media paused for one dictation and again before it resumed is still

@@ -1,7 +1,7 @@
 #pragma once
 
-// Waits on a delivery or a clipboard operation, which answer in the
-// background, for tests that read the answer.
+// Waits on a delivery, a clipboard operation or a target provider, which can
+// answer in the background, for tests that read the answer.
 
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
@@ -85,5 +85,27 @@ inline ClipboardRestored restoreWaylandAndWait(const ClipboardSnapshot &snapshot
         [&](QObject *context, auto done) { WlClipboardDelivery::restore(snapshot, context, done); });
 }
 #endif
+
+// Captures through provider and waits for the Target: an empty one when none
+// comes in time.
+inline Target captureAndWait(TargetProvider &provider, int timeoutMs = 10000)
+{
+    QObject context;
+    std::optional<Target> captured;
+    provider.capture(&context, [&captured](const Target &target) { captured = target; });
+    return QTest::qWaitFor([&captured] { return captured.has_value(); }, timeoutMs) ? *captured : Target{};
+}
+
+// Asks provider how target relates to the window in front, and waits: nothing
+// when no answer comes in time.
+inline std::optional<TargetProvider::FocusMatch> focusMatchAndWait(TargetProvider &provider,
+                                                                   const Target &target,
+                                                                   int timeoutMs = 10000)
+{
+    QObject context;
+    std::optional<TargetProvider::FocusMatch> match;
+    provider.focusMatch(target, &context, [&match](TargetProvider::FocusMatch given) { match = given; });
+    return QTest::qWaitFor([&match] { return match.has_value(); }, timeoutMs) ? match : std::nullopt;
+}
 
 } // namespace speecher::test

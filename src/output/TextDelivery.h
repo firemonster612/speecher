@@ -14,18 +14,21 @@ class DeliveryBackend {
 public:
     // htmlAvailable is a clipboard backend's alone.
     using Outcome = ClipboardCopied;
+    // Asked with a reply, which hears whether the keystroke may go out.
+    using PasteGate = std::function<void(std::function<void(bool clear)>)>;
     virtual ~DeliveryBackend() = default;
     // A keyboard backend pastes what is already on the clipboard; a
     // clipboard backend copies content. done runs once with the outcome, and
     // may run before deliver() returns.
-    // clearToInject is the final gate: a keyboard backend calls it after all
-    // of its preparation (modifier release) and immediately before sending
-    // the paste keystroke, aborting when it returns false. It refuses once
-    // the delivery was answered, and otherwise when focus moved off the
-    // Target. Clipboard-only backends may ignore it; a null function means
-    // nothing gates the injection.
+    // clearToInject is the final gate: a keyboard backend asks it after all
+    // of its preparation (modifier release) and sends the paste keystroke
+    // from its reply, aborting when the reply is false. It refuses once the
+    // delivery was answered, and otherwise when focus moved off the Target;
+    // asking the compositor, it may reply on a later turn of the event loop.
+    // Clipboard-only backends may ignore it; a null one means nothing gates
+    // the injection.
     virtual void deliver(const DeliveryContent &content,
-                         const std::function<bool()> &clearToInject,
+                         const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) = 0;
 };
 

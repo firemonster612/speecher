@@ -4,6 +4,7 @@
 #include "providers/ProviderRegistry.h"
 #include "providers/SpeechTranscriber.h"
 #include "providers/TranscriptRefiner.h"
+#include <QPointer>
 #include <QThread>
 #include <QtEndian>
 
@@ -170,13 +171,31 @@ class FakeTargetProvider final : public TargetProvider {
 public:
     using TargetProvider::TargetProvider;
 
-    Target capture() override
+    // Answers at once, as the macOS and Windows providers do, or at
+    // answerCapture() while holdsCapture is set, as one asking the
+    // compositor does.
+    void capture(QObject *context, std::function<void(const Target &)> done) override
     {
         ++captureCalls;
         if (onCapture) {
             onCapture();
         }
-        return target;
+        if (holdsCapture) {
+            m_heldCapture = [context = QPointer<QObject>(context), done](const Target &captured) {
+                if (context) {
+                    done(captured);
+                }
+            };
+            return;
+        }
+        done(target);
+    }
+
+    void answerCapture()
+    {
+        if (const auto held = std::exchange(m_heldCapture, {})) {
+            held(target);
+        }
     }
 
     // Delivery asks twice: once before it copies, and again immediately
@@ -186,6 +205,28 @@ public:
     {
         ++focusChecks;
         return focusChecks == 1 ? focused : focusedAtPasteTime;
+    }
+
+    // Answers from stillFocused() at once, or every check held at
+    // answerFocusMatch() while holdsFocusMatch is set.
+    void focusMatch(const Target &checked, QObject *context, std::function<void(FocusMatch)> done) override
+    {
+        if (!holdsFocusMatch) {
+            TargetProvider::focusMatch(checked, context, std::move(done));
+            return;
+        }
+        m_heldFocusMatches << [this, checked, context = QPointer<QObject>(context), done] {
+            if (context) {
+                TargetProvider::focusMatch(checked, context, done);
+            }
+        };
+    }
+
+    void answerFocusMatch()
+    {
+        for (const auto &held : std::exchange(m_heldFocusMatches, {})) {
+            held();
+        }
     }
 
     bool preparePaste(const Target &) override { return pasteReady; }
@@ -218,9 +259,14 @@ public:
     bool directInsertionAvailable = false;
     bool inserted = false;
     QString insertedText;
-    // Runs inside capture(), as events delivered in a real provider's nested
-    // event loop would.
+    // Runs inside capture(), as a handler a provider calls into would.
     std::function<void()> onCapture;
+    bool holdsCapture = false;
+    bool holdsFocusMatch = false;
+
+private:
+    std::function<void(const Target &)> m_heldCapture;
+    QList<std::function<void()>> m_heldFocusMatches;
 };
 
 class FakeScreenshotContextProvider final : public ScreenshotContextProvider {

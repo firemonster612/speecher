@@ -7,6 +7,7 @@
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
 #include <QFile>
+#include <QPointer>
 
 namespace speecher {
 
@@ -42,45 +43,48 @@ void AtSpiTargetProvider::clearAccessible()
     m_snapshot.reset();
 }
 
-Target AtSpiTargetProvider::capture()
+void AtSpiTargetProvider::capture(QObject *context, std::function<void(const Target &)> done)
 {
     clearAccessible();
     ++m_captures;
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
-    Target target = m_snapshot->target();
-    if (!target.hasIdentity()) {
-        Target fromCompositor = compositorFallbackTarget();
-        if (fromCompositor.hasIdentity()) {
-            return fromCompositor;
-        }
+    const Target target = m_snapshot->target();
+    if (target.hasIdentity()) {
+        done(target);
+        return;
     }
-    return target;
+    compositorFallbackTarget([context = QPointer<QObject>(context), done, target](const Target &fromCompositor) {
+        if (context) {
+            done(fromCompositor.hasIdentity() ? fromCompositor : target);
+        }
+    });
 }
 
 // Accessibility found no focus target. Ask the compositor which window is
 // active so a terminal that never reached the a11y bus still resolves to the
 // terminal paste rule instead of the global blind-paste chord.
-Target AtSpiTargetProvider::compositorFallbackTarget()
+void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Target &)> done)
 {
     if (!m_activeWindow) {
         m_activeWindow = std::make_unique<KWinActiveWindow>();
     }
-    const std::optional<KWinWindowInfo> window = m_activeWindow->activeWindow();
-    if (!window) {
-        return {};
-    }
-
-    Target target;
-    target.applicationId = window->resourceClass.toCaseFolded();
-    target.applicationName = window->caption;
-    target.processName = !window->resourceName.isEmpty()
-        ? window->resourceName
-        : processNameForPid(window->processId);
-    target.processId = window->processId;
-    target.compositorWindowId = window->internalId;
-    target.compositorActive = true;
-    target.terminalHost = isTerminalTarget(target);
-    return target;
+    m_activeWindow->activeWindow([done](const std::optional<KWinWindowInfo> &window) {
+        if (!window) {
+            done({});
+            return;
+        }
+        Target target;
+        target.applicationId = window->resourceClass.toCaseFolded();
+        target.applicationName = window->caption;
+        target.processName = !window->resourceName.isEmpty()
+            ? window->resourceName
+            : processNameForPid(window->processId);
+        target.processId = window->processId;
+        target.compositorWindowId = window->internalId;
+        target.compositorActive = true;
+        target.terminalHost = isTerminalTarget(target);
+        done(target);
+    });
 }
 
 // KWin's window handle answers this outright where it exists: it survives the
@@ -105,22 +109,18 @@ TargetProvider::FocusMatch AtSpiTargetProvider::compositorWindowMatch(const Targ
     return a.applicationName == b.applicationName ? FocusMatch::Same : FocusMatch::TitleChanged;
 }
 
-TargetProvider::FocusMatch AtSpiTargetProvider::focusMatch(const Target &target)
+void AtSpiTargetProvider::focusMatch(const Target &target, QObject *context, std::function<void(FocusMatch)> done)
 {
     if (!target.compositorActive) {
-        return m_snapshot && m_snapshot->matches(target, true) ? FocusMatch::Same
-                                                               : FocusMatch::Different;
+        done(m_snapshot && m_snapshot->matches(target, true) ? FocusMatch::Same : FocusMatch::Different);
+        return;
     }
-    const Target active = compositorFallbackTarget();
-    if (!active.compositorActive) {
-        return FocusMatch::Different;
-    }
-    return compositorWindowMatch(active, target);
-}
-
-bool AtSpiTargetProvider::stillFocused(const Target &target)
-{
-    return focusMatch(target) == FocusMatch::Same;
+    compositorFallbackTarget([context = QPointer<QObject>(context), done, target](const Target &active) {
+        if (!context) {
+            return;
+        }
+        done(active.compositorActive ? compositorWindowMatch(active, target) : FocusMatch::Different);
+    });
 }
 
 bool AtSpiTargetProvider::canInsertText(const Target &target)

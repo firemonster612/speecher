@@ -19,9 +19,10 @@ class AtSpiTargetProvider final : public TargetProvider {
 public:
     explicit AtSpiTargetProvider(QObject *parent = nullptr);
     ~AtSpiTargetProvider() override;
-    Target capture() override;
-    bool stillFocused(const Target &target) override;
-    FocusMatch focusMatch(const Target &target) override;
+    // Both answer at once for an accessible target, and once KWin has for a
+    // compositor-fallback one.
+    void capture(QObject *context, std::function<void(const Target &)> done) override;
+    void focusMatch(const Target &target, QObject *context, std::function<void(FocusMatch)> done) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
     bool verifyInsertion(const Target &target, const QString &plainText) override;
@@ -34,7 +35,8 @@ public:
 
 private:
     void clearAccessible();
-    Target compositorFallbackTarget();
+    // The window KWin has in front, or an empty Target off KDE.
+    void compositorFallbackTarget(std::function<void(const Target &)> done);
 
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;

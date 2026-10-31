@@ -831,7 +831,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(GetForegroundWindow() == notepad, 2000);
 
         WinTargetProvider targetProvider;
-        const Target target = targetProvider.capture();
+        const Target target = test::captureAndWait(targetProvider);
         qInfo().noquote() << QStringLiteral("windows live target process=%1 appId=%2 role=%3")
                                  .arg(target.processName, target.applicationId, target.role);
         QCOMPARE(target.processName.toLower(), QStringLiteral("notepad.exe"));

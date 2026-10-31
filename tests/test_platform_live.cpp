@@ -304,7 +304,7 @@ private slots:
             QSKIP("Live Plasma AT-SPI check is opt-in");
         }
         AtSpiTargetProvider provider;
-        Target target = provider.capture();
+        Target target = test::captureAndWait(provider);
         target.category = classifyTarget(target);
         const AppSettings settings = SettingsStore().snapshot();
         const QString profile = resolveWritingProfile(
@@ -323,7 +323,7 @@ private slots:
                         profile,
                         target.accessible ? QStringLiteral("yes") : QStringLiteral("no"),
                         target.secure ? QStringLiteral("yes") : QStringLiteral("no"),
-                        provider.stillFocused(target) ? QStringLiteral("yes") : QStringLiteral("no"))
+                        test::focusMatchAndWait(provider, target) == TargetProvider::FocusMatch::Same ? QStringLiteral("yes") : QStringLiteral("no"))
                    .arg(directInsert ? QStringLiteral("yes") : QStringLiteral("no"),
                         QString::number(target.windowTitle.size()),
                         QString::number(target.documentUrl.size()),
@@ -735,7 +735,7 @@ private slots:
         }
         AtSpiTargetProvider provider;
         provider.setCorrectionObservationEnabled(false);
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY(target.hasIdentity());
         QVERIFY(provider.canInsertText(target));
         QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
@@ -759,11 +759,11 @@ private slots:
         }
         AtSpiTargetProvider provider;
         provider.setCorrectionObservationEnabled(false);
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY(provider.canInsertText(target));
         const QString inserted = QStringLiteral("late text ");
         QTimer::singleShot(0, &provider, [&provider, &inserted] {
-            const Target next = provider.capture();
+            const Target next = test::captureAndWait(provider);
             provider.insertText(next, inserted);
         });
         QVERIFY(!provider.verifyInsertion(target, inserted));
@@ -776,7 +776,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY2(target.hasIdentity(), "No focused external AT-SPI target was found");
         QVERIFY2(target.role.contains(QStringLiteral("text"), Qt::CaseInsensitive),
                  qPrintable(QStringLiteral("Unexpected focused target: %1 / %2 / %3")
@@ -785,7 +785,7 @@ private slots:
 
         qInfo().noquote() << "captured external edit target; change focus now";
         QTest::qWait(2500);
-        QVERIFY(!provider.stillFocused(target));
+        QVERIFY(test::focusMatchAndWait(provider, target) != TargetProvider::FocusMatch::Same);
 
         QString error;
         QVERIFY2(provider.insertText(target, QStringLiteral("inserted"), &error), qPrintable(error));
@@ -799,7 +799,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        Target target = provider.capture();
+        Target target = test::captureAndWait(provider);
         target.category = classifyTarget(target);
         QVERIFY2(target.hasIdentity(), "No focused Plasma target was found");
         QVERIFY2(!target.secure, "Live delivery refuses secure targets");
@@ -963,7 +963,7 @@ private slots:
             QSKIP("Live AT-SPI selection fixture is opt-in");
         }
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QCOMPARE(target.selectedText, QStringLiteral("text"));
         QCOMPARE(target.nearbyTextBefore, QStringLiteral("prefix "));
         QCOMPARE(target.nearbyTextAfter, QStringLiteral(" suffix text"));
@@ -977,7 +977,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY2(target.hasIdentity(), "No focused read-only target was found");
         QVERIFY(!target.editable);
         QVERIFY(!provider.canInsertText(target));
@@ -992,7 +992,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY2(target.hasIdentity(), "No focused password target was found");
         QVERIFY(target.secure);
         QVERIFY(target.nearbyTextBefore.isEmpty());
@@ -1007,7 +1007,7 @@ private slots:
         }
 
         AtSpiTargetProvider provider;
-        const Target target = provider.capture();
+        const Target target = test::captureAndWait(provider);
         QVERIFY2(target.hasIdentity(), "No focused password target was found");
         QVERIFY(target.secure);
 

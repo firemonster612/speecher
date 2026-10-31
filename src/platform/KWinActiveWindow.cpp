@@ -4,12 +4,12 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
-#include <QDBusReply>
-#include <QEventLoop>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QFile>
-#include <QScopeGuard>
 #include <QStandardPaths>
-#include <QTimer>
+
+#include <utility>
 
 namespace speecher {
 
@@ -67,7 +67,9 @@ QString writeScriptFile(const QString &source)
     return path;
 }
 
-int loadKWinScript(const QString &scriptPath)
+// KWin's answer is the script's id, or a negative one when it turned the
+// script down.
+QDBusPendingCall loadKWinScript(const QString &scriptPath)
 {
     QDBusMessage load = QDBusMessage::createMethodCall(
         QString::fromLatin1(kKWinService),
@@ -75,11 +77,7 @@ int loadKWinScript(const QString &scriptPath)
         QString::fromLatin1(kScriptingInterface),
         QStringLiteral("loadScript"));
     load.setArguments({scriptPath, QStringLiteral("speecher-active-window")});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(load, QDBus::Block, 500);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return -1;
-    }
-    return reply.arguments().first().toInt();
+    return QDBusConnection::sessionBus().asyncCall(load, 500);
 }
 
 void runKWinScript(int scriptId)
@@ -88,7 +86,7 @@ void runKWinScript(int scriptId)
     QDBusMessage run = QDBusMessage::createMethodCall(
         QString::fromLatin1(kKWinService), path,
         QStringLiteral("org.kde.kwin.Script"), QStringLiteral("run"));
-    QDBusConnection::sessionBus().call(run, QDBus::Block, 500);
+    QDBusConnection::sessionBus().call(run, QDBus::NoBlock);
 }
 
 void unloadKWinScript()
@@ -108,6 +106,8 @@ KWinActiveWindow::KWinActiveWindow(QObject *parent)
     : QObject(parent)
     , m_objectPath(QStringLiteral("/org/speecher/WindowProbe"))
 {
+    m_timeout.setSingleShot(true);
+    connect(&m_timeout, &QTimer::timeout, this, [this] { answer(std::nullopt); });
 }
 
 KWinActiveWindow::~KWinActiveWindow()
@@ -133,62 +133,68 @@ void KWinActiveWindow::reportWindow(const QString &resourceClass,
                                     const QString &processId,
                                     const QString &internalId)
 {
-    m_pending = {resourceClass.trimmed(), resourceName.trimmed(), caption.trimmed(),
-                 internalId.trimmed(), processId.toLongLong()};
-    m_reported = true;
+    if (m_waiting.isEmpty()) {
+        return;
+    }
+    const KWinWindowInfo window{resourceClass.trimmed(), resourceName.trimmed(), caption.trimmed(),
+                                internalId.trimmed(), processId.toLongLong()};
+    // Never report Speecher's own surface: pasting into ourselves is never the
+    // intent, and the popup can momentarily read as active on some setups.
+    if (window.resourceClass.isEmpty() || window.processId == QCoreApplication::applicationPid()) {
+        answer(std::nullopt);
+        return;
+    }
+    answer(window);
 }
 
-std::optional<KWinWindowInfo> KWinActiveWindow::activeWindow(int timeoutMs)
+void KWinActiveWindow::activeWindow(std::function<void(const std::optional<KWinWindowInfo> &)> done, int timeoutMs)
 {
     if (!kwinAvailable() || !ensureRegistered()) {
-        return std::nullopt;
+        done(std::nullopt);
+        return;
     }
-
-    m_reported = false;
-    m_pending = {};
+    m_waiting << std::move(done);
+    if (m_waiting.size() > 1) {
+        return;
+    }
 
     const QString scriptPath = writeScriptFile(
         scriptSource(QDBusConnection::sessionBus().baseService(), m_objectPath));
     if (scriptPath.isEmpty()) {
-        return std::nullopt;
+        answer(std::nullopt);
+        return;
     }
     // KWin refuses to load a plugin name it already has, and a probe that
     // never got to unload (Speecher was killed mid-probe) leaves its script
     // loaded for the rest of the KWin session.
     unloadKWinScript();
-    const int scriptId = loadKWinScript(scriptPath);
-    if (scriptId < 0) {
-        return std::nullopt;
-    }
-    runKWinScript(scriptId);
-    const auto unload = qScopeGuard(&unloadKWinScript);
+    const quint64 probe = ++m_probes;
+    m_timeout.start(timeoutMs);
+    auto *loading = new QDBusPendingCallWatcher(loadKWinScript(scriptPath), this);
+    connect(loading, &QDBusPendingCallWatcher::finished, this, [this, probe](QDBusPendingCallWatcher *watcher) {
+        watcher->deleteLater();
+        if (probe != m_probes || m_waiting.isEmpty()) {
+            return;
+        }
+        const QDBusPendingReply<int> scriptId = *watcher;
+        if (scriptId.isError() || scriptId.value() < 0) {
+            answer(std::nullopt);
+            return;
+        }
+        // reportWindow arrives once the script has run.
+        runKWinScript(scriptId.value());
+    });
+}
 
-    if (!m_reported) {
-        QEventLoop loop;
-        QTimer timeout;
-        timeout.setSingleShot(true);
-        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-        // reportWindow arrives on the D-Bus queue; poll it into the loop.
-        QTimer poll;
-        QObject::connect(&poll, &QTimer::timeout, &loop, [this, &loop] {
-            if (m_reported) {
-                loop.quit();
-            }
-        });
-        timeout.start(timeoutMs);
-        poll.start(5);
-        loop.exec(QEventLoop::ExcludeUserInputEvents);
+void KWinActiveWindow::answer(const std::optional<KWinWindowInfo> &window)
+{
+    m_timeout.stop();
+    unloadKWinScript();
+    // Taken first: an answer may ask again, which starts a probe of its own.
+    const auto waiting = std::exchange(m_waiting, {});
+    for (const auto &done : waiting) {
+        done(window);
     }
-
-    if (!m_reported || m_pending.resourceClass.isEmpty()) {
-        return std::nullopt;
-    }
-    // Never report Speecher's own surface: pasting into ourselves is never the
-    // intent, and the popup can momentarily read as active on some setups.
-    if (m_pending.processId == QCoreApplication::applicationPid()) {
-        return std::nullopt;
-    }
-    return m_pending;
 }
 
 } // namespace speecher
