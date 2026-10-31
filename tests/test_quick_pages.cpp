@@ -20,6 +20,7 @@
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QAccessible>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
@@ -36,6 +37,7 @@
 #include <QTextDocument>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -588,6 +590,33 @@ private slots:
         QCOMPARE(sectionCaption(row), QString());
     }
 
+    // A search for a fallback refinement provider's row, such as Claude's
+    // model while ChatGPT refines, shows that provider's settings.
+    void searchShowsTheProviderSettingsItLandsIn()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
+        settings.set(QStringLiteral("refinementFallbacks"), QVariantList{QStringLiteral("anthropic")});
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("anthropicModel"));
+
+        QQuickItem *tabs = nullptr;
+        QTRY_VERIFY((tabs = findItem(main->contentItem(), QStringLiteral("providerTabs"))));
+        QTRY_COMPARE(tabs->property("currentId").toString(), QStringLiteral("anthropic"));
+        QQuickItem *row = schemaRow(main, QStringLiteral("anthropicModel"));
+        QVERIFY(row);
+        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+    }
+
     // A search for a row whose section is hidden on purpose, such as the
     // Global Shortcut where the desktop gives none, leaves it hidden.
     void searchLeavesHiddenSectionsHidden()
@@ -781,6 +810,104 @@ private slots:
         QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
     }
 
+    // At the window's narrowest, an app match's Writing Profile choice ends
+    // before its Edit and Delete buttons, so a click on it can't delete the
+    // match.
+    void appMatchChoicesClearTheirButtons()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.appRecognitionRules = {{.match = QStringLiteral("org.kde.konsole"), .category = AppCategory::Terminal}};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        main->resize(main->minimumWidth(), main->height());
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("appRules"));
+
+        QQuickItem *profile = nullptr;
+        QTRY_VERIFY((profile = findItem(main->contentItem(), QStringLiteral("matchProfile"))));
+        QQuickItem *row = profile;
+        while (row && !row->property("actions").isValid()) {
+            row = row->parentItem();
+        }
+        QVERIFY(row);
+        QQuickItem *edit = nullptr;
+        QList<QQuickItem *> items{row};
+        while (!items.isEmpty() && !edit) {
+            QQuickItem *item = items.takeLast();
+            items += item->childItems();
+            if (item->property("iconName").toString() == QLatin1String("pencil")) {
+                edit = item;
+            }
+        }
+        QVERIFY(edit);
+        QTest::qWait(kSettleMs);
+        const qreal profileEnd = profile->mapToScene(QPointF(profile->width(), 0)).x();
+        const qreal buttonsStart = edit->mapToScene(QPointF(0, 0)).x();
+        QVERIFY2(profileEnd <= buttonsStart, qPrintable(QStringLiteral("%1 > %2").arg(profileEnd).arg(buttonsStart)));
+    }
+
+    // At the window's narrowest, each app type's name and examples end
+    // before its paste choice instead of running under it.
+    void appTypeRulesKeepTheirWordsClearOfTheirChoices()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        main->resize(main->minimumWidth(), main->height());
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("appRules"));
+        QTRY_VERIFY(schemaRow(main, QStringLiteral("categoryPasteRule_general")));
+        QTest::qWait(kSettleMs);
+
+        int checked = 0;
+        QList<QQuickItem *> items{main->contentItem()};
+        while (!items.isEmpty()) {
+            QQuickItem *row = items.takeLast();
+            items += row->childItems();
+            if (!row->property("rowId").toString().startsWith(QLatin1String("categoryPasteRule_"))) {
+                continue;
+            }
+            // The row's words, and the left end of its choice, a Select.
+            QList<QQuickItem *> words;
+            qreal choiceStart = -1;
+            QList<QQuickItem *> parts{row};
+            while (!parts.isEmpty()) {
+                QQuickItem *part = parts.takeLast();
+                if (QByteArray(part->metaObject()->className()).startsWith("Select_")) {
+                    choiceStart = part->mapToScene(QPointF(0, 0)).x();
+                    continue;
+                }
+                parts += part->childItems();
+                if (part->isVisible() && part->property("contentWidth").isValid() && !part->property("text").toString().isEmpty()) {
+                    words.append(part);
+                }
+            }
+            QVERIFY2(choiceStart >= 0 && !words.isEmpty(), qPrintable(row->property("rowId").toString()));
+            for (QQuickItem *text : words) {
+                const qreal end = text->mapToScene(QPointF(text->property("contentWidth").toReal(), 0)).x();
+                QVERIFY2(end <= choiceStart, qPrintable(QStringLiteral("%1: \"%2\" ends at %3, its choice starts at %4")
+                                                            .arg(row->property("rowId").toString(), text->property("text").toString())
+                                                            .arg(end)
+                                                            .arg(choiceStart)));
+            }
+            ++checked;
+        }
+        QCOMPARE(checked, 7);
+    }
+
     // Undo after deleting an app's paste rule puts it back, even once the
     // page it was deleted on is gone.
     void pasteRuleUndoOutlivesItsPage()
@@ -920,6 +1047,8 @@ private slots:
 
     // Listening, the popup shows the scatter ribbon, or in Boring mode the
     // level bars and the record dot, and switches as the setting changes.
+    // The bars show only where the ribbon would: listening and paused, not
+    // while starting, renewing a sign-in or transcribing.
     void boringModeShowsLevelBars()
     {
         ApplicationController controller(true);
@@ -938,7 +1067,7 @@ private slots:
         QQuickItem *orb = findItem(popup->contentItem(), QStringLiteral("orb"));
         QVERIFY(ribbon && bars && orb);
         const auto showsRibbon = [&] {
-            return ribbon->opacity() == 1 && bars->opacity() == 0 && orb->property("phase").toString().isEmpty();
+            return ribbon->opacity() == 1 && !bars->isVisible() && orb->property("phase").toString().isEmpty();
         };
         const auto showsBars = [&] {
             return ribbon->opacity() == 0 && bars->opacity() == 1 && orb->property("phase").toString() == QLatin1String("listening");
@@ -947,6 +1076,68 @@ private slots:
         QTRY_VERIFY(showsRibbon());
         settings->set(QStringLiteral("boringMode"), true);
         QTRY_VERIFY(showsBars());
+
+        const struct {
+            const char *phase;
+            std::function<void()> enter;
+            bool barsShown;
+        } phases[] = {
+            {"paused", [session] { emit session->stateChanged(DictationState::Paused); }, true},
+            {"renewing", [session] { emit session->popupOAuthRefreshRequested(); }, false},
+            {"transcribing", [session] { emit session->stateChanged(DictationState::Stopping); }, false},
+            {"starting", [session] { emit session->stateChanged(DictationState::Starting); }, false},
+            {"listening", [session] { emit session->stateChanged(DictationState::Listening); }, true},
+        };
+        for (const auto &phase : phases) {
+            qInfo() << "phase:" << phase.phase;
+            phase.enter();
+            QTRY_COMPARE(bars->isVisible(), phase.barsShown);
+            QCOMPARE(ribbon->isVisible(), false);
+        }
+
+        // Live words widen the capsule from 280 to 460; the bars are counted
+        // once for the new width, not on every frame as it grows, and on no
+        // frame show past their own strip, over the clock and buttons.
+        QQuickItem *capsule = findItem(popup->contentItem(), QStringLiteral("capsule"));
+        QVERIFY(capsule);
+        // How far the bars show past their strip's right end.
+        const auto overrun = [bars] {
+            const qreal shown = bars->clip() ? bars->width() : bars->childrenRect().right();
+            return shown - bars->width();
+        };
+        QSignalSpy recounted(bars, SIGNAL(barsChanged()));
+        emit session->previewDisplayChanged(QStringLiteral("Quick update on the launch"));
+        QElapsedTimer widening;
+        widening.start();
+        qreal worst = 0;
+        while (widening.elapsed() < 1000) {
+            worst = std::max(worst, overrun());
+            QTest::qWait(5);
+        }
+        QCOMPARE(capsule->width(), 460.0);
+        QCOMPARE(recounted.count(), 1);
+        QCOMPARE(worst, 0.0);
+
+        // A follow-up listens under the edit it asks more of, in the wider
+        // capsule of a review; the bars fill its strip, listening and paused.
+        const auto fillsTheStrip = [bars] {
+            const int expected = std::max(8, int(std::floor(bars->width() / 5.5)));
+            return bars->isVisible() && bars->property("bars").toInt() == expected;
+        };
+        SelectionEditReview edit = selectionEditReview(
+            QStringLiteral("Can you send me the deck when you get a chance?"),
+            QStringLiteral("Can you send me the slides when you can?"), {QStringLiteral("make it shorter")},
+            reviewKeysFor(true, true, QString(), QStringLiteral("Ctrl+Space")));
+        edit.following = true;
+        emit session->popupSelectionEditReviewRequested(edit);
+        emit session->previewDisplayChanged(QString());
+        QTRY_VERIFY(capsule->width() > 460);
+        QTest::qWait(kSettleMs);
+        QTRY_VERIFY(fillsTheStrip());
+        emit session->stateChanged(DictationState::Paused);
+        QTest::qWait(kSettleMs);
+        QTRY_VERIFY(fillsTheStrip());
+
         settings->set(QStringLiteral("boringMode"), false);
         QTRY_VERIFY(showsRibbon());
     }

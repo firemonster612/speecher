@@ -31,10 +31,11 @@ Item {
     // A sign-in renews before the dictation goes on; the bar says so in
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
-    // Boring mode shows the voice as level bars beside the record dot.
+    // The voice shows while listening and paused: as the scatter ribbon, or
+    // in Boring mode as level bars beside the record dot.
+    readonly property bool voiceShown: (phase === "listening" || phase === "paused") && !renewing
     readonly property bool boring: Settings.values.boringMode === true
-    // The scatter ribbon shows the voice while listening and paused.
-    readonly property bool ribbonShown: !boring && (phase === "listening" || phase === "paused") && !renewing
+    readonly property bool ribbonShown: !boring && voiceShown
     // The last working phase, so its label holds while the bar fades out
     // and while the text is delivered.
     property string workPhase: "transcribing"
@@ -241,15 +242,25 @@ Item {
                     }
 
                     Waveform {
+                        id: levelBars
                         objectName: "levelBars"
                         x: popup.contentX
                         width: clock.x - x - 10
                         anchors.verticalCenter: parent.verticalCenter
                         height: 22
-                        bars: Math.max(8, Math.floor(width / 5.5))
+                        // From the width once the capsule has settled, so
+                        // the bars aren't rebuilt each frame as it grows,
+                        // and clipped while it gets there. Delayed, since
+                        // this width and the capsule's change together.
+                        Binding on bars {
+                            value: Math.max(8, Math.floor((levelBars.width + popup.target.width - bar.width) / 5.5))
+                            delayed: true
+                        }
+                        clip: true
                         level: popup.source.level
                         active: popup.boring && popup.phase === "listening"
-                        opacity: popup.boring && popup.recording && !popup.renewing ? 1 : 0
+                        opacity: popup.boring && popup.voiceShown ? 1 : 0
+                        visible: opacity > 0
                         Behavior on opacity { Ease {} }
                     }
 

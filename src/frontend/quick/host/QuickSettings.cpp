@@ -13,6 +13,7 @@
 #include <QDebug>
 #include <QKeyEvent>
 
+#include <algorithm>
 #include <type_traits>
 
 namespace speecher {
@@ -31,6 +32,10 @@ int minutesPerCheckIntervalUnit(const QString &unit)
     }
     return unit == QLatin1String("minutes") ? 1 : 0;
 }
+
+// The update check frequencies Check frequency lists, in minutes: its
+// options in schema/updates.js.
+constexpr int listedCheckIntervals[] = {5, 15, 30, 60, 360, 720, 1440, 10080};
 
 // The unit a custom interval reads back in: the one it was given in, or else
 // the largest that divides it evenly, so a day becomes 1 day, not 1440 minutes.
@@ -309,12 +314,14 @@ const SettingRow settingRows[] = {
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},
     FIELD_ROW("autoCheckUpdates", updates.autoCheck),
     FIELD_ROW("autoInstallUpdates", updates.autoInstall),
-    // A listed frequency is its minutes; an interval given in a unit is
-    // "custom", and choosing Custom keeps the interval for the custom row.
+    // A listed frequency is its minutes; an interval given in a unit, or one
+    // not listed, is "custom", and choosing Custom keeps the interval for the
+    // custom row.
     {"updateCheckInterval",
      [](const AppSettings &s) {
-         return QVariant(s.updates.checkIntervalUnit.isEmpty() ? QString::number(s.updates.checkIntervalMinutes)
-                                                               : QStringLiteral("custom"));
+         const bool listed = s.updates.checkIntervalUnit.isEmpty()
+             && std::ranges::find(listedCheckIntervals, s.updates.checkIntervalMinutes) != std::end(listedCheckIntervals);
+         return QVariant(listed ? QString::number(s.updates.checkIntervalMinutes) : QStringLiteral("custom"));
      },
      [](AppSettings &s, const QVariant &v) {
          if (v.toString() == QLatin1String("custom")) {

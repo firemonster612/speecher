@@ -23,8 +23,21 @@ Page {
     readonly property bool refines: inUse.length > 0
     // The providers that have settings on this page, in the Switcher's order.
     readonly property var configurable: ["openai", "anthropic", "local", "endpoint"]
+    // The schema section of each one's settings, in the same order.
+    readonly property var configurableSections: ["openAiModel", "anthropicModel", "localRunner", "refinementEndpointUrl"]
+                                                 .map(id => Schema.row(id).section)
     // Which provider's settings show, when there are fallbacks.
     property string providerTab: primary
+    // A search that lands on a provider's settings shows that provider's.
+    function _follow(rowId) {
+        const spec = Schema.row(rowId)
+        const at = spec.page === "refinement" ? configurableSections.indexOf(spec.section) : -1
+        if (at >= 0) providerTab = configurable[at]
+    }
+    Connections {
+        target: Navigation
+        function onPendingRowChanged() { page._follow(Navigation.pendingRow) }
+    }
 
     // The page's fixed wording.
     readonly property var t: ({
@@ -42,7 +55,7 @@ Page {
         return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
     }
 
-    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); _follow(Navigation.pendingRow) }
 
     // The row takes a new primary out of the fallbacks, and None clears
     // them, in one save.
