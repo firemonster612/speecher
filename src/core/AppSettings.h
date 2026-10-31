@@ -310,9 +310,9 @@ struct RefinementEndpointSettings {
     QString model;
     QString apiKey;
 
-    // Uses the CLI Proxy key, read or not, from leaving the preset at the
-    // proxy's address until the key is typed or the server changes. apiKey
-    // keeps the copy that leaving made, which requests don't use.
+    // Uses the CLI Proxy key, from leaving the preset at the proxy's address
+    // until a key is entered or the server moves, and only while the proxy
+    // stays on that server (resolvedRefinementEndpoint).
     bool useCliproxyKey = false;
 
     bool operator==(const RefinementEndpointSettings &other) const = default;

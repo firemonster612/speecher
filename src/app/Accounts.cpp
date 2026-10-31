@@ -237,6 +237,15 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
+    // A key saved or cleared for the Custom endpoint is the one it uses from
+    // now on, in place of the proxy's it took from the preset.
+    if (secret == SecretStore::Secret::RefinementEndpointKey
+        && m_settings.dictationSnapshot().refinement.endpoint.useCliproxyKey) {
+        m_settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint.useCliproxyKey = false;
+            return true;
+        });
+    }
     SecretStore *secrets = m_settings.secrets();
     m_saving.insert(secret, secrets->nextRequest(secret));
     storeSecret(secrets, secret, value);

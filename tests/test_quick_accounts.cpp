@@ -7,6 +7,7 @@
 #include "common/test_auth.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
+#include "core/EndpointSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -484,6 +485,37 @@ private slots:
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
         QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
         QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+    }
+
+    // A key saved or cleared in the Custom endpoint's field is the one it
+    // sends, in place of the CLI Proxy key it took from the preset.
+    void anEndpointKeyFromItsFieldReplacesTheProxyKey()
+    {
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        const auto sentKey = [] { return resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey; };
+        QTest::ignoreMessage(QtWarningMsg,
+                             "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+            draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+            draft.refinement.endpoint = {.preset = QStringLiteral("cliproxy")};
+            return true;
+        });
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.preset = QString()});
+            return true;
+        });
+        QCOMPARE(sentKey(), QStringLiteral("proxy-key"));
+
+        QTest::ignoreMessage(
+            QtWarningMsg, "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied");
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("own-key"));
+        QCOMPARE(sentKey(), QStringLiteral("own-key"));
+
+        accounts.clearSecret(QStringLiteral("refinementEndpointApiKey"));
+        QCOMPARE(sentKey(), QString());
     }
 
     // SchemaRow's secret field hands what was typed to Accounts and lets go

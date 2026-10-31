@@ -16,11 +16,11 @@ struct RefinementEndpoint {
 
 RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings);
 
-// Only engaged fields are user edits, including an explicitly emptied key.
+// Only engaged fields are user edits. The key is saved apart, through
+// Accounts, which also ends the use of the proxy's key (useCliproxyKey).
 struct RefinementEndpointEdit {
     std::optional<QString> format;
     std::optional<QString> baseUrl;
-    std::optional<QString> apiKey;
     std::optional<QString> model;
     std::optional<QString> preset;
 };

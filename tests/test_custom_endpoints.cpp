@@ -1043,18 +1043,52 @@ private slots:
         QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QString());
     }
 
-    // A key typed for the Custom endpoint stays when its server changes, even
-    // one that matches the proxy's.
-    void aTypedKeyStaysWhenTheServerChanges()
+    // A Custom endpoint's key stays only while its server does: a new path
+    // keeps it, a new scheme, host or port drops it, also a plain copy of the
+    // proxy's key that an earlier build saved without useCliproxyKey.
+    void aKeyStaysOnlyOnItsServer_data()
     {
+        QTest::addColumn<QString>("key");
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<QString>("sent");
+        const QString own = QStringLiteral("own-key");
+        QTest::newRow("another path") << own << QStringLiteral("http://localhost:11434/api/v1") << own;
+        QTest::newRow("another port") << own << QStringLiteral("http://localhost:11435/v1") << QString();
+        QTest::newRow("another scheme") << own << QStringLiteral("https://localhost:11434/v1") << QString();
+        QTest::newRow("copied proxy key, another host")
+            << QStringLiteral("proxy-key") << QStringLiteral("http://other.example/v1") << QString();
+    }
+
+    void aKeyStaysOnlyOnItsServer()
+    {
+        QFETCH(QString, key);
+        QFETCH(QString, url);
+        QFETCH(QString, sent);
         AppSettings settings;
         settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-        settings.refinement.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:8317");
-        editRefinementEndpoint(settings, {.apiKey = QStringLiteral("proxy-key")});
+        settings.refinement.endpoint.baseUrl = QStringLiteral("http://localhost:11434/v1");
+        settings.refinement.endpoint.apiKey = key;
 
-        editRefinementEndpoint(settings, {.baseUrl = QStringLiteral("http://other.example/v1")});
+        editRefinementEndpoint(settings, {.baseUrl = url});
 
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, sent);
+    }
+
+    // An endpoint left at the proxy's server stops getting the proxy's key
+    // once the proxy moves to another one.
+    void aMovedProxyKeepsItsKey()
+    {
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        editRefinementEndpoint(settings, {.preset = QString()});
         QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QStringLiteral("proxy-key"));
+
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+        settings.refinement.cliproxyApiKey = QStringLiteral("key-b");
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
     }
 
     // Keys land in the keyring when one works, and in the settings file
