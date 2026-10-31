@@ -10,6 +10,7 @@
 #include "providers/RefinementChain.h"
 
 #include <QDebug>
+#include <QScopedValueRollback>
 #include <QTimer>
 
 #include <utility>
@@ -296,7 +297,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     // not apply. One that lands while the microphone stops waits as any start
     // does, the review shown as it is until it begins.
     if (m_state == DictationState::Reviewing && !m_review.followingUp()) {
-        if (m_audioStopDepth > 0) {
+        if (startWaits()) {
             m_pendingStart = SessionOverrides{};
         } else {
             startFollowUp();
@@ -307,10 +308,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
         return;
     }
-    if (m_audioStopDepth > 0) {
-        // A start that lands inside the microphone's stop (a cancel's nested
-        // event loop) would open it only for the stop to close it again. It
-        // waits for the stop instead, and a stop or cancel meanwhile drops it.
+    if (startWaits()) {
         m_pendingStart = overrides;
         return;
     }
@@ -638,7 +636,28 @@ void DictationSession::cancelForShutdown()
     stopAudio();
 }
 
+// A start that lands inside the microphone's stop, or anywhere in a cancel's
+// cleanup, such as from a handler of the Idle it announces, would open the
+// microphone only for that cleanup to close it again. It waits for the
+// cleanup instead, and a stop or cancel meanwhile drops it.
+bool DictationSession::startWaits() const
+{
+    return m_audioStopDepth > 0 || m_cancelling;
+}
+
 void DictationSession::cancel()
+{
+    {
+        const QScopedValueRollback<bool> cancelling(m_cancelling, true);
+        cancelSession();
+    }
+    // The outermost cleanup is over; a stop still running starts it itself.
+    if (!m_cancelling && m_audioStopDepth == 0) {
+        startPendingLater();
+    }
+}
+
+void DictationSession::cancelSession()
 {
     const bool startDropped = std::exchange(m_pendingStart, std::nullopt).has_value();
     if (m_state == DictationState::Idle || m_state == DictationState::Delivering) {
@@ -820,14 +839,21 @@ void DictationSession::stopAudio()
     if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
         restartMicrophone(step);
     }
-    if (m_pendingStart) {
-        // After the caller has settled the session it stopped the microphone for.
-        QTimer::singleShot(0, this, [this] {
-            if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
-                startSession(*overrides);
-            }
-        });
+    startPendingLater();
+}
+
+// After the caller has settled the session it ended or stopped the
+// microphone for.
+void DictationSession::startPendingLater()
+{
+    if (!m_pendingStart) {
+        return;
     }
+    QTimer::singleShot(0, this, [this] {
+        if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
+            startSession(*overrides);
+        }
+    });
 }
 
 bool DictationSession::startAudio(QString *error)
