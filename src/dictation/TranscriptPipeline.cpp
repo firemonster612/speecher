@@ -106,13 +106,16 @@ QStringList refinementVocabulary(const AppSettings &settings,
     return deduplicated;
 }
 
-QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target)
+QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target, const QString &writingProfile)
 {
     // Only the user's own rules: a Learned Correction's text is what the user
     // typed, braces and all. prepare reads these rules once, so the expansion
     // before refinement, the one after it and the placeholder restore all
     // insert the same date and time.
     QList<BindingRule> rules = withVariablesFilled(settings.bindings);
+    // A correction that writes a term limited to other profiles stays out
+    // with it, as in the vocabulary.
+    const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
     QSet<QString> claimedPhrases;
     for (const BindingRule &rule : settings.bindings) {
         claimedPhrases.insert(BindingProcessor::normalizedPhrase(rule.phrase));
@@ -124,8 +127,8 @@ QList<BindingRule> activeBindings(const AppSettings &settings, const Target &tar
                 && correction.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;
             const bool applies = exactApplication ? exact : correction.applicationId.isEmpty();
             const QString phrase = BindingProcessor::normalizedPhrase(correction.original);
-            if (correction.enabled && applies && !phrase.isEmpty()
-                && !claimedPhrases.contains(phrase)) {
+            if (correction.enabled && applies && !phrase.isEmpty() && !claimedPhrases.contains(phrase)
+                && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
                 rules.append({correction.original, correction.corrected});
                 claimedPhrases.insert(phrase);
             }
@@ -205,7 +208,8 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
                                                      const QString &spokenLanguage)
 {
     TranscriptPipelineResult result;
-    const QList<BindingRule> bindings = activeBindings(settings, target);
+    const QString writingProfile = writingProfileFor(settings, choices, target);
+    const QList<BindingRule> bindings = activeBindings(settings, target, writingProfile);
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
     result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
@@ -222,7 +226,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementSettings = effectiveRefinementSettings(settings, choices, target);
     result.refinementContext.target = target;
     result.refinementContext.spokenLanguage = spokenLanguage;
-    result.refinementContext.writingProfile = writingProfileFor(settings, choices, target);
+    result.refinementContext.writingProfile = writingProfile;
     result.refinementVocabulary = refinementVocabulary(settings,
                                                        choices.vocabulary,
                                                        result.refinementContext.writingProfile,

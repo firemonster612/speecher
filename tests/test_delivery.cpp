@@ -730,7 +730,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
 
         // A correction that writes a term limited elsewhere stays out with it,
-        // and one that only differs in case keeps the term's context.
+        // from the requests and the transcript, and one that only differs in
+        // case keeps the term's context.
         VocabularyEntry pr{QStringLiteral("PR")};
         pr.context = QStringLiteral("Pull request.");
         pr.profiles = {WritingProfile::AiCoding};
@@ -741,6 +742,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                      .refinementVocabulary.contains(QStringLiteral("pr")));
         QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("pr")));
         const RunChoices aiCoding{WritingProfile::AiCoding};
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, {}, Target{}, settings.speech.language)
+                     .bindingResult.boundText,
+                 QStringLiteral("pee are"));
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, aiCoding, Target{}, settings.speech.language)
+                     .bindingResult.boundText,
+                 QStringLiteral("pr"));
         QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
                      .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
                  QStringLiteral("Pull request."));
