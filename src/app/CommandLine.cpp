@@ -100,9 +100,9 @@ Check which speech and refinement services can work:
 
 Record a call into a file, in the running Speecher (started if needed):
   speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
-                           record the microphone as "me" and, on Linux and
-                           Windows, system audio as "them", and print the
-                           file's path once the speech provider is
+                           record the microphone as "me" and system audio
+                           as "them", and print the file's path once the
+                           speech provider is
                            connected, or exit with status 1 and no file;
                            each utterance is appended as one line,
                            "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
