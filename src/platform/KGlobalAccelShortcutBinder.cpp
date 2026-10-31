@@ -150,6 +150,10 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         }
         return false;
     }
+    if (m_suspensionCount > 0) {
+        // Checked against other apps now, but left to the recorder until resume.
+        releaseAction();
+    }
     emit bindingChanged();
     return true;
 #else
@@ -161,6 +165,45 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
 #endif
 }
 
+// Deleting the action marks it inactive with the daemon, which stops taking
+// its keys but keeps them stored, as for an app that is not running. Removing
+// its shortcuts instead would lose the binding if Speecher quit before resume.
+void KGlobalAccelShortcutBinder::releaseAction()
+{
+    if (!m_action) {
+        return;
+    }
+    delete m_action;
+    m_action = nullptr;
+    m_resumeBinding = true;
+}
+
+void KGlobalAccelShortcutBinder::suspend()
+{
+    if (m_suspensionCount++ == 0) {
+        releaseAction();
+    }
+}
+
+QString KGlobalAccelShortcutBinder::resume()
+{
+    if (m_suspensionCount == 0 || --m_suspensionCount > 0 || !m_resumeBinding) {
+        return {};
+    }
+    m_resumeBinding = false;
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    const ShortcutBinding stored = shortcut();
+    makeShortcutAction();
+    KGlobalAccel::self()->setShortcut(m_action, keyList(stored.combination()), KGlobalAccel::Autoloading);
+    // Another app may have taken the keys while they were let go.
+    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
+    if (!stored.isEmpty() && (active.isEmpty() || active.first() != stored.combination())) {
+        return ownedElsewhereText(stored);
+    }
+#endif
+    return {};
+}
+
 bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
@@ -170,6 +213,7 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
         }
         return false;
     }
+    m_resumeBinding = false;
     QAction *action = m_action ? m_action : makeShortcutAction();
     KGlobalAccel::self()->removeAllShortcuts(action);
     KGlobalAccel::self()->cleanComponent(QString::fromLatin1(shortcutComponent));
