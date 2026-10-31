@@ -288,11 +288,16 @@ void TextDelivery::deliver(const OutputSettings &settings,
     if (m_requests.size() > 1) {
         return;
     }
+    QList<DeliveryResult> results;
     while (!m_requests.isEmpty()) {
         const Request request = m_requests.first();
-        const DeliveryResult result = deliverNow(request.settings, request.content, request.target);
-        QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
+        results << deliverNow(request.settings, request.content, request.target);
         m_requests.removeFirst();
+    }
+    // Posted once all are done: a later one's nested event loop would
+    // otherwise answer an earlier one inside this call.
+    for (const DeliveryResult &result : results) {
+        QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
     }
 }
 

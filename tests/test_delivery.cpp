@@ -1140,7 +1140,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
     // A delivery asked for while another waits in a nested event loop, here
     // while the insertion is verified, waits its turn: the answers keep the
-    // order the deliveries were asked in.
+    // order the deliveries were asked in, and neither arrives inside the
+    // first call, though the second waits in a nested loop too.
     void aDeliveryAskedForMidDeliveryIsAnsweredAfterIt()
     {
         class ReenteringProvider final : public TargetProvider {
@@ -1152,8 +1153,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             {
                 if (const auto deliverNext = std::exchange(duringVerification, {})) {
                     deliverNext();
+                    return false;
                 }
-                return false;
+                QCoreApplication::processEvents();
+                return true;
             }
             std::function<void()> duringVerification;
         } provider;
@@ -1165,14 +1168,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
         Target editor;
         editor.applicationId = QStringLiteral("editor");
-        Target secure = editor;
-        secure.secure = true;
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
-        provider.duringVerification = [&] { delivery.deliver(settings, content, secure); };
+        provider.duringVerification = [&] { delivery.deliver(settings, content, editor); };
 
         delivery.deliver(settings, content, editor);
+        QVERIFY(receipts.isEmpty());
         QTRY_COMPARE(receipts.size(), 2);
-        QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::Copied}));
+        QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::VerifiedInTarget}));
     }
 
     void keyboardBackendGateRefusesPasteAfterBlockingPreparation()
