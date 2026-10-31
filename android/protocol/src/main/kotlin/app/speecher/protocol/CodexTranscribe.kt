@@ -40,10 +40,10 @@ fun preferredTranscript(batch: String?, streamed: String): String =
 fun wavFromPcm16Mono(pcm: ByteArray, rateHz: Int): ByteArray =
     wavHeaderPcm16Mono(pcm.size, rateHz) + pcm
 
-const val WAV_HEADER_BYTES = 44
+internal const val WAV_HEADER_BYTES = 44
 
 /** The header a WAV file of [pcmBytes] of 16-bit mono PCM at [rateHz] starts with. */
-fun wavHeaderPcm16Mono(pcmBytes: Int, rateHz: Int): ByteArray =
+internal fun wavHeaderPcm16Mono(pcmBytes: Int, rateHz: Int): ByteArray =
     ByteBuffer.allocate(WAV_HEADER_BYTES)
         .order(ByteOrder.LITTLE_ENDIAN)
         .put("RIFF".toByteArray(Charsets.US_ASCII))
