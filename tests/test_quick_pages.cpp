@@ -588,6 +588,33 @@ private slots:
         QCOMPARE(sectionCaption(row), QString());
     }
 
+    // A search for a fallback refinement provider's row, such as Claude's
+    // model while ChatGPT refines, shows that provider's settings.
+    void searchShowsTheProviderSettingsItLandsIn()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
+        settings.set(QStringLiteral("refinementFallbacks"), QVariantList{QStringLiteral("anthropic")});
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("anthropicModel"));
+
+        QQuickItem *tabs = nullptr;
+        QTRY_VERIFY((tabs = findItem(main->contentItem(), QStringLiteral("providerTabs"))));
+        QTRY_COMPARE(tabs->property("currentId").toString(), QStringLiteral("anthropic"));
+        QQuickItem *row = schemaRow(main, QStringLiteral("anthropicModel"));
+        QVERIFY(row);
+        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+    }
+
     // A search for a row whose section is hidden on purpose, such as the
     // Global Shortcut where the desktop gives none, leaves it hidden.
     void searchLeavesHiddenSectionsHidden()
