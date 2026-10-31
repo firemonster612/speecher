@@ -44,8 +44,9 @@ enum class PhoneTransferState {
     Failed,
 };
 
-// One transfer: listens from construction until destruction, which is as long
-// as the dialog showing its code is open, and serves the bundle once.
+// One transfer: listens from construction until it has served the bundle,
+// once, or until destruction, which is as long as the dialog showing its code
+// is open.
 class PhoneTransfer : public QObject {
     Q_OBJECT
 
