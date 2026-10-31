@@ -3193,6 +3193,26 @@ private slots:
         QCOMPARE(client.readLine(), responseBytes);
     }
 
+    // A launch listens before it builds the controller, so one that finds
+    // Speecher running builds nothing. A request that comes before the
+    // controller exists is answered once it takes the socket.
+    void theControllerAnswersOnTheSocketItIsHanded()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->ipcName = uniqueControllerIpcName();
+        auto ipc = std::make_unique<SingleInstanceIpc>(platform);
+        QCOMPARE(ipc->listen(), IpcListenResult::Listening);
+        QLocalSocket client;
+        connectToController(client, platform->ipcName);
+        client.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
+
+        ApplicationController controller(true, platform, std::move(ipc));
+
+        QTRY_VERIFY(client.canReadLine());
+        const QJsonObject answer = QJsonDocument::fromJson(client.readLine()).object();
+        QCOMPARE(answer.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
+    }
+
     // The controller answers status on its own IPC with the recording, and
     // writes a watcher a line on each change of the dictation state. A
     // watcher's further commands are ignored: none doubles its lines or ends
