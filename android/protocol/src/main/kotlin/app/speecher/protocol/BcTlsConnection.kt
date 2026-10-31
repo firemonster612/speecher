@@ -140,7 +140,8 @@ private val checkServerTrusted: (Array<X509Certificate>, String, String) -> Unit
     val manager = trust.trustManagers.filterIsInstance<X509TrustManager>().first()
     val type = runCatching {
         Class.forName("android.net.http.X509TrustManagerExtensions")
-    }.getOrNull()
+    }
+        .getOrNull()
     if (type == null) {
         return@lazy { chain, authType, _ -> manager.checkServerTrusted(chain, authType) }
     }
