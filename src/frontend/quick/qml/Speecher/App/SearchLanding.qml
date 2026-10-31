@@ -22,8 +22,10 @@ QtObject {
         Navigation.pendingRow = ""
         landed()
     }
-    // After the page has slid in and laid out.
-    readonly property Timer _wait: Timer { interval: Theme.ms(260); onTriggered: landing._land() }
+    // After the page has slid in and laid out. QML empties a landing it has
+    // begun destroying while its Timer can still fire; such a landing has no
+    // _land, so it does nothing.
+    readonly property Timer _wait: Timer { interval: Theme.ms(260); onTriggered: if (landing._land) landing._land() }
     readonly property Connections _search: Connections {
         target: Navigation
         function onPendingRowChanged() { if (landing.rowIds.includes(Navigation.pendingRow)) landing._wait.restart() }
