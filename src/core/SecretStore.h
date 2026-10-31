@@ -136,6 +136,23 @@ private:
         quint64 number = 0;
     };
 
+    // Where a secret's writes stand. One is written at a time, and each event
+    // has one handler:
+    //   from             event                to
+    //   Idle             ask (save)           Writing it
+    //   Writing/Dropped  ask (save)           it waits its turn, replacing any
+    //                                         waiting
+    //   Writing          answer (finishWrite) the request stored, then Writing
+    //                                         the waiting one, which answers
+    //                                         for it, else Idle and
+    //                                         saveFinished
+    //   any              removal, or an ask   Dropped (Idle stays Idle),
+    //                    refused (drop)       nothing waiting; saveFinished
+    //                                         refuses the newest
+    //   Dropped          answer (finishWrite) Writing the waiting one, else
+    //                                         Idle; nothing stored
+    enum class Phase { Idle, Writing, Dropped };
+
     struct SecretState {
         // What storage holds, as this store last read or wrote it.
         std::optional<QString> stored;
@@ -143,13 +160,11 @@ private:
         QElapsedTimer retryTimer;
         // Whether the main thread's keyring read is under way.
         bool reading = false;
-        // The request being written, until it settles or a removal drops it,
-        // and the one waiting its turn. Reads return the newer.
+        Phase phase = Phase::Idle;
+        // The request being written, only while Writing, and the one waiting
+        // its turn.
         std::optional<Request> writing;
         std::optional<Request> waiting;
-        // Whether the keyring is taking a write of the secret, dropped or
-        // not: the next one waits for it.
-        bool keyringBusy = false;
         // The count of settings file saves (SettingsFile::saves) at which the
         // file holds its last change of what it says about the secret:
         // nothing of that change counts as stored before.
@@ -157,6 +172,25 @@ private:
         // Whether the last answer refused a request storage took, only for
         // the settings file not saving it (saveSecrets).
         bool commitRefused = false;
+
+        // The request asked for last, waiting or being written, whose value
+        // reads return; null when none is.
+        const Request *newest() const;
+        // Leaves the keyring's answer to the request being written unheard,
+        // and nothing waiting. Returns the newest request it dropped.
+        std::optional<Request> drop();
+    };
+
+    // What the settings file tells a reader about a secret: the copy it keeps,
+    // whether a deletion marker hides the key, and whether the keyring may
+    // hold it (mayBeInKeyring).
+    struct FileSays {
+        QString copy;
+        bool hidden = false;
+        bool inKeyring = false;
+        bool operator==(const FileSays &) const = default;
+        // The same, but the marker hides the key and no copy is kept.
+        FileSays withKeyHidden() const { return {{}, true, inKeyring}; }
     };
 
     // What a keyring request found: whether it went through, the entry's
@@ -189,6 +223,8 @@ private:
     QString writeRefusal() const;
     quint64 save(Secret secret, Request request);
     void writeNext(Secret secret);
+    FileSays fileSays(Secret secret) const;
+    bool say(Secret secret, const FileSays &says);
     void hide(Secret secret);
     void finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer);
     bool writesSettled() const;
@@ -196,7 +232,7 @@ private:
     bool store(Secret secret, const Request &request, const std::optional<KeyringAnswer> &answer);
     void settle(Secret secret, const Request &request, bool stored, const QString &error);
     bool holds(Secret secret, const Request &request) const;
-    bool keep(Secret secret, const Request &request, const KeyringAnswer &answer);
+    bool keep(Secret secret, const Request &request, const KeyringAnswer &answer, FileSays &file);
     void changedInFile(Secret secret);
     bool commit(Secret secret);
     void removeNext(size_t index);

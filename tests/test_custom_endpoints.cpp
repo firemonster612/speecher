@@ -2387,6 +2387,45 @@ private slots:
         comparePeerRead(settings, proxy, QStringLiteral("new-key"));
     }
 
+    // A save that leaves the settings file saying what its disk copy says is
+    // stored though the file can't be saved, and leaves nothing for a later
+    // edit to report. Here a refused removal's marker comes and goes before
+    // reaching the disk (r389 Sol).
+    void aSaveTheSettingsFileAlreadyHoldsIsStored()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows keeps the settings in the registry, which file permissions don't lock");
+#endif
+        if (privateKeyring()) {
+            QSKIP("The keyring takes the key, and its removal");
+        }
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const QString file = settings.raw().fileName();
+        QVERIFY(savedSecret(secrets, openAi, QStringLiteral("alpha")));
+        const QFileDevice::Permissions permissions = QFile::permissions(file);
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(file, permissions);
+            savedSecret(secrets, openAi, {});
+        });
+        std::optional<bool> removed;
+        secrets->deleteKeyringSecrets([&removed](bool deleted, const QString &) { removed = deleted; });
+        QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
+        QTRY_VERIFY(removed.has_value());
+        QVERIFY(!*removed);
+        QVERIFY(secrets->deletionPending(openAi));
+
+        QVERIFY(savedSecret(secrets, openAi, QStringLiteral("alpha")));
+
+        QVERIFY(QFile::setPermissions(file, permissions));
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+        secrets->saveSecrets({});
+        QCOMPARE(finished.count(), 0);
+        comparePeerRead(settings, openAi, QStringLiteral("alpha"));
+    }
+
     // A save of the settings file stores every change made before it,
     // whoever saves it, so a key whose own save the file refused is stored
     // once another save went through, though the file won't save a later

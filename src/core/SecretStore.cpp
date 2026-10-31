@@ -14,7 +14,6 @@
 #include <iterator>
 #include <memory>
 #include <optional>
-#include <tuple>
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #if __has_include(<qt6keychain/keychain.h>)
@@ -99,6 +98,22 @@ SecretStore::SecretState &SecretStore::state(Secret secret) const
     return m_cache[static_cast<size_t>(secret)];
 }
 
+const SecretStore::Request *SecretStore::SecretState::newest() const
+{
+    if (waiting) return &*waiting;
+    return writing ? &*writing : nullptr;
+}
+
+std::optional<SecretStore::Request> SecretStore::SecretState::drop()
+{
+    std::optional<Request> dropped;
+    if (const Request *request = newest()) dropped = *request;
+    if (phase == Phase::Writing) phase = Phase::Dropped;
+    writing.reset();
+    waiting.reset();
+    return dropped;
+}
+
 void SecretStore::cacheValue(Secret secret, const QString &value) const
 {
     SecretState &entry = state(secret);
@@ -156,7 +171,7 @@ void SecretStore::finishRead(Secret secret, const KeyringAnswer &answer)
 
 QString SecretStore::settingsFallback(Secret secret) const
 {
-    return m_settings ? m_settings->raw().value(settingsKey(secret)).toString().trimmed() : QString();
+    return m_settings->raw().value(settingsKey(secret)).toString().trimmed();
 }
 
 // Every install has read the OpenAI key from the keyring, so that entry is
@@ -165,14 +180,12 @@ QString SecretStore::settingsFallback(Secret secret) const
 bool SecretStore::mayBeInKeyring(Secret secret) const
 {
     return secret == Secret::OpenAiApiKey
-        || (m_settings
-            && m_settings->raw().value(SettingsKeys::SecretsInKeyring).toStringList()
-                   .contains(keyringEntry(secret)));
+        || m_settings->raw().value(SettingsKeys::SecretsInKeyring).toStringList().contains(keyringEntry(secret));
 }
 
 void SecretStore::recordKeyringEntry(Secret secret, bool present) const
 {
-    if (!m_settings || secret == Secret::OpenAiApiKey) {
+    if (secret == Secret::OpenAiApiKey) {
         return;
     }
     QStringList entries = m_settings->raw().value(SettingsKeys::SecretsInKeyring).toStringList();
@@ -189,13 +202,13 @@ void SecretStore::recordKeyringEntry(Secret secret, bool present) const
 
 bool SecretStore::deletionPending(Secret secret) const
 {
-    return m_settings && m_settings->raw().value(pendingDeletionKey(secret)).toBool();
+    return m_settings->raw().value(pendingDeletionKey(secret)).toBool();
 }
 
 bool SecretStore::isSecretKnown(Secret secret) const
 {
     const SecretState &entry = state(secret);
-    return deletionPending(secret) || entry.stored || entry.writing || entry.waiting;
+    return deletionPending(secret) || entry.stored || entry.newest();
 }
 
 // What a read answers without the keyring: the value asked for last,
@@ -205,8 +218,7 @@ bool SecretStore::isSecretKnown(Secret secret) const
 std::optional<QString> SecretStore::readWithoutKeyring(Secret secret) const
 {
     const SecretState &entry = state(secret);
-    if (entry.waiting) return entry.waiting->value;
-    if (entry.writing) return entry.writing->value;
+    if (const Request *asked = entry.newest()) return asked->value;
     if (deletionPending(secret)) return QString();
     if (entry.stored) return entry.stored;
     // A save that reaches the keyring removes the settings file's copy.
@@ -254,7 +266,7 @@ void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
         SecretState &entry = state(row.secret);
         // A write under way, or one this edit asks for, answers itself.
         const bool asked = std::ranges::any_of(values, [&row](const auto &value) { return value.first == row.secret; });
-        if (!entry.commitRefused || entry.writing || entry.waiting || entry.keyringBusy || asked
+        if (!entry.commitRefused || entry.phase != Phase::Idle || entry.waiting || asked
             || !writeRefusal().isEmpty() || !commit(row.secret)) {
             continue;
         }
@@ -274,7 +286,7 @@ void SecretStore::saveSecrets(const QList<std::pair<Secret, QString>> &values)
 // neither the keyring nor the settings file gets a key back.
 QString SecretStore::writeRefusal() const
 {
-    if (m_settings && m_settings->raw().closed()) {
+    if (m_settings->raw().closed()) {
         return QStringLiteral("Speecher's settings were deleted");
     }
     return m_removals.isEmpty() ? QString() : QStringLiteral("Speecher's secrets are being removed");
@@ -285,14 +297,11 @@ quint64 SecretStore::save(Secret secret, Request request)
     request.number = ++m_requests;
     SecretState &entry = state(secret);
     // A marker a request still under way put in hid nothing it didn't.
-    request.marked = entry.waiting ? entry.waiting->marked
-        : entry.writing            ? entry.writing->marked
-                                   : deletionPending(secret);
+    const Request *asked = entry.newest();
+    request.marked = asked ? asked->marked : deletionPending(secret);
     if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
-        // It replaces the requests before it, whose keyring answer then goes
-        // unheard.
-        entry.writing.reset();
-        entry.waiting.reset();
+        // It replaces the requests before it.
+        entry.drop();
         QTimer::singleShot(0, this, [this, secret, request, refusal] { settle(secret, request, false, refusal); });
         notifyIfWritesSettled();
         return request.number;
@@ -302,27 +311,56 @@ quint64 SecretStore::save(Secret secret, Request request)
     // while the key can still be read.
     if (request.value.isEmpty() && !request.migrating) {
         const bool findable = !settingsFallback(secret).isEmpty() || mayBeInKeyring(secret);
-        if (entry.writing || (findable && !holds(secret, request))) {
+        if (entry.phase == Phase::Writing || (findable && !holds(secret, request))) {
             hide(secret);
         }
     }
     entry.waiting = request;
-    if (!entry.writing && !entry.keyringBusy) {
+    if (entry.phase == Phase::Idle) {
         writeNext(secret);
     }
     return request.number;
+}
+
+SecretStore::FileSays SecretStore::fileSays(Secret secret) const
+{
+    return {settingsFallback(secret), deletionPending(secret), mayBeInKeyring(secret)};
+}
+
+// Makes the settings file say that about the secret, for the file's next
+// save. Returns whether it said something else before.
+bool SecretStore::say(Secret secret, const FileSays &says)
+{
+    const FileSays before = fileSays(secret);
+    if (says == before) {
+        return false;
+    }
+    if (says.copy != before.copy) {
+        if (says.copy.isEmpty()) {
+            m_settings->raw().remove(settingsKey(secret));
+        } else {
+            m_settings->raw().setValue(settingsKey(secret), says.copy);
+        }
+    }
+    if (says.hidden != before.hidden) {
+        if (says.hidden) {
+            m_settings->raw().setValue(pendingDeletionKey(secret), true);
+        } else {
+            m_settings->raw().remove(pendingDeletionKey(secret));
+        }
+    }
+    if (says.inKeyring != before.inKeyring) {
+        recordKeyringEntry(secret, says.inKeyring);
+    }
+    changedInFile(secret);
+    return true;
 }
 
 // Puts the secret's deletion marker in the settings file and takes out its
 // copy there, for the file's next save, until a clear settles.
 void SecretStore::hide(Secret secret)
 {
-    if (!m_settings || (deletionPending(secret) && settingsFallback(secret).isEmpty())) {
-        return;
-    }
-    m_settings->raw().setValue(pendingDeletionKey(secret), true);
-    m_settings->raw().remove(settingsKey(secret));
-    changedInFile(secret);
+    say(secret, fileSays(secret).withKeyHidden());
 }
 
 // Starts writing the request waiting its turn. One that needs no keyring is
@@ -331,11 +369,8 @@ void SecretStore::writeNext(Secret secret)
 {
     SecretState &entry = state(secret);
     entry.writing = std::exchange(entry.waiting, std::nullopt);
-    entry.keyringBusy = true;
-    const auto finish = [this, secret](const std::optional<KeyringAnswer> &answer) {
-        state(secret).keyringBusy = false;
-        finishWrite(secret, answer);
-    };
+    entry.phase = Phase::Writing;
+    const auto finish = [this, secret](const std::optional<KeyringAnswer> &answer) { finishWrite(secret, answer); };
     const Request &request = *entry.writing;
     if (!writeRefusal().isEmpty() || (!request.migrating && holds(secret, request))) {
         QTimer::singleShot(0, this, [finish] { finish(std::nullopt); });
@@ -360,7 +395,8 @@ void SecretStore::writeNext(Secret secret)
 void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer)
 {
     SecretState &entry = state(secret);
-    // A removal dropped the request, and answered for it.
+    entry.phase = Phase::Idle;
+    // A removal or a refused request dropped it, and answered for it.
     if (const std::optional<Request> request = std::exchange(entry.writing, std::nullopt)) {
         const bool stored = store(secret, *request, answer);
         if (!entry.waiting) {
@@ -368,7 +404,7 @@ void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> 
         }
     }
     // A saveFinished handler may have started the next write already.
-    if (entry.waiting && !entry.writing && !entry.keyringBusy) {
+    if (entry.phase == Phase::Idle && entry.waiting) {
         writeNext(secret);
     }
     notifyIfWritesSettled();
@@ -377,7 +413,7 @@ void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> 
 bool SecretStore::writesSettled() const
 {
     return m_removals.isEmpty()
-        && std::ranges::none_of(m_cache, [](const SecretState &entry) { return entry.writing || entry.waiting; });
+        && std::ranges::none_of(m_cache, [](const SecretState &entry) { return entry.newest() != nullptr; });
 }
 
 void SecretStore::afterWrites(std::function<void()> done)
@@ -403,24 +439,18 @@ bool SecretStore::store(Secret secret, const Request &request, const std::option
         m_lastError = refusal;
         return false;
     }
-    // What the settings file tells a reader about the secret.
-    const auto fileSays = [this, secret] {
-        return std::tuple(settingsFallback(secret), deletionPending(secret), mayBeInKeyring(secret));
-    };
-    const auto said = fileSays();
+    const FileSays before = fileSays(secret);
+    FileSays after = before;
     m_lastError.clear();
-    const bool kept = !answer || keep(secret, request, *answer);
+    const bool kept = !answer || keep(secret, request, *answer, after);
     // A newer request waiting its turn behind a hidden key, such as a clear
     // or the key entered after it, keeps whatever this older request stored
     // hidden, in the same save of the settings file.
-    if (state(secret).waiting && std::get<1>(said)) {
-        hide(secret);
+    if (state(secret).waiting && before.hidden) {
+        after = after.withKeyHidden();
     }
+    const bool changed = say(secret, after);
     const QString refusal = m_lastError;
-    const bool changed = fileSays() != said;
-    if (changed) {
-        changedInFile(secret);
-    }
     const bool committed = commit(secret);
     // A refusal that changed nothing leaves an earlier change's refused
     // commit to report.
@@ -466,32 +496,30 @@ bool SecretStore::holds(Secret secret, const Request &request) const
                           : request.fallBack && copy == request.value;
 }
 
-// Puts what the keyring did with the request in the settings file and this
-// store's memory: when it refused, the settings file keeps the key if the
-// request allows it, and a refused deletion leaves a marker. Returns whether
-// storage holds the request (holds), else puts why in lastError(). A
-// migration's refused request leaves both as they were.
-bool SecretStore::keep(Secret secret, const Request &request, const KeyringAnswer &answer)
+// Puts what the keyring did with the request in what the settings file is to
+// say (file) and in this store's memory: when it refused, the settings file
+// keeps the key if the request allows it, and a refused deletion hides the
+// key. Returns whether storage then holds the request (holds), else puts why
+// in lastError(). A migration's refused request changes neither.
+bool SecretStore::keep(Secret secret, const Request &request, const KeyringAnswer &answer, FileSays &file)
 {
     m_lastError = answer.error;
     const QString &value = request.value;
     if (answer.ok) {
-        recordKeyringEntry(secret, !value.isEmpty());
-        if (m_settings) {
-            m_settings->raw().remove(settingsKey(secret));
-            m_settings->raw().remove(pendingDeletionKey(secret));
-        }
+        // A deleted entry is looked up no more, but for the OpenAI one,
+        // which always is (mayBeInKeyring).
+        file = {{}, false, !value.isEmpty() || secret == Secret::OpenAiApiKey};
         cacheValue(secret, value);
-        return holds(secret, request);
+        return true;
     }
-    if (!m_settings || request.migrating) {
+    if (request.migrating) {
         return false;
     }
     if (value.isEmpty()) {
         // Hides the old key across restarts until a deletion goes through,
         // even a key the request keeps out of the settings file: an older
         // copy may be there.
-        hide(secret);
+        file = file.withKeyHidden();
         cacheValue(secret, {});
         return false;
     }
@@ -503,21 +531,18 @@ bool SecretStore::keep(Secret secret, const Request &request, const KeyringAnswe
         m_lastError = QStringLiteral("No keyring took it (%1), and %2").arg(m_lastError, unsafe);
         return false;
     }
-    m_settings->raw().remove(pendingDeletionKey(secret));
     qWarning().noquote() << "keyring unavailable, keeping" << keyringEntry(secret)
                          << "in the settings file:" << m_lastError;
-    m_settings->raw().setValue(settingsKey(secret), value);
+    file = {value, false, file.inKeyring};
     cacheValue(secret, value);
-    return holds(secret, request);
+    return true;
 }
 
 // Notes that the settings file now says something new about the secret,
 // which its next save holds.
 void SecretStore::changedInFile(Secret secret)
 {
-    if (m_settings) {
-        state(secret).savedBy = m_settings->raw().saves() + 1;
-    }
+    state(secret).savedBy = m_settings->raw().saves() + 1;
 }
 
 // Whether the settings file saved what it says about the secret, any save of
@@ -526,7 +551,7 @@ void SecretStore::changedInFile(Secret secret)
 // lastError(), when the file won't save.
 bool SecretStore::commit(Secret secret)
 {
-    if (!m_settings || m_settings->raw().saves() >= state(secret).savedBy || m_settings->raw().save()) {
+    if (m_settings->raw().saves() >= state(secret).savedBy || m_settings->raw().save()) {
         return true;
     }
     m_lastError = QStringLiteral("Could not save the settings file %1").arg(m_settings->raw().fileName());
@@ -695,12 +720,7 @@ void SecretStore::deleteKeyringSecrets(std::function<void(bool deleted, const QS
     // Drops every request under way or waiting its turn, so none is written
     // after the deletions.
     for (const SecretEntry &row : secretEntries) {
-        SecretState &entry = state(row.secret);
-        std::optional<Request> dropped = std::exchange(entry.waiting, std::nullopt);
-        if (std::optional<Request> written = std::exchange(entry.writing, std::nullopt); !dropped) {
-            dropped = written;
-        }
-        if (dropped) {
+        if (const std::optional<Request> dropped = state(row.secret).drop()) {
             settle(row.secret, *dropped, false, writeRefusal());
         }
     }
@@ -732,7 +752,7 @@ void SecretStore::removeNext(size_t index)
         // keyring kept would come back after a reinstall; a marker hides it
         // unless a read finds the entry gone. A keyring that can't be read
         // may hold the key still, once it answers again.
-        if (!m_settings || secret != Secret::OpenAiApiKey) {
+        if (secret != Secret::OpenAiApiKey) {
             removeNext(index + 1);
             return;
         }
