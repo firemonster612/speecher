@@ -74,7 +74,8 @@ Transcribe without a window, printing the results:
   --stdout                 also print each transcript
   --raw                    print and save the raw transcript, not the refined one
   --srt | --vtt            save and print SRT or WebVTT subtitles instead, from
-                           the raw transcript; only local models give timings
+                           the raw transcript; only local models that time
+                           their segments, such as Whisper, give timings
   --json                   print one JSON object per file, then a summary
   Exit status: 0 all files transcribed, 1 some failed, 2 usage error.
 
@@ -100,10 +101,10 @@ Check which speech and refinement services can work:
 
 Record a call into a file, in the running Speecher (started if needed):
   speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
-                           record the microphone as "me" and, on Linux and
-                           Windows, system audio as "them", and print the
-                           file's path once the speech provider is
-                           connected, or exit with status 1 and no file;
+                           record the microphone as "me" and system audio
+                           as "them", and print the file's path once the
+                           speech provider is connected, or exit with
+                           status 1 and no file;
                            each utterance is appended as one line,
                            "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
                            (default file: recordings/<yyyy-mm-dd-hhmm>.md in

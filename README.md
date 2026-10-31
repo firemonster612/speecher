@@ -4,13 +4,19 @@
 
 <h1 align="center">speecher</h1>
 
-<p align="center">Speech-to-text for Linux, macOS, and Windows that reuses your existing subscriptions.</p>
+<p align="center">Speech-to-text for Linux, macOS, and Windows that reuses your existing subscriptions, or runs a model on your own computer.</p>
 
 ## Quick start
 
 ### Prerequisites
 
-Sign in to at least one transcription service: Claude Code for Claude, or the ChatGPT app or Codex CLI for ChatGPT. Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
+Speecher needs one way to turn speech into text:
+
+- A sign-in: Claude Code for Claude, or the ChatGPT app or Codex CLI for ChatGPT.
+- A Local Model, which the setup assistant downloads and which runs on your computer with no account. Release packages include local speech; a source build needs `-DSPEECHER_WITH_LOCAL_SPEECH=ON` (see [Build](#build)).
+- A Custom Endpoint: a speech server you host.
+
+Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
 
 ```sh
 # Arch
@@ -248,14 +254,14 @@ speecher transcribe --model local --srt talk.mp3         # talk-transcribed.srt 
 ffmpeg -i talk.mp4 -f wav - | speecher transcribe --stdout -   # audio from stdin
 ```
 
-`--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, and `--vocab-file <path>` adds the file's terms to it for this run only, one per line, skipping blank lines and lines starting with `#`, so a coding agent can pass identifiers from the repo it works in. They go to the speech service and to refinement ahead of your saved terms, in the file's order, as many as each takes, even with `--no-vocabulary`. Your settings are not changed. `--raw` prints and saves the unrefined transcript. `--srt` or `--vtt` saves and prints SRT or WebVTT subtitles instead of text, the same file the Transcribe window's Export writes, and with `--json` each object's `text` holds the subtitles. Subtitles come from the raw transcript and need timings, which only Local models return; with any other speech provider each file fails. Unset choices come from your settings. `-` as the only file reads the audio from stdin, so `ffmpeg` or `sox` can pipe it in; the audio is spooled to a temporary file that is removed when the run ends, even when a signal interrupts it; on Windows, removal when the run is interrupted is best effort and can leave the file in the temporary folder. Stdin must be a pipe or file, not a terminal. It always runs without a window, needs `--stdout`, `--json` or `--output <folder>`, and is named `stdin` in progress and saved as `stdin-transcribed.txt`; with `--json` its `file` is `-`. Empty stdin fails the run with status 1. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
+`--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, and `--vocab-file <path>` adds the file's terms to it for this run only, one per line, skipping blank lines and lines starting with `#`, so a coding agent can pass identifiers from the repo it works in. They go to the speech service and to refinement ahead of your saved terms, in the file's order, as many as each takes, even with `--no-vocabulary`. Your settings are not changed. `--raw` prints and saves the unrefined transcript. `--srt` or `--vtt` saves and prints SRT or WebVTT subtitles instead of text, the same file the Transcribe window's Export writes, and with `--json` each object's `text` holds the subtitles. Subtitles come from the raw transcript and need timings, which only Local models that time their segments, such as Whisper, return; with any other model or speech provider each file fails. Unset choices come from your settings. `-` as the only file reads the audio from stdin, so `ffmpeg` or `sox` can pipe it in; the audio is spooled to a temporary file that is removed when the run ends, even when a signal interrupts it; on Windows, removal when the run is interrupted is best effort and can leave the file in the temporary folder. Stdin must be a pipe or file, not a terminal. It always runs without a window, needs `--stdout`, `--json` or `--output <folder>`, and is named `stdin` in progress and saved as `stdin-transcribed.txt`; with `--json` its `file` is `-`. Empty stdin fails the run with status 1. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
 
-The desktop UI is being replaced by one Qt Quick UI on every platform, which
-the running app shows in its own process (see
-[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). On Linux it opens
-when you launch Speecher or click its tray icon, whose menu also starts and
-stops dictation; `speecher --daemon` starts without a window. Elsewhere,
-until it lands, Speecher runs in the background without windows.
+The desktop UI is one Qt Quick UI on every platform, which the running app
+shows in its own process (see
+[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). It opens when
+you launch Speecher or click its tray icon; on macOS, choose Open Speecher
+from the menu bar icon's menu. That menu also starts and stops dictation.
+`speecher --daemon` starts without a window.
 
 ### Voice input from the terminal
 
@@ -340,7 +346,7 @@ On Windows, uninstall Speecher from **Settings > Apps > Installed apps**.
 
 ## Transcription
 
-Choose Claude or ChatGPT under the transcription settings. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
+Choose Claude, ChatGPT, a Local Model or a Custom Endpoint under Speech to text. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
 
 ChatGPT dictation uses the same streaming protocol as the Codex CLI and reuses its ChatGPT OAuth session. An OpenAI API key cannot authorize this endpoint. Sign in with `codex login` or the ChatGPT app before using it.
 
