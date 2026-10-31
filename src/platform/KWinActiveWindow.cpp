@@ -25,7 +25,9 @@ constexpr auto kProbeInterface = "org.speecher.WindowProbe";
 // to guess a number's width, and the pid lets the caller confirm the window is
 // not Speecher's own surface. internalId is KWin's per-window handle; a
 // compositor that does not have it reports an empty string rather than failing.
-QString scriptSource(const QString &service, const QString &path)
+// probe comes back with the report, so a late one from an earlier probe is
+// told apart.
+QString scriptSource(const QString &service, const QString &path, quint64 probe)
 {
     return QStringLiteral(
                "var w = workspace.activeWindow || workspace.activeClient;\n"
@@ -37,8 +39,8 @@ QString scriptSource(const QString &service, const QString &path)
                "  pid = w.pid ? '' + w.pid : '0';\n"
                "  id = w.internalId ? '' + w.internalId : '';\n"
                "}\n"
-               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid, id);\n")
-        .arg(service, path, QString::fromLatin1(kProbeInterface));
+               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid, id, '%4');\n")
+        .arg(service, path, QString::fromLatin1(kProbeInterface), QString::number(probe));
 }
 
 bool kwinAvailable()
@@ -112,6 +114,11 @@ KWinActiveWindow::KWinActiveWindow(QObject *parent)
 
 KWinActiveWindow::~KWinActiveWindow()
 {
+    // Gone mid-probe: the script must not stay loaded. One still loading is
+    // unloaded by the next probe, whichever process runs it.
+    if (!m_waiting.isEmpty()) {
+        unloadKWinScript();
+    }
     if (m_registered) {
         QDBusConnection::sessionBus().unregisterObject(m_objectPath);
     }
@@ -131,9 +138,11 @@ void KWinActiveWindow::reportWindow(const QString &resourceClass,
                                     const QString &resourceName,
                                     const QString &caption,
                                     const QString &processId,
-                                    const QString &internalId)
+                                    const QString &internalId,
+                                    const QString &probe)
 {
-    if (m_waiting.isEmpty()) {
+    // A probe that timed out can still report, while the next one waits.
+    if (m_waiting.isEmpty() || probe != QString::number(m_probes)) {
         return;
     }
     const KWinWindowInfo window{resourceClass.trimmed(), resourceName.trimmed(), caption.trimmed(),
@@ -158,8 +167,9 @@ void KWinActiveWindow::activeWindow(std::function<void(const std::optional<KWinW
         return;
     }
 
+    const quint64 probe = ++m_probes;
     const QString scriptPath = writeScriptFile(
-        scriptSource(QDBusConnection::sessionBus().baseService(), m_objectPath));
+        scriptSource(QDBusConnection::sessionBus().baseService(), m_objectPath, probe));
     if (scriptPath.isEmpty()) {
         answer(std::nullopt);
         return;
@@ -168,10 +178,9 @@ void KWinActiveWindow::activeWindow(std::function<void(const std::optional<KWinW
     // never got to unload (Speecher was killed mid-probe) leaves its script
     // loaded for the rest of the KWin session.
     unloadKWinScript();
-    const quint64 probe = ++m_probes;
-    m_timeout.start(timeoutMs);
     auto *loading = new QDBusPendingCallWatcher(loadKWinScript(scriptPath), this);
-    connect(loading, &QDBusPendingCallWatcher::finished, this, [this, probe](QDBusPendingCallWatcher *watcher) {
+    connect(loading, &QDBusPendingCallWatcher::finished, this,
+            [this, probe, timeoutMs](QDBusPendingCallWatcher *watcher) {
         watcher->deleteLater();
         if (probe != m_probes || m_waiting.isEmpty()) {
             return;
@@ -181,7 +190,9 @@ void KWinActiveWindow::activeWindow(std::function<void(const std::optional<KWinW
             answer(std::nullopt);
             return;
         }
-        // reportWindow arrives once the script has run.
+        // reportWindow arrives once the script has run. The load has its own
+        // limit; this one is KWin's to run the script and report.
+        m_timeout.start(timeoutMs);
         runKWinScript(scriptId.value());
     });
 }

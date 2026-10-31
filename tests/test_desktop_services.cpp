@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
+#include <QTimer>
 
 using namespace speecher;
 
@@ -44,6 +45,8 @@ public:
     // A script already loaded under `plugin`, as a probe that never got to
     // unload leaves it.
     void leaveLoaded(const QString &plugin) { m_loaded.insert(plugin); }
+    // How long after each run the script reports, as a busy KWin is slow to.
+    void delayReports(int ms) { m_reportDelayMs = ms; }
 
     bool handleMessage(const QDBusMessage &message, const QDBusConnection &) override
     {
@@ -58,12 +61,15 @@ public:
             m_bus.send(message.createReply(m_loaded.remove(arguments.at(0).toString())));
         } else if (message.member() == QLatin1String("run")) {
             m_bus.send(message.createReply());
+            ++m_runs;
             reportWindowTo(m_scriptPath);
         }
         return true;
     }
 
 private:
+    // Reports a different window on each run, {window-1} first, and hands
+    // back the probe number the script carries.
     void reportWindowTo(const QString &scriptPath)
     {
         QFile script(scriptPath);
@@ -71,18 +77,24 @@ private:
             return;
         }
         const QRegularExpressionMatch target =
-            QRegularExpression(QStringLiteral("callDBus\\('([^']*)', '([^']*)', '([^']*)'"))
+            QRegularExpression(QStringLiteral(
+                "callDBus\\('([^']*)', '([^']*)', '([^']*)', 'reportWindow'[^)]*?(?:, '(\\d+)')?\\)"))
                 .match(QString::fromUtf8(script.readAll()));
         QDBusMessage report = QDBusMessage::createMethodCall(
             target.captured(1), target.captured(2), target.captured(3), QStringLiteral("reportWindow"));
         report << QStringLiteral("konsole") << QStringLiteral("konsole") << QStringLiteral("Shell")
-               << QStringLiteral("4242") << QStringLiteral("{window}");
-        m_bus.send(report);
+               << QStringLiteral("4242") << QStringLiteral("{window-%1}").arg(m_runs);
+        if (target.hasCaptured(4)) {
+            report << target.captured(4);
+        }
+        QTimer::singleShot(m_reportDelayMs, this, [this, report] { m_bus.send(report); });
     }
 
     QThread m_thread;
     QSet<QString> m_loaded;
     QString m_scriptPath;
+    int m_runs = 0;
+    int m_reportDelayMs = 0;
 };
 
 // An MPRIS media player that is playing until told to pause.
@@ -146,7 +158,7 @@ private slots:
         QTRY_VERIFY(answered);
         QVERIFY(window);
         QCOMPARE(window->resourceClass, QStringLiteral("konsole"));
-        QCOMPARE(window->internalId, QStringLiteral("{window}"));
+        QCOMPARE(window->internalId, QStringLiteral("{window-1}"));
         QVERIFY(QFile::exists(runtime.filePath(QStringLiteral("speecher-kwin-active-window.js"))));
     }
 
@@ -175,6 +187,35 @@ private slots:
         probe.activeWindow(record, 2000);
         QVERIFY(answers.isEmpty());
         QTRY_COMPARE(answers, (QStringList{QStringLiteral("konsole"), QStringLiteral("konsole")}));
+    }
+
+    // A probe that timed out can still report while the next one waits: that
+    // late report is not the next probe's answer, which names the window as
+    // KWin saw it for that probe.
+    void kwinProbeIgnoresALateReportFromAnEarlierProbe()
+    {
+        QTemporaryDir runtime;
+        QVERIFY(runtime.isValid());
+        const QByteArray previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(runtime.path()));
+        const auto restoreRuntime = qScopeGuard([&] {
+            previousRuntime.isNull() ? qunsetenv("XDG_RUNTIME_DIR")
+                                     : qputenv("XDG_RUNTIME_DIR", previousRuntime);
+        });
+        FakeKWin kwin;
+        kwin.delayReports(300);
+        QVERIFY(kwin.start(QStringLiteral("org.kde.KWin"), QStringLiteral("/Scripting")));
+
+        KWinActiveWindow probe;
+        std::optional<std::optional<KWinWindowInfo>> first;
+        std::optional<std::optional<KWinWindowInfo>> second;
+        probe.activeWindow([&first](const std::optional<KWinWindowInfo> &window) { first = window; }, 50);
+        QTRY_VERIFY(first.has_value());
+        QVERIFY(!*first);
+        probe.activeWindow([&second](const std::optional<KWinWindowInfo> &window) { second = window; }, 2000);
+        QTRY_VERIFY(second.has_value());
+        QVERIFY(*second);
+        QCOMPARE((*second)->internalId, QStringLiteral("{window-2}"));
     }
 
     // Media paused for one dictation and again before it resumed is still

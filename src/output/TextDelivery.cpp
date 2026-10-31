@@ -307,7 +307,7 @@ private:
 // stop().
 class TextDelivery::Run final : public QObject {
     // One of this run's frames on the stack. The deadline can stop the run
-    // from a step's nested event loop, such as the KWin probe's; the run is
+    // from a step's nested event loop, such as verifyInsertion()'s; the run is
     // deleted only once no frame is left that would return into it, so the
     // backend it is in stays alive too.
     class Frame {
@@ -715,8 +715,8 @@ void TextDelivery::deliver(const OutputSettings &settings,
                            const Target &target)
 {
     m_requests.append({settings, content, target});
-    // Never inside this call: a step's nested event loop, to check focus or
-    // verify an insertion, could otherwise answer an earlier delivery here.
+    // Never inside this call: a step's nested event loop, verifying an
+    // insertion, could otherwise answer an earlier delivery here.
     QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);
 }
 

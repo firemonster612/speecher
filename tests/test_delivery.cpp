@@ -1295,7 +1295,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(backendGone);
     }
 
-    void aDeadlineInANestedFocusCheckPressesNoKeys_data()
+    void aDeadlineWhileAFocusCheckWaitsPressesNoKeys_data()
     {
         QTest::addColumn<int>("waitingCheck");
         QTest::newRow("first focus check") << 1;
@@ -1303,30 +1303,27 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QTest::newRow("last-moment gate") << 3;
     }
 
-    // The deadline can fire while a focus check waits in a nested event loop,
-    // as the KWin probe does. The delivery is answered once, as unfinished:
-    // it presses no keys and readies no paste after that answer, and the one
-    // asked for after it starts only once that loop has returned. The first
-    // two rows also hold through the paste-key gate, which refuses an
-    // answered delivery; only preparePaste tells the second row apart.
-    void aDeadlineInANestedFocusCheckPressesNoKeys()
+    // The deadline can come while a focus check waits for the compositor.
+    // The delivery is answered once, as unfinished, and when the check then
+    // answers, no paste is readied and no keys go out.
+    void aDeadlineWhileAFocusCheckWaitsPressesNoKeys()
     {
         QFETCH(int, waitingCheck);
-        class SlowFocus final : public TargetProvider {
+        class LateFocus final : public TargetProvider {
         public:
-            explicit SlowFocus(int waitingCheck) : waitingCheck(waitingCheck) {}
+            explicit LateFocus(int waitingCheck) : waitingCheck(waitingCheck) {}
             void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
-            bool stillFocused(const Target &) override
+            void focusMatch(const Target &, QObject *context, std::function<void(FocusMatch)> done) override
             {
-                reentered = reentered || waiting;
-                if (++checks == waitingCheck) {
-                    waiting = true;
-                    QEventLoop wait;
-                    QTimer::singleShot(100, &wait, &QEventLoop::quit);
-                    wait.exec();
-                    waiting = false;
+                if (++checks != waitingCheck) {
+                    done(FocusMatch::Same);
+                    return;
                 }
-                return true;
+                held = [context = QPointer<QObject>(context), done] {
+                    if (context) {
+                        done(FocusMatch::Same);
+                    }
+                };
             }
             bool preparePaste(const Target &) override
             {
@@ -1336,8 +1333,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             const int waitingCheck;
             int checks = 0;
             int prepared = 0;
-            bool waiting = false;
-            bool reentered = false;
+            std::function<void()> held;
         } targetProvider(waitingCheck);
         int pressed = 0;
         class GatedBackend final : public DeliveryBackend {
@@ -1347,19 +1343,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                          const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) override
             {
-                const auto press = [this, done](bool clear) {
-                    if (!clear) {
-                        done({false, false, QStringLiteral("refused")});
-                        return;
-                    }
-                    ++pressed;
-                    done({true, false, {}});
-                };
-                if (clearToInject) {
-                    clearToInject(press);
-                } else {
-                    press(true);
-                }
+                clearToInject([this, done](bool clear) {
+                    pressed += clear ? 1 : 0;
+                    done({clear, false, clear ? QString() : QStringLiteral("refused")});
+                });
             }
             int &pressed;
         };
@@ -1375,17 +1362,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-        const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
 
-        delivery.deliver(settings, content, target);
-        delivery.deliver(settings, content, target);
-        QTRY_COMPARE(answers.size(), 2);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
-        QCOMPARE(answers.at(1).receipt, DeliveryReceipt::InputSent);
-        // The second delivery's paste, and only it.
-        QCOMPARE(pressed, 1);
-        QCOMPARE(targetProvider.prepared, waitingCheck == 3 ? 2 : 1);
-        QVERIFY(!targetProvider.reentered);
+        QVERIFY(targetProvider.held);
+        targetProvider.held();
+        QTest::qWait(20);
+        QCOMPARE(answers.size(), 1);
+        QCOMPARE(pressed, 0);
+        // The last-moment gate comes after the paste was readied.
+        QCOMPARE(targetProvider.prepared, waitingCheck == 3 ? 1 : 0);
     }
 
     void aDeadlineInANestedInsertionCheckLeavesTheClipboard_data()
@@ -1395,9 +1382,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QTest::newRow("paste keys") << false;
     }
 
-    // An insertion check that waits past the deadline and then confirms the
-    // words leaves them on the clipboard: the previous clipboard comes back
-    // only for a delivery still waiting for its answer.
+    // An insertion check that waits in a nested event loop past the deadline
+    // and then confirms the words leaves them on the clipboard: the previous
+    // clipboard comes back only for a delivery still waiting for its answer.
+    // The delivery asked for after it starts only once that loop has
+    // returned, never inside it.
     void aDeadlineInANestedInsertionCheckLeavesTheClipboard()
     {
         QFETCH(bool, insertsDirectly);
@@ -1409,12 +1398,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             bool insertText(const Target &, const QString &, QString *) override { return true; }
             bool verifyInsertion(const Target &, const QString &) override
             {
+                reentered = reentered || waiting;
+                waiting = true;
                 QEventLoop wait;
                 QTimer::singleShot(100, &wait, &QEventLoop::quit);
                 wait.exec();
+                waiting = false;
                 return true;
             }
             bool insertsDirectly = false;
+            bool waiting = false;
+            bool reentered = false;
         } targetProvider;
         targetProvider.insertsDirectly = insertsDirectly;
         QList<QString> attempts;
@@ -1431,15 +1425,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        const DeliveryResult result = deliverAndWait(
-            delivery, settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target);
-        QCOMPARE(result.message, QStringLiteral("Delivery did not finish in time"));
+        QStringList answers;
+        connect(&delivery, &TextDeliveryAdapter::delivered, this,
+                [&answers](const DeliveryResult &result) { answers << result.message; });
+        const DeliveryContent content = makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText);
+        delivery.deliver(settings, content, target);
+        delivery.deliver(settings, content, target);
+        QTRY_COMPARE(answers.size(), 2);
+        QCOMPARE(answers, QStringList(2, QStringLiteral("Delivery did not finish in time")));
         QTest::qWait(150);
+        QVERIFY(!targetProvider.reentered);
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("dictation"));
     }
 
     // The delivery can go while its run is still on the stack: from inside a
-    // focus check's nested event loop, or from the handler of its answer.
+    // nested event loop, as verifyInsertion() can run one (here in a focus
+    // check, the first step), or from the handler of its answer.
     // The run unwinds without touching it, and nothing is pressed or
     // answered after. A run going too early shows only under AddressSanitizer.
     void aDeliveryCanGoWhileItsRunIsOnTheStack_data()

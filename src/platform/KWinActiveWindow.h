@@ -38,8 +38,10 @@ public:
     ~KWinActiveWindow() override;
 
     // Asks KWin and returns at once. done hears the active window, or nothing
-    // off KDE, for Speecher's own surface, or when KWin does not answer within
-    // timeoutMs. Asked again before then, the probe under way answers both.
+    // off KDE, for Speecher's own surface, when KWin turns the script down or
+    // takes over half a second to load it, or when it does not report within
+    // timeoutMs of running it. Asked again before then, the probe under way
+    // answers both.
     void activeWindow(std::function<void(const std::optional<KWinWindowInfo> &)> done, int timeoutMs = 250);
 
 public slots:
@@ -49,7 +51,8 @@ public slots:
                                    const QString &resourceName,
                                    const QString &caption,
                                    const QString &processId,
-                                   const QString &internalId);
+                                   const QString &internalId,
+                                   const QString &probe);
 
 private:
     bool ensureRegistered();
