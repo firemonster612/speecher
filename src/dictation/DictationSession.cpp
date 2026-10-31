@@ -749,6 +749,18 @@ void DictationSession::resume()
     if (step != m_step) {
         return;
     }
+    // A resume inside a pause's microphone stop: capture would end with that
+    // stop, so it restarts once the outermost stop returns.
+    if (m_audioStopDepth > 0) {
+        m_restartStep = step;
+        return;
+    }
+    restartMicrophone(step);
+}
+
+// After a pause, for the resume that took step; the session still listens.
+void DictationSession::restartMicrophone(quint64 step)
+{
     // What a warm microphone kept rolling during the pause stays out.
     m_audio->clearPreRoll();
     QString audioError;
@@ -778,7 +790,14 @@ void DictationSession::stopAudio()
     m_audio->stop();
     --m_audioStopDepth;
     setMicrophoneOpen(false);
-    if (m_audioStopDepth == 0 && m_pendingStart) {
+    if (m_audioStopDepth > 0) {
+        return;
+    }
+    // Unless a stop, cancel or pause has moved the session on since.
+    if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
+        restartMicrophone(step);
+    }
+    if (m_pendingStart) {
         // After the caller has settled the session it stopped the microphone for.
         QTimer::singleShot(0, this, [this] {
             if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {

@@ -46,7 +46,6 @@ void DictationSpeech::begin()
     m_retiredAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
-    m_inputEnded = false;
     // A failure that switched the last session's provider says nothing of this one.
     m_switchFailure = {};
     m_phase = Phase::Starting;
@@ -97,9 +96,7 @@ QString DictationSpeech::failureText(const QString &providerMessage, const QList
 
 void DictationSpeech::hear(const QByteArray &pcm)
 {
-    // Behind anything still held, so the provider hears it all in order, and
-    // never to an attempt told its input ended.
-    if (m_between.holdsAudio() || m_between.hasHeldAudio() || m_inputEnded) {
+    if (m_between.holdsAudio()) {
         hold(pcm);
         return;
     }
@@ -375,7 +372,6 @@ void DictationSpeech::cancel()
     m_emptyResumedAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
-    m_inputEnded = false;
     m_phase = Phase::Idle;
 }
 
@@ -385,19 +381,18 @@ void DictationSpeech::resumeAttempt()
 {
     const QString providerId = m_attempts->chain()->currentId();
     emit ran(providerId);
-    m_inputEnded = false;
+    m_between.inputEnded = false;
     m_attempts->startAttempt(chainSpeechSettings(m_settings->speech, providerId), {});
     sendHeldAudio();
 }
 
 // A provider that fails on the way makes way for the next, which gets what is
 // still waiting; what the failed one took is never sent again. Nothing goes
-// to an attempt told its input ended, or a paused one finishing, as a
-// handler may have told the attempt that just opened.
+// to an attempt told its input ended, as a handler may have told the attempt
+// that just opened.
 void DictationSpeech::sendHeldAudio()
 {
-    while (!m_between.awaitingProvider && !m_between.finishingPausedAttempt && !m_inputEnded
-           && m_between.hasHeldAudio()) {
+    while (!m_between.awaitingProvider && !m_between.inputEnded && m_between.hasHeldAudio()) {
         m_attempts->sendAudio(m_between.takeOldestHeld());
     }
 }
@@ -407,10 +402,10 @@ void DictationSpeech::sendHeldAudio()
 void DictationSpeech::endInput()
 {
     sendHeldAudio();
-    if (m_between.awaitingProvider || m_inputEnded) {
+    if (m_between.awaitingProvider || m_between.inputEnded) {
         return;
     }
-    m_inputEnded = true;
+    m_between.inputEnded = true;
     m_attempts->finishInput();
 }
 
@@ -434,7 +429,7 @@ void DictationSpeech::openFirstAttempt()
 {
     const QString providerId = m_attempts->chain()->currentId();
     emit ran(providerId);
-    m_inputEnded = false;
+    m_between.inputEnded = false;
     if (!m_attempts->startAttempt(chainSpeechSettings(m_settings->speech, providerId), {})) {
         return;
     }

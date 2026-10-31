@@ -174,8 +174,6 @@ private:
     // told the input ended, resume() the next attempt to open.
     bool m_finishOwed = false;
     bool m_openOwed = false;
-    // The current attempt was told its input ended: no audio may follow.
-    bool m_inputEnded = false;
     // The attempt a resume opened with nothing held for it, until it hears
     // audio; 0 for none.
     quint64 m_emptyResumedAttempt = 0;

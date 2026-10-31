@@ -20,9 +20,15 @@ struct BetweenAttempts {
     // Audio went past the most that may be held; what follows is dropped
     // too, so the held audio has no gap.
     bool heldPastTheBudget = false;
+    // The current attempt was told its input ended: no audio may follow.
+    bool inputEnded = false;
 
-    // No open attempt can take audio now: it is held.
-    bool holdsAudio() const { return finishingPausedAttempt || endedDuringStop || awaitingProvider; }
+    // No open attempt can take audio now, or older audio still waits for
+    // one: it is held, so the provider hears it all in order.
+    bool holdsAudio() const
+    {
+        return finishingPausedAttempt || endedDuringStop || awaitingProvider || inputEnded || hasHeldAudio();
+    }
 
     // Audio no open attempt can take yet: heard after a resume while the
     // paused attempt still finishes, while the next provider prepares, or

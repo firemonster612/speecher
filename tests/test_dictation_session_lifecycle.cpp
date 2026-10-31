@@ -1670,6 +1670,38 @@ private slots:
         QCOMPARE(starts, 1);
     }
 
+    // A pause and resume inside a pause's microphone stop: the session
+    // listens again, and capture restarts once that stop has returned.
+    void aResumeInsideAPausesMicrophoneStopCapturesAgain()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        bool nested = false;
+        audio.onStop = [&] {
+            if (!std::exchange(nested, true)) {
+                session.pause();
+                session.resume();
+            }
+        };
+
+        session.pause();
+
+        QVERIFY(nested);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio.isActive());
+        audio.pushAudio(QByteArrayLiteral("after"));
+        QCOMPARE(speech->audioChunks.last(), QByteArrayLiteral("after"));
+    }
+
     // A pause and resume from the partial the next attempt commits as it
     // opens finish that attempt: audio held for it waits for the one after.
     void heldAudioWaitsOutAPauseAndResumeFromACommittedPartial()
