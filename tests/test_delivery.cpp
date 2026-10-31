@@ -1999,6 +1999,23 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(ready.ready());
     }
 
+    // With two accounts set up, one that left the group has no setup left,
+    // though the files stay for the other. The last account's files count.
+    void ydotoolSetupIsGoneForAnAccountThatLeftTheGroup()
+    {
+        YdotoolProbeFacts facts;
+        facts.speecherSetupFilesInstalled = true;
+        facts.otherAccountsInConfiguredGroup = true;
+        facts.userInConfiguredGroup = true;
+        QVERIFY(YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
+
+        facts.userInConfiguredGroup = false;
+        QVERIFY(!YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
+
+        facts.otherAccountsInConfiguredGroup = false;
+        QVERIFY(YdotoolSetup::evaluate(facts).speecherManagedSetupInstalled);
+    }
+
 #endif // SPEECHER_WITH_WAYLAND
 };
 

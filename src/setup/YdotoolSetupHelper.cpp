@@ -127,18 +127,17 @@ bool writeSetupFile(const std::string &path,
     return true;
 }
 
-// The other accounts the virtual keyboard is set up for: the group's members
-// besides user.
-std::vector<std::string> otherConfiguredUsers(const std::string &user)
+// Whether the virtual keyboard is set up for an account besides user: the
+// group has another member.
+bool otherAccountsConfigured(const std::string &user)
 {
-    std::vector<std::string> others;
     const struct group *configured = getgrnam(std::string(groupName).c_str());
     for (char **member = configured ? configured->gr_mem : nullptr; member && *member; ++member) {
         if (user != *member) {
-            others.emplace_back(*member);
+            return true;
         }
     }
-    return others;
+    return false;
 }
 
 bool install(const std::string &user, std::string &error)
@@ -212,8 +211,8 @@ bool install(const std::string &user, std::string &error)
         return failed();
     }
     // The app enables the service for this account alone (systemctl --user).
-    // Earlier releases enabled it here for every account, where it fails in
-    // a loop for each one without the group; take that away.
+    // Earlier releases enabled it here for every account, where it fails at
+    // every login for each one without the group; take that away.
     std::string ignored;
     run("systemctl", {"--global", "disable", std::string(serviceName)}, ignored, false, true);
     // The app reads only whether this file exists: the setup is Speecher's.
@@ -229,16 +228,19 @@ bool install(const std::string &user, std::string &error)
 // still there, so what did not come off has to reach the person.
 bool remove(const std::string &user, std::string &error)
 {
-    // The service file, udev rule and group serve every account set up, so
-    // removing them for one would leave the others' running daemons holding
-    // /dev/uinput with a setup that is gone.
-    if (const std::vector<std::string> others = otherConfiguredUsers(user); !others.empty()) {
-        std::string names;
-        for (const std::string &other : others) {
-            names += (names.empty() ? "" : ", ") + other;
+    // The service file, udev rule and group serve every account set up. While
+    // another account remains, this one only leaves the group: taking the rest
+    // would go from under that account's running daemon. The last account to
+    // leave removes everything below.
+    std::string stepError;
+    if (otherAccountsConfigured(user)) {
+        std::string ignored;
+        run("systemctl", {"--global", "disable", std::string(serviceName)}, ignored, true, true);
+        if (!userInGroup(groupName, user)
+            || run("gpasswd", {"-d", user, std::string(groupName)}, stepError)) {
+            return true;
         }
-        error = "The virtual keyboard is also set up for " + names
-            + ". Remove it from those accounts first; removing it here would take it from them too.";
+        error = "Could not remove " + user + " from the " + std::string(groupName) + " group: " + stepError;
         return false;
     }
     std::vector<std::string> problems;
@@ -248,7 +250,6 @@ bool remove(const std::string &user, std::string &error)
         }
     };
 
-    std::string stepError;
     // An earlier release enabled the service for every account. Without
     // systemctl that link stays, and new sessions keep starting the daemon;
     // that is a leftover, not a step to skip.
