@@ -20,16 +20,15 @@ class Microphone(private val context: Context) {
      */
     private val oneRecorder = Any()
 
-    fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
+    fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) =
+        synchronized(oneRecorder) { record(shouldContinue, onAudio) }
+
+    private fun record(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
         if (
             context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                 PackageManager.PERMISSION_GRANTED
         )
             throw SecurityException("Microphone permission is missing")
-        synchronized(oneRecorder) { record(shouldContinue, onAudio) }
-    }
-
-    private fun record(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
         if (!shouldContinue()) return
         active = true
         val rate = 16000
