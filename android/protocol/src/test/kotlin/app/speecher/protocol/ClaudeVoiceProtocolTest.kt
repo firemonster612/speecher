@@ -9,22 +9,24 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class ClaudeVoiceProtocolTest {
+    private val english =
+        listOf(
+            "encoding" to "linear16",
+            "sample_rate" to "16000",
+            "channels" to "1",
+            "endpointing_ms" to "300",
+            "utterance_end_ms" to "1000",
+            "language" to "en",
+            "use_conversation_engine" to "true",
+            "forward_interims" to "typed",
+            "stt_provider" to "deepgram-nova3",
+        )
+
     @Test
     fun `the stream query names the spoken language, and none for Automatic`() {
-        val german =
-            listOf(
-                "encoding" to "linear16",
-                "sample_rate" to "16000",
-                "channels" to "1",
-                "endpointing_ms" to "300",
-                "utterance_end_ms" to "1000",
-                "language" to "de",
-                "use_conversation_engine" to "true",
-                "forward_interims" to "typed",
-                "stt_provider" to "deepgram-nova3",
-            )
+        val german = english.map { if (it.first == "language") "language" to "de" else it }
         assertEquals(german, claudeVoiceStreamQuery("de") { null })
-        assertEquals(german - ("language" to "de"), claudeVoiceStreamQuery("auto") { null })
+        assertEquals(english - ("language" to "en"), claudeVoiceStreamQuery("auto") { null })
     }
 
     @Test
@@ -33,18 +35,17 @@ class ClaudeVoiceProtocolTest {
         val claudeCode = "CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED"
         // Spellings as Qt reads them: any case, trimmed of Unicode whitespace.
         val off =
-            listOf("0", "false", "NO", "\t Off \n", "\u0085off ").map { mapOf(speecher to it) }
+            listOf("0", "false", "NO", "\t Off \n", "\u0085off\u00A0").map { mapOf(speecher to it) }
         val on =
             listOf(emptyMap(), mapOf(speecher to "disabled"), mapOf(speecher to "   ")) +
                 mapOf(claudeCode to "0") +
-                listOf("1", "true", "YES", "\u0085 On  ").map {
+                listOf("1", "true", "YES", "\u0085 On \u00A0").map {
                     mapOf(speecher to "0", claudeCode to it)
                 }
+        val untyped = english - ("forward_interims" to "typed")
         assertEquals(
-            off.map { false } + on.map { true },
-            (off + on).map { env ->
-                ("forward_interims" to "typed") in claudeVoiceStreamQuery("en", env::get)
-            },
+            off.map { untyped } + on.map { english },
+            (off + on).map { env -> claudeVoiceStreamQuery("en", env::get) },
         )
     }
 
@@ -53,8 +54,14 @@ class ClaudeVoiceProtocolTest {
         val cases =
             listOf(
                 emptyList<String>() to "",
-                listOf("  Kotlin \t\n Coroutines\u0085", "", " ", " New York　", "a b", "Gradle") to
-                    "Kotlin Coroutines,New York,a b,Gradle",
+                listOf(
+                    "  Kotlin \t\n Coroutines\u0085",
+                    "",
+                    "\u00A0",
+                    "\u2003New York\u3000",
+                    "a b",
+                    "Gradle",
+                ) to "Kotlin Coroutines,New York,a b,Gradle",
                 listOf("a,b", "\u001CX\u001F", "a\u0000b") to "a,b,\u001CX\u001F,a\u0000b",
                 // Duplicates differ only in ASCII case.
                 listOf("Gradle", "kotlin", "GRADLE", " Kotlin ", "Émile", "émile") to

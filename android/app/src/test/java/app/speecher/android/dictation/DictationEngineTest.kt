@@ -132,10 +132,11 @@ class DictationEngineTest {
         assertEquals(listOf(listOf<Byte>(9)), t.clients[1].heard)
         assertEquals(DictationState.Listening("before the drop", "", 0f), t.engine.state)
 
-        val inserted = dropAfter("heard so far", tasks)
+        val insertTasks = ManualExecutor()
+        val inserted = dropAfter("heard so far", insertTasks)
         inserted.connectFailure = IOException("network down")
         inserted.engine.insert()
-        tasks.runNext()
+        insertTasks.runNext()
         assertEquals(listOf("heard so far"), inserted.commits)
     }
 
@@ -319,21 +320,26 @@ class DictationEngineTest {
 
     @Test
     fun `refinement streams into the panel and commits the final text once`() {
-        val t =
+        lateinit var t: TestDictation
+        // The panel as each piece arrives, while the cleanup is still running.
+        val shown = mutableListOf<DictationState>()
+        t =
             TestDictation(
-                    refine = { _, _, _, onText ->
-                        onText("Hello")
-                        onText("Hello there.")
-                        "Hello there."
-                    }
-                )
-                .dictate("hello there", SpeechProvider.ChatGpt)
+                refine = { _, _, _, onText ->
+                    onText("Hello")
+                    shown += t.engine.state
+                    onText("Hello there.")
+                    shown += t.engine.state
+                    "Hello there."
+                }
+            )
+        t.dictate("hello there", SpeechProvider.ChatGpt)
         assertEquals(
-            listOf("Hello", "Hello there."),
-            t.states
-                .filterIsInstance<DictationState.Refining>()
-                .map { it.refined }
-                .filter { it.isNotEmpty() },
+            listOf(
+                DictationState.Refining("hello there", "Hello"),
+                DictationState.Refining("hello there", "Hello there."),
+            ),
+            shown,
         )
         assertEquals(listOf("Hello there."), t.commits)
     }
