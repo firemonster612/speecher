@@ -1,11 +1,13 @@
 #pragma once
 
 #include "core/PasteRules.h"
+#include "output/ProcessRunner.h"
 
 #include <QObject>
 #include <QString>
 
 #include <functional>
+#include <optional>
 
 namespace speecher {
 
@@ -14,6 +16,9 @@ class YdotoolDelivery : public QObject {
 
 public:
     explicit YdotoolDelivery(QObject *parent = nullptr);
+    // Gone mid-paste: the paste keys stop, and the modifiers are let go all
+    // the same.
+    ~YdotoolDelivery() override;
     // Waits for ydotool, for the setup's test typing; delivery pastes instead.
     bool type(const QString &text, QString *error = nullptr);
     // Presses the paste keys over what is on the clipboard, and returns at
@@ -30,6 +35,14 @@ public:
     static QStringList commandArguments(const QString &text);
     static QStringList pasteShortcutArguments(PasteMethod method);
     static QString withoutTrailingWhitespace(const QString &text);
+
+private:
+    // The paste keystroke under way, and the release that must follow it.
+    struct PasteUnderWay {
+        std::function<void()> stop;
+        ProcessCommand release;
+    };
+    std::optional<PasteUnderWay> m_pasteUnderWay;
 };
 
 } // namespace speecher

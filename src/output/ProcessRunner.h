@@ -39,9 +39,13 @@ struct ProcessResult {
     QString error;
 };
 
-// Starts command and returns at once. done runs once, when the command has
-// exited, failed or run out of time, unless context is gone by then; a command
-// that runs out of time or gives too much output is killed.
-void runProcess(const ProcessCommand &command, QObject *context, std::function<void(const ProcessResult &)> done);
+// Starts command and returns at once, with a function that stops it: the
+// command is killed if it still runs, and answers that it was stopped. done
+// runs once, when the command has exited, failed, run out of time or been
+// stopped, unless context is gone by then; a command that runs out of time or
+// gives too much output is killed. A command whose context goes runs on.
+std::function<void()> runProcess(const ProcessCommand &command,
+                                 QObject *context,
+                                 std::function<void(const ProcessResult &)> done);
 
 } // namespace speecher

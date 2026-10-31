@@ -61,37 +61,45 @@ static QString virtualKeyboardMethod()
 }
 
 #ifdef SPEECHER_WITH_WAYLAND
-// A ydotool first on PATH for its lifetime, which logs each call's arguments
-// and takes releaseDelay seconds to let go of the modifiers.
+// The only ydotool on PATH for its lifetime, so no real one presses keys on
+// the desktop running the tests. It logs each call's arguments, takes
+// releaseDelay seconds to let go of the modifiers and pasteDelay to press the
+// paste keys, and logs a paste as sent only once that delay is over.
 class FakeYdotool {
 public:
-    explicit FakeYdotool(const char *releaseDelay)
+    explicit FakeYdotool(const char *releaseDelay, const char *pasteDelay = "0")
         : m_path(qgetenv("PATH"))
     {
         QFile script(m_dir.filePath(QStringLiteral("ydotool")));
-        if (script.open(QIODevice::WriteOnly)) {
-            script.write("#!/bin/sh\necho \"$*\" >> '" + QFile::encodeName(log()) + "'\n"
-                         "case \"$*\" in *'29:0 97:0'*) /bin/sleep " + QByteArray(releaseDelay) + ";; esac\n");
-            script.close();
-            script.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
-        }
-        qputenv("PATH", QFile::encodeName(m_dir.path()) + ':' + m_path);
+        m_ready = m_dir.isValid() && script.open(QIODevice::WriteOnly)
+            && script.write("#!/bin/sh\necho \"$*\" >> '" + QFile::encodeName(log(QStringLiteral("calls")))
+                            + "'\ncase \"$*\" in\n*'29:0 97:0'*) /bin/sleep " + QByteArray(releaseDelay) + ";;\n"
+                            "*'47:1'*) /bin/sleep " + QByteArray(pasteDelay) + "; echo \"$*\" >> '"
+                            + QFile::encodeName(log(QStringLiteral("sent"))) + "';;\nesac\n") > 0;
+        script.close();
+        m_ready = m_ready && script.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        qputenv("PATH", QFile::encodeName(m_dir.path()));
     }
     ~FakeYdotool() { qputenv("PATH", m_path); }
 
+    bool ready() const { return m_ready; }
     // Each call's arguments, in order.
-    QStringList calls() const
+    QStringList calls() const { return lines(QStringLiteral("calls")); }
+    // The paste keystrokes that went out.
+    QStringList sentPastes() const { return lines(QStringLiteral("sent")); }
+
+private:
+    QString log(const QString &name) const { return m_dir.filePath(name); }
+    QStringList lines(const QString &name) const
     {
-        QFile file(log());
+        QFile file(log(name));
         return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts)
                                               : QStringList();
     }
 
-private:
-    QString log() const { return m_dir.filePath(QStringLiteral("calls")); }
-
     QTemporaryDir m_dir;
     const QByteArray m_path;
+    bool m_ready = false;
 };
 #endif
 
@@ -1504,6 +1512,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         QFETCH(bool, clear);
         const FakeYdotool ydotool("0.2");
+        QVERIFY(ydotool.ready());
         YdotoolDelivery delivery;
         int turns = 0;
         QTimer ticker;
@@ -1538,6 +1547,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     void aDeliveryStoppedWhileYdotoolWorksPressesNoKeys()
     {
         const FakeYdotool ydotool("0.3");
+        QVERIFY(ydotool.ready());
         class Focused final : public TargetProvider {
         public:
             Target capture() override { return {}; }
@@ -1560,6 +1570,37 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY2(std::none_of(calls.cbegin(), calls.cend(),
                               [](const QString &call) { return call.contains(QStringLiteral("47:1")); }),
                  qPrintable(calls.join(QStringLiteral(" | "))));
+    }
+
+    // The deadline can come while ydotool presses the paste keys: those keys
+    // stop, and the modifiers they may hold down are let go all the same.
+    void aDeliveryStoppedMidPasteSendsNoKeysAndStillReleasesTheModifiers()
+    {
+        const FakeYdotool ydotool("0", "1");
+        QVERIFY(ydotool.ready());
+        class Focused final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override { return true; }
+        } targetProvider;
+        TextDelivery delivery(&targetProvider);
+        delivery.setAnswerDeadlineMs(300);
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QCOMPARE(result.message, QStringLiteral("Delivery did not finish in time"));
+        QTRY_COMPARE(ydotool.calls().size(), 3);
+        const QStringList calls = ydotool.calls();
+        QVERIFY(calls.at(1).contains(QStringLiteral("47:1")));
+        QVERIFY(calls.at(2).contains(QStringLiteral("29:0 97:0")));
+        // Past the moment the paste would have gone out.
+        QTest::qWait(1200);
+        QVERIFY2(ydotool.sentPastes().isEmpty(), qPrintable(ydotool.sentPastes().join(QStringLiteral(" | "))));
     }
 
     // Publishing replaces the helper serving the selection without waiting

@@ -1,8 +1,8 @@
 #include "output/WlClipboardDelivery.h"
 
 #include "dictation/DictationPorts.h"
-#include "output/WaylandClipboardOwner.h"
 #include "output/ProcessRunner.h"
+#include "output/WaylandClipboardOwner.h"
 #include "output/WaylandClipboardProcess.h"
 
 #include <QElapsedTimer>
@@ -93,9 +93,7 @@ void copyBytes(const QByteArray &data,
         arguments << QStringLiteral("--type") << mimeType;
     }
     runProcess({executable, QStringLiteral("wl-copy"), arguments, data}, context,
-                                 [done](const ProcessResult &result) {
-                                     done(result.ok, result.error);
-                                 });
+               [done](const ProcessResult &result) { done(result.ok, result.error); });
 }
 
 // Reads the remaining formats one wl-paste at a time, all within the
@@ -336,9 +334,7 @@ void WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
             return;
         }
         runProcess({executable, QStringLiteral("wl-copy"), {QStringLiteral("--clear")}}, context,
-                                     [answer](const ProcessResult &result) {
-                                         answer(result.ok, result.error);
-                                     });
+                   [answer](const ProcessResult &result) { answer(result.ok, result.error); });
         return;
     }
 

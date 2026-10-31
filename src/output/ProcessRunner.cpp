@@ -62,6 +62,8 @@ public:
     // says finished, which must not reach the members gone before it.
     ~RunningCommand() override { m_process.disconnect(this); }
 
+    void stop() { answer({false, {}, QStringLiteral("%1 was stopped").arg(m_command.tool)}); }
+
 private:
     void readOutput()
     {
@@ -101,9 +103,16 @@ private:
 
 } // namespace
 
-void runProcess(const ProcessCommand &command, QObject *context, std::function<void(const ProcessResult &)> done)
+std::function<void()> runProcess(const ProcessCommand &command,
+                                 QObject *context,
+                                 std::function<void(const ProcessResult &)> done)
 {
-    new RunningCommand(command, context, std::move(done));
+    const QPointer<RunningCommand> running = new RunningCommand(command, context, std::move(done));
+    return [running] {
+        if (running) {
+            running->stop();
+        }
+    };
 }
 
 } // namespace speecher
