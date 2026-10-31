@@ -31,9 +31,10 @@ struct BetweenAttempts {
     }
 
     // Audio no open attempt can take yet: heard after a resume while the
-    // paused attempt still finishes, while the next provider prepares, or
-    // after the last attempt ended during the stop. The next attempt gets
-    // it, once, oldest first.
+    // paused attempt still finishes, while the next provider prepares, after
+    // the last attempt ended during the stop, after the attempt was told its
+    // input ended, or behind older audio still held. The next attempt that
+    // can take it gets it, once, oldest first.
     void hold(const QByteArray &pcm)
     {
         m_heldAudio.append(pcm);

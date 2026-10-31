@@ -793,7 +793,8 @@ void DictationSession::stopAudio()
     if (m_audioStopDepth > 0) {
         return;
     }
-    // Unless a stop, cancel or pause has moved the session on since.
+    // A resume made inside the stop restarts capture now, unless a stop,
+    // cancel or pause has moved the session on since.
     if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
         restartMicrophone(step);
     }
