@@ -73,6 +73,7 @@ Page {
         SchemaRow { rowId: "showRefinementText" }
         SchemaRow { rowId: "resultDuration" }
         SchemaRow { rowId: "reviewSelectionEdits" }
+        SchemaRow { rowId: "boringMode" }
     }
 
     Section {

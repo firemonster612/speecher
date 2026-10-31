@@ -54,6 +54,5 @@ Page {
         }
         SchemaRow { rowId: "translucency" }
         SchemaRow { rowId: "roundedCorners" }
-        SchemaRow { rowId: "boringMode" }
     }
 }

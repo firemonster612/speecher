@@ -991,6 +991,8 @@ private slots:
 
     // Listening, the popup shows the scatter ribbon, or in Boring mode the
     // level bars and the record dot, and switches as the setting changes.
+    // The bars show only where the ribbon would: listening and paused, not
+    // while starting, renewing a sign-in or transcribing.
     void boringModeShowsLevelBars()
     {
         ApplicationController controller(true);
@@ -1009,7 +1011,7 @@ private slots:
         QQuickItem *orb = findItem(popup->contentItem(), QStringLiteral("orb"));
         QVERIFY(ribbon && bars && orb);
         const auto showsRibbon = [&] {
-            return ribbon->opacity() == 1 && bars->opacity() == 0 && orb->property("phase").toString().isEmpty();
+            return ribbon->opacity() == 1 && !bars->isVisible() && orb->property("phase").toString().isEmpty();
         };
         const auto showsBars = [&] {
             return ribbon->opacity() == 0 && bars->opacity() == 1 && orb->property("phase").toString() == QLatin1String("listening");
@@ -1018,6 +1020,36 @@ private slots:
         QTRY_VERIFY(showsRibbon());
         settings->set(QStringLiteral("boringMode"), true);
         QTRY_VERIFY(showsBars());
+
+        const struct {
+            const char *phase;
+            std::function<void()> enter;
+            bool barsShown;
+        } phases[] = {
+            {"paused", [session] { emit session->stateChanged(DictationState::Paused); }, true},
+            {"renewing", [session] { emit session->popupOAuthRefreshRequested(); }, false},
+            {"transcribing", [session] { emit session->stateChanged(DictationState::Stopping); }, false},
+            {"starting", [session] { emit session->stateChanged(DictationState::Starting); }, false},
+            {"listening", [session] { emit session->stateChanged(DictationState::Listening); }, true},
+        };
+        for (const auto &phase : phases) {
+            qInfo() << "phase:" << phase.phase;
+            phase.enter();
+            QTRY_COMPARE(bars->isVisible(), phase.barsShown);
+            QCOMPARE(ribbon->isVisible(), false);
+        }
+
+        // Live words widen the capsule from 280 to 460; the bars are counted
+        // once for the new width, not on every frame as it grows.
+        QQuickItem *capsule = findItem(popup->contentItem(), QStringLiteral("capsule"));
+        QVERIFY(capsule);
+        QSignalSpy recounted(bars, SIGNAL(barsChanged()));
+        emit session->previewDisplayChanged(QStringLiteral("Quick update on the launch"));
+        QTRY_COMPARE(capsule->width(), 460.0);
+        QTest::qWait(kSettleMs);
+        QCOMPARE(capsule->width(), 460.0);
+        QCOMPARE(recounted.count(), 1);
+
         settings->set(QStringLiteral("boringMode"), false);
         QTRY_VERIFY(showsRibbon());
     }
