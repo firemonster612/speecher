@@ -192,6 +192,10 @@ private:
     QList<TranscribeFileResult> m_results;
     TranscribeFileResult m_current;
     bool m_running = false;
+    // Moves on as a batch begins or is cancelled. A handler of the batch's
+    // signals, or an event loop the microphone spins, may do either; the
+    // batch it interrupted goes no further.
+    quint64 m_batch = 0;
     int m_index = -1;
 
     // The current pass over the file: a first that measures it, then one

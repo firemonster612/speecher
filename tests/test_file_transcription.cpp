@@ -2995,6 +2995,39 @@ private slots:
         QVERIFY(!QFile::exists(m_dir.filePath(QStringLiteral("one-transcribed.txt"))));
     }
 
+    // A listening batch cancelled as it starts, or while its microphone
+    // starts, leaves the microphone off and starts no provider.
+    void aListeningBatchCancelledAsItStartsGoesNoFurther_data()
+    {
+        QTest::addColumn<bool>("whileTheMicrophoneStarts");
+        QTest::newRow("as the file starts") << false;
+        QTest::newRow("while the microphone starts") << true;
+    }
+
+    void aListeningBatchCancelledAsItStartsGoesNoFurther()
+    {
+        QFETCH(bool, whileTheMicrophoneStarts);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        if (whileTheMicrophoneStarts) {
+            microphone.onStart = [&session] { session.cancel(); };
+        } else {
+            QObject::connect(&session, &FileTranscriptionSession::fileStarted, &session,
+                             [&session] { session.cancel(); });
+        }
+
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTest::qWait(200);
+
+        QVERIFY(!session.isRunning());
+        QVERIFY(!microphone.active);
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(finished.first().at(1).toBool(), true);
+        QCOMPARE(m_script.attempts, 0);
+    }
+
     void withoutVocabularyTheProviderHearsNone()
     {
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));

@@ -309,6 +309,7 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, m_runChoices, Target{});
     m_results.clear();
     m_running = true;
+    ++m_batch;
     m_index = -1;
     finishFile();
 }
@@ -320,6 +321,7 @@ void FileTranscriptionSession::cancel()
     }
     releaseFileResources();
     m_running = false;
+    ++m_batch;
     emit batchFinished(m_results, true);
 }
 
@@ -328,7 +330,11 @@ void FileTranscriptionSession::startFile()
     m_current = {};
     m_current.path = m_paths.at(m_index);
     m_stream->reset();
+    const quint64 batch = m_batch;
     emit fileStarted(m_index, m_current.path);
+    if (batch != m_batch) {
+        return;
+    }
     if (m_input) {
         startMicrophone();
         return;
@@ -343,7 +349,7 @@ void FileTranscriptionSession::measureFile()
 {
     auto peaks = std::make_shared<PeakLevels>();
     decodeFile([peaks](const QByteArray &pcm) { peaks->add(pcm); },
-               [this, peaks] {
+               [this, peaks, batch = m_batch] {
                    if (peaks->bytes() == 0) {
                        failFile(QStringLiteral("The file contains no audio"));
                        return;
@@ -352,6 +358,9 @@ void FileTranscriptionSession::measureFile()
                    releaseDecoder();
                    m_fileBytes = peaks->bytes();
                    emit fileDecoded(m_index, peaks->levels(), m_fileBytes * 1000 / kSpeechBytesPerSecond);
+                   if (batch != m_batch) {
+                       return;
+                   }
                    streamFile();
                });
 }
@@ -479,7 +488,14 @@ void FileTranscriptionSession::startMicrophone()
     });
     m_microphone = Microphone::Listening;
     QString error;
-    if (!m_input->start(&error)) {
+    const quint64 batch = m_batch;
+    const bool started = m_input->start(&error);
+    // Starting spins an event loop, where the batch may have been cancelled
+    // and the microphone stopped.
+    if (batch != m_batch) {
+        return;
+    }
+    if (!started) {
         m_microphone = Microphone::Off;
         failFile(error);
         return;
@@ -520,7 +536,11 @@ void FileTranscriptionSession::refine(const QString &raw)
     // never on this thread, where a cancel could run meanwhile. A cancel
     // drops them unanswered.
     m_refinementFailures.clear();
+    const quint64 batch = m_batch;
     emit fileRefining(m_index);
+    if (batch != m_batch) {
+        return;
+    }
     m_refinementChain->begin(m_options.refinementProviderId, m_batchSettings.refinement.fallbackProviderIds);
     m_refinementChain->prepare(m_batchSettings, refinement);
 }
@@ -619,7 +639,11 @@ void FileTranscriptionSession::finishFile()
     releaseFileResources();
     if (m_index >= 0) {
         m_results.append(m_current);
+        const quint64 batch = m_batch;
         emit fileFinished(m_index, m_current);
+        if (batch != m_batch) {
+            return;
+        }
     }
     if (++m_index < m_paths.size()) {
         startFile();
