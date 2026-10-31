@@ -79,6 +79,11 @@ QtObject {
         if (spec.needs && !has(spec.needs)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
+    // Whether the row that turns this one on (enabledWhen) is on, by the
+    // values Settings holds.
+    function rowEnabled(spec, values) {
+        return !spec.enabledWhen || values[spec.enabledWhen.id] === spec.enabledWhen.equals
+    }
     // The row's options this computer has.
     function options(spec, has) {
         return (spec.options || []).filter(o => !o.needs || has(o.needs))

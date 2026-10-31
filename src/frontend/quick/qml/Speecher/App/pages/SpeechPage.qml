@@ -19,13 +19,35 @@ Page {
     readonly property var modelsSpec: Schema.row("speechModels")
     readonly property string primaryLabel: ModelText.service(primary).label
 
-    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); _follow(Navigation.pendingRow) }
 
-    // Whether a service is the primary or one of its fallbacks, so its
-    // settings matter.
-    function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 }
-    // Where a service stands in the chain, for its section's caption.
-    function role(id) { return ModelText.roleText(id === primary ? 0 : fallbacks.indexOf(id) + 1) }
+    // The service whose section a search landed in, which opens while the
+    // page shows though nothing uses the service: the Local Model's or the
+    // Custom Endpoint's.
+    property string searched: ""
+    function _follow(rowId) {
+        const spec = Schema.row(rowId)
+        if (spec.page !== "speech") return
+        if (spec.section === Schema.row("speechLocalModel").section) searched = "local"
+        else if (spec.section === Schema.row("speechEndpointUrl").section) searched = "endpoint"
+    }
+    Connections {
+        target: Navigation
+        function onPendingRowChanged() { page._follow(Navigation.pendingRow) }
+    }
+
+    // Whether a service is the primary, one of its fallbacks or a Writing
+    // Profile's own, so its settings matter.
+    function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 || Library.profiles.some(p => p.speech === id) }
+    // Where a service stands in the chain, or the profiles that choose it,
+    // for its section's caption; empty for one nothing uses.
+    function role(id) {
+        if (id === primary) return ModelText.roleText(0)
+        const fallback = fallbacks.indexOf(id)
+        if (fallback >= 0) return ModelText.roleText(fallback + 1)
+        const profiles = Library.profiles.filter(p => p.speech === id).map(p => p.name)
+        return profiles.length ? ModelText.profileRoleText(profiles) : ""
+    }
     // The row takes a new primary out of the fallback list, in one save.
     function choose(id) { Settings.set("speechProvider", id) }
     // The models behind the service; a Local Model lists the rated catalog,
@@ -112,10 +134,10 @@ Page {
     }
 
     Reveal {
-        open: page.uses("local")
+        open: page.uses("local") || page.searched === "local"
         Section {
             title: Schema.row("speechLocalModel").section
-            caption: page.role("local") + ModelText.ratedAsText(Models.speechRatings.local)
+            caption: [page.role("local"), ModelText.ratedAsText(Models.speechRatings.local)].join("").trim()
             SchemaRow {
                 id: localRow
                 readonly property bool none: Models.downloaded.length === 0
@@ -147,7 +169,7 @@ Page {
     }
 
     Reveal {
-        open: page.uses("endpoint")
+        open: page.uses("endpoint") || page.searched === "endpoint"
         Section {
             title: Schema.row("speechEndpointUrl").section
             caption: page.role("endpoint")

@@ -427,6 +427,28 @@ private slots:
         QCOMPARE(appearance.systemColors().value(QStringLiteral("window")).value<QColor>(), QColor(32, 35, 38));
     }
 
+    // A scheme installed after the start into a color-schemes folder that
+    // didn't exist then is offered too.
+    void aSchemesFolderMadeAfterTheStartIsFollowed()
+    {
+        const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+        QVERIFY(QDir().mkpath(dataDir));
+        ApplicationController controller(true);
+        QuickAppearance appearance(&controller);
+        const auto names = [&appearance] {
+            QStringList named;
+            for (const QVariant &scheme : appearance.installedSchemes()) {
+                named.append(scheme.toMap().value(QStringLiteral("name")).toString());
+            }
+            return named;
+        };
+        QVERIFY(!names().contains(QStringLiteral("Amber")));
+
+        QVERIFY(writeFile(colorSchemesFolder(dataDir) + QStringLiteral("/Amber.colors"),
+                          QByteArray(breezeColors).replace("Name=Breeze Light", "Name=Amber")));
+        QTRY_VERIFY_WITH_TIMEOUT(names().contains(QStringLiteral("Amber")), 5000);
+    }
+
     // A kdeglobals made after the start, and then a user's copy ahead of the
     // system's, are each followed.
     void systemColorsFollowTheKdeglobalsInEffect()

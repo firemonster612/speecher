@@ -63,12 +63,11 @@ QuickAppearance::QuickAppearance(ApplicationController *controller, QObject *par
         connect(m_desktopColors, &DesktopColors::changed, this, &QuickAppearance::readSystemColors);
     }
 
-    for (const QString &dataDir : QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
-        if (QFileInfo(colorSchemesFolder(dataDir)).isDir()) {
-            m_schemeFolders.addPath(colorSchemesFolder(dataDir));
-        }
-    }
-    connect(&m_schemeFolders, &QFileSystemWatcher::directoryChanged, this, &QuickAppearance::readInstalledSchemes);
+    watchSchemeFolders();
+    connect(&m_schemeFolders, &QFileSystemWatcher::directoryChanged, this, [this] {
+        watchSchemeFolders();
+        readInstalledSchemes();
+    });
     readSystemColors();
     readInstalledSchemes();
 }
@@ -99,6 +98,22 @@ void QuickAppearance::readSystemColors()
     }
     m_systemColors = colors;
     emit systemColorsChanged();
+}
+
+void QuickAppearance::watchSchemeFolders()
+{
+    for (const QString &dataDir : QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
+        const QString schemes = colorSchemesFolder(dataDir);
+        const bool hasSchemes = QFileInfo(schemes).isDir();
+        const QString watched = hasSchemes ? schemes : dataDir;
+        const QString unwatched = hasSchemes ? dataDir : schemes;
+        if (m_schemeFolders.directories().contains(unwatched)) {
+            m_schemeFolders.removePath(unwatched);
+        }
+        if (QFileInfo(watched).isDir() && !m_schemeFolders.directories().contains(watched)) {
+            m_schemeFolders.addPath(watched);
+        }
+    }
 }
 
 void QuickAppearance::readInstalledSchemes()

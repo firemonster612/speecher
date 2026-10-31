@@ -149,6 +149,8 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("^Library\\.update\\(terms\\)")));
         QCOMPARE(library.update(QStringLiteral("terms"), QStringLiteral("Wayland"), {{QStringLiteral("uses"), 99}}),
                  QStringLiteral("invalid"));
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("^Library\\.remove\\(profiles\\)")));
+        QCOMPARE(library.remove(QStringLiteral("profiles"), QStringLiteral("work")), -1);
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
         QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
         QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
@@ -614,6 +616,7 @@ private slots:
         component.setData("import QtQuick\nimport Speecher.Backend\nQtObject {\n"
                           "    property int profiles: Library.profiles.length\n"
                           "    property string summary: Library.profileSummary(Library.profiles[1])\n"
+                          "    property string invalid: Library.refusalText(\"terms\", \"invalid\")\n"
                           "    function addTerm() { return Library.add(\"terms\", { term: \"Wayland\" }) }\n"
                           "}\n",
                           QUrl());
@@ -621,6 +624,8 @@ private slots:
         QVERIFY2(probe, qPrintable(component.errorString()));
         QCOMPARE(probe->property("profiles").toInt(), 5);
         QCOMPARE(probe->property("summary").toString(), QStringLiteral("Medium cleanup"));
+        // The page's own mistake still keeps the form from closing silently.
+        QCOMPARE(probe->property("invalid").toString(), QStringLiteral("Speecher couldn't save this."));
 
         QVariant refused;
         QMetaObject::invokeMethod(probe.get(), "addTerm", Q_RETURN_ARG(QVariant, refused));

@@ -380,10 +380,12 @@ QString QuickLibrary::update(const QString &list, const QString &key, const QVar
 int QuickLibrary::remove(const QString &list, const QString &key)
 {
     const EditedList *edited = findList(list);
-    SettingsEdit undo;
-    if (edited && edited->remove) {
-        save([&](AppSettings &s) { return bool(undo = edited->remove(s, key)); });
+    if (!edited || !edited->remove) {
+        qWarning().noquote() << "Library.remove(" + list + ") is no list to remove from";
+        return -1;
     }
+    SettingsEdit undo;
+    save([&](AppSettings &s) { return bool(undo = edited->remove(s, key)); });
     return keepUndo(undo);
 }
 

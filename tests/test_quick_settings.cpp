@@ -146,6 +146,13 @@ private slots:
         settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("1440"));
         QCOMPARE(SettingsStore().dictationSnapshot().updates.checkIntervalMinutes, 1440);
         QCOMPARE(settings.values().value(QStringLiteral("updateCheckInterval")).toString(), QStringLiteral("1440"));
+        // What isn't a number of minutes saves nothing; a number past the
+        // limits saves the nearest.
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("updateCheckInterval\\) got no number")));
+        settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("hourly"));
+        QCOMPARE(SettingsStore().dictationSnapshot().updates.checkIntervalMinutes, 1440);
+        settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("1"));
+        QCOMPARE(SettingsStore().dictationSnapshot().updates.checkIntervalMinutes, UpdateSettings::minimumCheckIntervalMinutes);
 
         settings.set(QStringLiteral("updateCheckInterval"), QStringLiteral("custom"));
         settings.set(QStringLiteral("updateCheckCustomInterval"),

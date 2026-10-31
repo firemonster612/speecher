@@ -51,8 +51,10 @@ class QuickTranscription final : public QObject, public HostSingleton<QuickTrans
     Q_PROPERTY(QString phase READ phase NOTIFY fileChanged)
     // The current file's levels, 0..1 across its length; empty until read.
     Q_PROPERTY(QVariantList peaks READ peaks NOTIFY fileChanged)
-    Q_PROPERTY(QString partial READ partial NOTIFY fileChanged)
-    // Each batch file's state: waiting, current, done or failed.
+    // What the current file has been heard to say so far.
+    Q_PROPERTY(QString partial READ partial NOTIFY partialChanged)
+    // Each batch file's state while the batch runs: waiting, current, done or
+    // failed. A later retry's outcome shows in results.
     Q_PROPERTY(QStringList queue READ queue NOTIFY fileChanged)
     // How far the current file is, 0..1.
     Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged)
@@ -112,7 +114,7 @@ public:
     // Saves one result in the format to file; exported(index) says it was.
     Q_INVOKABLE void exportResult(int index, const QString &format, const QUrl &file);
     // Saves every result that has the format in folder, numbering rather
-    // than overwriting; exported(-1) says it was.
+    // than overwriting; exported(-1) says they were, once at least one was.
     Q_INVOKABLE void exportAll(const QString &format, const QUrl &folder);
 
 signals:
@@ -121,6 +123,7 @@ signals:
     void optionsChanged();
     void batchChanged();
     void fileChanged();
+    void partialChanged();
     void progressChanged();
     void resultsChanged();
     void problemChanged();

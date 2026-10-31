@@ -33,6 +33,7 @@
 #include <QScopeGuard>
 #include <QSGRendererInterface>
 #include <QSignalSpy>
+#include <QTextDocument>
 
 #include <algorithm>
 #include <functional>
@@ -94,6 +95,29 @@ QList<std::pair<QString, QString>> searchResults(QObject *search, const QString 
         results.append({map.value(QStringLiteral("id")).toString(), map.value(QStringLiteral("trail")).toString()});
     }
     return results;
+}
+
+// The SchemaRow for rowId in window, or null.
+QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
+{
+    QList<QQuickItem *> items{window->contentItem()};
+    while (!items.isEmpty()) {
+        QQuickItem *item = items.takeLast();
+        items += item->childItems();
+        if (item->property("rowId").toString() == rowId) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
+// The caption of the Section item sits in.
+QString sectionCaption(QQuickItem *item)
+{
+    while (item && !item->property("caption").isValid()) {
+        item = item->parentItem();
+    }
+    return item ? item->property("caption").toString() : QStringLiteral("(no section)");
 }
 
 // The sidebar entry for pageId in window, or null.
@@ -524,6 +548,130 @@ private slots:
         QTRY_VERIFY(row->property("shown").toBool());
         QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("cliproxy"));
         QTRY_VERIFY(!row->property("shown").toBool());
+    }
+
+    // A search result for a row in a section folded away, such as the
+    // Custom Endpoint's while Codex is chosen, opens the section and lands
+    // on the row; keypad Enter picks a result as Return does.
+    void searchOpensTheSectionItLandsIn()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && search);
+
+        QMetaObject::invokeMethod(search, "open");
+        const auto results = searchResults(search, QStringLiteral("endpoint url"));
+        const auto at = std::find_if(results.cbegin(), results.cend(),
+                                     [](const auto &result) { return result.first == QStringLiteral("speechEndpointUrl"); });
+        QVERIFY(at != results.cend());
+        for (auto i = results.cbegin(); i != at; ++i) {
+            QTest::keyClick(main, Qt::Key_Down);
+        }
+        QTest::keyClick(main, Qt::Key_Enter, Qt::KeypadModifier);
+
+        QTRY_COMPARE(navigation->current(), QStringLiteral("speech"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
+        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        // Scrolled into the window.
+        QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
+        // Nothing uses the endpoint, so its section claims no role.
+        QCOMPARE(sectionCaption(row), QString());
+    }
+
+    // A search for a row whose section is hidden on purpose, such as the
+    // Global Shortcut where the desktop gives none, leaves it hidden.
+    void searchLeavesHiddenSectionsHidden()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->goToRow(QStringLiteral("shortcuts"), QStringLiteral("globalShortcut"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("globalShortcut"))));
+        QQuickItem *page = row;
+        while (page && !page->property("noShortcuts").isValid()) {
+            page = page->parentItem();
+        }
+        QVERIFY(page);
+        if (!page->property("noShortcuts").toBool()) {
+            QSKIP("This desktop gives global shortcuts, so the section shows anyway");
+        }
+        // Past the landing's wait and any Reveal's growth.
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+        QTest::qWait(kSettleMs);
+        QVERIFY(!row->isVisible());
+    }
+
+    // A service a Writing Profile chooses for itself shows its settings on
+    // Speech to text, as the chosen one and its fallbacks do.
+    void speechShowsTheSettingsOfAServiceAProfileChooses()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
+        controller.settings()->edit([](AppSettings &draft) {
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == QLatin1String("email")) {
+                    profile.speechProvider = QStringLiteral("endpoint");
+                }
+            }
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
+        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        QCOMPARE(sectionCaption(row), QStringLiteral("Used by your Email profile."));
+    }
+
+    // A proof keeps the text's own spacing, and closes up only the gap a
+    // word left out by its mode leaves.
+    void proofTextKeepsItsSpacing()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import Speecher.Controls\nDiffText {}\n", QUrl());
+        const std::unique_ptr<QObject> diff(component.create());
+        QVERIFY2(diff, qPrintable(component.errorString()));
+        const auto segment = [](const char *kind, const char *text) {
+            return QVariantMap{{QStringLiteral("kind"), QLatin1String(kind)}, {QStringLiteral("text"), QString::fromUtf8(text)}};
+        };
+        const QVariantList edit{segment("same", "Well"), segment("same", " "), segment("removed", "um"),
+                                segment("same", " "), segment("same", "so"), segment("same", " "),
+                                segment("removed", "anyway"), segment("same", ","), segment("same", " "),
+                                segment("added", "fine"), segment("same", "  done")};
+        const auto shown = [&diff, &edit](const char *mode) {
+            QVariant html;
+            QMetaObject::invokeMethod(diff.get(), "html", Q_RETURN_ARG(QVariant, html), Q_ARG(QVariant, edit),
+                                      Q_ARG(QVariant, QLatin1String(mode)));
+            QTextDocument document;
+            document.setHtml(html.toString());
+            return document.toPlainText();
+        };
+        QCOMPARE(shown("marked"), QStringLiteral("Well um so anyway, fine  done"));
+        QCOMPARE(shown("spoken"), QStringLiteral("Well um so anyway, done"));
+        QCOMPARE(shown("result"), QStringLiteral("Well so, fine  done"));
     }
 
     // Dictation's page says how each of its subpages is set now. The test

@@ -577,7 +577,7 @@ Helpers:
 In Speecher.App, besides SchemaRow:
 
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
-- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open.
+- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Speech to text's Local Model and Custom Endpoint sections do through the page's `searched`.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
