@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
@@ -199,17 +200,21 @@ private class ChunkedInputStream(private val input: InputStream) : InputStream()
     }
 }
 
+// InputStream.readNBytes would do these, but Android has it only from API 33.
 private fun readExactly(input: InputStream, size: Int): ByteArray {
     if (size > MAX_BODY_BYTES) throw IOException("HTTP response too large")
-    val bytes = input.readNBytes(size)
-    if (bytes.size != size) throw EOFException("HTTP body ended after ${bytes.size} of $size bytes")
-    return bytes
+    return ByteArray(size).also(DataInputStream(input)::readFully)
 }
 
 private fun readAtMost(input: InputStream): ByteArray {
-    val bytes = input.readNBytes(MAX_BODY_BYTES + 1)
-    if (bytes.size > MAX_BODY_BYTES) throw IOException("HTTP response too large")
-    return bytes
+    val bytes = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) return bytes.toByteArray()
+        bytes.write(buffer, 0, count)
+        if (bytes.size() > MAX_BODY_BYTES) throw IOException("HTTP response too large")
+    }
 }
 
 /** One header or chunk-size line without its line ending. */

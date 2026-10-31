@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktfmt)
+    alias(libs.plugins.animalsniffer)
 }
 
 kotlin {
@@ -16,12 +17,17 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.bouncycastle.tls)
     implementation(libs.bouncycastle.prov)
+    // Android 12's API, the app's minSdk: check fails on a JDK call the phone lacks.
+    signature(variantOf(libs.android.api.signature) { artifactType("signature") })
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.mockwebserver)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test { useJUnitPlatform() }
+
+// Only the shipped code runs on the phone; tests and live checks run on the host JVM.
+animalsniffer { sourceSets = listOf(project.sourceSets.main.get()) }
 
 val live = sourceSets.create("live")
 

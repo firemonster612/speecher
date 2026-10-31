@@ -16,6 +16,7 @@ savedstate = "1.5.0"
 espresso = "3.7.0"
 codeScanner = "16.1.0"
 fragment = "1.9.1"
+gummyBears = "0.16.0"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -43,6 +44,7 @@ lifecycle-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", v
 savedstate = { module = "androidx.savedstate:savedstate", version.ref = "savedstate" }
 code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
 fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }
+android-api-signature = { module = "com.toasttab.android:gummy-bears-api-31", version.ref = "gummyBears" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -50,3 +52,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "ktfmt" }
+animalsniffer = { id = "ru.vyarus.animalsniffer", version = "2.0.1" }
