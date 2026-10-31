@@ -1,11 +1,14 @@
 #include "common/test_suites.h"
+#include "common/delivery_waits.h"
 
 #include "app/PlatformComposition.h"
 #include "platform/mac/MacSystemAudioCapture.h"
 #include "platform/mac/MacSystemAudioInput.h"
+#include "platform/mac/MacTargetProvider.h"
 
 #include <QScopeGuard>
 #include <QTest>
+#include <QTimer>
 
 #import <CoreMedia/CoreMedia.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
@@ -309,6 +312,28 @@ private slots:
         capture.read(2, current);
         QCOMPARE(capture.audio.left(750 * kBytesPerMs), QByteArray(750 * kBytesPerMs, '\0'));
         QVERIFY(capture.audio.size() > 750 * kBytesPerMs);
+    }
+
+    // A capture while verification waits starts the next dictation's
+    // delivery, so the old verification gives up even when the new capture
+    // is the same control and the text it inserts is the text expected.
+    void liveCaptureDuringVerificationEndsIt()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_MAC_RECAPTURE") != QStringLiteral("1")) {
+            QSKIP("Live macOS recapture check is opt-in; focus an editable control in another app");
+        }
+        MacTargetProvider provider;
+        provider.setCorrectionObservationEnabled(false);
+        const Target target = test::captureAndWait(provider);
+        QVERIFY(provider.canInsertText(target));
+        // A capture takes no baseline here; a paste's preparation does.
+        QVERIFY(provider.preparePaste(target));
+        const QString inserted = QStringLiteral("late text ");
+        QTimer::singleShot(0, &provider, [&provider, &inserted] {
+            const Target next = test::captureAndWait(provider);
+            provider.insertText(next, inserted);
+        });
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, inserted));
     }
 };
 

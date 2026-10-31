@@ -21,12 +21,25 @@ public:
     void bind() override;
     ShortcutBinding shortcut() const override;
     bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) override;
+    // Plasma consumes a registered combination everywhere, so recording
+    // lets go of the action; the daemon keeps its keys for resume().
+    void suspend() override;
+    QString resume() override;
+    // Delivery leaves the registration alone, as it did before recording
+    // suspended it: letting go and taking it back costs blocking D-Bus round
+    // trips on the UI thread at every delivery.
+    void suspendForDelivery() override {}
+    void resumeAfterDelivery() override {}
     bool removeRegistration(QString *error = nullptr) override;
 
 private:
     QAction *makeShortcutAction();
+    void releaseAction();
 
     QAction *m_action = nullptr;
+    // Setup and settings can record concurrently; only the last resume binds.
+    int m_suspensionCount = 0;
+    bool m_resumeBinding = false;
 };
 
 // Takes keys through KDE's global shortcut daemon. While they are held,

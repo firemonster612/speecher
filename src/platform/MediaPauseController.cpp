@@ -1,6 +1,7 @@
 #include "platform/MediaPauseController.h"
 
 #include <QDBusConnection>
+#include <QDBusError>
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
@@ -97,15 +98,27 @@ void MediaPauseController::pausePlaying()
 
 void MediaPauseController::resumePaused()
 {
-    ++m_generation;
+    const quint64 generation = ++m_generation;
     m_pauseRequested = false;
-    const QStringList players = m_pausedPlayers;
-    m_pausedPlayers.clear();
-    for (const QString &player : players) {
-        QDBusConnection::sessionBus().asyncCall(
-            playerCommand(player, QStringLiteral("Play")), 300);
+    // A player stays listed until it takes Play, so one that refused or
+    // missed it is asked again at the next resume.
+    for (const QString &player : std::as_const(m_pausedPlayers)) {
+        auto *playWatcher = new QDBusPendingCallWatcher(
+            QDBusConnection::sessionBus().asyncCall(playerCommand(player, QStringLiteral("Play")), 300),
+            this);
+        connect(playWatcher, &QDBusPendingCallWatcher::finished, this, [this, playWatcher, player, generation] {
+            const QDBusPendingReply<> played = *playWatcher;
+            playWatcher->deleteLater();
+            // A pause since may have paused the player again, listed under
+            // its earlier entry, which the next resume still needs. A player
+            // that has quit has nothing left to resume.
+            if (generation == m_generation
+                && (!played.isError() || played.error().type() == QDBusError::ServiceUnknown)) {
+                m_pausedPlayers.removeAll(player);
+            }
+        });
     }
-    qInfo() << "media resumed players=" << players.size();
+    qInfo() << "media resumed players=" << m_pausedPlayers.size();
 }
 
 } // namespace speecher

@@ -132,6 +132,18 @@ QString RoutingShortcutBinder::resume()
     return error;
 }
 
+void RoutingShortcutBinder::suspendForDelivery()
+{
+    m_combination->suspendForDelivery();
+    m_singleKey->suspendForDelivery();
+}
+
+void RoutingShortcutBinder::resumeAfterDelivery()
+{
+    m_combination->resumeAfterDelivery();
+    m_singleKey->resumeAfterDelivery();
+}
+
 bool RoutingShortcutBinder::removeRegistration(QString *error)
 {
     m_singleKey->setShortcut({});

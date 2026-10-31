@@ -254,6 +254,7 @@ void WinTargetProvider::capture(QObject *context, std::function<void(const Targe
 Target WinTargetProvider::captureNow()
 {
     clearCapture();
+    ++m_captures;
     Target target;
     const HWND foreground = GetForegroundWindow();
     m_native->window = foreground;
@@ -438,8 +439,11 @@ void WinTargetProvider::verifyInsertion(const Target &target,
     }
     // A copy, because a capture before the answer resets the member.
     const InsertionBaseline baseline = *m_insertionBaseline;
-    const auto read = [this, target]() -> std::optional<QString> {
-        if (!m_native->focused || !stillFocused(target)) {
+    const quint64 capture = m_captures;
+    const auto read = [this, capture, target]() -> std::optional<QString> {
+        // The answer comes in the same call as the read that passed, so this
+        // also keeps a later capture's control from being observed.
+        if (m_captures != capture || !m_native->focused || !stillFocused(target)) {
             return std::nullopt;
         }
         return currentText(m_native->focused.Get());

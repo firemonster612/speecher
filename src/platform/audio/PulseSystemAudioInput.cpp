@@ -27,6 +27,56 @@ private:
     pa_threaded_mainloop *m_mainloop;
 };
 
+// How long open() waits on the sound server, on Speecher's main thread.
+constexpr int kOpenTimeoutSeconds = 3;
+
+// Ends open()'s waits once the sound server has had kOpenTimeoutSeconds to
+// answer: one that accepts the connection and never replies would otherwise
+// hold the main thread until libpulse gives up on each reply. Created and
+// destroyed with the mainloop locked.
+class OpenDeadline {
+public:
+    OpenDeadline(pa_threaded_mainloop *mainloop, pa_context *context)
+        : m_mainloop(mainloop)
+        , m_event(pa_context_rttime_new(
+              context, pa_rtclock_now() + kOpenTimeoutSeconds * PA_USEC_PER_SEC,
+              [](pa_mainloop_api *, pa_time_event *, const timeval *, void *self) {
+                  auto *deadline = static_cast<OpenDeadline *>(self);
+                  deadline->m_passed = true;
+                  pa_threaded_mainloop_signal(deadline->m_mainloop, 0);
+              },
+              this))
+    {
+    }
+    ~OpenDeadline()
+    {
+        if (m_event) {
+            pa_threaded_mainloop_get_api(m_mainloop)->time_free(m_event);
+        }
+    }
+    Q_DISABLE_COPY_MOVE(OpenDeadline)
+
+    // Waits for the PulseAudio thread's next signal. False, at once or on
+    // waking, once the deadline has passed.
+    bool wait()
+    {
+        if (!m_passed) {
+            pa_threaded_mainloop_wait(m_mainloop);
+        }
+        return !m_passed;
+    }
+
+private:
+    pa_threaded_mainloop *m_mainloop;
+    pa_time_event *m_event;
+    bool m_passed = false;
+};
+
+QString noAnswerText()
+{
+    return QStringLiteral("The sound server did not answer within %1 seconds.").arg(kOpenTimeoutSeconds);
+}
+
 QString pulseError(pa_context *context)
 {
     return QString::fromUtf8(pa_strerror(pa_context_errno(context)));
@@ -114,6 +164,7 @@ bool PulseSystemAudioInput::open(QString *error)
     }
 
     MainloopLocker lock(m_mainloop);
+    OpenDeadline deadline(m_mainloop, m_context);
     if (pa_context_connect(m_context, nullptr, PA_CONTEXT_NOAUTOSPAWN, nullptr) < 0) {
         *error = QStringLiteral("Could not connect to the sound server: %1").arg(pulseError(m_context));
         return false;
@@ -123,7 +174,10 @@ bool PulseSystemAudioInput::open(QString *error)
             *error = QStringLiteral("Could not connect to the sound server: %1").arg(pulseError(m_context));
             return false;
         }
-        pa_threaded_mainloop_wait(m_mainloop);
+        if (!deadline.wait()) {
+            *error = noAnswerText();
+            return false;
+        }
     }
 
     // A server change event is the only sign the default output moved. The
@@ -146,10 +200,15 @@ bool PulseSystemAudioInput::open(QString *error)
     pa_operation_unref(subscription);
 
     if (pa_operation *query = queryDefaultSink()) {
-        while (pa_operation_get_state(query) == PA_OPERATION_RUNNING) {
-            pa_threaded_mainloop_wait(m_mainloop);
+        bool answered = true;
+        while (answered && pa_operation_get_state(query) == PA_OPERATION_RUNNING) {
+            answered = deadline.wait();
         }
         pa_operation_unref(query);
+        if (!answered) {
+            *error = noAnswerText();
+            return false;
+        }
     }
     if (!PA_CONTEXT_IS_GOOD(pa_context_get_state(m_context))) {
         *error = lostConnection(m_context);
@@ -170,7 +229,10 @@ bool PulseSystemAudioInput::open(QString *error)
             *error = captureError(m_context);
             return false;
         }
-        pa_threaded_mainloop_wait(m_mainloop);
+        if (!deadline.wait()) {
+            *error = noAnswerText();
+            return false;
+        }
     }
     return true;
 }

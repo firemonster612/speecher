@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QDebug>
+#include <QScopeGuard>
 
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
@@ -126,13 +127,21 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         }
         return false;
     }
+    // Read from the daemon: a suspension deletes the action, and the one made
+    // below knows no keys until it is given some.
+    const QList<QKeySequence> previous = keyList(this->shortcut().combination());
     // removeRegistration() deletes the action when a single key takes over;
     // choosing a combination again arrives here without a bind() in between,
     // so recreate the action (and its activation connection) on demand.
     if (!m_action) {
         makeShortcutAction();
     }
-    const QList<QKeySequence> previous = KGlobalAccel::self()->shortcut(m_action);
+    // While suspended, the keys stay free for the recorder however this ends.
+    const auto keepSuspended = qScopeGuard([this] {
+        if (m_suspensionCount > 0) {
+            releaseAction();
+        }
+    });
     if (!KGlobalAccel::self()->setShortcut(
             m_action, keyList(shortcut.combination()), KGlobalAccel::NoAutoloading)) {
         if (error) {
@@ -161,6 +170,45 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
 #endif
 }
 
+// Deleting the action marks it inactive with the daemon, which stops taking
+// its keys but keeps them stored, as for an app that is not running. Removing
+// its shortcuts instead would lose the binding if Speecher quit before resume.
+void KGlobalAccelShortcutBinder::releaseAction()
+{
+    if (!m_action) {
+        return;
+    }
+    delete m_action;
+    m_action = nullptr;
+    m_resumeBinding = true;
+}
+
+void KGlobalAccelShortcutBinder::suspend()
+{
+    if (m_suspensionCount++ == 0) {
+        releaseAction();
+    }
+}
+
+QString KGlobalAccelShortcutBinder::resume()
+{
+    if (m_suspensionCount == 0 || --m_suspensionCount > 0 || !m_resumeBinding) {
+        return {};
+    }
+    m_resumeBinding = false;
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    const ShortcutBinding stored = shortcut();
+    makeShortcutAction();
+    KGlobalAccel::self()->setShortcut(m_action, keyList(stored.combination()), KGlobalAccel::Autoloading);
+    // Another app may have taken the keys while they were let go.
+    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
+    if (!stored.isEmpty() && (active.isEmpty() || active.first() != stored.combination())) {
+        return ownedElsewhereText(stored);
+    }
+#endif
+    return {};
+}
+
 bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
@@ -170,6 +218,7 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
         }
         return false;
     }
+    m_resumeBinding = false;
     QAction *action = m_action ? m_action : makeShortcutAction();
     KGlobalAccel::self()->removeAllShortcuts(action);
     KGlobalAccel::self()->cleanComponent(QString::fromLatin1(shortcutComponent));

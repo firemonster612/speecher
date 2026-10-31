@@ -667,13 +667,10 @@ bool QtAudioInput::sourceMatches(const AudioCaptureSettings &settings) const
     if (!m_source || !m_device) {
         return false;
     }
-
-    if (settings.deviceId.isEmpty()) {
-        const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
-        return !defaultDevice.isNull() && m_currentDeviceId == encodedDeviceId(defaultDevice);
-    }
-
-    return m_currentDeviceId == settings.deviceId;
+    // Compared with the device an open would pick, so a source on the
+    // stand-in for a missing microphone matches until that microphone returns.
+    const QAudioDevice device = selectedDevice(settings, nullptr);
+    return !device.isNull() && m_currentDeviceId == encodedDeviceId(device);
 }
 
 } // namespace speecher

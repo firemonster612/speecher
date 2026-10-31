@@ -24,6 +24,7 @@
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTimer>
 
 #include <windows.h>
 #include <ks.h>
@@ -855,6 +856,26 @@ private slots:
             QVERIFY(test::verifyInsertionAndWait(targetProvider, target, inserted));
         }
         qInfo().noquote() << "windows live delivery text=" + inserted;
+    }
+
+    // A capture while verification waits starts the next dictation's
+    // delivery, so the old verification gives up even when the new capture
+    // is the same control and the text it inserts is the text expected.
+    void liveCaptureDuringVerificationEndsIt()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_WIN_RECAPTURE") != QStringLiteral("1")) {
+            QSKIP("Live Windows recapture check is opt-in; focus an editable control in another app");
+        }
+        WinTargetProvider provider;
+        provider.setCorrectionObservationEnabled(false);
+        const Target target = test::captureAndWait(provider);
+        QVERIFY(provider.canInsertText(target));
+        const QString inserted = QStringLiteral("late text ");
+        QTimer::singleShot(0, &provider, [&provider, &inserted] {
+            const Target next = test::captureAndWait(provider);
+            provider.insertText(next, inserted);
+        });
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, inserted));
     }
 };
 

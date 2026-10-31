@@ -250,6 +250,7 @@ void MacTargetProvider::capture(QObject *context, std::function<void(const Targe
 Target MacTargetProvider::captureNow()
 {
     releaseFocusedElement();
+    ++m_captures;
 
     Target target;
     NSRunningApplication *frontmost = [NSWorkspace sharedWorkspace].frontmostApplication;
@@ -400,8 +401,11 @@ void MacTargetProvider::verifyInsertion(const Target &target,
     }
     // A copy, because a capture before the answer resets the member.
     const InsertionBaseline baseline = *m_insertionBaseline;
-    const auto read = [this]() -> std::optional<QString> {
-        if (!m_focusedElement) {
+    const quint64 capture = m_captures;
+    const auto read = [this, capture, target]() -> std::optional<QString> {
+        // The answer comes in the same call as the read that passed, so this
+        // also keeps a later capture's element from being observed.
+        if (m_captures != capture || !m_focusedElement || !stillFocused(target)) {
             return std::nullopt;
         }
         return stringAttribute(static_cast<AXUIElementRef>(m_focusedElement), kAXValueAttribute);

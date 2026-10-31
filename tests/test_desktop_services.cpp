@@ -20,6 +20,8 @@
 #include <QThread>
 #include <QTimer>
 
+#include <optional>
+
 using namespace speecher;
 
 namespace {
@@ -112,17 +114,50 @@ public:
             m_bus.send(message.createReply(QVariant::fromValue(QDBusVariant(status))));
             return true;
         }
+        if (message.member() == QLatin1String("Play") && refusedPlays > 0) {
+            --refusedPlays;
+            m_bus.send(message.createErrorReply(QDBusError::Failed, QStringLiteral("Not now")));
+            return true;
+        }
         if (message.member() == QLatin1String("Pause")) {
             playing = false;
         } else if (message.member() == QLatin1String("Play")) {
             playing = true;
+            if (holdsPlayAnswer) {
+                heldPlayAnswer = message.createReply();
+                return true;
+            }
         }
         m_bus.send(message.createReply());
         return true;
     }
 
+    // Answers the Play held back while holdsPlayAnswer was set.
+    void answerHeldPlay()
+    {
+        m_bus.send(*heldPlayAnswer);
+        heldPlayAnswer.reset();
+        holdsPlayAnswer = false;
+    }
+
     bool playing = true;
+    int refusedPlays = 0;
+    bool holdsPlayAnswer = false;
+    std::optional<QDBusMessage> heldPlayAnswer;
 };
+
+// Waits until the test player has answered everything sent to it so far. The
+// controller shares this connection, so it has those answers by then too.
+bool playerAnsweredEarlierCalls()
+{
+    QDBusPendingCallWatcher answered(QDBusConnection::sessionBus().asyncCall(
+        QDBusMessage::createMethodCall(QStringLiteral("org.mpris.MediaPlayer2.speecherTest"),
+                                       QStringLiteral("/org/mpris/MediaPlayer2"),
+                                       QStringLiteral("org.mpris.MediaPlayer2.Player"),
+                                       QStringLiteral("Stop"))));
+    QSignalSpy finished(&answered, &QDBusPendingCallWatcher::finished);
+    return finished.wait(5000);
+}
 
 class DesktopServicesTests : public QObject {
     Q_OBJECT
@@ -228,16 +263,49 @@ private slots:
         MediaPauseController media;
         media.pausePlaying();
         QTRY_VERIFY(!player.playing);
-        // The player answered Pause before this, so the controller has the
-        // answer by the time this one is back.
-        QDBusPendingCallWatcher answered(QDBusConnection::sessionBus().asyncCall(
-            QDBusMessage::createMethodCall(QStringLiteral("org.mpris.MediaPlayer2.speecherTest"),
-                                           QStringLiteral("/org/mpris/MediaPlayer2"),
-                                           QStringLiteral("org.mpris.MediaPlayer2.Player"),
-                                           QStringLiteral("Stop"))));
-        QSignalSpy finished(&answered, &QDBusPendingCallWatcher::finished);
-        QTRY_VERIFY(!finished.isEmpty());
+        QVERIFY(playerAnsweredEarlierCalls());
         media.pausePlaying();
+        media.resumePaused();
+        QTRY_VERIFY(player.playing);
+    }
+
+    // A player that refuses Play stays paused, and the next resume asks again.
+    void refusedResumeIsTriedAgain()
+    {
+        FakePlayer player;
+        QVERIFY(player.start(QStringLiteral("org.mpris.MediaPlayer2.speecherTest"),
+                             QStringLiteral("/org/mpris/MediaPlayer2")));
+        MediaPauseController media;
+        media.pausePlaying();
+        QTRY_VERIFY(!player.playing);
+        QVERIFY(playerAnsweredEarlierCalls());
+        player.refusedPlays = 1;
+        media.resumePaused();
+        QVERIFY(playerAnsweredEarlierCalls());
+        QVERIFY(!player.playing);
+        media.resumePaused();
+        QTRY_VERIFY(player.playing);
+    }
+
+    // A pause answered before the previous resume's Play keeps the player
+    // listed, so the last resume plays it again.
+    void pauseBeforeALateResumeAnswerIsResumed()
+    {
+        FakePlayer player;
+        QVERIFY(player.start(QStringLiteral("org.mpris.MediaPlayer2.speecherTest"),
+                             QStringLiteral("/org/mpris/MediaPlayer2")));
+        MediaPauseController media;
+        media.pausePlaying();
+        QTRY_VERIFY(!player.playing);
+        QVERIFY(playerAnsweredEarlierCalls());
+        player.holdsPlayAnswer = true;
+        media.resumePaused();
+        QTRY_VERIFY(player.playing);
+        media.pausePlaying();
+        QTRY_VERIFY(!player.playing);
+        QVERIFY(playerAnsweredEarlierCalls());
+        player.answerHeldPlay();
+        QVERIFY(playerAnsweredEarlierCalls());
         media.resumePaused();
         QTRY_VERIFY(player.playing);
     }
