@@ -46,6 +46,7 @@ void DictationSpeech::begin()
     m_retiredAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
+    m_inputEnded = false;
     // A failure that switched the last session's provider says nothing of this one.
     m_switchFailure = {};
     m_phase = Phase::Starting;
@@ -96,7 +97,9 @@ QString DictationSpeech::failureText(const QString &providerMessage, const QList
 
 void DictationSpeech::hear(const QByteArray &pcm)
 {
-    if (m_between.holdsAudio()) {
+    // Behind anything still held, so the provider hears it all in order, and
+    // never to an attempt told its input ended.
+    if (m_between.holdsAudio() || m_between.hasHeldAudio() || m_inputEnded) {
         hold(pcm);
         return;
     }
@@ -136,7 +139,7 @@ void DictationSpeech::takeReadyProvider()
             resumeAttempt();
             if (!m_between.awaitingProvider) {
                 m_between.finishingPausedAttempt = true;
-                m_attempts->finishInput();
+                endInput();
             }
         }
         break;
@@ -280,7 +283,7 @@ void DictationSpeech::proceed()
     // Unless the paused attempt ended meanwhile. A provider may report it
     // ended from inside finishInput(), and move the session on.
     if (std::exchange(m_finishOwed, false) && m_between.finishingPausedAttempt) {
-        m_attempts->finishInput();
+        endInput();
         if (m_phase != phase) {
             return;
         }
@@ -330,7 +333,7 @@ void DictationSpeech::finishStop()
         return;
     }
     if (m_attempts->transcriber()) {
-        m_attempts->finishInput();
+        endInput();
     }
 }
 
@@ -353,7 +356,7 @@ void DictationSpeech::end()
     if (m_between.hasHeldAudio()) {
         resumeAttempt();
         if (!m_between.awaitingProvider) {
-            m_attempts->finishInput();
+            endInput();
         }
         return;
     }
@@ -372,28 +375,43 @@ void DictationSpeech::cancel()
     m_emptyResumedAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
+    m_inputEnded = false;
     m_phase = Phase::Idle;
 }
 
+// Opens a fresh attempt on the same transcriber while the microphone keeps
+// running; the transcriber buffers audio until the new stream is ready.
 void DictationSpeech::resumeAttempt()
 {
-    const Phase phase = m_phase;
-    startNextAttempt();
-    // A handler that paused or stopped from the partial the attempt committed
-    // as it opened has told it the input ended: what is held waits for the
-    // next one.
-    if (m_phase == phase) {
-        sendHeldAudio();
-    }
+    const QString providerId = m_attempts->chain()->currentId();
+    emit ran(providerId);
+    m_inputEnded = false;
+    m_attempts->startAttempt(chainSpeechSettings(m_settings->speech, providerId), {});
+    sendHeldAudio();
 }
 
 // A provider that fails on the way makes way for the next, which gets what is
-// still waiting; what the failed one took is never sent again.
+// still waiting; what the failed one took is never sent again. Nothing goes
+// to an attempt told its input ended, or a paused one finishing, as a
+// handler may have told the attempt that just opened.
 void DictationSpeech::sendHeldAudio()
 {
-    while (!m_between.awaitingProvider && m_between.hasHeldAudio()) {
+    while (!m_between.awaitingProvider && !m_between.finishingPausedAttempt && !m_inputEnded
+           && m_between.hasHeldAudio()) {
         m_attempts->sendAudio(m_between.takeOldestHeld());
     }
+}
+
+// What is held reaches the attempt first, when it may take it; then the
+// attempt is told the input ended.
+void DictationSpeech::endInput()
+{
+    sendHeldAudio();
+    if (m_between.awaitingProvider || m_inputEnded) {
+        return;
+    }
+    m_inputEnded = true;
+    m_attempts->finishInput();
 }
 
 // In Stopping, the last attempt before the speech ends ended. While the
@@ -416,6 +434,7 @@ void DictationSpeech::openFirstAttempt()
 {
     const QString providerId = m_attempts->chain()->currentId();
     emit ran(providerId);
+    m_inputEnded = false;
     if (!m_attempts->startAttempt(chainSpeechSettings(m_settings->speech, providerId), {})) {
         return;
     }
@@ -436,15 +455,6 @@ void DictationSpeech::listen()
     }
 }
 
-// Opens a fresh attempt on the same transcriber while the microphone keeps
-// running; the transcriber buffers audio until the new stream is ready.
-void DictationSpeech::startNextAttempt()
-{
-    const QString providerId = m_attempts->chain()->currentId();
-    emit ran(providerId);
-    m_attempts->startAttempt(chainSpeechSettings(m_settings->speech, providerId), {});
-}
-
 void DictationSpeech::rollOver()
 {
     // The provider ended a healthy stream on its own (a clean server close)
@@ -455,7 +465,7 @@ void DictationSpeech::rollOver()
         return;
     }
     qInfo() << "speech stream ended by the provider; rolling over to attempt" << m_attempts->currentId() + 1;
-    startNextAttempt();
+    resumeAttempt();
 }
 
 void DictationSpeech::handleCompleted()
@@ -518,7 +528,7 @@ void DictationSpeech::handleFailure(const SpeechFailure &failure)
         emit wordsMayBeMissing(failure);
         qInfo().noquote() << "speech stream reconnecting attempt=" << m_attempts->currentId() + 1
                           << "reason=" + failure.message;
-        startNextAttempt();
+        resumeAttempt();
         return;
     }
     // Reconnects spent, or a failure they can't mend: the provider is done

@@ -137,9 +137,8 @@ private:
     void retireAttempt();
     void rollOver();
     void openFirstAttempt();
-    void startNextAttempt();
-    // Opens the attempt after a pause once the paused one has finished, and
-    // sends it the audio heard in between.
+    // Opens the next attempt, after a pause, a rollover or a reconnect, and
+    // sends it the audio held for it.
     void resumeAttempt();
     // Sends the open attempt the audio that waited for one, in order.
     void sendHeldAudio();
@@ -147,6 +146,7 @@ private:
     // The speech ends on what the attempts heard: audio still held gets an
     // attempt of its own first, then ended().
     void end();
+    void endInput();
     void finishStop();
     void cancelRetiredAttempt();
     bool offline() const;
@@ -174,6 +174,8 @@ private:
     // told the input ended, resume() the next attempt to open.
     bool m_finishOwed = false;
     bool m_openOwed = false;
+    // The current attempt was told its input ended: no audio may follow.
+    bool m_inputEnded = false;
     // The attempt a resume opened with nothing held for it, until it hears
     // audio; 0 for none.
     quint64 m_emptyResumedAttempt = 0;

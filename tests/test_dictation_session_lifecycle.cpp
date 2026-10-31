@@ -1670,6 +1670,79 @@ private slots:
         QCOMPARE(starts, 1);
     }
 
+    // A pause and resume from the partial the next attempt commits as it
+    // opens finish that attempt: audio held for it waits for the one after.
+    void heldAudioWaitsOutAPauseAndResumeFromACommittedPartial()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->ignoresEndedAttempts = true;
+        speech->autoCompleteOnFinish = false;
+        speech->emitPartialText(QStringLiteral("unfinished"));
+        session.pause();
+        session.resume();
+        audio.pushAudio(QByteArrayLiteral("held"));
+        bool armed = true;
+        connect(&session, &DictationSession::previewChanged, &session, [&] {
+            if (std::exchange(armed, false)) {
+                session.pause();
+                session.resume();
+            }
+        });
+
+        speech->emitCompletion();
+        QVERIFY(!armed);
+        speech->emitCompletion();
+
+        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("held")}));
+    }
+
+    // A stop from the partial the next attempt commits as it opens: the
+    // audio held for that attempt reaches it before the stop's post-roll.
+    void heldAudioPrecedesPostRollAfterAStopFromACommittedPartial()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->autoCompleteOnFinish = false;
+        speech->emitPartialText(QStringLiteral("unfinished"));
+        session.pause();
+        session.resume();
+        audio.pushAudio(QByteArrayLiteral("first"));
+        audio.onStop = [&] { audio.pushAudio(QByteArrayLiteral("post")); };
+        bool armed = true;
+        connect(&session, &DictationSession::previewChanged, &session, [&] {
+            if (std::exchange(armed, false)) {
+                session.stopListening();
+            }
+        });
+
+        speech->emitCompletion();
+        QVERIFY(!armed);
+
+        QCOMPARE(speech->audioChunks, (QList<QByteArray>{QByteArrayLiteral("first"), QByteArrayLiteral("post")}));
+        speech->emitCompletion();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastText, QStringLiteral("unfinished"));
+    }
+
     // The empty attempt a failed restart leaves is let go before the session
     // shows Stopping: what its provider sends then does not count.
     void anAttemptLetGoAfterAFailedRestartIsNotHeardFromAgain()

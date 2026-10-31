@@ -280,6 +280,9 @@ public:
 
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
     {
+        if (ignoresEndedAttempts && (endedAttempts.contains(attemptId) || inputEndedAttempts.contains(attemptId))) {
+            return;
+        }
         if (attemptId == currentAttemptId) {
             audioChunks << pcm;
         }
@@ -291,6 +294,7 @@ public:
         if (ignoresEndedAttempts && endedAttempts.contains(attemptId)) {
             return;
         }
+        inputEndedAttempts.append(attemptId);
         if (onFinishInput) {
             onFinishInput();
         }
@@ -389,10 +393,11 @@ public:
     int beginUtteranceCalls = 0;
     quint64 currentAttemptId = 0;
     bool autoCompleteOnFinish = true;
-    // As a real provider: finishInput() for an attempt that has ended does
-    // nothing.
+    // As a real provider: finishInput() for an attempt that has ended, and
+    // audio for one that ended or was told its input ended, do nothing.
     bool ignoresEndedAttempts = false;
     QList<quint64> endedAttempts;
+    QList<quint64> inputEndedAttempts;
     QList<quint64> cancelledAttempts;
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;

@@ -419,6 +419,29 @@ private slots:
         QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
     }
 
+    // A primary that fails inside its first attempt hands over to a fallback
+    // that opens its own at once: the transcript keeps the fallback's
+    // language.
+    void refinementGetsTheLanguageOfAFallbackOpenedInsideTheFailedAttempt()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
+        rig.settings.edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("de");
+            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            return true;
+        });
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
+        };
+        rig.listen();
+        rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
+        rig.session->stopListening();
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
+    }
+
     // When the chain runs out after a fallback kept words, refinement is
     // still told the language that fallback heard them in.
     void refinementGetsTheKeptWordsLanguageOnceTheChainRunsOut()

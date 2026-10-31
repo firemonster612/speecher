@@ -87,12 +87,20 @@ bool SpeechAttempts::startAttempt(const SpeechSettings &speech, const SpeechAtte
     m_policy.attemptStarted();
     const quint64 attemptId = ++m_id;
     m_transcriber->startAttempt(attemptId, speech, options);
+    // A provider that failed inside the call may have handed over to one
+    // that opened its own attempt, partial, language and all.
+    if (attemptId != m_id) {
+        return false;
+    }
     // Only once the new attempt is current: a handler that acts on the
     // committed partial acts on the new attempt. Before the transcript's own
     // attempt starts, so the partial keeps the language it was heard in.
     commitPartial();
+    if (attemptId != m_id) {
+        return false;
+    }
     m_transcript->startAttempt(speech.language);
-    return attemptId == m_id;
+    return true;
 }
 
 void SpeechAttempts::cancel()
