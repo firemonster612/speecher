@@ -2,6 +2,7 @@
 
 #include "output/HelperPath.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QPointer>
 #include <QProcess>
@@ -18,8 +19,10 @@ namespace {
 // has exited, and never waits for that.
 class RunningCommand final : public QObject {
 public:
+    // The application's, so no command in flight outlives it.
     RunningCommand(Command command, QObject *context, std::function<void(const CommandResult &)> done)
-        : m_command(std::move(command))
+        : QObject(QCoreApplication::instance())
+        , m_command(std::move(command))
         , m_context(context)
         , m_done(std::move(done))
     {

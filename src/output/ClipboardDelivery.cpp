@@ -5,22 +5,9 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>
-#include <QPointer>
 
 namespace speecher {
 namespace {
-
-// done, kept from running once context is gone. The wl-clipboard helpers
-// answer to this delivery's own lifetime, and this to the caller's.
-template <typename Answer>
-std::function<void(const Answer &)> whileAlive(QObject *context, std::function<void(const Answer &)> done)
-{
-    return [context = QPointer<QObject>(context), done = std::move(done)](const Answer &answer) {
-        if (context) {
-            done(answer);
-        }
-    };
-}
 
 QClipboard *systemClipboard()
 {
@@ -120,7 +107,7 @@ void ClipboardDelivery::copyWayland(const DeliveryContent &content,
                                     QObject *context,
                                     std::function<void(const ClipboardCopied &)> done)
 {
-    m_waylandClipboard.copy(content, this, whileAlive(context, std::move(done)));
+    m_waylandClipboard.copy(content, context, std::move(done));
 }
 #endif
 
@@ -153,7 +140,7 @@ void ClipboardDelivery::capture(QObject *context, std::function<void(const Clipb
 {
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        WlClipboardDelivery::capture(this, whileAlive(context, std::move(done)));
+        WlClipboardDelivery::capture(context, std::move(done));
         return;
     }
 #endif
@@ -171,9 +158,9 @@ void ClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
         if (preserveNewCopy) {
-            m_waylandClipboard.restorePreservingNewCopy(snapshot, this, whileAlive(context, std::move(done)));
+            m_waylandClipboard.restorePreservingNewCopy(snapshot, context, std::move(done));
         } else {
-            WlClipboardDelivery::restore(snapshot, this, whileAlive(context, std::move(done)));
+            WlClipboardDelivery::restore(snapshot, context, std::move(done));
         }
         return;
     }

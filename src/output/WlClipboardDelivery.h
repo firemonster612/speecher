@@ -20,7 +20,8 @@ class WlClipboardDelivery : public QObject {
 public:
     explicit WlClipboardDelivery(QObject *parent = nullptr);
     // Each of these starts the helpers and returns at once. done runs once
-    // with their answer, unless context is gone by then.
+    // with their answer, unless context is gone by then, or, for copy and
+    // restorePreservingNewCopy, this clipboard is.
     void copy(const DeliveryContent &content, QObject *context, std::function<void(const ClipboardCopied &)> done);
     static bool isAvailable();
     static bool isWaylandSession();

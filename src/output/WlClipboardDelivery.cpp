@@ -6,6 +6,7 @@
 
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QPointer>
 #include <QStringList>
 #include <QUuid>
 
@@ -189,11 +190,16 @@ void WlClipboardDelivery::copy(const DeliveryContent &content,
     parts.append({copyMarkerMimeType(), QUuid::createUuid().toByteArray()});
     m_copiedParts.clear();
 
+    // The helpers answer to context; this may go before they do.
+    const QPointer<WlClipboardDelivery> self(this);
     // The helper's failure is the one reported when wl-copy fails too.
-    const auto copyPlainText = [this, context, done, text](const QString &helperError) {
-        copyBytes(text, QStringLiteral("text/plain"), context, [this, done, text, helperError](bool ok, const QString &error) {
+    const auto copyPlainText = [self, context, done, text](const QString &helperError) {
+        copyBytes(text, QStringLiteral("text/plain"), context, [self, done, text, helperError](bool ok, const QString &error) {
+            if (!self) {
+                return;
+            }
             if (ok) {
-                m_copiedParts = {{QStringLiteral("text/plain"), text}};
+                self->m_copiedParts = {{QStringLiteral("text/plain"), text}};
             }
             done({ok, false, ok ? QString() : helperError.isEmpty() ? error : helperError});
         });
@@ -204,13 +210,16 @@ void WlClipboardDelivery::copy(const DeliveryContent &content,
         return;
     }
     WaylandClipboardOwner::start(helper, parts, context,
-                                 [this, done, parts, copyPlainText, html = content.html.has_value()](
+                                 [self, done, parts, copyPlainText, html = content.html.has_value()](
                                      bool published, const QString &error) {
+                                     if (!self) {
+                                         return;
+                                     }
                                      if (!published) {
                                          copyPlainText(error);
                                          return;
                                      }
-                                     m_copiedParts = parts;
+                                     self->m_copiedParts = parts;
                                      done({true, html, {}});
                                  });
 }
@@ -288,7 +297,11 @@ void WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snap
         done({true, false, {}});
         return;
     }
-    capture(context, [this, snapshot, context, done](const ClipboardCaptured &current) {
+    capture(context, [self = QPointer<WlClipboardDelivery>(this), snapshot, context, done](
+                         const ClipboardCaptured &current) {
+        if (!self) {
+            return;
+        }
         if (!current.ok) {
             done({false, false, current.error});
             return;
@@ -296,7 +309,7 @@ void WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snap
         // The decision has been made for this copy. Keeping the parts would
         // let a later delivery that never copied anything restore over
         // somebody else's clipboard on the strength of this one.
-        const QList<ClipboardMimePart> copied = std::exchange(m_copiedParts, {});
+        const QList<ClipboardMimePart> copied = std::exchange(self->m_copiedParts, {});
         if (!copyStillOnClipboard(copied, current.snapshot.parts)) {
             done({true, true, {}});
             return;

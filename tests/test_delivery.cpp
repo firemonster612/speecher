@@ -68,7 +68,7 @@ private slots:
     void waylandClipboardFailures_data()
     {
         QTest::addColumn<QString>("scenario");
-        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot"}) {
+        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone"}) {
             QTest::newRow(scenario) << QString::fromLatin1(scenario);
         }
     }
@@ -117,7 +117,7 @@ private slots:
             return file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         };
         QVERIFY(script("wl-copy", R"(
-case "$T4_SCENARIO" in "copy failure"|"both fail"|"slow snapshot") exit 1;; esac
+case "$T4_SCENARIO" in "copy failure"|"both fail"|"slow snapshot"|"clipboard gone") exit 1;; esac
 /bin/cat > "$T4_CLIPBOARD"
 )"));
         QVERIFY(script("wl-paste", R"(
@@ -141,6 +141,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             QVERIFY(copyAndWait(clipboard, makeDeliveryContent("dictation", OutputFormat::PlainText)).ok);
             QVERIFY(writeClipboard("someone else's copy"));
             QVERIFY(restoreAndWait(clipboard, previous.snapshot, true).ok);
+        } else if (scenario == "clipboard gone") {
+            // The helpers answer once the clipboard object is gone and its
+            // context is not: nothing answers, and nothing reaches the
+            // freed object.
+            QObject context;
+            bool answered = false;
+            auto *wayland = new WlClipboardDelivery;
+            wayland->copy(makeDeliveryContent("dictation", OutputFormat::PlainText), &context,
+                          [&answered](const ClipboardCopied &) { answered = true; });
+            delete wayland;
+            QTest::qWait(300);
+            QVERIFY(!answered);
         } else {
             FakeTargetProvider provider;
             provider.directInsertionAvailable = true;

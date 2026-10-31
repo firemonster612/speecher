@@ -125,6 +125,10 @@ private:
 
     void failWithHelperError()
     {
+        // Answered already: a helper that cleared the selection may be gone.
+        if (!m_done) {
+            return;
+        }
         const QString stderrText = QString::fromUtf8(m_process->readAllStandardError()).trimmed();
         fail(stderrText.isEmpty() ? QStringLiteral("Wayland clipboard helper did not publish the selection")
                                   : stderrText);
