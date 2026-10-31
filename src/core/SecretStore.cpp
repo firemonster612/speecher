@@ -385,9 +385,8 @@ void SecretStore::settle(Secret secret, const Request &request, bool stored, con
         qWarning().noquote() << "Could not" << (cleared ? "clear" : "save") << keyringEntry(secret) + QLatin1Char(':')
                              << error;
     }
-    emit saveFinished(secret, request.number, cleared, stored, stored ? QString() : error);
-    // A saveFinished handler may have saved another secret, which sets lastError().
     m_lastError = stored ? QString() : error;
+    emit saveFinished(secret, request.number, cleared, stored, m_lastError);
 }
 
 // Whether storage holds the request where it allows, as this store and a new

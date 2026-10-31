@@ -1576,9 +1576,8 @@ private slots:
         comparePeerRead(settings, openAi, QString());
     }
 
-    // A refused save's reason is its own: a saveFinished handler that clears
-    // another key, which needs no keyring, changes neither what lastError()
-    // nor what saveFinished says.
+    // A refused save's reason is its own: what saveFinished says, and what
+    // lastError() says when it comes, whatever a handler saves then.
     void aRefusedSaveKeepsItsReason()
     {
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
@@ -1597,16 +1596,18 @@ private slots:
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
         QObject handler;
-        connect(secrets, &SecretStore::saveFinished, &handler, [secrets, proxy, speech](SecretStore::Secret secret) {
+        QString reason;
+        connect(secrets, &SecretStore::saveFinished, &handler, [&reason, secrets, proxy, speech](SecretStore::Secret secret) {
             if (secret == proxy) {
-                secrets->saveSecret(speech, {});
+                reason = secrets->lastError();
+                secrets->saveSecret(speech, QStringLiteral("speech-key"));
             }
         });
 
         QVERIFY(!savedSecret(secrets, proxy, {}));
 
         const QString denied = QStringLiteral("Keyring deletion denied");
-        QCOMPARE(secrets->lastError(), denied);
+        QCOMPARE(reason, denied);
         QCOMPARE(finished.first().at(4).toString(), denied);
     }
 
