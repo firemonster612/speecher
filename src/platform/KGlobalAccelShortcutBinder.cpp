@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QDebug>
+#include <QScopeGuard>
 
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
@@ -126,13 +127,21 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         }
         return false;
     }
+    // Read from the daemon: a suspension deletes the action, and the one made
+    // below knows no keys until it is given some.
+    const QList<QKeySequence> previous = keyList(this->shortcut().combination());
     // removeRegistration() deletes the action when a single key takes over;
     // choosing a combination again arrives here without a bind() in between,
     // so recreate the action (and its activation connection) on demand.
     if (!m_action) {
         makeShortcutAction();
     }
-    const QList<QKeySequence> previous = KGlobalAccel::self()->shortcut(m_action);
+    // While suspended, the keys stay free for the recorder however this ends.
+    const auto keepSuspended = qScopeGuard([this] {
+        if (m_suspensionCount > 0) {
+            releaseAction();
+        }
+    });
     if (!KGlobalAccel::self()->setShortcut(
             m_action, keyList(shortcut.combination()), KGlobalAccel::NoAutoloading)) {
         if (error) {
@@ -149,10 +158,6 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
             *error = ownedElsewhereText(shortcut);
         }
         return false;
-    }
-    if (m_suspensionCount > 0) {
-        // Checked against other apps now, but left to the recorder until resume.
-        releaseAction();
     }
     emit bindingChanged();
     return true;
