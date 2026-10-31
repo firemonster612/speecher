@@ -281,13 +281,13 @@ void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, b
     if (own) {
         finishWrite(secret, stored, !cleared, error);
         if (stored && !cleared) {
-            emit secretSaved(secret);
+            emit draftSettled(secret);
         }
         return;
     }
     noteOtherWrite(secret, cleared, stored, error);
     if (fieldWaited && cleared) {
-        emit secretDiscarded(secret);
+        emit draftSettled(secret);
     }
 }
 
@@ -296,14 +296,21 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
     const auto state = [this, secret] {
         return std::tuple(m_savedSecrets.value(secret, true), m_savedSecrets.contains(secret),
                           m_pendingClears.value(secret), m_writeFailures.contains(secret),
-                          m_writeFailures.value(secret).reason);
+                          m_writeFailures.value(secret));
     };
     const auto before = state();
-    m_secretsWritten.append(secret);
+    const bool wasPending = m_pendingClears.value(secret);
+    m_secretsWritten.insert(secret);
     m_pendingClears.insert(secret, m_settings.secrets()->deletionPending(secret));
     if (stored) {
+        // Every settings edit stores each key it holds again: only a write
+        // that changed whether the key is saved, or ended a pending clear,
+        // answers the failure the row shows.
+        const bool savedChanged = m_savedSecrets.contains(secret) && m_savedSecrets.value(secret) == cleared;
+        if (savedChanged || (wasPending && !m_pendingClears.value(secret))) {
+            m_writeFailures.remove(secret);
+        }
         m_savedSecrets.insert(secret, !cleared);
-        m_writeFailures.remove(secret);
     } else {
         // A refused clear still hides the key (deletionPending).
         if (cleared) {
@@ -311,7 +318,7 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
         }
         m_writeFailures.insert(secret, {cleared, error});
     }
-    // Every settings edit settles each key it holds, mostly to no change.
+    // Mostly no change, as above.
     if (state() != before) {
         emit secretsChanged();
     }
@@ -319,7 +326,7 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
 
 void Accounts::finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error)
 {
-    m_secretsWritten.append(secret);
+    m_secretsWritten.insert(secret);
     SecretStore *secrets = m_settings.secrets();
     m_pendingClears.insert(secret, secrets->deletionPending(secret));
     if (done) {

@@ -141,11 +141,7 @@ SettingRow {
             }
             Connections {
                 target: Accounts
-                function onSecretSaved(rowId) {
-                    if (rowId === root.rowId && !field._editedSinceSubmit)
-                        field.clear()
-                }
-                function onSecretDiscarded(rowId) {
+                function onDraftSettled(rowId) {
                     if (rowId === root.rowId && !field._editedSinceSubmit)
                         field.clear()
                 }

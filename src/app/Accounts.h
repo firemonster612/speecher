@@ -6,6 +6,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 
@@ -38,6 +39,7 @@ public:
         bool clearing = false;
         // The keyring's words, possibly empty.
         QString reason;
+        bool operator==(const WriteFailure &) const = default;
     };
 
     Accounts(SettingsStore &settings,
@@ -86,13 +88,11 @@ signals:
     void signInsChanged();
     void cliproxyAccountsChanged();
     void secretsChanged();
-    // A save of the secret went through and no newer write of it waits: the
-    // value asked for last is the one kept.
-    void secretSaved(SecretStore::Secret secret);
-    // A clear from elsewhere, such as moving the Custom endpoint to another
-    // server, replaced the value a field submitted: the field drops it, but
-    // not what was typed since.
-    void secretDiscarded(SecretStore::Secret secret);
+    // The field is done with the value it submitted for the secret, which it
+    // drops, though not what was typed since: the save went through with no
+    // newer write of it waiting, or a clear from elsewhere, such as moving
+    // the Custom endpoint to another server, replaced it.
+    void draftSettled(SecretStore::Secret secret);
 
 private:
     using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
@@ -129,7 +129,7 @@ private:
     quint64 m_lastSecretRead = 0;
     // Secrets saved or cleared since that read began, which it must not
     // overwrite.
-    QList<SecretStore::Secret> m_secretsWritten;
+    QSet<SecretStore::Secret> m_secretsWritten;
     // Secrets whose save or clear waits for the store's answer, with the
     // number of the request each asked for last (SecretStore::nextRequest).
     QMap<SecretStore::Secret, quint64> m_saving;

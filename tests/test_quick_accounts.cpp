@@ -27,6 +27,10 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif
+
 #include <memory>
 
 // The UI's QML modules are linked into the tests by test_quick_settings.cpp,
@@ -554,6 +558,38 @@ private slots:
         QVERIFY2(error.value(QStringLiteral("reason")).toString().contains(QStringLiteral("deletion denied")),
                  qPrintable(error.value(QStringLiteral("reason")).toString()));
     }
+
+#ifndef Q_OS_WIN
+    // A save refused before the key went in, as when the settings file can't
+    // be made private, keeps its reason on the row through a later settings
+    // edit, which stores the key's old state again and changes nothing.
+    void aRefusedSaveKeepsItsReasonThroughAnotherEdit()
+    {
+        if (getuid() == 0) {
+            QSKIP("Root writes to a read-only folder");
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        const QString file = controller.settings()->raw().fileName();
+        const QString folder = QFileInfo(file).absolutePath();
+        const auto writable = qScopeGuard([folder] {
+            QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        // No file, and a folder it can't be made in.
+        QFile::remove(file);
+        QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
+        accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        const QVariant refusal = accounts.secretErrors().value(QStringLiteral("cliproxyApiKey"));
+        const QString reason = refusal.toMap().value(QStringLiteral("reason")).toString();
+        QVERIFY2(reason.contains(QStringLiteral("can't be kept from other users")), qPrintable(reason));
+
+        settings.set(QStringLiteral("previewWords"), 13.0);
+
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refusal);
+    }
+#endif
 
     // The key field still holds what was submitted for server A while the
     // keyring makes it wait. Moving the endpoint to B meanwhile drops that
