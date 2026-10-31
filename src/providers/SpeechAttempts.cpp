@@ -81,14 +81,17 @@ quint64 SpeechAttempts::currentId() const
 
 bool SpeechAttempts::startAttempt(const SpeechSettings &speech, const SpeechAttemptOptions &options)
 {
-    commitPartial();
-    m_transcript->startAttempt(speech.language);
     m_attemptConnected = false;
     m_attemptSentAudio = false;
     ++m_providerAttempts;
     m_policy.attemptStarted();
     const quint64 attemptId = ++m_id;
     m_transcriber->startAttempt(attemptId, speech, options);
+    // Only once the new attempt is current: a handler that acts on the
+    // committed partial acts on the new attempt. Before the transcript's own
+    // attempt starts, so the partial keeps the language it was heard in.
+    commitPartial();
+    m_transcript->startAttempt(speech.language);
     return attemptId == m_id;
 }
 

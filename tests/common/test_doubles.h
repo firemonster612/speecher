@@ -288,10 +288,14 @@ public:
     void finishInput(quint64 attemptId) override
     {
         ++stopCalls;
+        if (ignoresEndedAttempts && endedAttempts.contains(attemptId)) {
+            return;
+        }
         if (onFinishInput) {
             onFinishInput();
         }
         if (autoCompleteOnFinish) {
+            endedAttempts.append(attemptId);
             emit attemptCompleted(attemptId);
         }
     }
@@ -348,6 +352,7 @@ public:
 
     void emitCompletion()
     {
+        endedAttempts.append(currentAttemptId);
         emit attemptCompleted(currentAttemptId);
     }
 
@@ -384,6 +389,10 @@ public:
     int beginUtteranceCalls = 0;
     quint64 currentAttemptId = 0;
     bool autoCompleteOnFinish = true;
+    // As a real provider: finishInput() for an attempt that has ended does
+    // nothing.
+    bool ignoresEndedAttempts = false;
+    QList<quint64> endedAttempts;
     QList<quint64> cancelledAttempts;
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;

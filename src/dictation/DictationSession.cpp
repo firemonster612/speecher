@@ -716,9 +716,6 @@ void DictationSession::pause()
     }
     m_speech->pause();
     const quint64 step = setState(DictationState::Paused);
-    if (step != m_step) {
-        return;
-    }
     emit audioLevelChanged(0.0f);
     if (step != m_step) {
         return;
@@ -871,7 +868,7 @@ void DictationSession::continueStartupAfterPreparation()
             m_audioStep = 0;
         }
         if (step != m_step) {
-            qInfo() << "audio start failed for a cancelled generation";
+            qInfo() << "audio start failed after the session moved on";
             return;
         }
         qWarning().noquote() << "audio start failed message=" + audioError;
@@ -885,14 +882,12 @@ void DictationSession::continueStartupAfterPreparation()
         if (m_audioStep == step) {
             stopAudio();
         }
-        qInfo() << "audio start completed for a cancelled generation";
+        qInfo() << "audio start completed after the session moved on";
         return;
     }
     qInfo() << "audio capture started";
     m_speech->listen();
-    if (setState(DictationState::Listening) == m_step) {
-        m_speech->proceed();
-    }
+    setState(DictationState::Listening);
 }
 
 void DictationSession::failStartup(const QString &message, const PopupErrorAction &fix)
@@ -1198,7 +1193,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         makeDeliveryContent(text, settings.output.format),
         m_target);
     if (step != m_step) {
-        qInfo() << "delivery result ignored for a cancelled generation";
+        qInfo() << "delivery result ignored after the session moved on";
         return;
     }
     clearScreenshotContext();

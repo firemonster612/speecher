@@ -1617,6 +1617,7 @@ private slots:
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->ignoresEndedAttempts = true;
         speech->emitPartialText(QStringLiteral("unfinished"));
         session.pause();
         bool armed = true;
@@ -1631,6 +1632,10 @@ private slots:
         QVERIFY(!armed);
         QCOMPARE(int(session.state()), int(DictationState::Paused));
         QVERIFY(!audio.isActive());
+        // The pause told the attempt the resume opened, so a stop still ends.
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastText, QStringLiteral("unfinished"));
     }
 
     // A handler that pauses and resumes again as a resume announces Listening
@@ -1663,6 +1668,38 @@ private slots:
 
         QCOMPARE(int(session.state()), int(DictationState::Listening));
         QCOMPARE(starts, 1);
+    }
+
+    // The empty attempt a failed restart leaves is let go before the session
+    // shows Stopping: what its provider sends then does not count.
+    void anAttemptLetGoAfterAFailedRestartIsNotHeardFromAgain()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("kept"));
+        session.pause();
+        audio.startResult = false;
+        connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
+            if (state == DictationState::Stopping) {
+                speech->emitFinalText(QStringLiteral("late"));
+                speech->emitFailure(QStringLiteral("lost"), false, SpeechPhase::Finalize);
+            }
+        });
+
+        session.resume();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastText, QStringLiteral("kept"));
+        QVERIFY2(!session.lastMessage().contains(QStringLiteral("may be missing")), qPrintable(session.lastMessage()));
     }
 
     // A resume whose attempt fails as it opens delivers the words the pause

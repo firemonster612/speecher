@@ -43,6 +43,7 @@ void DictationSpeech::begin()
     m_between.awaitingProvider = true;
     m_microphoneStarting = false;
     m_emptyResumedAttempt = 0;
+    m_retiredAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
     // A failure that switched the last session's provider says nothing of this one.
@@ -259,7 +260,16 @@ void DictationSpeech::stop()
     if (m_phase != Phase::Listening && m_phase != Phase::Paused) {
         return;
     }
-    m_stoppedWhilePaused = m_phase == Phase::Paused || std::exchange(m_openOwed, false);
+    m_noAttemptToFinish = m_phase == Phase::Paused || std::exchange(m_openOwed, false);
+    // Nothing reached the attempt a resume opened, as when the microphone
+    // would not restart: it is let go before the session shows Stopping, so
+    // nothing it sends counts, and is told at proceed(). Post-roll, if the
+    // microphone ran, waits for an attempt of its own.
+    if (m_phase == Phase::Listening && m_emptyResumedAttempt == m_attempts->currentId()) {
+        m_retiredAttempt = std::exchange(m_emptyResumedAttempt, 0);
+        m_attempts->forgetAttempt();
+        m_between.endedDuringStop = true;
+    }
     m_phase = Phase::Stopping;
     m_microphoneStopped = false;
 }
@@ -301,6 +311,7 @@ void DictationSpeech::finishStop()
     if (std::exchange(m_microphoneStopped, true)) {
         return;
     }
+    cancelRetiredAttempt();
     // The last attempt ended during the stop and the post-roll since waits:
     // it gets an attempt of its own before the speech ends.
     if (std::exchange(m_between.endedDuringStop, false)) {
@@ -314,22 +325,21 @@ void DictationSpeech::finishStop()
         return;
     }
     // The paused attempt's words are in.
-    if (m_stoppedWhilePaused) {
+    if (m_noAttemptToFinish) {
         end();
         return;
     }
-    if (!m_attempts->transcriber()) {
-        return;
+    if (m_attempts->transcriber()) {
+        m_attempts->finishInput();
     }
-    // Nothing reached the attempt a resume opened, as when the microphone
-    // would not restart: it is let go, and the speech ends on what the pause
-    // kept.
-    if (m_emptyResumedAttempt == m_attempts->currentId()) {
-        m_attempts->cancel();
-        end();
-        return;
+}
+
+void DictationSpeech::cancelRetiredAttempt()
+{
+    const quint64 retired = std::exchange(m_retiredAttempt, 0);
+    if (retired && m_attempts->transcriber()) {
+        m_attempts->transcriber()->cancelAttempt(retired);
     }
-    m_attempts->finishInput();
 }
 
 // Audio heard after a resume reaches an attempt of its own before the speech
@@ -355,6 +365,7 @@ void DictationSpeech::cancel()
 {
     // The next provider may be preparing.
     m_attempts->chain()->cancel();
+    cancelRetiredAttempt();
     m_attempts->cancel();
     m_settings.reset();
     m_between = {};
@@ -366,8 +377,14 @@ void DictationSpeech::cancel()
 
 void DictationSpeech::resumeAttempt()
 {
+    const Phase phase = m_phase;
     startNextAttempt();
-    sendHeldAudio();
+    // A handler that paused or stopped from the partial the attempt committed
+    // as it opened has told it the input ended: what is held waits for the
+    // next one.
+    if (m_phase == phase) {
+        sendHeldAudio();
+    }
 }
 
 // A provider that fails on the way makes way for the next, which gets what is

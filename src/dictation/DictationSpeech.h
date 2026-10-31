@@ -45,7 +45,8 @@ public:
     // renews alongside. settings are the session's, which the speech runs
     // with from here on.
     void start(const AppSettings &settings, TranscriptRefiner *refiner);
-    // The microphone has started for the first attempt.
+    // The microphone has started for the first attempt; nothing is owed to
+    // the provider.
     void listen();
     // Audio from the microphone, which the session took for the speech.
     void hear(const QByteArray &pcm);
@@ -147,6 +148,7 @@ private:
     // attempt of its own first, then ended().
     void end();
     void finishStop();
+    void cancelRetiredAttempt();
     bool offline() const;
 
     SpeechAttempts *m_attempts;
@@ -167,7 +169,7 @@ private:
     bool m_microphoneStopped = false;
     // The stop came while paused, or before a resume's attempt opened: no
     // attempt is open to be told the input ended.
-    bool m_stoppedWhilePaused = false;
+    bool m_noAttemptToFinish = false;
     // Owed to the provider at proceed(): pause() left the open attempt to be
     // told the input ended, resume() the next attempt to open.
     bool m_finishOwed = false;
@@ -175,6 +177,8 @@ private:
     // The attempt a resume opened with nothing held for it, until it hears
     // audio; 0 for none.
     quint64 m_emptyResumedAttempt = 0;
+    // That attempt, let go by a stop; its provider is told at proceed().
+    quint64 m_retiredAttempt = 0;
 };
 
 } // namespace speecher

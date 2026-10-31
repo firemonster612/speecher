@@ -63,9 +63,10 @@ public:
 
     quint64 currentId() const;
     // Opens the next attempt on the transcriber, with speech for the provider
-    // the chain is on. The partial the last attempt left is committed first,
-    // as nothing will finish it. False when the provider failed the attempt
-    // from inside the call.
+    // the chain is on. The partial the last attempt left is committed once the
+    // new attempt is current, as nothing will finish it. False when the
+    // provider failed the attempt, or a handler moved it on, from inside the
+    // call.
     bool startAttempt(const SpeechSettings &speech, const SpeechAttemptOptions &options);
     // Cancels the current attempt; nothing it sends from here on counts.
     void cancel();
