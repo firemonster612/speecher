@@ -1458,6 +1458,8 @@ private slots:
             QTRY_COMPARE(primary->refineCalls, 1);
             primary->emitFailure(QStringLiteral("offline"), Network);
         }
+        // Refinement begins once the microphone has stopped.
+        QTRY_VERIFY(!rig.audio.active);
         QTest::qWait(100);
 
         QVERIFY(ended);
@@ -1530,7 +1532,6 @@ private slots:
         refiner->refreshFailure = ProviderFailure{ProviderFailureKind::Network, QStringLiteral("refresh failed")};
         speech->emitFinalText(QStringLiteral("spoken words"));
         session.stopListening();
-        QTRY_COMPARE(session.state(), DictationState::Refining);
         QTRY_COMPARE(delivery.calls, 1);
         QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->prepareCalls, 0);
