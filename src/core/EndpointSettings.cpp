@@ -16,10 +16,7 @@ RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings
 
 QString refinementEndpointKey(const RefinementSettings &settings)
 {
-    if (!settings.endpoint.apiKey.isEmpty()) {
-        return settings.endpoint.apiKey;
-    }
-    return usesProxyKey(settings) ? settings.cliproxyApiKey : QString();
+    return usesProxyKey(settings) ? settings.cliproxyApiKey : settings.endpoint.apiKey;
 }
 
 bool usesProxyKey(const RefinementSettings &settings)

@@ -238,17 +238,26 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    // A key entered while the CLI Proxy preset shows belongs to the proxy's
-    // server, not to the Custom server saved behind the preset.
-    if (secret == SecretStore::Secret::RefinementEndpointKey
-        && m_settings.dictationSnapshot().refinement.endpoint.preset == QStringLiteral("cliproxy")) {
-        m_settings.edit([](AppSettings &draft) {
-            detachRefinementEndpoint(draft);
+    SecretStore *secrets = m_settings.secrets();
+    // Its number before any keyring wait: the edit below asks for its secrets
+    // before it waits on one.
+    m_saving.insert(secret, secrets->nextRequest(secret));
+    // The endpoint key is saved with the server it belongs to, in one edit:
+    // an edit or key entered while the keyring makes this one wait comes
+    // after it and stands. A key entered while the CLI Proxy preset shows
+    // belongs to the proxy's server, not the Custom server saved behind it.
+    // Deleted settings take no edit; storeSecret refuses with why.
+    if (secret == SecretStore::Secret::RefinementEndpointKey && !m_settings.raw().deleted()) {
+        m_settings.edit([&value](AppSettings &draft) {
+            if (draft.refinement.endpoint.preset == QStringLiteral("cliproxy")) {
+                detachRefinementEndpoint(draft);
+            }
+            draft.refinement.endpoint.apiKey = value;
+            draft.unreadSecretKeys.removeAll(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey));
             return true;
         });
+        return;
     }
-    SecretStore *secrets = m_settings.secrets();
-    m_saving.insert(secret, secrets->nextRequest(secret));
     storeSecret(secrets, secret, value);
 }
 
@@ -262,7 +271,15 @@ void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, b
                                   const QString &error)
 {
     const auto waiting = m_saving.constFind(secret);
+    // Saved by something other than a field, such as a settings edit that
+    // moved the endpoint to another server and so cleared its key: the row
+    // shows what storage now holds.
     if (waiting == m_saving.cend()) {
+        if (stored && (!m_savedSecrets.contains(secret) || m_savedSecrets.value(secret) == cleared)) {
+            m_secretsWritten.append(secret);
+            m_savedSecrets.insert(secret, !cleared);
+            emit secretsChanged();
+        }
         return;
     }
     const bool own = *waiting == request;

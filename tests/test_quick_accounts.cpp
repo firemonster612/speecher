@@ -25,6 +25,7 @@
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <memory>
 
@@ -485,6 +486,79 @@ private slots:
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
         QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
         QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+    }
+
+    // The CLI Proxy preset shows, at proxy-b, over the Custom server-a whose
+    // key the keyring holds, so dropping that key waits on the keyring. Set
+    // before the app starts, which then can't know the key yet.
+    static void showTheProxyPresetOverAKeyringKey()
+    {
+        SettingsStore settings;
+        settings.raw().setValue(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://proxy-b.example:8317"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://server-a.example/v1"));
+        settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
+        settings.raw().sync();
+    }
+
+    // A server change made while the keyring makes an entered key wait comes
+    // after the key, so the endpoint reaches the new server without it.
+    void aServerChangeDuringAKeySaveLeavesTheKeyBehind()
+    {
+        showTheProxyPresetOverAKeyringKey();
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        bool changedDuringTheSave = false;
+        QTimer::singleShot(0, &accounts, [&] {
+            changedDuringTheSave = true;
+            settings.edit([](AppSettings &draft) {
+                editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://server-c.example/v1")});
+                return true;
+            });
+        });
+
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
+
+        QVERIFY(changedDuringTheSave);
+        const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+        QCOMPARE(sent.apiBase, QStringLiteral("http://server-c.example/v1"));
+        QCOMPARE(sent.apiKey, QString());
+    }
+
+    // A key entered while the keyring makes an older one wait stands.
+    void aKeyEnteredDuringAKeySaveStands()
+    {
+        showTheProxyPresetOverAKeyringKey();
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        bool enteredDuringTheSave = false;
+        QTimer::singleShot(0, &accounts, [&] {
+            enteredDuringTheSave = true;
+            accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-new"));
+        });
+
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-old"));
+
+        QVERIFY(enteredDuringTheSave);
+        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QStringLiteral("key-new"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+    }
+
+    // Moving the endpoint to another server drops its key, and its row says
+    // so, though no field asked for the change.
+    void anEndpointKeyDroppedByAServerChangeShowsAsNotSaved()
+    {
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
+
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
     }
 
     // A key entered while the CLI Proxy preset shows belongs to the proxy's

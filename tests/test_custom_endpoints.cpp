@@ -1098,38 +1098,45 @@ private slots:
 
     // Startup reads only the key the endpoint will send: its own, and the
     // proxy's only when it has none and is on the proxy's server. A proxy key
-    // left unread then can't stop the endpoint's own.
+    // left unread then can't stop the endpoint's own. With the endpoint's own
+    // key unread too, that key is read first.
     void onlyTheKeyTheEndpointSendsIsRead_data()
     {
         QTest::addColumn<QString>("ownKey");
         QTest::addColumn<QString>("url");
-        QTest::addColumn<bool>("proxyRead");
+        QTest::addColumn<bool>("ownUnread");
+        QTest::addColumn<bool>("readsAKey");
         const QString proxy = QStringLiteral("http://127.0.0.1:8317/v1");
-        QTest::newRow("own key, the proxy's server") << QStringLiteral("own-key") << proxy << false;
-        QTest::newRow("own key, after the proxy moved")
-            << QStringLiteral("own-key") << QStringLiteral("http://server.example/v1") << false;
-        QTest::newRow("no key, another server") << QString() << QStringLiteral("http://server.example/v1") << false;
-        QTest::newRow("no key, the proxy's server") << QString() << proxy << true;
+        const QString other = QStringLiteral("http://server.example/v1");
+        QTest::newRow("own key, the proxy's server") << QStringLiteral("own-key") << proxy << false << false;
+        QTest::newRow("own key, after the proxy moved") << QStringLiteral("own-key") << other << false << false;
+        QTest::newRow("no key, another server") << QString() << other << false << false;
+        QTest::newRow("no key, the proxy's server") << QString() << proxy << false << true;
+        QTest::newRow("both unread, the proxy's server") << QString() << proxy << true << true;
     }
 
     void onlyTheKeyTheEndpointSendsIsRead()
     {
         QFETCH(QString, ownKey);
         QFETCH(QString, url);
-        QFETCH(bool, proxyRead);
+        QFETCH(bool, ownUnread);
+        QFETCH(bool, readsAKey);
         AppSettings settings;
         settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
         settings.refinement.endpoint.baseUrl = url;
         settings.refinement.endpoint.apiKey = ownKey;
         settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        if (ownUnread) {
+            settings.unreadSecretKeys.append(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey));
+        }
 
         QCOMPARE(SettingsStore::hasUnreadProviderSecrets(settings, ProviderRole::Refinement, QStringLiteral("endpoint")),
-                 proxyRead);
+                 readsAKey);
     }
 
     // An endpoint left at the proxy's server stops getting the proxy's key
     // once the proxy moves to another one.
-    void aMovedProxyKeepsItsKey()
+    void anEndpointLeftAtAMovedProxySendsNoKey()
     {
         AppSettings settings;
         settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
