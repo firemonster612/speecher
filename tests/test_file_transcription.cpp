@@ -64,6 +64,8 @@ namespace {
 // deletes each file's transcriber once the file is done.
 struct Script {
     bool expireFirstStream = false;
+    // What the first stream received before it ended, with expireFirstStream.
+    qsizetype firstStreamBytes = 0;
     int attempts = 0;
     qsizetype bytes = 0;
     QStringList vocabulary;
@@ -130,6 +132,7 @@ public:
             m_script->audioSent();
         }
         if (m_script->expireFirstStream && m_script->attempts == 1) {
+            m_script->firstStreamBytes += pcm.size();
             emit finalTranscript(attemptId, QStringLiteral("before"));
             emit attemptCompleted(attemptId);
         }
@@ -770,9 +773,9 @@ private slots:
         QVERIFY(results.first().error.isEmpty());
     }
 
-    // Transcribe asks for timings, and keeps the segments that can be cues.
-    // The first stream ends after one 100 ms chunk, so the second attempt's
-    // audio starts 100 ms into the file.
+    // Transcribe asks for timings, and keeps the segments that can be cues,
+    // timed from the start of the file: the second attempt's audio starts
+    // where the first stream's ended.
     void timesUsableSegmentsFromTheStartOfTheFile()
     {
         SpeechAttemptPolicy::setStableAttemptMs(0);
@@ -792,7 +795,13 @@ private slots:
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
         QVERIFY(m_script.timedSegments);
-        QCOMPARE(results.first().segments, QList<TranscriptSegment>({{100, 300, QStringLiteral("heard")}}));
+        // The second stream starts where the first one's audio ended: one
+        // chunk, which is short when the provider was ready before the file
+        // had decoded that far.
+        QVERIFY(m_script.firstStreamBytes > 0);
+        const qint64 secondStartMs = m_script.firstStreamBytes * 1000 / 32000;
+        QCOMPARE(results.first().segments,
+                 QList<TranscriptSegment>({{secondStartMs, secondStartMs + 200, QStringLiteral("heard")}}));
     }
 
     // Every segment starts a cue; a long one splits at its sentence end, or
