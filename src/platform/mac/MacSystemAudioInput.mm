@@ -518,23 +518,42 @@ MacSystemAudioInput::MacSystemAudioInput(QString permissionDenied, QObject *pare
 
 MacSystemAudioInput::~MacSystemAudioInput()
 {
-    stop();
+    close();
 }
 
-bool MacSystemAudioInput::start(QString *error)
+// open() waits for ScreenCaptureKit's answer, so it runs on the next turn of
+// the event loop rather than inside start().
+void MacSystemAudioInput::start()
 {
-    if (m_stream) {
-        return true;
+    abort();
+    m_opening = true;
+    reportLater([this] {
+        m_opening = false;
+        const QString message = open();
+        if (message.isEmpty()) {
+            emit started();
+            return;
+        }
+        close();
+        emit failed(message);
+    });
+}
+
+void MacSystemAudioInput::stop()
+{
+    if (!isActive()) {
+        return;
     }
-    const QString message = open();
-    if (message.isEmpty()) {
-        return true;
-    }
-    stop();
-    if (error) {
-        *error = message;
-    }
-    return false;
+    abort();
+    reportLater([this] { emit stopped(); });
+}
+
+// Also drops an open that has not run yet.
+void MacSystemAudioInput::abort()
+{
+    dropReports();
+    m_opening = false;
+    close();
 }
 
 QString MacSystemAudioInput::open()
@@ -569,7 +588,7 @@ QString MacSystemAudioInput::open()
     return {};
 }
 
-void MacSystemAudioInput::stop()
+void MacSystemAudioInput::close()
 {
     if (!m_stream) {
         return;
@@ -591,7 +610,7 @@ void MacSystemAudioInput::stop()
 
 bool MacSystemAudioInput::isActive() const
 {
-    return m_stream != nullptr;
+    return m_opening || m_stream != nullptr;
 }
 
 void MacSystemAudioInput::fail(quint64 generation, const QString &message)
@@ -599,7 +618,8 @@ void MacSystemAudioInput::fail(quint64 generation, const QString &message)
     if (generation != m_generation) {
         return;
     }
-    stop();
+    dropReports();
+    close();
     emit failed(message);
 }
 

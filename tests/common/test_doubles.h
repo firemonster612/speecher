@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace speecher::test {
 
@@ -35,32 +36,63 @@ public:
     {
     }
 
-    bool start(QString *error = nullptr) override
+    // Starts and stops on the next turn of the event loop, as a real input
+    // does: onStart runs as it starts, before started(), or failed() when
+    // startResult is false by then, and onStop as it stops, before stopped().
+    void start() override
     {
+        dropReports();
+        stopping = false;
         if (!startResult) {
-            if (error) {
-                *error = startError;
-            }
-            return false;
+            reportLater([this] { emit failed(startError); });
+            return;
         }
         started = true;
         active = true;
-        if (onStart) {
-            onStart();
-        }
-        if (!startResult) {
-            active = false;
-        }
-        return startResult;
+        reportLater([this] {
+            if (onStart) {
+                onStart();
+            }
+            // onStart stopped or aborted it.
+            if (!active || stopping) {
+                return;
+            }
+            if (!startResult) {
+                active = false;
+                emit failed(startError);
+                return;
+            }
+            emit AudioInput::started();
+        });
     }
 
     void stop() override
     {
-        if (onStop) {
-            onStop();
+        if (!active || stopping) {
+            return;
         }
+        stopping = true;
+        dropReports();
+        reportLater([this] {
+            if (onStop) {
+                onStop();
+            }
+            // onStop aborted or started it again.
+            if (!stopping) {
+                return;
+            }
+            stopping = false;
+            active = false;
+            emit levelChanged(0.0f);
+            emit stopped();
+        });
+    }
+
+    void abort() override
+    {
+        dropReports();
+        stopping = false;
         active = false;
-        emit levelChanged(0.0f);
     }
 
     bool isActive() const override
@@ -88,8 +120,16 @@ public:
         emit audioChunk(pcm);
     }
 
+    // Capture ends with it, as a real input's does; one asked to stop says
+    // stopped() instead.
     void emitFailure(const QString &message)
     {
+        dropReports();
+        active = false;
+        if (std::exchange(stopping, false)) {
+            emit stopped();
+            return;
+        }
         emit failed(message);
     }
 
@@ -99,6 +139,7 @@ public:
     QString device;
     bool started = false;
     bool active = false;
+    bool stopping = false;
     bool keepsSilence = false;
     std::function<void()> onStart;
     std::function<void()> onStop;

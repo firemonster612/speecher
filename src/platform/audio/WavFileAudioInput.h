@@ -16,8 +16,9 @@ class WavFileAudioInput final : public AudioInput {
 public:
     explicit WavFileAudioInput(const QString &path, QObject *parent = nullptr);
 
-    bool start(QString *error = nullptr) override;
+    void start() override;
     void stop() override;
+    void abort() override;
     bool isActive() const override;
 
 private:

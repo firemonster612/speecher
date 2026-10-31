@@ -6,7 +6,6 @@
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 
-#include <QPointer>
 
 #include <utility>
 
@@ -54,15 +53,10 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller,
             stop();
             return;
         }
-        // Queued: start() can wait in a nested event loop, which must not run
-        // inside the settings store's signal (a CLI's config set over IPC).
-        QMetaObject::invokeMethod(this, [this, deviceId = settings.deviceId] {
-            if (deviceId != m_deviceId || m_state != MicrophoneTestState::Running) {
-                return;
-            }
+        if (m_state == MicrophoneTestState::Running) {
             stop();
-            start(deviceId);
-        }, Qt::QueuedConnection);
+            start(settings.deviceId);
+        }
     });
 }
 
@@ -75,11 +69,7 @@ MicrophoneTest::~MicrophoneTest()
     }
     disconnect(m_input, nullptr, this, nullptr);
     m_input->setParent(nullptr);
-    // While Starting, the input's start() is still on the stack below, and
-    // start() frees the input once it returns and finds this test gone.
-    if (m_state != MicrophoneTestState::Starting) {
-        m_input->deleteLater();
-    }
+    m_input->deleteLater();
 }
 
 bool MicrophoneTest::canToggle() const
@@ -104,49 +94,22 @@ void MicrophoneTest::start(const QString &deviceId)
         }
         emit levelChanged(level);
     });
+    connect(input, &AudioInput::started, this, [this] { setState(MicrophoneTestState::Running); });
     connect(input, &AudioInput::failed, this, [this, deviceId](const QString &message) {
-        // While Starting, start() reports it once the input's start() returns.
-        if (m_state == MicrophoneTestState::Starting) {
-            m_startFailure = message;
-            m_stopRequested = true;
-            return;
-        }
         // What it heard came from a device that has gone.
-        m_heard = false;
-        stop();
+        if (m_state == MicrophoneTestState::Running) {
+            m_heard = false;
+        }
+        closeDevice();
         emit failed(deviceId, message);
     });
     m_input = input;
     setState(MicrophoneTestState::Starting);
-
-    // The input's start() can wait for the device in a nested event loop, in
-    // which anything may stop or destroy this test.
-    const QPointer<MicrophoneTest> alive(this);
-    QString error;
-    const bool started = input->start(&error);
-    if (!alive) {
-        input->deleteLater();
-        return;
-    }
-    const bool stopRequested = std::exchange(m_stopRequested, false);
-    // The input's own reason beats the timeout its start() then gives.
-    const QString failure = std::exchange(m_startFailure, QString());
-    if (!started || stopRequested) {
-        closeDevice();
-        if (!failure.isEmpty() || !started) {
-            emit failed(deviceId, failure.isEmpty() ? error : failure);
-        }
-        return;
-    }
-    setState(MicrophoneTestState::Running);
+    input->start();
 }
 
 void MicrophoneTest::stop()
 {
-    if (m_state == MicrophoneTestState::Starting) {
-        m_stopRequested = true;
-        return;
-    }
     closeDevice();
 }
 

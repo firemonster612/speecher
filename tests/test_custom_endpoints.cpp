@@ -2587,7 +2587,7 @@ private slots:
             speech->emitFinalText(QStringLiteral("spoken words"));
             session.stopListening();
             // The read runs on the worker while the session waits in Refining.
-            QCOMPARE(session.state(), DictationState::Refining);
+            QTRY_COMPARE(session.state(), DictationState::Refining);
             QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 2000);
             QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
             QVERIFY2(session.lastMessage().startsWith(QStringLiteral("Used raw transcript")),

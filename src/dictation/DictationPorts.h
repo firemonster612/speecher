@@ -5,11 +5,13 @@
 #include "core/Target.h"
 #include "dictation/PopupPresentation.h"
 
+#include <functional>
 #include <optional>
 
 #include <QList>
 #include <QObject>
 #include <QStringList>
+#include <QTimer>
 
 namespace speecher {
 
@@ -51,12 +53,26 @@ public:
     // input started once and then thrown away. Inputs that read no device,
     // such as a file standing in for the microphone, ignore it.
     virtual void useDevice(const QString &deviceId) { Q_UNUSED(deviceId) }
-    // start() may wait for the first audio and stop() for the post-roll in a
-    // nested event loop. Shortcut presses, IPC, settings changes and failed()
-    // can all arrive meanwhile, so a caller may be re-entered, including by
-    // another start() or stop(), before either returns.
-    virtual bool start(QString *error = nullptr) = 0;
+    // start(), stop() and abort() return at once, and no signal is emitted
+    // from inside them, so a caller is never re-entered by its own call. A
+    // signal's handler may call them, and the input then says nothing more
+    // of the capture that handler ended.
+    //
+    // Asks for capture: started() follows once audio flows, or failed() when
+    // the input cannot capture. Audio may arrive before either. A start()
+    // while capturing first ends that capture, with no signal for it.
+    virtual void start() = 0;
+    // Asks capture to end: the post-roll still arrives as audioChunk, then
+    // stopped(), even when capture fails meanwhile. A stop() while starting
+    // drops the start: stopped() follows and started() never does. Nothing
+    // while off or already stopping.
     virtual void stop() = 0;
+    // Ends capture now, with no post-roll and no signal at all for it, a start
+    // or stop under way included.
+    virtual void abort() = 0;
+    // True from start() until stopped(), failed() or abort(), opening and
+    // post-roll included. An input with no post-roll may turn false at stop(),
+    // before its stopped() arrives.
     virtual bool isActive() const = 0;
     // Forgets the audio a warm input keeps rolling for the next start, so a
     // resume after a pause does not send what was said during it.
@@ -73,7 +89,30 @@ public:
 signals:
     void audioChunk(const QByteArray &pcm);
     void levelChanged(float level);
+    void started();
+    void stopped();
+    // The input could not start, or capture ended without a stop(); nothing
+    // follows.
     void failed(const QString &message);
+
+protected:
+    // Runs report on the next turn of the event loop, unless dropReports()
+    // comes first: how an input says started(), stopped() or failed() without
+    // saying it inside the call that led to it.
+    void reportLater(std::function<void()> report)
+    {
+        QTimer::singleShot(0, this, [this, reports = m_reports, report = std::move(report)] {
+            if (reports == m_reports) {
+                report();
+            }
+        });
+    }
+    // For start() and abort(): what an earlier capture had yet to report is
+    // never reported.
+    void dropReports() { ++m_reports; }
+
+private:
+    quint64 m_reports = 0;
 };
 
 class MediaController : public QObject {

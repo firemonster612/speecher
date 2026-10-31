@@ -6,6 +6,7 @@
 #include <QList>
 #include <QMediaDevices>
 #include <QScopedPointer>
+#include <QTimer>
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/SilenceGate.h"
 
@@ -25,8 +26,9 @@ public:
 
     void warmUp() override;
     void useDevice(const QString &deviceId) override;
-    bool start(QString *error = nullptr) override;
+    void start() override;
     void stop() override;
+    void abort() override;
     bool isActive() const override;
     void clearPreRoll() override;
     void keepSilence() override;
@@ -34,17 +36,22 @@ public:
 public slots:
     void applySettings(const AudioCaptureSettings &settings);
 
-signals:
-    void firstSampleObserved();
-
 private:
+    // Where the capture is. Starting waits for the source's first audio, up
+    // to the readiness timeout; Stopping takes the post-roll, on a timer.
+    enum class Capture { Off, Starting, On, Stopping };
+
     void ensureMediaDevicesInitialized();
     void handleAudioInputsChanged();
     void syncWarmSource();
     AudioCaptureSettings currentSettings() const;
     bool ensureSourceRunning(const AudioCaptureSettings &settings, QString *error);
-    bool waitForFirstSample(const AudioCaptureSettings &settings, QString *error);
-    void waitForPostRoll(const AudioCaptureSettings &settings);
+    void captureStarted();
+    void readinessTimedOut();
+    void finishStop();
+    void reportStopped();
+    // Off at once, with no signal: the source stays open only when warm.
+    void endCapture();
     void stopSource();
     void onReadyRead();
     void handleSourceStateChanged(QAudio::State state);
@@ -63,7 +70,12 @@ private:
     QString m_currentDeviceLabel;
     AudioCaptureSettings m_captureSettings;
     SilenceGate m_gate;
-    bool m_captureActive = false;
+    Capture m_capture = Capture::Off;
+    // Moves on as a capture starts and as it ends, so code that emitted can
+    // tell a handler ended the capture, or started another.
+    quint64 m_captureId = 0;
+    QTimer m_readinessTimer;
+    QTimer m_postRollTimer;
     bool m_sourceStopping = false;
     bool m_seenFirstSample = false;
     bool m_conversionFailed = false;

@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/audio_input_waits.h"
 #include "core/ProviderAttemptIssueText.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SettingsKeys.h"
@@ -653,7 +654,7 @@ private slots:
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         codex->autoCompleteOnFinish = false;
         rig.listen();
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         rig.session->resume();
         rig.audio.pushAudio("x");
         rig.session->setReachability(Reachability::Offline);
@@ -766,7 +767,7 @@ private slots:
         rig.listen();
         codex->emitFinalText(QStringLiteral("said"));
         codex->autoCompleteOnFinish = false;
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         rig.session->resume();
         const QByteArray second(16000 * 2, '\0');
         // Exactly the budget, then the post-roll goes past it.
@@ -800,7 +801,7 @@ private slots:
         rig.listen();
         codex->emitFinalText(QStringLiteral("said"));
         codex->autoCompleteOnFinish = false;
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         rig.session->resume();
         const QByteArray second(16000 * 2, '\0');
         for (int seconds = 0; seconds < 10; ++seconds) {
@@ -870,7 +871,7 @@ private slots:
         rig.listen();
         rig.audio.pushAudio("before pause");
         codex->emitFinalText(QStringLiteral("before"));
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         codex->emitFailure(QStringLiteral("expired"), false, SpeechPhase::Finalize,
                            ProviderFailureKind::Authentication);
         QCOMPARE(rig.session->state(), DictationState::Paused);
@@ -878,7 +879,7 @@ private slots:
         QCOMPARE(rig.microphoneStarts, 1);
         rig.session->resume();
         QCOMPARE(local->startCalls, 1);
-        QCOMPARE(rig.microphoneStarts, 2);
+        QTRY_COMPARE(rig.microphoneStarts, 2);
         rig.audio.pushAudio("after resume");
         // What the failed provider heard before the pause is never sent again.
         QCOMPARE(local->audioChunks, QList<QByteArray>{"after resume"});
@@ -898,7 +899,7 @@ private slots:
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         codex->autoCompleteOnFinish = false;
         rig.listen();
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         rig.session->resume();
         rig.audio.pushAudio("x");
         codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Finalize, Network);
@@ -941,7 +942,7 @@ private slots:
         rig.listen();
         codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
         rig.audio.pushAudio("w");
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         QCOMPARE(rig.session->state(), DictationState::Paused);
         QTRY_COMPARE(local->startCalls, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"w"});
@@ -950,7 +951,7 @@ private slots:
         local->emitCompletion();
         rig.session->resume();
         QCOMPARE(local->startCalls, 2);
-        QCOMPARE(rig.microphoneStarts, 2);
+        QTRY_COMPARE(rig.microphoneStarts, 2);
     }
 
     // A provider failing inside the microphone's stop for a pause: the next
@@ -969,7 +970,7 @@ private slots:
             codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Streaming, Network);
             rig.audio.pushAudio("tail two");
         };
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         QCOMPARE(rig.session->state(), DictationState::Paused);
         QCOMPARE(codex->audioChunks, QList<QByteArray>{"tail one"});
         QCOMPARE(local->audioChunks, QList<QByteArray>{"tail two"});
@@ -987,8 +988,9 @@ private slots:
         codex->autoCompleteOnFinish = false;
         rig.listen();
         codex->emitFinalText(QStringLiteral("paused words"));
-        rig.session->pause();
+        QVERIFY(pauseAndWait(*rig.session));
         rig.session->resume();
+        QTRY_COMPARE(rig.microphoneStarts, 2);
         rig.audio.pushAudio("y");
         rig.session->stopListening();
         QCOMPARE(rig.session->state(), DictationState::Stopping);
@@ -997,7 +999,7 @@ private slots:
         QTRY_COMPARE(rig.delivery.calls, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"y"});
         QCOMPARE(local->stopCalls, 1);
-        QCOMPARE(rig.microphoneStarts, 2);
+        QTRY_COMPARE(rig.microphoneStarts, 2);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("paused words resumed words"));
     }
 
@@ -1237,7 +1239,7 @@ private slots:
         openai->refreshDelayMs = 100;
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
-        QCOMPARE(rig.session->state(), DictationState::Refining);
+        QTRY_COMPARE(rig.session->state(), DictationState::Refining);
         QCOMPARE(openai->prepareCalls, 0);
         if (stopWhileRenewing) {
             rig.session->stopListening();
@@ -1526,7 +1528,7 @@ private slots:
         refiner->refreshFailure = ProviderFailure{ProviderFailureKind::Network, QStringLiteral("refresh failed")};
         speech->emitFinalText(QStringLiteral("spoken words"));
         session.stopListening();
-        QCOMPARE(session.state(), DictationState::Refining);
+        QTRY_COMPARE(session.state(), DictationState::Refining);
         QTRY_COMPARE(delivery.calls, 1);
         QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->prepareCalls, 0);

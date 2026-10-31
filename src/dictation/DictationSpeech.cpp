@@ -375,6 +375,7 @@ void DictationSpeech::cancel()
     m_attempts->cancel();
     m_settings.reset();
     m_between = {};
+    m_microphoneStarting = false;
     m_emptyResumedAttempt = 0;
     m_finishOwed = false;
     m_openOwed = false;
@@ -446,11 +447,11 @@ void DictationSpeech::openFirstAttempt()
     }
     m_microphoneStarting = true;
     emit readyToListen();
-    m_microphoneStarting = false;
 }
 
 void DictationSpeech::listen()
 {
+    m_microphoneStarting = false;
     if (m_phase == Phase::Starting) {
         m_phase = Phase::Listening;
     }

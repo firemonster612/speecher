@@ -1,4 +1,5 @@
 #include "common/test_prelude.h"
+#include "common/audio_input_waits.h"
 
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/PcmWav.h"
@@ -367,13 +368,13 @@ private slots:
         QSignalSpy chunks(&capture, &AudioInput::audioChunk);
         QSignalSpy failed(&capture, &AudioInput::failed);
         QString error;
-        QVERIFY2(capture.start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(capture, &error), qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(!chunks.isEmpty(), 2000);
         QCOMPARE(failed.count(), 0);
         const QByteArray pcm = chunks.first().first().toByteArray();
         QVERIFY(!pcm.isEmpty());
         QCOMPARE(pcm.size() % int(sizeof(qint16)), 0);
-        capture.stop();
+        QVERIFY(test::stopAndWait(capture));
         QVERIFY(!capture.isActive());
     }
 
@@ -391,12 +392,12 @@ private slots:
         QVERIFY(capture);
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY(!capture->start(&error));
+        QVERIFY(!test::startAndWait(*capture, &error));
         QVERIFY(error.startsWith(QStringLiteral("Could not connect to the sound server")));
         QVERIFY(!capture->isActive());
-        // The failed start is reported once, by its return value.
+        // The failed start is reported once, by failed().
         QTest::qWait(100);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), 1);
     }
 
     void systemAudioCaptureFollowsDefaultOutput()
@@ -411,7 +412,7 @@ private slots:
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(capture->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*capture, &error), qPrintable(error));
         QTRY_VERIFY(isRecorded(sinks.firstMonitor));
 
         QVERIFY(pactl({QStringLiteral("set-default-sink"), sinks.second}));
@@ -433,7 +434,7 @@ private slots:
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(capture->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*capture, &error), qPrintable(error));
         QTRY_VERIFY(isRecorded(sinks.firstMonitor));
 
         // Nothing here handles events, so the killed stream's failure reaches
@@ -473,9 +474,9 @@ private slots:
         connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(capture->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*capture, &error), qPrintable(error));
         QTest::qWait(seconds * 1000);
-        capture->stop();
+        QVERIFY(test::stopAndWait(*capture));
 
         QCOMPARE(failed.count(), 0);
         QFile wav(wavPath);
@@ -501,11 +502,11 @@ private slots:
         connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(capture->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*capture, &error), qPrintable(error));
         QVERIFY(playTone(output));
         // Allow for the capture's poll and the output's latency.
         QTest::qWait(500);
-        capture->stop();
+        QVERIFY(test::stopAndWait(*capture));
 
         QCOMPARE(failed.count(), 0);
         QVERIFY2(loudestRms(pcm) > 0.05f, qPrintable(QString::number(loudestRms(pcm))));
@@ -513,7 +514,7 @@ private slots:
 
 #ifdef Q_OS_MACOS
     // For a Mac where the test binary has no Screen & System Audio Recording:
-    // the first run raises macOS's prompt, and start() answers without
+    // the first run raises macOS's prompt, and the start fails without
     // waiting for it.
     void liveSystemAudioSaysWhenNotAllowed()
     {
@@ -523,12 +524,12 @@ private slots:
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY(!capture->start(&error));
+        QVERIFY(!test::startAndWait(*capture, &error));
         QCOMPARE(error, systemAudioPermissionText());
         QVERIFY(!capture->isActive());
-        // A failed start is reported once, by its return value.
+        // A failed start is reported once, by failed().
         QTest::qWait(300);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), 1);
     }
 #endif
 
@@ -556,7 +557,7 @@ private slots:
         connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(capture->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*capture, &error), qPrintable(error));
 
         // Only the default output is captured.
         QVERIFY(playTone(second));
@@ -600,7 +601,7 @@ private slots:
         QByteArray heard;
         connect(system.get(), &AudioInput::audioChunk, system.get(), [&](const QByteArray &chunk) { heard += chunk; });
         QString error;
-        QVERIFY2(system->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*system, &error), qPrintable(error));
         QProcess player;
         player.start(QStringLiteral("powershell.exe"),
                      {QStringLiteral("-NoProfile"),
@@ -622,7 +623,7 @@ private slots:
         connect(microphone.get(), &AudioInput::audioChunk, microphone.get(), [&](const QByteArray &chunk) {
             recorded += chunk;
         });
-        QVERIFY2(microphone->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*microphone, &error), qPrintable(error));
         qInfo().noquote() << "echo cancellation:"
                           << (microphone->echoCancellationWarning().isEmpty() ? QStringLiteral("on")
                                                                               : microphone->echoCancellationWarning());
@@ -631,7 +632,7 @@ private slots:
         heard.clear();
         QTest::qWait(1000);
         const float during = rmsForPcm16(heard);
-        microphone->stop();
+        QVERIFY(test::stopAndWait(*microphone));
         qInfo().noquote() << "tone before" << before << "with the microphone open" << during << "microphone heard"
                           << loudestRms(recorded) << "over" << recorded.size() / 32 << "ms";
 
@@ -655,11 +656,11 @@ private slots:
         });
         QString error;
         QElapsedTimer running;
-        QVERIFY2(microphone->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*microphone, &error), qPrintable(error));
         running.start();
         QTest::qWait(1000);
         const qint64 untilStopMs = running.elapsed();
-        microphone->stop();
+        QVERIFY(test::stopAndWait(*microphone));
         const qint64 recordedMs = recorded.size() / 32;
         qInfo().noquote() << "recorded" << recordedMs << "ms for a stop after" << untilStopMs
                           << "ms with a post-roll of" << postRollMs << "ms";
@@ -694,7 +695,7 @@ private slots:
         });
         QSignalSpy failed(microphone.get(), &AudioInput::failed);
         QString error;
-        QVERIFY2(microphone->start(&error), qPrintable(error));
+        QVERIFY2(test::startAndWait(*microphone, &error), qPrintable(error));
 
         const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         const auto uninitialize = qScopeGuard([apartment] {
@@ -721,7 +722,7 @@ private slots:
         QVERIFY(recorded.size() > heardBefore);
         QVERIFY(microphone->isActive());
         QCOMPARE(failed.count(), 0);
-        microphone->stop();
+        QVERIFY(test::stopAndWait(*microphone));
     }
 #endif
 

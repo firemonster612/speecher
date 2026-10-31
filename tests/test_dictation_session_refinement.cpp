@@ -634,67 +634,6 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
     }
 
-    void aFollowUpAskedForWhileTheMicrophoneStopsWaits_data()
-    {
-        QTest::addColumn<bool>("cancelIt");
-        QTest::newRow("then stopped") << false;
-        QTest::newRow("then cancelled") << true;
-    }
-
-    // A follow-up asked for while a cancelled one still stops the microphone
-    // waits for it. Dropped before it begins, by a stop or a cancel, it leaves
-    // the review shown as it was, buttons and all.
-    void aFollowUpAskedForWhileTheMicrophoneStopsWaits()
-    {
-        QFETCH(bool, cancelIt);
-        SettingsStore settings;
-        settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
-        FakeAudioInput audio;
-        FakeMediaController media;
-        FakeTargetProvider target;
-        target.target.applicationId = QStringLiteral("org.kde.kate");
-        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
-        target.target.selectionStart = 0;
-        target.target.selectionEnd = 30;
-        FakeDelivery delivery;
-        ProviderRegistry registry;
-        FakeSpeechTranscriber *speech = nullptr;
-        FakeRefiner *refiner = nullptr;
-        registerFakeSpeechProvider(registry, &speech);
-        registerFakeRefiner(registry, &refiner);
-        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
-        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
-        session.startListening();
-        QTRY_COMPARE(session.state(), DictationState::Listening);
-        speech->emitFinalText(QStringLiteral("make it Thursday"));
-        session.stopListening();
-        QTRY_COMPARE(refiner->refineCalls, 1);
-        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
-
-        session.toggle();
-        QTRY_COMPARE(session.state(), DictationState::Listening);
-        bool asked = false;
-        audio.onStop = [&] {
-            if (std::exchange(asked, true)) {
-                return;
-            }
-            session.toggle();
-            QVERIFY(session.startPending());
-            QVERIFY(!reviews.last().first().value<SelectionEditReview>().following);
-            if (cancelIt) {
-                session.cancel();
-            } else {
-                session.stopListening();
-            }
-        };
-        session.cancel();
-        QCoreApplication::processEvents();
-        QVERIFY(!session.startPending());
-        QCOMPARE(session.state(), DictationState::Reviewing);
-        QVERIFY(!reviews.last().first().value<SelectionEditReview>().following);
-    }
-
     // What a failed follow-up met is not the revision kept: its receipt is
     // the one that revision would have had.
     void aFailedFollowUpLeavesTheKeptRevisionsReceipt()

@@ -84,8 +84,8 @@ public:
 
 signals:
     // The first provider is ready and its attempt open: the session starts
-    // the microphone, then listen(). A provider ready while it starts only
-    // opens its attempt.
+    // the microphone, then listen() once it has. A provider ready meanwhile
+    // only opens its attempt.
     void readyToListen();
     // Whether providerId's sign-in held: it prepared and takes the dictation
     // from here, or the service turned the sign-in down.
@@ -161,9 +161,9 @@ private:
     // The failure that sent the speech on to the next provider, which ends
     // it if none takes over.
     SpeechFailure m_switchFailure;
-    // The session starts the microphone for the first attempt; it spins an
-    // event loop, and a provider that becomes ready meanwhile opens only its
-    // attempt.
+    // From readyToListen() until listen(): the session starts the
+    // microphone for the first attempt, and a provider that becomes ready
+    // meanwhile opens only its attempt.
     bool m_microphoneStarting = false;
     // While stopping: the microphone has stopped, and nothing more is heard.
     bool m_microphoneStopped = false;

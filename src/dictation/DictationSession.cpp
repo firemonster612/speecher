@@ -10,7 +10,6 @@
 #include "providers/RefinementChain.h"
 
 #include <QDebug>
-#include <QScopedValueRollback>
 #include <QTimer>
 
 #include <utility>
@@ -115,7 +114,7 @@ DictationSession::DictationSession(SettingsStore *settings,
             stopListening();
         }
     });
-    connect(m_speech, &DictationSpeech::readyToListen, this, &DictationSession::continueStartupAfterPreparation);
+    connect(m_speech, &DictationSpeech::readyToListen, this, &DictationSession::startMicrophone);
     connect(m_speech, &DictationSpeech::ended, this, [this] { beginRefinement(m_generation); });
     connect(m_speech, &DictationSpeech::failed, this, &DictationSession::endSpeechAfterFailure);
     connect(m_speech, &DictationSpeech::exhausted, this, &DictationSession::speechChainExhausted);
@@ -140,28 +139,9 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
         m_speech->hear(pcm);
     });
-    connect(m_audio, &AudioInput::failed, this, [this](const QString &message) {
-        if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
-            return;
-        }
-
-        qWarning().noquote() << "audio capture failed transcriptEmpty=" << m_transcript->isEmpty()
-                             << "heardSpeech=" << m_heardSpeech << "message=" + message;
-        // Speech heard may have no text yet: a provider that answers once the
-        // input ends, as an endpoint does, still holds it.
-        if (!m_transcript->isEmpty() || m_heardSpeech) {
-            m_lastMessage = message;
-            m_usedRawTranscript = true;
-            stopListening();
-            return;
-        }
-
-        letGoOfMicrophone([this, &message] {
-            m_speech->cancel();
-            failSession(message);
-            stopAudio();
-        });
-    });
+    connect(m_audio, &AudioInput::started, this, &DictationSession::microphoneStarted);
+    connect(m_audio, &AudioInput::stopped, this, &DictationSession::microphoneStopped);
+    connect(m_audio, &AudioInput::failed, this, &DictationSession::microphoneFailed);
 }
 
 void DictationSession::setScreenshotContextProvider(ScreenshotContextProvider *provider)
@@ -215,19 +195,9 @@ DictationState DictationSession::state() const
     return m_state;
 }
 
-DictationState DictationSession::reportedState() const
-{
-    return m_pendingStart ? DictationState::Starting : m_state;
-}
-
 QString DictationSession::stateName() const
 {
-    return dictationStateName(reportedState());
-}
-
-bool DictationSession::startPending() const
-{
-    return m_pendingStart.has_value();
+    return dictationStateName(m_state);
 }
 
 bool DictationSession::reviewUp() const
@@ -268,9 +238,7 @@ void DictationSession::toggleWith(const SessionOverrides &overrides)
 void DictationSession::toggleSession(const SessionOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
-    if (m_pendingStart) {
-        stopListening();
-    } else if (m_state == DictationState::Idle || m_state == DictationState::Error) {
+    if (m_state == DictationState::Idle || m_state == DictationState::Error) {
         startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
@@ -296,22 +264,13 @@ void DictationSession::startSession(const SessionOverrides &overrides)
 {
     // A start while an edit is reviewed, from a toggle or a push-to-talk
     // press, is a follow-up to it, on the edit's own settings: overrides do
-    // not apply. One that lands while the microphone stops waits as any start
-    // does, the review shown as it is until it begins.
+    // not apply.
     if (m_state == DictationState::Reviewing && !m_review.followingUp()) {
-        if (startWaits()) {
-            m_pendingStart = SessionOverrides{};
-        } else {
-            startFollowUp();
-        }
+        startFollowUp();
         return;
     }
     const bool followUp = m_state == DictationState::Reviewing && m_review.followingUp();
     if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
-        return;
-    }
-    if (startWaits()) {
-        m_pendingStart = overrides;
         return;
     }
 
@@ -560,7 +519,6 @@ void DictationSession::stopListening()
         cancel();
         return;
     }
-    m_pendingStart.reset();
     if (m_state == DictationState::Error) {
         ++m_generation;
         emit popupHideRequested();
@@ -597,12 +555,9 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Starting) {
-        letGoOfMicrophone([this] {
-            discard();
-            emit popupHideRequested();
-            setState(DictationState::Idle);
-            stopAudio();
-        });
+        discard();
+        emit popupHideRequested();
+        setState(DictationState::Idle);
         return;
     }
     if (m_state != DictationState::Listening) {
@@ -610,25 +565,16 @@ void DictationSession::stopListening()
     }
     m_speech->stop();
     const quint64 generation = m_generation;
-    const quint64 step = setState(DictationState::Stopping, m_lastMessage);
+    setState(DictationState::Stopping, m_lastMessage);
     // A handler of Stopping that cancelled has stopped this microphone, and
-    // the one it is on now may be a replacement session's. One that moved
-    // this session on, as a speech failure does, still leaves it to stop.
+    // the one it is on now may be a replacement session's.
     if (generation != m_generation) {
         return;
     }
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     // Stopping still takes the post-roll that arrives while the microphone
-    // stops. Paused media resumes only after it, so the post-roll does not
-    // pick it up from the speakers.
-    stopAudio();
-    resumePausedMedia();
-    // A stop inside a pause's microphone stop: the pause has the speech
-    // proceed once the microphone has stopped.
-    if (step != m_step || m_audioStopDepth > 0) {
-        return;
-    }
-    m_speech->proceed();
+    // stops; the speech proceeds once it has stopped.
+    stopMicrophone(Microphone::Stopping);
 }
 
 // The quit path. stopListening() finalizes — its Refining branch delivers the
@@ -636,57 +582,18 @@ void DictationSession::stopListening()
 // the popup goes away with the process.
 void DictationSession::cancelForShutdown()
 {
-    m_pendingStart.reset();
     if (m_state == DictationState::Idle) {
         return;
     }
-    letGoOfMicrophone([this] {
-        m_review.end();
-        discard();
-        emit popupHideRequested();
-        setState(DictationState::Idle);
-        stopAudio();
-    });
-}
-
-// A start made while the session is still letting go of its microphone,
-// inside the microphone's stop or anywhere in an end that announces Idle or
-// Error before it stops it, would open the microphone only for that stop to
-// close it again. It waits until the session has let go instead, and a stop
-// or cancel meanwhile drops it.
-bool DictationSession::startWaits() const
-{
-    return m_audioStopDepth > 0 || m_lettingGoOfMicrophone;
-}
-
-// Runs end, which announces the session's end and then stops the microphone,
-// and starts what waited for it once the outermost such end is over; a stop
-// still running starts it itself.
-void DictationSession::letGoOfMicrophone(const std::function<void()> &end)
-{
-    {
-        const QScopedValueRollback<bool> lettingGo(m_lettingGoOfMicrophone, true);
-        end();
-    }
-    if (!m_lettingGoOfMicrophone && m_audioStopDepth == 0) {
-        startPendingLater();
-    }
+    m_review.end();
+    discard();
+    emit popupHideRequested();
+    setState(DictationState::Idle);
 }
 
 void DictationSession::cancel()
 {
-    letGoOfMicrophone([this] { cancelSession(); });
-}
-
-void DictationSession::cancelSession()
-{
-    const bool startDropped = std::exchange(m_pendingStart, std::nullopt).has_value();
     if (m_state == DictationState::Idle || m_state == DictationState::Delivering) {
-        return;
-    }
-    // A follow-up still waiting for the microphone to stop is all a cancel
-    // drops; the review stays.
-    if (m_state == DictationState::Reviewing && startDropped) {
         return;
     }
     if (m_state == DictationState::Error) {
@@ -707,13 +614,12 @@ void DictationSession::cancelSession()
         qInfo().noquote() << "follow-up cancelled state=" + stateName();
         discard();
         returnToReview();
-        stopAudio();
         return;
     }
     qInfo().noquote() << "cancel requested state=" + stateName();
     discard();
     // A handler of Idle may start another session, which the receipt of
-    // this one must not cover; the microphone still stops last.
+    // this one must not cover.
     if (const quint64 step = setState(DictationState::Idle); step == m_step) {
         emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
         const quint64 generation = m_generation;
@@ -725,16 +631,15 @@ void DictationSession::cancelSession()
                                }
                            });
     }
-    stopAudio();
 }
 
 // Bumps the generation and the attempt so every pending completion (startup
-// preparation, speech, refinement, screenshot) is stale, cancels the providers,
-// and delivers nothing. The microphone is not stopped here: stopping spins an
-// event loop, so callers leave the session idle first and stop it last.
+// preparation, speech, refinement, screenshot) is stale, stops the microphone
+// at once, cancels the providers, and delivers nothing.
 void DictationSession::discard()
 {
     ++m_generation;
+    abortMicrophone();
     m_speech->cancel();
     m_refinementChain->cancel();
     if (m_refiner) {
@@ -759,36 +664,23 @@ void DictationSession::forgetSession()
 // Media the session paused stays paused: the person is still mid-dictation.
 void DictationSession::pause()
 {
-    if (m_state != DictationState::Listening) {
+    if (m_state != DictationState::Listening || m_microphone == Microphone::Pausing) {
         return;
     }
     qInfo() << "pause requested transcriptLength=" << m_transcript->text().size();
-    const quint64 listening = m_step;
     // The post-roll arrives while the microphone stops and belongs to this
-    // attempt; a stop or cancel can land meanwhile.
-    stopAudio();
-    if (listening != m_step) {
-        // Held audio past the budget stopped listening inside this stop,
-        // whose post-roll kept arriving; the speech proceeds now that the
-        // microphone has stopped, as stopListening() has it after its own.
-        if (m_state == DictationState::Stopping) {
-            m_speech->proceed();
-        }
-        return;
-    }
-    m_speech->pause();
-    const quint64 step = setState(DictationState::Paused);
-    emit audioLevelChanged(0.0f);
-    if (step != m_step) {
-        return;
-    }
-    m_speech->proceed();
+    // attempt; the session shows Paused once it has stopped.
+    stopMicrophone(Microphone::Pausing);
 }
 
 void DictationSession::togglePause()
 {
     if (m_state == DictationState::Paused) {
         resume();
+    } else if (m_microphone == Microphone::Pausing) {
+        // Pressed again before the pause took: listening goes on, in the
+        // attempt that never paused.
+        startMicrophone();
     } else {
         pause();
     }
@@ -811,95 +703,115 @@ void DictationSession::resume()
     if (step != m_step) {
         return;
     }
-    // A resume inside a pause's microphone stop: capture would end with that
-    // stop, so it restarts once the outermost stop returns.
-    if (m_audioStopDepth > 0) {
-        m_restartStep = step;
-        return;
-    }
-    restartMicrophone(step);
-}
-
-// After a pause, for the resume that took step; the session still listens.
-void DictationSession::restartMicrophone(quint64 step)
-{
     // What a warm microphone kept rolling during the pause stays out.
     m_audio->clearPreRoll();
-    QString audioError;
-    m_audioStep = step;
-    const bool started = startAudio(&audioError);
-    // Starting spins an event loop too; a stop or cancel may have ended the
-    // session meanwhile, and stopped the microphone itself.
-    if (step != m_step) {
-        if (m_audioStep == step) {
-            stopAudio();
-        }
+    startMicrophone();
+}
+
+// For the first attempt, and after a pause; the session listens once the
+// microphone has started.
+void DictationSession::startMicrophone()
+{
+    m_microphone = Microphone::Starting;
+    updateMicrophoneHeld();
+    m_audio->start();
+}
+
+// stopping is Pausing or Stopping: what the session does once the microphone
+// has stopped. A stop that comes while a pause's microphone stops ends as a
+// stop instead.
+void DictationSession::stopMicrophone(Microphone stopping)
+{
+    const Microphone was = std::exchange(m_microphone, stopping);
+    if (was == Microphone::Off) {
+        microphoneStopped();
+    } else if (was == Microphone::Starting || was == Microphone::On) {
+        m_audio->stop();
+    }
+}
+
+// Nothing more from it reaches the session.
+void DictationSession::abortMicrophone()
+{
+    if (std::exchange(m_microphone, Microphone::Off) != Microphone::Off) {
+        m_audio->abort();
+    }
+    updateMicrophoneHeld();
+}
+
+void DictationSession::microphoneStarted()
+{
+    if (m_microphone != Microphone::Starting) {
         return;
     }
-    if (!started) {
-        m_audioStep = 0;
-        qWarning().noquote() << "audio restart after pause failed message=" + audioError;
+    m_microphone = Microphone::On;
+    // A resume's microphone: the session listens already.
+    if (m_state != DictationState::Starting) {
+        return;
+    }
+    qInfo() << "audio capture started";
+    m_speech->listen();
+    setState(DictationState::Listening);
+}
+
+void DictationSession::microphoneStopped()
+{
+    const Microphone was = std::exchange(m_microphone, Microphone::Off);
+    updateMicrophoneHeld();
+    if (was == Microphone::Pausing && m_state == DictationState::Listening) {
+        m_speech->pause();
+        const quint64 step = setState(DictationState::Paused);
+        emit audioLevelChanged(0.0f);
+        if (step == m_step) {
+            m_speech->proceed();
+        }
+    } else if (was == Microphone::Stopping && m_state == DictationState::Stopping) {
+        // Only after the post-roll, so it does not pick paused media up from
+        // the speakers.
+        resumePausedMedia();
+        m_speech->proceed();
+    }
+}
+
+void DictationSession::microphoneFailed(const QString &message)
+{
+    const Microphone was = std::exchange(m_microphone, Microphone::Off);
+    if (was == Microphone::Off) {
+        return;
+    }
+    if (m_state == DictationState::Starting) {
+        qWarning().noquote() << "audio start failed message=" + message;
+        // A provider that failed while the microphone started may have handed
+        // over to one still preparing.
+        m_speech->cancel();
+        failSession(message);
+        return;
+    }
+    if (was == Microphone::Starting) {
+        qWarning().noquote() << "audio restart after pause failed message=" + message;
         // The speech lets go of an attempt the resume opened that heard
         // nothing, and delivers what the pause kept.
         stopListening();
-    }
-}
-
-void DictationSession::stopAudio()
-{
-    m_audioStep = 0;
-    ++m_audioStopDepth;
-    m_audio->stop();
-    --m_audioStopDepth;
-    setMicrophoneOpen(false);
-    if (m_audioStopDepth > 0) {
         return;
     }
-    // A resume made inside the stop restarts capture now, unless a stop,
-    // cancel or pause has moved the session on since.
-    if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
-        restartMicrophone(step);
-    }
-    // letGoOfMicrophone() starts it once its whole end is over.
-    if (!m_lettingGoOfMicrophone) {
-        startPendingLater();
-    }
-}
-
-// After the caller has settled the session it ended or stopped the
-// microphone for.
-void DictationSession::startPendingLater()
-{
-    if (!m_pendingStart) {
+    qWarning().noquote() << "audio capture failed transcriptEmpty=" << m_transcript->isEmpty()
+                         << "heardSpeech=" << m_heardSpeech << "message=" + message;
+    // Speech heard may have no text yet: a provider that answers once the
+    // input ends, as an endpoint does, still holds it.
+    if (!m_transcript->isEmpty() || m_heardSpeech) {
+        m_lastMessage = message;
+        m_usedRawTranscript = true;
+        stopListening();
         return;
     }
-    QTimer::singleShot(0, this, [this] {
-        if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
-            startSession(*overrides);
-        }
-    });
-}
-
-bool DictationSession::startAudio(QString *error)
-{
-    setMicrophoneOpen(true);
-    const bool started = m_audio->start(error);
-    if (!started) {
-        setMicrophoneOpen(false);
-    }
-    return started;
-}
-
-void DictationSession::setMicrophoneOpen(bool open)
-{
-    m_microphoneOpen = open;
-    updateMicrophoneHeld();
+    m_speech->cancel();
+    failSession(message);
 }
 
 void DictationSession::updateMicrophoneHeld()
 {
-    const bool held =
-        m_microphoneOpen || m_state == DictationState::Starting || m_state == DictationState::Listening;
+    const bool held = m_microphone != Microphone::Off || m_state == DictationState::Starting
+        || m_state == DictationState::Listening;
     if (std::exchange(m_microphoneHeld, held) != held) {
         emit microphoneChanged(held);
     }
@@ -937,7 +849,7 @@ quint64 DictationSession::setState(DictationState state, const QString &message,
     }
     qInfo().noquote() << "state changed state=" + stateName()
                       << "messagePresent=" + QString::number(!message.isEmpty());
-    emit stateChanged(reportedState());
+    emit stateChanged(state);
     // A handler that moved the session on has announced its own state.
     if (step != m_step) {
         return step;
@@ -946,40 +858,6 @@ quint64 DictationSession::setState(DictationState state, const QString &message,
     updateMicrophoneHeld();
     updateListening();
     return step;
-}
-
-// The first attempt is open: the microphone starts, and the session listens.
-void DictationSession::continueStartupAfterPreparation()
-{
-    const quint64 step = m_step;
-    QString audioError;
-    m_audioStep = step;
-    const bool started = startAudio(&audioError);
-    if (!started) {
-        if (m_audioStep == step) {
-            m_audioStep = 0;
-        }
-        if (step != m_step) {
-            qInfo() << "audio start failed after the session moved on";
-            return;
-        }
-        qWarning().noquote() << "audio start failed message=" + audioError;
-        // A provider that failed while the microphone started may have handed
-        // over to one still preparing.
-        m_speech->cancel();
-        failSession(audioError);
-        return;
-    }
-    if (step != m_step) {
-        if (m_audioStep == step) {
-            stopAudio();
-        }
-        qInfo() << "audio start completed after the session moved on";
-        return;
-    }
-    qInfo() << "audio capture started";
-    m_speech->listen();
-    setState(DictationState::Listening);
 }
 
 void DictationSession::failStartup(const QString &message, const PopupErrorAction &fix)
@@ -997,6 +875,7 @@ void DictationSession::failStartup(const QString &message, const PopupErrorActio
 // (setState). Paused media plays again.
 void DictationSession::failSession(const QString &message, const PopupErrorAction &fix)
 {
+    abortMicrophone();
     clearScreenshotContext();
     m_sessionSettings.reset();
     resumePausedMedia();
@@ -1381,13 +1260,20 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
         m_usedRawTranscript = true;
         if (hearing) {
             m_speech->cancel();
+            abortMicrophone();
             const quint64 step = setState(DictationState::Stopping, failure.message);
-            stopAudio();
             resumePausedMedia();
             if (step == m_step) {
                 beginRefinement(m_generation);
             }
             return;
+        }
+        // No provider takes a post-roll still arriving, or the one a stop
+        // whose Stopping announcement brought the failure is about to ask
+        // for; the media it would have waited for plays now.
+        if (m_microphone != Microphone::Off) {
+            abortMicrophone();
+            resumePausedMedia();
         }
         m_lastMessage = failure.message;
         beginRefinement(m_generation);
@@ -1400,10 +1286,7 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     const PopupErrorAction fix = m_speech->triedFallbacks(m_providerHistory.issues)
         ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")}
         : PopupErrorAction{};
-    letGoOfMicrophone([this, &message, &fix] {
-        failSession(message, fix);
-        stopAudio();
-    });
+    failSession(message, fix);
 }
 
 bool DictationSession::selectTranscriptRefiner(const QString &providerId)

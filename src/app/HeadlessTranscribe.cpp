@@ -483,9 +483,9 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
         session.finishListening();
     });
 
-    // Returns once the microphone is open, or the run has failed.
-    session.startListening(microphone, resolved);
-    if (session.isRunning()) {
+    // Listening once the microphone is open; a microphone that will not open
+    // fails the run instead.
+    QObject::connect(microphone, &AudioInput::started, &loop, [&] {
         const QString stopKeys = enterStops ? QStringLiteral("Enter or Ctrl-C") : QStringLiteral("Ctrl-C");
         err << (untilSilenceMs ? QStringLiteral("Listening. Press %1 to stop, or pause for %2 s.")
                                      .arg(stopKeys)
@@ -495,6 +495,9 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
             << "\n"
             << std::flush;
         poll.start();
+    }, Qt::SingleShotConnection);
+    session.startListening(microphone, resolved);
+    if (session.isRunning()) {
         loop.exec();
     }
     return finish(result.failed() ? 1 : 0, shownTranscript(result, options.raw), result.error);

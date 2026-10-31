@@ -139,7 +139,8 @@ private:
     void startStream(Stream &stream, AudioInput *input, const AppSettings &settings);
     void handleStreamConnected(Stream &stream);
     void finishStartOnceSettled();
-    void finishListening(Stream &stream);
+    void stopSystemAudio();
+    void listeningFinished(Stream &stream);
     void markDictation();
     void trackUtterance(Stream &stream, const QByteArray &pcm);
     void endUtterance(Stream &stream);

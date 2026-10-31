@@ -37,20 +37,22 @@ bool isScreenRecordingDenied(CFErrorRef error);
 // on, as long as LoopbackReopen allows; see SystemAudioCapture.
 class MacSystemAudioInput final : public AudioInput {
 public:
-    // permissionDenied is what start() and failed say when Screen & System
+    // permissionDenied is what failed says when Screen & System
     // Audio Recording is off for Speecher, worded in core.
     explicit MacSystemAudioInput(QString permissionDenied, QObject *parent = nullptr);
     ~MacSystemAudioInput() override;
 
-    bool start(QString *error = nullptr) override;
+    void start() override;
     void stop() override;
+    void abort() override;
     bool isActive() const override;
 
 private:
     friend class ScreenCaptureAudio;
 
-    // Leaves whatever it got as far as for stop() to tear down when it fails.
+    // Leaves whatever it got as far as for close() to tear down when it fails.
     QString open();
+    void close();
     // Runs on the main thread.
     void fail(quint64 generation, const QString &message);
 
@@ -58,8 +60,10 @@ private:
     // stays C++.
     struct Stream;
     std::unique_ptr<Stream> m_stream;
+    // From start() until its open runs.
+    bool m_opening = false;
     QString m_permissionDenied;
-    // Bumped by every stop, so audio and failures the capture queue posted
+    // Bumped by every close, so audio and failures the capture queue posted
     // before it are dropped rather than reaching the next start.
     quint64 m_generation = 0;
 };

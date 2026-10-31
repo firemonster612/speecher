@@ -43,7 +43,6 @@ public:
     // Does nothing unless the test is Stopped and canToggle(). Emits failed,
     // after it is Stopped again, when the device will not open.
     void start(const QString &deviceId);
-    // While Starting, takes effect once the device has finished opening.
     void stop();
 
 signals:
@@ -66,11 +65,6 @@ private:
     QString m_deviceId;
     MicrophoneTestState m_state = MicrophoneTestState::Stopped;
     bool m_heard = false;
-    // A stop that arrived while the input's start() was still waiting for
-    // the device: closing it then would free the input under its own call.
-    bool m_stopRequested = false;
-    // Why the input failed while Starting, reported once start() returns.
-    QString m_startFailure;
 };
 
 } // namespace speecher
