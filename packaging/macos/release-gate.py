@@ -263,7 +263,9 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
                 update.cli('settings')
                 time.sleep(3)
                 screenshot(evidence, 'offer')
-                if ui(evidence, 'press', 'Install and restart'):
+                # 0.2.0's banner buttons have no accessible title; Install and
+                # restart is the first after the offer (UpdateBannerContent).
+                if ui(evidence, 'press-after', ' is available'):
                     pressed_at = time.monotonic()
                 elif not dumped:
                     dumped = ui(evidence, 'dump')
