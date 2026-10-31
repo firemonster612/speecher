@@ -418,7 +418,6 @@ RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
     RefinementEndpointSettings settings;
     const QString preset = value(SettingsKeys::RefinementEndpointPreset, QString()).toString();
     settings.preset = preset == QStringLiteral("cliproxy") ? preset : QString();
-    settings.useCliproxyKey = value(SettingsKeys::RefinementEndpointUseCliproxyKey, false).toBool();
     const QString format = value(SettingsKeys::RefinementEndpointFormat, settings.format).toString();
     settings.format = format == QStringLiteral("anthropic") ? format : QStringLiteral("openai");
     settings.baseUrl = withoutTrailingSlashes(value(SettingsKeys::RefinementEndpointBaseUrl, QString()).toString());
@@ -428,7 +427,8 @@ RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
 
 void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSettings &value)
 {
-    m_settings.setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, value.useCliproxyKey);
+    // Retired: which key the endpoint sends follows from its server.
+    m_settings.remove(SettingsKeys::RefinementEndpointUseCliproxyKey);
     m_settings.setValue(SettingsKeys::RefinementEndpointPreset,
                         value.preset == QStringLiteral("cliproxy") ? value.preset : QString());
     m_settings.setValue(SettingsKeys::RefinementEndpointFormat,

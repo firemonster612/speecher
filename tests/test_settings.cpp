@@ -1524,8 +1524,7 @@ private slots:
             s.refinement.cliproxyBaseUrl = QStringLiteral("http://localhost:8317");
             s.refinement.endpoint = {.format = QStringLiteral("anthropic"),
                                      .baseUrl = QStringLiteral("http://localhost:11434/v1"),
-                                     .model = QStringLiteral("llama"),
-                                     .useCliproxyKey = true};
+                                     .model = QStringLiteral("llama")};
             s.refinement.localRunner = {.runner = QStringLiteral("lmstudio"), .model = QStringLiteral("qwen")};
             s.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
             s.accounts.openAiCliproxyAccount = QStringLiteral("codex-a.json");

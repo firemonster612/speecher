@@ -1045,7 +1045,7 @@ private slots:
 
     // A Custom endpoint's key stays only while its server does: a new path
     // keeps it, a new scheme, host or port drops it, also a plain copy of the
-    // proxy's key that an earlier build saved without useCliproxyKey.
+    // proxy's key that an earlier build saved.
     void aKeyStaysOnlyOnItsServer_data()
     {
         QTest::addColumn<QString>("key");
@@ -1072,6 +1072,59 @@ private slots:
         editRefinementEndpoint(settings, {.baseUrl = url});
 
         QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, sent);
+    }
+
+    // An earlier build marked a key typed on the proxy's server as unused
+    // (useCliproxyKey); it is sent now, and the next save drops the mark.
+    void aTypedKeyAnEarlierBuildMarkedUnusedIsSent()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://127.0.0.1:8317/v1"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, true);
+        settings.raw().setValue(SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
+        settings.raw().setValue(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey),
+                                QStringLiteral("typed-key"));
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.snapshot().refinement).apiKey, QStringLiteral("typed-key"));
+
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint.model = QStringLiteral("model");
+            return true;
+        });
+        QVERIFY(!settings.raw().contains(SettingsKeys::RefinementEndpointUseCliproxyKey));
+    }
+
+    // Startup reads only the key the endpoint will send: its own, and the
+    // proxy's only when it has none and is on the proxy's server. A proxy key
+    // left unread then can't stop the endpoint's own.
+    void onlyTheKeyTheEndpointSendsIsRead_data()
+    {
+        QTest::addColumn<QString>("ownKey");
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<bool>("proxyRead");
+        const QString proxy = QStringLiteral("http://127.0.0.1:8317/v1");
+        QTest::newRow("own key, the proxy's server") << QStringLiteral("own-key") << proxy << false;
+        QTest::newRow("own key, after the proxy moved")
+            << QStringLiteral("own-key") << QStringLiteral("http://server.example/v1") << false;
+        QTest::newRow("no key, another server") << QString() << QStringLiteral("http://server.example/v1") << false;
+        QTest::newRow("no key, the proxy's server") << QString() << proxy << true;
+    }
+
+    void onlyTheKeyTheEndpointSendsIsRead()
+    {
+        QFETCH(QString, ownKey);
+        QFETCH(QString, url);
+        QFETCH(bool, proxyRead);
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.endpoint.baseUrl = url;
+        settings.refinement.endpoint.apiKey = ownKey;
+        settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+
+        QCOMPARE(SettingsStore::hasUnreadProviderSecrets(settings, ProviderRole::Refinement, QStringLiteral("endpoint")),
+                 proxyRead);
     }
 
     // An endpoint left at the proxy's server stops getting the proxy's key
@@ -2120,7 +2173,8 @@ private slots:
         });
         settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
                                 refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));
-        settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, refiner == QStringLiteral("endpoint-inherited"));
+        // Inherited: a Custom endpoint without a key of its own, on the proxy's server.
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://proxy.example:8317/v1"));
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
         settings.raw().sync();
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");

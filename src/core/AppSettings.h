@@ -308,12 +308,9 @@ struct RefinementEndpointSettings {
     // The API base the endpoint paths hang off, e.g. http://localhost:11434/v1.
     QString baseUrl;
     QString model;
+    // Without one, the CLI Proxy key goes to the proxy's own server
+    // (refinementEndpointKey).
     QString apiKey;
-
-    // Uses the CLI Proxy key, from leaving the preset at the proxy's address
-    // until a key is entered or the server moves, and only while the proxy
-    // stays on that server (resolvedRefinementEndpoint).
-    bool useCliproxyKey = false;
 
     bool operator==(const RefinementEndpointSettings &other) const = default;
 };

@@ -1,6 +1,7 @@
 #include "app/Accounts.h"
 
 #include "app/ProviderAvailability.h"
+#include "core/EndpointSettings.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderProbe.h"
@@ -237,12 +238,12 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    // A key saved or cleared for the Custom endpoint is the one it uses from
-    // now on, in place of the proxy's it took from the preset.
+    // A key entered while the CLI Proxy preset shows belongs to the proxy's
+    // server, not to the Custom server saved behind the preset.
     if (secret == SecretStore::Secret::RefinementEndpointKey
-        && m_settings.dictationSnapshot().refinement.endpoint.useCliproxyKey) {
+        && m_settings.dictationSnapshot().refinement.endpoint.preset == QStringLiteral("cliproxy")) {
         m_settings.edit([](AppSettings &draft) {
-            draft.refinement.endpoint.useCliproxyKey = false;
+            detachRefinementEndpoint(draft);
             return true;
         });
     }

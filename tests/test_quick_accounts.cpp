@@ -487,35 +487,46 @@ private slots:
         QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
     }
 
-    // A key saved or cleared in the Custom endpoint's field is the one it
-    // sends, in place of the CLI Proxy key it took from the preset.
-    void anEndpointKeyFromItsFieldReplacesTheProxyKey()
+    // A key entered while the CLI Proxy preset shows belongs to the proxy's
+    // server: the endpoint turns Custom there, and the Custom server saved
+    // behind the preset never gets that key. Cleared, the endpoint sends the
+    // proxy's key again, being on the proxy's server.
+    void anEndpointKeyEnteredOnThePresetBelongsToTheProxysServer()
     {
         ApplicationController controller(true);
         QuickAccounts accounts(&controller);
         SettingsStore &settings = *controller.settings();
-        const auto sentKey = [] { return resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey; };
+        const auto sent = [] { return resolvedRefinementEndpoint(SettingsStore().snapshot().refinement); };
         QTest::ignoreMessage(QtWarningMsg,
                              "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
         settings.edit([](AppSettings &draft) {
-            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
             draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-            draft.refinement.endpoint = {.preset = QStringLiteral("cliproxy")};
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
             return true;
         });
+        const QString fallback =
+            "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied";
+        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.preset = QStringLiteral("cliproxy")});
+            return true;
+        });
+
+        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
+
+        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
+        QCOMPARE(sent().apiKey, QStringLiteral("key-b"));
         settings.edit([](AppSettings &draft) {
             editRefinementEndpoint(draft, {.preset = QString()});
             return true;
         });
-        QCOMPARE(sentKey(), QStringLiteral("proxy-key"));
-
-        QTest::ignoreMessage(
-            QtWarningMsg, "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied");
-        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("own-key"));
-        QCOMPARE(sentKey(), QStringLiteral("own-key"));
+        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
 
         accounts.clearSecret(QStringLiteral("refinementEndpointApiKey"));
-        QCOMPARE(sentKey(), QString());
+        QCOMPARE(sent().apiKey, QStringLiteral("proxy-key"));
     }
 
     // SchemaRow's secret field hands what was typed to Accounts and lets go

@@ -110,6 +110,7 @@ inline const QString SecretsInKeyring = QStringLiteral("secrets/inKeyring");
 inline const QString SpeechEndpointBaseUrl = QStringLiteral("endpoint/speech/baseUrl");
 inline const QString SpeechEndpointPath = QStringLiteral("endpoint/speech/path");
 inline const QString SpeechEndpointModel = QStringLiteral("endpoint/speech/model");
+// Retired; removed on save.
 inline const QString RefinementEndpointUseCliproxyKey = QStringLiteral("endpoint/refinement/useCliproxyKey");
 inline const QString RefinementEndpointPreset = QStringLiteral("endpoint/refinement/preset");
 inline const QString RefinementEndpointFormat = QStringLiteral("endpoint/refinement/format");
