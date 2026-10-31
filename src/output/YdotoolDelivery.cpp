@@ -1,10 +1,14 @@
 #include "output/YdotoolDelivery.h"
 
+#include "output/ProcessRunner.h"
+
+#include <QCoreApplication>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
 
 #include <limits>
+#include <utility>
 
 namespace speecher {
 
@@ -47,19 +51,22 @@ bool runYdotool(const QString &executable,
     return false;
 }
 
+// Lets go of both Ctrl and both Shift keys, so a held one cannot turn the
+// keystrokes into another shortcut.
+QStringList modifierReleaseArguments()
+{
+    return {QStringLiteral("key"),
+            QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
+            QStringLiteral("29:0"),
+            QStringLiteral("97:0"),
+            QStringLiteral("42:0"),
+            QStringLiteral("54:0")};
+}
+
 bool releaseModifierKeys(const QString &executable, const QProcessEnvironment &env)
 {
     QString ignored;
-    return runYdotool(executable,
-                      env,
-                      {QStringLiteral("key"),
-                       QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
-                       QStringLiteral("29:0"),
-                       QStringLiteral("97:0"),
-                       QStringLiteral("42:0"),
-                       QStringLiteral("54:0")},
-                      modifierTimeoutMs,
-                      &ignored);
+    return runYdotool(executable, env, modifierReleaseArguments(), modifierTimeoutMs, &ignored);
 }
 
 } // namespace
@@ -67,6 +74,20 @@ bool releaseModifierKeys(const QString &executable, const QProcessEnvironment &e
 YdotoolDelivery::YdotoolDelivery(QObject *parent)
     : QObject(parent)
 {
+}
+
+YdotoolDelivery::~YdotoolDelivery()
+{
+    if (!m_pasteUnderWay) {
+        return;
+    }
+    // Taken out first: stopping answers at once, and this still counts as
+    // alive until QObject's own destructor.
+    const PasteUnderWay paste = *std::exchange(m_pasteUnderWay, std::nullopt);
+    paste.stop();
+    // The application's: this is gone before the release answers. A killed
+    // keystroke may have left Ctrl down.
+    runProcess(paste.release, QCoreApplication::instance(), [](const ProcessResult &) {});
 }
 
 bool YdotoolDelivery::isAvailable()
@@ -154,21 +175,20 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
     return true;
 }
 
-bool YdotoolDelivery::pasteFromClipboard(const QString &text,
+void YdotoolDelivery::pasteFromClipboard(const QString &text,
                                          PasteMethod method,
                                          const std::function<bool()> &clearToInject,
-                                         QString *error)
+                                         std::function<void(bool, const QString &)> done)
 {
     if (text.isEmpty()) {
-        return true;
+        done(true, {});
+        return;
     }
 
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
     if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("ydotool is not installed");
-        }
-        return false;
+        done(false, QStringLiteral("ydotool is not installed"));
+        return;
     }
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -176,23 +196,40 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text,
     if (!socket.isEmpty()) {
         env.insert(QStringLiteral("YDOTOOL_SOCKET"), socket);
     }
-
-    releaseModifierKeys(executable, env);
-    // The modifier release above blocks; the user may have switched windows
-    // meanwhile. Last check before the keystroke, because a paste into the
-    // wrong window cannot be undone.
-    if (clearToInject && !clearToInject()) {
-        if (error) {
-            *error = QStringLiteral("The active window changed or could not be verified");
+    const auto ydotool = [&executable, &env](const QStringList &arguments, int timeoutMs) {
+        return ProcessCommand{.executable = executable,
+                              .tool = QStringLiteral("ydotool"),
+                              .arguments = arguments,
+                              .timeoutMs = timeoutMs,
+                              .environment = env};
+    };
+    ProcessCommand release = ydotool(modifierReleaseArguments(), modifierTimeoutMs);
+    // A modifier left down would turn the person's next keys into shortcuts.
+    release.finishesAtShutdown = true;
+    const ProcessCommand paste = ydotool(pasteShortcutArguments(method), shortcutTimeoutMs);
+    runProcess(release, this, [this, clearToInject, paste, release, done](const ProcessResult &) {
+        // The release took a turn of the event loop or more; the user may
+        // have switched windows meanwhile. Last check before the keystroke,
+        // because a paste into the wrong window cannot be undone.
+        if (clearToInject && !clearToInject()) {
+            done(false, QStringLiteral("The active window changed or could not be verified"));
+            return;
         }
-        return false;
-    }
-    if (!runYdotool(executable, env, pasteShortcutArguments(method), shortcutTimeoutMs, error)) {
-        releaseModifierKeys(executable, env);
-        return false;
-    }
-    releaseModifierKeys(executable, env);
-    return true;
+        m_pasteUnderWay = PasteUnderWay{{}, release};
+        // The paste's own answer, once the modifiers are released after it.
+        auto stop = runProcess(paste, this, [this, release, done](const ProcessResult &pasted) {
+            // Nothing under way: the destructor stopped it and releases.
+            if (!m_pasteUnderWay) {
+                return;
+            }
+            m_pasteUnderWay.reset();
+            runProcess(release, this, [pasted, done](const ProcessResult &) { done(pasted.ok, pasted.error); });
+        });
+        // A command that failed to start has answered already.
+        if (m_pasteUnderWay) {
+            m_pasteUnderWay->stop = std::move(stop);
+        }
+    });
 }
 
 } // namespace speecher

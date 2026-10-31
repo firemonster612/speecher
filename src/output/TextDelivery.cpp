@@ -37,13 +37,14 @@ public:
                  const std::function<bool()> &clearToInject,
                  std::function<void(const Outcome &)> done) override
     {
-        Outcome outcome;
-        outcome.ok = YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject, &outcome.error);
-        done(outcome);
+        m_ydotool.pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject,
+                                     [done](bool pasted, const QString &error) { done({pasted, false, error}); });
     }
 
 private:
     PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
+    // Kept as long as the backend: its answer comes from ydotool's, later.
+    YdotoolDelivery m_ydotool;
 };
 
 class WlCopyBackend final : public DeliveryBackend {
