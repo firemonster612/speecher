@@ -101,7 +101,7 @@ SecretStore::SecretState &SecretStore::state(Secret secret) const
 const SecretStore::Request *SecretStore::SecretState::newest() const
 {
     if (waiting) return &*waiting;
-    return phase == Phase::Writing ? &writing : nullptr;
+    return writing ? &*writing : nullptr;
 }
 
 std::optional<SecretStore::Request> SecretStore::SecretState::drop()
@@ -109,6 +109,7 @@ std::optional<SecretStore::Request> SecretStore::SecretState::drop()
     std::optional<Request> dropped;
     if (const Request *request = newest()) dropped = *request;
     if (phase == Phase::Writing) phase = Phase::Dropped;
+    writing.reset();
     waiting.reset();
     return dropped;
 }
@@ -367,10 +368,10 @@ void SecretStore::hide(Secret secret)
 void SecretStore::writeNext(Secret secret)
 {
     SecretState &entry = state(secret);
-    entry.writing = *std::exchange(entry.waiting, std::nullopt);
+    entry.writing = std::exchange(entry.waiting, std::nullopt);
     entry.phase = Phase::Writing;
     const auto finish = [this, secret](const std::optional<KeyringAnswer> &answer) { finishWrite(secret, answer); };
-    const Request &request = entry.writing;
+    const Request &request = *entry.writing;
     if (!writeRefusal().isEmpty() || (!request.migrating && holds(secret, request))) {
         QTimer::singleShot(0, this, [finish] { finish(std::nullopt); });
         return;
@@ -394,14 +395,12 @@ void SecretStore::writeNext(Secret secret)
 void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer)
 {
     SecretState &entry = state(secret);
-    // A removal or a refused request dropped it, and answered for it.
-    const bool dropped = entry.phase == Phase::Dropped;
     entry.phase = Phase::Idle;
-    if (!dropped) {
-        const Request request = entry.writing;
-        const bool stored = store(secret, request, answer);
+    // A removal or a refused request dropped it, and answered for it.
+    if (const std::optional<Request> request = std::exchange(entry.writing, std::nullopt)) {
+        const bool stored = store(secret, *request, answer);
         if (!entry.waiting) {
-            settle(secret, request, stored, m_lastError);
+            settle(secret, *request, stored, m_lastError);
         }
     }
     // A saveFinished handler may have started the next write already.

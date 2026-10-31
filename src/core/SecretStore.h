@@ -138,16 +138,19 @@ private:
 
     // Where a secret's writes stand. One is written at a time, and each event
     // has one handler:
-    //   from     event                to
-    //   Idle     ask (save)           Writing it
-    //   Writing  ask (save)           it waits its turn, replacing any waiting
-    //   Writing  answer (finishWrite) the request stored, then Writing the
-    //                                 waiting one, which answers for it, else
-    //                                 Idle and saveFinished
-    //   any      removal, or an ask   Dropped (Idle stays Idle), nothing
-    //            refused (drop)       waiting; saveFinished refuses the newest
-    //   Dropped  answer (finishWrite) Writing the waiting one, else Idle;
-    //                                 nothing stored
+    //   from             event                to
+    //   Idle             ask (save)           Writing it
+    //   Writing/Dropped  ask (save)           it waits its turn, replacing any
+    //                                         waiting
+    //   Writing          answer (finishWrite) the request stored, then Writing
+    //                                         the waiting one, which answers
+    //                                         for it, else Idle and
+    //                                         saveFinished
+    //   any              removal, or an ask   Dropped (Idle stays Idle),
+    //                    refused (drop)       nothing waiting; saveFinished
+    //                                         refuses the newest
+    //   Dropped          answer (finishWrite) Writing the waiting one, else
+    //                                         Idle; nothing stored
     enum class Phase { Idle, Writing, Dropped };
 
     struct SecretState {
@@ -158,8 +161,9 @@ private:
         // Whether the main thread's keyring read is under way.
         bool reading = false;
         Phase phase = Phase::Idle;
-        // The request being written, while Writing, and the one waiting its turn.
-        Request writing;
+        // The request being written, only while Writing, and the one waiting
+        // its turn.
+        std::optional<Request> writing;
         std::optional<Request> waiting;
         // The count of settings file saves (SettingsFile::saves) at which the
         // file holds its last change of what it says about the secret:
