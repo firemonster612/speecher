@@ -127,7 +127,11 @@ bool SettingsFile::save()
     // goes in only once makeSettingsPrivate succeeds (SecretStore).
     makeSettingsPrivate(*this, nullptr);
     saving->sync();
-    return saving->status() == QSettings::NoError;
+    if (saving->status() != QSettings::NoError) {
+        return false;
+    }
+    ++m_saves;
+    return true;
 }
 
 bool SettingsFile::deleteFile()
@@ -150,7 +154,7 @@ bool SettingsFile::event(QEvent *event)
 {
     // QSettings saves on this event, posted after the first unsaved change.
     // Swallowed, it leaves the change unsaved, and QSettings posts no other.
-    // Otherwise save makes that save first, keeping the file private.
+    // Otherwise save makes that save first, so saves() counts it.
     if (event->type() == QEvent::UpdateRequest) {
         if (m_deleted) {
             return true;

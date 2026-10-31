@@ -1,3 +1,4 @@
+#include "common/test_secrets.h"
 #include "common/test_suites.h"
 
 #include "app/Accounts.h"
@@ -466,14 +467,14 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg,
                              "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
         accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("  proxy-key  "));
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("proxy-key"));
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
         QVERIFY(accounts.secretErrors().isEmpty());
 
         // The OpenAI key never falls back to the settings file; why it was
         // not saved is the keyring's answer.
         accounts.saveSecret(QStringLiteral("openAiApiKey"), QStringLiteral("sk-test-key"));
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
+        QTRY_COMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
                  QVariant(QVariantMap{{QStringLiteral("action"), QStringLiteral("save")},
                                       {QStringLiteral("reason"), QStringLiteral("Keyring write denied")}}));
         QVERIFY(!accounts.savedSecrets().contains(QStringLiteral("openAiApiKey")));
@@ -488,8 +489,8 @@ private slots:
         QVERIFY(!visible.contains("sk-test-key"));
 
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QString());
     }
 
     // The CLI Proxy preset shows, at proxy-b, over the Custom server-a whose
@@ -524,11 +525,12 @@ private slots:
 
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
 
+        QVERIFY(!changedDuringTheSave);
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
         QVERIFY(changedDuringTheSave);
         const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
         QCOMPARE(sent.apiBase, QStringLiteral("http://server-c.example/v1"));
         QCOMPARE(sent.apiKey, QString());
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
     }
 
     // A key moving the endpoint drops shows as not saved even when the
@@ -546,12 +548,12 @@ private slots:
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
 
         settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
 
         const QString row = QStringLiteral("refinementEndpointApiKey");
-        QCOMPARE(accounts.savedSecrets().value(row), QVariant(false));
+        QTRY_COMPARE(accounts.savedSecrets().value(row), QVariant(false));
         QCOMPARE(accounts.pendingClears().value(row), QVariant(true));
         const QVariantMap error = accounts.secretErrors().value(row).toMap();
         QCOMPARE(error.value(QStringLiteral("action")).toString(), QStringLiteral("clear"));
@@ -591,6 +593,7 @@ private slots:
         QFile::remove(file);
         QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
         accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QTRY_VERIFY(accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
         QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         const QVariant refusal = accounts.secretErrors().value(QStringLiteral("cliproxyApiKey"));
         const QString reason = refusal.toMap().value(QStringLiteral("reason")).toString();
@@ -604,7 +607,7 @@ private slots:
             return true;
         });
 
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), kept ? refusal : QVariant());
+        QTRY_COMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), kept ? refusal : QVariant());
     }
 
     // A save whose settings-file commit failed leaves the key in place but
@@ -638,6 +641,7 @@ private slots:
         // Qt writes the file through a temporary one beside it.
         QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
         accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QTRY_VERIFY(accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
         QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         const QString reason = accounts.secretErrors()
                                    .value(QStringLiteral("cliproxyApiKey"))
@@ -652,13 +656,12 @@ private slots:
                 return true;
             });
         } else {
-            QCOMPARE(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("new-key")),
-                     SecretStore::SaveResult::Stored);
+            QVERIFY(savedSecret(settings.secrets(), SecretStore::Secret::CliproxyApiKey, QStringLiteral("new-key")));
         }
 
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("new-key"));
+        QTRY_VERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("new-key"));
         QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
-        QVERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
     }
 #endif
 
@@ -700,8 +703,9 @@ private slots:
         field->setProperty("text", QStringLiteral("entered-for-a"));
         QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
 
-        QVERIFY(movedDuringTheSave);
-        QCOMPARE(field->property("text").toString(), typedMeanwhile);
+        QVERIFY(!movedDuringTheSave);
+        QTRY_VERIFY(movedDuringTheSave);
+        QTRY_COMPARE(field->property("text").toString(), typedMeanwhile);
         if (typedMeanwhile.isEmpty()) {
             QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
             const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
@@ -724,9 +728,10 @@ private slots:
 
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-old"));
 
+        QVERIFY(!enteredDuringTheSave);
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
         QVERIFY(enteredDuringTheSave);
         QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QStringLiteral("key-new"));
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
     }
 
     // Moving the endpoint to another server drops its key, and its row says
@@ -738,11 +743,11 @@ private slots:
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
 
         settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
 
-        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
+        QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
     }
 
     // A key entered while the CLI Proxy preset shows belongs to the proxy's
@@ -775,8 +780,8 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
 
+        QTRY_COMPARE(sent().apiKey, QStringLiteral("key-b"));
         QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
-        QCOMPARE(sent().apiKey, QStringLiteral("key-b"));
         settings.edit([](AppSettings &draft) {
             editRefinementEndpoint(draft, {.preset = QString()});
             return true;
@@ -784,7 +789,7 @@ private slots:
         QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
 
         accounts.clearSecret(QStringLiteral("refinementEndpointApiKey"));
-        QCOMPARE(sent().apiKey, QStringLiteral("proxy-key"));
+        QTRY_COMPARE(sent().apiKey, QStringLiteral("proxy-key"));
     }
 
     // SchemaRow's secret field hands what was typed to Accounts and lets go
@@ -804,8 +809,8 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
         row.field->setProperty("text", QStringLiteral("proxy-key"));
         QVERIFY(QMetaObject::invokeMethod(row.field, "editingFinished"));
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("proxy-key"));
-        QCOMPARE(row.field->property("text").toString(), QString());
+        QTRY_COMPARE(row.field->property("text").toString(), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
         QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("Saved"));
         // No property of the field keeps a copy of the saved key.
         const QMetaObject *meta = row.field->metaObject();
@@ -815,11 +820,11 @@ private slots:
         }
 
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
-        QCOMPARE(row.field->property("placeholderText").toString(), QStringLiteral("A key the server accepts"));
+        QTRY_COMPARE(row.field->property("placeholderText").toString(), QStringLiteral("A key the server accepts"));
     }
 
-    // The keyring's wait runs the event loop, where typing goes on and the
-    // field can save again. What was typed meanwhile stays in the field, and
+    // Typing goes on while the keyring makes a save wait, and the field can
+    // save again. What was typed meanwhile stays in the field, and
     // the key saved last is the one kept, by the keyring and the daemon both.
     void savesDuringASaveEndWithTheNewest()
     {
@@ -839,7 +844,7 @@ private slots:
         QMetaObject::invokeMethod(
             field, [field] { field->setProperty("text", QStringLiteral("typed-meanwhile")); }, Qt::QueuedConnection);
         QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("first-key"));
+        QTRY_COMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("first-key"));
         QCOMPARE(field->property("text").toString(), QStringLiteral("typed-meanwhile"));
 
         field->setProperty("text", QStringLiteral("outer-key"));
@@ -851,10 +856,10 @@ private slots:
             },
             Qt::QueuedConnection);
         QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+        QTRY_COMPARE(field->property("text").toString(), QString());
         QCOMPARE(controller.settings()->secrets()->secret(SecretStore::Secret::CliproxyApiKey),
                  QStringLiteral("inner-key"));
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("inner-key"));
-        QCOMPARE(field->property("text").toString(), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("inner-key"));
     }
 
     // A save asked for during another waits its turn, and the field keeps
@@ -879,7 +884,7 @@ private slots:
             },
             Qt::QueuedConnection);
         QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
-        QVERIFY(accounts.secretErrors().contains(QStringLiteral("openAiApiKey")));
+        QTRY_VERIFY(accounts.secretErrors().contains(QStringLiteral("openAiApiKey")));
         QCOMPARE(field->property("text").toString(), QStringLiteral("newer-key"));
     }
 
@@ -898,10 +903,9 @@ private slots:
         row.field->setProperty("text", QStringLiteral("row-key"));
         QMetaObject::invokeMethod(row.field, "editingFinished", Qt::QueuedConnection);
 
-        QCOMPARE(controller.settings()->secrets()->saveApiKey(QStringLiteral("other-key")),
-                 SecretStore::SaveResult::Pending);
+        controller.settings()->secrets()->saveApiKey(QStringLiteral("other-key"));
 
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
+        QTRY_COMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")),
                  QVariant(QVariantMap{{QStringLiteral("action"), QStringLiteral("save")},
                                       {QStringLiteral("reason"), QStringLiteral("Keyring write denied")}}));
         QCOMPARE(row.field->property("text").toString(), QStringLiteral("row-key"));
@@ -930,9 +934,9 @@ private slots:
             secrets, [secrets, proxy] { secrets->saveSecret(proxy, QStringLiteral("other-key")); },
             Qt::QueuedConnection);
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("outer-key")), SecretStore::SaveResult::Pending);
+        secrets->saveSecret(proxy, QStringLiteral("outer-key"));
 
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("other-key"));
+        QTRY_COMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("other-key"));
         QCOMPARE(row.field->property("text").toString(), QStringLiteral("row-key"));
         QVERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
     }
@@ -999,10 +1003,10 @@ private slots:
                                            {QStringLiteral("reason"), QStringLiteral("Keyring deletion denied")}});
 
         accounts.clearSecret(QStringLiteral("openAiApiKey"));
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")), refused);
+        QTRY_COMPARE(accounts.secretErrors().value(QStringLiteral("openAiApiKey")), refused);
 
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refused);
+        QTRY_COMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refused);
     }
 
     // A key the keyring refused to delete stays clearable after a check
@@ -1018,13 +1022,14 @@ private slots:
         QVERIFY(row.clear);
         QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
         accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("proxy-key"));
-        QVERIFY(row.clear->isVisible());
+        QTRY_VERIFY(row.clear->isVisible());
 
         controller.settings()->raw().setValue(SettingsKeys::SecretsInKeyring,
                                               QStringList{QStringLiteral("cliproxy-api-key")});
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
+        QTRY_VERIFY(accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
         accounts.recheck(QStringLiteral("cliproxy"));
         QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
         QVERIFY(row.clear->isVisible());

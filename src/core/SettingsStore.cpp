@@ -248,11 +248,6 @@ SecretStore *SettingsStore::secrets() const
     return m_secrets;
 }
 
-QString SettingsStore::cliproxyApiKey() const
-{
-    return m_secrets->secret(SecretStore::Secret::CliproxyApiKey);
-}
-
 AppSettings SettingsStore::snapshot() const
 {
     return snapshotReading(true);

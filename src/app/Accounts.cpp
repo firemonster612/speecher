@@ -59,15 +59,13 @@ struct SecretPresence {
     QMap<SecretStore::Secret, bool> pendingClears;
 };
 
-// Saves value, or clears the secret when it is empty. The OpenAI key never
-// falls back to the settings file, so it goes through saveApiKey either way.
-void storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
+// Saves value, or clears the secret when it is empty, and returns the
+// request's number. The OpenAI key never falls back to the settings file, so
+// it goes through saveApiKey either way.
+quint64 storeSecret(SecretStore *secrets, SecretStore::Secret secret, const QString &value)
 {
-    if (secret == SecretStore::Secret::OpenAiApiKey) {
-        secrets->saveApiKey(value);
-    } else {
-        secrets->saveSecret(secret, value);
-    }
+    return secret == SecretStore::Secret::OpenAiApiKey ? secrets->saveApiKey(value)
+                                                       : secrets->saveSecret(secret, value);
 }
 
 // Tells ProviderAvailability what a check found of a provider's sign-in, for
@@ -251,22 +249,21 @@ void Accounts::write(SecretStore::Secret secret, const QString &value)
             return true;
         });
     }
-    // After the edit: its own clear of the key is no answer to this save.
-    m_saving.insert(secret, value.isEmpty());
-    storeSecret(m_settings.secrets(), secret, value);
+    m_saving.insert(secret, storeSecret(m_settings.secrets(), secret, value));
 }
 
 // The store answers only a secret's newest request, so a field lets go of
 // its key once the save it asked for last is kept. One a newer request from
-// elsewhere replaced while it waited its turn was never written: the field
+// elsewhere replaced was never written: the field
 // stops waiting and keeps its key, unless what replaced it was a clear, as a
 // server change makes: the key the field still holds was entered for the
 // server before.
-void Accounts::secretSaveFinished(SecretStore::Secret secret, bool cleared, bool stored, const QString &error)
+void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
+                                  const QString &error)
 {
     const auto waiting = m_saving.constFind(secret);
     const bool fieldWaited = waiting != m_saving.cend();
-    const bool own = fieldWaited && *waiting == cleared;
+    const bool own = fieldWaited && *waiting == request;
     if (fieldWaited) {
         m_saving.erase(waiting);
     }

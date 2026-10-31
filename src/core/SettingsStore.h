@@ -80,7 +80,6 @@ public:
     // saved. The files that won't save or go put their paths in path.
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
-    QString cliproxyApiKey() const;
     // Starts Speecher at login, or stops it, as the saved launchAtLogin says.
     // applySnapshot runs it after every save.
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);

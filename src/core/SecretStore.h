@@ -68,11 +68,12 @@ public:
     // working without one. A key kept in the settings file is what every
     // reader finds until a keyring takes it. A deletion the keyring refuses
     // leaves a marker in the settings file that hides the key until a
-    // deletion goes through. saveFinished says how it went: during this call
-    // when storage needs no keyring for it or refuses it outright, else once
-    // the keyring answers. One secret is written at a time; a request made
-    // meanwhile waits its turn and replaces any other waiting one.
-    void saveSecret(Secret secret, const QString &value);
+    // deletion goes through. Returns the request's number, which
+    // saveFinished carries once storage answers, never during this call. One
+    // secret is written at a time; a request made meanwhile waits its turn,
+    // replacing any other waiting one, and answers for the one being written
+    // too.
+    quint64 saveSecret(Secret secret, const QString &value);
     // What a settings edit saves: the secrets it changed (saveSecret), after
     // reporting each secret whose earlier change only now reached the
     // settings file, through the edit's save.
@@ -93,7 +94,7 @@ public:
 
     QString apiKey();
     // Unlike saveSecret, refuses to fall back to the settings file.
-    void saveApiKey(const QString &apiKey);
+    quint64 saveApiKey(const QString &apiKey);
     QString status();
     QString lastError() const;
     // Why the last read of the secret failed, naming the secret, or nothing
@@ -102,12 +103,14 @@ public:
     bool usesInsecureSettingsFallback() const;
 
 signals:
-    // The newest save or clear of the secret settled: storage holds it, or
-    // refused it for error's reason. cleared says it was a clear. A request
-    // replaced while it waited its turn has no saveFinished of its own. Also
+    // The newest save or clear of the secret, number request
+    // (saveSecret), settled: storage holds it, or refused it for error's
+    // reason. cleared says it was a clear. A request
+    // a newer one replaced, while it waited its turn or before the keyring
+    // answered it, has no saveFinished of its own. Also
     // comes when an earlier change of the secret that the settings file
-    // didn't save reaches it (saveSecrets).
-    void saveFinished(SecretStore::Secret secret, bool cleared, bool stored, const QString &error);
+    // didn't save reaches it (saveSecrets), as request 0.
+    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
 
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
@@ -121,6 +124,7 @@ private:
         // A startup migration's: written though storage holds it, and
         // reporting nothing (migrateSettingsFallbacks).
         bool migrating = false;
+        quint64 number = 0;
     };
 
     struct SecretState {
@@ -137,9 +141,13 @@ private:
         // Whether the keyring is taking a write of the secret, dropped or
         // not: the next one waits for it.
         bool keyringBusy = false;
-        // Whether the settings file holds a change of what it says about the
-        // secret that it hasn't saved, so a new process wouldn't find it.
-        bool uncommitted = false;
+        // The count of settings file saves (SettingsFile::saves) at which the
+        // file holds its last change of what it says about the secret:
+        // nothing of that change counts as stored before.
+        quint64 savedBy = 0;
+        // Whether the last answer refused a request storage took, only for
+        // the settings file not saving it (saveSecrets).
+        bool commitRefused = false;
     };
 
     // What a keyring request found: whether it went through, the entry's
@@ -169,12 +177,13 @@ private:
     bool mayBeInKeyring(Secret secret) const;
     void recordKeyringEntry(Secret secret, bool present) const;
     QString writeRefusal() const;
-    void save(Secret secret, const Request &request);
+    quint64 save(Secret secret, Request request);
     void writeNext(Secret secret);
     void finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer);
     void settle(Secret secret, const Request &request, bool stored, const QString &error);
     bool holds(Secret secret, const Request &request) const;
     bool keep(Secret secret, const Request &request, const KeyringAnswer &answer);
+    void changedInFile(Secret secret);
     bool commit(Secret secret);
     void removeNext(size_t index);
     void finishRemoval();
@@ -182,6 +191,8 @@ private:
 
     SettingsStore *m_settings;
     QString m_lastError;
+    // Numbers every request.
+    quint64 m_requests = 0;
     // While deleteKeyringSecrets runs, what each of its callers waits for;
     // empty otherwise.
     QList<std::function<void(bool, const QString &)>> m_removals;

@@ -12,6 +12,7 @@
 // native-to-Quick update ran through an updater. native-insights.jsonl is
 // that build's history format, also by hand.
 
+#include "common/test_secrets.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
@@ -171,7 +172,7 @@ private slots:
     void cleanup()
     {
         SettingsStore store;
-        store.secrets()->deleteKeyringSecrets();
+        removedSecrets(store.secrets());
         store.raw().clear();
         // Only what these tests wrote: other test processes share the folder.
         for (const QString &file : {QStringLiteral("insights.jsonl"), QStringLiteral("sentinel.txt")}) {
@@ -189,8 +190,7 @@ private slots:
     void masterSettingsSurviveTheUpdate()
     {
         if (keyringExpected()) {
-            QCOMPARE(SettingsStore().secrets()->saveSecret(SecretStore::Secret::OpenAiApiKey, openAiKey),
-                     SecretStore::SaveResult::Stored);
+            QVERIFY(savedSecret(SettingsStore().secrets(), SecretStore::Secret::OpenAiApiKey, openAiKey));
         }
         loadSettingsFile(QStringLiteral("master-0.2.0.conf"));
         if (!keyringExpected()) {
@@ -356,6 +356,8 @@ private:
     void checkMasterState(ApplicationController &controller)
     {
         SettingsStore &store = *controller.settings();
+        // The main thread's snapshot only starts a keyring read.
+        readSecret(store.secrets(), SecretStore::Secret::CliproxyApiKey);
         const AppSettings settings = store.snapshot();
         QVERIFY(settings.setupCompleted);
         QVERIFY(settings.launchAtLogin);
@@ -435,7 +437,7 @@ private:
         QCOMPARE(settings.refinement.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
 
         QCOMPARE(settings.refinement.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
-        QCOMPARE(store.secrets()->apiKey(), openAiKey);
+        QCOMPARE(readSecret(store.secrets(), SecretStore::Secret::OpenAiApiKey), openAiKey);
         // A key moves out of the settings file only once the keyring holds it.
         QCOMPARE(store.raw().contains(SettingsKeys::CliproxyApiKey), !keyringExpected());
 

@@ -113,7 +113,7 @@ SpeecherRemoval::Steps quietRemoval()
     steps.removeVirtualKeyboard = [](QString *) { return true; };
     steps.keyHelperInstalled = [] { return false; };
     steps.removeKeyHelper = [](QString *) { return true; };
-    steps.deleteSecrets = [](QString *) { return true; };
+    steps.deleteSecrets = [](SpeecherRemoval::Steps::SecretsDeleted done) { done(true, {}); };
     steps.settingsHideKeys = [] { return false; };
     steps.deleteSettings = [](QString *) { return true; };
     return steps;
