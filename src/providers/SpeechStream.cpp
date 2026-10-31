@@ -131,6 +131,11 @@ bool SpeechStream::hasAudio() const
     return m_pcmDropped > 0 || !m_pcm.isEmpty();
 }
 
+qsizetype SpeechStream::unsentBytes() const
+{
+    return m_pcmDropped + m_pcm.size() - m_sent;
+}
+
 void SpeechStream::endInput()
 {
     m_inputEnded = true;
@@ -255,7 +260,7 @@ void SpeechStream::sendNextChunk()
         return;
     }
     markUtterancesOnceSent();
-    emit progress(qreal(m_sent) / qreal(m_pcmDropped + m_pcm.size()));
+    emit progress(m_sent);
     // Once a stream has connected, no other provider takes the input from its
     // start (see handleFailure) and its next stream picks up at the next
     // unsent chunk, so what it was sent is never needed again.

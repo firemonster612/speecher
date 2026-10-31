@@ -30,21 +30,60 @@ using Stage = ProviderAttemptIssue::Stage;
 
 // Waveform resolution handed to the front end.
 constexpr int kPeakCount = 240;
+// The most stretches PeakLevels keeps; enough that each of the front end's
+// peaks spans several.
+constexpr qsizetype kMostPeakStretches = qsizetype(16) * kPeakCount;
+// How far the streaming pass reads ahead of what the speech provider was
+// sent. Decoding runs thousands of times faster than the stream sends.
+constexpr qsizetype kMostUnsentBytes = qsizetype(5) * kSpeechBytesPerSecond;
 
-QVector<float> peakLevels(const QByteArray &pcm)
-{
-    const qsizetype samples = pcm.size() / 2;
-    QVector<float> peaks(kPeakCount, 0.0f);
-    if (samples == 0) {
+// A file's peak levels, taken as its 16 kHz mono audio decodes, so none of
+// the audio is kept. Each stretch holds its loudest sample. Stretches start
+// one sample long; once there are kMostPeakStretches, neighbours merge and
+// later stretches are twice as long.
+class PeakLevels {
+public:
+    void add(const QByteArray &pcm)
+    {
+        const auto *data = reinterpret_cast<const qint16 *>(pcm.constData());
+        for (qsizetype i = 0; i < pcm.size() / 2; ++i) {
+            if (m_samples++ % m_stretchSamples == 0) {
+                if (m_stretches.size() == kMostPeakStretches) {
+                    mergeStretches();
+                }
+                m_stretches.append(0.0f);
+            }
+            m_stretches.last() = std::max(m_stretches.last(), std::abs(data[i]) / 32768.0f);
+        }
+    }
+
+    // kPeakCount levels (0..1) across the audio.
+    QVector<float> levels() const
+    {
+        QVector<float> peaks(kPeakCount, 0.0f);
+        for (qsizetype i = 0; i < m_stretches.size(); ++i) {
+            const int bucket = int(qint64(i) * m_stretchSamples * kPeakCount / m_samples);
+            peaks[bucket] = std::max(peaks[bucket], m_stretches.at(i));
+        }
         return peaks;
     }
-    const auto *data = reinterpret_cast<const qint16 *>(pcm.constData());
-    for (qsizetype i = 0; i < samples; ++i) {
-        const int bucket = int(i * kPeakCount / samples);
-        peaks[bucket] = std::max(peaks[bucket], std::abs(data[i]) / 32768.0f);
+
+    qint64 bytes() const { return m_samples * 2; }
+
+private:
+    void mergeStretches()
+    {
+        for (qsizetype i = 0; i < m_stretches.size() / 2; ++i) {
+            m_stretches[i] = std::max(m_stretches.at(2 * i), m_stretches.at(2 * i + 1));
+        }
+        m_stretches.resize(m_stretches.size() / 2);
+        m_stretchSamples *= 2;
     }
-    return peaks;
-}
+
+    QVector<float> m_stretches;
+    qint64 m_stretchSamples = 1;
+    qint64 m_samples = 0;
+};
 
 } // namespace
 
@@ -185,8 +224,10 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
             m_current.segments.append(segment);
         }
     });
-    connect(m_stream, &SpeechStream::progress, this,
-            [this](qreal fractionOfAudioSent) { emit fileProgress(m_index, fractionOfAudioSent); });
+    connect(m_stream, &SpeechStream::progress, this, [this](qint64 bytesSent) {
+        reportProgress(bytesSent);
+        readDecodedAudio();
+    });
     connect(m_stream, &SpeechStream::finished, this, &FileTranscriptionSession::finishTranscription);
     connect(m_stream, &SpeechStream::failed, this, &FileTranscriptionSession::failFile);
     connect(m_refinementChain, &RefinementChain::passedOver, this,
@@ -293,40 +334,129 @@ void FileTranscriptionSession::startFile()
         return;
     }
 
-    m_decoder = new QAudioDecoder(this);
-    auto converter = std::make_shared<AudioPcmConverter>();
-    auto sourceFormat = std::make_shared<QAudioFormat>();
-    connect(m_decoder, &QAudioDecoder::bufferReady, this, [this, converter, sourceFormat] {
-        const QAudioBuffer buffer = m_decoder->read();
-        if (buffer.format() != *sourceFormat) {
-            *sourceFormat = buffer.format();
-            converter->reset(*sourceFormat);
-        }
-        const AudioPcmConversion converted =
-            converter->convert(QByteArray(buffer.constData<char>(), buffer.byteCount()));
-        if (!converted.error.isEmpty()) {
-            m_decoder->stop();
-            failFile(QStringLiteral("Could not read the audio: %1").arg(converted.error));
-            return;
-        }
-        m_decoded += converted.pcm16Mono16k;
-    });
-    connect(m_decoder, &QAudioDecoder::finished, this, [this] {
-        const QByteArray pcm = std::exchange(m_decoded, {});
-        if (pcm.isEmpty()) {
-            failFile(QStringLiteral("The file contains no audio"));
-            return;
-        }
-        emit fileDecoded(m_index, peakLevels(pcm), pcm.size() * 1000 / kSpeechBytesPerSecond);
-        m_stream->append(pcm);
-        m_stream->endInput();
+    measureFile();
+}
+
+// The first pass reads the whole file as fast as it decodes, for its length
+// and waveform, and keeps none of its audio.
+void FileTranscriptionSession::measureFile()
+{
+    auto peaks = std::make_shared<PeakLevels>();
+    decodeFile([peaks](const QByteArray &pcm) { peaks->add(pcm); },
+               [this, peaks] {
+                   if (peaks->bytes() == 0) {
+                       failFile(QStringLiteral("The file contains no audio"));
+                       return;
+                   }
+                   // Done with the file until the second pass opens it again.
+                   releaseDecoder();
+                   m_fileBytes = peaks->bytes();
+                   emit fileDecoded(m_index, peaks->levels(), m_fileBytes * 1000 / kSpeechBytesPerSecond);
+                   streamFile();
+               });
+}
+
+// The second pass decodes the file again into the stream, reading only while
+// little of it waits to be sent, so a long file is never held whole. It
+// should yield what the first counted; whatever it yields is the file.
+void FileTranscriptionSession::streamFile()
+{
+    m_streamedBytes = 0;
+    m_streamDecoded = false;
+    const bool decoding = decodeFile(
+        [this](const QByteArray &pcm) {
+            m_streamedBytes += pcm.size();
+            m_stream->append(pcm);
+        },
+        [this] {
+            if (m_streamedBytes == 0) {
+                failFile(QStringLiteral("The file contains no audio"));
+                return;
+            }
+            m_streamDecoded = true;
+            m_fileBytes = m_streamedBytes;
+            // The stream says nothing more when all of it was sent already.
+            if (m_stream->unsentBytes() == 0) {
+                reportProgress(m_fileBytes);
+            }
+            m_stream->endInput();
+        });
+    // A decoder that failed at once has moved the batch on: the stream is the
+    // next file's now.
+    if (decoding) {
         m_stream->prepare(m_batchSettings);
-    });
+    }
+}
+
+// The share of the input sent. A file's bar reaches the end only once the
+// second pass has decoded all of the file and the stream sent it.
+void FileTranscriptionSession::reportProgress(qint64 bytesSent)
+{
+    // A microphone's input has no length yet: its share is of what it heard
+    // so far.
+    if (m_input) {
+        emit fileProgress(m_index, qreal(bytesSent) / qreal(bytesSent + m_stream->unsentBytes()));
+        return;
+    }
+    const qint64 fileBytes = std::max(m_fileBytes, m_streamedBytes);
+    if (bytesSent >= fileBytes && !m_streamDecoded) {
+        return;
+    }
+    emit fileProgress(m_index, qreal(bytesSent) / qreal(fileBytes));
+}
+
+// Starts a pass over the current file: takeAudio gets each buffer it
+// decodes, and finished runs once all of them came. False when the decoder
+// failed at once, which ends the file.
+bool FileTranscriptionSession::decodeFile(std::function<void(const QByteArray &)> takeAudio,
+                                          std::function<void()> finished)
+{
+    releaseDecoder();
+    m_takeDecodedAudio = std::move(takeAudio);
+    m_decodedFormat = {};
+    m_decoder = new QAudioDecoder(this);
+    connect(m_decoder, &QAudioDecoder::bufferReady, this, &FileTranscriptionSession::readDecodedAudio);
+    connect(m_decoder, &QAudioDecoder::finished, this, std::move(finished));
     connect(m_decoder, qOverload<QAudioDecoder::Error>(&QAudioDecoder::error), this, [this] {
         failFile(QStringLiteral("Could not decode the audio: %1").arg(m_decoder->errorString()));
     });
     m_decoder->setSource(QUrl::fromLocalFile(m_current.path));
-    m_decoder->start();
+    const QPointer<QAudioDecoder> decoder = m_decoder;
+    decoder->start();
+    return m_decoder == decoder;
+}
+
+// The decoder holds its next buffer until it is read, so leaving it unread
+// pauses decoding; the stream's progress reads it once the stream has sent
+// enough. The first pass never waits, as the stream is empty then.
+void FileTranscriptionSession::readDecodedAudio()
+{
+    if (!m_decoder || !m_decoder->bufferAvailable() || m_stream->unsentBytes() >= kMostUnsentBytes) {
+        return;
+    }
+    const QAudioBuffer buffer = m_decoder->read();
+    if (buffer.format() != m_decodedFormat) {
+        m_decodedFormat = buffer.format();
+        m_converter.reset(m_decodedFormat);
+    }
+    const AudioPcmConversion converted = m_converter.convert(QByteArray(buffer.constData<char>(), buffer.byteCount()));
+    if (!converted.error.isEmpty()) {
+        failFile(QStringLiteral("Could not read the audio: %1").arg(converted.error));
+        return;
+    }
+    m_takeDecodedAudio(converted.pcm16Mono16k);
+}
+
+// Signals from a retired decoder must not reach the next pass or file.
+void FileTranscriptionSession::releaseDecoder()
+{
+    if (!m_decoder) {
+        return;
+    }
+    disconnect(m_decoder, nullptr, this, nullptr);
+    m_decoder->stop();
+    m_decoder->deleteLater();
+    m_decoder = nullptr;
 }
 
 // The microphone fills the stream from before the providers prepare.
@@ -503,12 +633,7 @@ void FileTranscriptionSession::releaseFileResources()
 {
     m_stream->release();
     m_refinementChain->cancel();
-    // Signals from a retired provider must not reach the next file.
-    if (m_decoder) {
-        disconnect(m_decoder, nullptr, this, nullptr);
-        m_decoder->stop();
-        m_decoder->deleteLater();
-    }
+    releaseDecoder();
     if (m_input) {
         disconnect(m_input, nullptr, this, nullptr);
         if (std::exchange(m_microphone, Microphone::Off) == Microphone::Listening) {
@@ -516,7 +641,6 @@ void FileTranscriptionSession::releaseFileResources()
         }
     }
     releaseRefiner();
-    m_decoded.clear();
 }
 
 } // namespace speecher

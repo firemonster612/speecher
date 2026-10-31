@@ -19,15 +19,22 @@
 #include "transcribe/TranscribePresentation.h"
 #include "transcribe/TranscribeQueue.h"
 
+#include <QAudioDecoder>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMediaFormat>
 #include <QMimeDatabase>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QScopeGuard>
-#include <QFile>
-#include <QPointer>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QThread>
+#include <QtEndian>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QAudioBufferInput>
 #include <QImage>
@@ -36,14 +43,11 @@
 #include <QVideoFrame>
 #include <QVideoFrameInput>
 #endif
-#include <QSignalSpy>
-#include <QTemporaryDir>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QtEndian>
 
+#include <algorithm>
 #include <cmath>
 #include <csignal>
+#include <functional>
 #include <optional>
 #include <sstream>
 #include <utility>
@@ -60,6 +64,8 @@ namespace {
 // deletes each file's transcriber once the file is done.
 struct Script {
     bool expireFirstStream = false;
+    // What the first stream received before it ended, with expireFirstStream.
+    qsizetype firstStreamBytes = 0;
     int attempts = 0;
     qsizetype bytes = 0;
     QStringList vocabulary;
@@ -67,6 +73,12 @@ struct Script {
     bool timedSegments = false;
     // Sent with each finished input, timed from the start of its attempt.
     QList<TranscriptSegment> segments;
+    // Called with each chunk of audio sent.
+    std::function<void()> audioSent;
+    // How long each preparation takes on the worker.
+    int prepareDelayMs = 0;
+    // Each attempt connects as it starts, as the Custom Endpoint's does.
+    bool connects = false;
 };
 
 // Answers a finished input with how many bytes of audio it received, and can
@@ -84,21 +96,43 @@ public:
     {
         return std::nullopt;
     }
-
-    void startAttempt(quint64, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
+    std::optional<PreparationJob> createPrepareJob(const SpeechSettings &, const AccountSettings &) override
     {
+        if (m_script->prepareDelayMs == 0) {
+            return std::nullopt;
+        }
+        return PreparationJob{.run = [ms = m_script->prepareDelayMs]() -> std::optional<ProviderFailure> {
+            QThread::msleep(ms);
+            return std::nullopt;
+        }};
+    }
+
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
+    {
+        m_attemptId = attemptId;
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
         m_script->language = settings.language;
         m_script->timedSegments = options.timedSegments;
         m_bytes = 0;
+        if (m_script->connects) {
+            emit attemptConnected(attemptId);
+        }
     }
 
+    // Audio for an attempt this transcriber is not on goes nowhere.
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
     {
+        if (attemptId != m_attemptId) {
+            return;
+        }
         m_script->bytes += pcm.size();
         m_bytes += pcm.size();
+        if (m_script->audioSent) {
+            m_script->audioSent();
+        }
         if (m_script->expireFirstStream && m_script->attempts == 1) {
+            m_script->firstStreamBytes += pcm.size();
             emit finalTranscript(attemptId, QStringLiteral("before"));
             emit attemptCompleted(attemptId);
         }
@@ -117,17 +151,18 @@ public:
 
 private:
     Script *m_script;
+    quint64 m_attemptId = 0;
     qsizetype m_bytes = 0;
 };
 
-// Half a second of a 440 Hz tone as 44.1 kHz stereo s16, so the file has to
-// be downmixed and resampled on its way to the provider.
-void writeWav(const QString &path)
+// A 440 Hz tone, half a second unless ms says, as 44.1 kHz stereo s16, so
+// the file has to be downmixed and resampled on its way to the provider.
+void writeWav(const QString &path, int ms = 500)
 {
     constexpr int rate = 44100;
     constexpr int channels = 2;
     QByteArray data;
-    for (int i = 0; i < rate / 2; ++i) {
+    for (int i = 0; i < rate * ms / 1000; ++i) {
         const auto sample = qint16(8000 * std::sin(2 * M_PI * 440 * i / rate));
         for (int c = 0; c < channels; ++c) {
             data.append(reinterpret_cast<const char *>(&sample), 2);
@@ -462,6 +497,154 @@ private slots:
         QCOMPARE(readFile(results.first().savedPath), QStringLiteral("Heard it."));
     }
 
+    // The waveform and length come from a first pass over the file, before
+    // any progress; the bar then fills to the end before refinement.
+    void filesReportTheirPhasesInOrder()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QStringList seen;
+        QVector<float> peaks;
+        qint64 durationMs = 0;
+        QList<qreal> progress;
+        connect(&session, &FileTranscriptionSession::fileStarted, this, [&] { seen << QStringLiteral("started"); });
+        connect(&session, &FileTranscriptionSession::fileDecoded, this,
+                [&](int, const QVector<float> &levels, qint64 ms) {
+                    seen << QStringLiteral("decoded");
+                    peaks = levels;
+                    durationMs = ms;
+                });
+        connect(&session, &FileTranscriptionSession::fileProgress, this, [&](int, qreal fraction) {
+            if (seen.last() != QStringLiteral("progress")) {
+                seen << QStringLiteral("progress");
+            }
+            progress << fraction;
+        });
+        connect(&session, &FileTranscriptionSession::fileRefining, this, [&] { seen << QStringLiteral("refining"); });
+        connect(&session, &FileTranscriptionSession::fileFinished, this, [&] { seen << QStringLiteral("finished"); });
+        connect(&session, &FileTranscriptionSession::batchFinished, this, [&] { seen << QStringLiteral("batch"); });
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("strong_polish");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(seen.size(), 6, 10000);
+
+        QCOMPARE(seen,
+                 QStringList({QStringLiteral("started"), QStringLiteral("decoded"), QStringLiteral("progress"),
+                              QStringLiteral("refining"), QStringLiteral("finished"), QStringLiteral("batch")}));
+        QVERIFY(qAbs(durationMs - 500) <= 1);
+        // The tone's level, 8000 of 32768, across the whole length.
+        QCOMPARE(peaks.size(), 240);
+        for (qsizetype i = 1; i < peaks.size() - 1; ++i) {
+            QVERIFY2(qAbs(peaks.at(i) - 0.244f) < 0.01f, qPrintable(QString::number(i)));
+        }
+        QVERIFY(std::ranges::is_sorted(progress));
+        QCOMPARE(progress.last(), 1.0);
+    }
+
+    // A file's audio goes to the stream while the file still decodes, a few
+    // seconds ahead of what was sent, rather than once all of it decoded.
+    void aLongFileReachesTheProviderWhileItStillDecodes()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("talk.wav"));
+        writeWav(audio, 12000);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        int sentWhileDecoding = 0;
+        m_script.audioSent = [&] {
+            const QList<QAudioDecoder *> decoders = session.findChildren<QAudioDecoder *>();
+            if (std::ranges::any_of(decoders, &QAudioDecoder::isDecoding)) {
+                ++sentWhileDecoding;
+            }
+        };
+
+        QVERIFY(session.start({audio}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+
+        QVERIFY(qAbs(m_script.bytes - 12 * 32000) <= 8);
+        // Most of the file went out while the decoder still had the rest.
+        QVERIFY2(sentWhileDecoding > 60, qPrintable(QString::number(sentWhileDecoding)));
+        QVERIFY(finished.first().first().value<QList<TranscribeFileResult>>().first().error.isEmpty());
+    }
+
+    // A file gone before its second pass fails there, and starts no
+    // provider: the next file reaches its own whole, though it takes a while
+    // to prepare.
+    void aFileGoneBeforeItStreamsLeavesTheNextWhole()
+    {
+        const QString gone = m_dir.filePath(QStringLiteral("gone.wav"));
+        const QString next = m_dir.filePath(QStringLiteral("next.wav"));
+        writeWav(gone);
+        writeWav(next, 12000);
+        m_script.connects = true;
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        bool removed = false;
+        connect(&session, &FileTranscriptionSession::fileDecoded, this, [&](int index) {
+            if (index == 0) {
+                removed = QFile::remove(gone);
+            } else {
+                m_script.prepareDelayMs = 200;
+            }
+        });
+
+        QVERIFY(session.start({gone, next}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+        if (!removed) {
+            QSKIP("The platform kept the decoded file open");
+        }
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QCOMPARE(results.size(), 2);
+        QVERIFY(results.at(0).error.startsWith(QStringLiteral("Could not decode the audio")));
+        QVERIFY2(qAbs(results.at(1).raw.mid(6).toLongLong() - 12 * 32000) <= 8, qPrintable(results.at(1).raw));
+    }
+
+    void progressEndsOnceAllTheAudioDecodedIsSent_data()
+    {
+        QTest::addColumn<int>("streamedMs");
+        QTest::newRow("second pass decodes less") << 500;
+        QTest::newRow("second pass decodes more") << 2000;
+    }
+
+    // The bar follows what the second pass decodes when that differs from
+    // what the first counted, and reaches the end once, when all of it was
+    // sent.
+    void progressEndsOnceAllTheAudioDecodedIsSent()
+    {
+        QFETCH(int, streamedMs);
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio, 1000);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        QList<qreal> progress;
+        bool replaced = false;
+        connect(&session, &FileTranscriptionSession::fileDecoded, this, [&] {
+            replaced = QFile::remove(audio);
+            writeWav(audio, streamedMs);
+        });
+        connect(&session, &FileTranscriptionSession::fileProgress, this,
+                [&](int, qreal fraction) { progress << fraction; });
+
+        QVERIFY(session.start({audio}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        if (!replaced) {
+            QSKIP("The platform kept the decoded file open");
+        }
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QVERIFY2(qAbs(results.first().raw.mid(6).toLongLong() - streamedMs * 32) <= 8,
+                 qPrintable(results.first().raw));
+        QCOMPARE(progress.count(1.0), 1);
+        QCOMPARE(progress.last(), 1.0);
+    }
+
     // A refiner that cannot reach its service makes way for the saved
     // fallback, which refines the file.
     void aRefinerThatCannotReachItsServiceHandsTheFileToTheFallback()
@@ -590,9 +773,9 @@ private slots:
         QVERIFY(results.first().error.isEmpty());
     }
 
-    // Transcribe asks for timings, and keeps the segments that can be cues.
-    // The first stream ends after one 100 ms chunk, so the second attempt's
-    // audio starts 100 ms into the file.
+    // Transcribe asks for timings, and keeps the segments that can be cues,
+    // timed from the start of the file: the second attempt's audio starts
+    // where the first stream's ended.
     void timesUsableSegmentsFromTheStartOfTheFile()
     {
         SpeechAttemptPolicy::setStableAttemptMs(0);
@@ -612,7 +795,13 @@ private slots:
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
         QVERIFY(m_script.timedSegments);
-        QCOMPARE(results.first().segments, QList<TranscriptSegment>({{100, 300, QStringLiteral("heard")}}));
+        // The second stream starts where the first one's audio ended: one
+        // chunk, which is short when the provider was ready before the file
+        // had decoded that far.
+        QVERIFY(m_script.firstStreamBytes > 0);
+        const qint64 secondStartMs = m_script.firstStreamBytes * 1000 / 32000;
+        QCOMPARE(results.first().segments,
+                 QList<TranscriptSegment>({{secondStartMs, secondStartMs + 200, QStringLiteral("heard")}}));
     }
 
     // Every segment starts a cue; a long one splits at its sentence end, or

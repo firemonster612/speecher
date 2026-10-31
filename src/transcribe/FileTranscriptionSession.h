@@ -4,6 +4,7 @@
 #include "core/ProviderTable.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
+#include "platform/audio/AudioPcmConverter.h"
 #include "providers/RefinementChain.h"
 #include "providers/SpeechStream.h"
 #include "providers/TranscriptRefiner.h"
@@ -154,6 +155,12 @@ private:
 
     void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
+    void measureFile();
+    void streamFile();
+    bool decodeFile(std::function<void(const QByteArray &)> takeAudio, std::function<void()> finished);
+    void reportProgress(qint64 bytesSent);
+    void readDecodedAudio();
+    void releaseDecoder();
     void startMicrophone();
     void finishTranscription();
     void refine(const QString &raw);
@@ -187,15 +194,25 @@ private:
     bool m_running = false;
     int m_index = -1;
 
+    // The current pass over the file: a first that measures it, then one
+    // that streams it.
     QPointer<QAudioDecoder> m_decoder;
+    AudioPcmConverter m_converter;
+    QAudioFormat m_decodedFormat;
+    // Where the pass puts each buffer, as 16 kHz mono.
+    std::function<void(const QByteArray &)> m_takeDecodedAudio;
+    // The file's audio as 16 kHz mono: what the first pass counted, until
+    // the second has decoded all of it.
+    qint64 m_fileBytes = 0;
+    // What the second pass has decoded so far, and whether that is all.
+    qint64 m_streamedBytes = 0;
+    bool m_streamDecoded = false;
     // The microphone a startListening() batch reads instead of a file.
     QPointer<AudioInput> m_input;
     Microphone m_microphone = Microphone::Off;
     QPointer<TranscriptRefiner> m_refiner;
     // Each refiner the file tried, and why it could not refine it.
     QList<std::pair<QString, QString>> m_refinementFailures;
-    // The file as it decodes, until it goes to the stream whole.
-    QByteArray m_decoded;
     TranscriptPipelineResult m_pipeline;
 };
 
