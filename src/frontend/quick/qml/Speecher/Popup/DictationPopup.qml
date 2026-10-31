@@ -87,10 +87,8 @@ Item {
         if (followingUp) return Qt.size(widest, review.y + review.implicitHeight + liveHeight)
         if (phase === "delivered" || phase === "error") return Qt.size(Math.min(widest, Math.max(160, receipt.x + receipt.implicitWidth + receiptEnd)),
                                                                       Math.max(barHeight, receipt.implicitHeight + 20))
-        return Qt.size(liveWidth, liveHeight)
+        return Qt.size(showText ? 460 : recording ? 280 : 220, liveHeight)
     }
-    // The live bar's width, wider while words show.
-    readonly property int liveWidth: showText ? 460 : recording ? 280 : 220
     // The live bar, and the words above it when they show.
     readonly property real liveHeight: showText ? barHeight + words.y + words.implicitHeight - 4 : barHeight
     // The tallest it gets while words come in: every line of live text
@@ -251,13 +249,14 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         height: 22
                         // From the width once the capsule has settled, so
-                        // the bars aren't rebuilt each frame as it grows.
-                        // Delayed, since this width and the capsule's
-                        // change together.
+                        // the bars aren't rebuilt each frame as it grows,
+                        // and clipped while it gets there. Delayed, since
+                        // this width and the capsule's change together.
                         Binding on bars {
-                            value: Math.max(8, Math.floor((levelBars.width + popup.liveWidth - bar.width) / 5.5))
+                            value: Math.max(8, Math.floor((levelBars.width + popup.target.width - bar.width) / 5.5))
                             delayed: true
                         }
+                        clip: true
                         level: popup.source.level
                         active: popup.boring && popup.phase === "listening"
                         opacity: popup.boring && popup.voiceShown ? 1 : 0

@@ -20,6 +20,7 @@
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QAccessible>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
@@ -36,6 +37,7 @@
 #include <QTextDocument>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -1094,15 +1096,47 @@ private slots:
         }
 
         // Live words widen the capsule from 280 to 460; the bars are counted
-        // once for the new width, not on every frame as it grows.
+        // once for the new width, not on every frame as it grows, and on no
+        // frame show past their own strip, over the clock and buttons.
         QQuickItem *capsule = findItem(popup->contentItem(), QStringLiteral("capsule"));
         QVERIFY(capsule);
+        // How far the bars show past their strip's right end.
+        const auto overrun = [bars] {
+            const qreal shown = bars->clip() ? bars->width() : bars->childrenRect().right();
+            return shown - bars->width();
+        };
         QSignalSpy recounted(bars, SIGNAL(barsChanged()));
         emit session->previewDisplayChanged(QStringLiteral("Quick update on the launch"));
-        QTRY_COMPARE(capsule->width(), 460.0);
-        QTest::qWait(kSettleMs);
+        QElapsedTimer widening;
+        widening.start();
+        qreal worst = 0;
+        while (widening.elapsed() < 1000) {
+            worst = std::max(worst, overrun());
+            QTest::qWait(5);
+        }
         QCOMPARE(capsule->width(), 460.0);
         QCOMPARE(recounted.count(), 1);
+        QCOMPARE(worst, 0.0);
+
+        // A follow-up listens under the edit it asks more of, in the wider
+        // capsule of a review; the bars fill its strip, listening and paused.
+        const auto fillsTheStrip = [bars] {
+            const int expected = std::max(8, int(std::floor(bars->width() / 5.5)));
+            return bars->isVisible() && bars->property("bars").toInt() == expected;
+        };
+        SelectionEditReview edit = selectionEditReview(
+            QStringLiteral("Can you send me the deck when you get a chance?"),
+            QStringLiteral("Can you send me the slides when you can?"), {QStringLiteral("make it shorter")},
+            reviewKeysFor(true, true, QString(), QStringLiteral("Ctrl+Space")));
+        edit.following = true;
+        emit session->popupSelectionEditReviewRequested(edit);
+        emit session->previewDisplayChanged(QString());
+        QTRY_VERIFY(capsule->width() > 460);
+        QTest::qWait(kSettleMs);
+        QTRY_VERIFY(fillsTheStrip());
+        emit session->stateChanged(DictationState::Paused);
+        QTest::qWait(kSettleMs);
+        QTRY_VERIFY(fillsTheStrip());
 
         settings->set(QStringLiteral("boringMode"), false);
         QTRY_VERIFY(showsRibbon());
