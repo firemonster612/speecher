@@ -613,17 +613,21 @@ private slots:
     // A save whose settings-file commit failed leaves the key in place but
     // unsaved. A retry that commits it, made directly or by a settings edit
     // that saves the file, is a save that went through, and ends the
-    // failure, though it finds the key already in place.
+    // failure, though it finds the key already in place. So is one after
+    // another key was refused before it changed anything (r376-sol9).
     void aRetryThatCommitsARefusedSaveEndsItsFailure_data()
     {
         QTest::addColumn<bool>("throughAnEdit");
-        QTest::newRow("saved again") << false;
-        QTest::newRow("a settings edit") << true;
+        QTest::addColumn<bool>("anotherRefusedFirst");
+        QTest::newRow("saved again") << false << false;
+        QTest::newRow("a settings edit") << true << false;
+        QTest::newRow("saved again after another refusal") << false << true;
     }
 
     void aRetryThatCommitsARefusedSaveEndsItsFailure()
     {
         QFETCH(bool, throughAnEdit);
+        QFETCH(bool, anotherRefusedFirst);
         if (getuid() == 0) {
             QSKIP("Root writes to a read-only folder");
         }
@@ -649,6 +653,16 @@ private slots:
                                    .value(QStringLiteral("reason"))
                                    .toString();
         QVERIFY2(reason.contains(QStringLiteral("Could not save the settings file")), qPrintable(reason));
+        if (anotherRefusedFirst) {
+            // No file, and a folder it can't be made in: the key can't go in.
+            QFile::remove(settings.raw().fileName());
+            QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
+            accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("other-key"));
+            QTRY_VERIFY(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")).toMap()
+                            .value(QStringLiteral("reason")).toString()
+                            .contains(QStringLiteral("can't be kept from other users")));
+            QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        }
 
         if (throughAnEdit) {
             settings.edit([](AppSettings &draft) {
@@ -712,6 +726,31 @@ private slots:
             QCOMPARE(sent.apiBase, QStringLiteral("http://server-b.example/v1"));
             QCOMPARE(sent.apiKey, QString());
         }
+    }
+
+    // An edit of other settings while the keyring makes a key's save wait
+    // leaves that save alone, so the field still gets its answer
+    // (r376-opus4).
+    void anEditDuringAKeySaveLeavesTheFieldItsAnswer()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        const SecretRowWindow row = showSecretRow(engine);
+        QVERIFY(row.field);
+        QTest::ignoreMessage(QtWarningMsg, proxyKeyFallbackWarning);
+        row.field->setProperty("text", QStringLiteral("proxy-key"));
+        QVERIFY(QMetaObject::invokeMethod(row.field, "editingFinished"));
+
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.ui.previewWords = 13;
+            return true;
+        });
+
+        QTRY_COMPARE(row.field->property("text").toString(), QString());
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
     }
 
     // A key entered while the keyring makes an older one wait stands.

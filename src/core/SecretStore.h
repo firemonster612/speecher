@@ -48,12 +48,12 @@ public:
     void prefetch();
     // The value in memory, or the settings-file copy of a secret not in the
     // keyring, else the keyring's. On the main thread, whose event loop
-    // brings the keyring's answers, this never waits: the secret stays unread
-    // (isSecretKnown) until the read it starts answers. Elsewhere it waits
-    // for the keyring (1.5 s at most). A failed read
-    // returns an empty string, is never cached as "not set", and isn't tried
-    // again for 5 s. Every read, this and the ones below, returns the value
-    // asked for last from the moment it is asked for.
+    // brings the keyring's answers, this never waits: the secret stays
+    // unread (isSecretKnown) until the read it starts answers. Elsewhere it
+    // waits for the keyring (1.5 s at most). A failed read returns an empty
+    // string, is never cached as "not set", and isn't tried again for 5 s.
+    // Every read, this and the ones below, returns the value asked for last
+    // from the moment it is asked for.
     QString secret(Secret secret);
     // Never reads the keyring: the value in memory, or the settings-file copy
     // of a secret not in the keyring, else an empty string.
@@ -98,18 +98,18 @@ public:
     QString status();
     QString lastError() const;
     // Why the last read of the secret failed, naming the secret, or nothing
-    // when it was read. Ask right after the read: it carries lastError().
+    // when it was read. Ask right after the read, or its answer on the main
+    // thread: it carries lastError().
     QString readFailure(Secret secret) const;
     bool usesInsecureSettingsFallback() const;
 
 signals:
-    // The newest save or clear of the secret, number request
-    // (saveSecret), settled: storage holds it, or refused it for error's
-    // reason. cleared says it was a clear. A request
-    // a newer one replaced, while it waited its turn or before the keyring
-    // answered it, has no saveFinished of its own. Also
-    // comes when an earlier change of the secret that the settings file
-    // didn't save reaches it (saveSecrets), as request 0.
+    // The newest save or clear of the secret, number request (saveSecret),
+    // settled: storage holds it, or refused it for error's reason. cleared
+    // says it was a clear. A request a newer one replaced, while it waited
+    // its turn or before the keyring answered it, has no saveFinished of its
+    // own. Also comes, as request 0, when an earlier change of the secret
+    // that the settings file didn't save reaches it (saveSecrets).
     void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
 
 private:
@@ -180,6 +180,7 @@ private:
     quint64 save(Secret secret, Request request);
     void writeNext(Secret secret);
     void finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer);
+    bool store(Secret secret, const Request &request, const std::optional<KeyringAnswer> &answer);
     void settle(Secret secret, const Request &request, bool stored, const QString &error);
     bool holds(Secret secret, const Request &request) const;
     bool keep(Secret secret, const Request &request, const KeyringAnswer &answer);

@@ -254,10 +254,9 @@ void Accounts::write(SecretStore::Secret secret, const QString &value)
 
 // The store answers only a secret's newest request, so a field lets go of
 // its key once the save it asked for last is kept. One a newer request from
-// elsewhere replaced was never written: the field
-// stops waiting and keeps its key, unless what replaced it was a clear, as a
-// server change makes: the key the field still holds was entered for the
-// server before.
+// elsewhere replaced was never written: the field stops waiting and keeps
+// its key, unless what replaced it was a clear, as a server change makes:
+// the key the field still holds was entered for the server before.
 void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
                                   const QString &error)
 {

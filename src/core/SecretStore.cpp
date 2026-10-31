@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QTimer>
 
+#include <algorithm>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -150,9 +151,7 @@ void SecretStore::finishRead(Secret secret, const KeyringAnswer &answer)
         entry.retryTimer.start();
         return;
     }
-    // A missing entry leaves what the settings file says, as
-    // readWithoutKeyring would have read it.
-    cacheValue(secret, answer.value.isEmpty() ? settingsFallback(secret) : answer.value);
+    cacheValue(secret, answer.value);
 }
 
 QString SecretStore::settingsFallback(Secret secret) const
@@ -329,35 +328,8 @@ void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> 
 {
     SecretState &entry = state(secret);
     // A removal dropped the request, and answered for it.
-    if (std::optional<Request> request = std::exchange(entry.writing, std::nullopt)) {
-        bool stored = false;
-        if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
-            // Settings deleted while the keyring took it touch neither.
-            m_lastError = refusal;
-        } else {
-            // What the settings file tells a reader about the secret.
-            const auto fileSays = [this, secret] {
-                return std::tuple(settingsFallback(secret), deletionPending(secret), mayBeInKeyring(secret));
-            };
-            const auto said = fileSays();
-            m_lastError.clear();
-            const bool kept = !answer || keep(secret, *request, *answer);
-            const QString why = m_lastError;
-            const bool changed = fileSays() != said;
-            if (changed) {
-                changedInFile(secret);
-            }
-            const bool committed = commit(secret);
-            // A refusal that changed nothing leaves an earlier change's
-            // refused commit to report.
-            if (kept || changed) {
-                entry.commitRefused = kept && !committed;
-            }
-            stored = kept && committed;
-            if (!kept) {
-                m_lastError = why;
-            }
-        }
+    if (const std::optional<Request> request = std::exchange(entry.writing, std::nullopt)) {
+        const bool stored = store(secret, *request, answer);
         if (!entry.waiting) {
             settle(secret, *request, stored, m_lastError);
         }
@@ -365,6 +337,40 @@ void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> 
     if (entry.waiting) {
         writeNext(secret);
     }
+}
+
+// Keeps what the keyring did with the request (keep), or nothing when it
+// needed no keyring, and saves the settings file (commit). Returns whether
+// storage holds the request, else puts why in lastError().
+bool SecretStore::store(Secret secret, const Request &request, const std::optional<KeyringAnswer> &answer)
+{
+    // Settings deleted while the keyring took it touch neither.
+    if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
+        m_lastError = refusal;
+        return false;
+    }
+    // What the settings file tells a reader about the secret.
+    const auto fileSays = [this, secret] {
+        return std::tuple(settingsFallback(secret), deletionPending(secret), mayBeInKeyring(secret));
+    };
+    const auto said = fileSays();
+    m_lastError.clear();
+    const bool kept = !answer || keep(secret, request, *answer);
+    const QString refusal = m_lastError;
+    const bool changed = fileSays() != said;
+    if (changed) {
+        changedInFile(secret);
+    }
+    const bool committed = commit(secret);
+    // A refusal that changed nothing leaves an earlier change's refused
+    // commit to report.
+    if (kept || changed) {
+        state(secret).commitRefused = kept && !committed;
+    }
+    if (!kept) {
+        m_lastError = refusal;
+    }
+    return kept && committed;
 }
 
 // Logs a refusal with why, and tells saveFinished how the request went,
