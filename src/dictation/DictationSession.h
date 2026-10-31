@@ -2,14 +2,13 @@
 
 #include "core/DictationRecord.h"
 #include "core/ProviderReadiness.h"
-#include "dictation/BetweenAttempts.h"
 #include "dictation/DictationPorts.h"
+#include "dictation/DictationSpeech.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/EditReview.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
 #include "dictation/TranscriptPipeline.h"
-#include "providers/SpeechAttempts.h"
 #include "providers/TranscriptRefiner.h"
 
 #include <QElapsedTimer>
@@ -152,20 +151,13 @@ private:
     using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
     bool selectProviders();
-    void prepareSpeechProvider();
-    TranscriptRefiner *refinerToRenew() const;
-    void speechProviderReady();
-    void speechChainExhausted();
-    void holdPendingAudio(const QByteArray &pcm);
-    void switchSpeechProvider(const SpeechFailure &failure);
-    void noteSpeechFailure(const SpeechFailure &failure);
-    void retireSpeechAttempt();
+    void speechChainExhausted(const SpeechFailure &switchFailure);
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
     bool offlineFor(ProviderRole role, const QString &providerId) const;
     void noteSignIn(const QString &providerId, bool signedIn);
     void noteRan(ProviderRole role, const QString &providerId);
     ProviderLabels providerLabels() const;
-    void continueStartupAfterPreparation(quint64 generation);
+    void continueStartupAfterPreparation();
     void failStartup(const QString &message, const PopupErrorAction &fix);
     void failSession(const QString &message, const PopupErrorAction &fix = {});
     void beginRefinement(quint64 generation);
@@ -184,18 +176,7 @@ private:
     void enterReview();
     void emitReview();
     bool selectionUnchanged();
-    void handleSpeechFailure(const SpeechFailure &failure);
-    void handleAttemptCompleted();
     void endSpeechAfterFailure(const SpeechFailure &failure);
-    void rollOverSpeechAttempt();
-    void startNextAttempt();
-    // Opens the attempt after a pause once the paused one has finished, and
-    // sends it the audio heard in between.
-    void resumeAttempt();
-    // Sends the open attempt the audio that waited for one, in order.
-    void sendPendingAudio();
-    void refineAfterLastAttempt();
-    void attemptEndedWhileStopping();
     // QtAudioInput::stop() spins a nested event loop for the post-roll, during
     // which commands and provider signals are dispatched. Callers settle the
     // session before stopping and recheck it afterwards.
@@ -229,8 +210,8 @@ private:
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
-    // The session's speech providers, through the registry's transcribers.
-    SpeechAttempts *m_speech = nullptr;
+    // The session's speech, through the registry's transcribers.
+    DictationSpeech *m_speech = nullptr;
     RefinementChain *m_refinementChain = nullptr;
     QTimer *m_completionTimer = nullptr;
     // The registry owns it and may be destroyed first; never call a dead one.
@@ -260,10 +241,6 @@ private:
     // From Listening to Stopping: the audio a Dictation Session transcribed.
     QElapsedTimer m_listeningClock;
     int m_listeningMs = 0;
-    BetweenAttempts m_between;
-    // The failure that sent the session on to the next provider, which ends
-    // the speech if none takes over.
-    SpeechFailure m_switchFailure;
     // Each connection to a refiner gets its own revision.
     quint64 m_refinementRevision = 0;
     // The raw transcript is delivered in place of a refinement that was
@@ -276,10 +253,6 @@ private:
     bool m_microphoneOpen = false;
     bool m_microphoneHeld = false;
     bool m_listening = false;
-    // The generation whose first microphone start is under way; it spins an
-    // event loop too. A provider that becomes ready meanwhile opens only its
-    // attempt, and that start goes on to Listening.
-    quint64 m_microphoneStartGeneration = 0;
     std::optional<SessionOverrides> m_pendingStart;
 };
 
