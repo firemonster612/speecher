@@ -1525,6 +1525,52 @@ private slots:
         comparePeerRead(settings, key, enteredForB);
     }
 
+    // A key entered with a server move is saved once the keyring answers, so
+    // the old server's key is hidden first: another process reading the new
+    // server before the save lands finds no key, not the old one.
+    void aKeyEnteredWithAServerMoveNeverShowsTheOldKey_data()
+    {
+        QTest::addColumn<int>("secret");
+        QTest::newRow("speech endpoint") << int(SecretStore::Secret::SpeechEndpointKey);
+        QTest::newRow("CLI Proxy API") << int(SecretStore::Secret::CliproxyApiKey);
+    }
+
+    void aKeyEnteredWithAServerMoveNeverShowsTheOldKey()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        QFETCH(int, secret);
+        const auto key = SecretStore::Secret(secret);
+        const auto moveTo = [key](const QString &server, const QString &enteredKey) {
+            return [key, server, enteredKey](AppSettings &draft) {
+                if (key == SecretStore::Secret::SpeechEndpointKey) {
+                    draft.speech.endpoint.baseUrl = server;
+                    draft.speech.endpoint.apiKey = enteredKey;
+                } else {
+                    draft.refinement.cliproxyBaseUrl = server;
+                    draft.refinement.cliproxyApiKey = enteredKey;
+                }
+                return true;
+            };
+        };
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] { savedSecret(secrets, key, {}); });
+        settings.edit(moveTo(QStringLiteral("http://server-a.example"), QString()));
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("key-a")));
+
+        settings.edit(moveTo(QStringLiteral("http://server-b.example"), QStringLiteral("key-b")));
+        settings.raw().sync();
+
+        comparePeerRead(settings, key, QString());
+        bool settled = false;
+        secrets->afterWrites([&settled] { settled = true; });
+        QTRY_VERIFY(settled);
+        comparePeerRead(settings, key, QStringLiteral("key-b"));
+    }
+
     // A deletion marker that comes while a worker waits on the keyring hides
     // the key the keyring answers with, as removal's marker does from a
     // worker that opened the settings before it (r382 Sol5).

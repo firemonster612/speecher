@@ -410,10 +410,14 @@ bool SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
         const bool unchanged = draft.unreadSecretKeys.contains(key)
             ? value.trimmed().isEmpty()
             : !previous.unreadSecretKeys.contains(key) && value.trimmed() == before.trimmed();
+        // The clear first, even under a key the edit entered: a clear hides
+        // the old key at once, a save only once the keyring answers, after
+        // the new server reached the file.
+        if (movedServer) {
+            secrets.append({secret, QString()});
+        }
         if (!unchanged) {
             secrets.append({secret, value});
-        } else if (movedServer) {
-            secrets.append({secret, QString()});
         }
     }
     // First: a key cleared here is hidden before the settings saved with
