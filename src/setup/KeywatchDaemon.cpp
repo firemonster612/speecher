@@ -392,6 +392,12 @@ private:
         if (got < 0) {
             return;
         }
+        // A watching client has asked all it may. Its connection carries
+        // KeyEvents now, and a reply written among them would break their
+        // framing, so whatever else it sends is read and dropped.
+        if (client.evdev != 0) {
+            return;
+        }
         client.pendingFill += std::size_t(got);
         if (client.pendingFill < sizeof(WatchRequest)) {
             return;
@@ -401,10 +407,10 @@ private:
         client.pendingFill = 0;
         Refusal refusal = Refusal::None;
         const PermittedKey *key = nullptr;
-        if (client.evdev != 0 || uidAtWatchLimit(client)) {
-            // One key per connection, and a few connections per uid: one for
-            // each Global Shortcut. Keys that cannot spell text do not
-            // compose into a keylogger however many are watched at once.
+        if (uidAtWatchLimit(client)) {
+            // A few connections per uid, one key each: one for each Global
+            // Shortcut. Keys that cannot spell text do not compose into a
+            // keylogger however many are watched at once.
             refusal = Refusal::AlreadyWatching;
         } else if (request.version < speecher::keywatch::oldestProtocolVersion
                    || request.version > speecher::keywatch::protocolVersion) {
@@ -419,9 +425,7 @@ private:
         if (refusal != Refusal::None) {
             logLine("refused uid " + std::to_string(client.uid) + " pid "
                     + std::to_string(client.pid) + " key " + std::to_string(request.keyId));
-            if (client.evdev == 0) {
-                dropClient(client);
-            }
+            dropClient(client);
             return;
         }
         client.evdev = key->evdev;
