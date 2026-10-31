@@ -288,6 +288,9 @@ public:
     void finishInput(quint64 attemptId) override
     {
         ++stopCalls;
+        if (onFinishInput) {
+            onFinishInput();
+        }
         if (autoCompleteOnFinish) {
             emit attemptCompleted(attemptId);
         }
@@ -359,6 +362,9 @@ public:
     std::function<void()> duringBackgroundPrepare;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
+    // Runs inside finishInput(), as a provider that sends its last words as
+    // it finishes.
+    std::function<void()> onFinishInput;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
     std::function<void(quint64)> onCancelAttempt;
     // Runs inside endUtterance(), as a provider that finalizes when asked.

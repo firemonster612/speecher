@@ -1546,6 +1546,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("heard"));
         speech->autoCompleteOnFinish = action == QStringLiteral("stop");
+        QSignalSpy statuses(&session, &DictationSession::statusChanged);
         connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
             if (state != DictationState::Paused) {
                 return;
@@ -1564,11 +1565,131 @@ private slots:
         if (action == QStringLiteral("stop")) {
             QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
             QCOMPARE(delivery.lastText, QStringLiteral("heard"));
+            // The receipt is the last word; Paused is not shown after it.
+            QCOMPARE(statuses.last().first().toString(), session.lastMessage());
             return;
         }
         QCOMPARE(int(session.state()), int(DictationState::Paused));
         QCOMPARE(speech->startCalls, 1);
         QCOMPARE(delivery.calls, 0);
+    }
+
+    // Words the paused attempt sends as it finishes reach handlers once the
+    // session shows Paused: a resume from one is not lost.
+    void aResumeFromTheLastWordsOfAPausedAttemptListensAgain()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->onFinishInput = [&] { speech->emitFinalText(QStringLiteral("last words")); };
+        connect(&session, &DictationSession::previewChanged, &session, [&](const QString &text) {
+            if (text == QStringLiteral("last words")) {
+                session.resume();
+            }
+        });
+
+        session.pause();
+
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio.isActive());
+    }
+
+    // The partial a resume commits as its attempt opens reaches handlers once
+    // the session listens: a pause from one stops the microphone.
+    void aPauseFromThePartialAResumeCommitsPauses()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitPartialText(QStringLiteral("unfinished"));
+        session.pause();
+        bool armed = true;
+        connect(&session, &DictationSession::previewChanged, &session, [&] {
+            if (std::exchange(armed, false)) {
+                session.pause();
+            }
+        });
+
+        session.resume();
+
+        QVERIFY(!armed);
+        QCOMPARE(int(session.state()), int(DictationState::Paused));
+        QVERIFY(!audio.isActive());
+    }
+
+    // A handler that pauses and resumes again as a resume announces Listening
+    // has the microphone started once, by its own resume.
+    void aResumeOvertakenByAnotherStartsTheMicrophoneOnce()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        session.pause();
+        int starts = 0;
+        audio.onStart = [&] { ++starts; };
+        bool armed = true;
+        connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
+            if (state == DictationState::Listening && std::exchange(armed, false)) {
+                session.pause();
+                session.resume();
+            }
+        });
+
+        session.resume();
+
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(starts, 1);
+    }
+
+    // A resume whose attempt fails as it opens delivers the words the pause
+    // kept, without starting the microphone again.
+    void aResumeFailingAtOnceDeliversWithoutTheMicrophone()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("kept"));
+        session.pause();
+        speech->onStartAttempt = [&] { speech->emitFailure(QStringLiteral("refused")); };
+        audio.started = false;
+
+        session.resume();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastText, QStringLiteral("kept"));
+        QVERIFY(!audio.started);
     }
 
     // Stop while paused delivers what was said, once the paused attempt's
