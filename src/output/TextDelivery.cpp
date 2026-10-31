@@ -12,9 +12,13 @@
 #include "output/win/WinPasteDelivery.h"
 #endif
 
+#include <QDebug>
+#include <QPointer>
+#include <QTimer>
+
 #include <memory>
-#include <optional>
 #include <utility>
+#include <vector>
 
 namespace speecher {
 
@@ -29,12 +33,13 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content,
+    void deliver(const DeliveryContent &content,
                  const std::function<bool()> &clearToInject,
-                 bool *,
-                 QString *error) override
+                 std::function<void(const Outcome &)> done) override
     {
-        return YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject, error);
+        Outcome outcome;
+        outcome.ok = YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject, &outcome.error);
+        done(outcome);
     }
 
 private:
@@ -48,12 +53,11 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content,
+    void deliver(const DeliveryContent &content,
                  const std::function<bool()> &,
-                 bool *htmlAvailable,
-                 QString *error) override
+                 std::function<void(const Outcome &)> done) override
     {
-        return m_clipboardDelivery->copyWayland(content, htmlAvailable, error);
+        m_clipboardDelivery->copyWayland(content, m_clipboardDelivery, std::move(done));
     }
 
 private:
@@ -64,12 +68,13 @@ private:
 #ifdef SPEECHER_WITH_MAC
 class MacPasteBackend final : public DeliveryBackend {
 public:
-    bool deliver(const DeliveryContent &,
+    void deliver(const DeliveryContent &,
                  const std::function<bool()> &clearToInject,
-                 bool *,
-                 QString *error) override
+                 std::function<void(const Outcome &)> done) override
     {
-        return MacPasteDelivery().paste(clearToInject, error);
+        Outcome outcome;
+        outcome.ok = MacPasteDelivery().paste(clearToInject, &outcome.error);
+        done(outcome);
     }
 };
 #endif // SPEECHER_WITH_MAC
@@ -82,12 +87,13 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &,
+    void deliver(const DeliveryContent &,
                  const std::function<bool()> &clearToInject,
-                 bool *,
-                 QString *error) override
+                 std::function<void(const Outcome &)> done) override
     {
-        return WinPasteDelivery().paste(m_pasteMethod, clearToInject, error);
+        Outcome outcome;
+        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, clearToInject, &outcome.error);
+        done(outcome);
     }
 
 private:
@@ -102,12 +108,11 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content,
+    void deliver(const DeliveryContent &content,
                  const std::function<bool()> &,
-                 bool *htmlAvailable,
-                 QString *error) override
+                 std::function<void(const Outcome &)> done) override
     {
-        return m_clipboardDelivery->copyQt(content, htmlAvailable, error);
+        m_clipboardDelivery->copyQt(content, m_clipboardDelivery, std::move(done));
     }
 
 private:
@@ -201,48 +206,59 @@ void TextDelivery::useDefaultBackendFactory()
 }
 
 // The clipboard as it was before a paste borrowed it, put back once the paste
-// is verified, and what the receipt says about it.
+// is verified, and what the receipt says about it. Both steps answer through
+// next once the clipboard has, unless context is gone by then.
 class TextDelivery::PreviousClipboard {
 public:
-    // Saves the clipboard when wanted, or notes why it could not.
-    PreviousClipboard(ClipboardDelivery &clipboard, bool wanted)
+    explicit PreviousClipboard(ClipboardDelivery &clipboard)
         : m_clipboard(clipboard)
     {
+    }
+
+    // Saves the clipboard when wanted, or notes why it could not.
+    void save(bool wanted, QObject *context, std::function<void()> next)
+    {
         if (!wanted) {
+            next();
             return;
         }
         if (!m_clipboard.canSnapshot()) {
             m_warning = QStringLiteral("Previous clipboard could not be saved because snapshots are unavailable");
+            next();
             return;
         }
-        QString captureError;
-        m_saved = m_clipboard.capture(&m_snapshot, &captureError);
-        if (!m_saved) {
-            m_warning = captureError.isEmpty()
-                ? QStringLiteral("Previous clipboard could not be saved")
-                : QStringLiteral("Previous clipboard could not be saved: %1").arg(captureError);
-        }
+        m_clipboard.capture(context, [this, next](const ClipboardCaptured &captured) {
+            m_saved = captured.ok;
+            m_snapshot = captured.snapshot;
+            if (!m_saved) {
+                m_warning = captured.error.isEmpty()
+                    ? QStringLiteral("Previous clipboard could not be saved")
+                    : QStringLiteral("Previous clipboard could not be saved: %1").arg(captured.error);
+            }
+            next();
+        });
     }
 
-    // Puts the saved clipboard back after a verified paste. False when nothing
-    // was saved, or when it could not be put back, which the receipt then says.
-    bool restore()
+    // Puts the saved clipboard back after a verified paste. next hears false
+    // when nothing was saved, or when it could not be put back, which the
+    // receipt then says.
+    void restore(QObject *context, std::function<void(bool restored)> next)
     {
         if (!m_saved) {
-            return false;
+            next(false);
+            return;
         }
-        QString error;
-        bool keptNewerCopy = false;
-        const bool ok = m_clipboard.restore(m_snapshot, &error, true, &keptNewerCopy);
-        if (ok && keptNewerCopy) {
-            m_note = QStringLiteral("Previous clipboard kept as-is.");
-        }
-        if (!ok) {
-            m_warning = error.isEmpty()
-                ? QStringLiteral("Previous clipboard could not be restored")
-                : QStringLiteral("Previous clipboard could not be restored: %1").arg(error);
-        }
-        return ok;
+        m_clipboard.restore(m_snapshot, true, context, [this, next](const ClipboardRestored &restored) {
+            if (restored.ok && restored.keptNewerCopy) {
+                m_note = QStringLiteral("Previous clipboard kept as-is.");
+            }
+            if (!restored.ok) {
+                m_warning = restored.error.isEmpty()
+                    ? QStringLiteral("Previous clipboard could not be restored")
+                    : QStringLiteral("Previous clipboard could not be restored: %1").arg(restored.error);
+            }
+            next(restored.ok);
+        });
     }
 
     // message, followed by what became of the previous clipboard.
@@ -265,6 +281,371 @@ private:
     QString m_note;
 };
 
+// One delivery, step by step: save the previous clipboard, copy, then insert
+// straight into the app or press the paste keys, and put the previous
+// clipboard back after a verified paste. A step that waits on a helper goes
+// on from its answer. done hears the result once, and nothing runs after
+// stop().
+class TextDelivery::Run final : public QObject {
+    // One of this run's frames on the stack. The deadline can stop the run
+    // from a step's nested event loop, such as the KWin probe's; the run is
+    // deleted only once no frame is left that would return into it, so the
+    // backend it is in stays alive too.
+    class Frame {
+    public:
+        explicit Frame(Run &run)
+            : m_run(run)
+        {
+            ++m_run.m_frames;
+        }
+        ~Frame()
+        {
+            if (--m_run.m_frames == 0 && !m_run.m_done) {
+                m_run.deleteLater();
+            }
+        }
+
+    private:
+        Run &m_run;
+    };
+
+    // step, run only while this delivery still waits for an answer: not once
+    // it answered or was stopped, nor once it is gone.
+    template <typename Step>
+    auto whileRunning(Step step)
+    {
+        return [self = QPointer<Run>(this), step = std::move(step)](const auto &...answer) {
+            if (self && self->m_done) {
+                Frame frame(*self);
+                step(answer...);
+            }
+        };
+    }
+
+public:
+    // Takes what it needs from delivery, and no parent: delivery may go while
+    // this run's frames are on the stack, which then stop() it.
+    Run(TextDelivery &delivery, Request request, std::function<void(const DeliveryResult &)> done)
+        : m_targetProvider(delivery.m_targetProvider)
+        , m_backendFactory(delivery.m_backendFactory)
+        , m_clipboard(delivery.m_clipboardDelivery)
+        , m_request(std::move(request))
+        , m_previousClipboard(delivery.m_clipboardDelivery)
+        , m_done(std::move(done))
+    {
+    }
+
+    bool running() const { return bool(m_done); }
+    bool onTheStack() const { return m_frames > 0; }
+
+    void start()
+    {
+        Frame frame(*this);
+        const OutputSettings &settings = m_request.settings;
+        m_choice = choosePasteMethod(settings, m_request.target);
+        m_pasteMethod = m_choice.method;
+        m_insertion = directInsertion(OutputMethod::normalized(settings.method), m_pasteMethod);
+        m_focus = m_targetProvider ? m_targetProvider->focusMatch(m_request.target)
+                                   : TargetProvider::FocusMatch::Different;
+        // focusMatch() and verifyInsertion() can wait in a nested event loop,
+        // where the deadline, or delivery going, may stop this run: it goes
+        // no further.
+        if (!m_done) {
+            return;
+        }
+        m_targetFocused = m_pasteMethod != PasteMethod::ClipboardOnly
+            && (m_choice.currentFocusFallback || m_focus == TargetProvider::FocusMatch::Same);
+        m_previousClipboard.save(m_pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping,
+                                 this, whileRunning([this] { copy(); }));
+    }
+
+    // Drops the steps still to come; nothing is answered after. The run
+    // deletes itself once none of its frames is left on the stack.
+    void stop()
+    {
+        m_done = {};
+        if (m_frames == 0) {
+            deleteLater();
+        }
+    }
+
+private:
+    void finish(const DeliveryResult &result)
+    {
+        if (const auto done = std::exchange(m_done, {})) {
+            done(result);
+        }
+    }
+
+    void copy()
+    {
+        m_clipboard.copy(m_request.content, this, whileRunning([this](const ClipboardCopied &copied) {
+            m_copiedInitially = copied.ok;
+            m_initialCopyError = copied.error;
+            m_copiedAsPlainText = m_request.content.html.has_value() && !copied.htmlAvailable;
+            insertOrPaste();
+        }));
+    }
+
+    void insertOrPaste()
+    {
+        TargetProvider *provider = m_targetProvider;
+        const Target &target = m_request.target;
+        const QString &plainText = m_request.content.plainText;
+        QString insertionError;
+        if (m_insertion.requested
+            && provider
+            && provider->canInsertText(target)
+            && provider->insertText(target, plainText, &insertionError)) {
+            const bool verified = provider->verifyInsertion(target, plainText);
+            if (!m_done) {
+                return;
+            }
+            const auto answer = [this, verified] {
+                const QString message = verified
+                    ? QStringLiteral("Pasted")
+                    : m_copiedInitially
+                        ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
+                        : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(m_initialCopyError);
+                finish({
+                    true,
+                    verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
+                    m_copiedAsPlainText,
+                    m_previousClipboard.annotate(
+                        m_copiedAsPlainText ? message + QStringLiteral(" as plain text") : message),
+                });
+            };
+            if (m_copiedInitially && verified) {
+                m_previousClipboard.restore(this, whileRunning([answer](bool) { answer(); }));
+            } else {
+                answer();
+            }
+            return;
+        }
+        if (!m_copiedInitially) {
+            finish({false, DeliveryReceipt::None, false,
+                    m_previousClipboard.annotate(m_initialCopyError.isEmpty()
+                        ? QStringLiteral("Could not copy or insert the transcription")
+                        : QStringLiteral("Could not copy or insert the transcription: %1").arg(m_initialCopyError))});
+            return;
+        }
+        if (m_insertion.only) {
+            if (!insertionError.isEmpty()) {
+                finish({
+                    true,
+                    DeliveryReceipt::Copied,
+                    m_copiedAsPlainText,
+                    m_previousClipboard.annotate(QStringLiteral("Copied; direct insertion was rejected")),
+                });
+                return;
+            }
+            m_pasteMethod = PasteMethod::ClipboardOnly;
+        }
+        QString focusWarning;
+        if (m_pasteMethod != PasteMethod::ClipboardOnly && !m_targetFocused) {
+            if (target.compositorActive) {
+                // A retitled window and a second window of the same program look
+                // alike from here, and one of them is not a window change at all,
+                // so that reading is kept out of the message.
+                focusWarning = m_focus == TargetProvider::FocusMatch::TitleChanged
+                    ? QStringLiteral("The window title changed. Your dictation is on the clipboard.")
+                    : QStringLiteral("The active window changed or could not be verified. Your dictation is on the clipboard.");
+            }
+            m_pasteMethod = PasteMethod::ClipboardOnly;
+        }
+
+        if (m_pasteMethod == PasteMethod::ClipboardOnly) {
+            finish({
+                true,
+                DeliveryReceipt::Copied,
+                m_copiedAsPlainText,
+                m_previousClipboard.annotate(
+                    !focusWarning.isEmpty() ? focusWarning
+                        : m_copiedAsPlainText ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied")),
+            });
+            return;
+        }
+        m_methods = orderedMethods(m_request.settings, m_choice.method);
+        pasteThroughBackend(0);
+    }
+
+    // Tries the backends for the paste method from index on, in turn.
+    void pasteThroughBackend(qsizetype index)
+    {
+        std::unique_ptr<DeliveryBackend> backend;
+        for (; index < m_methods.size() && !backend; ++index) {
+            backend = m_backendFactory ? m_backendFactory(m_methods.at(index), m_request.settings, m_choice.method)
+                                       : nullptr;
+        }
+        if (!backend) {
+            finishCopied();
+            return;
+        }
+        const QString method = m_methods.at(index - 1);
+        TargetProvider *provider = m_targetProvider;
+        const bool virtualKeyboardInput = pressesPasteKeys(method);
+        // currentFocusFallback is the blind paste into whatever is in front:
+        // there is no target to still be focused on.
+        const bool focusGated = virtualKeyboardInput && provider && !m_choice.currentFocusFallback;
+        // The focus gate belongs here, immediately before the keystrokes go
+        // out: preparePaste marks the edit for verification, it does not
+        // decide whether to paste.
+        if (focusGated) {
+            const QString refusal = preparePasteInFocus();
+            if (!m_done) {
+                return;
+            }
+            if (!refusal.isEmpty()) {
+                m_firstError = refusal;
+                finishCopied();
+                return;
+            }
+        }
+        // The keyboard backends wait again after the check above (modifier
+        // release), so they get a last-moment gate to call immediately before
+        // the keystroke goes out. It also refuses once this run was answered,
+        // blind pastes included.
+        const std::function<bool()> clearToInject = virtualKeyboardInput
+            ? std::function<bool()>([self = QPointer<Run>(this), focusGated] {
+                  // Matters if a backend calls it from a later turn of the
+                  // event loop.
+                  if (!self || !self->m_done) {
+                      return false;
+                  }
+                  if (!focusGated) {
+                      return true;
+                  }
+                  Frame frame(*self);
+                  const bool focused = self->m_targetProvider->focusMatch(self->m_request.target)
+                      == TargetProvider::FocusMatch::Same;
+                  return focused && self->m_done;
+              })
+            : std::function<bool()>();
+        // Kept for the whole run: a backend may still be on the stack when
+        // its answer moves on to the next.
+        m_backends.push_back(std::move(backend));
+        m_backends.back()->deliver(
+            m_request.content, clearToInject,
+            whileRunning([this, index, method, virtualKeyboardInput](const DeliveryBackend::Outcome &outcome) {
+                if (outcome.ok) {
+                    pasted(method, virtualKeyboardInput, outcome.htmlAvailable);
+                    return;
+                }
+                if (m_firstError.isEmpty()) {
+                    m_firstError = outcome.error;
+                }
+                // A failed paste already left the text on the clipboard, so the
+                // later clipboard methods would only re-report what the caller
+                // already has.
+                if (virtualKeyboardInput) {
+                    finishCopied();
+                    return;
+                }
+                pasteThroughBackend(index);
+            }));
+    }
+
+    // Checks that the Target still has focus and readies it for the paste.
+    // Returns why the paste keys must not go out, or nothing when they may.
+    QString preparePasteInFocus()
+    {
+        const Target &target = m_request.target;
+        const TargetProvider::FocusMatch atPasteTime = m_targetProvider->focusMatch(target);
+        if (!m_done) {
+            return {};
+        }
+        if (atPasteTime != TargetProvider::FocusMatch::Same) {
+            return !target.compositorActive
+                ? QStringLiteral("The target is no longer available for paste")
+                : atPasteTime == TargetProvider::FocusMatch::TitleChanged
+                    ? QStringLiteral("The window title changed")
+                    : QStringLiteral("The active window changed or could not be verified");
+        }
+        if (!m_targetProvider->preparePaste(target)) {
+            return QStringLiteral("The target is no longer available for paste");
+        }
+        return {};
+    }
+
+    void pasted(const QString &method, bool virtualKeyboardInput, bool htmlAvailable)
+    {
+        TargetProvider *provider = m_targetProvider;
+        const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
+            || method == QString::fromLatin1(OutputMethod::QtClipboard);
+        // A keyboard backend pastes the copy deliver() made.
+        const bool downgraded = virtualKeyboardInput ? m_copiedAsPlainText
+                                                     : m_request.content.html.has_value() && !htmlAvailable;
+        const bool verified = !copied
+            && provider
+            && provider->verifyInsertion(m_request.target, m_request.content.plainText);
+        if (!m_done) {
+            return;
+        }
+        const auto answer = [this, copied, downgraded, verified, virtualKeyboardInput](bool restoredClipboard) {
+            // A compositor-fallback target has no accessible node, so there is
+            // nothing to read back: the paste can never be confirmed. Saying
+            // "could not confirm" on every such dictation reads like a failure
+            // when nothing went wrong.
+            const bool verifiable = !m_request.target.compositorActive;
+            const QString message = copied
+                ? QStringLiteral("Copied")
+                : !verified
+                    ? verifiable
+                        ? QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard.")
+                        : QStringLiteral("Sent. Your dictation is also on the clipboard.")
+                    : virtualKeyboardInput
+                    ? restoredClipboard
+                        ? QStringLiteral("Sent to the app")
+                        : QStringLiteral("Copied • Sent to the app")
+                    : verified ? QStringLiteral("Pasted") : QStringLiteral("Sent to the app");
+            finish({true,
+                    copied ? DeliveryReceipt::Copied
+                           : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
+                    downgraded,
+                    m_previousClipboard.annotate(
+                        downgraded && !virtualKeyboardInput ? message + QStringLiteral(" as plain text") : message)});
+        };
+        if (virtualKeyboardInput && verified) {
+            m_previousClipboard.restore(this, whileRunning(answer));
+        } else {
+            answer(false);
+        }
+    }
+
+    // No backend delivered; the words are on the clipboard from the copy.
+    void finishCopied()
+    {
+        finish({
+            true,
+            DeliveryReceipt::Copied,
+            m_copiedAsPlainText,
+            m_previousClipboard.annotate(
+                m_firstError.isEmpty()
+                    ? (m_copiedAsPlainText ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
+                    : QStringLiteral("Copied; insertion failed: %1").arg(m_firstError)),
+        });
+    }
+
+    TargetProvider *const m_targetProvider;
+    const BackendFactory m_backendFactory;
+    ClipboardDelivery &m_clipboard;
+    const Request m_request;
+    PreviousClipboard m_previousClipboard;
+    std::function<void(const DeliveryResult &)> m_done;
+    PasteChoice m_choice;
+    PasteMethod m_pasteMethod = PasteMethod::ClipboardOnly;
+    DirectInsertion m_insertion;
+    TargetProvider::FocusMatch m_focus = TargetProvider::FocusMatch::Different;
+    bool m_targetFocused = false;
+    bool m_copiedInitially = false;
+    bool m_copiedAsPlainText = false;
+    QString m_initialCopyError;
+    QStringList m_methods;
+    QString m_firstError;
+    std::vector<std::unique_ptr<DeliveryBackend>> m_backends;
+    int m_frames = 0;
+};
+
 TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &settings, const Target &target)
 {
     const PasteRule pasteRule = resolvePasteRule(settings.pasteRules, target);
@@ -277,231 +658,59 @@ TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &
     return {pastes ? pasteRule.method : PasteMethod::ClipboardOnly, currentFocusFallback};
 }
 
+TextDelivery::~TextDelivery()
+{
+    if (!m_run) {
+        return;
+    }
+    m_run->stop();
+    // A run with frames on the stack finishes unwinding without this. One
+    // without goes now: at shutdown no event loop may be left to delete it.
+    if (!m_run->onTheStack()) {
+        delete m_run.data();
+    }
+}
+
+void TextDelivery::setAnswerDeadlineMs(int ms)
+{
+    m_answerDeadlineMs = ms;
+}
+
 void TextDelivery::deliver(const OutputSettings &settings,
                            const DeliveryContent &content,
                            const Target &target)
 {
     m_requests.append({settings, content, target});
-    // A delivery waiting in a nested event loop, to check focus or verify an
-    // insertion, can be asked for another; that one waits its turn, so the
-    // answers keep the order of the requests.
-    if (m_requests.size() > 1) {
+    // Never inside this call: a step's nested event loop, to check focus or
+    // verify an insertion, could otherwise answer an earlier delivery here.
+    QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);
+}
+
+void TextDelivery::startNext()
+{
+    if (m_run || m_requests.isEmpty()) {
         return;
     }
-    QList<DeliveryResult> results;
-    while (!m_requests.isEmpty()) {
-        const Request request = m_requests.first();
-        results << deliverNow(request.settings, request.content, request.target);
-        m_requests.removeFirst();
-    }
-    // Posted once all are done: a later one's nested event loop would
-    // otherwise answer an earlier one inside this call.
-    for (const DeliveryResult &result : results) {
-        QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
-    }
+    Run *run = new Run(*this, m_requests.first(), [this](const DeliveryResult &result) { answer(result); });
+    m_run = run;
+    // Only once the run is gone: a stopped one can still have frames in a
+    // nested event loop, which must not start a delivery inside it.
+    connect(run, &QObject::destroyed, this, &TextDelivery::startNext, Qt::QueuedConnection);
+    QTimer::singleShot(m_answerDeadlineMs, run, [this, run] {
+        if (!run->running()) {
+            return;
+        }
+        qWarning() << "text delivery did not finish within" << m_answerDeadlineMs << "ms";
+        answer({false, DeliveryReceipt::None, false, QStringLiteral("Delivery did not finish in time")});
+    });
+    run->start();
 }
 
-DeliveryResult TextDelivery::deliverNow(const OutputSettings &settings,
-                                        const DeliveryContent &content,
-                                        const Target &target)
+void TextDelivery::answer(const DeliveryResult &result)
 {
-    const PasteChoice choice = choosePasteMethod(settings, target);
-    PasteMethod pasteMethod = choice.method;
-    const DirectInsertion insertion = directInsertion(OutputMethod::normalized(settings.method), pasteMethod);
-    const TargetProvider::FocusMatch focus = m_targetProvider
-        ? m_targetProvider->focusMatch(target)
-        : TargetProvider::FocusMatch::Different;
-    const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
-        && (choice.currentFocusFallback || focus == TargetProvider::FocusMatch::Same);
-
-    PreviousClipboard previousClipboard(m_clipboardDelivery,
-                                        pasteMethod != PasteMethod::ClipboardOnly
-                                            && settings.restoreClipboardAfterTyping);
-    bool initiallyHtmlAvailable = false;
-    QString initialCopyError;
-    const bool copiedInitially = m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError);
-    const bool copiedAsPlainText = content.html.has_value() && !initiallyHtmlAvailable;
-
-    QString insertionError;
-    if (insertion.requested
-        && m_targetProvider
-        && m_targetProvider->canInsertText(target)
-        && m_targetProvider->insertText(target, content.plainText, &insertionError)) {
-        const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
-        if (copiedInitially && verified) {
-            previousClipboard.restore();
-        }
-        const QString message = verified
-            ? QStringLiteral("Pasted")
-            : copiedInitially
-                ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
-                : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(initialCopyError);
-        return {
-            true,
-            verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
-            copiedAsPlainText,
-            previousClipboard.annotate(
-                copiedAsPlainText ? message + QStringLiteral(" as plain text") : message),
-        };
-    }
-    if (!copiedInitially) {
-        return {false, DeliveryReceipt::None, false,
-                previousClipboard.annotate(initialCopyError.isEmpty()
-                    ? QStringLiteral("Could not copy or insert the transcription")
-                    : QStringLiteral("Could not copy or insert the transcription: %1").arg(initialCopyError))};
-    }
-    if (insertion.only) {
-        if (!insertionError.isEmpty()) {
-            return {
-                true,
-                DeliveryReceipt::Copied,
-                copiedAsPlainText,
-                previousClipboard.annotate(QStringLiteral("Copied; direct insertion was rejected")),
-            };
-        }
-        pasteMethod = PasteMethod::ClipboardOnly;
-    }
-    QString focusWarning;
-    if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
-        if (target.compositorActive) {
-            // A retitled window and a second window of the same program look
-            // alike from here, and one of them is not a window change at all,
-            // so that reading is kept out of the message.
-            focusWarning = focus == TargetProvider::FocusMatch::TitleChanged
-                ? QStringLiteral("The window title changed. Your dictation is on the clipboard.")
-                : QStringLiteral("The active window changed or could not be verified. Your dictation is on the clipboard.");
-        }
-        pasteMethod = PasteMethod::ClipboardOnly;
-    }
-
-    if (pasteMethod == PasteMethod::ClipboardOnly) {
-        return {
-            true,
-            DeliveryReceipt::Copied,
-            copiedAsPlainText,
-            previousClipboard.annotate(
-                !focusWarning.isEmpty() ? focusWarning
-                    : copiedAsPlainText ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied")),
-        };
-    }
-
-    QString firstError;
-    if (std::optional<DeliveryResult> pasted = pasteThroughBackends(
-            settings, content, target, choice, copiedAsPlainText, previousClipboard, &firstError)) {
-        return *pasted;
-    }
-    return {
-        true,
-        DeliveryReceipt::Copied,
-        copiedAsPlainText,
-        previousClipboard.annotate(
-            firstError.isEmpty()
-                ? (copiedAsPlainText ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
-                : QStringLiteral("Copied; insertion failed: %1").arg(firstError)),
-    };
-}
-
-QString TextDelivery::preparePasteInFocus(const Target &target)
-{
-    const TargetProvider::FocusMatch atPasteTime = m_targetProvider->focusMatch(target);
-    if (atPasteTime != TargetProvider::FocusMatch::Same) {
-        return !target.compositorActive
-            ? QStringLiteral("The target is no longer available for paste")
-            : atPasteTime == TargetProvider::FocusMatch::TitleChanged
-                ? QStringLiteral("The window title changed")
-                : QStringLiteral("The active window changed or could not be verified");
-    }
-    if (!m_targetProvider->preparePaste(target)) {
-        return QStringLiteral("The target is no longer available for paste");
-    }
-    return {};
-}
-
-std::optional<DeliveryResult> TextDelivery::pasteThroughBackends(const OutputSettings &settings,
-                                                                 const DeliveryContent &content,
-                                                                 const Target &target,
-                                                                 const PasteChoice &choice,
-                                                                 bool copiedAsPlainText,
-                                                                 PreviousClipboard &previousClipboard,
-                                                                 QString *firstError)
-{
-    for (const QString &method : orderedMethods(settings, choice.method)) {
-        std::unique_ptr<DeliveryBackend> backend = m_backendFactory
-            ? m_backendFactory(method, settings, choice.method)
-            : nullptr;
-        if (!backend) {
-            continue;
-        }
-
-        QString error;
-        bool htmlAvailable = false;
-        const bool virtualKeyboardInput = pressesPasteKeys(method);
-        // currentFocusFallback is the blind paste into whatever is in front:
-        // there is no target to still be focused on.
-        const bool focusGated = virtualKeyboardInput && m_targetProvider && !choice.currentFocusFallback;
-        // The focus gate belongs here, immediately before the keystrokes go
-        // out: preparePaste marks the edit for verification, it does not
-        // decide whether to paste.
-        if (focusGated) {
-            const QString refusal = preparePasteInFocus(target);
-            if (!refusal.isEmpty()) {
-                *firstError = refusal;
-                return std::nullopt;
-            }
-        }
-        // The keyboard backends block again after the check above (modifier
-        // release), so they get a last-moment gate to call immediately before
-        // the keystroke goes out.
-        const std::function<bool()> clearToInject = focusGated
-            ? std::function<bool()>([this, &target] {
-                  return m_targetProvider->focusMatch(target) == TargetProvider::FocusMatch::Same;
-              })
-            : std::function<bool()>();
-        if (backend->deliver(content, clearToInject, &htmlAvailable, &error)) {
-            const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
-                || method == QString::fromLatin1(OutputMethod::QtClipboard);
-            // A keyboard backend pastes the copy deliver() made.
-            const bool downgraded = virtualKeyboardInput ? copiedAsPlainText
-                                                         : content.html.has_value() && !htmlAvailable;
-            const bool verified = !copied
-                && m_targetProvider
-                && m_targetProvider->verifyInsertion(target, content.plainText);
-            const bool restoredClipboard = virtualKeyboardInput && verified && previousClipboard.restore();
-            // A compositor-fallback target has no accessible node, so there is
-            // nothing to read back: the paste can never be confirmed. Saying
-            // "could not confirm" on every such dictation reads like a failure
-            // when nothing went wrong.
-            const bool verifiable = !target.compositorActive;
-            const QString message = copied
-                ? QStringLiteral("Copied")
-                : !verified
-                    ? verifiable
-                        ? QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard.")
-                        : QStringLiteral("Sent. Your dictation is also on the clipboard.")
-                    : virtualKeyboardInput
-                    ? restoredClipboard
-                        ? QStringLiteral("Sent to the app")
-                        : QStringLiteral("Copied • Sent to the app")
-                    : verified ? QStringLiteral("Pasted") : QStringLiteral("Sent to the app");
-            return DeliveryResult{true,
-                                  copied ? DeliveryReceipt::Copied
-                                         : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
-                                  downgraded,
-                                  previousClipboard.annotate(
-                                      downgraded && !virtualKeyboardInput
-                                          ? message + QStringLiteral(" as plain text")
-                                          : message)};
-        }
-        if (firstError->isEmpty()) {
-            *firstError = error;
-        }
-        // A failed paste already left the text on the clipboard, so the later
-        // clipboard methods would only re-report what the caller already has.
-        if (virtualKeyboardInput) {
-            return std::nullopt;
-        }
-    }
-    return std::nullopt;
+    m_run->stop();
+    m_requests.removeFirst();
+    emit delivered(result);
 }
 
 QStringList TextDelivery::pasteRoute(const OutputSettings &settings, PasteMethod pasteMethod)
