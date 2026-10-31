@@ -562,9 +562,20 @@ private slots:
 #ifndef Q_OS_WIN
     // A save refused before the key went in, as when the settings file can't
     // be made private, keeps its reason on the row through a later settings
-    // edit, which stores the key's old state again and changes nothing.
-    void aRefusedSaveKeepsItsReasonThroughAnotherEdit()
+    // edit, which stores the key's old state again and changes nothing. A
+    // key a settings edit replaces is a save that went through, and ends it.
+    void aRefusedSaveKeepsItsReasonUntilASaveGoesThrough_data()
     {
+        QTest::addColumn<QString>("replacement");
+        QTest::addColumn<bool>("kept");
+        QTest::newRow("unrelated edit") << QString() << true;
+        QTest::newRow("key replaced by an edit") << QStringLiteral("replacement-key") << false;
+    }
+
+    void aRefusedSaveKeepsItsReasonUntilASaveGoesThrough()
+    {
+        QFETCH(QString, replacement);
+        QFETCH(bool, kept);
         if (getuid() == 0) {
             QSKIP("Root writes to a read-only folder");
         }
@@ -585,9 +596,15 @@ private slots:
         const QString reason = refusal.toMap().value(QStringLiteral("reason")).toString();
         QVERIFY2(reason.contains(QStringLiteral("can't be kept from other users")), qPrintable(reason));
 
-        settings.set(QStringLiteral("previewWords"), 13.0);
+        controller.settings()->edit([&replacement](AppSettings &draft) {
+            draft.ui.previewWords = 13;
+            if (!replacement.isEmpty()) {
+                draft.refinement.cliproxyApiKey = replacement;
+            }
+            return true;
+        });
 
-        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), refusal);
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), kept ? refusal : QVariant());
     }
 #endif
 

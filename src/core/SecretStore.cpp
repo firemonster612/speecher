@@ -385,11 +385,14 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
     quint64 written = 0;
     Request request;
     bool stored = false;
+    bool wrote = false;
     do {
         written = entry.requests;
         request = *entry.requested;
         // A file that won't save refuses the request without another write.
-        stored = (holds(secret, request) || write(secret, request)) && fileSaved(secret);
+        const bool held = holds(secret, request);
+        stored = (held || write(secret, request)) && fileSaved(secret);
+        wrote = wrote || (stored && !held);
     } while (entry.requested && entry.requests != written);
     entry.writing = false;
     // The removal already answered for what was asked.
@@ -400,7 +403,7 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
     const bool cleared = request.value.isEmpty();
     const QString error = m_lastError;
     if (stored) {
-        emit saveFinished(secret, written, cleared, true, QString());
+        emit saveFinished(secret, written, cleared, true, QString(), wrote);
     } else {
         refuse(secret, written, cleared, error);
     }
@@ -418,7 +421,7 @@ void SecretStore::refuse(Secret secret, quint64 request, bool cleared, const QSt
 {
     qWarning().noquote() << "Could not" << (cleared ? "clear" : "save") << keyringEntry(secret) + QLatin1Char(':')
                          << error;
-    emit saveFinished(secret, request, cleared, false, error);
+    emit saveFinished(secret, request, cleared, false, error, false);
 }
 
 // Whether storage holds the request where it allows, as this store and a new

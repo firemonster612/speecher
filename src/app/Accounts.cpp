@@ -270,7 +270,7 @@ void Accounts::write(SecretStore::Secret secret, const QString &value)
 // unless what replaced it was a clear, as a server change makes: the key the
 // field still holds was entered for the server before.
 void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
-                                  const QString &error)
+                                  const QString &error, bool wrote)
 {
     const auto waiting = m_saving.constFind(secret);
     const bool fieldWaited = waiting != m_saving.cend();
@@ -285,13 +285,13 @@ void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, b
         }
         return;
     }
-    noteOtherWrite(secret, cleared, stored, error);
+    noteOtherWrite(secret, cleared, stored, error, wrote);
     if (fieldWaited && cleared) {
         emit draftSettled(secret);
     }
 }
 
-void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error)
+void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error, bool wrote)
 {
     const auto state = [this, secret] {
         return std::tuple(m_savedSecrets.value(secret, true), m_savedSecrets.contains(secret),
@@ -299,15 +299,12 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
                           m_writeFailures.value(secret));
     };
     const auto before = state();
-    const bool wasPending = m_pendingClears.value(secret);
     m_secretsWritten.insert(secret);
     m_pendingClears.insert(secret, m_settings.secrets()->deletionPending(secret));
     if (stored) {
         // Every settings edit stores each key it holds again: only a write
-        // that changed whether the key is saved, or ended a pending clear,
-        // answers the failure the row shows.
-        const bool savedChanged = m_savedSecrets.contains(secret) && m_savedSecrets.value(secret) == cleared;
-        if (savedChanged || (wasPending && !m_pendingClears.value(secret))) {
+        // storage took succeeds where the row's failure didn't.
+        if (wrote) {
             m_writeFailures.remove(secret);
         }
         m_savedSecrets.insert(secret, !cleared);

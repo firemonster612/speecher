@@ -105,11 +105,11 @@ private:
     // the same secret under way, carrying the number the secret waits for.
     void write(SecretStore::Secret secret, const QString &value);
     void secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
-                            const QString &error);
+                            const QString &error, bool wrote);
     void finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error);
     // Shows on the secret's row what a write no field asked for, or one that
     // replaced a field's, left in storage, checking no sign-in again.
-    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error);
+    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error, bool wrote);
     void settingsSaved();
 
     SettingsStore &m_settings;

@@ -125,9 +125,12 @@ public:
 signals:
     // A save or clear of the secret settled: request is its number
     // (nextRequest), and storage holds it, or refused it for error's reason.
-    // cleared says it was a clear. A request replaced before it settled has
-    // no saveFinished of its own: one with a higher number settled it.
-    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
+    // cleared says it was a clear, and wrote that storage took it, rather
+    // than only holding it already, as when a settings edit saves every key
+    // again unchanged. A request replaced before it settled has no
+    // saveFinished of its own: one with a higher number settled it.
+    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error,
+                      bool wrote);
 
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
