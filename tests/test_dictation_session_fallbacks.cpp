@@ -419,6 +419,29 @@ private slots:
         QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
     }
 
+    // A primary that fails inside its first attempt hands over to a fallback
+    // that opens its own at once: the transcript keeps the fallback's
+    // language.
+    void refinementGetsTheLanguageOfAFallbackOpenedInsideTheFailedAttempt()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
+        rig.settings.edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("de");
+            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            return true;
+        });
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Connect, Network);
+        };
+        rig.listen();
+        rig.speech[QStringLiteral("claude")]->emitFinalText(QStringLiteral("bonjour"));
+        rig.session->stopListening();
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastContext.spokenLanguage, QStringLiteral("fr"));
+    }
+
     // When the chain runs out after a fallback kept words, refinement is
     // still told the language that fallback heard them in.
     void refinementGetsTheKeptWordsLanguageOnceTheChainRunsOut()
@@ -1447,6 +1470,44 @@ private slots:
         QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->prepareCalls, 0);
         QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
+    }
+
+    // A failure that switched one session's speech provider is not the next
+    // session's: when its chain runs out, nothing had switched it.
+    void aSwitchFailureDoesNotCarryIntoTheNextSession()
+    {
+        ProviderRegistry registry;
+        std::map<QString, FakeSpeechTranscriber *> speech;
+        for (const QString id : {QStringLiteral("claude"), QStringLiteral("codex")}) {
+            registerFakeSpeechProvider(registry, &speech[id], id);
+            registry.speechProvider(id);
+        }
+        TranscriptState transcript;
+        DictationSpeech dictation(&registry, &transcript);
+        QList<SpeechFailure> switchFailures;
+        connect(&dictation, &DictationSpeech::exhausted, this,
+                [&](const SpeechFailure &failure) { switchFailures << failure; });
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("en");
+        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.fallbackProviderIds = {QStringLiteral("codex")};
+
+        dictation.begin();
+        QVERIFY(dictation.selectProviders(settings.speech));
+        dictation.start(settings, nullptr);
+        speech[QStringLiteral("claude")]->emitFailure(QStringLiteral("claude is down"), false, SpeechPhase::Streaming,
+                                                      ProviderFailureKind::Server);
+        QCOMPARE(speech[QStringLiteral("codex")]->startCalls, 1);
+
+        speech[QStringLiteral("codex")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("codex is down")};
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {};
+        dictation.begin();
+        QVERIFY(dictation.selectProviders(settings.speech));
+        dictation.start(settings, nullptr);
+        QCOMPARE(switchFailures.size(), 1);
+        QCOMPARE(switchFailures.first().message, QString());
     }
 
     void noSpeechServiceNamesEachProviderAndWhy()

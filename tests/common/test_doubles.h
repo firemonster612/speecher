@@ -280,6 +280,9 @@ public:
 
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
     {
+        if (ignoresEndedAttempts && (endedAttempts.contains(attemptId) || inputEndedAttempts.contains(attemptId))) {
+            return;
+        }
         if (attemptId == currentAttemptId) {
             audioChunks << pcm;
         }
@@ -288,7 +291,15 @@ public:
     void finishInput(quint64 attemptId) override
     {
         ++stopCalls;
+        if (ignoresEndedAttempts && endedAttempts.contains(attemptId)) {
+            return;
+        }
+        inputEndedAttempts.append(attemptId);
+        if (onFinishInput) {
+            onFinishInput();
+        }
         if (autoCompleteOnFinish) {
+            endedAttempts.append(attemptId);
             emit attemptCompleted(attemptId);
         }
     }
@@ -345,6 +356,7 @@ public:
 
     void emitCompletion()
     {
+        endedAttempts.append(currentAttemptId);
         emit attemptCompleted(currentAttemptId);
     }
 
@@ -359,6 +371,9 @@ public:
     std::function<void()> duringBackgroundPrepare;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
+    // Runs inside finishInput(), as a provider that sends its last words as
+    // it finishes.
+    std::function<void()> onFinishInput;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
     std::function<void(quint64)> onCancelAttempt;
     // Runs inside endUtterance(), as a provider that finalizes when asked.
@@ -378,6 +393,11 @@ public:
     int beginUtteranceCalls = 0;
     quint64 currentAttemptId = 0;
     bool autoCompleteOnFinish = true;
+    // As a real provider: finishInput() for an attempt that has ended, and
+    // audio for one that ended or was told its input ended, do nothing.
+    bool ignoresEndedAttempts = false;
+    QList<quint64> endedAttempts;
+    QList<quint64> inputEndedAttempts;
     QList<quint64> cancelledAttempts;
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;

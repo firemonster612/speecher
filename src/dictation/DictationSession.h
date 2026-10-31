@@ -147,7 +147,9 @@ signals:
 private:
     static int s_popupPaintFallbackMs;
 
-    void setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
+    // Returns the step it took: a caller that runs code which can reach a
+    // handler, this announcement's included, compares it with m_step after.
+    quint64 setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
     using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
     bool selectProviders();
@@ -182,6 +184,7 @@ private:
     // session before stopping and recheck it afterwards.
     void stopAudio();
     bool startAudio(QString *error);
+    void restartMicrophone(quint64 step);
     void setMicrophoneOpen(bool open);
     void updateMicrophoneHeld();
     void updateListening();
@@ -224,7 +227,14 @@ private:
     EditReview m_review;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
-    quint64 m_audioGeneration = 0;
+    // The step the microphone was last started at; 0 once stopped.
+    quint64 m_audioStep = 0;
+    // A resume's step whose microphone restarts once the outermost stop
+    // returns; 0 for none.
+    quint64 m_restartStep = 0;
+    // Bumped by every setState(), so any announcement, even of the same
+    // state, tells a caller the session moved on under it.
+    quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
     // What the session chose for itself: a forced Writing Profile.
@@ -247,6 +257,8 @@ private:
     // asked for.
     bool m_usedRawTranscript = false;
     ProviderHistory m_providerHistory;
+    // What the system last said about the internet.
+    Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
