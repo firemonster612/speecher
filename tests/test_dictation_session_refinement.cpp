@@ -1621,18 +1621,22 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("raw transcript"));
     }
 
-    // A cancel as the session says it refines ends the session there: the
-    // refiner, ready at once or after its sign-in renews, is never asked.
+    // A cancel as the session says it refines, or notes the refiner's
+    // sign-in, ends the session there: the refiner, ready at once or after
+    // its sign-in renews, is never asked.
     void aCancelAsRefiningBeginsAsksNoRefiner_data()
     {
         QTest::addColumn<bool>("renews");
-        QTest::newRow("ready at once") << false;
-        QTest::newRow("renewing") << true;
+        QTest::addColumn<bool>("onSignIn");
+        QTest::newRow("ready at once") << false << false;
+        QTest::newRow("renewing") << true << false;
+        QTest::newRow("as the sign-in is noted") << false << true;
     }
 
     void aCancelAsRefiningBeginsAsksNoRefiner()
     {
         QFETCH(bool, renews);
+        QFETCH(bool, onSignIn);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
@@ -1646,11 +1650,20 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
-        connect(&session, &DictationSession::stateChanged, &session, [&session](DictationState state) {
-            if (state == DictationState::Refining) {
-                session.cancel();
-            }
-        });
+        if (onSignIn) {
+            // The speech provider's sign-in is noted as the session starts.
+            connect(&session, &DictationSession::providerSignInObserved, &session, [&session] {
+                if (session.state() == DictationState::Stopping) {
+                    session.cancel();
+                }
+            });
+        } else {
+            connect(&session, &DictationSession::stateChanged, &session, [&session](DictationState state) {
+                if (state == DictationState::Refining) {
+                    session.cancel();
+                }
+            });
+        }
         session.startListening();
         QTRY_COMPARE(session.state(), DictationState::Listening);
         refiner->refreshRequired = renews;

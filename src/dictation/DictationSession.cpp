@@ -340,7 +340,9 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_usedRawTranscript = false;
     m_providerHistory = {};
     m_listeningMs = 0;
-    setState(DictationState::Starting);
+    if (const quint64 step = setState(DictationState::Starting); step != m_step) {
+        return;
+    }
     qInfo().noquote() << "startListening credentialsPath=" + settings.accounts.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_speechWarning.clear();
@@ -348,6 +350,10 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_transcript->clear();
     m_transcriptPipeline = {};
     emit previewDisplayChanged({});
+    // Clearing the transcript announces the empty preview too.
+    if (generation != m_generation) {
+        return;
+    }
     emit popupShowRequested(generation);
     QTimer::singleShot(s_popupPaintFallbackMs, this, [this, generation] {
         continueStartupAfterPopup(generation);
@@ -426,6 +432,10 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     }
     if (settings.ui.pauseMediaDuringTranscription) {
         m_mediaController->pausePlaying();
+    }
+    // A capture may answer at once.
+    if (step != m_step) {
+        return;
     }
 
     // Walks the speech chain on from the provider it is on, never back: the
@@ -560,11 +570,12 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Refining) {
+        // First: cancelling can make a refiner emit at once.
+        m_refinementGeneration = 0;
         m_refinementChain->cancel();
         if (m_refiner) {
             m_refiner->cancel();
         }
-        m_refinementGeneration = 0;
         if (m_transcriptPipeline.editsSelection) {
             forgetSession();
             emit popupHideRequested();
@@ -663,15 +674,19 @@ void DictationSession::cancel()
     }
     qInfo().noquote() << "cancel requested state=" + stateName();
     discard();
-    setState(DictationState::Idle);
-    emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
-    const quint64 generation = m_generation;
-    // The live setting: discard() has already dropped the session snapshot.
-    QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this, [this, generation] {
-        if (generation == m_generation && m_state == DictationState::Idle) {
-            emit popupHideRequested();
-        }
-    });
+    // A handler of Idle may start another session, which the receipt of
+    // this one must not cover; the microphone still stops last.
+    if (const quint64 step = setState(DictationState::Idle); step == m_step) {
+        emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
+        const quint64 generation = m_generation;
+        // The live setting: discard() has already dropped the session snapshot.
+        QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this,
+                           [this, generation] {
+                               if (generation == m_generation && m_state == DictationState::Idle) {
+                                   emit popupHideRequested();
+                               }
+                           });
+    }
     stopAudio();
 }
 
@@ -922,7 +937,11 @@ void DictationSession::continueStartupAfterPreparation()
 void DictationSession::failStartup(const QString &message, const PopupErrorAction &fix)
 {
     qWarning().noquote() << "speech unavailable message=" + message;
+    const quint64 step = m_step;
     emit previewDisplayChanged({});
+    if (step != m_step) {
+        return;
+    }
     failSession(message, fix);
 }
 
@@ -988,12 +1007,14 @@ void DictationSession::beginRefinement(quint64 generation)
 void DictationSession::startRefiner()
 {
     const RefinementSettings refinement = m_refinementChain->currentSettings();
-    noteSignIn(refinement.providerId, true);
-
+    // A handler of the sign-in or of Refining may have stopped or cancelled
+    // the session, and with it dropped the settings the refiner runs with.
     const quint64 generation = m_generation;
+    noteSignIn(refinement.providerId, true);
+    if (generation != m_generation) {
+        return;
+    }
     enterRefining();
-    // A handler of Refining may have stopped or cancelled the session, and
-    // with it dropped the settings the refiner runs with.
     if (generation != m_generation || m_state != DictationState::Refining) {
         return;
     }
@@ -1039,7 +1060,12 @@ void DictationSession::enterRefining()
 void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
 {
     if (permitsProviderFallback(failure.kind)) {
+        const quint64 generation = m_generation;
         passOverRefiner(m_refinementChain->currentId(), Stage::Connect, failure);
+        // Its sign-in and the emptied preview are announced first.
+        if (generation != m_generation) {
+            return;
+        }
         m_refinementChain->prepareNext(*m_sessionSettings, m_transcriptPipeline.refinementSettings);
         return;
     }
@@ -1113,7 +1139,11 @@ void DictationSession::startFollowUp()
 {
     qInfo() << "follow-up requested";
     m_review.startFollowUp();
+    const quint64 step = m_step;
     emitReview();
+    if (step != m_step) {
+        return;
+    }
     startSession({});
 }
 
@@ -1138,7 +1168,9 @@ void DictationSession::enterReview()
     // The controller takes the review's keys as the state changes; when that
     // changes their names, setReviewKeys has already shown the review.
     const ReviewKeys keys = m_review.keys();
-    setState(DictationState::Reviewing);
+    if (const quint64 step = setState(DictationState::Reviewing); step != m_step) {
+        return;
+    }
     if (m_review.keys() == keys) {
         emitReview();
     }
@@ -1398,7 +1430,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             // Target acts on the review as it does during a manual Replace.
             reviseSelectionEdit(*refined);
             m_refinementGeneration = 0;
-            setState(DictationState::Reviewing);
+            if (const quint64 step = setState(DictationState::Reviewing); step != m_step) {
+                return;
+            }
             replaceWithRevision();
         } else if (refined) {
             deliverFinal(*refined);

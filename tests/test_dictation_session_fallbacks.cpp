@@ -1418,6 +1418,51 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
     }
 
+    // A cancel as a refiner is passed over, from the emptied preview, ends
+    // the session there: the fallback is never prepared or asked, and no
+    // error follows.
+    void aCancelAsARefinerIsPassedOverPreparesNoFallback_data()
+    {
+        QTest::addColumn<bool>("failsToAnswer");
+        QTest::newRow("fails to prepare") << false;
+        QTest::newRow("fails to answer") << true;
+    }
+
+    void aCancelAsARefinerIsPassedOverPreparesNoFallback()
+    {
+        QFETCH(bool, failsToAnswer);
+        ChainRig rig({QStringLiteral("local")}, {QStringLiteral("openai"), QStringLiteral("endpoint")});
+        FakeRefiner *primary = rig.refiners[QStringLiteral("openai")];
+        FakeRefiner *fallback = rig.refiners[QStringLiteral("endpoint")];
+        if (!failsToAnswer) {
+            primary->prepareFailure = ProviderFailure{Network, QStringLiteral("offline")};
+        }
+        rig.listen();
+        bool cancelled = false;
+        connect(rig.session.get(), &DictationSession::popupRefinementPreviewChanged, rig.session.get(), [&] {
+            if (!std::exchange(cancelled, true)) {
+                rig.session->cancel();
+            }
+        });
+        QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        if (failsToAnswer) {
+            QTRY_COMPARE(primary->refineCalls, 1);
+            primary->emitFailure(QStringLiteral("offline"), Network);
+        }
+        QTest::qWait(100);
+
+        QVERIFY(cancelled);
+        QCOMPARE(rig.session->state(), DictationState::Idle);
+        for (const QList<QVariant> &state : std::as_const(states)) {
+            QVERIFY(state.first().value<DictationState>() != DictationState::Error);
+        }
+        QCOMPARE(fallback->prepareCalls, 0);
+        QCOMPARE(fallback->refineCalls, 0);
+        QCOMPARE(rig.delivery.calls, 0);
+    }
+
     // A sign-in turned down: a successful outcome with Open Accounts, up
     // for at least as long as an error would be, so the fix can be used.
     void aTurnedDownSignInOffersAccountsAndStaysUpToBeRead()

@@ -82,6 +82,10 @@ private:
     AppSettings m_settings;
     RefinementSettings m_refinement;
     QPointer<TranscriptRefiner> m_refiner;
+    // Moves on as a walk is cancelled or another starts. A handler of any
+    // signal may do either, so the walk checks it after each one it emits and
+    // goes no further once it moved.
+    quint64 m_walkGeneration = 0;
 };
 
 } // namespace speecher
