@@ -763,6 +763,34 @@ private slots:
         QCOMPARE(rig.delivery.calls, 1);
     }
 
+    // Once audio went past the budget, what follows stays dropped, even when
+    // the paused attempt then fails and the next provider is awaited.
+    void audioPastTheBudgetStaysDroppedWhenThePausedAttemptFails()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 100;
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->autoCompleteOnFinish = false;
+        rig.session->pause();
+        rig.session->resume();
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            rig.audio.pushAudio(second);
+        }
+        rig.audio.onStop = [&] {
+            rig.audio.pushAudio(second);
+            codex->emitFailure(QStringLiteral("timed out"), true, SpeechPhase::Finalize, ProviderFailureKind::Timeout);
+            rig.audio.pushAudio(QByteArray(320, '\0'));
+        };
+        rig.session->stopListening();
+        QTRY_COMPARE(rig.delivery.calls, 1);
+        QCOMPARE(local->audioChunks, QList<QByteArray>(10, second));
+    }
+
     // The attempt id moves on before the old provider is cancelled, so what
     // it emits while stopping, and after, never reaches the transcript; its
     // partial is kept once. A whole-attempt transcript from the next one

@@ -540,14 +540,16 @@ void DictationSession::speechChainExhausted()
 // what was heard.
 void DictationSession::holdPendingAudio(const QByteArray &pcm)
 {
+    // Whichever provider takes the held audio, nothing after the budget joins it.
+    if (m_between.heldPastTheBudget) {
+        return;
+    }
     if (!m_between.awaitingProvider) {
-        if (!m_between.heldPastTheBudget && m_between.heldBytes() + pcm.size() <= kMaxPendingAudioBytes) {
+        if (m_between.heldBytes() + pcm.size() <= kMaxPendingAudioBytes) {
             m_between.hold(pcm);
             return;
         }
-        if (std::exchange(m_between.heldPastTheBudget, true)) {
-            return;
-        }
+        m_between.heldPastTheBudget = true;
         qWarning() << "speech audio held past the connect budget while an attempt finishes; dropping";
         if (m_speechWarning.isEmpty()) {
             m_speechWarning = QStringLiteral("Part of the dictation may be missing. "
