@@ -581,7 +581,8 @@ private slots:
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
-        // Scrolled into the window.
+        // Landed, which clears the pending row, then scrolled into the window.
+        QTRY_COMPARE(navigation->pendingRow(), QString());
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
         // Nothing uses the endpoint, so its section claims no role.
         QCOMPARE(sectionCaption(row), QString());
