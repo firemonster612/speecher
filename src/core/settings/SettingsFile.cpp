@@ -1,5 +1,7 @@
 #include "core/settings/SettingsFile.h"
 
+#include "core/OwnerOnly.h"
+
 #include <QDebug>
 #include <QDir>
 #include <QEvent>
@@ -8,10 +10,6 @@
 #include <QTemporaryDir>
 
 #include <memory>
-
-#ifdef Q_OS_UNIX
-#include <unistd.h>
-#endif
 
 namespace speecher {
 
@@ -30,16 +28,12 @@ bool inPreferencesDomain(const QSettings &settings)
 }
 
 #ifdef Q_OS_UNIX
-constexpr QFile::Permissions groupAndOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
-    | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
-
 // Takes every permission from the group and other users, and says whether
 // path is then this user's alone.
 bool keepToOwner(const QString &path)
 {
     QFile::setPermissions(path, QFile::permissions(path) & ~groupAndOthers);
-    const QFileInfo now(path);
-    return now.exists() && now.ownerId() == getuid() && !(now.permissions() & groupAndOthers);
+    return isOwnerOnly(path);
 }
 #endif
 

@@ -2,6 +2,7 @@
 
 #include "app/CompositionEchoCanceller.h"
 #include "app/CompositionSockets.h"
+#include "core/OwnerOnly.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
@@ -39,11 +40,7 @@ namespace {
 // Whether path is a folder of this user's that no one else may enter.
 bool privateFolder(const QString &path)
 {
-    const QFileInfo folder(path);
-    const QFile::Permissions groupAndOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
-        | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
-    return !path.isEmpty() && folder.isDir() && folder.ownerId() == getuid()
-        && !(folder.permissions() & groupAndOthers);
+    return !path.isEmpty() && QFileInfo(path).isDir() && isOwnerOnly(path);
 }
 
 // Where the single-instance socket lives: $XDG_RUNTIME_DIR, or without it
