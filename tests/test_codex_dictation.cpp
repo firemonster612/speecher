@@ -363,7 +363,8 @@ private slots:
                      16000,
                      QStringLiteral("auto"));
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        // Windows retries a refused loopback connect for about 2 s.
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 8000);
         QCOMPARE(failed.first().at(1).toBool(), kind != ProviderFailureKind::Authentication);
         QCOMPARE(failed.first().at(2).value<SpeechPhase>(), phase);
         QCOMPARE(failed.first().at(3).value<ProviderFailureKind>(), kind);
