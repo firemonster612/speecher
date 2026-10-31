@@ -157,7 +157,8 @@ private:
     void startFile();
     void measureFile();
     void streamFile();
-    void decodeFile(std::function<void(const QByteArray &)> takeAudio, std::function<void()> finished);
+    bool decodeFile(std::function<void(const QByteArray &)> takeAudio, std::function<void()> finished);
+    void reportProgress(qint64 bytesSent);
     void readDecodedAudio();
     void releaseDecoder();
     void startMicrophone();
@@ -200,8 +201,12 @@ private:
     QAudioFormat m_decodedFormat;
     // Where the pass puts each buffer, as 16 kHz mono.
     std::function<void(const QByteArray &)> m_takeDecodedAudio;
-    // The file's audio as 16 kHz mono, from the first pass.
+    // The file's audio as 16 kHz mono: what the first pass counted, until
+    // the second has decoded all of it.
     qint64 m_fileBytes = 0;
+    // What the second pass has decoded so far, and whether that is all.
+    qint64 m_streamedBytes = 0;
+    bool m_streamDecoded = false;
     // The microphone a startListening() batch reads instead of a file.
     QPointer<AudioInput> m_input;
     Microphone m_microphone = Microphone::Off;

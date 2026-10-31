@@ -225,10 +225,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
         }
     });
     connect(m_stream, &SpeechStream::progress, this, [this](qint64 bytesSent) {
-        // A microphone's input has no length yet: its share is of what it
-        // heard so far.
-        const qint64 inputBytes = m_input ? bytesSent + m_stream->unsentBytes() : m_fileBytes;
-        emit fileProgress(m_index, qreal(bytesSent) / qreal(inputBytes));
+        reportProgress(bytesSent);
         readDecodedAudio();
     });
     connect(m_stream, &SpeechStream::finished, this, &FileTranscriptionSession::finishTranscription);
@@ -351,6 +348,8 @@ void FileTranscriptionSession::measureFile()
                        failFile(QStringLiteral("The file contains no audio"));
                        return;
                    }
+                   // Done with the file until the second pass opens it again.
+                   releaseDecoder();
                    m_fileBytes = peaks->bytes();
                    emit fileDecoded(m_index, peaks->levels(), m_fileBytes * 1000 / kSpeechBytesPerSecond);
                    streamFile();
@@ -358,17 +357,58 @@ void FileTranscriptionSession::measureFile()
 }
 
 // The second pass decodes the file again into the stream, reading only while
-// little of it waits to be sent, so a long file is never held whole. Decoding
-// is deterministic, so this pass yields the m_fileBytes the first counted.
+// little of it waits to be sent, so a long file is never held whole. It
+// should yield what the first counted; whatever it yields is the file.
 void FileTranscriptionSession::streamFile()
 {
-    decodeFile([this](const QByteArray &pcm) { m_stream->append(pcm); }, [this] { m_stream->endInput(); });
-    m_stream->prepare(m_batchSettings);
+    m_streamedBytes = 0;
+    m_streamDecoded = false;
+    const bool decoding = decodeFile(
+        [this](const QByteArray &pcm) {
+            m_streamedBytes += pcm.size();
+            m_stream->append(pcm);
+        },
+        [this] {
+            if (m_streamedBytes == 0) {
+                failFile(QStringLiteral("The file contains no audio"));
+                return;
+            }
+            m_streamDecoded = true;
+            m_fileBytes = m_streamedBytes;
+            // The stream says nothing more when all of it was sent already.
+            if (m_stream->unsentBytes() == 0) {
+                reportProgress(m_fileBytes);
+            }
+            m_stream->endInput();
+        });
+    // A decoder that failed at once has moved the batch on: the stream is the
+    // next file's now.
+    if (decoding) {
+        m_stream->prepare(m_batchSettings);
+    }
+}
+
+// The share of the input sent. A file's bar reaches the end only once the
+// second pass has decoded all of the file and the stream sent it.
+void FileTranscriptionSession::reportProgress(qint64 bytesSent)
+{
+    // A microphone's input has no length yet: its share is of what it heard
+    // so far.
+    if (m_input) {
+        emit fileProgress(m_index, qreal(bytesSent) / qreal(bytesSent + m_stream->unsentBytes()));
+        return;
+    }
+    const qint64 fileBytes = std::max(m_fileBytes, m_streamedBytes);
+    if (bytesSent >= fileBytes && !m_streamDecoded) {
+        return;
+    }
+    emit fileProgress(m_index, qreal(bytesSent) / qreal(fileBytes));
 }
 
 // Starts a pass over the current file: takeAudio gets each buffer it
-// decodes, and finished runs once all of them came.
-void FileTranscriptionSession::decodeFile(std::function<void(const QByteArray &)> takeAudio,
+// decodes, and finished runs once all of them came. False when the decoder
+// failed at once, which ends the file.
+bool FileTranscriptionSession::decodeFile(std::function<void(const QByteArray &)> takeAudio,
                                           std::function<void()> finished)
 {
     releaseDecoder();
@@ -381,7 +421,9 @@ void FileTranscriptionSession::decodeFile(std::function<void(const QByteArray &)
         failFile(QStringLiteral("Could not decode the audio: %1").arg(m_decoder->errorString()));
     });
     m_decoder->setSource(QUrl::fromLocalFile(m_current.path));
-    m_decoder->start();
+    const QPointer<QAudioDecoder> decoder = m_decoder;
+    decoder->start();
+    return m_decoder == decoder;
 }
 
 // The decoder holds its next buffer until it is read, so leaving it unread

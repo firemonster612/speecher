@@ -33,6 +33,7 @@
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QtEndian>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QAudioBufferInput>
@@ -72,6 +73,10 @@ struct Script {
     QList<TranscriptSegment> segments;
     // Called with each chunk of audio sent.
     std::function<void()> audioSent;
+    // How long each preparation takes on the worker.
+    int prepareDelayMs = 0;
+    // Each attempt connects as it starts, as a streaming service's does.
+    bool connects = false;
 };
 
 // Answers a finished input with how many bytes of audio it received, and can
@@ -89,18 +94,36 @@ public:
     {
         return std::nullopt;
     }
-
-    void startAttempt(quint64, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
+    std::optional<PreparationJob> createPrepareJob(const SpeechSettings &, const AccountSettings &) override
     {
+        if (m_script->prepareDelayMs == 0) {
+            return std::nullopt;
+        }
+        return PreparationJob{.run = [ms = m_script->prepareDelayMs]() -> std::optional<ProviderFailure> {
+            QThread::msleep(ms);
+            return std::nullopt;
+        }};
+    }
+
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &options) override
+    {
+        m_attemptId = attemptId;
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
         m_script->language = settings.language;
         m_script->timedSegments = options.timedSegments;
         m_bytes = 0;
+        if (m_script->connects) {
+            emit attemptConnected(attemptId);
+        }
     }
 
+    // Audio for an attempt this transcriber is not on goes nowhere.
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
     {
+        if (attemptId != m_attemptId) {
+            return;
+        }
         m_script->bytes += pcm.size();
         m_bytes += pcm.size();
         if (m_script->audioSent) {
@@ -125,6 +148,7 @@ public:
 
 private:
     Script *m_script;
+    quint64 m_attemptId = 0;
     qsizetype m_bytes = 0;
 };
 
@@ -542,6 +566,80 @@ private slots:
         // Most of the file went out while the decoder still had the rest.
         QVERIFY2(sentWhileDecoding > 60, qPrintable(QString::number(sentWhileDecoding)));
         QVERIFY(finished.first().first().value<QList<TranscribeFileResult>>().first().error.isEmpty());
+    }
+
+    // A file gone before its second pass fails there, and starts no
+    // provider: the next file reaches its own whole, though it takes a while
+    // to prepare.
+    void aFileGoneBeforeItStreamsLeavesTheNextWhole()
+    {
+        const QString gone = m_dir.filePath(QStringLiteral("gone.wav"));
+        const QString next = m_dir.filePath(QStringLiteral("next.wav"));
+        writeWav(gone);
+        writeWav(next, 12000);
+        m_script.connects = true;
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        bool removed = false;
+        connect(&session, &FileTranscriptionSession::fileDecoded, this, [&](int index) {
+            if (index == 0) {
+                removed = QFile::remove(gone);
+            } else {
+                m_script.prepareDelayMs = 200;
+            }
+        });
+
+        QVERIFY(session.start({gone, next}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 20000);
+        if (!removed) {
+            QSKIP("The platform kept the decoded file open");
+        }
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QCOMPARE(results.size(), 2);
+        QVERIFY(results.at(0).error.startsWith(QStringLiteral("Could not decode the audio")));
+        QVERIFY2(qAbs(results.at(1).raw.mid(6).toLongLong() - 12 * 32000) <= 8, qPrintable(results.at(1).raw));
+    }
+
+    void progressEndsOnceAllTheAudioDecodedIsSent_data()
+    {
+        QTest::addColumn<int>("streamedMs");
+        QTest::newRow("second pass decodes less") << 500;
+        QTest::newRow("second pass decodes more") << 2000;
+    }
+
+    // The bar follows what the second pass decodes when that differs from
+    // what the first counted, and reaches the end once, when all of it was
+    // sent.
+    void progressEndsOnceAllTheAudioDecodedIsSent()
+    {
+        QFETCH(int, streamedMs);
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio, 1000);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        QList<qreal> progress;
+        bool replaced = false;
+        connect(&session, &FileTranscriptionSession::fileDecoded, this, [&] {
+            replaced = QFile::remove(audio);
+            writeWav(audio, streamedMs);
+        });
+        connect(&session, &FileTranscriptionSession::fileProgress, this,
+                [&](int, qreal fraction) { progress << fraction; });
+
+        QVERIFY(session.start({audio}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        if (!replaced) {
+            QSKIP("The platform kept the decoded file open");
+        }
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QVERIFY2(qAbs(results.first().raw.mid(6).toLongLong() - streamedMs * 32) <= 8,
+                 qPrintable(results.first().raw));
+        QCOMPARE(progress.count(1.0), 1);
+        QCOMPARE(progress.last(), 1.0);
     }
 
     // A refiner that cannot reach its service makes way for the saved

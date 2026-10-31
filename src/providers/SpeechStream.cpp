@@ -15,9 +15,6 @@ namespace {
 
 using Stage = ProviderAttemptIssue::Stage;
 
-// Room the kept audio may hold beyond what it keeps: a minute of it.
-constexpr qsizetype kMostUnusedPcmBytes = qsizetype(60) * kSpeechBytesPerSecond;
-
 // How many of marks, in order of position, fall before position.
 template <typename Marks>
 qsizetype marksBefore(const Marks &marks, qsizetype position)
@@ -309,11 +306,6 @@ void SpeechStream::keepAudioBounded()
 void SpeechStream::forgetAudioBefore(qsizetype position)
 {
     m_pcm.remove(0, position - m_pcmDropped);
-    // Removing from the front keeps the allocation, so a large backlog that
-    // has gone out would otherwise stay in memory until release().
-    if (m_pcm.capacity() - m_pcm.size() > kMostUnusedPcmBytes) {
-        m_pcm.squeeze();
-    }
     m_pcmDropped = position;
     m_sent = std::max(m_sent, position);
     const qsizetype passed = marksBefore(m_utteranceMarks, position);

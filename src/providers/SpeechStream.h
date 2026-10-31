@@ -97,8 +97,9 @@ signals:
     // A provider takes the input from the start of the audio kept; the text
     // so far is gone.
     void startedOver();
-    // How much of the input has gone to the provider, from its start; less
-    // than before once a provider takes the input from the start.
+    // After each chunk sent: how much of the input has gone to the provider,
+    // from its start; less than before once a provider takes the input from
+    // the start. A file session reads more of its file on it.
     void progress(qint64 bytesSent);
     // The stream could not take the oldest audio, this much of it, which
     // was dropped.
