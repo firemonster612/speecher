@@ -1,5 +1,6 @@
 #include "core/SettingsStore.h"
 #include "core/EndpointSettings.h"
+#include "core/EndpointUrl.h"
 #include "core/OutputMethod.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -371,8 +372,7 @@ bool SettingsStore::edit(const std::function<bool(AppSettings &)> &change)
         qCritical().noquote() << "Settings: not saved, since the edit changed " + field + ", which is never stored";
         return false;
     }
-    applySnapshot(draft, before);
-    return true;
+    return applySnapshot(draft, before);
 }
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
@@ -380,20 +380,29 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     applySnapshot(draft, dictationSnapshot());
 }
 
-void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &previous)
+bool SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &previous)
 {
     if (m_settings.closed()) {
         qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
-        return;
+        return false;
     }
     using Secret = SecretStore::Secret;
-    const std::tuple<Secret, QString, QString> keys[] = {
-        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey},
-        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey, previous.refinement.cliproxyApiKey},
-        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey, previous.refinement.endpoint.apiKey},
+    // A key belongs to its server: moved to another one, a key the edit
+    // didn't enter goes, with any save of it waiting its turn, as
+    // editRefinementEndpoint drops the refinement endpoint's. A first server
+    // keeps a key entered before it.
+    const auto moved = [](const QString &from, const QString &to) {
+        return !QUrl(from.trimmed()).host().isEmpty() && !sameOrigin(from, to);
+    };
+    const std::tuple<Secret, QString, QString, bool> keys[] = {
+        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey,
+         moved(previous.speech.endpoint.baseUrl, draft.speech.endpoint.baseUrl)},
+        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey, previous.refinement.cliproxyApiKey,
+         moved(previous.refinement.cliproxyBaseUrl, draft.refinement.cliproxyBaseUrl)},
+        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey, previous.refinement.endpoint.apiKey, false},
     };
     QList<std::pair<Secret, QString>> secrets;
-    for (const auto &[secret, value, before] : keys) {
+    for (const auto &[secret, value, before, movedServer] : keys) {
         const QString key = SecretStore::settingsKey(secret);
         // An empty key the draft never read came from a skipped read, not
         // from the person. A key the edit left as it read it stays as it is:
@@ -403,6 +412,8 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
             : !previous.unreadSecretKeys.contains(key) && value.trimmed() == before.trimmed();
         if (!unchanged) {
             secrets.append({secret, value});
+        } else if (movedServer) {
+            secrets.append({secret, QString()});
         }
     }
     // First: a key cleared here is hidden before the settings saved with
@@ -421,6 +432,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
         emit correctionLearningEnabledChanged(saved.correctionLearningEnabled);
     }
     emit snapshotApplied(previous);
+    return true;
 }
 
 void SettingsStore::setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile)
