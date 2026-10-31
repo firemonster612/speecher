@@ -49,6 +49,9 @@ private:
     // nothing can prove that delivery changed the control.
     std::optional<InsertionBaseline> m_insertionBaseline;
     std::unique_ptr<mac::CorrectionObserver> m_correctionObserver;
+    // Counts captures, so a verification can tell that the element it reads
+    // now belongs to a later capture, even one of the same control.
+    quint64 m_captures = 0;
     bool m_correctionObservationEnabled = true;
 };
 
