@@ -6,10 +6,12 @@
 #include <QSocketNotifier>
 
 #include <algorithm>
+#include <optional>
 
 // Xlib last: its macros (None, Bool, KeyPress) collide with Qt names.
 #include <X11/XKBlib.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/keysym.h>
 
 namespace speecher {
@@ -96,6 +98,7 @@ public:
 
     Display *display = nullptr;
     QList<X11KeyHold *> holds;
+    int xiOpcode = 0;
 
     // Ends an active grab the leaving hold's key left behind, so keys pressed
     // while it is still down reach the focused app. The server may have
@@ -105,7 +108,9 @@ public:
     //
     // A grab another hold's key started is that hold's: its key is down and
     // it still acts, and the key's own release ends the grab. Ending it here
-    // would let the server's key repeat start it again as a fresh press.
+    // would let the server's key repeat start it again as a fresh press. A
+    // key still held when that grab ends sends its release to the app, so
+    // the raw releases readEvents() watches are what clear its hold.
     void releaseKeyboard(X11KeyHold *leaving)
     {
         leaving->m_down = false;
@@ -120,16 +125,54 @@ public:
         while (XPending(display)) {
             XEvent event;
             XNextEvent(display, &event);
-            if (event.type != KeyPress && event.type != KeyRelease) {
-                continue;
-            }
-            for (X11KeyHold *hold : std::as_const(holds)) {
-                hold->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
+            if (event.type == KeyPress || event.type == KeyRelease) {
+                for (X11KeyHold *hold : std::as_const(holds)) {
+                    hold->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
+                }
+            } else if (const std::optional<int> keycode = rawReleaseKeycode(&event)) {
+                for (X11KeyHold *hold : std::as_const(holds)) {
+                    hold->keyEvent(false, *keycode, 0);
+                }
             }
         }
     }
 
 private:
+    // The key a raw XInput2 release is for; nothing for any other event.
+    std::optional<int> rawReleaseKeycode(XEvent *event) const
+    {
+        XGenericEventCookie *cookie = &event->xcookie;
+        if (cookie->type != GenericEvent || cookie->extension != xiOpcode
+            || !XGetEventData(display, cookie)) {
+            return std::nullopt;
+        }
+        std::optional<int> keycode;
+        if (cookie->evtype == XI_RawKeyRelease) {
+            keycode = static_cast<const XIRawEvent *>(cookie->data)->detail;
+        }
+        XFreeEventData(display, cookie);
+        return keycode;
+    }
+
+    // Core key events reach only whoever the keyboard is grabbed for or
+    // focused on, so a release after the grab carrying it ended goes to the
+    // app. Raw releases reach the root window in every case from XI 2.1 on.
+    void watchRawReleases()
+    {
+        int firstEvent = 0;
+        int firstError = 0;
+        int major = 2;
+        int minor = 2;
+        if (!XQueryExtension(display, "XInputExtension", &xiOpcode, &firstEvent, &firstError)
+            || XIQueryVersion(display, &major, &minor) != Success) {
+            return;
+        }
+        unsigned char bits[XIMaskLen(XI_LASTEVENT)] = {};
+        XISetMask(bits, XI_RawKeyRelease);
+        XIEventMask mask{XIAllMasterDevices, int(sizeof(bits)), bits};
+        XISelectEvents(display, DefaultRootWindow(display), &mask, 1);
+    }
+
     Connection()
     {
         display = XOpenDisplay(nullptr);
@@ -139,6 +182,7 @@ private:
         // Without it a held key repeats as release-press pairs, and each
         // press would cancel or toggle pause again.
         XkbSetDetectableAutoRepeat(display, True, nullptr);
+        watchRawReleases();
         auto *notifier = new QSocketNotifier(ConnectionNumber(display), QSocketNotifier::Read);
         QObject::connect(notifier, &QSocketNotifier::activated, notifier, [this] { readEvents(); });
     }

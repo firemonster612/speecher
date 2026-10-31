@@ -174,19 +174,39 @@ int checkKeysDuringAHeldGrab(SettingsStore *settings)
     QTest::qWait(1500);
     press(XK_p, false);
     pause.setArmed(false);
+    const qsizetype pausedWhileHeld = paused.count();
+
+    // Hold P and press C, which disarms Pause alone, as cancelling a
+    // follow-up returns to the review. P lifts first and ends the grab, so
+    // C's release goes to the app; C must still act when pressed again.
+    cancel.setArmed(true);
+    pause.setArmed(true);
+    const qsizetype cancelledBeforeOrder = cancelled.count();
+    press(XK_p, true);
+    press(XK_c, true);
+    pause.setArmed(false);
+    press(XK_p, false);
+    press(XK_c, false);
+    press(XK_c, true);
+    press(XK_c, false);
+    const qsizetype cancelledAcrossTheGrab = cancelled.count() - cancelledBeforeOrder;
+    cancel.setArmed(false);
     XCloseDisplay(display);
     cancel.setShortcut({});
     pause.setShortcut({});
-    if (dReached != 1 || cancelledDuringPause != 1 || paused.count() != 1) {
+    if (dReached != 1 || cancelledDuringPause != 1 || pausedWhileHeld != 1 || cancelledAcrossTheGrab != 2) {
         std::fprintf(stderr, "D reached the app %d times after disarming mid-hold (want 1); C "
                              "cancelled %lld times while P was held (want 1); a held P paused "
-                             "%lld times after Cancel let go (want 1)\n",
+                             "%lld times after Cancel let go (want 1); C cancelled %lld times "
+                             "around a grab P ended (want 2)\n",
                      dReached, static_cast<long long>(cancelledDuringPause),
-                     static_cast<long long>(paused.count()));
+                     static_cast<long long>(pausedWhileHeld),
+                     static_cast<long long>(cancelledAcrossTheGrab));
         return 1;
     }
     std::puts("X11 key grab: disarming mid-hold hands the keyboard back, Cancel acts while Pause "
-              "is held, and a held Pause acts once after Cancel lets go");
+              "is held, a held Pause acts once after Cancel lets go, and Cancel acts again after "
+              "its release went to the app");
     return 0;
 }
 
