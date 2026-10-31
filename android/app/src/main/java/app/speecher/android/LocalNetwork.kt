@@ -42,6 +42,24 @@ fun onLocalNetwork(server: String): Boolean {
 }
 
 /**
+ * Whether sending [apiKey] to [server] would carry it in clear text beyond the local network: plain
+ * http to a host neither on the local network nor this device. The desktop sends it anyway; a phone
+ * moves between networks it does not control. Looks names up, as [onLocalNetwork] does.
+ */
+fun exposesApiKey(server: String, apiKey: String): Boolean {
+    val url = server.toHttpUrlOrNull()
+    if (url == null || url.isHttps || apiKey.isEmpty()) return false
+    return !onLocalNetwork(server) && !onThisDevice(url.host)
+}
+
+private fun onThisDevice(host: String): Boolean =
+    try {
+        InetAddress.getAllByName(host).all { it.isLoopbackAddress }
+    } catch (_: UnknownHostException) {
+        false
+    }
+
+/**
  * True when Speecher may reach the local network. Otherwise asks through [prompt], or, when the
  * person [refused] it before and Android no longer shows its prompt (it stops after a second
  * refusal), opens Speecher's settings, where Nearby devices is under Permissions.
