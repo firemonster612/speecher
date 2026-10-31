@@ -2,13 +2,16 @@ package app.speecher.protocol
 
 import java.io.InputStream
 import java.io.OutputStream
+import java.lang.reflect.InvocationTargetException
 import java.net.IDN
 import java.net.InetAddress
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Vector
+import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -117,7 +120,14 @@ internal fun connectTls(
                                 "RSA" -> "ECDHE_RSA"
                                 else -> "UNKNOWN"
                             }
-                        checkServerTrusted(chain, authType, host)
+                        // An IOException, so a rejected chain is a Network failure, as a refused
+                        // hostname is, rather than an unclassified one.
+                        try {
+                            checkServerTrusted(chain, authType, host)
+                        } catch (e: CertificateException) {
+                            throw SSLHandshakeException("TLS certificate for $host not trusted")
+                                .apply { initCause(e) }
+                        }
                         verifyHostname(host, chain.first())
                     }
                 }
@@ -153,7 +163,14 @@ private val checkServerTrusted: (Array<X509Certificate>, String, String) -> Unit
             String::class.java,
             String::class.java,
         )
-    return@lazy { chain, authType, host -> check.invoke(extensions, chain, authType, host) }
+    return@lazy { chain, authType, host ->
+        try {
+            check.invoke(extensions, chain, authType, host)
+        } catch (e: InvocationTargetException) {
+            // Reflection wraps the CertificateException the trust manager threw.
+            throw e.cause ?: e
+        }
+    }
 }
 
 internal fun verifyHostname(host: String, certificate: X509Certificate) {

@@ -21,6 +21,7 @@ dependencies {
     signature(variantOf(libs.android.api.signature) { artifactType("signature") })
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
