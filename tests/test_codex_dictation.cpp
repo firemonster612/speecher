@@ -5,6 +5,7 @@
 
 #include <QScopeGuard>
 #include <QTcpServer>
+#include <QTcpSocket>
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/CodexSpeechTranscriber.h"
@@ -708,10 +709,12 @@ private slots:
         server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
         // A closed port: the accuracy pass must fail without failing dictation.
-        QTcpServer unusedPort;
-        QVERIFY(unusedPort.listen(QHostAddress::LocalHost));
-        const quint16 closedPort = unusedPort.serverPort();
-        unusedPort.close();
+        // Bound but not listening, it refuses connections and stays this
+        // test's: a port let go could be taken by a server in another test
+        // process, which would then get this request.
+        QTcpSocket unusedPort;
+        QVERIFY(unusedPort.bind(QHostAddress::LocalHost, 0, QAbstractSocket::DontShareAddress));
+        const quint16 closedPort = unusedPort.localPort();
         qputenv("SPEECHER_CODEX_DICTATION_URL",
                 QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                     .arg(server.serverPort()).toUtf8());
