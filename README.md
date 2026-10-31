@@ -250,12 +250,11 @@ ffmpeg -i talk.mp4 -f wav - | speecher transcribe --stdout -   # audio from stdi
 
 `--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, and `--vocab-file <path>` adds the file's terms to it for this run only, one per line, skipping blank lines and lines starting with `#`, so a coding agent can pass identifiers from the repo it works in. They go to the speech service and to refinement ahead of your saved terms, in the file's order, as many as each takes, even with `--no-vocabulary`. Your settings are not changed. `--raw` prints and saves the unrefined transcript. `--srt` or `--vtt` saves and prints SRT or WebVTT subtitles instead of text, the same file the Transcribe window's Export writes, and with `--json` each object's `text` holds the subtitles. Subtitles come from the raw transcript and need timings, which only Local models return; with any other speech provider each file fails. Unset choices come from your settings. `-` as the only file reads the audio from stdin, so `ffmpeg` or `sox` can pipe it in; the audio is spooled to a temporary file that is removed when the run ends, even when a signal interrupts it; on Windows, removal when the run is interrupted is best effort and can leave the file in the temporary folder. Stdin must be a pipe or file, not a terminal. It always runs without a window, needs `--stdout`, `--json` or `--output <folder>`, and is named `stdin` in progress and saved as `stdin-transcribed.txt`; with `--json` its `file` is `-`. Empty stdin fails the run with status 1. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
 
-The desktop UI is being replaced by one Qt Quick UI on every platform, which
-the running app shows in its own process (see
-[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). On Linux it opens
-when you launch Speecher or click its tray icon, whose menu also starts and
-stops dictation; `speecher --daemon` starts without a window. Elsewhere,
-until it lands, Speecher runs in the background without windows.
+The desktop UI is one Qt Quick UI on every platform, which the running app
+shows in its own process (see
+[ADR 0009](docs/adr/0009-one-quick-ui-inside-the-daemon.md)). It opens when
+you launch Speecher or click its tray or menu bar icon, whose menu also starts
+and stops dictation; `speecher --daemon` starts without a window.
 
 ### Voice input from the terminal
 
