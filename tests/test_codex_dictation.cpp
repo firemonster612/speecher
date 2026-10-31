@@ -5,7 +5,6 @@
 
 #include <QScopeGuard>
 #include <QTcpServer>
-#include <QTcpSocket>
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/CodexSpeechTranscriber.h"
@@ -347,7 +346,8 @@ private slots:
         QFETCH(ProviderFailureKind, kind);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        if (statusLine.isEmpty()) server.close();
+        // Without a status line, port 1, where nothing listens.
+        const quint16 port = statusLine.isEmpty() ? 1 : server.serverPort();
         connect(&server, &QTcpServer::newConnection, this, [&server, statusLine] {
             QTcpSocket *socket = server.nextPendingConnection();
             connect(socket, &QTcpSocket::readyRead, socket, [socket, statusLine] {
@@ -358,8 +358,7 @@ private slots:
 
         CodexDictationClient client;
         QSignalSpy failed(&client, &CodexDictationClient::failed);
-        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
-                              .arg(server.serverPort())),
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(port)),
                      QStringLiteral("invalid-token"),
                      16000,
                      QStringLiteral("auto"));
@@ -708,18 +707,13 @@ private slots:
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        // A closed port: the accuracy pass must fail without failing dictation.
-        // Bound but not listening, it refuses connections and stays this
-        // test's: a port let go could be taken by a server in another test
-        // process, which would then get this request.
-        QTcpSocket unusedPort;
-        QVERIFY(unusedPort.bind(QHostAddress::LocalHost, 0, QAbstractSocket::DontShareAddress));
-        const quint16 closedPort = unusedPort.localPort();
         qputenv("SPEECHER_CODEX_DICTATION_URL",
                 QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                     .arg(server.serverPort()).toUtf8());
-        qputenv("SPEECHER_CODEX_TRANSCRIBE_URL",
-                QStringLiteral("http://127.0.0.1:%1/transcribe").arg(closedPort).toUtf8());
+        // Port 1, where nothing listens: the accuracy pass must fail without
+        // failing dictation. A port let go could be taken by a server in
+        // another test process, which would then get this request.
+        qputenv("SPEECHER_CODEX_TRANSCRIBE_URL", QByteArray("http://127.0.0.1:1/transcribe"));
         const auto unsetEnv = qScopeGuard([] {
             qunsetenv("SPEECHER_CODEX_DICTATION_URL");
             qunsetenv("SPEECHER_CODEX_TRANSCRIBE_URL");
