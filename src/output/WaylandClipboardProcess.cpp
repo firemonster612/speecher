@@ -59,6 +59,10 @@ public:
         m_process.start(m_command.executable, m_command.arguments);
     }
 
+    // The application ends one still running: its process dies with it and
+    // says finished, which must not reach the members gone before it.
+    ~RunningCommand() override { m_process.disconnect(this); }
+
 private:
     void readOutput()
     {
