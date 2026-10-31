@@ -1,4 +1,5 @@
 #include "core/SettingsStore.h"
+#include "core/EndpointSettings.h"
 #include "core/OutputMethod.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -163,7 +164,18 @@ void migrateSavedSettings()
     QSettings newSettings(QSettings::defaultFormat(), QSettings::UserScope,
                           QString::fromLatin1(SettingsKeys::Organization), SettingsKeys::application());
     QString error;
-    if (!migrateSettingsIdentity(newSettings, *olderSettings(), &error)) {
+    // Before anything is written: the identity migration copies in the keys
+    // the older settings kept.
+    if (!makeSettingsPrivate(newSettings, &error)) {
+        qWarning().noquote() << "Settings: not migrated, since" << error;
+        return;
+    }
+    const std::unique_ptr<QSettings> older = olderSettings();
+    // An older Speecher left its file, keys and all, open to others.
+    if (QFile::exists(older->fileName()) && !makeSettingsPrivate(*older, &error)) {
+        qWarning().noquote() << "Settings: the older settings stay readable, since" << error;
+    }
+    if (!migrateSettingsIdentity(newSettings, *older, &error)) {
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
@@ -273,17 +285,20 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
     }
     const RefinementSettings &refinement = settings.refinement;
     const bool refines = role == ProviderRole::Refinement;
-    if (refines && endpoint && refinement.endpoint.preset.isEmpty()
-        && !refinement.endpoint.useCliproxyKey) {
+    const bool custom = endpoint && refinement.endpoint.preset.isEmpty();
+    const auto endpointKey = SecretStore::settingsKey(Secret::RefinementEndpointKey);
+    if (refines && custom) {
         secrets.append(
             {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
     }
-    const bool proxyPreset = endpoint
-        && (refinement.endpoint.preset == QStringLiteral("cliproxy") || refinement.endpoint.useCliproxyKey);
+    // A Custom endpoint needs the proxy's key only once its own is known to
+    // be empty, as refinementEndpointKey picks.
+    const bool endpointProxyKey = endpoint
+        && (!custom || (!settings.unreadSecretKeys.contains(endpointKey) && usesProxyKey(refinement)));
     const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
         && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy)
             || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy));
-    if (refines && (proxyPreset || remoteProxy)) {
+    if (refines && (endpointProxyKey || remoteProxy)) {
         secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
     }
     secrets.removeIf([&settings](const ProviderSecret &secret) {
@@ -301,13 +316,16 @@ bool SettingsStore::hasUnreadProviderSecrets(const AppSettings &settings, Provid
 
 QString SettingsStore::resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId)
 {
-    const QList<ProviderSecret> unread = unreadProviderSecrets(settings, role, providerId);
-    if (unread.isEmpty()) return {};
+    if (!hasUnreadProviderSecrets(settings, role, providerId)) return {};
 
     // Own QSettings and SecretStore in this worker; never access the GUI cache
     // or its in-flight prefetch jobs from another thread.
     SettingsStore source;
-    for (const auto &[secret, field] : unread) {
+    // One at a time: what one read finds decides the next, as the Custom
+    // endpoint's own key decides whether the proxy's is needed.
+    for (QList<ProviderSecret> unread = unreadProviderSecrets(settings, role, providerId); !unread.isEmpty();
+         unread = unreadProviderSecrets(settings, role, providerId)) {
+        const auto &[secret, field] = unread.first();
         QString &value = field(settings);
         value = source.secrets()->secret(secret);
         if (const QString failure = source.secrets()->readFailure(secret); value.isEmpty() && !failure.isEmpty()) {

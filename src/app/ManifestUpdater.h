@@ -76,6 +76,8 @@ protected:
     virtual bool installDownload(const QString &path, QString *error) = 0;
     virtual void restartApplication() = 0;
     void finishRestart() override;
+    // Where a check fetches the channel's manifest.
+    virtual QUrl manifestUrl(UpdateChannel channel) const;
 
 private:
     friend class ManifestUpdaterTestAccess;
@@ -99,7 +101,6 @@ private:
     bool automaticCheckDue() const;
     // Arms the timer for the next automatic check, or the retry of a failed one.
     void scheduleAutomaticCheck();
-    QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
     void recordAutomaticCheckFailure();
     void beginDownload(bool openReleaseOnManualFailure);

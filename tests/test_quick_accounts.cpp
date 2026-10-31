@@ -7,6 +7,7 @@
 #include "common/test_auth.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
+#include "core/EndpointSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -24,6 +25,11 @@
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTimer>
+
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif
 
 #include <memory>
 
@@ -484,6 +490,301 @@ private slots:
         accounts.clearSecret(QStringLiteral("cliproxyApiKey"));
         QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
         QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(false));
+    }
+
+    // The CLI Proxy preset shows, at proxy-b, over the Custom server-a whose
+    // key the keyring holds, so dropping that key waits on the keyring. Set
+    // before the app starts, which then can't know the key yet.
+    static void showTheProxyPresetOverAKeyringKey()
+    {
+        SettingsStore settings;
+        settings.raw().setValue(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://proxy-b.example:8317"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://server-a.example/v1"));
+        settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
+        settings.raw().sync();
+    }
+
+    // A server change made while the keyring makes an entered key wait comes
+    // after the key, so the endpoint reaches the new server without it.
+    void aServerChangeDuringAKeySaveLeavesTheKeyBehind()
+    {
+        showTheProxyPresetOverAKeyringKey();
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        bool changedDuringTheSave = false;
+        QTimer::singleShot(0, &accounts, [&] {
+            changedDuringTheSave = true;
+            settings.edit([](AppSettings &draft) {
+                editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://server-c.example/v1")});
+                return true;
+            });
+        });
+
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
+
+        QVERIFY(changedDuringTheSave);
+        const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+        QCOMPARE(sent.apiBase, QStringLiteral("http://server-c.example/v1"));
+        QCOMPARE(sent.apiKey, QString());
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
+    }
+
+    // A key moving the endpoint drops shows as not saved even when the
+    // keyring refuses to delete it: the key is hidden, its clear waits to be
+    // retried, and the row says why.
+    void anEndpointKeyWhoseDropTheKeyringRefusesShowsItsPendingClear()
+    {
+        {
+            SettingsStore saved;
+            saved.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
+            saved.raw().sync();
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
+
+        const QString row = QStringLiteral("refinementEndpointApiKey");
+        QCOMPARE(accounts.savedSecrets().value(row), QVariant(false));
+        QCOMPARE(accounts.pendingClears().value(row), QVariant(true));
+        const QVariantMap error = accounts.secretErrors().value(row).toMap();
+        QCOMPARE(error.value(QStringLiteral("action")).toString(), QStringLiteral("clear"));
+        QVERIFY2(error.value(QStringLiteral("reason")).toString().contains(QStringLiteral("deletion denied")),
+                 qPrintable(error.value(QStringLiteral("reason")).toString()));
+    }
+
+#ifndef Q_OS_WIN
+    // A save refused before the key went in, as when the settings file can't
+    // be made private, keeps its reason on the row through a later settings
+    // edit, which stores the key's old state again and changes nothing. A
+    // key a settings edit replaces is a save that went through, and ends it.
+    void aRefusedSaveKeepsItsReasonUntilASaveGoesThrough_data()
+    {
+        QTest::addColumn<QString>("replacement");
+        QTest::addColumn<bool>("kept");
+        QTest::newRow("unrelated edit") << QString() << true;
+        QTest::newRow("key replaced by an edit") << QStringLiteral("replacement-key") << false;
+    }
+
+    void aRefusedSaveKeepsItsReasonUntilASaveGoesThrough()
+    {
+        QFETCH(QString, replacement);
+        QFETCH(bool, kept);
+        if (getuid() == 0) {
+            QSKIP("Root writes to a read-only folder");
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        const QString file = controller.settings()->raw().fileName();
+        const QString folder = QFileInfo(file).absolutePath();
+        const auto writable = qScopeGuard([folder] {
+            QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        // No file, and a folder it can't be made in.
+        QFile::remove(file);
+        QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
+        accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        const QVariant refusal = accounts.secretErrors().value(QStringLiteral("cliproxyApiKey"));
+        const QString reason = refusal.toMap().value(QStringLiteral("reason")).toString();
+        QVERIFY2(reason.contains(QStringLiteral("can't be kept from other users")), qPrintable(reason));
+
+        controller.settings()->edit([&replacement](AppSettings &draft) {
+            draft.ui.previewWords = 13;
+            if (!replacement.isEmpty()) {
+                draft.refinement.cliproxyApiKey = replacement;
+            }
+            return true;
+        });
+
+        QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), kept ? refusal : QVariant());
+    }
+
+    // A save whose settings-file commit failed leaves the key in place but
+    // unsaved. A retry that commits it, made directly or by a settings edit
+    // that saves the file, is a save that went through, and ends the
+    // failure, though it finds the key already in place.
+    void aRetryThatCommitsARefusedSaveEndsItsFailure_data()
+    {
+        QTest::addColumn<bool>("throughAnEdit");
+        QTest::newRow("saved again") << false;
+        QTest::newRow("a settings edit") << true;
+    }
+
+    void aRetryThatCommitsARefusedSaveEndsItsFailure()
+    {
+        QFETCH(bool, throughAnEdit);
+        if (getuid() == 0) {
+            QSKIP("Root writes to a read-only folder");
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        settings.edit([](AppSettings &draft) {
+            draft.ui.previewWords = 12;
+            return true;
+        });
+        const QString folder = QFileInfo(settings.raw().fileName()).absolutePath();
+        const auto writable = qScopeGuard([folder] {
+            QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        // Qt writes the file through a temporary one beside it.
+        QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
+        accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        const QString reason = accounts.secretErrors()
+                                   .value(QStringLiteral("cliproxyApiKey"))
+                                   .toMap()
+                                   .value(QStringLiteral("reason"))
+                                   .toString();
+        QVERIFY2(reason.contains(QStringLiteral("Could not save the settings file")), qPrintable(reason));
+
+        if (throughAnEdit) {
+            settings.edit([](AppSettings &draft) {
+                draft.ui.previewWords = 13;
+                return true;
+            });
+        } else {
+            QCOMPARE(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("new-key")),
+                     SecretStore::SaveResult::Stored);
+        }
+
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("new-key"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
+        QVERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
+    }
+#endif
+
+    // The key field still holds what was submitted for server A while the
+    // keyring makes it wait. Moving the endpoint to B meanwhile drops that
+    // draft, so leaving the field again saves nothing for B; text typed
+    // after submitting stays, being the person's for B.
+    void aKeyFieldDropsItsDraftWhenTheServerMovesDuringTheSave_data()
+    {
+        QTest::addColumn<QString>("typedMeanwhile");
+        QTest::newRow("unchanged draft") << QString();
+        QTest::newRow("typed after submitting") << QStringLiteral("typed-for-b");
+    }
+
+    void aKeyFieldDropsItsDraftWhenTheServerMovesDuringTheSave()
+    {
+        QFETCH(QString, typedMeanwhile);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        const SecretRowWindow row = showSecretRow(engine, QStringLiteral("refinementEndpointApiKey"));
+        QVERIFY(row.field);
+        QQuickItem *field = row.field;
+        bool movedDuringTheSave = false;
+        QMetaObject::invokeMethod(
+            field,
+            [&] {
+                movedDuringTheSave = true;
+                if (!typedMeanwhile.isEmpty()) {
+                    field->setProperty("text", typedMeanwhile);
+                }
+                settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-b.example/v1"));
+            },
+            Qt::QueuedConnection);
+
+        field->setProperty("text", QStringLiteral("entered-for-a"));
+        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+
+        QVERIFY(movedDuringTheSave);
+        QCOMPARE(field->property("text").toString(), typedMeanwhile);
+        if (typedMeanwhile.isEmpty()) {
+            QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+            const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+            QCOMPARE(sent.apiBase, QStringLiteral("http://server-b.example/v1"));
+            QCOMPARE(sent.apiKey, QString());
+        }
+    }
+
+    // A key entered while the keyring makes an older one wait stands.
+    void aKeyEnteredDuringAKeySaveStands()
+    {
+        showTheProxyPresetOverAKeyringKey();
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        bool enteredDuringTheSave = false;
+        QTimer::singleShot(0, &accounts, [&] {
+            enteredDuringTheSave = true;
+            accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-new"));
+        });
+
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-old"));
+
+        QVERIFY(enteredDuringTheSave);
+        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QStringLiteral("key-new"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+    }
+
+    // Moving the endpoint to another server drops its key, and its row says
+    // so, though no field asked for the change.
+    void anEndpointKeyDroppedByAServerChangeShowsAsNotSaved()
+    {
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
+
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
+    }
+
+    // A key entered while the CLI Proxy preset shows belongs to the proxy's
+    // server: the endpoint turns Custom there, and the Custom server saved
+    // behind the preset never gets that key. Cleared, the endpoint sends the
+    // proxy's key again, being on the proxy's server.
+    void anEndpointKeyEnteredOnThePresetBelongsToTheProxysServer()
+    {
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        const auto sent = [] { return resolvedRefinementEndpoint(SettingsStore().snapshot().refinement); };
+        QTest::ignoreMessage(QtWarningMsg,
+                             "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+            draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            return true;
+        });
+        const QString fallback =
+            "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied";
+        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.preset = QStringLiteral("cliproxy")});
+            return true;
+        });
+
+        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
+
+        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
+        QCOMPARE(sent().apiKey, QStringLiteral("key-b"));
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.preset = QString()});
+            return true;
+        });
+        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
+
+        accounts.clearSecret(QStringLiteral("refinementEndpointApiKey"));
+        QCOMPARE(sent().apiKey, QStringLiteral("proxy-key"));
     }
 
     // SchemaRow's secret field hands what was typed to Accounts and lets go

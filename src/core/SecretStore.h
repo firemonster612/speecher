@@ -125,9 +125,12 @@ public:
 signals:
     // A save or clear of the secret settled: request is its number
     // (nextRequest), and storage holds it, or refused it for error's reason.
-    // cleared says it was a clear. A request replaced before it settled has
-    // no saveFinished of its own: one with a higher number settled it.
-    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
+    // cleared says it was a clear, and wrote that storage took it, rather
+    // than only holding it already, as when a settings edit saves every key
+    // again unchanged. A request replaced before it settled has no
+    // saveFinished of its own: one with a higher number settled it.
+    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error,
+                      bool wrote);
 
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
@@ -156,6 +159,11 @@ private:
         // file holds its last change of what it says about the secret:
         // nothing of that change counts as stored before.
         quint64 savedBy = 0;
+        // The value of the request refused last, until a request settles
+        // stored. Storing that value answers the refusal (saveFinished's
+        // wrote), though storage finds it already in place, as a value whose
+        // settings file commit failed is.
+        std::optional<QString> refused;
     };
 
     SecretState &state(Secret secret) const;
@@ -172,7 +180,7 @@ private:
     quint64 ask(Secret secret, const Request &request);
     SaveResult save(Secret secret, const Request &request);
     SaveResult settle(Secret secret, quint64 own);
-    void refuse(Secret secret, quint64 request, bool cleared, const QString &error);
+    void refuse(Secret secret, quint64 request, const QString &value, const QString &error);
     bool holds(Secret secret, const Request &request) const;
     bool write(Secret secret, const Request &request);
     void changedInFile(Secret secret) const;

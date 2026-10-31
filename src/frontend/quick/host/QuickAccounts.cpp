@@ -88,10 +88,10 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
     connect(m_accounts, &Accounts::signInsChanged, this, &QuickAccounts::servicesChanged);
     connect(m_accounts, &Accounts::cliproxyAccountsChanged, this, &QuickAccounts::cliproxyAccountsChanged);
     connect(m_accounts, &Accounts::secretsChanged, this, &QuickAccounts::secretsChanged);
-    connect(m_accounts, &Accounts::secretSaved, this, [this](SecretStore::Secret secret) {
+    connect(m_accounts, &Accounts::draftSettled, this, [this](SecretStore::Secret secret) {
         for (const SecretRow &row : secretRows) {
             if (row.secret == secret) {
-                emit secretSaved(QLatin1String(row.id));
+                emit draftSettled(QLatin1String(row.id));
             }
         }
     });

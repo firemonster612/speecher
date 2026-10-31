@@ -21,6 +21,8 @@ class SettingsStore;
 class SingleInstancePlatform {
 public:
     virtual ~SingleInstancePlatform() = default;
+    // Empty when the platform has no safe place for the socket, and
+    // SingleInstanceIpc::listen then fails.
     virtual QString ipcListenName() const = 0;
     virtual QStringList ipcConnectCandidates() const = 0;
     virtual QString detachedExecutablePath() const = 0;

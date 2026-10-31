@@ -15,12 +15,21 @@ struct RefinementEndpoint {
 };
 
 RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings);
+// The key a Custom endpoint sends: its own when it has one, else the CLI
+// Proxy key while it is on the proxy's server (usesProxyKey), else none.
+QString refinementEndpointKey(const RefinementSettings &settings);
+// Whether a Custom endpoint without a key of its own sends the proxy's: it
+// is on the proxy's server.
+bool usesProxyKey(const RefinementSettings &settings);
+// Turns the CLI Proxy preset into a Custom endpoint at the proxy's address,
+// with no key of its own.
+void detachRefinementEndpoint(AppSettings &settings);
 
-// Only engaged fields are user edits, including an explicitly emptied key.
+// Only engaged fields are user edits. The key is saved apart, through
+// Accounts.
 struct RefinementEndpointEdit {
     std::optional<QString> format;
     std::optional<QString> baseUrl;
-    std::optional<QString> apiKey;
     std::optional<QString> model;
     std::optional<QString> preset;
 };

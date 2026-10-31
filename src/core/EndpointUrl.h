@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QUrl>
 
 namespace speecher {
 
@@ -22,6 +23,16 @@ inline QString endpointServerBase(const QString &url)
         base = withoutTrailingSlashes(base.chopped(3));
     }
     return base;
+}
+
+// Whether two endpoint URLs name the same server: one scheme, host and port,
+// whatever their paths. A URL without a host names no server.
+inline bool sameOrigin(const QString &first, const QString &second)
+{
+    const QUrl a(first.trimmed());
+    const QUrl b(second.trimmed());
+    const auto port = [](const QUrl &url) { return url.port(url.scheme() == QStringLiteral("https") ? 443 : 80); };
+    return !a.host().isEmpty() && a.scheme() == b.scheme() && a.host() == b.host() && port(a) == port(b);
 }
 
 inline QString endpointApiBase(const QString &url)

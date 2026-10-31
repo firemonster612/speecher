@@ -1,6 +1,7 @@
 #include "common/test_prelude.h"
 #include "common/test_http.h"
 #include "common/test_doubles.h"
+#include "core/EndpointSettings.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
@@ -21,6 +22,11 @@
 #include <QSignalSpy>
 
 #include <optional>
+
+#ifndef Q_OS_WIN
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 using namespace speecher::test;
 
@@ -81,6 +87,12 @@ QString preferencesPath(SettingsStore &settings)
     preferences.cdUp();
     return preferences.path();
 }
+
+#ifndef Q_OS_WIN
+// The permissions that let anyone but the owner in.
+constexpr QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
+    | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
+#endif
 
 // Deleting the settings moves every QSettings made afterwards to a throwaway
 // folder; the guard puts them back here for the tests that come after.
@@ -972,6 +984,173 @@ private slots:
         QCOMPARE(settings.snapshot().refinement.endpoint.format, QStringLiteral("openai"));
     }
 
+    // Changing a Custom endpoint's server leaves the CLI Proxy key behind,
+    // whether the endpoint uses it unread or holds the copy leaving the
+    // preset made.
+    void anotherServerDoesNotGetTheProxyKey_data()
+    {
+        QTest::addColumn<bool>("unread");
+        QTest::newRow("read") << false;
+        QTest::newRow("unread") << true;
+    }
+
+    void anotherServerDoesNotGetTheProxyKey()
+    {
+        QFETCH(bool, unread);
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        if (unread) {
+            settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        } else {
+            settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        }
+        editRefinementEndpoint(settings, {.preset = QString()});
+
+        editRefinementEndpoint(settings, {.baseUrl = QStringLiteral("http://other.example/v1")});
+
+        // As a request reads it, the proxy key read by then.
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
+    }
+
+    // So does the copy leaving the preset made, after a restart that read
+    // neither key yet.
+    void anotherServerDoesNotGetTheCopiedProxyKeyAfterARestart()
+    {
+        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.edit([](AppSettings &draft) {
+                draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+                draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+                draft.refinement.endpoint.preset = QStringLiteral("cliproxy");
+                return true;
+            });
+            settings.edit([](AppSettings &draft) {
+                editRefinementEndpoint(draft, {.preset = QString()});
+                return true;
+            });
+        }
+
+        SettingsStore restarted;
+        restarted.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://other.example/v1")});
+            return true;
+        });
+
+        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QString());
+    }
+
+    // A Custom endpoint's key stays only while its server does: a new path
+    // keeps it, a new scheme, host or port drops it, also a plain copy of the
+    // proxy's key that an earlier build saved.
+    void aKeyStaysOnlyOnItsServer_data()
+    {
+        QTest::addColumn<QString>("key");
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<QString>("sent");
+        const QString own = QStringLiteral("own-key");
+        QTest::newRow("another path") << own << QStringLiteral("http://localhost:11434/api/v1") << own;
+        QTest::newRow("another port") << own << QStringLiteral("http://localhost:11435/v1") << QString();
+        QTest::newRow("another scheme") << own << QStringLiteral("https://localhost:11434/v1") << QString();
+        QTest::newRow("copied proxy key, another host")
+            << QStringLiteral("proxy-key") << QStringLiteral("http://other.example/v1") << QString();
+    }
+
+    void aKeyStaysOnlyOnItsServer()
+    {
+        QFETCH(QString, key);
+        QFETCH(QString, url);
+        QFETCH(QString, sent);
+        AppSettings settings;
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        settings.refinement.endpoint.baseUrl = QStringLiteral("http://localhost:11434/v1");
+        settings.refinement.endpoint.apiKey = key;
+
+        editRefinementEndpoint(settings, {.baseUrl = url});
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, sent);
+    }
+
+    // An earlier build marked a key typed on the proxy's server as unused
+    // (useCliproxyKey); it is sent now, and the next save drops the mark.
+    void aTypedKeyAnEarlierBuildMarkedUnusedIsSent()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://127.0.0.1:8317/v1"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, true);
+        settings.raw().setValue(SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey), QStringLiteral("proxy-key"));
+        settings.raw().setValue(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey),
+                                QStringLiteral("typed-key"));
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.snapshot().refinement).apiKey, QStringLiteral("typed-key"));
+
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint.model = QStringLiteral("model");
+            return true;
+        });
+        QVERIFY(!settings.raw().contains(SettingsKeys::RefinementEndpointUseCliproxyKey));
+    }
+
+    // Startup reads only the key the endpoint will send: its own, and the
+    // proxy's only when it has none and is on the proxy's server. A proxy key
+    // left unread then can't stop the endpoint's own. With the endpoint's own
+    // key unread too, that key is read first.
+    void onlyTheKeyTheEndpointSendsIsRead_data()
+    {
+        QTest::addColumn<QString>("ownKey");
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<bool>("ownUnread");
+        QTest::addColumn<bool>("readsAKey");
+        const QString proxy = QStringLiteral("http://127.0.0.1:8317/v1");
+        const QString other = QStringLiteral("http://server.example/v1");
+        QTest::newRow("own key, the proxy's server") << QStringLiteral("own-key") << proxy << false << false;
+        QTest::newRow("own key, after the proxy moved") << QStringLiteral("own-key") << other << false << false;
+        QTest::newRow("no key, another server") << QString() << other << false << false;
+        QTest::newRow("no key, the proxy's server") << QString() << proxy << false << true;
+        QTest::newRow("both unread, the proxy's server") << QString() << proxy << true << true;
+    }
+
+    void onlyTheKeyTheEndpointSendsIsRead()
+    {
+        QFETCH(QString, ownKey);
+        QFETCH(QString, url);
+        QFETCH(bool, ownUnread);
+        QFETCH(bool, readsAKey);
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.endpoint.baseUrl = url;
+        settings.refinement.endpoint.apiKey = ownKey;
+        settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        if (ownUnread) {
+            settings.unreadSecretKeys.append(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey));
+        }
+
+        QCOMPARE(SettingsStore::hasUnreadProviderSecrets(settings, ProviderRole::Refinement, QStringLiteral("endpoint")),
+                 readsAKey);
+    }
+
+    // An endpoint left at the proxy's server stops getting the proxy's key
+    // once the proxy moves to another one.
+    void anEndpointLeftAtAMovedProxySendsNoKey()
+    {
+        AppSettings settings;
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        editRefinementEndpoint(settings, {.preset = QString()});
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QStringLiteral("proxy-key"));
+
+        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+        settings.refinement.cliproxyApiKey = QStringLiteral("key-b");
+
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
+    }
+
     // Keys land in the keyring when one works, and in the settings file
     // otherwise; either way they read back and never double up.
     void endpointKeysRoundTripOutsideTheSettingsFile()
@@ -1010,6 +1189,93 @@ private slots:
         QVERIFY(!reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey));
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
+
+#ifndef Q_OS_WIN
+    // The settings file and its folder are the owner's alone before a key no
+    // keyring takes goes in, under a umask that opens new files to everyone,
+    // and stay so when the store writes its last changes as it closes.
+    void theSettingsFileHoldingAKeyIsTheOwnersAlone()
+    {
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        const mode_t umaskBefore = umask(0);
+        const auto restoreUmask = qScopeGuard([umaskBefore] { umask(umaskBefore); });
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        QString file;
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            file = settings.raw().fileName();
+            QFile::remove(file);
+            QFile::setPermissions(QFileInfo(file).absolutePath(), openToOthers | QFile::ReadOwner
+                                      | QFile::WriteOwner | QFile::ExeOwner);
+
+            QCOMPARE(settings.secrets()->saveSecret(proxy, QStringLiteral("file-key")), SaveResult::Stored);
+
+            QVERIFY(settings.raw().contains(SecretStore::settingsKey(proxy)));
+            settings.raw().setValue(QStringLiteral("test/closing"), true);
+        }
+        QVERIFY(QSettings(file, QSettings::IniFormat).value(QStringLiteral("test/closing")).toBool());
+        QCOMPARE((QFile::permissions(file) & openToOthers).toInt(), 0);
+        QCOMPARE((QFile::permissions(QFileInfo(file).absolutePath()) & openToOthers).toInt(), 0);
+    }
+
+    // Migration copies the older settings' keys only into settings of the
+    // owner's alone, under a umask that opens new files to everyone, and
+    // closes the older file the keys came from too.
+    void migratedKeysLandInSettingsOfTheOwnersAlone()
+    {
+        const mode_t umaskBefore = umask(0);
+        const auto restoreUmask = qScopeGuard([umaskBefore] { umask(umaskBefore); });
+        const QString key = SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey);
+        QString file;
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            file = settings.raw().fileName();
+        }
+        QFile::remove(file);
+        const QString folder = QFileInfo(file).absolutePath();
+        QFile::setPermissions(folder, openToOthers | QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QString olderFile;
+        {
+            QSettings older(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("local.speecher"),
+                            SettingsKeys::application());
+            older.setValue(key, QStringLiteral("older-key"));
+            older.sync();
+            olderFile = older.fileName();
+        }
+        const auto removeOlder = qScopeGuard([olderFile] {
+            QFile::remove(olderFile);
+            QDir().rmdir(QFileInfo(olderFile).absolutePath());
+        });
+
+        migrateSavedSettings();
+
+        QCOMPARE(QSettings(file, QSettings::IniFormat).value(key).toString(), QStringLiteral("older-key"));
+        for (const QString &path : {file, folder, olderFile, QFileInfo(olderFile).absolutePath()}) {
+            QCOMPARE((QFile::permissions(path) & openToOthers).toInt(), 0);
+        }
+    }
+#endif
+
+#ifdef Q_OS_LINUX
+    // Settings in a folder another user owns can't be made the owner's
+    // alone, so nothing is made there for a key to go in.
+    void settingsInAnotherUsersFolderAreNotMadePrivate()
+    {
+        if (getuid() == 0) {
+            QSKIP("Root can change any folder");
+        }
+        const QSettings settings(QStringLiteral("/speecher-test.ini"), QSettings::IniFormat);
+        QString error;
+
+        QVERIFY(!makeSettingsPrivate(settings, &error));
+
+        QVERIFY2(error.contains(QStringLiteral("can't be kept from other users")), qPrintable(error));
+        QVERIFY(!QFile::exists(settings.fileName()));
+    }
+#endif
 
     // Saving an empty key clears it, whether or not this store read it.
     void anEmptySaveClearsAKeyNeverRead()
@@ -1694,6 +1960,40 @@ private slots:
         comparePeerRead(settings, openAi, QString());
     }
 
+#ifndef Q_OS_WIN
+    // Readers made after a deletion keep their files in a private folder of
+    // the process's own. A link another user left at the name the folder once
+    // had, in the shared temporary folder, is neither written through nor
+    // emptied.
+    void readersAfterADeletionUseAPrivateFolderOfTheirOwn()
+    {
+        QTemporaryDir linked;
+        QFile linkedFile(linked.filePath(QStringLiteral("kept")));
+        QVERIFY(linkedFile.open(QIODevice::WriteOnly));
+        linkedFile.close();
+        const QString oldName =
+            QDir::temp().filePath(QStringLiteral("speecher-removed-%1").arg(QCoreApplication::applicationPid()));
+        QVERIFY(QFile::link(linked.path(), oldName));
+        const auto unlink = qScopeGuard([oldName] { QFile::remove(oldName); });
+        {
+            SettingsStore settings;
+            const auto kept = keepSettingsHere(settings);
+            QVERIFY(settings.deleteAll(nullptr));
+
+            QDir home = QFileInfo(QSettings(QSettings::defaultFormat(), QSettings::UserScope,
+                                            QString::fromLatin1(SettingsKeys::Organization),
+                                            SettingsKeys::application())
+                                      .fileName())
+                            .absoluteDir();
+            QVERIFY(home.cdUp());
+            QVERIFY(!QFileInfo(home.path()).isSymLink());
+            QCOMPARE((QFile::permissions(home.path()) & openToOthers).toInt(), 0);
+        }
+
+        QVERIFY(QFile::exists(linkedFile.fileName()));
+    }
+#endif
+
     // A save is stored once the settings file saved what it changed, judged
     // by that save alone: not while the file won't save, however often the
     // save is retried, nor because QSettings found a malformed line when it
@@ -1880,7 +2180,8 @@ private slots:
         });
         settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
                                 refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));
-        settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, refiner == QStringLiteral("endpoint-inherited"));
+        // Inherited: a Custom endpoint without a key of its own, on the proxy's server.
+        settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://proxy.example:8317/v1"));
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
         settings.raw().sync();
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");

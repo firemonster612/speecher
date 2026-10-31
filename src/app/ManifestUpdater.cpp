@@ -399,18 +399,6 @@ const UpdateManifest &ManifestUpdater::manifest() const
 
 QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
 {
-    // Update end-to-end tests point the check at a local server; the download
-    // URL inside the manifest still has to be https. The stable override lets
-    // a test serve two different manifests to one Nightly-channel check.
-    const QString stableOverride =
-        qEnvironmentVariable("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
-    if (channel == UpdateChannel::Stable && !stableOverride.isEmpty()) {
-        return QUrl(stableOverride);
-    }
-    const QString override = qEnvironmentVariable("SPEECHER_UPDATE_MANIFEST_URL");
-    if (!override.isEmpty()) {
-        return QUrl(override);
-    }
     return channel == UpdateChannel::Nightly ? nightlyManifestUrl : stableManifestUrl;
 }
 
@@ -450,15 +438,11 @@ void ManifestUpdater::finishCheck(QNetworkReply *reply)
 
     // The Nightly channel also reads the stable manifest: the newest release
     // is sometimes a Stable Release, and a nightly install should get it too.
-    // With one overridden URL both channels would read the same file, so the
-    // extra fetch only happens while the two URLs actually differ.
-    const QUrl stableUrl = manifestUrl(UpdateChannel::Stable);
-    if (m_checkChannel == UpdateChannel::Nightly
-        && stableUrl != manifestUrl(UpdateChannel::Nightly)) {
+    if (m_checkChannel == UpdateChannel::Nightly) {
         m_primaryCandidate = parsed;
         m_primaryCheckError = parsed ? QString() : checkError;
         m_fetchingStable = true;
-        QNetworkRequest request(stableUrl);
+        QNetworkRequest request(manifestUrl(UpdateChannel::Stable));
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::NoLessSafeRedirectPolicy);
         m_reply = m_network->get(request);

@@ -308,10 +308,9 @@ struct RefinementEndpointSettings {
     // The API base the endpoint paths hang off, e.g. http://localhost:11434/v1.
     QString baseUrl;
     QString model;
+    // Without one, the CLI Proxy key goes to the proxy's own server
+    // (refinementEndpointKey).
     QString apiKey;
-
-    // A detached URL can still use an unread proxy key until the user edits the key.
-    bool useCliproxyKey = false;
 
     bool operator==(const RefinementEndpointSettings &other) const = default;
 };

@@ -6,6 +6,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 
@@ -38,6 +39,7 @@ public:
         bool clearing = false;
         // The keyring's words, possibly empty.
         QString reason;
+        bool operator==(const WriteFailure &) const = default;
     };
 
     Accounts(SettingsStore &settings,
@@ -86,9 +88,11 @@ signals:
     void signInsChanged();
     void cliproxyAccountsChanged();
     void secretsChanged();
-    // A save of the secret went through and no newer write of it waits: the
-    // value asked for last is the one kept.
-    void secretSaved(SecretStore::Secret secret);
+    // The field is done with the value it submitted for the secret, which it
+    // drops, though not what was typed since: the save went through with no
+    // newer write of it waiting, or a clear from elsewhere, such as moving
+    // the Custom endpoint to another server, replaced it.
+    void draftSettled(SecretStore::Secret secret);
 
 private:
     using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
@@ -101,8 +105,11 @@ private:
     // the same secret under way, carrying the number the secret waits for.
     void write(SecretStore::Secret secret, const QString &value);
     void secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
-                            const QString &error);
+                            const QString &error, bool wrote);
     void finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error);
+    // Shows on the secret's row what a write no field asked for, or one that
+    // replaced a field's, left in storage, checking no sign-in again.
+    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error, bool wrote);
     void settingsSaved();
 
     SettingsStore &m_settings;
@@ -122,7 +129,7 @@ private:
     quint64 m_lastSecretRead = 0;
     // Secrets saved or cleared since that read began, which it must not
     // overwrite.
-    QList<SecretStore::Secret> m_secretsWritten;
+    QSet<SecretStore::Secret> m_secretsWritten;
     // Secrets whose save or clear waits for the store's answer, with the
     // number of the request each asked for last (SecretStore::nextRequest).
     QMap<SecretStore::Secret, quint64> m_saving;

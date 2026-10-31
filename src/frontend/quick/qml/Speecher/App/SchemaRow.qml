@@ -129,8 +129,9 @@ SettingRow {
             // Once saved, the key leaves the field; a refused one stays to
             // retry. Typing goes on while the keyring answers, and a save
             // asked for meanwhile waits its turn, so the field lets go only
-            // when Accounts says the draft submitted last was kept, and only
-            // if nothing was typed since.
+            // when Accounts says the draft submitted last was kept, or was
+            // dropped for a server it no longer belongs to, and only if
+            // nothing was typed since.
             onTextChanged: _editedSinceSubmit = true
             onEditingFinished: {
                 if (!text.trim())
@@ -140,7 +141,7 @@ SettingRow {
             }
             Connections {
                 target: Accounts
-                function onSecretSaved(rowId) {
+                function onDraftSettled(rowId) {
                     if (rowId === root.rowId && !field._editedSinceSubmit)
                         field.clear()
                 }
