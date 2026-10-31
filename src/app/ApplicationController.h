@@ -8,6 +8,7 @@
 #include <QObject>
 
 #include "app/PlatformComposition.h"
+#include "app/SingleInstanceIpc.h"
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
 #include "dictation/DictationTypes.h"
@@ -43,8 +44,13 @@ class ApplicationController : public QObject {
     Q_OBJECT
 
 public:
+    // ipc is the socket the command line reaches the controller on: main
+    // hands over one already listening, so a second launch forwards its
+    // command before anything is built. Without one, the controller makes
+    // its own, which ipcCommands()->listen() opens.
     explicit ApplicationController(bool popupOnly,
                                    std::shared_ptr<const PlatformComposition> platform = platformComposition(),
+                                   std::unique_ptr<SingleInstanceIpc> ipc = {},
                                    QObject *parent = nullptr);
     ~ApplicationController() override;
 

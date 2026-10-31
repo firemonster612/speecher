@@ -88,6 +88,7 @@ QString dataFolder()
 
 ApplicationController::ApplicationController(bool popupOnly,
                                              std::shared_ptr<const PlatformComposition> platform,
+                                             std::unique_ptr<SingleInstanceIpc> ipc,
                                              QObject *parent)
     : QObject(parent)
     , m_popupOnly(popupOnly)
@@ -268,7 +269,8 @@ ApplicationController::ApplicationController(bool popupOnly,
         emit lastRecordChanged();
     });
 
-    m_ipcCommands = new IpcCommandHandler(*this, *m_recording, m_platform, this);
+    m_ipcCommands = new IpcCommandHandler(*this, *m_recording,
+                                          ipc ? std::move(ipc) : std::make_unique<SingleInstanceIpc>(m_platform), this);
     // After record stop's replies are written: recordingChanged(false) comes
     // before them.
     connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);

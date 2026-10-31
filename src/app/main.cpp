@@ -426,7 +426,7 @@ static bool microphoneAccessGranted(const PlatformComposition &platform, QObject
     if (!granted) {
         loop.exec();
     }
-    return *granted;
+    return granted.value_or(false);
 }
 
 int main(int argc, char **argv)
@@ -516,24 +516,13 @@ int main(int argc, char **argv)
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
     app.setQuitOnLastWindowClosed(quitOnLastWindowClosed(decision.mode));
 
-    ApplicationController controller(daemon, platform);
-    QObject::connect(&controller,
-                     &ApplicationController::quitRequested,
-                     &app,
-                     &QCoreApplication::quit,
-                     Qt::QueuedConnection);
-    // From launch: in daemon mode it is the only sign the process is running
-    // and the global shortcut has something to reach.
-    TrayIcon tray(&controller);
-#ifdef Q_OS_WIN
-    win::quitWhenWindowsEndsSession(&controller, [&controller] {
-        // Queued: Windows waits on the message until this returns.
-        QMetaObject::invokeMethod(&controller, &ApplicationController::quitApplication, Qt::QueuedConnection);
-    });
-#endif
-    controller.updates()->start();
+    // Before the controller, so a launch that only hands its command to the
+    // running instance builds nothing: no keyring migration, no login entry,
+    // no shortcut binding, no settings save. Requests that come meanwhile
+    // wait for the event loop, after the controller takes the socket.
+    auto ipc = std::make_unique<SingleInstanceIpc>(platform);
     QString ipcError;
-    const IpcListenResult listened = controller.ipcCommands()->listen(&ipcError);
+    const IpcListenResult listened = ipc->listen(&ipcError);
     if (listened != IpcListenResult::Listening) {
         const IpcCommand showCommand = !decision.transcribeFiles.isEmpty() ? IpcCommand::Transcribe
             : decision.showSettings                                       ? IpcCommand::ShowSettings
@@ -579,9 +568,24 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-    // After the socket, so a launch that only hands its command to the
-    // running instance never builds a QML engine. Opens no window until the
-    // controller asks for one.
+
+    ApplicationController controller(daemon, platform, std::move(ipc));
+    QObject::connect(&controller,
+                     &ApplicationController::quitRequested,
+                     &app,
+                     &QCoreApplication::quit,
+                     Qt::QueuedConnection);
+    // From launch: in daemon mode it is the only sign the process is running
+    // and the global shortcut has something to reach.
+    TrayIcon tray(&controller);
+#ifdef Q_OS_WIN
+    win::quitWhenWindowsEndsSession(&controller, [&controller] {
+        // Queued: Windows waits on the message until this returns.
+        QMetaObject::invokeMethod(&controller, &ApplicationController::quitApplication, Qt::QueuedConnection);
+    });
+#endif
+    controller.updates()->start();
+    // Opens no window until the controller asks for one.
     QuickFrontEnd frontEnd(&controller, &tray);
 #ifdef Q_OS_MACOS
     // A click on the Dock icon, or opening Speecher again, brings up Main, as

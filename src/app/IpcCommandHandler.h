@@ -22,9 +22,10 @@ class IpcCommandHandler : public QObject {
     Q_OBJECT
 
 public:
+    // Serves ipc, which it takes over, listening or not.
     IpcCommandHandler(ApplicationController &controller,
                       RecordingSession &recording,
-                      std::shared_ptr<const PlatformComposition> platform,
+                      std::unique_ptr<SingleInstanceIpc> ipc,
                       QObject *parent = nullptr);
 
     IpcListenResult listen(QString *error = nullptr);

@@ -20,13 +20,14 @@ namespace speecher {
 
 IpcCommandHandler::IpcCommandHandler(ApplicationController &controller,
                                      RecordingSession &recording,
-                                     std::shared_ptr<const PlatformComposition> platform,
+                                     std::unique_ptr<SingleInstanceIpc> ipc,
                                      QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_recording(recording)
-    , m_ipc(new SingleInstanceIpc(std::move(platform), this))
+    , m_ipc(ipc.release())
 {
+    m_ipc->setParent(this);
     DictationSession *session = m_controller.session();
     connect(&m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();

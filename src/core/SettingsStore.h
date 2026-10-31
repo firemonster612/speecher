@@ -55,7 +55,8 @@ public:
     // ignored; edit refuses a change to one. The keys the draft changed go
     // through SecretStore::saveSecrets: one the keyring refuses is only
     // logged, and one asked for while a write of it waits on the keyring is
-    // saved after it.
+    // saved after it. Moving the speech endpoint or the CLI Proxy API server
+    // to another server clears its key, unless the draft entered a new one.
     void applySnapshot(const AppSettings &draft);
     // Saves what change makes of a dictation snapshot, unless it returns
     // false; returns whether it saved. The snapshot leaves unread keyring
@@ -146,7 +147,8 @@ signals:
 
 private:
     // previous is what dictationSnapshot read before the draft was made.
-    void applySnapshot(const AppSettings &draft, const AppSettings &previous);
+    // Returns whether it saved: false once deleteAll ran.
+    bool applySnapshot(const AppSettings &draft, const AppSettings &previous);
 
     AppSettings snapshotReading(bool waitForKeyring) const;
     // Clears every setting but the deletion markers, marks the identity

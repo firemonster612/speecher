@@ -1165,6 +1165,41 @@ private slots:
         QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
     }
 
+    // Moving the speech endpoint or the CLI Proxy API server to another
+    // server drops the key entered for the old one, a save of it still
+    // waiting its turn too, but keeps a key entered with the move.
+    void aKeyStaysWithTheServerItWasEnteredFor()
+    {
+        const auto speech = SecretStore::Secret::SpeechEndpointKey;
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, speech, proxy] {
+            savedSecret(secrets, speech, {});
+            savedSecret(secrets, proxy, {});
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.speech.endpoint.baseUrl = QStringLiteral("http://server-a.example");
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-a.example:8317");
+            return true;
+        });
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("proxy-key-a")));
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+        secrets->saveSecret(speech, QStringLiteral("speech-key-a"));
+
+        settings.edit([](AppSettings &draft) {
+            draft.speech.endpoint.baseUrl = QStringLiteral("http://server-b.example");
+            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+            draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key-b");
+            return true;
+        });
+
+        QTRY_COMPARE(finished.count(), 2);
+        QCOMPARE(readSecret(SettingsStore().secrets(), speech), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), QStringLiteral("proxy-key-b"));
+    }
+
     // Keys land in the keyring when one works, and in the settings file
     // otherwise; either way they read back and never double up.
     void endpointKeysRoundTripOutsideTheSettingsFile()
@@ -1488,6 +1523,52 @@ private slots:
         // The last request asked for answers: the clear, or the key for B.
         QCOMPARE(finished.last().at(2).toBool(), enteredForB.isEmpty());
         comparePeerRead(settings, key, enteredForB);
+    }
+
+    // A key entered with a server move is saved once the keyring answers, so
+    // the old server's key is hidden first: another process reading the new
+    // server before the save lands finds no key, not the old one.
+    void aKeyEnteredWithAServerMoveNeverShowsTheOldKey_data()
+    {
+        QTest::addColumn<int>("secret");
+        QTest::newRow("speech endpoint") << int(SecretStore::Secret::SpeechEndpointKey);
+        QTest::newRow("CLI Proxy API") << int(SecretStore::Secret::CliproxyApiKey);
+    }
+
+    void aKeyEnteredWithAServerMoveNeverShowsTheOldKey()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        QFETCH(int, secret);
+        const auto key = SecretStore::Secret(secret);
+        const auto moveTo = [key](const QString &server, const QString &enteredKey) {
+            return [key, server, enteredKey](AppSettings &draft) {
+                if (key == SecretStore::Secret::SpeechEndpointKey) {
+                    draft.speech.endpoint.baseUrl = server;
+                    draft.speech.endpoint.apiKey = enteredKey;
+                } else {
+                    draft.refinement.cliproxyBaseUrl = server;
+                    draft.refinement.cliproxyApiKey = enteredKey;
+                }
+                return true;
+            };
+        };
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] { savedSecret(secrets, key, {}); });
+        settings.edit(moveTo(QStringLiteral("http://server-a.example"), QString()));
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("key-a")));
+
+        settings.edit(moveTo(QStringLiteral("http://server-b.example"), QStringLiteral("key-b")));
+        settings.raw().sync();
+
+        comparePeerRead(settings, key, QString());
+        bool settled = false;
+        secrets->afterWrites([&settled] { settled = true; });
+        QTRY_VERIFY(settled);
+        comparePeerRead(settings, key, QStringLiteral("key-b"));
     }
 
     // A deletion marker that comes while a worker waits on the keyring hides
@@ -2275,7 +2356,8 @@ private slots:
     }
 
     // Once Speecher's settings are deleted, a save is refused before it
-    // reaches the keyring or the settings file, so no key comes back.
+    // reaches the keyring or the settings file, so no key comes back, and an
+    // edit says it saved nothing.
     void aSaveAfterTheSettingsAreDeletedIsRefused()
     {
         const auto openAi = SecretStore::Secret::OpenAiApiKey;
@@ -2289,6 +2371,10 @@ private slots:
 
         QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("late-key")));
         QVERIFY(!savedApiKey(secrets, QStringLiteral("late-key")));
+        QVERIFY(!settings.edit([](AppSettings &draft) {
+            draft.refinement.cliproxyApiKey = QStringLiteral("late-key");
+            return true;
+        }));
 
         QCOMPARE(secrets->secret(proxy), QString());
         comparePeerRead(settings, proxy, QString());
