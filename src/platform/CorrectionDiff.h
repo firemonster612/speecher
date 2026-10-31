@@ -23,6 +23,9 @@ struct CorrectionWindow {
 // learned under the same conditions whichever platform observed it.
 inline constexpr int correctionContextChars = 24;
 inline constexpr int correctionMinContextChars = 8;
+// An edited span longer than this is a paragraph the user rewrote, not a
+// correction of what Speecher dictated.
+inline constexpr int correctionMaxEditedChars = 500;
 
 // Observation timing, shared for the same reason. AT-SPI has no usable
 // text-change signal across toolkits, so that observer polls the control at

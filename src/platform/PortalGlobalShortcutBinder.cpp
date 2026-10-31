@@ -108,7 +108,11 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(SettingsStore *settings,
             m_supported = true;
         }
         emit supportChanged();
-        if (m_supported && m_bindWhenSupported) {
+        // A registration asked for meanwhile also binds, and says how it went.
+        if (std::exchange(m_registerWhenSupported, false)) {
+            m_bindWhenSupported = false;
+            registerShortcut();
+        } else if (m_supported && m_bindWhenSupported) {
             m_bindWhenSupported = false;
             createSession(false);
         }
@@ -167,6 +171,7 @@ void PortalGlobalShortcutBinder::bind()
 void PortalGlobalShortcutBinder::registerShortcut()
 {
     if (!m_supportKnown) {
+        m_registerWhenSupported = true;
         return;
     }
     if (!m_supported) {

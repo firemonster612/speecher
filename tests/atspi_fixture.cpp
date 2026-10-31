@@ -17,6 +17,7 @@ int main(int argc, char **argv)
         target->setEchoMode(QLineEdit::Password);
         target->setText(QStringLiteral("not-a-real-secret"));
     }
+    target->setReadOnly(app.arguments().contains(QStringLiteral("--read-only")));
     if (app.arguments().contains(QStringLiteral("--unicode"))) {
         target->setText(QString::fromUtf8("🌍 prefix text suffix text"));
         target->setCursorPosition(15);

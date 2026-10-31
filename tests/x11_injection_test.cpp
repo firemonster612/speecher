@@ -209,6 +209,14 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "could not open a second connection for injection\n");
         return 1;
     }
+    // Another client grabs the keyboard, as a menu or a KGlobalAccel
+    // shortcut does: the watch still sees the key.
+    if (XGrabKeyboard(display, DefaultRootWindow(display), False, GrabModeAsync, GrabModeAsync,
+                      CurrentTime)
+        != GrabSuccess) {
+        std::fprintf(stderr, "could not grab the keyboard from the injecting connection\n");
+        return 1;
+    }
 
     QTimer::singleShot(200, [display] {
         XTestFakeKeyEvent(display, rightAltKeycode, True, 0);
@@ -233,6 +241,7 @@ int main(int argc, char **argv)
                      static_cast<long long>(deactivated.count()));
         return 1;
     }
-    std::puts("XInput2 backend: activated() then deactivated() fired on injected right Alt");
+    std::puts("XInput2 backend: activated() then deactivated() fired on injected right Alt "
+              "while another client grabbed the keyboard");
     return keyGrab;
 }

@@ -27,8 +27,12 @@ XInput2ShortcutBinder::XInput2ShortcutBinder(SettingsStore *settings, GlobalShor
     }
     int firstEvent = 0;
     int firstError = 0;
+    // Before XI 2.1 the server holds raw events back from every client but
+    // the grabbing one while another client grabs the keyboard, as a
+    // KGlobalAccel shortcut or a menu does. The version a client announces
+    // decides which delivery it gets.
     int major = 2;
-    int minor = 0;
+    int minor = 2;
     if (!XQueryExtension(m_display, "XInputExtension", &m_xiOpcode, &firstEvent, &firstError)
         || XIQueryVersion(m_display, &major, &minor) != Success) {
         XCloseDisplay(m_display);

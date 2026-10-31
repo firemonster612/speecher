@@ -151,6 +151,12 @@ bool Target::hasSelection() const
         && !selectedText.isEmpty();
 }
 
+void Target::setNearbyText(const QString &text, int start, int end)
+{
+    nearbyTextBefore = text.left(start).right(nearbyTextChars);
+    nearbyTextAfter = text.mid(end, nearbyTextChars);
+}
+
 QList<AppRecognitionRule> builtInAppRecognitionRules()
 {
     return {

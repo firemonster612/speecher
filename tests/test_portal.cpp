@@ -256,6 +256,18 @@ private slots:
         QTRY_COMPARE(activated.count(), 1);
     }
 
+    // Choose shortcut pressed before the portal said it supports shortcuts
+    // goes ahead once it has.
+    void choosingAShortcutWaitsForSupport()
+    {
+        SettingsStore settings;
+        PortalGlobalShortcutBinder binder(&settings);
+        QVERIFY(!binder.supportKnown());
+        binder.registerShortcut();
+        m_portal.reply(m_portal.take(QStringLiteral("Register")));
+        bindInNewSession(binder, QStringLiteral("/session/1"), QStringLiteral("Ctrl+Alt+D"));
+    }
+
     // Removing the shortcut while the host identity is still registering
     // must not let that registration go on to open the chooser, and the
     // removal holds when Speecher next starts.

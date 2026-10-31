@@ -88,6 +88,13 @@ bool initializeAtSpiClient()
     return initializedWithEventFilter;
 }
 
+// Whether the control takes typing. Qt marks a read-only field editable and
+// read-only both, and it still offers the editable-text interface.
+bool takesTyping(AtspiAccessible *object)
+{
+    return hasState(object, ATSPI_STATE_EDITABLE) && !hasState(object, ATSPI_STATE_READ_ONLY);
+}
+
 bool isApplicationRoot(AtspiAccessible *accessible)
 {
     AtspiObject *object = accessible ? ATSPI_OBJECT(accessible) : nullptr;
@@ -814,7 +821,7 @@ TargetSnapshot TargetSnapshot::capture()
         clearError(&error);
         target.secure = target.secure || isForeignPrivilegedProcess(target.processId);
         target.accessible = true;
-        target.editable = hasState(focused, ATSPI_STATE_EDITABLE);
+        target.editable = takesTyping(focused);
         if (!target.secure) {
             populateAncestorContext(&target, focused, &identities);
             populateText(&target, focused);
@@ -888,7 +895,8 @@ bool TargetSnapshot::canInsert(const Target &target) const
 #ifdef SPEECHER_WITH_ATSPI
     return m_accessible && !target.secure && target.caretOffset >= 0
         && !(target.selectionStart >= 0 && target.selectionEnd > target.selectionStart)
-        && atspi_accessible_is_editable_text(m_accessible.get()) && matches(target, false);
+        && atspi_accessible_is_editable_text(m_accessible.get())
+        && takesTyping(m_accessible.get()) && matches(target, false);
 #else
     Q_UNUSED(target)
     return false;
@@ -976,9 +984,15 @@ QString TargetSnapshot::correctionWindow(const CorrectionWindow &window) const
         g_object_unref(text);
         return {};
     }
+    // Room for the longest edit CorrectionTracker learns from, and for edits
+    // nearby that shift the window a little. No more: the wider the read, the
+    // likelier its context repeats and the observation is abandoned.
+    constexpr int shiftChars = 16;
     const QString value = takeString(atspi_text_get_text(
-        text, qMax(0, insertionOffset - textOffsetLength(target, prefix) - 16),
-        qMin(count, insertionOffset + textOffsetLength(target, original) + 560 + textOffsetLength(target, suffix)), &error));
+        text, qMax(0, insertionOffset - textOffsetLength(target, prefix) - shiftChars),
+        qMin(count, insertionOffset + textOffsetLength(target, original) + correctionMaxEditedChars
+                        + textOffsetLength(target, suffix) + shiftChars),
+        &error));
     clearError(&error);
     g_object_unref(text);
     return value;

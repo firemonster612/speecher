@@ -75,6 +75,7 @@ private:
     bool m_supported = false;
     bool m_supportKnown = true;
     bool m_bindWhenSupported = false;
+    bool m_registerWhenSupported = false;
     bool m_identityReady = false;
     bool m_identityPending = false;
     bool m_registrationAfterIdentity = false;

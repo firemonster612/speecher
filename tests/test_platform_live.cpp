@@ -937,6 +937,22 @@ private slots:
         QCOMPARE(copiedText, QStringLiteral("Speecher clipboard probe"));
     }
 
+    // A read-only field still offers AT-SPI's editable-text interface.
+    void liveAtSpiReadOnlyTargetTakesNoInsertion()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_READONLY") != QStringLiteral("1")) {
+            QSKIP("Live AT-SPI read-only fixture is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused read-only target was found");
+        QVERIFY(!target.editable);
+        QVERIFY(!provider.canInsertText(target));
+        QString error;
+        QVERIFY(!provider.insertText(target, QStringLiteral("inserted"), &error));
+    }
+
     void liveAtSpiPasswordTargetIsPrivate()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_PASSWORD") != QStringLiteral("1")) {

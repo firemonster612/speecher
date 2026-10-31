@@ -104,10 +104,13 @@ void KeywatchShortcutBinder::startRecoveryPoll()
         m_recoveryPoll = new QTimer(this);
         m_recoveryPoll->setInterval(recoveryPollMs);
         connect(m_recoveryPoll, &QTimer::timeout, this, [this] {
-            if (!KeywatchSetup::probe().ready()) {
+            const ShortcutBinding stored = storedBinding();
+            if (!stored.isSingleKey() || !KeywatchSetup::probe().ready()) {
                 return;
             }
-            SingleKeyShortcutBinder::bind();
+            // bind() warned why the key could not be watched; every second
+            // the helper keeps refusing must not warn again.
+            setShortcut(stored);
             if (shortcut().isSingleKey()) {
                 m_recoveryPoll->stop();
                 emit supportChanged();

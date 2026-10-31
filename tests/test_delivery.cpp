@@ -534,6 +534,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
     }
 
+    // The text after a selection starts where the selection ends, however
+    // long the selection is.
+    void nearbyTextLiesEitherSideOfTheSelection()
+    {
+        Target target;
+        const QString selected(300, QLatin1Char('s'));
+        target.setNearbyText(QStringLiteral("before ") + selected + QStringLiteral(" after"), 7, 307);
+        QCOMPARE(target.nearbyTextBefore, QStringLiteral("before "));
+        QCOMPARE(target.nearbyTextAfter, QStringLiteral(" after"));
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;

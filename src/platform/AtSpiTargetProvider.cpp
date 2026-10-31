@@ -1,12 +1,12 @@
 #include "platform/AtSpiTargetProvider.h"
 
+#include "platform/InsertionBaseline.h"
 #include "platform/KWinActiveWindow.h"
 #include "platform/atspi/AtSpiAccess.h"
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
 #include <QFile>
-#include <QThread>
 
 namespace speecher {
 
@@ -147,27 +147,34 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         || plainText.isEmpty()) {
         return false;
     }
-    for (int attempt = 0; attempt < 5; ++attempt) {
-        if (attempt > 0) QThread::msleep(40);
-        const auto window = m_snapshot->verifiedInsertion(plainText);
-        if (!window) continue;
-        const QString &prefix = window->prefix;
-        const QString &suffix = window->suffix;
-        if (m_correctionObservationEnabled && prefix.size() >= correctionMinContextChars
-            && suffix.size() >= correctionMinContextChars) {
-            if (!m_correctionObserver) {
-                m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
-            }
-            m_correctionObserver->schedule(
-                this, m_snapshot.get(), *window,
-                [this](const QString &original, const QString &corrected,
-                       const QString &applicationId, double confidence) {
-                    emit correctionObserved(original, corrected, applicationId, confidence);
-                });
+    const atspi::TargetSnapshot *snapshot = m_snapshot.get();
+    std::optional<CorrectionWindow> window;
+    const bool shown = awaitInsertion([&]() -> std::optional<bool> {
+        // A capture during the wait replaces the snapshot being verified.
+        if (m_snapshot.get() != snapshot) {
+            return std::nullopt;
         }
-        return true;
+        window = snapshot->verifiedInsertion(plainText);
+        return window.has_value();
+    });
+    if (!shown) {
+        return false;
     }
-    return false;
+    const QString &prefix = window->prefix;
+    const QString &suffix = window->suffix;
+    if (m_correctionObservationEnabled && prefix.size() >= correctionMinContextChars
+        && suffix.size() >= correctionMinContextChars) {
+        if (!m_correctionObserver) {
+            m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
+        }
+        m_correctionObserver->schedule(
+            this, m_snapshot.get(), *window,
+            [this](const QString &original, const QString &corrected,
+                   const QString &applicationId, double confidence) {
+                emit correctionObserved(original, corrected, applicationId, confidence);
+            });
+    }
+    return true;
 }
 
 void AtSpiTargetProvider::setCorrectionObservationEnabled(bool enabled)
