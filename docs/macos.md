@@ -156,12 +156,40 @@ Quick build as an ordinary Sparkle update, and their permissions, Keychain
 items and login item carry over only if the new bundle is signed so macOS
 takes it for the same app. Ad-hoc test builds can't show that: each has its
 own signature. `packaging/macos/verify-dmg-update.py` drives the update
-itself. It can't run unattended: 0.2.0 turns Sparkle's own scheduler off, so
-Sparkle never downloads in the background, and the update waits for someone
-to press Install and restart in the old app. Run the checklist below by hand
-before the first Quick release, on an Apple Silicon Mac (the released DMGs are
-arm64 only) kept for the purpose: the script trusts a throwaway CA in the
-System keychain.
+itself. 0.2.0 turns Sparkle's own scheduler off, so Sparkle never downloads in
+the background, and the update waits for someone to press Install and restart
+in the old app. Before the first Quick release, run the CI gate below, and the
+checklist items it doesn't cover by hand on an Apple Silicon Mac (the released
+DMGs are arm64 only) kept for the purpose: the script trusts a throwaway CA in
+the System keychain.
+
+### The CI gate
+
+`.github/workflows/mac-release-gate.yml` runs steps 2 to 5 and 8 on an arm64
+GitHub runner with no person (`packaging/macos/release-gate.py`). Start the
+candidate as in step 1, then pass its run ID:
+
+```sh
+gh workflow run mac-release-gate.yml -f candidate_run=<Release run ID>
+```
+
+The runner's TCC databases are writable, so the gate records the grants
+against the shipped app's designated requirement as macOS does when a user
+allows them. It saves a dummy OpenAI key in the old app's Accounts pane and
+presses Install and restart through System Events. After the relaunch it
+checks that `speecher.log` reads `trusted=1` for the candidate's cdhash, that
+the TCC records still allow it, that the settings carried over, that
+`speecher providers` reads the key with no Keychain prompt and that Speecher
+has one login item. The job summary marks each check PASS or FAIL, and the
+`release-gate-evidence` artifact keeps what step 8 asks for.
+
+The summary marks what a runner can't check NOT_VERIFIED, never PASS: real
+microphone audio, the shortcut pasting into TextEdit, Music pausing and
+screenshot refinement without a prompt (only their TCC records are checked),
+the Claude Code and Codex sign-ins, a LaunchServices start taking typed keys,
+and steps 6 and 7. Check those by hand.
+
+### The checklist
 
 1. Get the shipped DMG from the latest GitHub release, not a rebuild. For the
    candidate, start `release.yml` by hand on the commit to release (Actions >
