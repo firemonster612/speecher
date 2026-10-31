@@ -20,6 +20,8 @@
 #include <QThread>
 #include <QTimer>
 
+#include <optional>
+
 using namespace speecher;
 
 namespace {
@@ -121,13 +123,27 @@ public:
             playing = false;
         } else if (message.member() == QLatin1String("Play")) {
             playing = true;
+            if (holdsPlayAnswer) {
+                heldPlayAnswer = message.createReply();
+                return true;
+            }
         }
         m_bus.send(message.createReply());
         return true;
     }
 
+    // Answers the Play held back while holdsPlayAnswer was set.
+    void answerHeldPlay()
+    {
+        m_bus.send(*heldPlayAnswer);
+        heldPlayAnswer.reset();
+        holdsPlayAnswer = false;
+    }
+
     bool playing = true;
     int refusedPlays = 0;
+    bool holdsPlayAnswer = false;
+    std::optional<QDBusMessage> heldPlayAnswer;
 };
 
 // Waits until the test player has answered everything sent to it so far. The
@@ -267,6 +283,29 @@ private slots:
         media.resumePaused();
         QVERIFY(playerAnsweredEarlierCalls());
         QVERIFY(!player.playing);
+        media.resumePaused();
+        QTRY_VERIFY(player.playing);
+    }
+
+    // A pause answered before the previous resume's Play keeps the player
+    // listed, so the last resume plays it again.
+    void pauseBeforeALateResumeAnswerIsResumed()
+    {
+        FakePlayer player;
+        QVERIFY(player.start(QStringLiteral("org.mpris.MediaPlayer2.speecherTest"),
+                             QStringLiteral("/org/mpris/MediaPlayer2")));
+        MediaPauseController media;
+        media.pausePlaying();
+        QTRY_VERIFY(!player.playing);
+        QVERIFY(playerAnsweredEarlierCalls());
+        player.holdsPlayAnswer = true;
+        media.resumePaused();
+        QTRY_VERIFY(player.playing);
+        media.pausePlaying();
+        QTRY_VERIFY(!player.playing);
+        QVERIFY(playerAnsweredEarlierCalls());
+        player.answerHeldPlay();
+        QVERIFY(playerAnsweredEarlierCalls());
         media.resumePaused();
         QTRY_VERIFY(player.playing);
     }
