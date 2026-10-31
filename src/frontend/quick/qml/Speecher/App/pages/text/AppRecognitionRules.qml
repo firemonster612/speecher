@@ -68,17 +68,18 @@ Section {
         }
     }
 
-    // Column heads over the matches, inset to line up with the rows' content.
+    // Column heads over the matches, where the first row puts its choices.
     Reveal {
         id: heads
-        readonly property real typeX: Theme.rowInset + (width - Theme.rowInset * 2) * 0.42
+        property real typeX
+        property real profileX
         open: Library.recognitionRules.length > 0
         Item {
             width: parent.width
             height: 40
             Txt { x: Theme.rowInset; anchors.bottom: parent.bottom; anchors.bottomMargin: Theme.space2; text: Library.pastingText.app; variant: "small"; tone: "secondary" }
             Txt { x: heads.typeX; anchors.bottom: parent.bottom; anchors.bottomMargin: Theme.space2; text: Library.pastingText.appType; variant: "small"; tone: "secondary" }
-            Txt { x: heads.typeX + 196; anchors.bottom: parent.bottom; anchors.bottomMargin: Theme.space2; text: Library.pastingText.profile; variant: "small"; tone: "secondary" }
+            Txt { x: heads.profileX; anchors.bottom: parent.bottom; anchors.bottomMargin: Theme.space2; text: Library.pastingText.profile; variant: "small"; tone: "secondary" }
         }
     }
     RowList {
@@ -101,25 +102,44 @@ Section {
             Row {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 10
-                AppIcon { name: matchRow.rule.match.split(".").pop(); size: 24; anchors.verticalCenter: parent.verticalCenter }
-                Txt { text: matchRow.rule.match; variant: "label"; anchors.verticalCenter: parent.verticalCenter }
+                AppIcon { id: appIcon; name: matchRow.rule.match.split(".").pop(); size: 24; anchors.verticalCenter: parent.verticalCenter }
+                Txt {
+                    width: Math.min(implicitWidth, choices.x - Theme.space3 - appIcon.width - parent.spacing)
+                    text: matchRow.rule.match
+                    variant: "label"
+                    elide: Text.ElideMiddle
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
-            Select {
-                x: heads.typeX - Theme.rowInset
+            // The app type and Writing Profile choices, 42% across where the
+            // row has room. Where it hasn't, they move left and narrow so
+            // they end before the row's Edit and Delete buttons, leaving the
+            // app's name at least 35%.
+            Row {
+                id: choices
+                readonly property real fullWidth: 184 + spacing + 170
+                width: Math.min(fullWidth, parent.width * 0.65)
+                x: Math.min((matchRow.width - Theme.rowInset * 2) * 0.42, parent.width - width)
                 anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: 184
-                options: section.categoryOptions
-                currentId: matchRow.rule.category
-                onChosen: id => matchRow.change({ category: id })
+                spacing: 12
+                Select {
+                    id: typeChoice
+                    width: (choices.width - choices.spacing) * 184 / (choices.fullWidth - choices.spacing)
+                    options: section.categoryOptions
+                    currentId: matchRow.rule.category
+                    onChosen: id => matchRow.change({ category: id })
+                }
+                Select {
+                    id: profileChoice
+                    objectName: "matchProfile"
+                    width: choices.width - choices.spacing - typeChoice.width
+                    options: section.profileOptions
+                    currentId: matchRow.rule.profile
+                    onChosen: id => matchRow.change({ profile: id })
+                }
             }
-            Select {
-                x: heads.typeX - Theme.rowInset + 196
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: 170
-                options: section.profileOptions
-                currentId: matchRow.rule.profile
-                onChosen: id => matchRow.change({ profile: id })
-            }
+            Binding { when: matchRow.index === 0; target: heads; property: "typeX"; value: Theme.rowInset + choices.x }
+            Binding { when: matchRow.index === 0; target: heads; property: "profileX"; value: Theme.rowInset + choices.x + profileChoice.x }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: Words.edit; onClicked: { matchForm.startEdit(matchRow.rule); section.revealRequested(matchForm) } },
                 IconButton {

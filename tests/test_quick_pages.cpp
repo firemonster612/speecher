@@ -781,6 +781,50 @@ private slots:
         QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
     }
 
+    // At the window's narrowest, an app match's Writing Profile choice ends
+    // before its Edit and Delete buttons, so a click on it can't delete the
+    // match.
+    void appMatchChoicesClearTheirButtons()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.appRecognitionRules = {{.match = QStringLiteral("org.kde.konsole"), .category = AppCategory::Terminal}};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        main->resize(main->minimumWidth(), main->height());
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("appRules"));
+
+        QQuickItem *profile = nullptr;
+        QTRY_VERIFY((profile = findItem(main->contentItem(), QStringLiteral("matchProfile"))));
+        QQuickItem *row = profile;
+        while (row && !row->property("actions").isValid()) {
+            row = row->parentItem();
+        }
+        QVERIFY(row);
+        QQuickItem *edit = nullptr;
+        QList<QQuickItem *> items{row};
+        while (!items.isEmpty() && !edit) {
+            QQuickItem *item = items.takeLast();
+            items += item->childItems();
+            if (item->property("iconName").toString() == QLatin1String("pencil")) {
+                edit = item;
+            }
+        }
+        QVERIFY(edit);
+        QTest::qWait(kSettleMs);
+        const qreal profileEnd = profile->mapToScene(QPointF(profile->width(), 0)).x();
+        const qreal buttonsStart = edit->mapToScene(QPointF(0, 0)).x();
+        QVERIFY2(profileEnd <= buttonsStart, qPrintable(QStringLiteral("%1 > %2").arg(profileEnd).arg(buttonsStart)));
+    }
+
     // Undo after deleting an app's paste rule puts it back, even once the
     // page it was deleted on is gone.
     void pasteRuleUndoOutlivesItsPage()
