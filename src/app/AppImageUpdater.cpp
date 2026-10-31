@@ -253,7 +253,7 @@ void AppImageUpdater::restartApplication()
         while (QLocalSocket *socket = m_restartServer->nextPendingConnection()) {
             socket->setParent(m_restartServer);
         }
-        QCoreApplication::quit();
+        quitAfterKeySaves();
     });
 
     m_appImagePath = currentAppImagePath();

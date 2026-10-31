@@ -1431,6 +1431,52 @@ private slots:
         comparePeerRead(settings, key, QString());
     }
 
+    // A save still under way when the endpoint moves lands hidden behind the
+    // move's clear, in the same save of the settings file, so another
+    // process reading before the clear answers finds no key for the new
+    // server (r382 Sol2 1).
+    void aSaveLandingAfterTheEndpointMovesStaysHidden()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] {
+            qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
+            savedSecret(secrets, key, {});
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            return true;
+        });
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("old-key")));
+        // Refused, so its answer comes on the event loop's next turn and the
+        // key goes to the settings file.
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+        secrets->saveSecret(key, QStringLiteral("pending-a"));
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://server-b.example/v1")});
+            return true;
+        });
+        bool read = false;
+
+        // Answered in the order asked: after the older save lands, before
+        // the clear it asked for next does.
+        QTimer::singleShot(0, this, [&] {
+            read = true;
+            comparePeerRead(settings, key, QString());
+        });
+
+        QTRY_VERIFY(read);
+        QTRY_COMPARE(finished.count(), 1);
+        QVERIFY(finished.first().at(2).toBool());
+        comparePeerRead(settings, key, QString());
+    }
+
     // A saveFinished handler's saves wait their turn behind the one it
     // started first, and the newest is the one kept and answered as stored
     // (r382 Sol 2).

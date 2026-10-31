@@ -106,7 +106,7 @@ void WindowsInstallerUpdater::restartApplication()
         return;
     }
     setState(State::Restarting);
-    QCoreApplication::quit();
+    quitAfterKeySaves();
 }
 
 } // namespace speecher

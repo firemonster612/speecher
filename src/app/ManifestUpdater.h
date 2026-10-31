@@ -75,6 +75,9 @@ protected:
                                                    bool *manualInstallRequired) = 0;
     virtual bool installDownload(const QString &path, QString *error) = 0;
     virtual void restartApplication() = 0;
+    // Quits once the key saves still under way settle, as
+    // ApplicationController::quitApplication does, so a restart keeps them.
+    void quitAfterKeySaves();
     void finishRestart() override;
     // Where a check fetches the channel's manifest.
     virtual QUrl manifestUrl(UpdateChannel channel) const;

@@ -74,9 +74,9 @@ public:
     // replacing any other waiting one, and answers for the one being written
     // too.
     quint64 saveSecret(Secret secret, const QString &value);
-    // What a settings edit saves: the secrets it changed (saveSecret), after
-    // reporting each secret whose earlier change only now reached the
-    // settings file, through the edit's save.
+    // What a settings edit saves: the secrets it changed (saveSecret). First
+    // it saves the settings file for each other secret whose change the file
+    // refused to save before, and reports the ones that saved as stored.
     void saveSecrets(const QList<std::pair<Secret, QString>> &values);
     // Removes every Speecher entry from the keychain, after any write the
     // keychain is taking. Every save waiting its turn is refused, the answer
@@ -89,9 +89,10 @@ public:
     // one runs finishes with it.
     void deleteKeyringSecrets(std::function<void(bool deleted, const QString &error)> done);
     // Calls done once no save, clear or removal asked for is still under way
-    // or waiting its turn: during this call when none is, else after 6 s at
-    // most, logging what was left. Quitting waits on it, so what was asked
-    // for reaches storage before the event loop stops.
+    // or waiting its turn, during this call when none is, replacing a done
+    // given before. Every keyring request answers within 1.5 s, so it comes.
+    // Quitting waits on it, so what was asked for reaches storage before the
+    // event loop stops.
     void afterWrites(std::function<void()> done);
     // The settings keys of the deletion markers (deletionPending) in the
     // settings file, each hiding a key the keyring kept.
@@ -208,7 +209,7 @@ private:
     // The first refusal the removal under way met.
     std::optional<QString> m_removalError;
     // What afterWrites calls once the writes settle.
-    QList<std::function<void()>> m_afterWrites;
+    std::function<void()> m_afterWrites;
     mutable std::array<SecretState, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
 };
 

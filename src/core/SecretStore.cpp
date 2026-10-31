@@ -29,9 +29,6 @@ namespace speecher {
 namespace {
 
 constexpr int keyringTimeoutMs = 1500;
-// How long afterWrites waits: a write and the one waiting its turn behind it,
-// each within the keyring's timeout, with room to spare.
-constexpr int writesSettleMs = 4 * keyringTimeoutMs;
 constexpr int keyringRetryDelayMs = 5000;
 
 struct SecretEntry {
@@ -357,9 +354,6 @@ void SecretStore::finishWrite(Secret secret, const std::optional<KeyringAnswer> 
         const bool stored = store(secret, *request, answer);
         if (!entry.waiting) {
             settle(secret, *request, stored, m_lastError);
-        } else if (entry.waiting->value.isEmpty()) {
-            // Whatever the older write stored stays hidden.
-            hide(secret);
         }
     }
     // A saveFinished handler may have started the next write already.
@@ -377,39 +371,14 @@ bool SecretStore::writesSettled() const
 
 void SecretStore::afterWrites(std::function<void()> done)
 {
-    if (writesSettled()) {
-        done();
-        return;
-    }
-    m_afterWrites.append(std::move(done));
-    if (m_afterWrites.size() > 1) {
-        return;
-    }
-    QTimer::singleShot(writesSettleMs, this, [this] {
-        if (m_afterWrites.isEmpty()) {
-            return;
-        }
-        QStringList left;
-        for (const SecretEntry &row : secretEntries) {
-            if (state(row.secret).writing || state(row.secret).waiting) {
-                left.append(keyringEntry(row.secret));
-            }
-        }
-        qWarning().noquote() << "Going on before the keyring answered for" << left.join(QStringLiteral(", "))
-                             << (m_removals.isEmpty() ? QString() : QStringLiteral("(removing Speecher's secrets)"));
-        for (const auto &done : std::exchange(m_afterWrites, {})) {
-            done();
-        }
-    });
+    m_afterWrites = std::move(done);
+    notifyIfWritesSettled();
 }
 
 void SecretStore::notifyIfWritesSettled()
 {
-    if (m_afterWrites.isEmpty() || !writesSettled()) {
-        return;
-    }
-    for (const auto &done : std::exchange(m_afterWrites, {})) {
-        done();
+    if (m_afterWrites && writesSettled()) {
+        std::exchange(m_afterWrites, {})();
     }
 }
 
@@ -430,6 +399,11 @@ bool SecretStore::store(Secret secret, const Request &request, const std::option
     const auto said = fileSays();
     m_lastError.clear();
     const bool kept = !answer || keep(secret, request, *answer);
+    // A clear waiting its turn keeps whatever this older request stored
+    // hidden, in the same save of the settings file.
+    if (const std::optional<Request> &next = state(secret).waiting; next && next->value.isEmpty()) {
+        hide(secret);
+    }
     const QString refusal = m_lastError;
     const bool changed = fileSays() != said;
     if (changed) {
@@ -505,8 +479,7 @@ bool SecretStore::keep(Secret secret, const Request &request, const KeyringAnswe
         // Hides the old key across restarts until a deletion goes through,
         // even a key the request keeps out of the settings file: an older
         // copy may be there.
-        m_settings->raw().setValue(pendingDeletionKey(secret), true);
-        m_settings->raw().remove(settingsKey(secret));
+        hide(secret);
         cacheValue(secret, {});
         return false;
     }
