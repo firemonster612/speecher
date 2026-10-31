@@ -524,10 +524,11 @@ void FileTranscriptionSession::startMicrophone()
         m_stream->endInput();
     });
     // As a dictation: a microphone that drops after it heard something still
-    // has those words transcribed.
+    // has those words transcribed. One that never started fails the file,
+    // whatever it heard: no provider prepared to take it.
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
-        m_microphone = Microphone::Off;
-        if (!m_stream->hasAudio()) {
+        const Microphone was = std::exchange(m_microphone, Microphone::Off);
+        if (was == Microphone::Starting || !m_stream->hasAudio()) {
             failFile(message);
             return;
         }
@@ -676,8 +677,12 @@ void FileTranscriptionSession::failFile(const QString &message)
 // Records the current file (if any) and moves on to the next, or ends the batch.
 void FileTranscriptionSession::finishFile()
 {
+    // Releasing cancels the providers, whose handlers may cancel the batch.
     const quint64 batch = m_batch;
     releaseFileResources();
+    if (batch != m_batch) {
+        return;
+    }
     if (m_index >= 0) {
         m_results.append(m_current);
         emit fileFinished(m_index, m_current);

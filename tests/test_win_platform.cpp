@@ -609,6 +609,29 @@ private slots:
         QCOMPARE(heard.size(), reads.load());
     }
 
+    // A handler of the stop's last drained audio that aborts hears nothing
+    // more from that capture, stopped() included.
+    void captureAbortedByItsLastAudioSaysNoMore()
+    {
+        std::atomic<int> reads = 0;
+        WinCaptureInput capture(kBareWording, [&reads] { return std::make_unique<CountingCapture>(&reads); }, 0);
+        QSignalSpy stopped(&capture, &AudioInput::stopped);
+        bool stopping = false;
+        connect(&capture, &AudioInput::audioChunk, &capture, [&] {
+            if (stopping) {
+                capture.abort();
+            }
+        });
+        QVERIFY(test::startAndWait(capture));
+        stopping = true;
+        // Before the first poll, so the drain is what the abort hears.
+        capture.stop();
+        QTest::qWait(200);
+
+        QCOMPARE(stopped.count(), 0);
+        QVERIFY(!capture.isActive());
+    }
+
     // A handler that stops in the middle of a read's chunks gets the rest of
     // the old capture, in order, before stopped(); a start there goes on.
     void captureStoppedFromItsAudioDeliversTheRestFirst()

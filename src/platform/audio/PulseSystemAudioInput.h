@@ -43,12 +43,14 @@ private:
     // Runs on the main thread.
     void fail(quint64 generation, const QString &message);
 
+    // From start() until its open runs.
+    bool m_opening = false;
     pa_threaded_mainloop *m_mainloop = nullptr;
     pa_context *m_context = nullptr;
     pa_stream *m_stream = nullptr;
     // The default output as last reported, whose monitor the stream reads.
     QByteArray m_sinkName;
-    // Bumped by every stop, so audio and failures the PulseAudio thread queued
+    // Bumped by every close, so audio and failures the PulseAudio thread queued
     // before it are dropped rather than reaching the next start.
     quint64 m_generation = 0;
     // Bumped by every new stream.

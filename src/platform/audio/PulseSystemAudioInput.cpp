@@ -59,31 +59,38 @@ PulseSystemAudioInput::~PulseSystemAudioInput()
     close();
 }
 
-// Waits only for the sound server, on the PulseAudio thread.
+// open() waits for the sound server's answers, so it runs on the next turn
+// of the event loop rather than inside start().
 void PulseSystemAudioInput::start()
 {
     abort();
-    QString message;
-    if (open(&message)) {
-        reportLater([this] { emit started(); });
-        return;
-    }
-    close();
-    reportLater([this, message] { emit failed(message); });
+    m_opening = true;
+    reportLater([this] {
+        m_opening = false;
+        QString message;
+        if (open(&message)) {
+            emit started();
+            return;
+        }
+        close();
+        emit failed(message);
+    });
 }
 
 void PulseSystemAudioInput::stop()
 {
-    if (!m_mainloop) {
+    if (!isActive()) {
         return;
     }
-    close();
+    abort();
     reportLater([this] { emit stopped(); });
 }
 
+// Also drops an open that has not run yet.
 void PulseSystemAudioInput::abort()
 {
     dropReports();
+    m_opening = false;
     close();
 }
 
@@ -189,7 +196,7 @@ void PulseSystemAudioInput::close()
 
 bool PulseSystemAudioInput::isActive() const
 {
-    return m_mainloop != nullptr;
+    return m_opening || m_mainloop != nullptr;
 }
 
 // Every answer, to start's request or to a change event, goes through
@@ -353,6 +360,7 @@ void PulseSystemAudioInput::fail(quint64 generation, const QString &message)
     if (generation != m_generation) {
         return;
     }
+    dropReports();
     close();
     emit failed(message);
 }

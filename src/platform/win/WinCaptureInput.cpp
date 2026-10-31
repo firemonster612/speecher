@@ -109,29 +109,40 @@ void WinCaptureInput::start()
 {
     abort();
     setEchoCancellationWarning({});
-    QString failure;
     m_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (m_stopEvent) {
-        // Waits only for the device to open, on the capture thread.
-        std::promise<QString> opened;
-        std::future<QString> done = opened.get_future();
-        m_thread = std::thread(&WinCaptureInput::capture, this, m_generation, std::move(opened));
-        failure = done.get();
-    } else {
-        failure = m_wording.startFailed(qt_error_string(int(GetLastError())));
-    }
-    if (failure.isEmpty()) {
-        reportLater([this] { emit started(); });
+    if (!m_stopEvent) {
+        const QString failure = m_wording.startFailed(qt_error_string(int(GetLastError())));
+        reportLater([this, failure] { emit failed(failure); });
         return;
     }
-    endCapture();
-    reportLater([this, failure] { emit failed(failure); });
+    // The device opens on the capture thread, which says how it went.
+    m_thread = std::thread(&WinCaptureInput::capture, this, m_generation);
+}
+
+void WinCaptureInput::opened(quint64 generation, const QString &error)
+{
+    if (generation != m_generation) {
+        return;
+    }
+    if (!error.isEmpty()) {
+        endCapture();
+        emit failed(error);
+        return;
+    }
+    m_open = true;
+    emit started();
 }
 
 // The post-roll's audio is delivered while the timer runs.
 void WinCaptureInput::stop()
 {
     if (!m_thread.joinable() || m_stopping) {
+        return;
+    }
+    // Still opening: the join waits for the device to answer.
+    if (!m_open) {
+        endCapture();
+        reportLater([this] { emit stopped(); });
         return;
     }
     m_stopping = true;
@@ -141,8 +152,7 @@ void WinCaptureInput::stop()
             return;
         }
         endCapture();
-        deliverAudio();
-        emit stopped();
+        reportStopped();
     };
     if (m_postRollMs > 0) {
         QTimer::singleShot(m_postRollMs, this, finish);
@@ -170,7 +180,7 @@ QString WinCaptureInput::echoCancellationWarning() const
     return m_echoCancellationWarning;
 }
 
-void WinCaptureInput::capture(quint64 generation, std::promise<QString> opened)
+void WinCaptureInput::capture(quint64 generation)
 {
     const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     const auto uninitialize = qScopeGuard([apartment] {
@@ -179,12 +189,15 @@ void WinCaptureInput::capture(quint64 generation, std::promise<QString> opened)
         }
     });
     const std::unique_ptr<WinCaptureStream> stream = m_createStream();
-    if (const QString error = stream->open(); !error.isEmpty()) {
-        opened.set_value(error);
+    const QString error = stream->open();
+    if (error.isEmpty()) {
+        setEchoCancellationWarning(stream->echoCancellationWarning());
+    }
+    QMetaObject::invokeMethod(
+        this, [this, generation, error] { opened(generation, error); }, Qt::QueuedConnection);
+    if (!error.isEmpty()) {
         return;
     }
-    setEchoCancellationWarning(stream->echoCancellationWarning());
-    opened.set_value({});
 
     for (;;) {
         // Polled rather than event-driven, because loopback signals nothing
@@ -256,9 +269,22 @@ void WinCaptureInput::endCapture()
     if (m_stopEvent) {
         CloseHandle(m_stopEvent);
         m_stopEvent = nullptr;
-        ++m_generation;
     }
+    // Also once the thread has ended, as the last drain is still reporting.
+    ++m_generation;
+    m_open = false;
     m_stopping = false;
+}
+
+// The last of the capture's audio, then stopped(), unless a handler of that
+// audio ended the capture or started another.
+void WinCaptureInput::reportStopped()
+{
+    const quint64 generation = m_generation;
+    deliverAudio();
+    if (generation == m_generation) {
+        emit stopped();
+    }
 }
 
 void WinCaptureInput::fail(quint64 generation, const QString &message)
@@ -267,10 +293,10 @@ void WinCaptureInput::fail(quint64 generation, const QString &message)
         return;
     }
     const bool stopping = m_stopping;
+    dropReports();
     endCapture();
     if (stopping) {
-        deliverAudio();
-        emit stopped();
+        reportStopped();
         return;
     }
     emit failed(message);

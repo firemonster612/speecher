@@ -235,6 +235,7 @@ void QtAudioInput::start()
         endCapture();
     }
     dropReports();
+    ++m_captureId;
 
     const AudioCaptureSettings settings = currentSettings();
     m_gate.reset(settings.mode == QStringLiteral("warm") && sourceMatches(settings));
@@ -246,8 +247,11 @@ void QtAudioInput::start()
         m_capture = Capture::Off;
         stopSource();
         reportLater([this, error] {
+            const quint64 capture = m_captureId;
             emit levelChanged(0.0f);
-            emit failed(error);
+            if (capture == m_captureId) {
+                emit failed(error);
+            }
         });
         return;
     }
@@ -267,8 +271,9 @@ void QtAudioInput::captureStarted()
     }
     m_readinessTimer.stop();
     m_capture = Capture::On;
+    const quint64 capture = m_captureId;
     emit started();
-    if (!m_captureSettings.vadEnabled) {
+    if (capture == m_captureId && !m_captureSettings.vadEnabled) {
         flushPreRoll();
     }
 }
@@ -298,10 +303,7 @@ void QtAudioInput::stop()
         return;
     case Capture::Starting:
         endCapture();
-        reportLater([this] {
-            emit levelChanged(0.0f);
-            emit stopped();
-        });
+        reportLater([this] { reportStopped(); });
         return;
     case Capture::On:
         break;
@@ -320,15 +322,26 @@ void QtAudioInput::finishStop()
         return;
     }
     if (m_captureSettings.vadEnabled) {
+        const quint64 capture = m_captureId;
         flushPendingPostRoll();
         // A handler of the post-roll may have aborted or started again.
-        if (m_capture != Capture::Stopping) {
+        if (capture != m_captureId) {
             return;
         }
     }
     endCapture();
+    reportStopped();
+}
+
+// The meter falls to nothing, then stopped(), unless the meter's handler
+// started again.
+void QtAudioInput::reportStopped()
+{
+    const quint64 capture = m_captureId;
     emit levelChanged(0.0f);
-    emit stopped();
+    if (capture == m_captureId) {
+        emit stopped();
+    }
 }
 
 void QtAudioInput::abort()
@@ -341,11 +354,11 @@ void QtAudioInput::abort()
         return;
     }
     endCapture();
-    emit levelChanged(0.0f);
 }
 
 void QtAudioInput::endCapture()
 {
+    ++m_captureId;
     m_capture = Capture::Off;
     m_readinessTimer.stop();
     m_postRollTimer.stop();
@@ -548,6 +561,7 @@ void QtAudioInput::onReadyRead()
         }
         return;
     }
+    const quint64 capture = m_captureId;
     if (m_capture == Capture::Starting) {
         captureStarted();
     }
@@ -556,13 +570,19 @@ void QtAudioInput::onReadyRead()
         return;
     }
 
+    // Also when a handler of started() ended the capture.
     if (m_capture == Capture::Off) {
         appendPreRoll(pcm);
         return;
     }
+    if (capture != m_captureId) {
+        return;
+    }
 
     emit levelChanged(std::min(1.0f, conversion.rms * 8.0f));
-    processOutputChunk(pcm, conversion.rms);
+    if (capture == m_captureId) {
+        processOutputChunk(pcm, conversion.rms);
+    }
 }
 
 void QtAudioInput::handleSourceStateChanged(QAudio::State state)
@@ -585,14 +605,18 @@ void QtAudioInput::handleSourceStateChanged(QAudio::State state)
 void QtAudioInput::failCapture(const QString &message)
 {
     const Capture was = std::exchange(m_capture, Capture::Off);
+    ++m_captureId;
     m_readinessTimer.stop();
     m_postRollTimer.stop();
     m_gate.reset(false);
     stopSource();
-    emit levelChanged(0.0f);
     if (was == Capture::Stopping) {
-        emit stopped();
-    } else if (was != Capture::Off) {
+        reportStopped();
+        return;
+    }
+    const quint64 capture = m_captureId;
+    emit levelChanged(0.0f);
+    if (capture == m_captureId && was != Capture::Off) {
         emit failed(message);
     }
 }
@@ -605,7 +629,11 @@ void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
     }
 
     const QList<QByteArray> chunks = m_gate.pass(pcm, isVoiced(rms, m_captureSettings.vadThresholdPercent));
+    const quint64 capture = m_captureId;
     for (const QByteArray &chunk : chunks) {
+        if (capture != m_captureId) {
+            return;
+        }
         emit audioChunk(chunk);
     }
 }

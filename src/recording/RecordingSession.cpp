@@ -140,7 +140,11 @@ public:
             stopCancelling();
             emit stopped();
         });
-        connect(m_microphone, &AudioInput::failed, this, &AudioInput::failed);
+        // What the canceller held goes first, while the stream still takes it.
+        connect(m_microphone, &AudioInput::failed, this, [this](const QString &message) {
+            stopCancelling();
+            emit failed(message);
+        });
         if (m_canceller && systemAudio) {
             connect(systemAudio, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
                 if (m_canceller) {

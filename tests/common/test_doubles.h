@@ -92,9 +92,7 @@ public:
     {
         dropReports();
         stopping = false;
-        if (std::exchange(active, false)) {
-            emit levelChanged(0.0f);
-        }
+        active = false;
     }
 
     bool isActive() const override
@@ -122,12 +120,16 @@ public:
         emit audioChunk(pcm);
     }
 
-    // Capture ends with it, as a real input's does.
+    // Capture ends with it, as a real input's does; one asked to stop says
+    // stopped() instead.
     void emitFailure(const QString &message)
     {
         dropReports();
         active = false;
-        stopping = false;
+        if (std::exchange(stopping, false)) {
+            emit stopped();
+            return;
+        }
         emit failed(message);
     }
 

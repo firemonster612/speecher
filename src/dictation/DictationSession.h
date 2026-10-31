@@ -94,7 +94,8 @@ public slots:
     // speech attempt. Stop while paused delivers what was said.
     void pause();
     void resume();
-    // The pause button: pauses, or resumes while paused.
+    // The pause button: pauses, or resumes while paused. Pressed again while
+    // a pause's microphone still stops, it listens on.
     void togglePause();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without

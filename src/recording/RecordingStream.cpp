@@ -85,9 +85,10 @@ void RecordingStream::start(AudioInput *input, const AppSettings &settings)
         endInput();
         emit listeningFinished();
     });
-    // An input that drops after it heard something still has that sent.
+    // An input that drops after it heard something still has that sent; one
+    // that never started has no provider to send it to.
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
-        if (!m_stream->hasAudio()) {
+        if (m_inputState == Input::Starting || !m_stream->hasAudio()) {
             fail(message);
             return;
         }

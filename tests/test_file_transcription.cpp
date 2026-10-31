@@ -2519,6 +2519,56 @@ private slots:
                                                    QStringLiteral("me: (dictating, not on the call)")}));
     }
 
+    // A recording microphone that heard something and then could not start
+    // fails the start with its reason.
+    void aRecordingMicrophoneThatHearsThenFailsToStartFailsTheStart()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            auto *microphone = new FakeAudioInput(parent);
+            microphone->onStart = [microphone] {
+                microphone->pushAudio(microphoneChunk(8000));
+                microphone->startResult = false;
+            };
+            return microphone;
+        });
+        QString error;
+        QVERIFY(startRecording(recording, QString(), &error, {}, true).isEmpty());
+        QCOMPARE(error, QStringLiteral("audio failed"));
+        QVERIFY(!recording.isRecording());
+    }
+
+    // A microphone that fails mid-recording still sends what the echo
+    // canceller held of it.
+    void aFailingRecordingMicrophoneKeepsWhatTheCancellerHeld()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        QPointer<FakeAudioInput> microphone;
+        EchoCancellerLog log;
+        RecordingSession recording(
+            &settings, m_registry.get(), [&](QObject *parent) { return microphone = new FakeAudioInput(parent); },
+            [](QObject *parent) { return new FakeAudioInput(parent); },
+            [&](QString *) -> std::unique_ptr<EchoCanceller> {
+                return std::make_unique<FakeEchoCanceller>(&log, microphoneChunk(0).size());
+            });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        FakeSpeechTranscriber *me = streamingCodexes().at(0);
+        me->autoCompleteOnFinish = false;
+        microphone->pushAudio(microphoneChunk(8000));
+        microphone->pushAudio(microphoneChunk(4000));
+        QTRY_COMPARE_WITH_TIMEOUT(me->audioChunks.join(), microphoneChunk(8000), 5000);
+
+        microphone->emitFailure(QStringLiteral("unplugged"));
+
+        QCOMPARE(log.flushes, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(me->audioChunks.join(), microphoneChunk(8000) + microphoneChunk(4000), 5000);
+    }
+
     // Beside system audio, the microphone goes whole through the echo
     // canceller, which takes system audio as its reference and gives back
     // what it held at the stop; one that cannot start leaves the recording
@@ -3039,32 +3089,103 @@ private slots:
     // and ends on its own.
     void aListeningBatchFinishedAsItStartsNeverListens_data()
     {
-        QTest::addColumn<bool>("asTheTranscriptClears");
-        QTest::newRow("as the transcript clears") << true;
-        QTest::newRow("as the file starts") << false;
+        QTest::addColumn<QString>("when");
+        QTest::newRow("as the transcript clears") << QStringLiteral("cleared");
+        QTest::newRow("as the file starts") << QStringLiteral("started");
+        QTest::newRow("while the microphone starts") << QStringLiteral("microphone");
     }
 
     void aListeningBatchFinishedAsItStartsNeverListens()
     {
-        QFETCH(bool, asTheTranscriptClears);
+        QFETCH(QString, when);
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
         const auto finish = [&session] { session.finishListening(); };
-        if (asTheTranscriptClears) {
+        if (when == QStringLiteral("cleared")) {
             QObject::connect(&session, &FileTranscriptionSession::filePartialText, &session, finish,
                              Qt::SingleShotConnection);
-        } else {
+        } else if (when == QStringLiteral("started")) {
             QObject::connect(&session, &FileTranscriptionSession::fileStarted, &session, finish);
+        } else {
+            microphone.onStart = finish;
         }
 
         QVERIFY(session.startListening(&microphone, speechOnly()));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
 
-        QVERIFY(!microphone.started);
+        // Asked to start only once the batch had begun.
+        QCOMPARE(microphone.started, when == QStringLiteral("microphone"));
+        QVERIFY(!microphone.active);
         QCOMPARE(finished.first().at(1).toBool(), false);
         QVERIFY(!session.isRunning());
+    }
+
+    // A microphone that heard something and then could not start fails the
+    // file with its reason: no provider prepared to take what it heard.
+    void aMicrophoneThatHearsThenFailsToStartFailsTheFile()
+    {
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        microphone.onStart = [&microphone] {
+            microphone.pushAudio(microphoneChunk(8000));
+            microphone.startResult = false;
+        };
+
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+
+        const QList<TranscribeFileResult> results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QCOMPARE(results.size(), 1);
+        QCOMPARE(results.first().error, microphone.startError);
+        QVERIFY(!session.isRunning());
+    }
+
+    // A failed file lets go of its microphone without a word: a handler of
+    // its meter cannot cancel the batch and start another in the middle of
+    // that, and the failed file is reported as the batch's own.
+    void aFailedFileLetsGoOfItsMicrophoneSilently()
+    {
+        FakeSpeechTranscriber *codex = nullptr;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codex](QObject *parent) {
+                                               codex = new FakeSpeechTranscriber(parent);
+                                               codex->autoCompleteOnFinish = false;
+                                               return codex;
+                                           });
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) {
+            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.fallbackProviderIds.clear();
+            return true;
+        });
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+        // Outside the session, which lets go of its own connections first.
+        QObject::connect(&microphone, &AudioInput::levelChanged, &microphone, [&](float level) {
+            if (level == 0.0f && session.isRunning()) {
+                session.cancel();
+                session.startListening(&microphone, options);
+            }
+        });
+        QVERIFY(session.startListening(&microphone, options));
+        QTRY_VERIFY_WITH_TIMEOUT(codex && codex->startCalls == 1, 5000);
+
+        codex->emitFailure(QStringLiteral("refused"));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+
+        QCOMPARE(finished.first().at(1).toBool(), false);
+        const QList<TranscribeFileResult> results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QCOMPARE(results.size(), 1);
+        QVERIFY2(results.first().error.contains(QStringLiteral("refused")), qPrintable(results.first().error));
+        QVERIFY(!session.isRunning());
+        QVERIFY(!microphone.active);
     }
 
     // A batch cancelled as its stream clears the transcript, and replaced

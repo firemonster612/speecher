@@ -565,10 +565,9 @@ void DictationSession::stopListening()
     }
     m_speech->stop();
     const quint64 generation = m_generation;
-    const quint64 step = setState(DictationState::Stopping, m_lastMessage);
+    setState(DictationState::Stopping, m_lastMessage);
     // A handler of Stopping that cancelled has stopped this microphone, and
-    // the one it is on now may be a replacement session's. One that moved
-    // this session on, as a speech failure does, still leaves it to stop.
+    // the one it is on now may be a replacement session's.
     if (generation != m_generation) {
         return;
     }
@@ -678,6 +677,10 @@ void DictationSession::togglePause()
 {
     if (m_state == DictationState::Paused) {
         resume();
+    } else if (m_microphone == Microphone::Pausing) {
+        // Pressed again before the pause took: listening goes on, in the
+        // attempt that never paused.
+        startMicrophone();
     } else {
         pause();
     }
@@ -733,6 +736,7 @@ void DictationSession::abortMicrophone()
     if (std::exchange(m_microphone, Microphone::Off) != Microphone::Off) {
         m_audio->abort();
     }
+    updateMicrophoneHeld();
 }
 
 void DictationSession::microphoneStarted()
@@ -772,16 +776,15 @@ void DictationSession::microphoneStopped()
 void DictationSession::microphoneFailed(const QString &message)
 {
     const Microphone was = std::exchange(m_microphone, Microphone::Off);
-    // Before the microphone starts too: the start fails either way.
+    if (was == Microphone::Off) {
+        return;
+    }
     if (m_state == DictationState::Starting) {
         qWarning().noquote() << "audio start failed message=" + message;
         // A provider that failed while the microphone started may have handed
         // over to one still preparing.
         m_speech->cancel();
         failSession(message);
-        return;
-    }
-    if (was == Microphone::Off) {
         return;
     }
     if (was == Microphone::Starting) {
@@ -1265,9 +1268,10 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
             }
             return;
         }
-        // No provider takes a post-roll still arriving; the media it waited
-        // for plays now.
-        if (m_microphone == Microphone::Stopping) {
+        // No provider takes a post-roll still arriving, or the one a stop
+        // whose Stopping announcement brought the failure is about to ask
+        // for; the media it would have waited for plays now.
+        if (m_microphone != Microphone::Off) {
             abortMicrophone();
             resumePausedMedia();
         }

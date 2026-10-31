@@ -60,8 +60,10 @@ private:
     // stays C++.
     struct Stream;
     std::unique_ptr<Stream> m_stream;
+    // From start() until its open runs.
+    bool m_opening = false;
     QString m_permissionDenied;
-    // Bumped by every stop, so audio and failures the capture queue posted
+    // Bumped by every close, so audio and failures the capture queue posted
     // before it are dropped rather than reaching the next start.
     quint64 m_generation = 0;
 };

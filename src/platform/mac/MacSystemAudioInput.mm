@@ -521,31 +521,38 @@ MacSystemAudioInput::~MacSystemAudioInput()
     close();
 }
 
-// Waits only for ScreenCaptureKit to open the stream, on the capture queue.
+// open() waits for ScreenCaptureKit's answer, so it runs on the next turn of
+// the event loop rather than inside start().
 void MacSystemAudioInput::start()
 {
     abort();
-    const QString message = open();
-    if (message.isEmpty()) {
-        reportLater([this] { emit started(); });
-        return;
-    }
-    close();
-    reportLater([this, message] { emit failed(message); });
+    m_opening = true;
+    reportLater([this] {
+        m_opening = false;
+        const QString message = open();
+        if (message.isEmpty()) {
+            emit started();
+            return;
+        }
+        close();
+        emit failed(message);
+    });
 }
 
 void MacSystemAudioInput::stop()
 {
-    if (!m_stream) {
+    if (!isActive()) {
         return;
     }
-    close();
+    abort();
     reportLater([this] { emit stopped(); });
 }
 
+// Also drops an open that has not run yet.
 void MacSystemAudioInput::abort()
 {
     dropReports();
+    m_opening = false;
     close();
 }
 
@@ -603,7 +610,7 @@ void MacSystemAudioInput::close()
 
 bool MacSystemAudioInput::isActive() const
 {
-    return m_stream != nullptr;
+    return m_opening || m_stream != nullptr;
 }
 
 void MacSystemAudioInput::fail(quint64 generation, const QString &message)
@@ -611,6 +618,7 @@ void MacSystemAudioInput::fail(quint64 generation, const QString &message)
     if (generation != m_generation) {
         return;
     }
+    dropReports();
     close();
     emit failed(message);
 }

@@ -53,23 +53,25 @@ public:
     // input started once and then thrown away. Inputs that read no device,
     // such as a file standing in for the microphone, ignore it.
     virtual void useDevice(const QString &deviceId) { Q_UNUSED(deviceId) }
-    // start(), stop() and abort() return at once, and nothing below is
-    // emitted from inside them, so a caller is never re-entered by its own
-    // call.
+    // start(), stop() and abort() return at once, and no signal is emitted
+    // from inside them, so a caller is never re-entered by its own call. A
+    // signal's handler may call them, and the input then says nothing more
+    // of the capture that handler ended.
     //
     // Asks for capture: started() follows once audio flows, or failed() when
-    // the input cannot capture. A start() while capturing first ends that
-    // capture, with no signal for it.
+    // the input cannot capture. Audio may arrive before either. A start()
+    // while capturing first ends that capture, with no signal for it.
     virtual void start() = 0;
     // Asks capture to end: the post-roll still arrives as audioChunk, then
     // stopped(), even when capture fails meanwhile. A stop() while starting
     // drops the start: stopped() follows and started() never does. Nothing
     // while off or already stopping.
     virtual void stop() = 0;
-    // Ends capture now: no post-roll, and nothing more from this capture but
-    // a levelChanged(0). Drops a start or a stop under way.
+    // Ends capture now, with no post-roll and no signal at all for it, a start
+    // or stop under way included.
     virtual void abort() = 0;
-    // From start() until stopped(), failed() or abort().
+    // True from start() until stopped(), failed() or abort(), opening and
+    // post-roll included.
     virtual bool isActive() const = 0;
     // Forgets the audio a warm input keeps rolling for the next start, so a
     // resume after a pause does not send what was said during it.

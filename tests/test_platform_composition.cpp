@@ -856,19 +856,31 @@ private slots:
     void shortcutReleasePreservesRecordingError()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
         ApplicationController controller(true, platform);
         const bool setupCompleted = controller.settings()->dictationSnapshot().setupCompleted;
         const auto restore = qScopeGuard([&] {
             controller.settings()->edit([&](AppSettings &draft) { draft.setupCompleted = setupCompleted; return true; });
         });
-        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.providerId = QStringLiteral("codex");
+            return true;
+        });
+        // A speech provider that prepares, so the session asks the
+        // microphone to start.
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+            [](QObject *parent) { return new test::FakeSpeechTranscriber(parent); });
         emit platform->binder->activated();
         QVERIFY(platform->microphoneAnswer);
         platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), DictationState::Starting);
-        auto *audio = controller.findChild<AudioInput *>();
+        auto *audio = static_cast<test::FakeAudioInput *>(controller.findChild<AudioInput *>());
         QVERIFY(audio);
-        emit audio->failed(QStringLiteral("Test microphone disconnected"));
+        // Only a microphone the session asked to start can fail its start.
+        QTRY_VERIFY(audio->started);
+        audio->emitFailure(QStringLiteral("Test microphone disconnected"));
         QCOMPARE(controller.session()->state(), DictationState::Error);
         QSignalSpy hidden(controller.session(), &DictationSession::popupHideRequested);
         QTest::qSleep(410);
@@ -3374,12 +3386,22 @@ private slots:
     void anUpdateRestartWaitsForADictationButNotItsError()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
         ApplicationController controller(true, platform);
         auto *updater = restartWatchableUpdater(controller);
         if (!updater) {
             QSKIP("Only the AppImage updater's restart can be watched without quitting");
         }
-        controller.settings()->edit([](AppSettings &draft) { draft.setupCompleted = true; return true; });
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.providerId = QStringLiteral("codex");
+            return true;
+        });
+        // A speech provider that prepares, so the session asks the
+        // microphone to start.
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+            [](QObject *parent) { return new test::FakeSpeechTranscriber(parent); });
         emit platform->binder->activated();
         platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), DictationState::Starting);
@@ -3389,9 +3411,11 @@ private slots:
         updater->installAndRestart();
         QCOMPARE(updater->state(), UpdateController::State::RestartPending);
 
-        auto *audio = controller.findChild<AudioInput *>();
+        auto *audio = static_cast<test::FakeAudioInput *>(controller.findChild<AudioInput *>());
         QVERIFY(audio);
-        emit audio->failed(QStringLiteral("Test microphone disconnected"));
+        // Only a microphone the session asked to start can fail its start.
+        QTRY_VERIFY(audio->started);
+        audio->emitFailure(QStringLiteral("Test microphone disconnected"));
         QCOMPARE(controller.session()->state(), DictationState::Error);
         QCOMPARE(restartAttempts.count(), 1);
     }

@@ -49,6 +49,7 @@ private:
     void captureStarted();
     void readinessTimedOut();
     void finishStop();
+    void reportStopped();
     // Off at once, with no signal: the source stays open only when warm.
     void endCapture();
     void stopSource();
@@ -70,6 +71,9 @@ private:
     AudioCaptureSettings m_captureSettings;
     SilenceGate m_gate;
     Capture m_capture = Capture::Off;
+    // Moves on as a capture starts and as it ends, so code that emitted can
+    // tell a handler ended the capture, or started another.
+    quint64 m_captureId = 0;
     QTimer m_readinessTimer;
     QTimer m_postRollTimer;
     bool m_sourceStopping = false;

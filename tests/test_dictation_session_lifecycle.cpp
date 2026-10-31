@@ -1585,6 +1585,70 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("heard"));
     }
 
+    // A cancel stops the microphone without a word, so nothing can cancel
+    // again and start another session in the middle of it: an Idle session
+    // never keeps capturing.
+    void aCancelLeavesNoCaptureBehindItsIdle()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        connect(&session, &DictationSession::popupShowRequested, &session,
+                [&session](quint64 generation) { session.popupPresented(generation); });
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        bool armed = true;
+        connect(&session, &DictationSession::audioLevelChanged, &session, [&](float level) {
+            if (level == 0.0f && std::exchange(armed, false)) {
+                session.cancel();
+                session.startListening();
+            }
+        });
+
+        session.cancel();
+        // Whatever the handler started has had its turns to reach the
+        // microphone.
+        QTest::qWait(100);
+
+        QVERIFY(session.state() != DictationState::Idle || !audio.active);
+    }
+
+    // The pause button pressed again while the pause's microphone still
+    // stops: the session never pauses, and listens on with the microphone on.
+    void aSecondPauseToggleBeforeThePauseTakesListensOn()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QSignalSpy states(&session, &DictationSession::stateChanged);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+
+        session.togglePause();
+        session.togglePause();
+        // The fake reports a turn later; this is ample for a pause to have
+        // taken.
+        QTest::qWait(50);
+
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio.active);
+        for (const QList<QVariant> &state : states) {
+            QVERIFY(state.first().value<DictationState>() != DictationState::Paused);
+        }
+    }
+
     // So does one started as a microphone that failed before anything was
     // heard ends the session in Error.
     void aStartAsAFailureEndsListensOnceTheMicrophoneStopped()
@@ -1806,6 +1870,8 @@ private slots:
 
         QCOMPARE(int(session.state()), int(DictationState::Listening));
         QTRY_COMPARE(starts, 1);
+        // A second start would report on the fake's next turn; 20 ms gives it
+        // several.
         QTest::qWait(20);
         QCOMPARE(starts, 1);
     }

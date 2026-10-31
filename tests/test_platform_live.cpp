@@ -395,9 +395,9 @@ private slots:
         QVERIFY(!test::startAndWait(*capture, &error));
         QVERIFY(error.startsWith(QStringLiteral("Could not connect to the sound server")));
         QVERIFY(!capture->isActive());
-        // The failed start is reported once, by its return value.
+        // The failed start is reported once, by failed().
         QTest::qWait(100);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), 1);
     }
 
     void systemAudioCaptureFollowsDefaultOutput()
@@ -514,7 +514,7 @@ private slots:
 
 #ifdef Q_OS_MACOS
     // For a Mac where the test binary has no Screen & System Audio Recording:
-    // the first run raises macOS's prompt, and start() answers without
+    // the first run raises macOS's prompt, and the start fails without
     // waiting for it.
     void liveSystemAudioSaysWhenNotAllowed()
     {
@@ -527,9 +527,9 @@ private slots:
         QVERIFY(!test::startAndWait(*capture, &error));
         QCOMPARE(error, systemAudioPermissionText());
         QVERIFY(!capture->isActive());
-        // A failed start is reported once, by its return value.
+        // A failed start is reported once, by failed().
         QTest::qWait(300);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), 1);
     }
 #endif
 
