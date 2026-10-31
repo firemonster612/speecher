@@ -89,6 +89,10 @@ signals:
     // A save of the secret went through and no newer write of it waits: the
     // value asked for last is the one kept.
     void secretSaved(SecretStore::Secret secret);
+    // A clear from elsewhere, such as moving the Custom endpoint to another
+    // server, replaced the value a field submitted: the field drops it, but
+    // not what was typed since.
+    void secretDiscarded(SecretStore::Secret secret);
 
 private:
     using SignInRun = SignInCheck (*)(SignInService, AppSettings, SecretStore *);
@@ -103,6 +107,9 @@ private:
     void secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
                             const QString &error);
     void finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error);
+    // Shows on the secret's row what a write no field asked for, or one that
+    // replaced a field's, left in storage, checking no sign-in again.
+    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error);
     void settingsSaved();
 
     SettingsStore &m_settings;

@@ -524,6 +524,83 @@ private slots:
         const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
         QCOMPARE(sent.apiBase, QStringLiteral("http://server-c.example/v1"));
         QCOMPARE(sent.apiKey, QString());
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
+    }
+
+    // A key moving the endpoint drops shows as not saved even when the
+    // keyring refuses to delete it: the key is hidden, its clear waits to be
+    // retried, and the row says why.
+    void anEndpointKeyWhoseDropTheKeyringRefusesShowsItsPendingClear()
+    {
+        {
+            SettingsStore saved;
+            saved.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
+            saved.raw().sync();
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
+
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-c.example/v1"));
+
+        const QString row = QStringLiteral("refinementEndpointApiKey");
+        QCOMPARE(accounts.savedSecrets().value(row), QVariant(false));
+        QCOMPARE(accounts.pendingClears().value(row), QVariant(true));
+        const QVariantMap error = accounts.secretErrors().value(row).toMap();
+        QCOMPARE(error.value(QStringLiteral("action")).toString(), QStringLiteral("clear"));
+        QVERIFY2(error.value(QStringLiteral("reason")).toString().contains(QStringLiteral("deletion denied")),
+                 qPrintable(error.value(QStringLiteral("reason")).toString()));
+    }
+
+    // The key field still holds what was submitted for server A while the
+    // keyring makes it wait. Moving the endpoint to B meanwhile drops that
+    // draft, so leaving the field again saves nothing for B; text typed
+    // after submitting stays, being the person's for B.
+    void aKeyFieldDropsItsDraftWhenTheServerMovesDuringTheSave_data()
+    {
+        QTest::addColumn<QString>("typedMeanwhile");
+        QTest::newRow("unchanged draft") << QString();
+        QTest::newRow("typed after submitting") << QStringLiteral("typed-for-b");
+    }
+
+    void aKeyFieldDropsItsDraftWhenTheServerMovesDuringTheSave()
+    {
+        QFETCH(QString, typedMeanwhile);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickAccounts accounts(&controller);
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-a.example/v1"));
+        const SecretRowWindow row = showSecretRow(engine, QStringLiteral("refinementEndpointApiKey"));
+        QVERIFY(row.field);
+        QQuickItem *field = row.field;
+        bool movedDuringTheSave = false;
+        QMetaObject::invokeMethod(
+            field,
+            [&] {
+                movedDuringTheSave = true;
+                if (!typedMeanwhile.isEmpty()) {
+                    field->setProperty("text", typedMeanwhile);
+                }
+                settings.set(QStringLiteral("refinementEndpointUrl"), QStringLiteral("http://server-b.example/v1"));
+            },
+            Qt::QueuedConnection);
+
+        field->setProperty("text", QStringLiteral("entered-for-a"));
+        QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+
+        QVERIFY(movedDuringTheSave);
+        QCOMPARE(field->property("text").toString(), typedMeanwhile);
+        if (typedMeanwhile.isEmpty()) {
+            QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
+            const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+            QCOMPARE(sent.apiBase, QStringLiteral("http://server-b.example/v1"));
+            QCOMPARE(sent.apiKey, QString());
+        }
     }
 
     // A key entered while the keyring makes an older one wait stands.

@@ -80,6 +80,8 @@ signals:
     // A save of the secret went through and no newer write of it waits: the
     // value asked for last is the one kept.
     void secretSaved(const QString &rowId);
+    // A field's submitted value was replaced by a clear (Accounts::secretDiscarded).
+    void secretDiscarded(const QString &rowId);
 
 private:
     // One of services by id, or an empty map.

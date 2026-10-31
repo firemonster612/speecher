@@ -95,6 +95,13 @@ QuickAccounts::QuickAccounts(ApplicationController *controller, QObject *parent)
             }
         }
     });
+    connect(m_accounts, &Accounts::secretDiscarded, this, [this](SecretStore::Secret secret) {
+        for (const SecretRow &row : secretRows) {
+            if (row.secret == secret) {
+                emit secretDiscarded(QLatin1String(row.id));
+            }
+        }
+    });
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickAccounts::settingsSaved);
     // Setup's fallback offer saves providers without a snapshot, so which
     // sign-ins are in use may change with it.
