@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <QPointer>
 #include <QStringList>
 
 namespace speecher {
@@ -17,11 +18,12 @@ public:
     // A keyboard backend pastes what is already on the clipboard; a
     // clipboard backend copies content. done runs once with the outcome, and
     // may run before deliver() returns.
-    // clearToInject is the final focus gate: a keyboard backend calls it after
-    // all of its preparation (modifier release) and immediately before
-    // sending the paste keystroke, aborting when it returns false.
-    // Clipboard-only backends may ignore it; a null function means nothing
-    // gates the injection.
+    // clearToInject is the final gate: a keyboard backend calls it after all
+    // of its preparation (modifier release) and immediately before sending
+    // the paste keystroke, aborting when it returns false. It refuses once
+    // the delivery was answered, and otherwise when focus moved off the
+    // Target. Clipboard-only backends may ignore it; a null function means
+    // nothing gates the injection.
     virtual void deliver(const DeliveryContent &content,
                          const std::function<bool()> &clearToInject,
                          std::function<void(const Outcome &)> done) = 0;
@@ -40,6 +42,7 @@ public:
     explicit TextDelivery(TargetProvider *targetProvider, QObject *parent = nullptr);
     explicit TextDelivery(BackendFactory backendFactory, QObject *parent = nullptr);
     TextDelivery(BackendFactory backendFactory, TargetProvider *targetProvider, QObject *parent = nullptr);
+    ~TextDelivery() override;
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
                  const Target &target) override;
@@ -80,12 +83,9 @@ private:
     // else is in front, or when a global rule pastes blindly into the current
     // focus; only the clipboard otherwise, and always for a secure field.
     static PasteChoice choosePasteMethod(const OutputSettings &settings, const Target &target);
-    // Checks that the Target still has focus and readies it for the paste.
-    // Returns why the paste keys must not go out, or nothing when they may.
-    QString preparePasteInFocus(const Target &target);
-    // Runs the first request, unless one already runs.
+    // Runs the first request, unless a run is still there, answered or not.
     void startNext();
-    // Answers the running request, once, and moves on to the next.
+    // Answers the running request, once. The next starts once its run is gone.
     void answer(const DeliveryResult &result);
 
     struct Request {
@@ -95,7 +95,8 @@ private:
     };
     // The delivery under way first, then those asked for meanwhile.
     QList<Request> m_requests;
-    Run *m_run = nullptr;
+    // From its start until it is destroyed, which can be well after its answer.
+    QPointer<Run> m_run;
     // Longer than every step's own time limit put together, so only a
     // delivery that is stuck runs into it.
     int m_answerDeadlineMs = 30000;

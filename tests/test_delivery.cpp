@@ -1190,8 +1190,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 
     // The deadline can fire while a focus check waits in a nested event loop,
-    // as the KWin probe does. The delivery is answered once, as unfinished,
-    // and no keys are pressed after that answer.
+    // as the KWin probe does. The delivery is answered once, as unfinished:
+    // it presses no keys and readies no paste after that answer, and the one
+    // asked for after it starts only once that loop has returned. The first
+    // two rows also hold through the paste-key gate, which refuses an
+    // answered delivery; only preparePaste tells the second row apart.
     void aDeadlineInANestedFocusCheckPressesNoKeys()
     {
         QFETCH(int, waitingCheck);
@@ -1201,20 +1204,31 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             Target capture() override { return {}; }
             bool stillFocused(const Target &) override
             {
+                reentered = reentered || waiting;
                 if (++checks == waitingCheck) {
+                    waiting = true;
                     QEventLoop wait;
                     QTimer::singleShot(100, &wait, &QEventLoop::quit);
                     wait.exec();
+                    waiting = false;
                 }
+                return true;
+            }
+            bool preparePaste(const Target &) override
+            {
+                ++prepared;
                 return true;
             }
             const int waitingCheck;
             int checks = 0;
+            int prepared = 0;
+            bool waiting = false;
+            bool reentered = false;
         } targetProvider(waitingCheck);
-        bool pressed = false;
+        int pressed = 0;
         class GatedBackend final : public DeliveryBackend {
         public:
-            explicit GatedBackend(bool &pressed) : pressed(pressed) {}
+            explicit GatedBackend(int &pressed) : pressed(pressed) {}
             void deliver(const DeliveryContent &,
                          const std::function<bool()> &clearToInject,
                          std::function<void(const Outcome &)> done) override
@@ -1223,10 +1237,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                     done({false, false, QStringLiteral("refused")});
                     return;
                 }
-                pressed = true;
+                ++pressed;
                 done({true, false, {}});
             }
-            bool &pressed;
+            int &pressed;
         };
         TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
             return std::make_unique<GatedBackend>(pressed);
@@ -1240,11 +1254,137 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
+        const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
-        QTRY_COMPARE(answers.size(), 1);
+        delivery.deliver(settings, content, target);
+        delivery.deliver(settings, content, target);
+        QTRY_COMPARE(answers.size(), 2);
         QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
-        QVERIFY(!pressed);
+        QCOMPARE(answers.at(1).receipt, DeliveryReceipt::InputSent);
+        // The second delivery's paste, and only it.
+        QCOMPARE(pressed, 1);
+        QCOMPARE(targetProvider.prepared, waitingCheck == 3 ? 2 : 1);
+        QVERIFY(!targetProvider.reentered);
+    }
+
+    void aDeadlineInANestedInsertionCheckLeavesTheClipboard_data()
+    {
+        QTest::addColumn<bool>("insertsDirectly");
+        QTest::newRow("direct insertion") << true;
+        QTest::newRow("paste keys") << false;
+    }
+
+    // An insertion check that waits past the deadline and then confirms the
+    // words leaves them on the clipboard: the previous clipboard comes back
+    // only for a delivery still waiting for its answer.
+    void aDeadlineInANestedInsertionCheckLeavesTheClipboard()
+    {
+        QFETCH(bool, insertsDirectly);
+        class SlowVerification final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override { return true; }
+            bool canInsertText(const Target &) override { return insertsDirectly; }
+            bool insertText(const Target &, const QString &, QString *) override { return true; }
+            bool verifyInsertion(const Target &, const QString &) override
+            {
+                QEventLoop wait;
+                QTimer::singleShot(100, &wait, &QEventLoop::quit);
+                wait.exec();
+                return true;
+            }
+            bool insertsDirectly = false;
+        } targetProvider;
+        targetProvider.insertsDirectly = insertsDirectly;
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+        delivery.setAnswerDeadlineMs(20);
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+        OutputSettings settings;
+        settings.method = insertsDirectly ? QString::fromLatin1(OutputMethod::DirectInsert) : virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        settings.restoreClipboardAfterTyping = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target);
+        QCOMPARE(result.message, QStringLiteral("Delivery did not finish in time"));
+        QTest::qWait(150);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("dictation"));
+    }
+
+    // The delivery can go while its run is still on the stack: from inside a
+    // focus check's nested event loop, or from the handler of its answer.
+    // The run unwinds without touching it, and nothing is pressed or
+    // answered after.
+    void aDeliveryCanGoWhileItsRunIsOnTheStack_data()
+    {
+        QTest::addColumn<bool>("goesMidCheck");
+        QTest::newRow("during the first focus check") << true;
+        QTest::newRow("from the answer's handler") << false;
+    }
+
+    void aDeliveryCanGoWhileItsRunIsOnTheStack()
+    {
+        QFETCH(bool, goesMidCheck);
+        class Focus final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override
+            {
+                if (const auto go = std::exchange(duringFirstCheck, {})) {
+                    QEventLoop wait;
+                    QTimer::singleShot(0, &wait, go);
+                    QTimer::singleShot(50, &wait, &QEventLoop::quit);
+                    wait.exec();
+                }
+                return true;
+            }
+            std::function<void()> duringFirstCheck;
+        } targetProvider;
+        int pressed = 0;
+        class Backend final : public DeliveryBackend {
+        public:
+            explicit Backend(int &pressed) : pressed(pressed) {}
+            void deliver(const DeliveryContent &,
+                         const std::function<bool()> &clearToInject,
+                         std::function<void(const Outcome &)> done) override
+            {
+                if (clearToInject && !clearToInject()) {
+                    done({false, false, {}});
+                    return;
+                }
+                ++pressed;
+                done({true, false, {}});
+            }
+            int &pressed;
+        };
+        auto *delivery = new TextDelivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+            return std::make_unique<Backend>(pressed);
+        }, &targetProvider);
+        int answers = 0;
+        connect(delivery, &TextDeliveryAdapter::delivered, this, [&answers, &delivery] {
+            ++answers;
+            delete std::exchange(delivery, nullptr);
+        });
+        if (goesMidCheck) {
+            targetProvider.duringFirstCheck = [&delivery] { delete std::exchange(delivery, nullptr); };
+        }
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QTRY_VERIFY(!delivery);
+        QTest::qWait(100);
+        QCOMPARE(answers, goesMidCheck ? 0 : 1);
+        QCOMPARE(pressed, goesMidCheck ? 0 : 1);
     }
 
     // A delivery asked for while another waits in a nested event loop, here
