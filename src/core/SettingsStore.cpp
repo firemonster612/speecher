@@ -216,20 +216,20 @@ bool SettingsStore::deleteAllButDeletionMarkers(QString *path)
     QString olderFile;
     const bool olderDeleted = deleteOlderSettings(&olderFile);
     QString file;
-    const bool kept = keepOnlyDeletionMarkers(&file);
+    const bool markersSaved = keepOnlyDeletionMarkers(&file);
     if (path) {
         *path = failedFiles(olderFile, file);
     }
-    if (!kept || !olderDeleted) {
+    if (!markersSaved || !olderDeleted) {
         return false;
     }
     // As after deleteAll, nothing set from now on brings a setting or a key
     // back. Only now: a removal tried again must find the files that stayed.
-    QVariantMap markers;
+    QVariantMap kept;
     for (const QString &key : m_settings.allKeys()) {
-        markers.insert(key, m_settings.value(key));
+        kept.insert(key, m_settings.value(key));
     }
-    m_settings.close(markers);
+    m_settings.close(kept);
     return true;
 }
 

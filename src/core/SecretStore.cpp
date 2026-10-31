@@ -283,6 +283,7 @@ QString SecretStore::writeRefusal() const
 quint64 SecretStore::save(Secret secret, Request request)
 {
     request.number = ++m_requests;
+    request.marked = deletionPending(secret);
     SecretState &entry = state(secret);
     if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
         // It replaces the requests before it, whose keyring answer then goes
@@ -337,8 +338,9 @@ void SecretStore::writeNext(Secret secret)
         QTimer::singleShot(0, this, [finish] { finish(std::nullopt); });
         return;
     }
-    // Clearing a key that was never written to the keyring needs no keyring.
-    if (request.value.isEmpty() && !mayBeInKeyring(secret)) {
+    // Clearing a key that was never written to the keyring needs no keyring,
+    // unless a deletion marker says the keyring may hold it.
+    if (request.value.isEmpty() && !mayBeInKeyring(secret) && !request.marked) {
         QTimer::singleShot(0, this, [finish] { finish(KeyringAnswer{true, {}, {}}); });
         return;
     }

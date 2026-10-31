@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_secrets.h"
+#include "common/test_settings_paths.h"
 #include "common/test_http.h"
 #include "common/test_doubles.h"
 #include "core/EndpointSettings.h"
@@ -30,6 +31,21 @@
 #endif
 
 using namespace speecher::test;
+
+#ifdef Q_OS_LINUX
+// What runs right after any QSettings::clear in this binary, which the Linux
+// build wraps (CMakeLists.txt), so a test can look at the settings then.
+std::function<void()> afterSettingsClear;
+
+extern "C" void __real__ZN9QSettings5clearEv(QSettings *settings);
+extern "C" void __wrap__ZN9QSettings5clearEv(QSettings *settings)
+{
+    __real__ZN9QSettings5clearEv(settings);
+    if (afterSettingsClear) {
+        afterSettingsClear();
+    }
+}
+#endif
 
 namespace {
 
@@ -81,29 +97,11 @@ const char *const peerRestartsVariable = "SPEECHER_TEST_PEER_RESTARTS";
 const char *const peerMovesVariable = "SPEECHER_TEST_PEER_MOVES_ENDPOINT_TO";
 const QByteArray peerReadMarker = "peer read: ";
 
-// Where this test process keeps its settings files (tests/test_main.cpp).
-QString preferencesPath(SettingsStore &settings)
-{
-    QDir preferences = QFileInfo(settings.raw().fileName()).absoluteDir();
-    preferences.cdUp();
-    return preferences.path();
-}
-
 #ifndef Q_OS_WIN
 // The permissions that let anyone but the owner in.
 constexpr QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
     | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
 #endif
-
-// Deleting the settings moves every QSettings made afterwards to a throwaway
-// folder; the guard puts them back here for the tests that come after.
-auto keepSettingsHere(SettingsStore &settings)
-{
-    return qScopeGuard([preferences = preferencesPath(settings)] {
-        QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences);
-        QSettings::setPath(QSettings::defaultFormat(), QSettings::SystemScope, preferences);
-    });
-}
 
 #ifdef Q_OS_LINUX
 // A removal of Speecher whose keyring and settings steps act on this store;
@@ -1925,6 +1923,7 @@ private slots:
             savedSecret(secrets, openAi, {});
             savedSecret(secrets, proxy, {});
         });
+        const auto kept = keepSettingsHere(settings);
         QVERIFY(savedSecret(secrets, openAi, QStringLiteral("hidden-key")));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         QVERIFY(!savedSecret(secrets, openAi, {}));
@@ -2007,21 +2006,55 @@ private slots:
             qputenv("SPEECHER_TEST_PRIVATE_KEYRING", privateKeyringBefore);
         });
         const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        // A key Speecher only reads once it recorded writing it to the
+        // keyring, and removal drops that record.
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
         settings.raw().setValue(SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion"), true);
+        settings.raw().setValue(SecretStore::settingsKey(proxy) + QStringLiteral("PendingDeletion"), true);
 
         QVERIFY(!removedSecrets(secrets));
         QVERIFY(secrets->deletionPending(openAi));
+        QVERIFY(secrets->deletionPending(proxy));
         QVERIFY(!savedApiKey(secrets, {}));
         QVERIFY(secrets->deletionPending(openAi));
+        QVERIFY(!savedSecret(secrets, proxy, {}));
+        QVERIFY(secrets->deletionPending(proxy));
 
         settings.raw().clear();
         QVERIFY(removedSecrets(secrets));
         QVERIFY(secrets->deletionMarkers().isEmpty());
 #endif
     }
+
+#ifdef Q_OS_LINUX
+    // Closing the settings never takes a deletion marker out of them, even
+    // for a moment: a store already open on them, as a worker's is, would
+    // read the key it hides then (r382 Sol6).
+    void closingTheSettingsKeepsTheirMarkersInPlace()
+    {
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto kept = keepSettingsHere(settings);
+        const QString marker = SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion");
+        settings.raw().setValue(marker, true);
+        settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("a term"));
+        SettingsStore reader;
+        QVERIFY(reader.secrets()->deletionPending(openAi));
+        bool unhidden = false;
+        afterSettingsClear = [&] { unhidden = unhidden || !reader.secrets()->deletionPending(openAi); };
+        const auto unhook = qScopeGuard([] { afterSettingsClear = {}; });
+
+        QVERIFY(settings.raw().close({{marker, true}}));
+
+        QVERIFY(!unhidden);
+        QVERIFY(reader.secrets()->deletionPending(openAi));
+        QVERIFY(!reader.raw().contains(SettingsKeys::VocabularyEntries));
+    }
+#endif
 
     // Removal deletes the settings an older Speecher left under its old app
     // id too, which the next start would import again, keys and all, and

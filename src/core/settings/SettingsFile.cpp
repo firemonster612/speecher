@@ -71,10 +71,16 @@ QString throwawayFile(const QSettings &settings)
     return home + QLatin1Char('/') + file.dir().dirName() + QLatin1Char('/') + file.fileName();
 }
 
-// Makes settings hold kept alone, and writes that.
+// Makes settings hold kept alone, and writes that. What is kept never leaves
+// them, even for a moment: a reader sharing them could find a key that a
+// deletion marker hides.
 void writeOnly(QSettings &settings, const QVariantMap &kept)
 {
-    settings.clear();
+    for (const QString &key : settings.allKeys()) {
+        if (!kept.contains(key)) {
+            settings.remove(key);
+        }
+    }
     for (auto it = kept.cbegin(); it != kept.cend(); ++it) {
         settings.setValue(it.key(), it.value());
     }
