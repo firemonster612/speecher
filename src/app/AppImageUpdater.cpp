@@ -1,6 +1,7 @@
 #include "app/AppImageUpdater.h"
 
 #include "app/CommandLine.h"
+#include "app/CompositionSockets.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -240,9 +241,11 @@ void AppImageUpdater::restartApplication()
     // single-instance check refuse startup. As an application child the server
     // dies with QCoreApplication, after the controller and its IPC listener.
     m_restartServer = new QLocalServer(QCoreApplication::instance());
-    const QString socketName = QStringLiteral("speecher-restart-%1").arg(
-        QUuid::createUuid().toString(QUuid::WithoutBraces));
-    if (!m_restartServer->listen(socketName)) {
+    // In the private runtime folder, not /tmp, where another user could see
+    // the socket and connect to make this process quit.
+    const QString socketName = inRuntimeDirectory(QStringLiteral("speecher-restart-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces)));
+    if (socketName.isEmpty() || !m_restartServer->listen(socketName)) {
         delete m_restartServer;
         m_restartServer = nullptr;
         setState(State::ReadyToRestart,
@@ -250,8 +253,19 @@ void AppImageUpdater::restartApplication()
         return;
     }
     connect(m_restartServer, &QLocalServer::newConnection, this, [this] {
+        bool replacementConnected = false;
         while (QLocalSocket *socket = m_restartServer->nextPendingConnection()) {
+            // Only a process of this user's may make this one quit.
+            if (!peerIsThisUser(*socket)) {
+                socket->abort();
+                socket->deleteLater();
+                continue;
+            }
             socket->setParent(m_restartServer);
+            replacementConnected = true;
+        }
+        if (!replacementConnected) {
+            return;
         }
         m_replacementConnected = true;
         quitAfterKeySaves();
