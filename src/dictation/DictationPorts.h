@@ -71,7 +71,8 @@ public:
     // or stop under way included.
     virtual void abort() = 0;
     // True from start() until stopped(), failed() or abort(), opening and
-    // post-roll included.
+    // post-roll included. An input with no post-roll may turn false at stop(),
+    // before its stopped() arrives.
     virtual bool isActive() const = 0;
     // Forgets the audio a warm input keeps rolling for the next start, so a
     // resume after a pause does not send what was said during it.

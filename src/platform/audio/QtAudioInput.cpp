@@ -346,6 +346,9 @@ void QtAudioInput::reportStopped()
 
 void QtAudioInput::abort()
 {
+    // Off already when a handler of the last report aborts: still silence
+    // the rest of that report.
+    ++m_captureId;
     dropReports();
     if (m_capture == Capture::Off) {
         if (currentSettings().mode != QStringLiteral("warm")) {
