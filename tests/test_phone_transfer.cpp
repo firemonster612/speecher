@@ -150,12 +150,14 @@ private slots:
         wrongToken[0] = char(wrongToken[0] ^ 1);
         QCOMPARE(exchange(parts.port, wrongToken), QByteArray());
         QCOMPARE(transfer.state(), PhoneTransferState::Waiting);
+        QVERIFY(transfer.isListening());
 
         QSignalSpy sent(&transfer, &PhoneTransfer::stateChanged);
         const QByteArray answer = exchange(parts.port, parts.token);
         QVERIFY(sent.count() == 1 || sent.wait(2000));
         QCOMPARE(transfer.state(), PhoneTransferState::Sent);
         QCOMPARE(transfer.link(), QString());
+        QVERIFY(!transfer.isListening());
 
         QVERIFY(answer.size() > 4 + 12 + 16);
         QCOMPARE(qFromBigEndian<quint32>(answer.constData()), quint32(answer.size() - 4));
@@ -173,8 +175,6 @@ private slots:
                                   size_t(cipherText.size())),
                  0);
         QCOMPARE(plain, phoneTransferBundle(settings, QSysInfo::machineHostName()));
-
-        QCOMPARE(exchange(parts.port, parts.token), QByteArray());
     }
 
     void aPhoneThatLeavesMidSendInterruptsTheTransfer()
