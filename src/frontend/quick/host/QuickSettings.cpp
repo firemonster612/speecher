@@ -299,6 +299,7 @@ const SettingRow settingRows[] = {
     FIELD_ROW("translucency", ui.translucency),
     FIELD_ROW("windowLayout", ui.windowLayout),
     FIELD_ROW("roundedCorners", ui.roundedCorners),
+    FIELD_ROW("boringMode", ui.boringMode),
     // General shows it only where Speecher can start at login
     // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),

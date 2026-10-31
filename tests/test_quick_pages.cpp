@@ -918,6 +918,39 @@ private slots:
         });
     }
 
+    // Listening, the popup shows the scatter ribbon, or in Boring mode the
+    // level bars and the record dot, and switches as the setting changes.
+    void boringModeShowsLevelBars()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        DictationSession *session = controller.session();
+        emit session->stateChanged(DictationState::Listening);
+        emit session->popupShowRequested(1);
+        QQuickWindow *popup = openWindow("PopupWindow");
+        QVERIFY(popup);
+        QVERIFY(QTest::qWaitForWindowExposed(popup));
+        auto *settings = qmlEngine(popup)->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        QVERIFY(settings);
+        QQuickItem *ribbon = findItem(popup->contentItem(), QStringLiteral("ribbon"));
+        QQuickItem *bars = findItem(popup->contentItem(), QStringLiteral("levelBars"));
+        QQuickItem *orb = findItem(popup->contentItem(), QStringLiteral("orb"));
+        QVERIFY(ribbon && bars && orb);
+        const auto showsRibbon = [&] {
+            return ribbon->opacity() == 1 && bars->opacity() == 0 && orb->property("phase").toString().isEmpty();
+        };
+        const auto showsBars = [&] {
+            return ribbon->opacity() == 0 && bars->opacity() == 1 && orb->property("phase").toString() == QLatin1String("listening");
+        };
+
+        QTRY_VERIFY(showsRibbon());
+        settings->set(QStringLiteral("boringMode"), true);
+        QTRY_VERIFY(showsBars());
+        settings->set(QStringLiteral("boringMode"), false);
+        QTRY_VERIFY(showsRibbon());
+    }
+
     // The popup's ribbon keeps every point finite and inside its strip, the
     // bar, through a loud voice, a pause, the capsule widening from 280 to
     // 460 for live words and reduced motion.

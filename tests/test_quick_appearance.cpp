@@ -378,17 +378,20 @@ private slots:
         QCOMPARE(settings.values().value(QStringLiteral("translucency")).toBool(), true);
         QCOMPARE(settings.values().value(QStringLiteral("windowLayout")).toString(), QStringLiteral("framed"));
         QCOMPARE(settings.values().value(QStringLiteral("roundedCorners")).toBool(), true);
+        QCOMPARE(settings.values().value(QStringLiteral("boringMode")).toBool(), false);
 
         settings.set(QStringLiteral("colorScheme"), QStringLiteral("installed:BreezeDark"));
         settings.set(QStringLiteral("translucency"), false);
         settings.set(QStringLiteral("windowLayout"), QStringLiteral("split"));
         settings.set(QStringLiteral("roundedCorners"), false);
+        settings.set(QStringLiteral("boringMode"), true);
 
         SettingsStore another;
         QCOMPARE(another.dictationSnapshot().ui.colorScheme, QStringLiteral("installed:BreezeDark"));
         QCOMPARE(another.dictationSnapshot().ui.translucency, false);
         QCOMPARE(another.dictationSnapshot().ui.windowLayout, QStringLiteral("split"));
         QCOMPARE(another.dictationSnapshot().ui.roundedCorners, false);
+        QCOMPARE(another.dictationSnapshot().ui.boringMode, true);
         another.edit([](AppSettings &draft) { draft.ui.windowLayout = QStringLiteral("sideways"); return true; });
         QCOMPARE(another.dictationSnapshot().ui.windowLayout, QStringLiteral("framed"));
     }

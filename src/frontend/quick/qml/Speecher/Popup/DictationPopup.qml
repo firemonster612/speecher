@@ -31,8 +31,10 @@ Item {
     // A sign-in renews before the dictation goes on; the bar says so in
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
+    // Boring mode shows the voice as level bars beside the record dot.
+    readonly property bool boring: Settings.values.boringMode === true
     // The scatter ribbon shows the voice while listening and paused.
-    readonly property bool ribbonShown: (phase === "listening" || phase === "paused") && !renewing
+    readonly property bool ribbonShown: !boring && (phase === "listening" || phase === "paused") && !renewing
     // The last working phase, so its label holds while the bar fades out
     // and while the text is delivered.
     property string workPhase: "transcribing"
@@ -230,6 +232,7 @@ Item {
                     // The ribbon takes the orb's place, so the orb shows nothing then.
                     VoiceOrb {
                         id: orb
+                        objectName: "orb"
                         x: popup.orbX
                         size: popup.orbSize
                         anchors.verticalCenter: parent.verticalCenter
@@ -237,10 +240,24 @@ Item {
                         level: popup.source.level
                     }
 
+                    Waveform {
+                        objectName: "levelBars"
+                        x: popup.contentX
+                        width: clock.x - x - 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 22
+                        bars: Math.max(8, Math.floor(width / 5.5))
+                        level: popup.source.level
+                        active: popup.boring && popup.phase === "listening"
+                        opacity: popup.boring && popup.recording && !popup.renewing ? 1 : 0
+                        Behavior on opacity { Ease {} }
+                    }
+
                     // From the orb's place to the clock. Its figure keeps
                     // 6 px in from its ends, so it starts 14 px into the pill.
                     ScatterRibbon {
                         id: ribbon
+                        objectName: "ribbon"
                         x: 8
                         width: clock.x - 6 - x
                         height: parent.height
