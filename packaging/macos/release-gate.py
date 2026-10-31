@@ -221,7 +221,7 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     # item with its own access list, as it did for its users.
     update.cli('settings')
     time.sleep(3)
-    saved = ui(evidence, 'click', 'Accounts')
+    saved = ui(evidence, 'select', 'Accounts')
     time.sleep(2)
     saved = saved and ui(evidence, 'type', 'Enter OpenAI API key', DUMMY_OPENAI_KEY)
     time.sleep(3)
@@ -252,7 +252,7 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
             [sys.executable, HERE / 'verify-dmg-update.py', shipped_dmg, candidate_dmg, signature_file, out,
              '--keep-state'],
             stdout=output, stderr=subprocess.STDOUT, env=dict(os.environ, SPEECHER_DISPOSABLE_MACHINE='1'))
-        pressed_at = None
+        pressed_at, dumped = None, False
         while script.poll() is None:
             time.sleep(10)
             served = requests.read_text() if requests.exists() else ''
@@ -265,6 +265,8 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
                 screenshot(evidence, 'offer')
                 if ui(evidence, 'press', 'Install and restart'):
                     pressed_at = time.monotonic()
+                elif not dumped:
+                    dumped = ui(evidence, 'dump')
         status = script.wait()
     for line in (out / 'summary.txt').read_text().splitlines() if (out / 'summary.txt').exists() else []:
         name, _, rest = line.partition('=')

@@ -3,12 +3,12 @@
 // (packaging/macos/release-gate.py). JavaScript for Automation:
 //
 //   osascript -l JavaScript release-gate-ui.js press LABEL
-//   osascript -l JavaScript release-gate-ui.js click LABEL
+//   osascript -l JavaScript release-gate-ui.js select LABEL
 //   osascript -l JavaScript release-gate-ui.js type LABEL TEXT
 //   osascript -l JavaScript release-gate-ui.js dump
 //
-// press: AXPress on the button named LABEL. click: a mouse click at the centre
-// of the element showing LABEL (a sidebar row's text has no press action).
+// press: AXPress on the button named LABEL. select: selects the list row
+// showing LABEL, such as a settings sidebar pane.
 // type: focuses the text field labelled LABEL, types TEXT and presses Return.
 // dump: every element's role and labels, for working out what to match.
 // Prints what it did; exits non-zero when nothing matched.
@@ -37,15 +37,28 @@ function role(element) {
     }
 }
 
+// Every element under element, depth first. Asked level by level rather
+// than through entireContents, which missed a banner SwiftUI had just shown.
+function* descendants(element) {
+    for (const child of element.uiElements()) {
+        yield child;
+        yield* descendants(child);
+    }
+}
+
 function find(process, label, roles) {
     for (const window of process.windows()) {
-        for (const element of window.entireContents()) {
+        for (const element of descendants(window)) {
             if ((!roles || roles.includes(role(element))) && labels(element).includes(label)) {
                 return element;
             }
         }
     }
     return null;
+}
+
+function parent(element) {
+    return element.attributes.byName('AXParent').value();
 }
 
 function run(argv) {
@@ -58,7 +71,7 @@ function run(argv) {
         const lines = [];
         speecher.windows().forEach((window, index) => {
             lines.push(`window ${index}: ${labels(window).join(' | ')}`);
-            for (const element of window.entireContents()) {
+            for (const element of descendants(window)) {
                 lines.push(`  ${role(element)}: ${labels(element).join(' | ')}`);
             }
         });
@@ -73,11 +86,14 @@ function run(argv) {
         element.actions.byName('AXPress').perform();
         return `pressed "${label}"`;
     }
-    if (action === 'click') {
-        const [x, y] = element.position();
-        const [width, height] = element.size();
-        speecher.click({at: [x + width / 2, y + height / 2]});
-        return `clicked "${label}" at ${x + width / 2},${y + height / 2}`;
+    if (action === 'select') {
+        // A synthetic click on a SwiftUI sidebar row's text doesn't select it.
+        let row = element;
+        while (role(row) !== 'AXRow') {
+            row = parent(row);
+        }
+        row.selected = true;
+        return `selected the row showing "${label}"`;
     }
     if (action === 'type') {
         element.focused = true;
