@@ -31,11 +31,11 @@
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/HotKeyShortcutBinder.h"
+#include "platform/RoutingShortcutBinder.h"
 #include "platform/SessionShortcutBinder.h"
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
-#include "platform/RoutingShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/atspi/AtSpiAccess.h"
