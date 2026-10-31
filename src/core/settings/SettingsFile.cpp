@@ -92,11 +92,20 @@ SettingsFile::SettingsFile(const QString &organization, const QString &applicati
 
 SettingsFile::~SettingsFile()
 {
-    // ~QSettings saves what changed since; clearing and deleting first leaves
-    // it nothing to save.
-    if (m_deleted) {
-        deleteFile();
+    if (!m_deleted) {
+        return;
     }
+    // ~QSettings saves what changed since; putting back what was kept, or
+    // clearing and deleting, first leaves it nothing else to save.
+    if (m_kept) {
+        clear();
+        for (auto it = m_kept->cbegin(); it != m_kept->cend(); ++it) {
+            setValue(it.key(), it.value());
+        }
+        QSettings::sync();
+        return;
+    }
+    deleteFile();
 }
 
 void SettingsFile::sync()
@@ -134,7 +143,7 @@ bool SettingsFile::save()
     return true;
 }
 
-bool SettingsFile::deleteFile()
+void SettingsFile::closeGate()
 {
     if (!m_deleted) {
         // Both scopes: a reader also opens the system scope's file as a
@@ -144,6 +153,30 @@ bool SettingsFile::deleteFile()
         QSettings::setPath(format(), QSettings::SystemScope, home + QStringLiteral("/system"));
     }
     m_deleted = true;
+}
+
+void SettingsFile::closeKeepingFile()
+{
+    QVariantMap kept;
+    for (const QString &key : allKeys()) {
+        kept.insert(key, value(key));
+    }
+    m_kept = kept;
+    closeGate();
+    // Readers made from now on, in the throwaway folder, find what was kept
+    // too: a deletion marker hides a key from them as from a new process.
+    QSettings reader(format(), QSettings::UserScope, organizationName(), applicationName());
+    reader.clear();
+    for (auto it = kept.cbegin(); it != kept.cend(); ++it) {
+        reader.setValue(it.key(), it.value());
+    }
+    reader.sync();
+}
+
+bool SettingsFile::deleteFile()
+{
+    closeGate();
+    m_kept.reset();
     clear();
     QSettings::sync();
     const QString file = fileName();

@@ -1907,7 +1907,8 @@ private slots:
     // A keyring that neither deletes nor reads, as one that doesn't answer,
     // may still hold the OpenAI key every start looks up: removal keeps the
     // marker hiding it, and only that, so a start after the keyring answers
-    // again finds no key (r382 Sol3).
+    // again finds no key (r382 Sol3). The settings count as removed, so
+    // nothing saved afterwards comes back beside the marker (r382 Sol4).
     void removalHidesTheOpenAiKeyFromAKeyringThatDoesNotAnswer()
     {
         const auto openAi = SecretStore::Secret::OpenAiApiKey;
@@ -1938,11 +1939,47 @@ private slots:
         removal.start(true);
 
         QTRY_COMPARE(finished.count(), 1);
-        QCOMPARE(finished.first().first().value<RemovalReport>().steps.last().outcome,
-                 RemovalStep::Outcome::KeptHidingKeys);
+        const RemovalReport report = finished.first().first().value<RemovalReport>();
+        QCOMPARE(report.steps.last().outcome, RemovalStep::Outcome::KeptHidingKeys);
+        QVERIFY(report.settingsDeleted());
         unset();
+        QTest::ignoreMessage(QtWarningMsg, "Could not save refinement-endpoint-key: Speecher's settings were deleted");
+        QVERIFY(!savedSecret(secrets, SecretStore::Secret::RefinementEndpointKey, QStringLiteral("after-removal")));
         comparePeerRead(settings, openAi, QString(), true);
         comparePeerRead(settings, proxy, QString());
+        comparePeerRead(settings, SecretStore::Secret::RefinementEndpointKey, QString());
+    }
+
+    // A build without QtKeychain can't see the keyring, so it never takes a
+    // deletion marker away: the key it hides may still be there. With no
+    // marker, removal has nothing to keep (r382 Sol4).
+    void aBuildWithoutQtKeychainKeepsDeletionMarkers()
+    {
+#ifdef SPEECHER_WITH_QKEYCHAIN
+        QSKIP("Needs a build without QtKeychain");
+#else
+        // No keyring is reached without QtKeychain, so the test refusal can
+        // step aside and let the requests reach the build's own answer.
+        const QByteArray privateKeyringBefore = qgetenv("SPEECHER_TEST_PRIVATE_KEYRING");
+        qputenv("SPEECHER_TEST_PRIVATE_KEYRING", "1");
+        const auto restore = qScopeGuard([privateKeyringBefore] {
+            qputenv("SPEECHER_TEST_PRIVATE_KEYRING", privateKeyringBefore);
+        });
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        settings.raw().setValue(SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion"), true);
+
+        QVERIFY(!removedSecrets(secrets));
+        QVERIFY(secrets->deletionPending(openAi));
+        QVERIFY(!savedApiKey(secrets, {}));
+        QVERIFY(secrets->deletionPending(openAi));
+
+        settings.raw().clear();
+        QVERIFY(removedSecrets(secrets));
+        QVERIFY(secrets->deletionMarkers().isEmpty());
+#endif
     }
 
     // Removal deletes the settings an older Speecher left under its old app

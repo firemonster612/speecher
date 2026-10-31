@@ -22,7 +22,8 @@ namespace speecher {
 bool RemovalReport::settingsDeleted() const
 {
     return std::ranges::any_of(steps, [](const RemovalStep &step) {
-        return step.part == RemovalStep::Part::Settings && step.outcome == RemovalStep::Outcome::Removed;
+        return step.part == RemovalStep::Part::Settings
+            && (step.outcome == RemovalStep::Outcome::Removed || step.outcome == RemovalStep::Outcome::KeptHidingKeys);
     });
 }
 

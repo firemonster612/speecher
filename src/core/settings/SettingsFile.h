@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QSettings>
+#include <QVariantMap>
+
+#include <optional>
 
 namespace speecher {
 
@@ -46,13 +49,22 @@ public:
     // false when the file won't go. The destructor deletes it again, for
     // whatever another QSettings wrote meanwhile.
     bool deleteFile();
+    // Closes the gate as deleteFile does, but keeps the file holding what
+    // this object holds now, which the destructor writes back over any
+    // change made since. QSettings made afterwards read the same.
+    void closeKeepingFile();
+    // Whether deleteFile or closeKeepingFile ran: nothing is saved since.
     bool deleted() const { return m_deleted; }
 
 protected:
     bool event(QEvent *event) override;
 
 private:
+    void closeGate();
+
     bool m_deleted = false;
+    // What closeKeepingFile kept, or nothing when the file was deleted.
+    std::optional<QVariantMap> m_kept;
     quint64 m_saves = 0;
 };
 

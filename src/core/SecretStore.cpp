@@ -339,8 +339,11 @@ void SecretStore::writeNext(Secret secret)
         QTimer::singleShot(0, this, [finish] { finish(KeyringAnswer{true, {}, {}}); });
         return;
     }
-    askKeyring(this, request.value.isEmpty() ? KeyringRequest::Delete : KeyringRequest::Write, secret, request.value,
-               finish);
+    if (request.value.isEmpty()) {
+        deleteKeyringEntry(secret, finish);
+    } else {
+        askKeyring(this, KeyringRequest::Write, secret, request.value, finish);
+    }
 }
 
 // Settles the request being written, from what the keyring answered, or
@@ -623,6 +626,24 @@ void SecretStore::askKeyring(const QObject *context, KeyringRequest request, Sec
 #endif
 }
 
+// A build without QtKeychain can't see the keyring: it can't say a key a
+// deletion marker hides is gone, so that deletion stays to be retried by a
+// build that can. Where no marker says a key may be there, it has nothing to
+// delete.
+void SecretStore::deleteKeyringEntry(Secret secret, KeyringDone done)
+{
+#ifndef SPEECHER_WITH_QKEYCHAIN
+    // A test's refusal answers first, as it does in a build with QtKeychain.
+    if (deletionPending(secret) && !testKeyringRefuses("SPEECHER_TEST_KEYRING_DELETE_FAILURE")) {
+        QTimer::singleShot(0, this, [done] {
+            done({false, {}, QStringLiteral("QtKeychain support was not compiled in")});
+        });
+        return;
+    }
+#endif
+    askKeyring(this, KeyringRequest::Delete, secret, {}, std::move(done));
+}
+
 // Off the main thread: QtKeychain's process-wide executor is not
 // thread-safe, so the read starts on the main thread, whose event loop runs
 // it, and only this thread waits.
@@ -686,7 +707,7 @@ void SecretStore::removeNext(size_t index)
         return;
     }
     const Secret secret = secretEntries[index].secret;
-    askKeyring(this, KeyringRequest::Delete, secret, {}, [this, index, secret](const KeyringAnswer &answer) {
+    deleteKeyringEntry(secret, [this, index, secret](const KeyringAnswer &answer) {
         if (answer.ok) {
             recordKeyringEntry(secret, false);
             if (deletionPending(secret)) {

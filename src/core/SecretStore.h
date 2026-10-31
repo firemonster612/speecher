@@ -173,6 +173,7 @@ private:
     static void askKeyring(const QObject *context, KeyringRequest request, Secret secret, const QString &value,
                            KeyringDone done);
     static KeyringAnswer waitForKeyring(Secret secret);
+    void deleteKeyringEntry(Secret secret, KeyringDone done);
 
     SecretState &state(Secret secret) const;
     void cacheValue(Secret secret, const QString &value) const;

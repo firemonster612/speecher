@@ -50,6 +50,7 @@ struct RemovalReport {
     QList<RemovalStep> steps;
     QString programFile;
 
+    // Whether the settings went, all but the deletion markers included.
     bool settingsDeleted() const;
 };
 

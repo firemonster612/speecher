@@ -76,8 +76,9 @@ public:
     // Clears every setting but SecretStore's deletion markers, which hide
     // keys the keyring kept, saves that, and deletes the older settings
     // deleteAll does: what removing Speecher with its settings does when
-    // deleting the file would show such a key. Changes made afterwards are
-    // saved. The files that won't save or go put their paths in path.
+    // deleting the file would show such a key. As after deleteAll, nothing
+    // the store holds is saved afterwards, and the settings file keeps the
+    // markers. The files that won't save or go put their paths in path.
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
     // Starts Speecher at login, or stops it, as the saved launchAtLogin says.

@@ -234,13 +234,14 @@ bool SettingsStore::keepOnlyDeletionMarkers(QString *path)
     // So the next start takes neither the markers nor older settings that
     // wouldn't go for settings to import.
     m_settings.setValue(SettingsKeys::IdentityMigrationVersion, identityMigrationVersion);
-    if (m_settings.save()) {
-        return true;
-    }
-    if (path) {
+    const bool saved = m_settings.save();
+    // As after deleteAll, nothing set from now on brings a setting or a key
+    // back; a file that didn't save gets the markers when the store goes.
+    m_settings.closeKeepingFile();
+    if (!saved && path) {
         *path = m_settings.fileName();
     }
-    return false;
+    return saved;
 }
 
 SecretStore *SettingsStore::secrets() const
