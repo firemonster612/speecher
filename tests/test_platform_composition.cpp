@@ -1753,9 +1753,10 @@ private slots:
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("speecher.log"));
         const QString previous = path + QStringLiteral(".1");
+        // As text: Windows ends the log's lines with \r\n.
         const auto read = [](const QString &file) {
             QFile log(file);
-            return log.open(QIODevice::ReadOnly) ? QString::fromUtf8(log.readAll()) : QString();
+            return log.open(QIODevice::ReadOnly | QIODevice::Text) ? QString::fromUtf8(log.readAll()) : QString();
         };
         LogFile log(path, 100);
         // Another Speecher process with the same log open.
