@@ -6,7 +6,6 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
-#include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -127,8 +126,6 @@ private slots:
     void providersCarryTheirStateAndCoresProblem()
     {
         ApplicationController controller(true);
-        // Online, as the machine running the tests may not be.
-        controller.networkReachability()->setReachability(Reachability::Online);
         QuickModels models(&controller);
         QSignalSpy changed(&models, &QuickModels::changed);
 

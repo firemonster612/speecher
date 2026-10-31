@@ -38,6 +38,10 @@ int main(int argc, char **argv)
         return runDeliveryTests(argc - 1, argv + 1);
     }
 #endif
+    // Online, whatever the machine's network, unless the run asks otherwise.
+    if (qEnvironmentVariableIsEmpty("SPEECHER_TEST_REACHABILITY")) {
+        qputenv("SPEECHER_TEST_REACHABILITY", "online");
+    }
     // Claude's and Codex's sign-ins sit in their homes, and on macOS and
     // Windows in the Keychain or Credential Manager under names made from
     // those homes. Empty ones keep every suite off the developer's own.

@@ -18,6 +18,7 @@ public:
 
     // Starts following the operating system's reports. Where no backend
     // loads, as when the plugin is missing, the answer stays Unknown.
+    // SPEECHER_TEST_REACHABILITY=online or offline answers instead.
     void watchSystem();
     Reachability reachability() const;
     // What each report sets; a test sets it directly.
