@@ -19,17 +19,21 @@
 #include "transcribe/TranscribePresentation.h"
 #include "transcribe/TranscribeQueue.h"
 
+#include <QAudioDecoder>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMediaFormat>
 #include <QMimeDatabase>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QScopeGuard>
-#include <QFile>
-#include <QPointer>
-
-#include <QAudioDecoder>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QtEndian>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QAudioBufferInput>
 #include <QImage>
@@ -38,16 +42,11 @@
 #include <QVideoFrame>
 #include <QVideoFrameInput>
 #endif
-#include <QSignalSpy>
-#include <QTemporaryDir>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QtEndian>
 
 #include <algorithm>
 #include <cmath>
-#include <functional>
 #include <csignal>
+#include <functional>
 #include <optional>
 #include <sstream>
 #include <utility>
