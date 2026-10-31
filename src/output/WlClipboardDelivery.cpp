@@ -74,22 +74,74 @@ QString preferredMimeType(const QStringList &mimeTypes)
     return mimeTypes.isEmpty() ? QString() : mimeTypes.first();
 }
 
-bool copyBytes(const QByteArray &data, const QString &mimeType, QString *error)
+// Copies one format through wl-copy, for when the helper is missing or failed.
+void copyBytes(const QByteArray &data,
+               const QString &mimeType,
+               QObject *context,
+               std::function<void(bool, const QString &)> done)
 {
     const QString executable = WaylandClipboardProcess::wlCopyExecutable();
     if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("wl-copy is not installed");
-        }
-        return false;
+        done(false, QStringLiteral("wl-copy is not installed"));
+        return;
     }
 
     QStringList arguments;
     if (!mimeType.isEmpty()) {
         arguments << QStringLiteral("--type") << mimeType;
     }
-    return WaylandClipboardProcess::run(
-        executable, QStringLiteral("wl-copy"), arguments, &data, nullptr, error);
+    WaylandClipboardProcess::run({executable, QStringLiteral("wl-copy"), arguments, data}, context,
+                                 [done](const WaylandClipboardProcess::CommandResult &result) {
+                                     done(result.ok, result.error);
+                                 });
+}
+
+// Reads the remaining formats one wl-paste at a time, all within the
+// snapshot's deadline, then answers with the whole snapshot.
+void captureParts(const QString &executable,
+                  QStringList remaining,
+                  ClipboardSnapshot snapshot,
+                  QElapsedTimer deadline,
+                  QObject *context,
+                  std::function<void(const ClipboardCaptured &)> done)
+{
+    if (remaining.isEmpty()) {
+        QStringList mimeTypes;
+        for (const ClipboardMimePart &part : std::as_const(snapshot.parts)) {
+            mimeTypes << part.mimeType;
+        }
+        snapshot.hasData = true;
+        snapshot.mimeType = preferredMimeType(mimeTypes);
+        snapshot.data = partData(snapshot.parts, snapshot.mimeType);
+        done({true, snapshot, {}});
+        return;
+    }
+    const int remainingMs = snapshotDeadlineMs - int(deadline.elapsed());
+    if (remainingMs <= 0) {
+        done({false, {}, QStringLiteral("Clipboard snapshot timed out")});
+        return;
+    }
+    const QString mimeType = remaining.takeFirst();
+    WaylandClipboardProcess::run(
+        {executable, QStringLiteral("wl-paste"), {QStringLiteral("--no-newline"), QStringLiteral("--type"), mimeType},
+         std::nullopt, true, remainingMs, maximumFormatBytes},
+        context,
+        [=](const WaylandClipboardProcess::CommandResult &result) mutable {
+            if (!result.ok) {
+                done({false, {}, result.error});
+                return;
+            }
+            snapshot.parts.append({mimeType, result.output});
+            qsizetype capturedBytes = 0;
+            for (const ClipboardMimePart &part : std::as_const(snapshot.parts)) {
+                capturedBytes += part.data.size();
+            }
+            if (capturedBytes > maximumSnapshotBytes) {
+                done({false, {}, QStringLiteral("Clipboard snapshot is too large to restore safely")});
+                return;
+            }
+            captureParts(executable, remaining, snapshot, deadline, context, done);
+        });
 }
 
 } // namespace
@@ -121,137 +173,86 @@ bool WlClipboardDelivery::canSnapshot()
     return !WaylandClipboardProcess::wlPasteExecutable().isEmpty();
 }
 
-bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable,
-                               QString *error)
+void WlClipboardDelivery::copy(const DeliveryContent &content,
+                               QObject *context,
+                               std::function<void(const ClipboardCopied &)> done)
 {
-    if (htmlAvailable) {
-        *htmlAvailable = false;
-    }
-
+    const QByteArray text = content.plainText.toUtf8();
     QList<ClipboardMimePart> parts{
-        {QStringLiteral("text/plain;charset=utf-8"), content.plainText.toUtf8()},
-        {QStringLiteral("text/plain"), content.plainText.toUtf8()},
-        {QStringLiteral("UTF8_STRING"), content.plainText.toUtf8()},
+        {QStringLiteral("text/plain;charset=utf-8"), text},
+        {QStringLiteral("text/plain"), text},
+        {QStringLiteral("UTF8_STRING"), text},
     };
     if (content.html) {
         parts.append({QStringLiteral("text/html"), content.html->toUtf8()});
     }
-
-    m_copiedParts.clear();
     parts.append({copyMarkerMimeType(), QUuid::createUuid().toByteArray()});
-    if (WaylandClipboardOwner::start(parts, error)) {
-        m_copiedParts = parts;
-        if (htmlAvailable) {
-            *htmlAvailable = content.html.has_value();
-        }
-        return true;
+    m_copiedParts.clear();
+
+    // The helper's failure is the one reported when wl-copy fails too.
+    const auto copyPlainText = [this, context, done, text](const QString &helperError) {
+        copyBytes(text, QStringLiteral("text/plain"), context, [this, done, text, helperError](bool ok, const QString &error) {
+            if (ok) {
+                m_copiedParts = {{QStringLiteral("text/plain"), text}};
+            }
+            done({ok, false, ok ? QString() : helperError.isEmpty() ? error : helperError});
+        });
+    };
+    const QString helper = WaylandClipboardProcess::helperExecutable();
+    if (helper.isEmpty()) {
+        copyPlainText(QStringLiteral("Speecher's Wayland clipboard helper is unavailable"));
+        return;
     }
-    QString plainError;
-    if (copyBytes(content.plainText.toUtf8(), QStringLiteral("text/plain"), &plainError)) {
-        m_copiedParts = {{QStringLiteral("text/plain"), content.plainText.toUtf8()}};
-        return true;
-    }
-    if (error && error->isEmpty()) {
-        *error = plainError;
-    }
-    return false;
+    WaylandClipboardOwner::start(helper, parts, context,
+                                 [this, done, parts, copyPlainText, html = content.html.has_value()](
+                                     bool published, const QString &error) {
+                                     if (!published) {
+                                         copyPlainText(error);
+                                         return;
+                                     }
+                                     m_copiedParts = parts;
+                                     done({true, html, {}});
+                                 });
 }
 
-bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
+void WlClipboardDelivery::capture(QObject *context, std::function<void(const ClipboardCaptured &)> done)
 {
-    if (!snapshot) {
-        if (error) {
-            *error = QStringLiteral("No clipboard snapshot destination");
-        }
-        return false;
-    }
-    *snapshot = {};
-
     const QString executable = WaylandClipboardProcess::wlPasteExecutable();
     if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("wl-paste is not installed");
-        }
-        return false;
+        done({false, {}, QStringLiteral("wl-paste is not installed")});
+        return;
     }
 
     QElapsedTimer deadline;
     deadline.start();
-    QByteArray typeOutput;
-    QString typeError;
-    if (!WaylandClipboardProcess::run(executable,
-                             QStringLiteral("wl-paste"),
-                             {QStringLiteral("--list-types")},
-                             nullptr,
-                             &typeOutput,
-                             &typeError,
-                             snapshotDeadlineMs,
-                             64 * 1024)) {
-        if (WaylandClipboardProcess::looksLikeEmptyClipboardError(typeError)) {
-            return true;
-        }
-        if (error) {
-            *error = typeError;
-        }
-        return false;
-    }
-
-    // Every offered format, private ones too: restoring less than the owner
-    // offered would drop images or app-private data.
-    QStringList mimeTypes;
-    for (const QString &line : QString::fromUtf8(typeOutput).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
-        const QString mimeType = line.trimmed();
-        if (!mimeType.isEmpty()) {
-            mimeTypes << mimeType;
-        }
-    }
-    if (mimeTypes.isEmpty()) {
-        return true;
-    }
-
-    qsizetype capturedBytes = 0;
-    for (const QString &mimeType : mimeTypes) {
-        const int remainingMs = snapshotDeadlineMs - int(deadline.elapsed());
-        if (remainingMs <= 0) {
-            if (error) {
-                *error = QStringLiteral("Clipboard snapshot timed out");
+    WaylandClipboardProcess::run(
+        {executable, QStringLiteral("wl-paste"), {QStringLiteral("--list-types")}, std::nullopt, true,
+         snapshotDeadlineMs, 64 * 1024},
+        context,
+        [executable, deadline, context, done](const WaylandClipboardProcess::CommandResult &types) {
+            if (!types.ok) {
+                if (WaylandClipboardProcess::looksLikeEmptyClipboardError(types.error)) {
+                    done({true, {}, {}});
+                } else {
+                    done({false, {}, types.error});
+                }
+                return;
             }
-            *snapshot = {};
-            return false;
-        }
-        QByteArray data;
-        if (!WaylandClipboardProcess::run(
-                executable,
-                QStringLiteral("wl-paste"),
-                {QStringLiteral("--no-newline"), QStringLiteral("--type"), mimeType},
-                nullptr,
-                &data,
-                error,
-                remainingMs,
-                maximumFormatBytes)) {
-            *snapshot = {};
-            return false;
-        }
-        capturedBytes += data.size();
-        if (capturedBytes > maximumSnapshotBytes) {
-            if (error) {
-                *error = QStringLiteral("Clipboard snapshot is too large to restore safely");
+            // Every offered format, private ones too: restoring less than the
+            // owner offered would drop images or app-private data.
+            QStringList mimeTypes;
+            for (const QString &line : QString::fromUtf8(types.output).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+                const QString mimeType = line.trimmed();
+                if (!mimeType.isEmpty()) {
+                    mimeTypes << mimeType;
+                }
             }
-            *snapshot = {};
-            return false;
-        }
-        snapshot->parts.append({mimeType, data});
-    }
-
-    snapshot->hasData = true;
-    snapshot->mimeType = preferredMimeType(mimeTypes);
-    for (const ClipboardMimePart &part : std::as_const(snapshot->parts)) {
-        if (part.mimeType == snapshot->mimeType) {
-            snapshot->data = part.data;
-            break;
-        }
-    }
-    return true;
+            if (mimeTypes.isEmpty()) {
+                done({true, {}, {}});
+                return;
+            }
+            captureParts(executable, mimeTypes, {}, deadline, context, done);
+        });
 }
 
 // Clipboard managers re-offer our copy under their own format set, and the
@@ -279,52 +280,52 @@ bool WlClipboardDelivery::copyStillOnClipboard(const QList<ClipboardMimePart> &c
     return !copiedText.isEmpty() && plainTextData(current) == copiedText;
 }
 
-bool WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snapshot,
-                                                   QString *error,
-                                                   bool *keptNewerCopy)
+void WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snapshot,
+                                                   QObject *context,
+                                                   std::function<void(const ClipboardRestored &)> done)
 {
-    if (keptNewerCopy) {
-        *keptNewerCopy = false;
-    }
     if (m_copiedParts.isEmpty()) {
-        return true;
+        done({true, false, {}});
+        return;
     }
-    ClipboardSnapshot current;
-    if (!capture(&current, error)) {
-        return false;
-    }
-    // The decision has been made for this copy. Keeping the parts would let a
-    // later delivery that never copied anything restore over somebody else's
-    // clipboard on the strength of this one.
-    const QList<ClipboardMimePart> copied = std::exchange(m_copiedParts, {});
-    if (!copyStillOnClipboard(copied, current.parts)) {
-        if (keptNewerCopy) {
-            *keptNewerCopy = true;
+    capture(context, [this, snapshot, context, done](const ClipboardCaptured &current) {
+        if (!current.ok) {
+            done({false, false, current.error});
+            return;
         }
-        return true;
-    }
-    return restore(snapshot, error);
+        // The decision has been made for this copy. Keeping the parts would
+        // let a later delivery that never copied anything restore over
+        // somebody else's clipboard on the strength of this one.
+        const QList<ClipboardMimePart> copied = std::exchange(m_copiedParts, {});
+        if (!copyStillOnClipboard(copied, current.snapshot.parts)) {
+            done({true, true, {}});
+            return;
+        }
+        restore(snapshot, context, done);
+    });
 }
 
-bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error)
+void WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
+                                  QObject *context,
+                                  std::function<void(const ClipboardRestored &)> done)
 {
+    const auto answer = [done](bool ok, const QString &error) { done({ok, false, ok ? QString() : error}); };
+    const QString helper = WaylandClipboardProcess::helperExecutable();
     if (!snapshot.hasData) {
-        if (!WaylandClipboardProcess::helperExecutable().isEmpty()) {
-            return WaylandClipboardOwner::start({}, error);
+        if (!helper.isEmpty()) {
+            WaylandClipboardOwner::start(helper, {}, context, answer);
+            return;
         }
         const QString executable = WaylandClipboardProcess::wlCopyExecutable();
         if (executable.isEmpty()) {
-            if (error) {
-                *error = QStringLiteral("wl-copy is not installed");
-            }
-            return false;
+            answer(false, QStringLiteral("wl-copy is not installed"));
+            return;
         }
-        return WaylandClipboardProcess::run(executable,
-                                   QStringLiteral("wl-copy"),
-                                   {QStringLiteral("--clear")},
-                                   nullptr,
-                                   nullptr,
-                                   error);
+        WaylandClipboardProcess::run({executable, QStringLiteral("wl-copy"), {QStringLiteral("--clear")}}, context,
+                                     [answer](const WaylandClipboardProcess::CommandResult &result) {
+                                         answer(result.ok, result.error);
+                                     });
+        return;
     }
 
     const QList<ClipboardMimePart> parts = snapshot.parts.isEmpty()
@@ -334,16 +335,15 @@ bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *er
               snapshot.data,
           }}
         : snapshot.parts;
-    if (!WaylandClipboardProcess::helperExecutable().isEmpty()) {
-        return WaylandClipboardOwner::start(parts, error);
+    if (!helper.isEmpty()) {
+        WaylandClipboardOwner::start(helper, parts, context, answer);
+        return;
     }
     if (parts.size() == 1) {
-        return copyBytes(parts.first().data, parts.first().mimeType, error);
+        copyBytes(parts.first().data, parts.first().mimeType, context, answer);
+        return;
     }
-    if (error) {
-        *error = QStringLiteral("Multi-format clipboard restoration needs Speecher's Wayland clipboard helper");
-    }
-    return false;
+    answer(false, QStringLiteral("Multi-format clipboard restoration needs Speecher's Wayland clipboard helper"));
 }
 
 } // namespace speecher

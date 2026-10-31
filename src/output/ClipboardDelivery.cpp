@@ -5,9 +5,22 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>
+#include <QPointer>
 
 namespace speecher {
 namespace {
+
+// done, kept from running once context is gone. The wl-clipboard helpers
+// answer to this delivery's own lifetime, and this to the caller's.
+template <typename Answer>
+std::function<void(const Answer &)> whileAlive(QObject *context, std::function<void(const Answer &)> done)
+{
+    return [context = QPointer<QObject>(context), done = std::move(done)](const Answer &answer) {
+        if (context) {
+            done(answer);
+        }
+    };
+}
 
 QClipboard *systemClipboard()
 {
@@ -107,10 +120,7 @@ void ClipboardDelivery::copyWayland(const DeliveryContent &content,
                                     QObject *context,
                                     std::function<void(const ClipboardCopied &)> done)
 {
-    Q_UNUSED(context)
-    ClipboardCopied copied;
-    copied.ok = m_waylandClipboard.copy(content, &copied.htmlAvailable, &copied.error);
-    done(copied);
+    m_waylandClipboard.copy(content, this, whileAlive(context, std::move(done)));
 }
 #endif
 
@@ -141,15 +151,14 @@ bool ClipboardDelivery::canSnapshot() const
 
 void ClipboardDelivery::capture(QObject *context, std::function<void(const ClipboardCaptured &)> done)
 {
-    Q_UNUSED(context)
-    ClipboardCaptured captured;
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        captured.ok = WlClipboardDelivery::capture(&captured.snapshot, &captured.error);
-        done(captured);
+        WlClipboardDelivery::capture(this, whileAlive(context, std::move(done)));
         return;
     }
 #endif
+    Q_UNUSED(context)
+    ClipboardCaptured captured;
     captured.ok = captureQtClipboard(&captured.snapshot, &captured.error);
     done(captured);
 }
@@ -159,17 +168,17 @@ void ClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
                                 QObject *context,
                                 std::function<void(const ClipboardRestored &)> done)
 {
-    Q_UNUSED(context)
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        ClipboardRestored restored;
-        restored.ok = preserveNewCopy
-            ? m_waylandClipboard.restorePreservingNewCopy(snapshot, &restored.error, &restored.keptNewerCopy)
-            : WlClipboardDelivery::restore(snapshot, &restored.error);
-        done(restored);
+        if (preserveNewCopy) {
+            m_waylandClipboard.restorePreservingNewCopy(snapshot, this, whileAlive(context, std::move(done)));
+        } else {
+            WlClipboardDelivery::restore(snapshot, this, whileAlive(context, std::move(done)));
+        }
         return;
     }
 #endif
+    Q_UNUSED(context)
     if (preserveNewCopy && !m_qtClipboard.ownsClipboardContent()) {
         // Keeping another application's newer copy satisfies automatic restore.
         done({true, true, {}});

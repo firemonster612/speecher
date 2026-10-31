@@ -21,8 +21,8 @@ class ClipboardDelivery : public QObject {
 public:
     explicit ClipboardDelivery(QObject *parent = nullptr);
     // Each of these answers through done once, unless context is gone by
-    // then. Today all answer before they return; callers must not rely on it,
-    // as the wl-clipboard helpers are to answer once they finish.
+    // then: before it returns through QClipboard, and once the helpers
+    // finish through wl-clipboard.
     void copy(const DeliveryContent &content, QObject *context, std::function<void(const ClipboardCopied &)> done);
 #ifdef SPEECHER_WITH_WAYLAND
     void copyWayland(const DeliveryContent &content,
