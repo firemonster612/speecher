@@ -281,8 +281,19 @@ void TextDelivery::deliver(const OutputSettings &settings,
                            const DeliveryContent &content,
                            const Target &target)
 {
-    const DeliveryResult result = deliverNow(settings, content, target);
-    QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
+    m_requests.append({settings, content, target});
+    // A delivery waiting in a nested event loop, to check focus or verify an
+    // insertion, can be asked for another; that one waits its turn, so the
+    // answers keep the order of the requests.
+    if (m_requests.size() > 1) {
+        return;
+    }
+    while (!m_requests.isEmpty()) {
+        const Request request = m_requests.first();
+        const DeliveryResult result = deliverNow(request.settings, request.content, request.target);
+        QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
+        m_requests.removeFirst();
+    }
 }
 
 DeliveryResult TextDelivery::deliverNow(const OutputSettings &settings,

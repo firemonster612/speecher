@@ -5,7 +5,6 @@
 
 #include "dictation/DictationPorts.h"
 
-#include <QCoreApplication>
 #include <QTest>
 
 #include <optional>
@@ -24,14 +23,7 @@ inline DeliveryResult deliverAndWait(TextDeliveryAdapter &delivery,
     const QMetaObject::Connection connection = QObject::connect(
         &delivery, &TextDeliveryAdapter::delivered, [&answer](const DeliveryResult &result) { answer = result; });
     delivery.deliver(settings, content, target);
-    const bool answered = QTest::qWaitFor(
-        [&answer] {
-            // The Wayland clipboard child runs with no application, whose
-            // event loop would otherwise send the posted answer.
-            QCoreApplication::sendPostedEvents();
-            return answer.has_value();
-        },
-        timeoutMs);
+    const bool answered = QTest::qWaitFor([&answer] { return answer.has_value(); }, timeoutMs);
     QObject::disconnect(connection);
     if (!answered) {
         return {false, DeliveryReceipt::None, false,

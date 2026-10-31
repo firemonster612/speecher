@@ -1138,6 +1138,43 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
     }
 
+    // A delivery asked for while another waits in a nested event loop, here
+    // while the insertion is verified, waits its turn: the answers keep the
+    // order the deliveries were asked in.
+    void aDeliveryAskedForMidDeliveryIsAnsweredAfterIt()
+    {
+        class ReenteringProvider final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool canInsertText(const Target &) override { return true; }
+            bool insertText(const Target &, const QString &, QString *) override { return true; }
+            bool verifyInsertion(const Target &, const QString &) override
+            {
+                if (const auto deliverNext = std::exchange(duringVerification, {})) {
+                    deliverNext();
+                }
+                return false;
+            }
+            std::function<void()> duringVerification;
+        } provider;
+        TextDelivery delivery(&provider);
+        QList<DeliveryReceipt> receipts;
+        connect(&delivery, &TextDeliveryAdapter::delivered, this,
+                [&receipts](const DeliveryResult &result) { receipts << result.receipt; });
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
+        Target editor;
+        editor.applicationId = QStringLiteral("editor");
+        Target secure = editor;
+        secure.secure = true;
+        const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
+        provider.duringVerification = [&] { delivery.deliver(settings, content, secure); };
+
+        delivery.deliver(settings, content, editor);
+        QTRY_COMPARE(receipts.size(), 2);
+        QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::Copied}));
+    }
+
     void keyboardBackendGateRefusesPasteAfterBlockingPreparation()
     {
         // Focus holds through delivery's own checks and moves while the

@@ -93,6 +93,13 @@ private:
                                                        PreviousClipboard &previousClipboard,
                                                        QString *firstError);
 
+    struct Request {
+        OutputSettings settings;
+        DeliveryContent content;
+        Target target;
+    };
+    // The delivery under way first, then those asked for meanwhile.
+    QList<Request> m_requests;
     ClipboardDelivery m_clipboardDelivery;
     BackendFactory m_backendFactory;
     TargetProvider *m_targetProvider = nullptr;
