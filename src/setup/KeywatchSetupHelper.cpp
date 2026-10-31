@@ -22,6 +22,8 @@
 #include <string_view>
 #include <vector>
 
+#include <sys/mman.h>
+
 using namespace speecher::helpers;
 
 namespace {
@@ -199,6 +201,38 @@ bool verifyPayload(std::string_view name, std::string_view expected, std::string
     return false;
 }
 
+// The bundled daemon, read once: the bytes checked are the bytes installed,
+// so the file cannot change between its check and its copy. They are hashed
+// from a memfd, which sha256sum reads through /proc.
+std::optional<std::string> verifiedDaemon(std::string &error)
+{
+    std::ifstream bundled(bundledPath("speecher-keywatchd"), std::ios::binary);
+    std::ostringstream daemon;
+    if (!bundled || !(daemon << bundled.rdbuf())) {
+        error = "Could not read the bundled speecher-keywatchd";
+        return std::nullopt;
+    }
+    const std::string bytes = daemon.str();
+    const int memory = memfd_create("speecher-keywatchd", 0);
+    bool written = memory >= 0;
+    for (std::size_t done = 0; written && done < bytes.size();) {
+        const ssize_t count = ::write(memory, bytes.data() + done, bytes.size() - done);
+        written = count > 0;
+        done += written ? std::size_t(count) : 0;
+    }
+    std::string hashError;
+    const bool matches = written
+        && sha256("/proc/self/fd/" + std::to_string(memory), hashError) == speecher::keywatch::daemonSha256;
+    if (memory >= 0) {
+        close(memory);
+    }
+    if (!matches) {
+        error = "Bundled speecher-keywatchd failed its integrity check";
+        return std::nullopt;
+    }
+    return bytes;
+}
+
 bool removeSelinuxPolicy(std::string &error)
 {
     if (!findExecutable("semodule")) {
@@ -262,23 +296,6 @@ bool ensureSystemUser(bool &created, std::string &error)
     return true;
 }
 
-// Puts the bundled daemon at its system path whole or not at all: a copy
-// made beside it is synced and renamed over it, so a crash or a full disk
-// mid-install never leaves a truncated binary there. The rename also replaces
-// a running daemon's file without touching that process, which opening the
-// file to overwrite would refuse (ETXTBSY); install() then restarts the
-// socket to bring up the new binary.
-bool installDaemon(std::string &error)
-{
-    std::ifstream bundled(bundledPath("speecher-keywatchd"), std::ios::binary);
-    std::ostringstream daemon;
-    if (!bundled || !(daemon << bundled.rdbuf())) {
-        error = "Could not read the bundled speecher-keywatchd";
-        return false;
-    }
-    return writeFile(std::string(daemonInstallPath), daemon.str(), error, 0755);
-}
-
 bool install(const std::string &user, std::string &error)
 {
     if (const std::string owner = otherAccountOwner(user); !owner.empty()) {
@@ -292,8 +309,8 @@ bool install(const std::string &user, std::string &error)
         transaction.appendToError(error);
         return false;
     };
-    if (!verifyPayload("speecher-keywatchd", speecher::keywatch::daemonSha256, error)
-        || !verifyPayload(policyFileName, speecher::keywatch::policySha256, error)) {
+    const std::optional<std::string> daemon = verifiedDaemon(error);
+    if (!daemon || !verifyPayload(policyFileName, speecher::keywatch::policySha256, error)) {
         return failed();
     }
     bool userCreated = false;
@@ -303,7 +320,12 @@ bool install(const std::string &user, std::string &error)
     if (userCreated) {
         transaction.record("created system user " + std::string(userName));
     }
-    if (!installDaemon(error)) {
+    // The daemon lands whole or not at all: a copy made beside it is synced
+    // and renamed over it, so a crash or a full disk never leaves a truncated
+    // binary there. The rename also replaces a running daemon's file without
+    // touching that process, which opening the file to overwrite would refuse
+    // (ETXTBSY); the socket restart below brings up the new binary.
+    if (!writeFile(std::string(daemonInstallPath), *daemon, error, 0755)) {
         return failed();
     }
     transaction.record("installed " + std::string(daemonInstallPath));
