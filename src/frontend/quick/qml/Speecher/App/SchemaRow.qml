@@ -20,7 +20,7 @@ SettingRow {
     property var value: _blurs ? Settings.values[rowId] : false
 
     // Whether the row that turns this one on is on (enabledWhen).
-    readonly property bool _turnedOn: !spec.enabledWhen || Settings.values[spec.enabledWhen.id] === spec.enabledWhen.equals
+    readonly property bool _turnedOn: Schema.rowEnabled(spec, Settings.values)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place.
     property string note: (!_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""

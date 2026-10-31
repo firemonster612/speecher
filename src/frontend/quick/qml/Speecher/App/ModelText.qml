@@ -118,6 +118,8 @@ QtObject {
     // Where a speech service stands in the chain: 0 for the service itself,
     // then its place among the fallbacks.
     function roleText(place) { return place === 0 ? "Used as your service." : "Used as fallback " + place + "." }
+    // A service only a Writing Profile chooses.
+    readonly property string profileRoleText: "Used by a writing profile."
     // What the fallback list says under each fallback: { text, state }.
     function fallbackStatus(provider, index, primaryLabel) {
         if (provider.state !== "ready" && provider.state !== "unknown") return { text: status(provider), state: provider.state }

@@ -130,6 +130,7 @@ FocusScope {
                 Keys.onDownPressed: list.currentIndex = Math.min(list.count - 1, list.currentIndex + 1)
                 Keys.onUpPressed: list.currentIndex = Math.max(0, list.currentIndex - 1)
                 Keys.onReturnPressed: root.activate(list.currentIndex)
+                Keys.onEnterPressed: root.activate(list.currentIndex)
             }
             KeyCap { text: "Esc"; size: "small"; anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.rule }
@@ -221,12 +222,13 @@ FocusScope {
                         width: childrenRect.width
                         height: childrenRect.height
                         // Off and greyed where the row needs blur and nothing
-                        // blurs, as on its page.
+                        // blurs, as on its page, and greyed while the row
+                        // that turns it on is off.
                         Switch {
                             readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
                             visible: !!hit.spec && hit.spec.kind === "toggle"
                             checked: blurs && !!Settings.values[hit.modelData.id]
-                            enabled: blurs
+                            enabled: blurs && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {
@@ -290,7 +292,7 @@ FocusScope {
         }
     }
 
-    // Bolds the parts of label that match the query.
+    // Underlines the parts of label that match the query.
     function highlight(label) {
         const esc = RichText.escape
         const words = query.trim().toLowerCase().split(/\s+/).filter(w => w.length)

@@ -21,11 +21,15 @@ Page {
 
     Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
-    // Whether a service is the primary or one of its fallbacks, so its
-    // settings matter.
-    function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 }
+    // Whether a service is the primary, one of its fallbacks or a Writing
+    // Profile's own, so its settings matter.
+    function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 || Library.profiles.some(p => p.speech === id) }
     // Where a service stands in the chain, for its section's caption.
-    function role(id) { return ModelText.roleText(id === primary ? 0 : fallbacks.indexOf(id) + 1) }
+    function role(id) {
+        if (id === primary) return ModelText.roleText(0)
+        const fallback = fallbacks.indexOf(id)
+        return fallback >= 0 ? ModelText.roleText(fallback + 1) : ModelText.profileRoleText
+    }
     // The row takes a new primary out of the fallback list, in one save.
     function choose(id) { Settings.set("speechProvider", id) }
     // The models behind the service; a Local Model lists the rated catalog,
