@@ -703,6 +703,49 @@ private slots:
         peer->deleteLater();
     }
 
+    // Past 80 s the batch endpoint would cut the tail, so the streamed
+    // transcript stays.
+    void aRecordingTooLongToRetranscribeKeepsTheStreamedTranscript()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTcpServer http;
+        QVERIFY(http.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_CODEX_DICTATION_URL",
+                QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort()).toUtf8());
+        qputenv("SPEECHER_CODEX_TRANSCRIBE_URL",
+                QStringLiteral("http://127.0.0.1:%1/transcribe").arg(http.serverPort()).toUtf8());
+        const auto unsetEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_CODEX_DICTATION_URL");
+            qunsetenv("SPEECHER_CODEX_TRANSCRIBE_URL");
+        });
+
+        CodexSpeechTranscriber transcriber;
+        QSignalSpy attemptText(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        settings.codexFinalRetranscribe = true;
+        transcriber.startAttempt(9, settings, {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
+        const QByteArray tenSeconds(10 * 16000 * 2, '\0');
+        for (int i = 0; i < 9; ++i) {
+            transcriber.sendAudio(9, tenSeconds);
+        }
+        transcriber.finishInput(9);
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.updated","sequence_no":2,"session":{"session_id":"s1","status":"closed","config":{}}})"));
+
+        // The batch server never answers: an accuracy pass would hold the
+        // completion for its 15 s deadline.
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 2000);
+        QCOMPARE(attemptText.count(), 0);
+    }
+
     void finalRetranscribeFailureKeepsStreamedTranscript()
     {
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
