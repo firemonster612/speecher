@@ -39,7 +39,7 @@ int main(int argc, char **argv)
     }
 #endif
     // Online, whatever the machine's network, unless the run asks otherwise.
-    if (!qEnvironmentVariableIsSet("SPEECHER_TEST_REACHABILITY")) {
+    if (qEnvironmentVariableIsEmpty("SPEECHER_TEST_REACHABILITY")) {
         qputenv("SPEECHER_TEST_REACHABILITY", "online");
     }
     // Claude's and Codex's sign-ins sit in their homes, and on macOS and

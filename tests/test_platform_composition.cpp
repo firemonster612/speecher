@@ -650,19 +650,18 @@ private slots:
         controller.stopListening();
     }
 
-    // Tests answer for the operating system's reachability: online unless a
-    // test asks for offline, whatever the machine's own network.
+    // Tests answer for the operating system's reachability, whatever the
+    // machine's own network: test_main sets online unless the run chose.
     void testsChooseTheReachabilityTheControllerSees()
     {
-        {
+        const QByteArray chosen = qgetenv("SPEECHER_TEST_REACHABILITY");
+        const auto restore = qScopeGuard([&] { qputenv("SPEECHER_TEST_REACHABILITY", chosen); });
+        for (const auto &[value, expected] : {std::pair{"online", Reachability::Online},
+                                              std::pair{"offline", Reachability::Offline}}) {
+            qputenv("SPEECHER_TEST_REACHABILITY", value);
             ApplicationController controller(true, std::make_shared<FakePlatformComposition>(platformComposition()));
-            QCOMPARE(controller.networkReachability()->reachability(), Reachability::Online);
+            QCOMPARE(controller.networkReachability()->reachability(), expected);
         }
-        const QByteArray previous = qgetenv("SPEECHER_TEST_REACHABILITY");
-        qputenv("SPEECHER_TEST_REACHABILITY", "offline");
-        const auto restore = qScopeGuard([&] { qputenv("SPEECHER_TEST_REACHABILITY", previous); });
-        ApplicationController controller(true, std::make_shared<FakePlatformComposition>(platformComposition()));
-        QCOMPARE(controller.networkReachability()->reachability(), Reachability::Offline);
     }
 
     // While a selection edit waits for review, holding the Global Shortcut in
