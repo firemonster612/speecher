@@ -35,11 +35,11 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
-    // Carries every saved endpoint and CLI Proxy API key, so a settings
-    // surface shows and saves them all. A key SecretStore::prefetch has not
-    // cached yet is read as SecretStore::secret reads it: on the main thread
-    // it stays unread while its read starts; elsewhere the read waits (1.5 s
-    // at most).
+    // Carries the saved endpoint and CLI Proxy API keys, reading each one
+    // the store hasn't as SecretStore::secret does: off the main thread the
+    // read waits for the keyring (1.5 s at most), so the snapshot has them
+    // all; on it, the read only starts, and the key stays in
+    // unreadSecretKeys until it answers.
     AppSettings snapshot() const;
     // Never waits for the keyring on the GUI thread. Startup preparation
     // resolves unread keys for each provider it tries on its worker.

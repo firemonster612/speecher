@@ -376,18 +376,6 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
         qWarning().noquote() << "Settings: not saved, since removing Speecher deleted them";
         return;
     }
-    writeSnapshot(draft);
-    reconcileLaunchAtLogin();
-    const AppSettings saved = SettingsCodecs::snapshot();
-    if (saved.audio != previous.audio) {
-        emit audioCaptureSettingsChanged(saved.audio);
-    }
-    if (saved.updates != previous.updates) {
-        emit updateSettingsChanged();
-    }
-    if (saved.correctionLearningEnabled != previous.correctionLearningEnabled) {
-        emit correctionLearningEnabledChanged(saved.correctionLearningEnabled);
-    }
     using Secret = SecretStore::Secret;
     const std::tuple<Secret, QString, QString> keys[] = {
         {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey},
@@ -407,7 +395,21 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
             secrets.append({secret, value});
         }
     }
+    // First: a key cleared here is hidden before the settings saved with
+    // it, such as a new server for it, can reach the file.
     m_secrets->saveSecrets(secrets);
+    writeSnapshot(draft);
+    reconcileLaunchAtLogin();
+    const AppSettings saved = SettingsCodecs::snapshot();
+    if (saved.audio != previous.audio) {
+        emit audioCaptureSettingsChanged(saved.audio);
+    }
+    if (saved.updates != previous.updates) {
+        emit updateSettingsChanged();
+    }
+    if (saved.correctionLearningEnabled != previous.correctionLearningEnabled) {
+        emit correctionLearningEnabledChanged(saved.correctionLearningEnabled);
+    }
     emit snapshotApplied(previous);
 }
 

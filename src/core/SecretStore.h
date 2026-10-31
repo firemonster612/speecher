@@ -88,6 +88,11 @@ public:
     // entry went, else the first refusal's reason; a removal asked for while
     // one runs finishes with it.
     void deleteKeyringSecrets(std::function<void(bool deleted, const QString &error)> done);
+    // Calls done once no save, clear or removal asked for is still under way
+    // or waiting its turn: during this call when none is, else after 6 s at
+    // most, logging what was left. Quitting waits on it, so what was asked
+    // for reaches storage before the event loop stops.
+    void afterWrites(std::function<void()> done);
     // The settings keys of the deletion markers (deletionPending) in the
     // settings file, each hiding a key the keyring kept.
     QStringList deletionMarkers() const;
@@ -179,7 +184,10 @@ private:
     QString writeRefusal() const;
     quint64 save(Secret secret, Request request);
     void writeNext(Secret secret);
+    void hide(Secret secret);
     void finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer);
+    bool writesSettled() const;
+    void notifyIfWritesSettled();
     bool store(Secret secret, const Request &request, const std::optional<KeyringAnswer> &answer);
     void settle(Secret secret, const Request &request, bool stored, const QString &error);
     bool holds(Secret secret, const Request &request) const;
@@ -199,6 +207,8 @@ private:
     QList<std::function<void(bool, const QString &)>> m_removals;
     // The first refusal the removal under way met.
     std::optional<QString> m_removalError;
+    // What afterWrites calls once the writes settle.
+    QList<std::function<void()>> m_afterWrites;
     mutable std::array<SecretState, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
 };
 

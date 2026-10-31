@@ -909,7 +909,8 @@ void ApplicationController::quitApplication()
         QTimer::singleShot(mediaResumeGraceMs, &resumeWindow, &QEventLoop::quit);
         resumeWindow.exec(QEventLoop::ExcludeUserInputEvents);
     }
-    emit quitRequested();
+    // A key save the keyring hasn't answered yet would go with the event loop.
+    m_secrets->afterWrites([this] { emit quitRequested(); });
 }
 
 // Children are otherwise deleted in creation order, which puts the provider

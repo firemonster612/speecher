@@ -232,7 +232,7 @@ int runHeadlessTranscribe(const QStringList &files,
     if (files.isEmpty()) {
         return finish(2, QStringLiteral("No audio files to transcribe"));
     }
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
+    const TranscribeOptions resolved = resolveOptions(options, settings->dictationSnapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, error);
     }
@@ -270,8 +270,8 @@ int runHeadlessTranscribe(const QStringList &files,
     if (options.format != TranscriptFormat::Text) {
         sessionOptions.refinementProviderId = kNoRefinementProvider;
     }
-    const bool refines = refinesTranscripts(sessionOptions, settings->snapshot().refinement);
-    const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;
+    const bool refines = refinesTranscripts(sessionOptions, settings->dictationSnapshot().refinement);
+    const QString speechProvider = batchLabels(resolved, *providers, settings->dictationSnapshot().refinement).speech;
 
     FileTranscriptionSession session(settings, providers);
     QEventLoop loop;
@@ -442,7 +442,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
         }
         return exitCode;
     };
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
+    const TranscribeOptions resolved = resolveOptions(options, settings->dictationSnapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, {}, error);
     }

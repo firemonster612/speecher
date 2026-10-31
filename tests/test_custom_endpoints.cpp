@@ -78,6 +78,7 @@ bool privateKeyring()
 
 const char *const peerSecretVariable = "SPEECHER_TEST_PEER_SECRET";
 const char *const peerRestartsVariable = "SPEECHER_TEST_PEER_RESTARTS";
+const char *const peerMovesVariable = "SPEECHER_TEST_PEER_MOVES_ENDPOINT_TO";
 const QByteArray peerReadMarker = "peer read: ";
 
 // Where this test process keeps its settings files (tests/test_main.cpp).
@@ -124,6 +125,27 @@ SpeecherRemoval::Steps removalSteps(SettingsStore &settings)
 }
 #endif
 
+// Runs function of this suite in a peer of this binary, on this process's
+// settings, with variables added to its environment, and returns what it
+// printed once it exited.
+QByteArray runPeer(SettingsStore &settings, const QString &function, const QMap<QString, QString> &variables)
+{
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("SPEECHER_TEST_PREFERENCES_DIR"), preferencesPath(settings));
+    for (auto it = variables.cbegin(); it != variables.cend(); ++it) {
+        environment.insert(it.key(), it.value());
+    }
+    QProcess peer;
+    peer.setProcessEnvironment(environment);
+    peer.setProcessChannelMode(QProcess::MergedChannels);
+    peer.start(QCoreApplication::applicationFilePath(), {QStringLiteral("--suite"), QStringLiteral("custom_endpoints"), function});
+    if (!peer.waitForFinished() || peer.exitCode() != 0) {
+        qWarning().noquote() << "The peer running" << function << "failed:" << peer.readAll();
+        return {};
+    }
+    return peer.readAll();
+}
+
 // Compares what another Speecher process reads for the secret, from this
 // one's settings file and keyring, with expected: a peer of this binary
 // running printWhatAPeerReads. It saves nothing first: a key a save said was
@@ -140,21 +162,13 @@ void comparePeerRead(SettingsStore &settings, SecretStore::Secret secret, const 
     Q_UNUSED(expected);
     Q_UNUSED(restart);
 #else
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(QStringLiteral("SPEECHER_TEST_PREFERENCES_DIR"), preferencesPath(settings));
-    environment.insert(QString::fromLatin1(peerSecretVariable), QString::number(int(secret)));
+    QMap<QString, QString> variables{{QString::fromLatin1(peerSecretVariable), QString::number(int(secret))}};
     if (restart) {
-        environment.insert(QString::fromLatin1(peerRestartsVariable), QStringLiteral("1"));
+        variables.insert(QString::fromLatin1(peerRestartsVariable), QStringLiteral("1"));
     }
-    QProcess peer;
-    peer.setProcessEnvironment(environment);
-    peer.setProcessChannelMode(QProcess::MergedChannels);
-    peer.start(QCoreApplication::applicationFilePath(),
-               {QStringLiteral("--suite"), QStringLiteral("custom_endpoints"), QStringLiteral("printWhatAPeerReads")});
-    QVERIFY(peer.waitForFinished());
-    const QByteArray output = peer.readAll();
+    const QByteArray output = runPeer(settings, QStringLiteral("printWhatAPeerReads"), variables);
     const qsizetype start = output.indexOf(peerReadMarker + '[');
-    QVERIFY2(peer.exitCode() == 0 && start >= 0, output.constData());
+    QVERIFY2(start >= 0, output.constData());
     const qsizetype value = start + peerReadMarker.size() + 1;
     QCOMPARE(QString::fromUtf8(output.mid(value, output.indexOf(']', value) - value)), expected);
 #endif
@@ -1194,7 +1208,6 @@ private slots:
         QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QString());
         QTRY_VERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
         QVERIFY(!reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey));
-        QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
 #ifndef Q_OS_WIN
@@ -1368,6 +1381,107 @@ private slots:
         }
         const auto secret = SecretStore::Secret(qEnvironmentVariableIntValue(peerSecretVariable));
         qInfo().noquote() << peerReadMarker + '[' + readSecret(SettingsStore().secrets(), secret).toUtf8() + ']';
+    }
+
+    // Run by aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce only, as a
+    // separate process. It ends without its event loop running again, as a
+    // quit right after the edit does, so the keyring never answers the
+    // edit's clear.
+    void moveTheEndpointInAPeer()
+    {
+        if (!qEnvironmentVariableIsSet(peerMovesVariable)) {
+            QSKIP("Run by aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce");
+        }
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = qEnvironmentVariable(peerMovesVariable)});
+            return true;
+        });
+    }
+
+    // A server change hides the key the endpoint leaves behind in the same
+    // save of the settings file as the new server, so a Speecher that quits
+    // before the keyring deletes the key never sends it there (r382 Sol 1).
+    void aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([&settings, secrets, key] {
+            settings.raw().sync();
+            savedSecret(secrets, key, {});
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            return true;
+        });
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("server-a-key")));
+        settings.raw().sync();
+
+        QVERIFY(!runPeer(settings, QStringLiteral("moveTheEndpointInAPeer"),
+                         {{QString::fromLatin1(peerMovesVariable), QStringLiteral("http://server-b.example/v1")}})
+                     .isEmpty());
+
+        settings.raw().sync();
+        QCOMPARE(settings.dictationSnapshot().refinement.endpoint.baseUrl, QStringLiteral("http://server-b.example/v1"));
+        comparePeerRead(settings, key, QString());
+    }
+
+    // A saveFinished handler's saves wait their turn behind the one it
+    // started first, and the newest is the one kept and answered as stored
+    // (r382 Sol 2).
+    void savesFromASaveFinishedHandlerWaitTheirTurn()
+    {
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] { savedSecret(secrets, key, {}); });
+        quint64 last = 0;
+        QMap<quint64, bool> answers;
+        QObject handler;
+        connect(secrets, &SecretStore::saveFinished, &handler,
+                [&](SecretStore::Secret secret, quint64 request, bool, bool stored) {
+            if (secret != key) {
+                return;
+            }
+            answers.insert(request, stored);
+            if (last == 0) {
+                // The first needs no keyring, storage holding it already.
+                secrets->saveSecret(key, QStringLiteral("initial"));
+                last = secrets->saveSecret(key, QStringLiteral("last"));
+            }
+        });
+
+        secrets->saveSecret(key, QStringLiteral("initial"));
+
+        QTRY_VERIFY(last != 0 && answers.contains(last));
+        QVERIFY(answers.value(last));
+        QCOMPARE(secrets->cachedSecret(key), QStringLiteral("last"));
+        QCOMPARE(readSecret(SettingsStore().secrets(), key), QStringLiteral("last"));
+    }
+
+    // Quitting Speecher waits for a key save the keyring hasn't answered
+    // yet, so the key is what the next start reads (r382 Sol 3).
+    void quittingWaitsForAKeySaveToSettle()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore().raw().clear();
+        ApplicationController controller(true);
+        SecretStore *secrets = controller.settings()->secrets();
+        const auto restore = qScopeGuard([secrets, proxy] { savedSecret(secrets, proxy, {}); });
+        QSignalSpy quit(&controller, &ApplicationController::quitRequested);
+
+        secrets->saveSecret(proxy, QStringLiteral("queued-key"));
+        controller.quitApplication();
+
+        QCOMPARE(quit.count(), 0);
+        QTRY_COMPARE(quit.count(), 1);
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), QStringLiteral("queued-key"));
     }
 
     // A save or clear asked for while another write of the same key waits on
@@ -1905,8 +2019,8 @@ private slots:
 
         QVERIFY(!savedSecret(secrets, proxy, {}));
 
-        // Long enough for the keyring to answer the older save.
-        QTest::qWait(200);
+        // A keyring request asked for now is answered after the older save.
+        readSecret(secrets, SecretStore::Secret::OpenAiApiKey);
         QCOMPARE(finished.count(), 1);
         QCOMPARE(finished.first().at(1).toULongLong(), quint64(2));
         QVERIFY(finished.first().at(2).toBool());
