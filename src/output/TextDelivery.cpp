@@ -24,10 +24,6 @@ namespace speecher {
 
 namespace {
 
-// Longer than every step's own time limit put together, so only a delivery
-// that is stuck runs into it.
-int s_answerDeadlineMs = 30000;
-
 #ifdef SPEECHER_WITH_WAYLAND
 // The keyboard backends paste what TextDelivery::deliver already copied.
 class YdotoolBackend final : public DeliveryBackend {
@@ -61,9 +57,7 @@ public:
                  const std::function<bool()> &,
                  std::function<void(const Outcome &)> done) override
     {
-        m_clipboardDelivery->copyWayland(content, m_clipboardDelivery, [done](const ClipboardCopied &copied) {
-            done({copied.ok, copied.htmlAvailable, copied.error});
-        });
+        m_clipboardDelivery->copyWayland(content, m_clipboardDelivery, std::move(done));
     }
 
 private:
@@ -118,9 +112,7 @@ public:
                  const std::function<bool()> &,
                  std::function<void(const Outcome &)> done) override
     {
-        m_clipboardDelivery->copyQt(content, m_clipboardDelivery, [done](const ClipboardCopied &copied) {
-            done({copied.ok, copied.htmlAvailable, copied.error});
-        });
+        m_clipboardDelivery->copyQt(content, m_clipboardDelivery, std::move(done));
     }
 
 private:
@@ -293,16 +285,38 @@ private:
 // straight into the app or press the paste keys, and put the previous
 // clipboard back after a verified paste. A step that waits on a helper goes
 // on from its answer. done hears the result once, and nothing runs after
-// abandon().
+// stop().
 class TextDelivery::Run final : public QObject {
-    // step, kept from running once this delivery has answered or was
-    // abandoned: deleteLater() alone leaves a turn of the loop in which a
-    // helper could still answer.
+    // One of this run's frames on the stack. The deadline can stop the run
+    // from a step's nested event loop, such as the KWin probe's; the run is
+    // deleted only once no frame is left that would return into it, so the
+    // backend it is in stays alive too.
+    class Frame {
+    public:
+        explicit Frame(Run &run)
+            : m_run(run)
+        {
+            ++m_run.m_frames;
+        }
+        ~Frame()
+        {
+            if (--m_run.m_frames == 0 && !m_run.m_done) {
+                m_run.deleteLater();
+            }
+        }
+
+    private:
+        Run &m_run;
+    };
+
+    // step, run only while this delivery still waits for an answer: not once
+    // it answered or was stopped, nor once it is gone.
     template <typename Step>
-    auto later(Step step)
+    auto whileRunning(Step step)
     {
         return [self = QPointer<Run>(this), step = std::move(step)](const auto &...answer) {
             if (self && self->m_done) {
+                Frame frame(*self);
                 step(answer...);
             }
         };
@@ -320,19 +334,33 @@ public:
 
     void start()
     {
+        Frame frame(*this);
         const OutputSettings &settings = m_request.settings;
         m_choice = choosePasteMethod(settings, m_request.target);
         m_pasteMethod = m_choice.method;
         m_insertion = directInsertion(OutputMethod::normalized(settings.method), m_pasteMethod);
         m_focus = m_delivery.m_targetProvider ? m_delivery.m_targetProvider->focusMatch(m_request.target)
                                               : TargetProvider::FocusMatch::Different;
+        // focusMatch() and verifyInsertion() can wait in a nested event loop,
+        // where the deadline may stop this run: it goes no further.
+        if (!m_done) {
+            return;
+        }
         m_targetFocused = m_pasteMethod != PasteMethod::ClipboardOnly
             && (m_choice.currentFocusFallback || m_focus == TargetProvider::FocusMatch::Same);
         m_previousClipboard.save(m_pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping,
-                                 this, later([this] { copy(); }));
+                                 this, whileRunning([this] { copy(); }));
     }
 
-    void abandon() { m_done = {}; }
+    // Drops the steps still to come; nothing is answered after. The run
+    // deletes itself once none of its frames is left on the stack.
+    void stop()
+    {
+        m_done = {};
+        if (m_frames == 0) {
+            deleteLater();
+        }
+    }
 
 private:
     void finish(const DeliveryResult &result)
@@ -344,7 +372,7 @@ private:
 
     void copy()
     {
-        m_delivery.m_clipboardDelivery.copy(m_request.content, this, later([this](const ClipboardCopied &copied) {
+        m_delivery.m_clipboardDelivery.copy(m_request.content, this, whileRunning([this](const ClipboardCopied &copied) {
             m_copiedInitially = copied.ok;
             m_initialCopyError = copied.error;
             m_copiedAsPlainText = m_request.content.html.has_value() && !copied.htmlAvailable;
@@ -363,6 +391,9 @@ private:
             && provider->canInsertText(target)
             && provider->insertText(target, plainText, &insertionError)) {
             const bool verified = provider->verifyInsertion(target, plainText);
+            if (!m_done) {
+                return;
+            }
             const auto answer = [this, verified] {
                 const QString message = verified
                     ? QStringLiteral("Pasted")
@@ -378,7 +409,7 @@ private:
                 });
             };
             if (m_copiedInitially && verified) {
-                m_previousClipboard.restore(this, later([answer](bool) { answer(); }));
+                m_previousClipboard.restore(this, whileRunning([answer](bool) { answer(); }));
             } else {
                 answer();
             }
@@ -455,8 +486,6 @@ private:
         // decide whether to paste.
         if (focusGated) {
             const QString refusal = m_delivery.preparePasteInFocus(m_request.target);
-            // Its focus check can wait in a nested event loop, which the
-            // deadline may end: an answered delivery presses no keys.
             if (!m_done) {
                 return;
             }
@@ -468,10 +497,20 @@ private:
         }
         // The keyboard backends wait again after the check above (modifier
         // release), so they get a last-moment gate to call immediately before
-        // the keystroke goes out.
-        const std::function<bool()> clearToInject = focusGated
-            ? std::function<bool()>([provider, target = m_request.target] {
-                  return provider->focusMatch(target) == TargetProvider::FocusMatch::Same;
+        // the keystroke goes out. It also refuses once this run was answered,
+        // blind pastes included.
+        const std::function<bool()> clearToInject = virtualKeyboardInput
+            ? std::function<bool()>([self = QPointer<Run>(this), focusGated] {
+                  if (!self || !self->m_done) {
+                      return false;
+                  }
+                  if (!focusGated) {
+                      return true;
+                  }
+                  Frame frame(*self);
+                  const bool focused = self->m_delivery.m_targetProvider->focusMatch(self->m_request.target)
+                      == TargetProvider::FocusMatch::Same;
+                  return focused && self->m_done;
               })
             : std::function<bool()>();
         // Kept for the whole run: a backend may still be on the stack when
@@ -479,7 +518,7 @@ private:
         m_backends.push_back(std::move(backend));
         m_backends.back()->deliver(
             m_request.content, clearToInject,
-            later([this, index, method, virtualKeyboardInput](const DeliveryBackend::Outcome &outcome) {
+            whileRunning([this, index, method, virtualKeyboardInput](const DeliveryBackend::Outcome &outcome) {
                 if (outcome.ok) {
                     pasted(method, virtualKeyboardInput, outcome.htmlAvailable);
                     return;
@@ -509,6 +548,9 @@ private:
         const bool verified = !copied
             && provider
             && provider->verifyInsertion(m_request.target, m_request.content.plainText);
+        if (!m_done) {
+            return;
+        }
         const auto answer = [this, copied, downgraded, verified, virtualKeyboardInput](bool restoredClipboard) {
             // A compositor-fallback target has no accessible node, so there is
             // nothing to read back: the paste can never be confirmed. Saying
@@ -534,7 +576,7 @@ private:
                         downgraded && !virtualKeyboardInput ? message + QStringLiteral(" as plain text") : message)});
         };
         if (virtualKeyboardInput && verified) {
-            m_previousClipboard.restore(this, later(answer));
+            m_previousClipboard.restore(this, whileRunning(answer));
         } else {
             answer(false);
         }
@@ -569,6 +611,7 @@ private:
     QStringList m_methods;
     QString m_firstError;
     std::vector<std::unique_ptr<DeliveryBackend>> m_backends;
+    int m_frames = 0;
 };
 
 TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &settings, const Target &target)
@@ -585,7 +628,7 @@ TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &
 
 void TextDelivery::setAnswerDeadlineMs(int ms)
 {
-    s_answerDeadlineMs = ms;
+    m_answerDeadlineMs = ms;
 }
 
 void TextDelivery::deliver(const OutputSettings &settings,
@@ -605,12 +648,11 @@ void TextDelivery::startNext()
     }
     Run *run = new Run(*this, m_requests.first(), [this](const DeliveryResult &result) { answer(result); });
     m_run = run;
-    QTimer::singleShot(s_answerDeadlineMs, run, [this, run] {
+    QTimer::singleShot(m_answerDeadlineMs, run, [this, run] {
         if (m_run != run) {
             return;
         }
-        run->abandon();
-        qWarning() << "text delivery did not finish within" << s_answerDeadlineMs << "ms";
+        qWarning() << "text delivery did not finish within" << m_answerDeadlineMs << "ms";
         answer({false, DeliveryReceipt::None, false, QStringLiteral("Delivery did not finish in time")});
     });
     run->start();
@@ -618,7 +660,7 @@ void TextDelivery::startNext()
 
 void TextDelivery::answer(const DeliveryResult &result)
 {
-    std::exchange(m_run, nullptr)->deleteLater();
+    std::exchange(m_run, nullptr)->stop();
     m_requests.removeFirst();
     QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);
     emit delivered(result);

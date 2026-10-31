@@ -11,12 +11,8 @@ namespace speecher {
 
 class DeliveryBackend {
 public:
-    struct Outcome {
-        bool ok = false;
-        // A clipboard backend's HTML went too.
-        bool htmlAvailable = false;
-        QString error;
-    };
+    // htmlAvailable is a clipboard backend's alone.
+    using Outcome = ClipboardCopied;
     virtual ~DeliveryBackend() = default;
     // A keyboard backend pastes what is already on the clipboard; a
     // clipboard backend copies content. done runs once with the outcome, and
@@ -66,7 +62,7 @@ public:
     static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
     // How long a delivery may take before it is answered as unfinished and
     // its remaining steps dropped. Tests shorten it.
-    static void setAnswerDeadlineMs(int ms);
+    void setAnswerDeadlineMs(int ms);
 
 private:
     // The paste method deliver starts from, and whether it pastes blindly into
@@ -100,6 +96,9 @@ private:
     // The delivery under way first, then those asked for meanwhile.
     QList<Request> m_requests;
     Run *m_run = nullptr;
+    // Longer than every step's own time limit put together, so only a
+    // delivery that is stuck runs into it.
+    int m_answerDeadlineMs = 30000;
     ClipboardDelivery m_clipboardDelivery;
     BackendFactory m_backendFactory;
     TargetProvider *m_targetProvider = nullptr;

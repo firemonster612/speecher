@@ -20,9 +20,10 @@ class ClipboardDelivery : public QObject {
 
 public:
     explicit ClipboardDelivery(QObject *parent = nullptr);
-    // Each of these answers through done once, unless context is gone by
-    // then. Today all answer before they return; callers must not rely on it,
-    // as the wl-clipboard helpers are to answer once they finish.
+    // Each of these answers through done once. For now every answer comes
+    // before the call returns and context is not consulted; once the
+    // wl-clipboard helpers answer in the background, done runs only while
+    // context lives. Callers must not rely on either.
     void copy(const DeliveryContent &content, QObject *context, std::function<void(const ClipboardCopied &)> done);
 #ifdef SPEECHER_WITH_WAYLAND
     void copyWayland(const DeliveryContent &content,
@@ -36,7 +37,7 @@ public:
     bool canSnapshot() const;
     void capture(QObject *context, std::function<void(const ClipboardCaptured &)> done);
     // With preserveNewCopy, a clipboard that someone else has since claimed is
-    // left alone and keptNewerCopy is said; that still counts as restored.
+    // left alone and keptNewerCopy is set; that still counts as restored.
     // preserveNewCopy consumes the record of what this object last copied, so
     // the question cannot be asked twice for one copy.
     void restore(const ClipboardSnapshot &snapshot,

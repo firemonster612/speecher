@@ -1134,8 +1134,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     // asked for after it still runs.
     void aStuckDeliveryIsAnsweredOnceAtTheDeadline()
     {
-        TextDelivery::setAnswerDeadlineMs(50);
-        const auto restoreDeadline = qScopeGuard([] { TextDelivery::setAnswerDeadlineMs(30000); });
         class FocusedTarget final : public TargetProvider {
         public:
             Target capture() override { return {}; }
@@ -1161,6 +1159,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&held](const QString &, const OutputSettings &, PasteMethod) {
             return std::make_unique<Backend>(held);
         }, &targetProvider);
+        delivery.setAnswerDeadlineMs(50);
         QList<DeliveryResult> answers;
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result; });
@@ -1179,8 +1178,73 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(answers.at(1).receipt, DeliveryReceipt::InputSent);
 
         held({true, false, {}});
-        QTest::qWait(20);
         QCOMPARE(answers.size(), 2);
+    }
+
+    void aDeadlineInANestedFocusCheckPressesNoKeys_data()
+    {
+        QTest::addColumn<int>("waitingCheck");
+        QTest::newRow("first focus check") << 1;
+        QTest::newRow("check before the keys") << 2;
+        QTest::newRow("last-moment gate") << 3;
+    }
+
+    // The deadline can fire while a focus check waits in a nested event loop,
+    // as the KWin probe does. The delivery is answered once, as unfinished,
+    // and no keys are pressed after that answer.
+    void aDeadlineInANestedFocusCheckPressesNoKeys()
+    {
+        QFETCH(int, waitingCheck);
+        class SlowFocus final : public TargetProvider {
+        public:
+            explicit SlowFocus(int waitingCheck) : waitingCheck(waitingCheck) {}
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override
+            {
+                if (++checks == waitingCheck) {
+                    QEventLoop wait;
+                    QTimer::singleShot(100, &wait, &QEventLoop::quit);
+                    wait.exec();
+                }
+                return true;
+            }
+            const int waitingCheck;
+            int checks = 0;
+        } targetProvider(waitingCheck);
+        bool pressed = false;
+        class GatedBackend final : public DeliveryBackend {
+        public:
+            explicit GatedBackend(bool &pressed) : pressed(pressed) {}
+            void deliver(const DeliveryContent &,
+                         const std::function<bool()> &clearToInject,
+                         std::function<void(const Outcome &)> done) override
+            {
+                if (clearToInject && !clearToInject()) {
+                    done({false, false, QStringLiteral("refused")});
+                    return;
+                }
+                pressed = true;
+                done({true, false, {}});
+            }
+            bool &pressed;
+        };
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+            return std::make_unique<GatedBackend>(pressed);
+        }, &targetProvider);
+        delivery.setAnswerDeadlineMs(20);
+        QList<DeliveryResult> answers;
+        connect(&delivery, &TextDeliveryAdapter::delivered, this,
+                [&answers](const DeliveryResult &result) { answers << result; });
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QTRY_COMPARE(answers.size(), 1);
+        QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
+        QVERIFY(!pressed);
     }
 
     // A delivery asked for while another waits in a nested event loop, here
