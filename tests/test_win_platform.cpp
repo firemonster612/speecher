@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "common/audio_input_waits.h"
+#include "common/delivery_waits.h"
 #include "app/PlatformComposition.h"
 
 #include "core/OutputMethod.h"
@@ -843,8 +844,9 @@ private slots:
             {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
         };
         const QString inserted = QStringLiteral("Speecher Windows delivery verified");
-        const DeliveryResult result = TextDelivery(&targetProvider).deliver(
-            output, makeDeliveryContent(inserted, OutputFormat::PlainText), target);
+        TextDelivery delivery(&targetProvider);
+        const DeliveryResult result = test::deliverAndWait(
+            delivery, output, makeDeliveryContent(inserted, OutputFormat::PlainText), target);
         QVERIFY2(result.ok, qPrintable(result.message));
         QVERIFY(result.receipt == DeliveryReceipt::VerifiedInTarget
                 || result.receipt == DeliveryReceipt::InputSent);

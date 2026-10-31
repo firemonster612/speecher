@@ -65,6 +65,7 @@ private slots:
         QTRY_COMPARE(refiner->refineCalls, 1);
         refiner->emitCompletedText(QStringLiteral("Surviving words."));
         QCOMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(session.lastTranscript(), QStringLiteral("Surviving words."));
         QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
         QVERIFY(status.last().first().toString().contains(QStringLiteral("Part of the dictation may be missing")));
@@ -304,6 +305,7 @@ private slots:
             return;
         }
         QTRY_COMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, followUp ? QStringLiteral("THE RELEASE IS TOMORROW!")
                                              : QStringLiteral("THE RELEASE IS TOMORROW"));
         QVERIFY(!session.reviewUp());
@@ -419,6 +421,7 @@ private slots:
 
         session.replaceSelection();
         QCOMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
@@ -488,6 +491,7 @@ private slots:
         session.replaceSelection();
         QVERIFY(!session.reviewUp());
         QCOMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Friday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         // Insights counts every instruction spoken for the edit.
@@ -670,6 +674,7 @@ private slots:
         refiner->emitFailure(QStringLiteral("refinement unavailable"));
         QCOMPARE(session.state(), DictationState::Reviewing);
         session.replaceSelection();
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
@@ -736,6 +741,7 @@ private slots:
         target.focused = !focusMoved;
         session.replaceSelection();
         QCOMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
         QCOMPARE(delivery.lastSettings.pasteRules,
                  (QList<PasteRule>{{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}}));
@@ -1318,6 +1324,7 @@ private slots:
         speech->emitFailure(QStringLiteral("provider disconnected"), false);
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
         QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
         QCOMPARE(audio->isActive(), false);
@@ -1364,6 +1371,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("after reconnect"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this and these words after reconnect"));
         QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
     }
@@ -1395,6 +1403,7 @@ private slots:
         speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
         QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
         QCOMPARE(speech->startCalls, 3);
@@ -1435,6 +1444,7 @@ private slots:
         speech->emitCompletion();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("keep this"));
         QCOMPARE(speech->startCalls, 3);
         QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
@@ -1526,6 +1536,7 @@ private slots:
 
         refiner->emitCompletedText(QStringLiteral("Keep this transcript."));
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("Keep this transcript."));
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app • Part of the dictation may be missing. The connection dropped."));

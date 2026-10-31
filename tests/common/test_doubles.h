@@ -562,19 +562,34 @@ public:
     {
     }
 
-    DeliveryResult deliver(const OutputSettings &settings,
-                           const DeliveryContent &content,
-                           const Target &target) override
+    // Answers with result on the next turn, or at answer() while
+    // holdsAnswer is set; answers counts the answers given.
+    void deliver(const OutputSettings &settings,
+                 const DeliveryContent &content,
+                 const Target &target) override
     {
         ++calls;
         lastSettings = settings;
         lastContent = content;
         lastTarget = target;
         lastText = content.plainText;
-        return result;
+        if (!holdsAnswer) {
+            QTimer::singleShot(0, this, [this, answer = result] {
+                ++answers;
+                emit delivered(answer);
+            });
+        }
+    }
+
+    void answer()
+    {
+        ++answers;
+        emit delivered(result);
     }
 
     DeliveryResult result{true, DeliveryReceipt::InputSent, false, QStringLiteral("Sent to the app")};
+    bool holdsAnswer = false;
+    int answers = 0;
     int calls = 0;
     OutputSettings lastSettings;
     DeliveryContent lastContent;

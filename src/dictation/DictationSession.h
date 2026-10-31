@@ -77,7 +77,8 @@ public slots:
     void stopListening();
     // Shutdown teardown: cancels everything in flight and resumes paused
     // media without ever delivering text — quitting mid-dictation must not
-    // paste into whatever window has focus.
+    // paste into whatever window has focus. A delivery already under way
+    // finishes, and its result is dropped.
     void cancelForShutdown();
     // Throws the session away from Starting through Refining: nothing is
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
@@ -198,6 +199,9 @@ private:
     // spokenWords is what Insights records for a reviewed edit, whose
     // instructions are the words spoken; otherwise the text's own.
     void deliverFinal(const QString &text, const QString &note = {}, std::optional<int> spokenWords = {});
+    // The receipt, the record and the popup's outcome, once the delivery
+    // deliverFinal asked for says what became of the words.
+    void finishDelivery(const DeliveryResult &result);
     void discard();
     void forgetSession();
     void clearScreenshotContext();
@@ -264,6 +268,20 @@ private:
     // asked for.
     bool m_usedRawTranscript = false;
     ProviderHistory m_providerHistory;
+    // What the last deliverFinal knew that its delivery's result needs.
+    struct AwaitedDelivery {
+        quint64 step = 0;
+        QString text;
+        QString note;
+        int words = 0;
+        QString appName;
+        QString profile;
+        QString profileName;
+        int completionStatusDurationMs = 0;
+    };
+    AwaitedDelivery m_awaitedDelivery;
+    // Deliveries asked for and not yet answered, a dropped one's included.
+    int m_unansweredDeliveries = 0;
     // What the system last said about the internet.
     Reachability m_reachability = Reachability::Unknown;
     // Every end of a session, cancel, failure or shutdown, aborts it before

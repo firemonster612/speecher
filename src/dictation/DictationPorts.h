@@ -212,9 +212,15 @@ class TextDeliveryAdapter : public QObject {
 
 public:
     using QObject::QObject;
-    virtual DeliveryResult deliver(const OutputSettings &settings,
-                                   const DeliveryContent &content,
-                                   const Target &target) = 0;
+    // Returns at once; delivered() follows with what became of the words,
+    // never from inside deliver(). Deliveries are answered in the order they
+    // were asked for.
+    virtual void deliver(const OutputSettings &settings,
+                         const DeliveryContent &content,
+                         const Target &target) = 0;
+
+signals:
+    void delivered(const speecher::DeliveryResult &result);
 };
 
 } // namespace speecher

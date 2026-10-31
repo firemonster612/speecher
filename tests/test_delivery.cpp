@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/delivery_waits.h"
 #include "output/HelperPath.h"
 #include "platform/ScreenshotImage.h"
 #include "setup/YdotoolSetupTransaction.h"
@@ -89,6 +90,12 @@ private slots:
                      child.readAll().constData());
             return;
         }
+        // A delivery answers through the event loop, and a QCoreApplication
+        // runs one without bringing Qt's own clipboard.
+        int argc = 1;
+        char name[] = "speecher_tests";
+        char *argv[] = {name, nullptr};
+        QCoreApplication app(argc, argv);
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const QList<QByteArray> names{"PATH", "XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "T4_CLIPBOARD", "T4_SCENARIO"};
@@ -147,7 +154,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             settings.restoreClipboardAfterTyping = true;
             Target target;
             target.applicationId = "test.editor";
-            const auto result = delivery.deliver(settings, makeDeliveryContent("dictation", OutputFormat::PlainText), target);
+            const auto result = deliverAndWait(delivery, settings, makeDeliveryContent("dictation", OutputFormat::PlainText), target);
             QCOMPARE(provider.insertCalls, 1);
             QCOMPARE(result.ok, scenario != "both fail");
             if (scenario == "snapshot failure") {
@@ -1126,9 +1133,48 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-        const auto result = delivery.deliver(
-            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        const auto result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+    }
+
+    // A delivery asked for while another waits in a nested event loop, here
+    // while the insertion is verified, waits its turn: the answers keep the
+    // order the deliveries were asked in, and neither arrives inside the
+    // first call, though the second waits in a nested loop too.
+    void aDeliveryAskedForMidDeliveryIsAnsweredAfterIt()
+    {
+        class ReenteringProvider final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool canInsertText(const Target &) override { return true; }
+            bool insertText(const Target &, const QString &, QString *) override { return true; }
+            bool verifyInsertion(const Target &, const QString &) override
+            {
+                if (const auto deliverNext = std::exchange(duringVerification, {})) {
+                    deliverNext();
+                    return false;
+                }
+                QCoreApplication::processEvents();
+                return true;
+            }
+            std::function<void()> duringVerification;
+        } provider;
+        TextDelivery delivery(&provider);
+        QList<DeliveryReceipt> receipts;
+        connect(&delivery, &TextDeliveryAdapter::delivered, this,
+                [&receipts](const DeliveryResult &result) { receipts << result.receipt; });
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
+        Target editor;
+        editor.applicationId = QStringLiteral("editor");
+        const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
+        provider.duringVerification = [&] { delivery.deliver(settings, content, editor); };
+
+        delivery.deliver(settings, content, editor);
+        QVERIFY(receipts.isEmpty());
+        QTRY_COMPARE(receipts.size(), 2);
+        QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::VerifiedInTarget}));
     }
 
     void keyboardBackendGateRefusesPasteAfterBlockingPreparation()
@@ -1172,8 +1218,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
-        const DeliveryResult result = delivery.deliver(
-            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
 
         QVERIFY(!pasted);
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
@@ -1210,8 +1256,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
         QVERIFY(result.ok);
@@ -1247,8 +1293,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             target.applicationId = QStringLiteral("org.kde.kate");
             target.category = AppCategory::CodeEditor;
 
-            const DeliveryResult result = delivery.deliver(
-                settings,
+            const DeliveryResult result = deliverAndWait(
+                delivery, settings,
                 makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
                 target);
 
@@ -1279,8 +1325,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
         };
 
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             {});
 
@@ -1306,8 +1352,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::WlCopy);
         settings.ydotoolEnabled = true;
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             {});
         QVERIFY(result.ok);
@@ -1392,8 +1438,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                     return std::make_unique<FakeBackend>(method, &attempts, &results);
                 }, &provider);
 
-                const DeliveryResult result = delivery.deliver(
-                    settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), row.target);
+                const DeliveryResult result = deliverAndWait(
+                    delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), row.target);
                 const QByteArray where = QByteArray(row.method) + ", " + row.name + ", as " + settings.method.toUtf8();
                 QVERIFY2(result.receipt == DeliveryReceipt::Copied, where.constData());
                 QVERIFY2((provider.insertCalls == 1) == row.inserts, where.constData());
@@ -1436,8 +1482,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
 
@@ -1468,8 +1514,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
 
@@ -1570,8 +1616,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         target.terminalHost = true;
         target.compositorActive = true;
 
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
 
@@ -1607,8 +1653,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
             target);
 
@@ -1644,8 +1690,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("keep copied"), OutputFormat::PlainText),
             target);
 
@@ -1683,8 +1729,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         target.selectionStart = 7;
         target.selectionEnd = 17;
 
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
@@ -1731,8 +1777,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QTimer::singleShot(0, [&clipboardDuringDelay] {
             clipboardDuringDelay = QApplication::clipboard()->text();
         });
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
         QCoreApplication::processEvents();
@@ -1786,8 +1832,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QTimer::singleShot(0, [&consumedText] {
             consumedText = QApplication::clipboard()->text();
         });
-        const DeliveryResult result = delivery.deliver(
-            settings,
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
         QCoreApplication::processEvents();
@@ -1984,8 +2030,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         QSignalSpy copies(QApplication::clipboard(), &QClipboard::dataChanged);
-        const DeliveryResult result = delivery.deliver(
-            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
         QCOMPARE(copies.count(), 1);

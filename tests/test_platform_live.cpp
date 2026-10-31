@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/audio_input_waits.h"
+#include "common/delivery_waits.h"
 
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/PcmWav.h"
@@ -813,8 +814,8 @@ private slots:
         ClipboardSnapshot before;
         const bool capturedBefore = WlClipboardDelivery::capture(&before);
         TextDelivery delivery(&provider);
-        const DeliveryResult result = delivery.deliver(
-            output,
+        const DeliveryResult result = test::deliverAndWait(
+            delivery, output,
             makeDeliveryContent(QStringLiteral(" Speecher matrix insertion "), OutputFormat::Html),
             target);
         QVERIFY2(result.ok, qPrintable(result.message));
@@ -1022,8 +1023,8 @@ private slots:
         output.pasteRules = defaultPasteRules();
         QSignalSpy corrections(&provider, &TargetProvider::correctionObserved);
         TextDelivery delivery(&provider);
-        const DeliveryResult result = delivery.deliver(
-            output,
+        const DeliveryResult result = test::deliverAndWait(
+            delivery, output,
             makeDeliveryContent(QStringLiteral("Speecher secure-target probe"),
                                 OutputFormat::Html),
             target);

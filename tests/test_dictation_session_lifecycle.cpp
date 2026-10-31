@@ -853,6 +853,7 @@ private slots:
         QTest::qWait(20);
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE(delivery->answers, 1);
 
         QCOMPARE(recorded.count(), enabled && delivered ? 1 : 0);
         if (!recorded.isEmpty()) {
@@ -931,6 +932,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("Stand up notes"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE(delivery->answers, 1);
 
         QCOMPARE(recorded.count(), 1);
         const auto record = recorded.first().first().value<DictationRecord>();
@@ -976,6 +978,7 @@ private slots:
         QCOMPARE(recorded.count(), 0);
         session.replaceSelection();
         QCOMPARE(delivery->calls, 1);
+        QTRY_COMPARE(delivery->answers, 1);
 
         QCOMPARE(recorded.count(), 1);
         QCOMPARE(recorded.first().first().value<DictationRecord>().words, 3);
@@ -1151,6 +1154,83 @@ private slots:
         QTest::qWait(10);
         QCOMPARE(delivery->calls, 0);
         QCOMPARE(int(session.state()), int(DictationState::Idle));
+    }
+
+    // Delivery answers later: the session shows Delivering until it does,
+    // and only the answer brings the receipt.
+    void theReceiptWaitsForTheDeliveryToAnswer()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        delivery->holdsAnswer = true;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy delivered(&session, &DictationSession::transcriptDelivered);
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("on its way"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTest::qWait(10);
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+        QCOMPARE(delivered.count(), 0);
+        QCOMPARE(message.count(), 0);
+
+        delivery->answer();
+        QCOMPARE(delivered.count(), 1);
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app"));
+    }
+
+    // Quitting while the words are on their way: the delivery finishes, and
+    // its answer brings no receipt, even once another dictation delivers.
+    void cancelForShutdownWhileDeliveringDropsTheAnswer()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        delivery->holdsAnswer = true;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("quit while pasting"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        session.cancelForShutdown();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("after the quit"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 2, 1000);
+        delivery->answer();
+        QCOMPARE(message.count(), 0);
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+        delivery->answer();
+        QCOMPARE(message.count(), 1);
     }
 
     // Cancel throws the session away from Starting through Refining: nothing
@@ -1766,6 +1846,7 @@ private slots:
 
         if (action == QStringLiteral("stop")) {
             QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+            QTRY_COMPARE(delivery.answers, 1);
             QCOMPARE(delivery.lastText, QStringLiteral("heard"));
             // The receipt is the last word; Paused is not shown after it.
             QCOMPARE(statuses.last().first().toString(), session.lastMessage());
@@ -2037,6 +2118,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("and its tail"));
         speech->emitCompletion();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("before the pause and its tail"));
         QCOMPARE(recorded.count(), 1);
         QVERIFY(recorded.first().first().value<DictationRecord>().audioMs < 400);

@@ -925,6 +925,7 @@ private slots:
         QTRY_COMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("kept"));
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QVERIFY(rig.session->lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
     }
 
@@ -1131,6 +1132,7 @@ private slots:
         QCOMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
         QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Sent to the app")
                                                                : QStringLiteral("Used raw transcript • Sent to the app"));
         QCOMPARE(outcome.first().at(1).value<PopupOutcome>(),

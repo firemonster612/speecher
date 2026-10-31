@@ -277,9 +277,33 @@ TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &
     return {pastes ? pasteRule.method : PasteMethod::ClipboardOnly, currentFocusFallback};
 }
 
-DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
-                                     const DeliveryContent &content,
-                                     const Target &target)
+void TextDelivery::deliver(const OutputSettings &settings,
+                           const DeliveryContent &content,
+                           const Target &target)
+{
+    m_requests.append({settings, content, target});
+    // A delivery waiting in a nested event loop, to check focus or verify an
+    // insertion, can be asked for another; that one waits its turn, so the
+    // answers keep the order of the requests.
+    if (m_requests.size() > 1) {
+        return;
+    }
+    QList<DeliveryResult> results;
+    while (!m_requests.isEmpty()) {
+        const Request request = m_requests.first();
+        results << deliverNow(request.settings, request.content, request.target);
+        m_requests.removeFirst();
+    }
+    // Posted once all are done: a later one's nested event loop would
+    // otherwise answer an earlier one inside this call.
+    for (const DeliveryResult &result : results) {
+        QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
+    }
+}
+
+DeliveryResult TextDelivery::deliverNow(const OutputSettings &settings,
+                                        const DeliveryContent &content,
+                                        const Target &target)
 {
     const PasteChoice choice = choosePasteMethod(settings, target);
     PasteMethod pasteMethod = choice.method;

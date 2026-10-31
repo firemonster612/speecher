@@ -2936,10 +2936,10 @@ private slots:
         QCOMPARE(controller.globalShortcut().combination(), chosen);
     }
 
-    // Delivery injects keystrokes, so both shortcuts must look away for
-    // exactly the deliver() call: a single-key binding on an injected key would
-    // otherwise take the paste for the user's finger.
-    void deliverySuspendsBothShortcutsForExactlyItsDuration()
+    // Delivery injects keystrokes, so both shortcuts must look away from the
+    // deliver() call until its delivered(): a single-key binding on an
+    // injected key would otherwise take the paste for the user's finger.
+    void deliverySuspendsBothShortcutsUntilItIsDelivered()
     {
         FakeGlobalShortcutBinder dictation;
         FakeGlobalShortcutBinder cancel;
@@ -2948,26 +2948,30 @@ private slots:
             FakeGlobalShortcutBinder *cancel = nullptr;
             int dictationSuspensions = -1;
             int cancelSuspensions = -1;
-            DeliveryResult deliver(const OutputSettings &,
-                                   const DeliveryContent &,
-                                   const Target &) override
+            void deliver(const OutputSettings &, const DeliveryContent &, const Target &) override
             {
                 dictationSuspensions = dictation->suspendCount - dictation->resumeCount;
                 cancelSuspensions = cancel->suspendCount - cancel->resumeCount;
-                DeliveryResult result;
-                result.ok = true;
-                return result;
             }
         };
         ProbingDelivery inner;
         inner.dictation = &dictation;
         inner.cancel = &cancel;
         ShortcutSuspendingDelivery delivery(&inner, {&dictation, &cancel});
-        QVERIFY(delivery.deliver({}, {}, {}).ok);
+        std::optional<bool> deliveredOk;
+        connect(&delivery, &TextDeliveryAdapter::delivered, this,
+                [&deliveredOk](const DeliveryResult &result) { deliveredOk = result.ok; });
+
+        delivery.deliver({}, {}, {});
         QCOMPARE(inner.dictationSuspensions, 1);
         QCOMPARE(inner.cancelSuspensions, 1);
+        QCOMPARE(dictation.resumeCount, 0);
+        QCOMPARE(cancel.resumeCount, 0);
+
+        emit inner.delivered(DeliveryResult{true});
         QCOMPARE(dictation.resumeCount, 1);
         QCOMPARE(cancel.resumeCount, 1);
+        QCOMPARE(deliveredOk, std::optional<bool>(true));
     }
 
 #ifdef Q_OS_LINUX
