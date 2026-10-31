@@ -239,7 +239,8 @@ void DictationSession::toggleWith(const SessionOverrides &overrides)
 void DictationSession::toggleSession(const SessionOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
-    if (m_state == DictationState::Idle || m_state == DictationState::Error) {
+    if (m_state == DictationState::Idle || m_state == DictationState::Error
+        || m_state == DictationState::Delivering) {
         startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
@@ -271,9 +272,15 @@ void DictationSession::startSession(const SessionOverrides &overrides)
         return;
     }
     const bool followUp = m_state == DictationState::Reviewing && m_review.followingUp();
-    if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
+    // A delivery that has answered only shows its receipt, which gives way to
+    // the next dictation; one still on its way holds the shortcut. The start
+    // goes straight on, never through Idle, where a pending update restart
+    // would go ahead.
+    const bool showingReceipt = m_state == DictationState::Delivering && m_completionTimer->isActive();
+    if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp && !showingReceipt) {
         return;
     }
+    m_completionTimer->stop();
 
     // A follow-up keeps the settings the edit was made with.
     AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
@@ -1194,9 +1201,17 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         spokenWords.value_or(countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text));
     m_refinementGeneration = 0;
     m_lastTranscript = text;
+    // A handler of Delivering or of the vocabulary's change, such as a quit,
+    // may move the session on; it then delivers nothing.
     const quint64 step = setState(DictationState::Delivering);
+    if (step != m_step) {
+        return;
+    }
     qInfo() << "deliverFinal length=" << text.size();
     m_settings->recordVocabularyUsage(text);
+    if (step != m_step) {
+        return;
+    }
     m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, profile, profileName,
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;

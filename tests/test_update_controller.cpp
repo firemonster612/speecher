@@ -653,6 +653,48 @@ private slots:
         QCOMPARE(updater.restartCount, 2);
     }
 
+    // A dictation started over the last one's receipt holds a pending
+    // restart: the session never passes through Idle on the way.
+    void aDictationStartedOverAReceiptHoldsAPendingRestart()
+    {
+        UpdateTestContext context;
+        context.settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        delivery.holdsAnswer = true;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&context.settings, &audio, &media, &delivery, &registry);
+        TestManifestUpdater updater(&context.settings);
+        // As ApplicationController wires them.
+        updater.setRestartBlockerProvider([&session] {
+            const DictationState state = session.state();
+            return state == DictationState::Idle || state == DictationState::Error
+                ? UpdateController::RestartBlocker::None
+                : UpdateController::RestartBlocker::Dictation;
+        });
+        connect(&session, &DictationSession::stateChanged, &updater, &UpdateController::resumePendingRestart);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("first"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 1000);
+        delivery.answer();
+        ManifestUpdaterTestAccess::setState(updater, UpdateController::State::ReadyToRestart);
+        ManifestUpdaterTestAccess::restartNow(updater);
+        QCOMPARE(updater.state(), UpdateController::State::RestartPending);
+
+        session.toggle();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        QCOMPARE(updater.restartCount, 0);
+    }
+
     void installAndRestartWritesRestoreStateBeforeRestarting()
     {
         UpdateTestContext context;

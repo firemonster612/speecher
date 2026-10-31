@@ -35,7 +35,8 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
 // in the prompt, and its text, empty when it had no words, is a final. The
 // quiet between them is not sent, but for a short lead-in. One that fails in
 // a way that may pass is reported and the next still goes; any other failure
-// fails the attempt. No audio is sent twice and none overlaps.
+// fails the attempt. No audio is sent twice and none overlaps. Past two
+// minutes of speech waiting, the oldest utterance is dropped and reported.
 class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 

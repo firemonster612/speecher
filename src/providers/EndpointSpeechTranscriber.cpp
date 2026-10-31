@@ -7,6 +7,7 @@
 #include "providers/PcmWav.h"
 #include "providers/ProviderFailureClassification.h"
 #include "providers/ServerSentEvents.h"
+#include "providers/SpeechAudio.h"
 
 #include <QHttpMultiPart>
 #include <QJsonDocument>
@@ -14,6 +15,7 @@
 #include <QNetworkReply>
 
 #include <algorithm>
+#include <numeric>
 
 namespace speecher {
 namespace {
@@ -28,6 +30,9 @@ constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
 // How long an utterance's upload may take, before the server's silence while
 // it transcribes.
 constexpr int uploadAllowanceMs = 5000;
+// The most speech waiting for its upload, two minutes: a server slower than
+// the speech falls no further behind, and the waiting audio stays bounded.
+constexpr qsizetype mostWaitingBytes = qsizetype(120) * kSpeechBytesPerSecond;
 
 QHttpPart formField(const QString &name, const QByteArray &value)
 {
@@ -243,11 +248,23 @@ void EndpointSpeechTranscriber::endUtterance(quint64 attemptId)
     }
 }
 
-// The open utterance waits for its upload.
+// The open utterance waits for its upload. Past mostWaitingBytes the oldest
+// waiting goes, reported as an utterance that failed; the newest always stays.
 void EndpointSpeechTranscriber::closeUtterance()
 {
-    if (std::exchange(m_utteranceOpen, false) && !m_pcm.isEmpty()) {
-        m_utterances.append(std::exchange(m_pcm, {}));
+    if (!std::exchange(m_utteranceOpen, false) || m_pcm.isEmpty()) {
+        return;
+    }
+    m_utterances.append(std::exchange(m_pcm, {}));
+    qsizetype waiting = std::accumulate(m_utterances.cbegin(), m_utterances.cend(), qsizetype(0),
+                                        [](qsizetype sum, const QByteArray &pcm) { return sum + pcm.size(); });
+    while (waiting > mostWaitingBytes && m_utterances.size() > 1) {
+        const qsizetype dropped = m_utterances.takeFirst().size();
+        waiting -= dropped;
+        emit utteranceFailed(finalizeFailure(
+            m_attemptId, {ProviderFailureKind::Timeout,
+                          QStringLiteral("Speech endpoint fell behind the speech; %1 s of it went untranscribed")
+                              .arg(dropped / kSpeechBytesPerSecond)}));
     }
 }
 

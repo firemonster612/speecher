@@ -256,7 +256,7 @@ private slots:
         QTRY_COMPARE(settings.dictationSnapshot().refinement.endpoint.model, QString("first"));
         QCOMPARE(setup.liveFacts().refinementEndpointStatus, QString("Connected. Models available: 2."));
         QCOMPARE(setup.liveFacts().refinementEndpointModels, QStringList({"first", "second"}));
-        QVERIFY(!server.waitForNewConnection(1000));
+        QVERIFY(!test::appRequestArrived(server, 1000));
     }
 
     void sharedChoicesPreserveSavedConfiguration()

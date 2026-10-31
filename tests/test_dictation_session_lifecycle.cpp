@@ -1246,6 +1246,68 @@ private slots:
         QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app"));
     }
 
+    // The shortcut waits while the words are on their way, and once they
+    // have arrived starts the next dictation over the receipt.
+    void aToggleStartsTheNextDictationOnceTheDeliveryHasAnswered()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        delivery->holdsAnswer = true;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("first"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        session.toggle();
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+
+        delivery->answer();
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+        session.toggle();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+    }
+
+    // A quit as the session turns to Delivering sends nothing.
+    void cancelForShutdownOnDeliveringSendsNothing()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.providerId = QStringLiteral("none");
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        connect(&session, &DictationSession::stateChanged, &session, [&session](DictationState state) {
+            if (state == DictationState::Delivering) session.cancelForShutdown();
+        });
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("quit must not paste this"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1000);
+        QTest::qWait(10);
+        QCOMPARE(delivery->calls, 0);
+    }
+
     // Quitting while the words are on their way: the delivery finishes, and
     // its answer brings no receipt, even once another dictation delivers.
     void cancelForShutdownWhileDeliveringDropsTheAnswer()
