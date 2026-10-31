@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 
+#include <QHash>
 #include <QList>
 #include <QByteArray>
 #include <QString>
@@ -63,6 +64,11 @@ public:
     static QString applyBindingsOutsidePlaceholders(const QString &text, const QList<BindingRule> &rules);
     static BindingRestoreResult restorePlaceholders(const QString &refinedText,
                                                     const QList<BindingPlaceholder> &placeholders);
+    static QHash<QString, QString> replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders);
+    // restorePlaceholders for a refinement still streaming, given the
+    // replacements by placeholder once for the whole stream.
+    static QString restorePlaceholdersForPreview(const QString &streamedText,
+                                                 const QHash<QString, QString> &replacements);
 };
 
 } // namespace speecher

@@ -193,4 +193,15 @@ BindingRestoreResult BindingProcessor::restorePlaceholders(const QString &refine
     return BindingMatcher::restorePlaceholders(refinedText, placeholders);
 }
 
+QHash<QString, QString> BindingProcessor::replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders)
+{
+    return BindingMatcher::replacementsByPlaceholder(placeholders);
+}
+
+QString BindingProcessor::restorePlaceholdersForPreview(const QString &streamedText,
+                                                        const QHash<QString, QString> &replacements)
+{
+    return BindingMatcher::restorePlaceholdersForPreview(streamedText, replacements);
+}
+
 } // namespace speecher

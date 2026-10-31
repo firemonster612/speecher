@@ -21,44 +21,23 @@ namespace speecher {
 namespace {
 
 #ifdef SPEECHER_WITH_WAYLAND
+// The keyboard backends paste what TextDelivery::deliver already copied.
 class YdotoolBackend final : public DeliveryBackend {
 public:
-    YdotoolBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
-        : m_clipboardDelivery(clipboardDelivery)
-        , m_pasteMethod(pasteMethod)
+    explicit YdotoolBackend(PasteMethod pasteMethod)
+        : m_pasteMethod(pasteMethod)
     {
     }
 
     bool deliver(const DeliveryContent &content,
                  const std::function<bool()> &clearToInject,
-                 bool *htmlAvailable,
+                 bool *,
                  QString *error) override
     {
-        QString copyError;
-        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
-            if (error) {
-                *error = copyError.isEmpty()
-                    ? QStringLiteral("Could not copy text before ydotool paste")
-                    : QStringLiteral("Could not copy text before ydotool paste: %1").arg(copyError);
-            }
-            return false;
-        }
-
-        QString pasteError;
-        if (!YdotoolDelivery().pasteFromClipboard(content.plainText,
-                                                  m_pasteMethod,
-                                                  clearToInject,
-                                                  &pasteError)) {
-            if (error) {
-                *error = pasteError;
-            }
-            return false;
-        }
-        return true;
+        return YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject, error);
     }
 
 private:
-    ClipboardDelivery *m_clipboardDelivery = nullptr;
     PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
 };
 
@@ -85,61 +64,33 @@ private:
 #ifdef SPEECHER_WITH_MAC
 class MacPasteBackend final : public DeliveryBackend {
 public:
-    explicit MacPasteBackend(ClipboardDelivery *clipboardDelivery)
-        : m_clipboardDelivery(clipboardDelivery)
-    {
-    }
-
-    bool deliver(const DeliveryContent &content,
+    bool deliver(const DeliveryContent &,
                  const std::function<bool()> &clearToInject,
-                 bool *htmlAvailable,
+                 bool *,
                  QString *error) override
     {
-        QString copyError;
-        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
-            if (error) {
-                *error = copyError.isEmpty()
-                    ? QStringLiteral("Could not copy text before keyboard paste")
-                    : QStringLiteral("Could not copy text before keyboard paste: %1").arg(copyError);
-            }
-            return false;
-        }
         return MacPasteDelivery().paste(clearToInject, error);
     }
-
-private:
-    ClipboardDelivery *m_clipboardDelivery = nullptr;
 };
 #endif // SPEECHER_WITH_MAC
 
 #ifdef SPEECHER_WITH_WIN
 class WinPasteBackend final : public DeliveryBackend {
 public:
-    WinPasteBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
-        : m_clipboardDelivery(clipboardDelivery)
-        , m_pasteMethod(pasteMethod)
+    explicit WinPasteBackend(PasteMethod pasteMethod)
+        : m_pasteMethod(pasteMethod)
     {
     }
 
-    bool deliver(const DeliveryContent &content,
+    bool deliver(const DeliveryContent &,
                  const std::function<bool()> &clearToInject,
-                 bool *htmlAvailable,
+                 bool *,
                  QString *error) override
     {
-        QString copyError;
-        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
-            if (error) {
-                *error = copyError.isEmpty()
-                    ? QStringLiteral("Could not copy text before keyboard paste")
-                    : QStringLiteral("Could not copy text before keyboard paste: %1").arg(copyError);
-            }
-            return false;
-        }
         return WinPasteDelivery().paste(m_pasteMethod, clearToInject, error);
     }
 
 private:
-    ClipboardDelivery *m_clipboardDelivery = nullptr;
     PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
 };
 #endif // SPEECHER_WITH_WIN
@@ -226,7 +177,7 @@ void TextDelivery::useDefaultBackendFactory()
         Q_UNUSED(pasteMethod)
 #ifdef SPEECHER_WITH_WAYLAND
         if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
-            return std::make_unique<YdotoolBackend>(&m_clipboardDelivery, pasteMethod);
+            return std::make_unique<YdotoolBackend>(pasteMethod);
         }
         if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
             return std::make_unique<WlCopyBackend>(&m_clipboardDelivery);
@@ -234,12 +185,12 @@ void TextDelivery::useDefaultBackendFactory()
 #endif
 #ifdef SPEECHER_WITH_MAC
         if (method == QString::fromLatin1(OutputMethod::MacPaste)) {
-            return std::make_unique<MacPasteBackend>(&m_clipboardDelivery);
+            return std::make_unique<MacPasteBackend>();
         }
 #endif
 #ifdef SPEECHER_WITH_WIN
         if (method == QString::fromLatin1(OutputMethod::WinPaste)) {
-            return std::make_unique<WinPasteBackend>(&m_clipboardDelivery, pasteMethod);
+            return std::make_unique<WinPasteBackend>(pasteMethod);
         }
 #endif
         if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
@@ -412,7 +363,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
 
     QString firstError;
     if (std::optional<DeliveryResult> pasted = pasteThroughBackends(
-            settings, content, target, choice, previousClipboard, &firstError)) {
+            settings, content, target, choice, copiedAsPlainText, previousClipboard, &firstError)) {
         return *pasted;
     }
     return {
@@ -446,6 +397,7 @@ std::optional<DeliveryResult> TextDelivery::pasteThroughBackends(const OutputSet
                                                                  const DeliveryContent &content,
                                                                  const Target &target,
                                                                  const PasteChoice &choice,
+                                                                 bool copiedAsPlainText,
                                                                  PreviousClipboard &previousClipboard,
                                                                  QString *firstError)
 {
@@ -473,9 +425,9 @@ std::optional<DeliveryResult> TextDelivery::pasteThroughBackends(const OutputSet
                 return std::nullopt;
             }
         }
-        // The keyboard backends block again after the check above (clipboard
-        // helper startup, owner replacement, modifier release), so they get a
-        // last-moment gate to call immediately before the keystroke goes out.
+        // The keyboard backends block again after the check above (modifier
+        // release), so they get a last-moment gate to call immediately before
+        // the keystroke goes out.
         const std::function<bool()> clearToInject = focusGated
             ? std::function<bool()>([this, &target] {
                   return m_targetProvider->focusMatch(target) == TargetProvider::FocusMatch::Same;
@@ -484,7 +436,9 @@ std::optional<DeliveryResult> TextDelivery::pasteThroughBackends(const OutputSet
         if (backend->deliver(content, clearToInject, &htmlAvailable, &error)) {
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
-            const bool downgraded = content.html.has_value() && !htmlAvailable;
+            // A keyboard backend pastes the copy deliver() made.
+            const bool downgraded = virtualKeyboardInput ? copiedAsPlainText
+                                                         : content.html.has_value() && !htmlAvailable;
             const bool verified = !copied
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);

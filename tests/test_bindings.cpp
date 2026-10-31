@@ -154,6 +154,14 @@ private slots:
             result.placeholders);
         QVERIFY(!restored.ok);
 
+        // The preview restores what the final pass restores, keeps what it
+        // would refuse as written, and hides a placeholder still streaming in.
+        const QHash<QString, QString> replacements = BindingProcessor::replacementsByPlaceholder(result.placeholders);
+        QCOMPARE(BindingProcessor::restorePlaceholdersForPreview(
+                     QStringLiteral("Send SPEECHER_BINDING_0, xSPEECHER_BINDING_1 and SPEECHER_BINDING_99 to SPEECHER_BIND"),
+                     replacements),
+                 QStringLiteral("Send efox@example.com, xSPEECHER_BINDING_1 and SPEECHER_BINDING_99 to "));
+
         QCOMPARE(BindingProcessor::applyBindingsOutsidePlaceholders(
                      QStringLiteral("SPEECHER_BINDING_0 and speecher binding"),
                      {{QStringLiteral("speecher binding"), QStringLiteral("bound")}}),

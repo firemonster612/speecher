@@ -729,6 +729,68 @@ private slots:
         QCOMPARE(local->startCalls, 0);
     }
 
+    // Audio past the budget during the stop's post-roll is dropped, and the
+    // paused attempt still finishing is waited for, not cancelled: nothing
+    // is delivered while it may still return words. When it then times out,
+    // the fallback takes what is held, and the words are delivered once.
+    void aPausedAttemptTimingOutAfterThePostRollOverflowHandsOver()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->autoCompleteOnFinish = false;
+        rig.session->pause();
+        rig.session->resume();
+        const QByteArray second(16000 * 2, '\0');
+        // Exactly the budget, then the post-roll goes past it.
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            rig.audio.pushAudio(second);
+        }
+        rig.audio.onStop = [&] { rig.audio.pushAudio(second); };
+        rig.session->stopListening();
+        QCOMPARE(rig.session->state(), DictationState::Stopping);
+        QTest::qWait(50);
+        QCOMPARE(rig.delivery.calls, 0);
+        QVERIFY(codex->cancelledAttempts.isEmpty());
+
+        codex->emitFailure(QStringLiteral("timed out"), true, SpeechPhase::Finalize, ProviderFailureKind::Timeout);
+        QTRY_COMPARE(rig.delivery.calls, 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
+        QCOMPARE(local->audioChunks, QList<QByteArray>(10, second));
+        QTest::qWait(50);
+        QCOMPARE(rig.delivery.calls, 1);
+    }
+
+    // Once audio went past the budget, what follows stays dropped, even when
+    // the paused attempt then fails and the next provider is awaited.
+    void audioPastTheBudgetStaysDroppedWhenThePausedAttemptFails()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 100;
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->autoCompleteOnFinish = false;
+        rig.session->pause();
+        rig.session->resume();
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            rig.audio.pushAudio(second);
+        }
+        rig.audio.onStop = [&] {
+            rig.audio.pushAudio(second);
+            codex->emitFailure(QStringLiteral("timed out"), true, SpeechPhase::Finalize, ProviderFailureKind::Timeout);
+            rig.audio.pushAudio(QByteArray(320, '\0'));
+        };
+        rig.session->stopListening();
+        QTRY_COMPARE(rig.delivery.calls, 1);
+        QCOMPARE(local->audioChunks, QList<QByteArray>(10, second));
+    }
+
     // The attempt id moves on before the old provider is cancelled, so what
     // it emits while stopping, and after, never reaches the transcript; its
     // partial is kept once. A whole-attempt transcript from the next one

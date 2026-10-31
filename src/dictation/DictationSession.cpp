@@ -10,17 +10,14 @@
 #include "providers/RefinementChain.h"
 
 #include <QDebug>
-#include <QHash>
-#include <QRegularExpression>
 #include <QTimer>
 
-#include <numeric>
 #include <utility>
 
 namespace speecher {
 namespace {
-// The audio held for a speech provider still preparing: the connect budget's
-// worth, 10 seconds of 16 kHz mono 16-bit PCM.
+// The most audio held between attempts: the connect budget's worth, 10
+// seconds of 16 kHz mono 16-bit PCM.
 constexpr qsizetype kMaxPendingAudioBytes = 10 * 16000 * 2;
 QString partMissingWarning(const SpeechFailure &failure)
 {
@@ -49,7 +46,6 @@ DictationSession::DictationSession(SettingsStore *settings,
                                    QObject *parent)
     : QObject(parent)
     , m_settings(settings)
-    , m_ui(settings ? settings->dictationSnapshot().ui : UiSettings{})
     , m_audio(audio)
     , m_mediaController(mediaController)
     , m_targetProvider(targetProvider)
@@ -64,11 +60,11 @@ DictationSession::DictationSession(SettingsStore *settings,
           this))
     , m_completionTimer(new QTimer(this))
 {
-    if (m_settings) {
-        connect(m_settings, &SettingsStore::snapshotApplied, this, [this] {
-            m_ui = m_settings->dictationSnapshot().ui;
-        });
-    }
+    Q_ASSERT_X(m_settings, "DictationSession", "a session reads and records through the settings store");
+    m_ui = m_settings->dictationSnapshot().ui;
+    connect(m_settings, &SettingsStore::snapshotApplied, this, [this] {
+        m_ui = m_settings->dictationSnapshot().ui;
+    });
     m_completionTimer->setSingleShot(true);
     m_completionTimer->setTimerType(Qt::PreciseTimer);
     connect(m_completionTimer, &QTimer::timeout, this, [this] {
@@ -329,7 +325,8 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_runChoices = choices;
     m_heardSpeech = false;
     m_target = {};
-    m_between = {.awaitingProvider = true};
+    m_between = {};
+    m_between.awaitingProvider = true;
     // The chains wait for the target, whose Writing Profile may lead them.
     m_refinementChain->begin(kNoRefinementProvider, {});
     m_usedRawTranscript = false;
@@ -413,6 +410,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         && m_screenshotProvider
         && chainReadsScreenshots
         && !m_target.secure
+        && !m_target.hasSelection()
         && !m_review.followingUp()) {
         m_screenshotCaptureGeneration = generation;
         m_screenshotProvider->capture();
@@ -494,7 +492,7 @@ void DictationSession::speechProviderReady()
     case DictationState::Paused:
         // What was heard before the pause goes to it now, as a pause would
         // send it; otherwise resume opens its first attempt.
-        if (!m_between.pendingAudio.isEmpty()) {
+        if (m_between.hasHeldAudio()) {
             resumeAttempt();
             if (!m_between.awaitingProvider) {
                 m_between.finishingPausedAttempt = true;
@@ -519,7 +517,7 @@ void DictationSession::speechProviderReady()
 void DictationSession::speechChainExhausted()
 {
     m_between.awaitingProvider = false;
-    m_between.pendingAudio.clear();
+    m_between.dropHeld();
     if (m_state != DictationState::Starting) {
         endSpeechAfterFailure(m_switchFailure);
         return;
@@ -534,14 +532,36 @@ void DictationSession::speechChainExhausted()
     failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
-// A provider still preparing gets no more than the connect budget's worth of
-// audio: past it, it is passed over and the speech ends with what was heard.
+// No more than the connect budget's worth of audio is held. A paused attempt
+// still finishing, or the last one ending during the stop, is never cut
+// short: past the budget, the audio is dropped from there on, and listening
+// stops, so the attempt finishes and what is held goes to a final one. A
+// provider still preparing past it is passed over and the speech ends with
+// what was heard.
 void DictationSession::holdPendingAudio(const QByteArray &pcm)
 {
-    m_between.pendingAudio.append(pcm);
-    const qsizetype held = std::accumulate(m_between.pendingAudio.cbegin(), m_between.pendingAudio.cend(), qsizetype(0),
-                                           [](qsizetype bytes, const QByteArray &chunk) { return bytes + chunk.size(); });
-    if (!m_between.awaitingProvider || held <= kMaxPendingAudioBytes) {
+    // Whichever provider takes the held audio, nothing after the budget joins it.
+    if (m_between.heldPastTheBudget) {
+        return;
+    }
+    if (!m_between.awaitingProvider) {
+        if (m_between.heldBytes() + pcm.size() <= kMaxPendingAudioBytes) {
+            m_between.hold(pcm);
+            return;
+        }
+        m_between.heldPastTheBudget = true;
+        qWarning() << "speech audio held past the connect budget while an attempt finishes; dropping";
+        if (m_speechWarning.isEmpty()) {
+            m_speechWarning = QStringLiteral("Part of the dictation may be missing. "
+                                             "Too much was said while earlier words were still transcribed.");
+        }
+        if (m_state == DictationState::Listening) {
+            stopListening();
+        }
+        return;
+    }
+    m_between.hold(pcm);
+    if (m_between.heldBytes() <= kMaxPendingAudioBytes) {
         return;
     }
     qWarning() << "speech provider still preparing past the connect budget";
@@ -822,7 +842,17 @@ void DictationSession::pause()
     // The post-roll arrives while the microphone stops and belongs to this
     // attempt; a stop or cancel can land meanwhile.
     stopAudio();
-    if (generation != m_generation || m_state != DictationState::Listening) {
+    if (generation != m_generation) {
+        return;
+    }
+    // Held audio past the budget stopped listening inside this stop, whose
+    // post-roll kept arriving; the last attempt's end, if it came meanwhile,
+    // is taken over here, as stopListening() takes it after its own stop.
+    if (m_state == DictationState::Stopping && std::exchange(m_between.endedDuringStop, false)) {
+        refineAfterLastAttempt();
+        return;
+    }
+    if (m_state != DictationState::Listening) {
         return;
     }
     // Paused again before the last pause's attempt finished: it is still
@@ -859,7 +889,7 @@ void DictationSession::resume()
     setState(DictationState::Listening);
     // Between providers the attempt opens once the next one is ready.
     const bool opensAttempt = !m_between.finishingPausedAttempt && !m_between.awaitingProvider;
-    const bool openedEmptyAttempt = opensAttempt && m_between.pendingAudio.isEmpty();
+    const bool openedEmptyAttempt = opensAttempt && !m_between.hasHeldAudio();
     if (opensAttempt) {
         resumeAttempt();
     }
@@ -902,8 +932,8 @@ void DictationSession::resumeAttempt()
 // still waiting; what the failed one took is never sent again.
 void DictationSession::sendPendingAudio()
 {
-    while (!m_between.awaitingProvider && !m_between.pendingAudio.isEmpty()) {
-        m_speech->sendAudio(m_between.pendingAudio.takeFirst());
+    while (!m_between.awaitingProvider && m_between.hasHeldAudio()) {
+        m_speech->sendAudio(m_between.takeOldestHeld());
     }
 }
 
@@ -915,7 +945,7 @@ void DictationSession::refineAfterLastAttempt()
     if (m_between.awaitingProvider) {
         return;
     }
-    if (!m_between.pendingAudio.isEmpty()) {
+    if (m_between.hasHeldAudio()) {
         resumeAttempt();
         if (!m_between.awaitingProvider) {
             m_speech->finishInput();
@@ -1146,6 +1176,7 @@ void DictationSession::startRefiner()
 
     enterRefining();
     m_refinementStream.clear();
+    m_previewReplacements = BindingProcessor::replacementsByPlaceholder(m_transcriptPipeline.bindingResult.placeholders);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     TranscriptPipeline::includeScreenshotContext(pipeline,
                                                  m_providers->refinementProviderReadsScreenshots(refinement.providerId),
@@ -1239,11 +1270,17 @@ void DictationSession::failSelectionEdit(const QString &message)
 // or Keep original ends the review.
 void DictationSession::reviewSelectionEdit(const QString &revised)
 {
+    reviseSelectionEdit(revised);
+    m_refinementGeneration = 0;
+    enterReview();
+}
+
+// The edit becomes the revision, after the one a follow-up was dictated for.
+void DictationSession::reviseSelectionEdit(const QString &revised)
+{
     const QString spoken = m_transcript->text();
     m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
-    m_refinementGeneration = 0;
-    enterReview();
 }
 
 // The review stays up, dimmed, while the follow-up is dictated as a session
@@ -1293,6 +1330,13 @@ void DictationSession::replaceSelection()
     if (m_state != DictationState::Reviewing || !m_sessionSettings) {
         return;
     }
+    replaceWithRevision();
+}
+
+// Ends the review and delivers the revision, with the totals of every
+// instruction spoken for it.
+void DictationSession::replaceWithRevision()
+{
     // The person may have clicked or typed in the Target while reading. The
     // edit replaces only the selection it was made from; any other goes
     // untouched and the edit waits on the clipboard. Read while the review is
@@ -1441,7 +1485,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         // A provider that turned the attempt away, rather than a stream that
         // closed, makes way for the next before the next attempt: at resume,
         // or now for words heard since one. Offline, so does a closed stream.
-        const bool attemptNeeded = m_state != DictationState::Stopping || !m_between.pendingAudio.isEmpty();
+        const bool attemptNeeded = m_state != DictationState::Stopping || m_between.hasHeldAudio();
         const bool offline = offlineFor(ProviderRole::Speech, m_speech->chain()->currentId());
         if ((!droppedStream || offline) && attemptNeeded && m_speech->chain()->fallbackRemains(failure.kind)) {
             noteSpeechFailure(failure);
@@ -1607,46 +1651,10 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             emit popupRefinementPreviewChanged({});
             return;
         }
-        // The stream carries SPEECHER_BINDING_n placeholders the final restore
-        // pass maps back to their bound values; the preview must not show that
-        // internal syntax. Complete tokens are restored here, and a token still
-        // streaming in at the tail (possibly with more digits coming) is hidden
-        // until it is finished.
-        QString preview = m_refinementStream;
-        static const QRegularExpression placeholderToken(
-            QStringLiteral("SPEECHER_BINDING_[0-9]+"));
-        const qsizetype tail = preview.lastIndexOf(QStringLiteral("SPEECHER"));
-        if (tail >= 0) {
-            const QRegularExpressionMatch match = placeholderToken.match(
-                preview, tail, QRegularExpression::NormalMatch,
-                QRegularExpression::AnchorAtOffsetMatchOption);
-            if (!match.hasMatch() || match.capturedEnd() == preview.size()) {
-                preview.truncate(tail);
-            }
-        }
-        // One left-to-right pass over whole-token matches, the token rule
-        // final restoration uses (BindingMatcher::restorePlaceholders):
-        // each match is replaced through a lookup and the scan continues
-        // after the splice, so inserted replacement text is never rescanned
-        // and a replacement that itself contains placeholder-shaped text
-        // survives here exactly as it does in the delivered result.
-        QHash<QString, QString> replacements;
-        for (const BindingPlaceholder &placeholder :
-             m_transcriptPipeline.bindingResult.placeholders) {
-            replacements.insert(placeholder.placeholder, placeholder.replacement);
-        }
-        QString restored;
-        restored.reserve(preview.size());
-        qsizetype cursor = 0;
-        QRegularExpressionMatchIterator tokens = placeholderToken.globalMatch(preview);
-        while (tokens.hasNext()) {
-            const QRegularExpressionMatch token = tokens.next();
-            restored += preview.mid(cursor, token.capturedStart() - cursor);
-            restored += replacements.value(token.captured(), token.captured());
-            cursor = token.capturedEnd();
-        }
-        restored += preview.mid(cursor);
-        preview = std::move(restored);
+        // The stream carries the SPEECHER_BINDING_n placeholders; the preview
+        // shows their bound values instead.
+        const QString preview =
+            BindingProcessor::restorePlaceholdersForPreview(m_refinementStream, m_previewReplacements);
         emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, m_ui.previewWords));
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this, current](const QString &text) {
@@ -1660,9 +1668,17 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             m_lastMessage.clear();
             m_usedRawTranscript = false;
         }
-        if (refined && m_transcriptPipeline.editsSelection && m_sessionSettings
-            && m_sessionSettings->ui.selectionEditReviewEnabled) {
+        if (refined && m_transcriptPipeline.editsSelection && m_ui.selectionEditReviewEnabled) {
             reviewSelectionEdit(*refined);
+        } else if (refined && m_review.followingUp()) {
+            // The review was turned off during a follow-up: the follow-up's
+            // edit ends the review as Replace would, every instruction counted.
+            // Reviewing first, so a stop or cancel while Replace reads the
+            // Target acts on the review as it does during a manual Replace.
+            reviseSelectionEdit(*refined);
+            m_refinementGeneration = 0;
+            setState(DictationState::Reviewing);
+            replaceWithRevision();
         } else if (refined) {
             deliverFinal(*refined);
         } else if (m_transcriptPipeline.editsSelection) {

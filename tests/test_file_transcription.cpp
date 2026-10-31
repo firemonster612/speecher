@@ -1852,7 +1852,8 @@ private slots:
 #ifdef Q_OS_UNIX
     // Lines the file does not take are counted, with why the first was not,
     // and nothing the stream does afterwards clears them: the stopped
-    // recording still says so.
+    // recording still says so. What part of a line went in is taken back, so
+    // the next line starts on its own.
     void aRecordingRemembersTheLinesItCouldNotWrite()
     {
         registerStreamingCodex();
@@ -1868,11 +1869,12 @@ private slots:
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         m_codex->emitFinalText(QStringLiteral("Written."));
         {
-            // The file can grow no more: writes past its end fail with EFBIG.
+            // The file can grow by a few bytes more: a line's start is
+            // written, then its rest fails with EFBIG.
             rlimit savedLimit{};
             QVERIFY(getrlimit(RLIMIT_FSIZE, &savedLimit) == 0);
             rlimit limit = savedLimit;
-            limit.rlim_cur = rlim_t(QFileInfo(path).size());
+            limit.rlim_cur = rlim_t(QFileInfo(path).size() + 5);
             QVERIFY(setrlimit(RLIMIT_FSIZE, &limit) == 0);
             const auto savedXfsz = std::signal(SIGXFSZ, SIG_IGN);
             const auto restore = qScopeGuard([&] {

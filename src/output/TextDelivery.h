@@ -13,11 +13,13 @@ namespace speecher {
 class DeliveryBackend {
 public:
     virtual ~DeliveryBackend() = default;
+    // A keyboard backend pastes what is already on the clipboard; a
+    // clipboard backend copies content and says whether its HTML went too.
     // clearToInject is the final focus gate: a keyboard backend calls it after
-    // all of its blocking preparation (clipboard helper startup, owner
-    // replacement, modifier release) and immediately before sending the paste
-    // keystroke, aborting when it returns false. Clipboard-only backends may
-    // ignore it; a null function means nothing gates the injection.
+    // all of its blocking preparation (modifier release) and immediately
+    // before sending the paste keystroke, aborting when it returns false.
+    // Clipboard-only backends may ignore it; a null function means nothing
+    // gates the injection.
     virtual bool deliver(const DeliveryContent &content,
                          const std::function<bool()> &clearToInject,
                          bool *htmlAvailable,
@@ -82,6 +84,7 @@ private:
                                                        const DeliveryContent &content,
                                                        const Target &target,
                                                        const PasteChoice &choice,
+                                                       bool copiedAsPlainText,
                                                        PreviousClipboard &previousClipboard,
                                                        QString *firstError);
 

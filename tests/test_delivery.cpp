@@ -1957,6 +1957,40 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  2);
     }
 
+    // The ydotool paste presses the keys over the copy deliver() made, rather
+    // than copying the words a second time.
+    void ydotoolPasteFillsTheClipboardOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString executablePath = dir.filePath(QStringLiteral("ydotool"));
+        QFile executable(executablePath);
+        QVERIFY(executable.open(QIODevice::WriteOnly | QIODevice::Text));
+        executable.write("#!/bin/sh\nexit 0\n");
+        executable.close();
+        QVERIFY(QFile::setPermissions(executablePath,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+        const QByteArray oldPath = qgetenv("PATH");
+        qputenv("PATH", QFile::encodeName(dir.path()) + ':' + oldPath);
+        const auto restorePath = qScopeGuard([&] { qputenv("PATH", oldPath); });
+
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = true;
+        TextDelivery delivery(&targetProvider);
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        QSignalSpy copies(QApplication::clipboard(), &QClipboard::dataChanged);
+        const DeliveryResult result = delivery.deliver(
+            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+        QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+        QCOMPARE(copies.count(), 1);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
+    }
+
     void ydotoolStatusEvaluation()
     {
         YdotoolProbeFacts facts;

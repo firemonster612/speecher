@@ -1,5 +1,7 @@
 #include "dictation/SelectionEditPresentation.h"
 
+#include "core/WordSpacing.h"
+
 #include <QStringList>
 #include <QTextBoundaryFinder>
 
@@ -54,23 +56,11 @@ QStringList words(const QString &text)
     return words;
 }
 
-// Scripts written without spaces between words: a mark there needs no space
-// beside it to stand apart.
+// A letter or digit of a script written with spaces between words; beside
+// one written without, a mark needs no space to stand apart.
 bool writtenWithSpaces(QChar c)
 {
-    switch (c.script()) {
-    case QChar::Script_Han:
-    case QChar::Script_Hiragana:
-    case QChar::Script_Katakana:
-    case QChar::Script_Thai:
-    case QChar::Script_Lao:
-    case QChar::Script_Khmer:
-    case QChar::Script_Myanmar:
-    case QChar::Script_Tibetan:
-        return false;
-    default:
-        return c.isLetterOrNumber();
-    }
+    return !writtenWithoutSpaces(c.script()) && c.isLetterOrNumber();
 }
 
 // Two words are the same when only the spaces after them differ.

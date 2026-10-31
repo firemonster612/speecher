@@ -115,9 +115,10 @@ bool isPlaceholderIndexToken(const QString &token)
     return numberWords.contains(token);
 }
 
-QRegularExpression exactPlaceholderRegex()
+const QRegularExpression &exactPlaceholderRegex()
 {
-    return QRegularExpression(QStringLiteral("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(?![A-Za-z0-9_])"));
+    static const QRegularExpression regex(QStringLiteral("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(?![A-Za-z0-9_])"));
+    return regex;
 }
 
 } // namespace
@@ -188,7 +189,7 @@ BindingProcessingResult BindingMatcher::process(const QString &transcript, const
 QString BindingMatcher::applyOutsidePlaceholders(const QString &text, const QList<BindingRule> &rules)
 {
     if (text.isEmpty() || rules.isEmpty()) return text;
-    const QRegularExpression placeholderRegex = exactPlaceholderRegex();
+    const QRegularExpression &placeholderRegex = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = placeholderRegex.globalMatch(text);
     QString output;
     qsizetype cursor = 0;
@@ -207,9 +208,8 @@ QString BindingMatcher::applyOutsidePlaceholders(const QString &text, const QLis
 BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedText, const QList<BindingPlaceholder> &placeholders)
 {
     if (placeholders.isEmpty()) return {true, refinedText};
-    QHash<QString, QString> replacementByPlaceholder;
-    for (const BindingPlaceholder &placeholder : placeholders) replacementByPlaceholder.insert(placeholder.placeholder, placeholder.replacement);
-    const QRegularExpression exactPlaceholder = exactPlaceholderRegex();
+    const QHash<QString, QString> replacementByPlaceholder = replacementsByPlaceholder(placeholders);
+    const QRegularExpression &exactPlaceholder = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = exactPlaceholder.globalMatch(refinedText);
     QString restored;
     QString residue;
@@ -234,6 +234,42 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
         if (residueTokens.at(index) == QStringLiteral("speecher") && residueTokens.at(index + 1) == QStringLiteral("binding") && isPlaceholderIndexToken(residueTokens.at(index + 2))) return {false, {}};
     }
     return {true, restored};
+}
+
+QHash<QString, QString> BindingMatcher::replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders)
+{
+    QHash<QString, QString> replacements;
+    for (const BindingPlaceholder &placeholder : placeholders) replacements.insert(placeholder.placeholder, placeholder.replacement);
+    return replacements;
+}
+
+// The placeholders that restorePlaceholders would restore are restored the
+// same way; one it doesn't know stays as written, as a preview has no result
+// to refuse. A placeholder still streaming in at the end, where more digits
+// could follow, is hidden until the text moves past it.
+QString BindingMatcher::restorePlaceholdersForPreview(const QString &streamedText, const QHash<QString, QString> &replacements)
+{
+    QString text = streamedText;
+    const qsizetype tail = text.lastIndexOf(QStringLiteral("SPEECHER"));
+    if (tail >= 0) {
+        static const QRegularExpression placeholderAtTail(QStringLiteral("SPEECHER_BINDING_[0-9]+"));
+        const QRegularExpressionMatch match = placeholderAtTail.match(text, tail, QRegularExpression::NormalMatch,
+                                                                      QRegularExpression::AnchorAtOffsetMatchOption);
+        if (!match.hasMatch() || match.capturedEnd() == text.size()) text.truncate(tail);
+    }
+    // One pass, continuing after each splice, so a replacement is never
+    // scanned for placeholders of its own.
+    QString restored;
+    qsizetype cursor = 0;
+    QRegularExpressionMatchIterator iterator = exactPlaceholderRegex().globalMatch(text);
+    while (iterator.hasNext()) {
+        const QRegularExpressionMatch match = iterator.next();
+        restored += text.mid(cursor, match.capturedStart(0) - cursor);
+        restored += replacements.value(match.captured(0), match.captured(0));
+        cursor = match.capturedEnd(0);
+    }
+    restored += text.mid(cursor);
+    return restored;
 }
 
 } // namespace speecher
