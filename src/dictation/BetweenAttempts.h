@@ -17,6 +17,9 @@ struct BetweenAttempts {
     // No provider is ready for the next attempt: the session is starting, or
     // the next provider prepares after one failed.
     bool awaitingProvider = false;
+    // Audio went past the most that may be held; what follows is dropped
+    // too, so the held audio has no gap.
+    bool heldPastTheBudget = false;
 
     // No open attempt can take audio now: it is held.
     bool holdsAudio() const { return finishingPausedAttempt || endedDuringStop || awaitingProvider; }

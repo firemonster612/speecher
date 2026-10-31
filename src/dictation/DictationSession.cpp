@@ -532,14 +532,22 @@ void DictationSession::speechChainExhausted()
     failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
-// No more than the connect budget's worth of audio is held. A provider still
-// preparing past it is passed over and the speech ends with what was heard.
-// A paused attempt still finishing, or the last one ending during the stop,
-// is never cut short: what goes past the budget is dropped, and listening
-// stops, so the attempt finishes and what is held goes to a final one.
+// No more than the connect budget's worth of audio is held. A paused attempt
+// still finishing, or the last one ending during the stop, is never cut
+// short: past the budget, the audio is dropped from there on, and listening
+// stops, so the attempt finishes and what is held goes to a final one. A
+// provider still preparing past it is passed over and the speech ends with
+// what was heard.
 void DictationSession::holdPendingAudio(const QByteArray &pcm)
 {
-    if (!m_between.awaitingProvider && m_between.heldBytes() + pcm.size() > kMaxPendingAudioBytes) {
+    if (!m_between.awaitingProvider) {
+        if (!m_between.heldPastTheBudget && m_between.heldBytes() + pcm.size() <= kMaxPendingAudioBytes) {
+            m_between.hold(pcm);
+            return;
+        }
+        if (std::exchange(m_between.heldPastTheBudget, true)) {
+            return;
+        }
         qWarning() << "speech audio held past the connect budget while an attempt finishes; dropping";
         if (m_speechWarning.isEmpty()) {
             m_speechWarning = QStringLiteral("Part of the dictation may be missing. "
@@ -551,7 +559,7 @@ void DictationSession::holdPendingAudio(const QByteArray &pcm)
         return;
     }
     m_between.hold(pcm);
-    if (!m_between.awaitingProvider || m_between.heldBytes() <= kMaxPendingAudioBytes) {
+    if (m_between.heldBytes() <= kMaxPendingAudioBytes) {
         return;
     }
     qWarning() << "speech provider still preparing past the connect budget";
@@ -832,7 +840,17 @@ void DictationSession::pause()
     // The post-roll arrives while the microphone stops and belongs to this
     // attempt; a stop or cancel can land meanwhile.
     stopAudio();
-    if (generation != m_generation || m_state != DictationState::Listening) {
+    if (generation != m_generation) {
+        return;
+    }
+    // Held audio past the budget stopped listening inside this stop, whose
+    // post-roll kept arriving; the last attempt's end, if it came meanwhile,
+    // is taken over here, as stopListening() takes it after its own stop.
+    if (m_state == DictationState::Stopping && std::exchange(m_between.endedDuringStop, false)) {
+        refineAfterLastAttempt();
+        return;
+    }
+    if (m_state != DictationState::Listening) {
         return;
     }
     // Paused again before the last pause's attempt finished: it is still

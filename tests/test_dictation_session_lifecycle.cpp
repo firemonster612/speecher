@@ -1330,10 +1330,11 @@ private slots:
     }
 
     // Audio heard after a resume while the paused attempt still finishes is
-    // held up to the connect budget's worth, ten seconds. What goes past it
-    // is dropped and listening stops, but the paused attempt, whose words may
-    // only come when it finishes, is never cancelled: it finishes, and what
-    // is held goes to one final attempt on the same provider.
+    // held up to the connect budget's worth, ten seconds. From the chunk that
+    // goes past it on, audio is dropped, even a smaller one that would fit,
+    // and listening stops; but the paused attempt, whose words may only come
+    // when it finishes, is never cancelled: it finishes, and what is held
+    // goes to one final attempt on the same provider.
     void audioPastTheConnectBudgetNeverCutsAPausedAttemptShort()
     {
         QFETCH(bool, stoppedFirst);
@@ -1359,9 +1360,14 @@ private slots:
             QCOMPARE(int(session.state()), int(DictationState::Stopping));
         }
         const QByteArray second(16000 * 2, '\0');
-        for (int seconds = 0; seconds < 11; ++seconds) {
-            audio->pushAudio(second);
+        const QByteArray halfSecond(16000, '\0');
+        QList<QByteArray> held(9, second);
+        held << halfSecond;
+        for (const QByteArray &chunk : held) {
+            audio->pushAudio(chunk);
         }
+        audio->pushAudio(second);
+        audio->pushAudio(QByteArray(8000, '\0'));
         QCOMPARE(int(session.state()), int(DictationState::Stopping));
         QVERIFY(speech->cancelledAttempts.isEmpty());
         QCOMPARE(delivery->calls, 0);
@@ -1373,13 +1379,57 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("said before the pause"));
         QCOMPARE(speech->startCalls, 2);
-        QCOMPARE(speech->audioChunks, QList<QByteArray>(10, second));
+        QCOMPARE(speech->audioChunks, held);
         QVERIFY(speech->cancelledAttempts.isEmpty());
         QTRY_COMPARE(outcome.size(), 1);
         QVERIFY2(outcome.first().at(0).toString().contains(QStringLiteral("Part of the dictation may be missing")),
                  qPrintable(outcome.first().at(0).toString()));
         QVERIFY2(!outcome.first().at(0).toString().contains(QStringLiteral("too long")),
                  qPrintable(outcome.first().at(0).toString()));
+    }
+
+    // A second pause whose post-roll goes past the held-audio budget stops
+    // listening inside its own microphone stop. When the paused attempt and
+    // the final one both end inside that stop, the words are still delivered.
+    void aSecondPauseGoingPastTheBudgetStillDelivers()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->autoCompleteOnFinish = false;
+        const quint64 pausedAttempt = speech->currentAttemptId;
+        session.pause();
+        session.resume();
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            audio->pushAudio(second);
+        }
+        bool overflowed = false;
+        audio->onStop = [&] {
+            if (std::exchange(overflowed, true)) {
+                return;
+            }
+            audio->pushAudio(second);
+            emit speech->finalTranscript(pausedAttempt, QStringLiteral("said before the pause"));
+            speech->autoCompleteOnFinish = true;
+            speech->emitCompletion();
+        };
+        session.pause();
+
+        QVERIFY(overflowed);
+        QCOMPARE(speech->startCalls, 2);
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("said before the pause"));
+        QCOMPARE(speech->audioChunks, QList<QByteArray>(10, second));
     }
 
     // Stop while paused delivers what was said, once the paused attempt's
