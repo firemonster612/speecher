@@ -336,6 +336,7 @@ public:
     }
 
     bool running() const { return bool(m_done); }
+    bool onTheStack() const { return m_frames > 0; }
 
     void start()
     {
@@ -506,8 +507,8 @@ private:
         // blind pastes included.
         const std::function<bool()> clearToInject = virtualKeyboardInput
             ? std::function<bool()>([self = QPointer<Run>(this), focusGated] {
-                  // Matters once a backend calls it from a later turn of the
-                  // event loop, as ydotool is to.
+                  // Matters if a backend calls it from a later turn of the
+                  // event loop.
                   if (!self || !self->m_done) {
                       return false;
                   }
@@ -659,9 +660,14 @@ TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &
 
 TextDelivery::~TextDelivery()
 {
-    // A run with frames on the stack finishes unwinding without this.
-    if (m_run) {
-        m_run->stop();
+    if (!m_run) {
+        return;
+    }
+    m_run->stop();
+    // A run with frames on the stack finishes unwinding without this. One
+    // without goes now: at shutdown no event loop may be left to delete it.
+    if (!m_run->onTheStack()) {
+        delete m_run.data();
     }
 }
 

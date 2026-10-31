@@ -1181,6 +1181,47 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(answers.size(), 2);
     }
 
+    // A delivery going while its backend still waits, as at shutdown once the
+    // event loop has ended, takes its run and that backend with it.
+    void aDeliveryGoneWhileItsBackendWaitsTakesItsRunWithIt()
+    {
+        class FocusedTarget final : public TargetProvider {
+        public:
+            Target capture() override { return {}; }
+            bool stillFocused(const Target &) override { return true; }
+        } targetProvider;
+        bool waiting = false;
+        bool backendGone = false;
+        class Backend final : public DeliveryBackend {
+        public:
+            Backend(bool &waiting, bool &gone) : waiting(waiting), gone(gone) {}
+            ~Backend() override { gone = true; }
+            void deliver(const DeliveryContent &,
+                         const std::function<bool()> &,
+                         std::function<void(const Outcome &)>) override
+            {
+                waiting = true;
+            }
+            bool &waiting;
+            bool &gone;
+        };
+        auto delivery = std::make_unique<TextDelivery>(
+            [&](const QString &, const OutputSettings &, PasteMethod) {
+                return std::make_unique<Backend>(waiting, backendGone);
+            },
+            &targetProvider);
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QTRY_VERIFY(waiting);
+
+        delivery.reset();
+        QVERIFY(backendGone);
+    }
+
     void aDeadlineInANestedFocusCheckPressesNoKeys_data()
     {
         QTest::addColumn<int>("waitingCheck");
@@ -1320,7 +1361,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     // The delivery can go while its run is still on the stack: from inside a
     // focus check's nested event loop, or from the handler of its answer.
     // The run unwinds without touching it, and nothing is pressed or
-    // answered after.
+    // answered after. A run going too early shows only under AddressSanitizer.
     void aDeliveryCanGoWhileItsRunIsOnTheStack_data()
     {
         QTest::addColumn<bool>("goesMidCheck");

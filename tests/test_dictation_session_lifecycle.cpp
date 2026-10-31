@@ -1094,7 +1094,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.includeScreenshotContext = true; return true; });
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(screenshots->captureCalls, 1, 250);
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Listening));
         speech->emitFinalText(QStringLiteral("second"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 2, 250);
