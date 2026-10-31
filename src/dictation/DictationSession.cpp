@@ -271,18 +271,16 @@ void DictationSession::startSession(const SessionOverrides &overrides)
         startFollowUp();
         return;
     }
-    // A delivery that has answered only shows its receipt, which gives way to
-    // the next dictation; one still on its way holds the shortcut.
-    if (m_state == DictationState::Delivering && m_completionTimer->isActive()) {
-        m_completionTimer->stop();
-        if (setState(DictationState::Idle) != m_step) {
-            return;
-        }
-    }
     const bool followUp = m_state == DictationState::Reviewing && m_review.followingUp();
-    if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
+    // A delivery that has answered only shows its receipt, which gives way to
+    // the next dictation; one still on its way holds the shortcut. The start
+    // goes straight on, never through Idle, where a pending update restart
+    // would go ahead.
+    const bool showingReceipt = m_state == DictationState::Delivering && m_completionTimer->isActive();
+    if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp && !showingReceipt) {
         return;
     }
+    m_completionTimer->stop();
 
     // A follow-up keeps the settings the edit was made with.
     AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
