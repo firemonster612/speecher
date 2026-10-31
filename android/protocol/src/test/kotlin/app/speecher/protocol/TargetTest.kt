@@ -11,17 +11,18 @@ class TargetTest {
         javaClass.getResource("/refinement-prompt/$name.txt")!!.readText()
 
     private fun resolve(
-        id: String,
-        name: String,
+        id: String = "",
+        name: String = "",
         nearbyText: NearbyText? = null,
         profiles: Map<WritingProfile, WritingProfileSettings> = emptyMap(),
         tones: List<CustomTone> = emptyList(),
         levels: List<CustomCleanupLevel> = emptyList(),
+        category: AppCategory? = null,
     ) =
         resolveRefinementContext(
             id,
             name,
-            null,
+            category,
             nearbyText,
             WritingProfile.Other,
             profiles,
@@ -29,64 +30,110 @@ class TargetTest {
             levels,
         )
 
+    private fun other(settings: WritingProfileSettings) = mapOf(WritingProfile.Other to settings)
+
+    private fun aiCoding(settings: WritingProfileSettings) =
+        mapOf(WritingProfile.AiCoding to settings)
+
+    private val terse =
+        CustomTone(
+            "custom_terse",
+            "Terse",
+            "Short sentences, lowercase, no greetings or sign-offs.",
+        )
+    private val notes =
+        CustomCleanupLevel(
+            "custom_notes",
+            "Notes",
+            CleanupStrength.LightCleanup,
+            "Use bullet points.",
+        )
+    private val tersePrompt =
+        CustomCleanupLevel(
+            "custom_terse_prompt",
+            "Terse prompt",
+            CleanupStrength.CustomOnly,
+            "Keep the prompt under three sentences.",
+        )
+
     @Test
-    fun `light cleanup for an unknown target omits balanced rules and caret text`() {
-        val context =
-            resolve(
-                "",
-                "",
-                profiles =
-                    mapOf(
-                        WritingProfile.Other to WritingProfileSettings(CleanupStrength.LightCleanup)
+    fun `each level, tone, profile and app gets the desktop's prompt`() {
+        val chatGpt = "com.openai.chatgpt"
+        val cases =
+            mapOf(
+                // No balanced rules and no caret text.
+                "light-unknown" to
+                    resolve(profiles = other(WritingProfileSettings(CleanupStrength.LightCleanup))),
+                // Strong and AI coding rules.
+                "strong-chatgpt" to
+                    resolve(
+                        chatGpt,
+                        "ChatGPT",
+                        profiles = aiCoding(WritingProfileSettings(CleanupStrength.StrongPolish)),
                     ),
-            )
-        assertEquals(desktopPrompt("light-unknown"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `strong polish in ChatGPT adds strong and AI coding rules`() {
-        val context =
-            resolve(
-                "com.openai.chatgpt",
-                "ChatGPT",
-                profiles =
-                    mapOf(
-                        WritingProfile.AiCoding to
-                            WritingProfileSettings(CleanupStrength.StrongPolish)
+                // The profile's tone, the text around the caret and the selection in the context.
+                "balanced-messages" to
+                    resolve(
+                        "com.google.android.apps.messaging",
+                        "Messages",
+                        NearbyText("Dinner at ", " works for me", 10, 15),
+                        other(WritingProfileSettings(tone = Tone.Casual)),
                     ),
-            )
-        assertEquals(desktopPrompt("strong-chatgpt"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `profile tone, text around the caret and the selection reach the context object`() {
-        val context =
-            resolve(
-                "com.google.android.apps.messaging",
-                "Messages",
-                NearbyText("Dinner at ", " works for me", 10, 15),
-                mapOf(WritingProfile.Other to WritingProfileSettings(tone = Tone.Casual)),
-            )
-        assertEquals(desktopPrompt("balanced-messages"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `global then profile instructions follow the built-in rules`() {
-        val context =
-            resolve(
-                    "",
-                    "",
-                    profiles =
-                        mapOf(
-                            WritingProfile.Other to
-                                WritingProfileSettings(
-                                    tone = Tone.Casual,
-                                    instructions = "Sign off with Best, Enzo",
+                // Global then profile instructions after the built-in rules.
+                "balanced-instructions" to
+                    resolve(
+                            profiles =
+                                other(
+                                    WritingProfileSettings(
+                                        tone = Tone.Casual,
+                                        instructions = "Sign off with Best, Enzo",
+                                    )
                                 )
+                        )
+                        .copy(
+                            additionalInstructions = "Spell it Speecher.\nKeep British spelling."
                         ),
-                )
-                .copy(additionalInstructions = "Spell it Speecher.\nKeep British spelling.")
-        assertEquals(desktopPrompt("balanced-instructions"), dictationSystemPrompt(context))
+                // A custom tone after the built-in tone rule, named in the context.
+                "balanced-custom-tone" to
+                    resolve(
+                        profiles = other(WritingProfileSettings(customTone = terse.id)),
+                        tones = listOf(terse),
+                    ),
+                // A custom level's section after the rules of its base.
+                "light-custom-level" to
+                    resolve(
+                        profiles = other(WritingProfileSettings(customCleanupLevel = notes.id)),
+                        levels = listOf(notes),
+                    ),
+                // A custom-only level drops every level rule.
+                "custom-only-chatgpt" to
+                    resolve(
+                        chatGpt,
+                        "ChatGPT",
+                        profiles =
+                            aiCoding(WritingProfileSettings(customCleanupLevel = tersePrompt.id)),
+                        levels = listOf(tersePrompt),
+                    ),
+                // A custom system prompt followed by the custom tone and level.
+                "custom-prompt-tone-level" to
+                    resolve(
+                            profiles =
+                                other(
+                                    WritingProfileSettings(
+                                        customCleanupLevel = notes.id,
+                                        customTone = terse.id,
+                                    )
+                                ),
+                            tones = listOf(terse),
+                            levels = listOf(notes.copy(base = CleanupStrength.StrongPolish)),
+                        )
+                        .copy(customSystemPrompt = "Clean up my dictation."),
+            )
+        cases.forEach { (name, context) ->
+            assertEquals(desktopPrompt(name), dictationSystemPrompt(context), name)
+        }
+        // The built-in prompt a custom one starts from.
+        assertEquals(desktopPrompt("built-in"), builtInDictationSystemPrompt)
     }
 
     @Test
@@ -146,16 +193,8 @@ class TargetTest {
         val styles =
             listOf("Spanish", " ").map {
                 resolve(
-                        "",
-                        "",
                         profiles =
-                            mapOf(
-                                WritingProfile.Other to
-                                    WritingProfileSettings(
-                                        CleanupStrength.None,
-                                        outputLanguage = it,
-                                    )
-                            ),
+                            other(WritingProfileSettings(CleanupStrength.None, outputLanguage = it))
                     )
                     .let { context -> context.style to context.outputLanguage }
             }
@@ -165,124 +204,22 @@ class TargetTest {
         )
     }
 
-    private val terse =
-        CustomTone(
-            "custom_terse",
-            "Terse",
-            "Short sentences, lowercase, no greetings or sign-offs.",
-        )
-
-    @Test
-    fun `a custom tone follows the built-in tone rule and is named in the context`() {
-        val context =
-            resolve(
-                "",
-                "",
-                profiles =
-                    mapOf(WritingProfile.Other to WritingProfileSettings(customTone = terse.id)),
-                tones = listOf(terse),
-            )
-        assertEquals(desktopPrompt("balanced-custom-tone"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `a custom level adds its section after the rules of its base`() {
-        val notes =
-            CustomCleanupLevel(
-                "custom_notes",
-                "Notes",
-                CleanupStrength.LightCleanup,
-                "Use bullet points.",
-            )
-        val context =
-            resolve(
-                "",
-                "",
-                profiles =
-                    mapOf(
-                        WritingProfile.Other to
-                            WritingProfileSettings(customCleanupLevel = notes.id)
-                    ),
-                levels = listOf(notes),
-            )
-        assertEquals(desktopPrompt("light-custom-level"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `a custom-only level drops every level rule`() {
-        val prompt =
-            CustomCleanupLevel(
-                "custom_terse_prompt",
-                "Terse prompt",
-                CleanupStrength.CustomOnly,
-                "Keep the prompt under three sentences.",
-            )
-        val context =
-            resolve(
-                "com.openai.chatgpt",
-                "ChatGPT",
-                profiles =
-                    mapOf(
-                        WritingProfile.AiCoding to
-                            WritingProfileSettings(customCleanupLevel = prompt.id)
-                    ),
-                levels = listOf(prompt),
-            )
-        assertEquals(desktopPrompt("custom-only-chatgpt"), dictationSystemPrompt(context))
-    }
-
-    @Test
-    fun `a custom system prompt is followed by the custom tone and level`() {
-        val notes =
-            CustomCleanupLevel(
-                "custom_notes",
-                "Notes",
-                CleanupStrength.StrongPolish,
-                "Use bullet points.",
-            )
-        val context =
-            resolve(
-                    "",
-                    "",
-                    profiles =
-                        mapOf(
-                            WritingProfile.Other to
-                                WritingProfileSettings(
-                                    customCleanupLevel = notes.id,
-                                    customTone = terse.id,
-                                )
-                        ),
-                    tones = listOf(terse),
-                    levels = listOf(notes),
-                )
-                .copy(customSystemPrompt = "Clean up my dictation.")
-        assertEquals(desktopPrompt("custom-prompt-tone-level"), dictationSystemPrompt(context))
-    }
-
     @Test
     fun `a selection edit gets the desktop's editing prompt, without the output language`() {
-        val prompt =
-            CustomCleanupLevel(
-                "custom_terse_prompt",
-                "Terse prompt",
-                CleanupStrength.CustomOnly,
-                "Keep the prompt under three sentences.",
-            )
         val context =
             resolve(
                     "com.openai.chatgpt",
                     "ChatGPT",
                     NearbyText("Dinner at ", " works for me", 10, 15),
-                    mapOf(
-                        WritingProfile.AiCoding to
-                            WritingProfileSettings(
-                                customCleanupLevel = prompt.id,
-                                customTone = terse.id,
-                                outputLanguage = "French",
-                            )
+                    aiCoding(
+                        WritingProfileSettings(
+                            customCleanupLevel = tersePrompt.id,
+                            customTone = terse.id,
+                            outputLanguage = "French",
+                        )
                     ),
                     listOf(terse),
-                    listOf(prompt),
+                    listOf(tersePrompt),
                 )
                 .copy(
                     additionalInstructions = "Spell it Speecher.",
@@ -299,11 +236,6 @@ class TargetTest {
             "custom_terse_3",
             customChoiceId("Terse", listOf("custom_terse", "custom_terse_2")),
         )
-    }
-
-    @Test
-    fun `the built-in prompt a custom one starts from matches the desktop's`() {
-        assertEquals(desktopPrompt("built-in"), builtInDictationSystemPrompt)
     }
 
     @Test
@@ -386,28 +318,12 @@ class TargetTest {
     @Test
     fun `the platform category applies only when no rule names the app`() {
         assertEquals(
-            AppCategory.Email,
-            resolveRefinementContext(
-                    "com.google.android.gm",
-                    "Gmail",
-                    AppCategory.Email,
-                    null,
-                    WritingProfile.Other,
-                    emptyMap(),
+            listOf(AppCategory.Email, AppCategory.AiCoding),
+            listOf(
+                    resolve("com.google.android.gm", "Gmail", category = AppCategory.Email),
+                    resolve("com.openai.chatgpt", "ChatGPT", category = AppCategory.General),
                 )
-                .category,
-        )
-        assertEquals(
-            AppCategory.AiCoding,
-            resolveRefinementContext(
-                    "com.openai.chatgpt",
-                    "ChatGPT",
-                    AppCategory.General,
-                    null,
-                    WritingProfile.Other,
-                    emptyMap(),
-                )
-                .category,
+                .map { it.category },
         )
     }
 }
