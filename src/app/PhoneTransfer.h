@@ -58,6 +58,8 @@ public:
     ~PhoneTransfer() override;
 
     PhoneTransferState state() const { return m_state; }
+    // Whether a phone can still connect; false once the bundle is served.
+    bool isListening() const { return m_server.isListening(); }
     // What the QR code carries; empty unless Waiting.
     QString link() const;
 
