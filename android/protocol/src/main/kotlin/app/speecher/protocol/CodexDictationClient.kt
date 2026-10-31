@@ -26,6 +26,7 @@ class CodexDictationClient(
     private val language: String,
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://chatgpt.com/backend-api/dictation/stream",
+    closeTimeoutMillis: Long = 8_000,
 ) : WebSocketTransport.Listener, SpeechClient {
     private val stream =
         StreamLifecycle(
@@ -36,7 +37,7 @@ class CodexDictationClient(
                 transport.sendText("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
                 transport.sendText("{\"type\":\"session.close\"}")
             },
-            closeTimeoutSeconds = 8,
+            closeTimeoutMillis,
         )
     private val finalIds = mutableSetOf<String>()
 
@@ -100,6 +101,7 @@ class CodexDictationClient(
                         if (id.isNotEmpty()) finalIds.add(id)
                         events(SpeechEvent.Final(value))
                     } else events(SpeechEvent.Partial(value))
+                    stream.extendCloseWait()
                 }
             }
             "session.updated" ->

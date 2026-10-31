@@ -61,6 +61,32 @@ class SpeechClientsTest {
     }
 
     @Test
+    fun `a Codex result while the stream closes restarts the wait for the close`() {
+        val transport = FakeTransport()
+        val events = LinkedBlockingQueue<SpeechEvent>()
+        val client =
+            CodexDictationClient(transport, "token", "en", events::add, closeTimeoutMillis = 1_000)
+        transport.server.onText("""{"type":"session.started"}""")
+        client.stop()
+        Thread.sleep(600)
+        transport.server.onText("""{"type":"transcript.segment","text":"Hello"}""")
+        Thread.sleep(600)
+        transport.server.onText("""{"type":"transcript.final","text":"Hello there."}""")
+        transport.server.onText("""{"type":"session.updated","session":{"status":"closed"}}""")
+
+        assertEquals(
+            listOf(
+                SpeechEvent.Connected,
+                SpeechEvent.Partial("Hello"),
+                SpeechEvent.Final("Hello there."),
+                SpeechEvent.Completed,
+            ),
+            events.toList(),
+        )
+        client.cancel()
+    }
+
+    @Test
     fun `stopping a stream the provider already ended sends nothing`() {
         val transport = FakeTransport()
         val events = mutableListOf<SpeechEvent>()
