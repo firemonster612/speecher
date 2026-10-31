@@ -11,6 +11,13 @@ NetworkReachability::NetworkReachability(QObject *parent)
 
 void NetworkReachability::watchSystem()
 {
+    // Tests answer for the operating system, so no suite depends on the
+    // network of the machine running it.
+    const QByteArray testReachability = qgetenv("SPEECHER_TEST_REACHABILITY");
+    if (!testReachability.isEmpty()) {
+        setReachability(testReachability == "offline" ? Reachability::Offline : Reachability::Online);
+        return;
+    }
     if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
         qWarning() << "no network information backend; reachability stays unknown";
         return;

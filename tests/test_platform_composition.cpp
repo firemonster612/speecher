@@ -10,6 +10,7 @@
 #include "app/CompositionSockets.h"
 #include "app/IpcCommandHandler.h"
 #include "app/LogFile.h"
+#include "app/NetworkReachability.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -647,6 +648,21 @@ private slots:
         if (!grantBeforeRelease) platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), hold ? DictationState::Idle : DictationState::Starting);
         controller.stopListening();
+    }
+
+    // Tests answer for the operating system's reachability: online unless a
+    // test asks for offline, whatever the machine's own network.
+    void testsChooseTheReachabilityTheControllerSees()
+    {
+        {
+            ApplicationController controller(true, std::make_shared<FakePlatformComposition>(platformComposition()));
+            QCOMPARE(controller.networkReachability()->reachability(), Reachability::Online);
+        }
+        const QByteArray previous = qgetenv("SPEECHER_TEST_REACHABILITY");
+        qputenv("SPEECHER_TEST_REACHABILITY", "offline");
+        const auto restore = qScopeGuard([&] { qputenv("SPEECHER_TEST_REACHABILITY", previous); });
+        ApplicationController controller(true, std::make_shared<FakePlatformComposition>(platformComposition()));
+        QCOMPARE(controller.networkReachability()->reachability(), Reachability::Offline);
     }
 
     // While a selection edit waits for review, holding the Global Shortcut in
