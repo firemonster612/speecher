@@ -7,6 +7,10 @@ name: macOS release gate
 # candidate first; it publishes nothing.
 
 on:
+  # TEMPORARY: registers the workflow from this branch; remove before merge.
+  push:
+    branches:
+      - mac-release-gate
   workflow_dispatch:
     inputs:
       candidate_run:
@@ -22,6 +26,7 @@ permissions:
 
 jobs:
   gate:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 60
     env:
