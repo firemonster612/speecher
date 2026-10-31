@@ -90,19 +90,30 @@ private:
     void answer(QTcpSocket *socket)
     {
         const QByteArray request = socket->readAll();
-        requests << request;
+        // Only a request for origin() is the test's. Another program may
+        // probe each new local port, as T3 Code does with a GET / for
+        // localhost; it is neither recorded nor given a canned response.
+        const bool forOrigin = addressedToOrigin(request);
+        if (forOrigin) requests << request;
         const QByteArray line = request.left(request.indexOf("\r\n"));
         const QByteArray route = line.split(' ').value(0) + ' ' + line.split(' ').value(1);
         const auto next = [this, &route] {
             QList<QByteArray> &queued = m_routes[route];
             return queued.size() > 1 ? queued.takeFirst() : queued.value(0);
         };
-        const QByteArray response = m_routes.contains(route)
+        const QByteArray response = forOrigin && m_routes.contains(route)
             ? next()
             : httpResponse("404 Not Found", "text/plain", "404 page not found for [" + line + "]");
         socket->write(response);
         socket->flush();
         socket->disconnectFromHost();
+    }
+
+    bool addressedToOrigin(const QByteArray &request) const
+    {
+        // Qt 6.7+ lowercases header names; older Qt sends them as written.
+        const QByteArray headers = request.left(request.indexOf("\r\n\r\n") + 2).toLower();
+        return headers.contains("\r\nhost: 127.0.0.1:" + QByteArray::number(m_server.serverPort()) + "\r\n");
     }
 
     QTcpServer m_server;
