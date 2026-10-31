@@ -32,6 +32,7 @@ public:
     bool translucency() const; void setTranslucency(bool value);
     QString windowLayout() const; void setWindowLayout(const QString &value);
     bool roundedCorners() const; void setRoundedCorners(bool value);
+    bool boringMode() const; void setBoringMode(bool value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);

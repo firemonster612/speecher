@@ -96,6 +96,7 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         stored("ui.windowLayout", member(&A::ui, &UiSettings::windowLayout), &C::windowLayout, &C::setWindowLayout),
         stored("ui.roundedCorners", member(&A::ui, &UiSettings::roundedCorners), &C::roundedCorners,
                &C::setRoundedCorners),
+        stored("ui.boringMode", member(&A::ui, &UiSettings::boringMode), &C::boringMode, &C::setBoringMode),
         stored("ui.pauseMediaDuringTranscription", member(&A::ui, &UiSettings::pauseMediaDuringTranscription),
                &C::pauseMediaDuringTranscription, &C::setPauseMediaDuringTranscription),
         stored("ui.soundsEnabled", member(&A::ui, &UiSettings::soundsEnabled), &C::soundsEnabled, &C::setSoundsEnabled),

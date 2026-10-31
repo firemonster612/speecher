@@ -262,6 +262,16 @@ void SettingsCodecs::setRoundedCorners(bool value)
     m_settings.setValue(SettingsKeys::UiRoundedCorners, value);
 }
 
+bool SettingsCodecs::boringMode() const
+{
+    return value(SettingsKeys::UiBoringMode, false).toBool();
+}
+
+void SettingsCodecs::setBoringMode(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiBoringMode, value);
+}
+
 bool SettingsCodecs::pauseMediaDuringTranscription() const
 {
     return value(SettingsKeys::UiPauseMedia, true).toBool();

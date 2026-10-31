@@ -1466,6 +1466,7 @@ private slots:
                     .translucency = false,
                     .windowLayout = QStringLiteral("split"),
                     .roundedCorners = false,
+                    .boringMode = true,
                     .pauseMediaDuringTranscription = false,
                     .soundsEnabled = true};
             s.speech.providerId = QStringLiteral("codex");

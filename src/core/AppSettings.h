@@ -171,6 +171,9 @@ struct UiSettings {
     QString windowLayout = QStringLiteral("framed");
     // The window draws its own corners rounded rather than square.
     bool roundedCorners = true;
+    // The dictation popup shows the voice as level bars beside the record
+    // dot rather than as the scatter ribbon.
+    bool boringMode = false;
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;
 

@@ -34,6 +34,7 @@ inline const QString UiColorScheme = QStringLiteral("ui/colorScheme");
 inline const QString UiTranslucency = QStringLiteral("ui/translucency");
 inline const QString UiWindowLayout = QStringLiteral("ui/windowLayout");
 inline const QString UiRoundedCorners = QStringLiteral("ui/roundedCorners");
+inline const QString UiBoringMode = QStringLiteral("ui/boringMode");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");

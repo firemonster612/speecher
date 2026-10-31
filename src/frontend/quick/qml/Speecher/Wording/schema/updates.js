@@ -56,5 +56,6 @@ var since = {
     insightsEnabled: "0.2.1",
     reviewSelectionEdits: "0.2.1",
     spokenLanguage: "0.2.1",
-    roundedCorners: "0.2.1"
+    roundedCorners: "0.2.1",
+    boringMode: "0.2.1"
 };
