@@ -2,6 +2,9 @@
 #include "common/test_doubles.h"
 #include "common/delivery_waits.h"
 #include "output/HelperPath.h"
+#ifdef SPEECHER_WITH_WAYLAND
+#include "output/WaylandClipboardOwner.h"
+#endif
 #include "platform/ScreenshotImage.h"
 #include "setup/YdotoolSetupTransaction.h"
 
@@ -65,7 +68,7 @@ private slots:
     void waylandClipboardFailures_data()
     {
         QTest::addColumn<QString>("scenario");
-        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail"}) {
+        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone"}) {
             QTest::newRow(scenario) << QString::fromLatin1(scenario);
         }
     }
@@ -114,10 +117,11 @@ private slots:
             return file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         };
         QVERIFY(script("wl-copy", R"(
-case "$T4_SCENARIO" in "copy failure"|"both fail") exit 1;; esac
+case "$T4_SCENARIO" in "copy failure"|"both fail"|"slow snapshot"|"clipboard gone") exit 1;; esac
 /bin/cat > "$T4_CLIPBOARD"
 )"));
         QVERIFY(script("wl-paste", R"(
+if [ "$T4_SCENARIO" = "slow snapshot" ]; then /bin/sleep 0.3; fi
 if [ "$T4_SCENARIO" = "snapshot failure" ]; then
     echo 'snapshot read failed' >&2
     exit 1
@@ -137,6 +141,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             QVERIFY(copyAndWait(clipboard, makeDeliveryContent("dictation", OutputFormat::PlainText)).ok);
             QVERIFY(writeClipboard("someone else's copy"));
             QVERIFY(restoreAndWait(clipboard, previous.snapshot, true).ok);
+        } else if (scenario == "clipboard gone") {
+            // The helpers answer once the clipboard object is gone and its
+            // context is not: nothing answers, and nothing reaches the
+            // freed object.
+            QObject context;
+            bool answered = false;
+            auto *wayland = new WlClipboardDelivery;
+            wayland->copy(makeDeliveryContent("dictation", OutputFormat::PlainText), &context,
+                          [&answered](const ClipboardCopied &) { answered = true; });
+            delete wayland;
+            QTest::qWait(300);
+            QVERIFY(!answered);
         } else {
             FakeTargetProvider provider;
             provider.directInsertionAvailable = true;
@@ -148,7 +164,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             settings.restoreClipboardAfterTyping = true;
             Target target;
             target.applicationId = "test.editor";
+            // The helpers run in the background: the event loop keeps turning
+            // while wl-paste takes its time.
+            int turns = 0;
+            QTimer ticker;
+            connect(&ticker, &QTimer::timeout, &ticker, [&turns] { ++turns; });
+            ticker.start(10);
             const auto result = deliverAndWait(delivery, settings, makeDeliveryContent("dictation", OutputFormat::PlainText), target);
+            ticker.stop();
+            if (scenario == "slow snapshot") {
+                QVERIFY2(turns >= 5, qPrintable(QString::number(turns)));
+            }
             QCOMPARE(provider.insertCalls, 1);
             QCOMPARE(result.ok, scenario != "both fail");
             if (scenario == "snapshot failure") {
@@ -1427,6 +1453,60 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(answers, goesMidCheck ? 0 : 1);
         QCOMPARE(pressed, goesMidCheck ? 0 : 1);
     }
+
+#ifdef SPEECHER_WITH_WAYLAND
+    // Publishing replaces the helper serving the selection without waiting
+    // for it: the new one's answer comes while the old one still runs, and
+    // the old one is stopped soon after.
+    void aReplacedClipboardHelperIsNotWaitedFor()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString pids = dir.filePath(QStringLiteral("pids"));
+        const QString helper = dir.filePath(QStringLiteral("helper"));
+        QFile script(helper);
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        // Serves until it is stopped, as a helper the compositor never tells
+        // to let go would.
+        script.write("#!/bin/sh\n/bin/cat > /dev/null\necho $$ >> '" + QFile::encodeName(pids)
+                     + "'\necho READY\nexec /bin/sleep 30\n");
+        script.close();
+        QVERIFY(script.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+        const auto running = [](qint64 pid) { return QFileInfo::exists(QStringLiteral("/proc/%1").arg(pid)); };
+        const auto helperPids = [&pids] {
+            QFile file(pids);
+            QList<qint64> found;
+            if (file.open(QIODevice::ReadOnly)) {
+                for (const QByteArray &line : file.readAll().split('\n')) {
+                    if (!line.isEmpty()) found << line.toLongLong();
+                }
+            }
+            return found;
+        };
+        // Ends with the test, so no late answer reaches published.
+        QObject context;
+        int published = 0;
+        const auto publish = [&](const QList<ClipboardMimePart> &parts) {
+            WaylandClipboardOwner::start(helper, parts, &context, [&published](bool ok, const QString &) {
+                published += ok ? 1 : 0;
+            });
+        };
+
+        publish({{QStringLiteral("text/plain"), QByteArrayLiteral("first")}});
+        QTRY_COMPARE(published, 1);
+        publish({{QStringLiteral("text/plain"), QByteArrayLiteral("second")}});
+        QTRY_COMPARE(published, 2);
+        const QList<qint64> helpers = helperPids();
+        QCOMPARE(helpers.size(), 2);
+        QVERIFY(running(helpers.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(!running(helpers.at(0)), 5000);
+
+        // Clearing lets the second go too, so no helper outlives the test.
+        publish({});
+        QTRY_COMPARE(published, 3);
+        QTRY_VERIFY_WITH_TIMEOUT(!running(helpers.at(1)), 5000);
+    }
+#endif
 
     // A delivery asked for while another waits in a nested event loop, here
     // while the insertion is verified, waits its turn: the answers keep the

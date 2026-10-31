@@ -800,7 +800,7 @@ private slots:
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(targetProvider->captureCalls, 0);
         QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Listening));
         speech->emitFinalText(QStringLiteral("hello"));
         session.stopListening();
 

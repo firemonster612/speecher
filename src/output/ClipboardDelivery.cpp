@@ -107,10 +107,7 @@ void ClipboardDelivery::copyWayland(const DeliveryContent &content,
                                     QObject *context,
                                     std::function<void(const ClipboardCopied &)> done)
 {
-    Q_UNUSED(context)
-    ClipboardCopied copied;
-    copied.ok = m_waylandClipboard.copy(content, &copied.htmlAvailable, &copied.error);
-    done(copied);
+    m_waylandClipboard.copy(content, context, std::move(done));
 }
 #endif
 
@@ -141,15 +138,14 @@ bool ClipboardDelivery::canSnapshot() const
 
 void ClipboardDelivery::capture(QObject *context, std::function<void(const ClipboardCaptured &)> done)
 {
-    Q_UNUSED(context)
-    ClipboardCaptured captured;
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        captured.ok = WlClipboardDelivery::capture(&captured.snapshot, &captured.error);
-        done(captured);
+        WlClipboardDelivery::capture(context, std::move(done));
         return;
     }
 #endif
+    Q_UNUSED(context)
+    ClipboardCaptured captured;
     captured.ok = captureQtClipboard(&captured.snapshot, &captured.error);
     done(captured);
 }
@@ -159,17 +155,17 @@ void ClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
                                 QObject *context,
                                 std::function<void(const ClipboardRestored &)> done)
 {
-    Q_UNUSED(context)
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        ClipboardRestored restored;
-        restored.ok = preserveNewCopy
-            ? m_waylandClipboard.restorePreservingNewCopy(snapshot, &restored.error, &restored.keptNewerCopy)
-            : WlClipboardDelivery::restore(snapshot, &restored.error);
-        done(restored);
+        if (preserveNewCopy) {
+            m_waylandClipboard.restorePreservingNewCopy(snapshot, context, std::move(done));
+        } else {
+            WlClipboardDelivery::restore(snapshot, context, std::move(done));
+        }
         return;
     }
 #endif
+    Q_UNUSED(context)
     if (preserveNewCopy && !m_qtClipboard.ownsClipboardContent()) {
         // Keeping another application's newer copy satisfies automatic restore.
         done({true, true, {}});
