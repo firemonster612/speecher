@@ -75,7 +75,7 @@ struct Script {
     std::function<void()> audioSent;
     // How long each preparation takes on the worker.
     int prepareDelayMs = 0;
-    // Each attempt connects as it starts, as a streaming service's does.
+    // Each attempt connects as it starts, as the Custom Endpoint's does.
     bool connects = false;
 };
 
