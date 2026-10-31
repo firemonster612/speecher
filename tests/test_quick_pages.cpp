@@ -852,6 +852,60 @@ private slots:
         QVERIFY2(profileEnd <= buttonsStart, qPrintable(QStringLiteral("%1 > %2").arg(profileEnd).arg(buttonsStart)));
     }
 
+    // At the window's narrowest, each app type's name and examples end
+    // before its paste choice instead of running under it.
+    void appTypeRulesKeepTheirWordsClearOfTheirChoices()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        main->resize(main->minimumWidth(), main->height());
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("appRules"));
+        QTRY_VERIFY(schemaRow(main, QStringLiteral("categoryPasteRule_general")));
+        QTest::qWait(kSettleMs);
+
+        int checked = 0;
+        QList<QQuickItem *> items{main->contentItem()};
+        while (!items.isEmpty()) {
+            QQuickItem *row = items.takeLast();
+            items += row->childItems();
+            if (!row->property("rowId").toString().startsWith(QLatin1String("categoryPasteRule_"))) {
+                continue;
+            }
+            // The row's words, and the left end of its choice, a Select.
+            QList<QQuickItem *> words;
+            qreal choiceStart = -1;
+            QList<QQuickItem *> parts{row};
+            while (!parts.isEmpty()) {
+                QQuickItem *part = parts.takeLast();
+                if (QByteArray(part->metaObject()->className()).startsWith("Select_")) {
+                    choiceStart = part->mapToScene(QPointF(0, 0)).x();
+                    continue;
+                }
+                parts += part->childItems();
+                if (part->isVisible() && part->property("contentWidth").isValid() && !part->property("text").toString().isEmpty()) {
+                    words.append(part);
+                }
+            }
+            QVERIFY2(choiceStart >= 0 && !words.isEmpty(), qPrintable(row->property("rowId").toString()));
+            for (QQuickItem *text : words) {
+                const qreal end = text->mapToScene(QPointF(text->property("contentWidth").toReal(), 0)).x();
+                QVERIFY2(end <= choiceStart, qPrintable(QStringLiteral("%1: \"%2\" ends at %3, its choice starts at %4")
+                                                            .arg(row->property("rowId").toString(), text->property("text").toString())
+                                                            .arg(end)
+                                                            .arg(choiceStart)));
+            }
+            ++checked;
+        }
+        QCOMPARE(checked, 7);
+    }
+
     // Undo after deleting an app's paste rule puts it back, even once the
     // page it was deleted on is gone.
     void pasteRuleUndoOutlivesItsPage()
