@@ -277,9 +277,17 @@ TextDelivery::PasteChoice TextDelivery::choosePasteMethod(const OutputSettings &
     return {pastes ? pasteRule.method : PasteMethod::ClipboardOnly, currentFocusFallback};
 }
 
-DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
-                                     const DeliveryContent &content,
-                                     const Target &target)
+void TextDelivery::deliver(const OutputSettings &settings,
+                           const DeliveryContent &content,
+                           const Target &target)
+{
+    const DeliveryResult result = deliverNow(settings, content, target);
+    QMetaObject::invokeMethod(this, [this, result] { emit delivered(result); }, Qt::QueuedConnection);
+}
+
+DeliveryResult TextDelivery::deliverNow(const OutputSettings &settings,
+                                        const DeliveryContent &content,
+                                        const Target &target)
 {
     const PasteChoice choice = choosePasteMethod(settings, target);
     PasteMethod pasteMethod = choice.method;

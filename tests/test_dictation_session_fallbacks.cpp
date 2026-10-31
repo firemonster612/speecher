@@ -609,6 +609,7 @@ private slots:
         local->emitFinalText(QStringLiteral("more words"));
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("first words more words"));
     }
 
@@ -679,6 +680,7 @@ private slots:
         local->emitFinalText(QStringLiteral("more words"));
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("first words more words"));
     }
 
@@ -783,10 +785,12 @@ private slots:
 
         codex->emitFailure(QStringLiteral("timed out"), true, SpeechPhase::Finalize, ProviderFailureKind::Timeout);
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(local->audioChunks, QList<QByteArray>(10, second));
         QTest::qWait(50);
         QCOMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
     }
 
     // Once audio went past the budget, what follows stays dropped, even when
@@ -814,6 +818,7 @@ private slots:
         };
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>(10, second));
     }
 
@@ -886,6 +891,7 @@ private slots:
         local->emitFinalText(QStringLiteral("after"));
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("before after"));
         QCOMPARE(codex->stopCalls, 1);
     }
@@ -923,6 +929,7 @@ private slots:
         endpoint->emitFailure(QStringLiteral("upload failed"), false, SpeechPhase::Finalize,
                               ProviderFailureKind::Server);
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("kept"));
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
         QVERIFY(rig.session->lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
@@ -997,6 +1004,7 @@ private slots:
         local->onStartAttempt = [local] { local->emitFinalText(QStringLiteral("resumed words")); };
         codex->emitFailure(QStringLiteral("refused"), false, SpeechPhase::Finalize, Network);
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"y"});
         QCOMPARE(local->stopCalls, 1);
         QTRY_COMPARE(rig.microphoneStarts, 2);
@@ -1045,10 +1053,12 @@ private slots:
         rig.session->stopListening();
         QCOMPARE(rig.session->state(), DictationState::Stopping);
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(local->audioChunks, QList<QByteArray>{"z"});
         QCOMPARE(local->stopCalls, 1);
         QTest::qWait(50);
         QCOMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
     }
 
     // A refiner that can't be reached makes way for the next, which gets the
@@ -1077,6 +1087,7 @@ private slots:
         QCOMPARE(local->lastRawTranscript, anthropic->lastRawTranscript);
         local->emitCompletedText(QStringLiteral("Spoken words."));
         QCOMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("Spoken words."));
     }
 
@@ -1097,6 +1108,7 @@ private slots:
         rig.session->setReachability(Reachability::Offline);
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("Spoken words."));
         QCOMPARE(openai->prepareCalls + openai->refineCalls, 0);
         QCOMPARE(anthropic->prepareCalls + anthropic->refineCalls, 0);
@@ -1129,6 +1141,7 @@ private slots:
             openai->emitFailure(QStringLiteral("truncated"), ProviderFailureKind::InvalidResult);
         }
         QCOMPARE(rig.delivery.calls, 1);
+        QTRY_COMPARE(rig.delivery.answers, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
         QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
         QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Sent to the app")
@@ -1244,10 +1257,12 @@ private slots:
         if (stopWhileRenewing) {
             rig.session->stopListening();
             QCOMPARE(rig.delivery.calls, 1);
+            QTRY_COMPARE(rig.delivery.answers, 1);
             QTest::qWait(250);
             QCOMPARE(openai->refreshCalls, 0);
             QCOMPARE(openai->refineCalls, 0);
             QCOMPARE(rig.delivery.calls, 1);
+            QTRY_COMPARE(rig.delivery.answers, 1);
             return;
         }
         QTRY_COMPARE(openai->refineCalls, 1);
@@ -1530,6 +1545,7 @@ private slots:
         session.stopListening();
         QTRY_COMPARE(session.state(), DictationState::Refining);
         QTRY_COMPARE(delivery.calls, 1);
+        QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(refiner->refreshRuns(), 1);
         QCOMPARE(refiner->prepareCalls, 0);
         QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));

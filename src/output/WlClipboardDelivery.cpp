@@ -107,7 +107,9 @@ bool WlClipboardDelivery::isAvailable()
 
 bool WlClipboardDelivery::isWaylandSession()
 {
-    if (qGuiApp) {
+    // A QCoreApplication has no platform to ask, so it goes by the
+    // environment, as no application at all does.
+    if (qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
         return QGuiApplication::platformName().contains(QStringLiteral("wayland"),
                                                         Qt::CaseInsensitive);
     }

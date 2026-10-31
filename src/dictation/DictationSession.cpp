@@ -142,6 +142,7 @@ DictationSession::DictationSession(SettingsStore *settings,
     connect(m_audio, &AudioInput::started, this, &DictationSession::microphoneStarted);
     connect(m_audio, &AudioInput::stopped, this, &DictationSession::microphoneStopped);
     connect(m_audio, &AudioInput::failed, this, &DictationSession::microphoneFailed);
+    connect(m_delivery, &TextDeliveryAdapter::delivered, this, &DictationSession::finishDelivery);
 }
 
 void DictationSession::setScreenshotContextProvider(ScreenshotContextProvider *provider)
@@ -1180,11 +1181,21 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
     const quint64 step = setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
     m_settings->recordVocabularyUsage(text);
-    const DeliveryResult result = m_delivery->deliver(
-        settings.output,
-        makeDeliveryContent(text, settings.output.format),
-        m_target);
-    if (step != m_step) {
+    m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, profile, profileName,
+                                        settings.output.completionStatusDurationMs};
+    ++m_unansweredDeliveries;
+    m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target);
+}
+
+void DictationSession::finishDelivery(const DeliveryResult &result)
+{
+    // Answers come in order: one for an earlier delivery, which a shutdown
+    // left behind, is never this one's.
+    if (--m_unansweredDeliveries > 0) {
+        return;
+    }
+    const AwaitedDelivery delivery = std::exchange(m_awaitedDelivery, {});
+    if (delivery.step != m_step) {
         qInfo() << "delivery result ignored after the session moved on";
         return;
     }
@@ -1192,11 +1203,12 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
     m_sessionSettings.reset();
     m_target = {};
     if (result.ok) {
-        emit transcriptDelivered(text);
+        emit transcriptDelivered(delivery.text);
         // The live setting, not the session snapshot: turning insights off
         // mid-session must stop this one being recorded.
         if (m_settings->dictationSnapshot().insightsEnabled) {
-            DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName};
+            DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, delivery.words, delivery.appName,
+                                   delivery.profile, delivery.profileName};
             record.speechProviders = m_providerHistory.speechRan;
             record.refinementProviders = m_providerHistory.refinementRan;
             emit dictationRecorded(record);
@@ -1214,16 +1226,16 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
                                                           m_usedRawTranscript,
                                                           m_speechWarning,
                                                           providerLabels());
-        if (!note.isEmpty()) {
-            outcome.message += popupMessageSeparator() + note;
+        if (!delivery.note.isEmpty()) {
+            outcome.message += popupMessageSeparator() + delivery.note;
         }
         m_lastMessage = outcome.message;
         emit popupMessageRequested(outcome.message, outcome.outcome, outcome.fix);
         emit statusChanged(outcome.message);
         // One that offers a fix stays up long enough to read and use it.
         const int durationMs = outcome.fix.fix == ErrorFix::None
-            ? settings.output.completionStatusDurationMs
-            : std::max(popupErrorDismissMs(outcome.message), settings.output.completionStatusDurationMs);
+            ? delivery.completionStatusDurationMs
+            : std::max(popupErrorDismissMs(outcome.message), delivery.completionStatusDurationMs);
         m_completionTimer->start(durationMs);
     } else {
         qWarning().noquote() << "text delivery failed message=" + result.message;

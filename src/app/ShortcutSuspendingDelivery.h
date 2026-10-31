@@ -8,8 +8,8 @@
 namespace speecher {
 
 // Text delivery injects keystrokes, and a single-key binder watching the
-// injected key would take them for the user's finger. Suspending exactly for
-// the duration of the delivery call closes that loop: the single-key binders
+// injected key would take them for the user's finger. Suspending from the
+// deliver() call until its delivered() closes that loop: the single-key binders
 // gate events while suspended and drain their sources before the suspension
 // lifts, so nothing injected leaks through after resume either. Every Global
 // Shortcut is suspended: an injected key can match the cancel shortcut as
@@ -25,20 +25,22 @@ public:
         , m_inner(inner)
         , m_binders(std::move(binders))
     {
+        connect(m_inner, &TextDeliveryAdapter::delivered, this, [this](const DeliveryResult &result) {
+            for (GlobalShortcutBinder *binder : m_binders) {
+                binder->resume();
+            }
+            emit delivered(result);
+        });
     }
 
-    DeliveryResult deliver(const OutputSettings &settings,
-                           const DeliveryContent &content,
-                           const Target &target) override
+    void deliver(const OutputSettings &settings,
+                 const DeliveryContent &content,
+                 const Target &target) override
     {
         for (GlobalShortcutBinder *binder : m_binders) {
             binder->suspend();
         }
-        const DeliveryResult result = m_inner->deliver(settings, content, target);
-        for (GlobalShortcutBinder *binder : m_binders) {
-            binder->resume();
-        }
-        return result;
+        m_inner->deliver(settings, content, target);
     }
 
 private:

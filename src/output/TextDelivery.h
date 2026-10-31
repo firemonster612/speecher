@@ -39,9 +39,9 @@ public:
     explicit TextDelivery(TargetProvider *targetProvider, QObject *parent = nullptr);
     explicit TextDelivery(BackendFactory backendFactory, QObject *parent = nullptr);
     TextDelivery(BackendFactory backendFactory, TargetProvider *targetProvider, QObject *parent = nullptr);
-    DeliveryResult deliver(const OutputSettings &settings,
-                           const DeliveryContent &content,
-                           const Target &target) override;
+    void deliver(const OutputSettings &settings,
+                 const DeliveryContent &content,
+                 const Target &target) override;
     // The steps deliver takes for this paste method and these settings, in
     // order: insert (straight into the app, through accessibility), press
     // (the paste keys) and copy (the words left on the clipboard).
@@ -70,6 +70,11 @@ private:
     class PreviousClipboard;
 
     void useDefaultBackendFactory();
+    // The whole delivery, done before it returns; deliver() reports its
+    // result on the next turn of the event loop.
+    DeliveryResult deliverNow(const OutputSettings &settings,
+                              const DeliveryContent &content,
+                              const Target &target);
     // The Paste Rule's method when the Target can be told apart from whatever
     // else is in front, or when a global rule pastes blindly into the current
     // focus; only the clipboard otherwise, and always for a secure field.
