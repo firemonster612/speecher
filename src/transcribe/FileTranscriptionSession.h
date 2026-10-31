@@ -226,6 +226,8 @@ private:
     // The microphone a startListening() batch reads instead of a file.
     QPointer<AudioInput> m_input;
     Microphone m_microphone = Microphone::Off;
+    // finishListening() came before the microphone opened.
+    bool m_finishBeforeListening = false;
     QPointer<TranscriptRefiner> m_refiner;
     // Each refiner the file tried, and why it could not refine it.
     QList<std::pair<QString, QString>> m_refinementFailures;

@@ -3032,6 +3032,38 @@ private slots:
         QCOMPARE(m_script.attempts, 0);
     }
 
+    // A listening batch finished as it starts never opens its microphone,
+    // and ends on its own.
+    void aListeningBatchFinishedAsItStartsNeverListens_data()
+    {
+        QTest::addColumn<bool>("asTheTranscriptClears");
+        QTest::newRow("as the transcript clears") << true;
+        QTest::newRow("as the file starts") << false;
+    }
+
+    void aListeningBatchFinishedAsItStartsNeverListens()
+    {
+        QFETCH(bool, asTheTranscriptClears);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        const auto finish = [&session] { session.finishListening(); };
+        if (asTheTranscriptClears) {
+            QObject::connect(&session, &FileTranscriptionSession::filePartialText, &session, finish,
+                             Qt::SingleShotConnection);
+        } else {
+            QObject::connect(&session, &FileTranscriptionSession::fileStarted, &session, finish);
+        }
+
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+
+        QVERIFY(!microphone.started);
+        QCOMPARE(finished.first().at(1).toBool(), false);
+        QVERIFY(!session.isRunning());
+    }
+
     // A start inside an earlier stop of the same microphone, from the
     // batchFinished of a cancel made there, is refused: the outer stop would
     // close the new batch's microphone once it returns. That stop then ends

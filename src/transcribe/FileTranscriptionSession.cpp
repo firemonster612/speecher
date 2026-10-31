@@ -302,6 +302,12 @@ void FileTranscriptionSession::stopInput()
 // delivers meanwhile still counts, so the input only ends once it returns.
 void FileTranscriptionSession::finishListening()
 {
+    // A finish before the microphone opened, from a handler of the batch's
+    // first notifications: the microphone never opens.
+    if (m_running && m_input && m_microphone == Microphone::Off) {
+        m_finishBeforeListening = true;
+        return;
+    }
     if (m_microphone != Microphone::Listening) {
         return;
     }
@@ -333,6 +339,7 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     }
     m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, m_runChoices, Target{});
     m_results.clear();
+    m_finishBeforeListening = false;
     m_running = true;
     ++m_batch;
     m_index = -1;
@@ -366,6 +373,11 @@ void FileTranscriptionSession::startFile()
     }
     emit fileStarted(m_index, m_current.path);
     if (batch != m_batch) {
+        return;
+    }
+    if (m_input && m_finishBeforeListening) {
+        m_stream->endInput();
+        m_stream->prepare(m_batchSettings);
         return;
     }
     if (m_input) {
