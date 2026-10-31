@@ -33,11 +33,12 @@ public:
     // From start() until finished().
     bool isRunning() const;
     // Streams what input hears until finishListening(), with settings' speech
-    // provider and its fallbacks. Not while running. An input that cannot
-    // start has finished the stream before this returns.
+    // provider and its fallbacks, which prepare once the input has started.
+    // Not while running. An input that cannot start finishes the stream.
     void start(AudioInput *input, const AppSettings &settings);
     // Stops the input; what it heard is still sent, and the stream finishes
-    // once the provider has answered it.
+    // once the provider has answered it. listeningFinished() follows once the
+    // input has stopped.
     void finishListening();
     // Has the speech provider begin an utterance with the last voicedBytes
     // the input heard, once the audio before has gone to it; see
@@ -67,19 +68,23 @@ signals:
     // Each piece of text that will not change again, in order: a final the
     // provider sent, or the partial a stream left when it ended.
     void textFinalized(const QString &text);
+    // After finishListening(): the input has stopped, and all it heard is in
+    // the stream.
+    void listeningFinished();
     // The stream ended: stopped and answered, cancelled, or on its own. error
     // says why it ended on its own, or what went wrong on the way (the input
     // failed after it heard something); empty otherwise.
     void finished(const QString &error);
 
 private:
-    enum class Input { Off, Listening, Stopping };
+    enum class Input { Off, Starting, Listening, Stopping };
 
     bool reconnectLater(const SpeechFailure &failure);
     void waitToReconnect(const QString &reason);
     void reconnect();
     bool renewSignIn();
     void handleSignInRenewed(const std::optional<ProviderFailure> &failure);
+    void endInput();
     void fail(const QString &message);
     void finish();
     void release();
@@ -96,6 +101,8 @@ private:
 
     QPointer<AudioInput> m_input;
     Input m_inputState = Input::Off;
+    // What the providers prepare with once the input has started.
+    AppSettings m_settings;
     // The service turned the sign-in down since a stream last connected.
     bool m_signInRefused = false;
 };

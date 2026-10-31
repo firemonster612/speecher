@@ -1325,8 +1325,9 @@ private slots:
 
         QVERIFY(session.startListening(&microphone, options));
         QVERIFY(microphone.active);
-        // The provider starts once the worker reports, never inside the call.
-        QVERIFY(codex);
+        // The providers prepare once the microphone has started, and the
+        // provider starts once the worker reports, never inside the call.
+        QTRY_VERIFY(codex);
         QCOMPARE(codex->startCalls, 0);
         QTRY_VERIFY_WITH_TIMEOUT(!codex->audioChunks.isEmpty(), 10000);
         microphone.pushAudio(microphoneChunk(8000));
@@ -1335,7 +1336,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(m_script.bytes, 9600, 10000);
         microphone.pushAudio(microphoneChunk(0));
         session.finishListening();
-        QVERIFY(!microphone.active);
+        QTRY_VERIFY(!microphone.active);
         microphone.pushAudio(microphoneChunk(8000));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
@@ -1531,7 +1532,7 @@ private slots:
         // The provider finishes the last utterance once the input ends.
         m_codex->autoCompleteOnFinish = false;
         recording.stop();
-        QVERIFY(microphoneStopped);
+        QTRY_VERIFY(microphoneStopped);
         QTRY_COMPARE_WITH_TIMEOUT(m_codex->stopCalls, 1, 10000);
         QCOMPARE(stopped.count(), 0);
         m_codex->emitFinalText(QStringLiteral("Bye."));
@@ -2097,19 +2098,17 @@ private slots:
         registerStreamingCodex();
         SettingsStore settings;
         settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
-        bool microphoneStopped = false;
-        bool systemAudioStopped = false;
+        QPointer<FakeAudioInput> microphone;
+        QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
             &settings, m_registry.get(),
-            [&microphoneStopped](QObject *parent) {
-                auto *microphone = new FakeAudioInput(parent);
-                microphone->onStop = [&microphoneStopped] { microphoneStopped = true; };
-                return microphone;
+            [&microphone](QObject *parent) {
+                microphone = new FakeAudioInput(parent);
+                return microphone.data();
             },
-            [&systemAudioStopped](QObject *parent) {
-                auto *systemAudio = new FakeAudioInput(parent);
-                systemAudio->onStop = [&systemAudioStopped] { systemAudioStopped = true; };
-                return systemAudio;
+            [&systemAudio](QObject *parent) {
+                systemAudio = new FakeAudioInput(parent);
+                return systemAudio.data();
             });
         QSignalSpy changed(&recording, &RecordingSession::recordingChanged);
         QString error;
@@ -2126,8 +2125,9 @@ private slots:
 
         recording.discard();
         QVERIFY(!recording.isRecording());
-        QVERIFY(microphoneStopped);
-        QVERIFY(systemAudioStopped);
+        // Stopped at once, with no post-roll.
+        QVERIFY(!microphone || !microphone->active);
+        QVERIFY(!systemAudio || !systemAudio->active);
         QCOMPARE(meCancels, 1);
         QCOMPARE(themCancels, 1);
         QVERIFY(!QFileInfo::exists(path));
@@ -2334,18 +2334,21 @@ private slots:
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        m_codex->onStartAttempt = [this] {
+        int retries = 0;
+        m_codex->onStartAttempt = [this, &retries] {
+            ++retries;
             m_codex->emitFailure(QStringLiteral("Host unreachable"), true, SpeechPhase::Connect,
                                  ProviderFailureKind::Network);
         };
         m_codex->emitFailure(QStringLiteral("Connection reset"), true, SpeechPhase::Streaming,
                              ProviderFailureKind::Network);
         microphone->pushAudio(microphoneChunk(8000));
-        const int startsBefore = m_codex->startCalls;
 
         recording.stop();
+        // Counted as it happens: the stream's provider may be gone once the
+        // recording has stopped.
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 2000);
-        QCOMPARE(m_codex->startCalls, startsBefore + 1);
+        QCOMPARE(retries, 1);
         const RecordingStreamStatus stream = stopped.first().first().value<RecordingStatus>().streams.first();
         QCOMPARE(stream.state, RecordingStreamStatus::State::Stopped);
         QCOMPARE(stream.problem, QStringLiteral("Host unreachable"));
@@ -2553,7 +2556,7 @@ private slots:
         me->autoCompleteOnFinish = false;
         microphone->pushAudio(microphoneChunk(8000));
         recording.stop();
-        QCOMPARE(log.flushes, 1);
+        QTRY_COMPARE(log.flushes, 1);
         // The input ends once all its audio has gone, the canceller's last
         // with it.
         QTRY_COMPARE_WITH_TIMEOUT(me->stopCalls, 1, 5000);
@@ -3090,85 +3093,27 @@ private slots:
         QVERIFY(!microphone.active);
     }
 
-    // A start inside an earlier stop of the same microphone, from the
-    // batchFinished of a cancel made there, is refused: the outer stop would
-    // close the new batch's microphone once it returns. That stop then ends
-    // nothing more.
-    void aStartInsideAnEarlierMicrophoneStopIsRefused_data()
+    // A cancel stops the microphone at once: a batch started from its
+    // batchFinished, on the same microphone, is accepted and listens.
+    void aStartAsACancelFinishesListens()
     {
-        QTest::addColumn<bool>("failedFile");
-        QTest::newRow("while it finishes listening") << false;
-        QTest::newRow("while a failed file stops it") << true;
-    }
-
-    void aStartInsideAnEarlierMicrophoneStopIsRefused()
-    {
-        QFETCH(bool, failedFile);
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
-        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
-        bool cancelled = false;
-        microphone.onStop = [&] {
-            if (!std::exchange(cancelled, true)) {
-                session.cancel();
-            }
-        };
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_VERIFY(microphone.started);
         std::optional<bool> accepted;
         QObject::connect(&session, &FileTranscriptionSession::batchFinished, &session, [&] {
             accepted = session.startListening(&microphone, speechOnly());
         }, Qt::SingleShotConnection);
-        QVERIFY(session.startListening(&microphone, speechOnly()));
-
-        failedFile ? microphone.emitFailure(QStringLiteral("unplugged")) : session.finishListening();
-        QTest::qWait(100);
-
-        QVERIFY(cancelled);
-        QCOMPARE(accepted, std::optional<bool>(false));
-        QCOMPARE(finished.count(), 1);
-        QCOMPARE(finished.first().at(1).toBool(), true);
-        QVERIFY(!session.isRunning());
-        QVERIFY(!microphone.active);
-    }
-
-    // A start inside a cancel's microphone stop is refused, and a finish
-    // there ends nothing: the microphone stays off once the cancel is done.
-    // Cancelling again does nothing more.
-    void aStartWhileACancelStopsTheMicrophoneIsRefused_data()
-    {
-        QTest::addColumn<bool>("finishes");
-        QTest::newRow("start") << false;
-        QTest::newRow("start, then finish") << true;
-    }
-
-    void aStartWhileACancelStopsTheMicrophoneIsRefused()
-    {
-        QFETCH(bool, finishes);
-        SettingsStore settings;
-        FileTranscriptionSession session(&settings, m_registry.get());
-        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        FakeAudioInput microphone;
-        QVERIFY(session.startListening(&microphone, speechOnly()));
-        std::optional<bool> accepted;
-        microphone.onStop = [&] {
-            if (accepted) {
-                return;
-            }
-            accepted = session.startListening(&microphone, speechOnly());
-            if (finishes) {
-                session.finishListening();
-            }
-        };
 
         session.cancel();
-        QTest::qWait(100);
 
-        QCOMPARE(accepted, std::optional<bool>(false));
-        QCOMPARE(finished.count(), 1);
-        QVERIFY(!session.isRunning());
-        QVERIFY(!microphone.active);
+        QCOMPARE(accepted, std::optional<bool>(true));
+        QTRY_COMPARE_WITH_TIMEOUT(m_script.attempts, 1, 5000);
+        QVERIFY(microphone.active);
         session.cancel();
-        QCOMPARE(finished.count(), 1);
+        QVERIFY(!microphone.active);
     }
 
     // A batch cancelled as its stream clears the transcript for the provider
@@ -3194,27 +3139,6 @@ private slots:
         QCOMPARE(finished.count(), 1);
         QVERIFY(!session.isRunning());
         QCOMPARE(m_script.attempts, 0);
-    }
-
-    // A batch cancelled while a failed file stops the microphone finishes
-    // once, cancelled, without reporting the file.
-    void aCancelWhileAFailedFileStopsTheMicrophoneFinishesOnce()
-    {
-        SettingsStore settings;
-        FileTranscriptionSession session(&settings, m_registry.get());
-        QSignalSpy files(&session, &FileTranscriptionSession::fileFinished);
-        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        FakeAudioInput microphone;
-        microphone.onStop = [&session] { session.cancel(); };
-        QVERIFY(session.startListening(&microphone, speechOnly()));
-
-        microphone.emitFailure(QStringLiteral("unplugged"));
-        QTest::qWait(100);
-
-        QCOMPARE(files.count(), 0);
-        QCOMPARE(finished.count(), 1);
-        QCOMPARE(finished.first().at(1).toBool(), true);
-        QVERIFY(!session.isRunning());
     }
 
     void withoutVocabularyTheProviderHearsNone()

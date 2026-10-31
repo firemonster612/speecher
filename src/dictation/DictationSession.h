@@ -17,7 +17,6 @@
 #include <QPointer>
 #include <QVector>
 
-#include <functional>
 #include <optional>
 
 class QTimer;
@@ -49,13 +48,8 @@ public:
     ~DictationSession() override;
 
     DictationState state() const;
-    // The state stateChanged and the status line report: Starting while a
-    // start waits for the microphone to stop, otherwise state().
-    DictationState reportedState() const;
-    // reportedState()'s name, as IPC and the command line carry it.
+    // state()'s name, as IPC and the command line carry it.
     QString stateName() const;
-    // A start that arrived while the microphone was stopping and waits for it.
-    bool startPending() const;
     QString lastMessage() const;
     QString lastTranscript() const;
     // How long this session has listened so far, pauses left out.
@@ -89,15 +83,15 @@ public slots:
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
     // While a selection edit is reviewed it keeps the original, silently.
     // Dismisses an error; does nothing while idle or delivering, when the text
-    // is already out. A start made while it lets go of the microphone begins
-    // once it has; a cancel made then drops that start.
+    // is already out.
     void cancel();
     // Ends a review by putting the edit in place of the selection, or on the
     // clipboard when the selection is no longer the one it was made from.
     void replaceSelection();
     // Pause turns the microphone off and lets the speech provider finish the
-    // words already spoken; they stay in the transcript. Resume listens on in
-    // a fresh speech attempt. Stop while paused delivers what was said.
+    // words already spoken; they stay in the transcript. The session shows
+    // Paused once the microphone has stopped. Resume listens on in a fresh
+    // speech attempt. Stop while paused delivers what was said.
     void pause();
     void resume();
     // The pause button: pauses, or resumes while paused.
@@ -161,7 +155,6 @@ private:
     void noteSignIn(const QString &providerId, bool signedIn);
     void noteRan(ProviderRole role, const QString &providerId);
     ProviderLabels providerLabels() const;
-    void continueStartupAfterPreparation();
     void failStartup(const QString &message, const PopupErrorAction &fix);
     void failSession(const QString &message, const PopupErrorAction &fix = {});
     void beginRefinement(quint64 generation);
@@ -182,17 +175,22 @@ private:
     void emitReview();
     bool selectionUnchanged();
     void endSpeechAfterFailure(const SpeechFailure &failure);
-    // QtAudioInput::stop() spins a nested event loop for the post-roll, during
-    // which commands and provider signals are dispatched. Callers settle the
-    // session before stopping and recheck it afterwards.
-    void stopAudio();
-    bool startWaits() const;
-    void letGoOfMicrophone(const std::function<void()> &end);
-    void startPendingLater();
-    void cancelSession();
-    bool startAudio(QString *error);
-    void restartMicrophone(quint64 step);
-    void setMicrophoneOpen(bool open);
+    // The microphone, which starts and stops in the background.
+    enum class Microphone {
+        Off,
+        Starting,
+        On,
+        // Stopping for a pause, which the session shows once it has stopped.
+        Pausing,
+        // Stopping for a stop; the speech proceeds once it has stopped.
+        Stopping,
+    };
+    void startMicrophone();
+    void stopMicrophone(Microphone stopping);
+    void abortMicrophone();
+    void microphoneStarted();
+    void microphoneStopped();
+    void microphoneFailed(const QString &message);
     void updateMicrophoneHeld();
     void updateListening();
     // note follows the receipt, such as why an edit went to the clipboard.
@@ -241,11 +239,6 @@ private:
     // discarded, is for what answers later: timers, a popup that was
     // painted, a screenshot, a refiner's revision.
     quint64 m_generation = 0;
-    // The step the microphone was last started at; 0 once stopped.
-    quint64 m_audioStep = 0;
-    // A resume's step whose microphone restarts once the outermost stop
-    // returns; 0 for none.
-    quint64 m_restartStep = 0;
     // Bumped by every setState(), even to the same state.
     quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
@@ -272,15 +265,11 @@ private:
     ProviderHistory m_providerHistory;
     // What the system last said about the internet.
     Reachability m_reachability = Reachability::Unknown;
-    // Inside stopAudio(), or inside letGoOfMicrophone(): a session start
-    // waits in m_pendingStart until it is over, unless a stop or cancel drops
-    // it first.
-    int m_audioStopDepth = 0;
-    bool m_lettingGoOfMicrophone = false;
-    bool m_microphoneOpen = false;
+    // Every end of a session, cancel, failure or shutdown, aborts it before
+    // the session announces the end, so a start never waits for it.
+    Microphone m_microphone = Microphone::Off;
     bool m_microphoneHeld = false;
     bool m_listening = false;
-    std::optional<SessionOverrides> m_pendingStart;
 };
 
 } // namespace speecher

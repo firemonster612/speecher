@@ -2,7 +2,6 @@
 
 #include "platform/audio/LoopbackPcm.h"
 
-#include <QEventLoop>
 #include <QMetaObject>
 #include <QScopeGuard>
 #include <QTimer>
@@ -106,15 +105,14 @@ WinCaptureInput::~WinCaptureInput()
     endCapture();
 }
 
-bool WinCaptureInput::start(QString *error)
+void WinCaptureInput::start()
 {
-    if (m_thread.joinable()) {
-        return true;
-    }
+    abort();
     setEchoCancellationWarning({});
     QString failure;
     m_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (m_stopEvent) {
+        // Waits only for the device to open, on the capture thread.
         std::promise<QString> opened;
         std::future<QString> done = opened.get_future();
         m_thread = std::thread(&WinCaptureInput::capture, this, m_generation, std::move(opened));
@@ -123,25 +121,42 @@ bool WinCaptureInput::start(QString *error)
         failure = m_wording.startFailed(qt_error_string(int(GetLastError())));
     }
     if (failure.isEmpty()) {
-        return true;
+        reportLater([this] { emit started(); });
+        return;
     }
     endCapture();
-    if (error) {
-        *error = failure;
-    }
-    return false;
+    reportLater([this, failure] { emit failed(failure); });
 }
 
+// The post-roll's audio is delivered while the timer runs.
 void WinCaptureInput::stop()
 {
-    if (m_thread.joinable() && m_postRollMs > 0) {
-        // The post-roll's audio is delivered meanwhile.
-        QEventLoop loop;
-        QTimer::singleShot(m_postRollMs, &loop, &QEventLoop::quit);
-        loop.exec();
+    if (!m_thread.joinable() || m_stopping) {
+        return;
     }
+    m_stopping = true;
+    const quint64 generation = m_generation;
+    const auto finish = [this, generation] {
+        if (generation != m_generation) {
+            return;
+        }
+        endCapture();
+        deliverAudio();
+        emit stopped();
+    };
+    if (m_postRollMs > 0) {
+        QTimer::singleShot(m_postRollMs, this, finish);
+    } else {
+        reportLater(finish);
+    }
+}
+
+void WinCaptureInput::abort()
+{
+    dropReports();
     endCapture();
-    deliverAudio();
+    const QMutexLocker locker(&m_mutex);
+    m_queued.clear();
 }
 
 bool WinCaptureInput::isActive() const
@@ -243,6 +258,7 @@ void WinCaptureInput::endCapture()
         m_stopEvent = nullptr;
         ++m_generation;
     }
+    m_stopping = false;
 }
 
 void WinCaptureInput::fail(quint64 generation, const QString &message)
@@ -250,7 +266,13 @@ void WinCaptureInput::fail(quint64 generation, const QString &message)
     if (generation != m_generation) {
         return;
     }
+    const bool stopping = m_stopping;
     endCapture();
+    if (stopping) {
+        deliverAudio();
+        emit stopped();
+        return;
+    }
     emit failed(message);
 }
 

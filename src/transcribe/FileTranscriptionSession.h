@@ -125,16 +125,12 @@ public:
     ~FileTranscriptionSession() override;
 
     bool isRunning() const;
-    // False when a batch is already running or there is nothing to do. Also
-    // false while the session still lets go of the last one: inside a
-    // cancel's cleanup or an input's stop, as from a handler of the cancel's
-    // batchFinished.
+    // False when a batch is already running or there is nothing to do.
     bool start(const QStringList &paths, const TranscribeOptions &options);
     // Transcribes what input hears until finishListening(), as one file with
     // no path that is never saved. Audio heard while the providers prepare waits for them, and a
     // provider that fails before any reached it hands all of it to the next.
-    // False when a batch is already running, or when start() would be
-    // refused for letting go of the last one.
+    // False when a batch is already running.
     bool startListening(AudioInput *input, const TranscribeOptions &options);
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
@@ -155,10 +151,9 @@ signals:
 
 private:
     // Where the microphone is, for a batch started with startListening().
-    enum class Microphone { Off, Listening, Stopping };
+    enum class Microphone { Off, Starting, Listening, Stopping };
 
-    bool canStart() const;
-    void stopInput();
+    void listenToNothing();
     void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
     void measureFile();
@@ -199,15 +194,9 @@ private:
     TranscribeFileResult m_current;
     bool m_running = false;
     // Moves on as a batch begins or is cancelled. A handler of any signal the
-    // batch emits, directly or through a call, or an event loop the
-    // microphone spins, may do either: after each such call the batch checks
-    // it and goes no further once it moved.
+    // batch emits, directly or through a call, may do either: after each such
+    // call the batch checks it and goes no further once it moved.
     quint64 m_batch = 0;
-    // A cancel releases the batch's resources; the microphone's stop spins
-    // an event loop meanwhile.
-    bool m_cancelling = false;
-    // Inside the input's stop(), from any caller.
-    int m_inputStopDepth = 0;
     int m_index = -1;
 
     // The current pass over the file: a first that measures it, then one

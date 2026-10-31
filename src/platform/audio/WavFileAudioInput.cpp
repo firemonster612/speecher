@@ -48,29 +48,35 @@ WavFileAudioInput::WavFileAudioInput(const QString &path, QObject *parent)
     connect(&m_timer, &QTimer::timeout, this, &WavFileAudioInput::emitChunk);
 }
 
-bool WavFileAudioInput::start(QString *error)
+void WavFileAudioInput::start()
 {
+    abort();
     QFile file(m_path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (error) {
-            *error = QStringLiteral("Could not open SPEECHER_AUDIO_WAV file %1").arg(m_path);
-        }
-        return false;
-    }
-    m_pcm = wavDataChunk(file.readAll());
+    m_pcm = file.open(QIODevice::ReadOnly) ? wavDataChunk(file.readAll()) : QByteArray();
     if (m_pcm.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("SPEECHER_AUDIO_WAV file %1 is not a usable WAV").arg(m_path);
-        }
-        return false;
+        const QString error = file.isOpen()
+            ? QStringLiteral("SPEECHER_AUDIO_WAV file %1 is not a usable WAV").arg(m_path)
+            : QStringLiteral("Could not open SPEECHER_AUDIO_WAV file %1").arg(m_path);
+        reportLater([this, error] { emit failed(error); });
+        return;
     }
     m_offset = 0;
     m_timer.start();
-    return true;
+    reportLater([this] { emit started(); });
 }
 
 void WavFileAudioInput::stop()
 {
+    if (!m_timer.isActive()) {
+        return;
+    }
+    abort();
+    reportLater([this] { emit stopped(); });
+}
+
+void WavFileAudioInput::abort()
+{
+    dropReports();
     m_timer.stop();
     m_pcm.clear();
     m_offset = 0;

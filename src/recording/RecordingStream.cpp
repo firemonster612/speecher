@@ -63,8 +63,8 @@ int RecordingStream::utteranceAnswerTimeoutMs() const
 // The input fills the stream from before the providers prepare.
 void RecordingStream::start(AudioInput *input, const AppSettings &settings)
 {
-    AppSettings streamed = settings;
-    streamed.speech.codexFinalRetranscribe = false;
+    m_settings = settings;
+    m_settings.speech.codexFinalRetranscribe = false;
     m_running = true;
     m_error.clear();
     m_stream->reset();
@@ -74,6 +74,17 @@ void RecordingStream::start(AudioInput *input, const AppSettings &settings)
             m_stream->append(pcm);
         }
     });
+    connect(m_input, &AudioInput::started, this, [this] {
+        m_inputState = Input::Listening;
+        // The recording's own provider fails the stream when it cannot listen
+        // for the Spoken Language.
+        m_stream->prepare(m_settings);
+    });
+    // The post-roll arrives before it, and still counts.
+    connect(m_input, &AudioInput::stopped, this, [this] {
+        endInput();
+        emit listeningFinished();
+    });
     // An input that drops after it heard something still has that sent.
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
         if (!m_stream->hasAudio()) {
@@ -81,29 +92,36 @@ void RecordingStream::start(AudioInput *input, const AppSettings &settings)
             return;
         }
         m_error = message;
-        finishListening();
+        endInput();
     });
-    m_inputState = Input::Listening;
-    QString error;
-    if (!m_input->start(&error)) {
-        m_inputState = Input::Off;
-        fail(error);
-        return;
-    }
-    // The recording's own provider fails the stream when it cannot listen
-    // for the Spoken Language.
-    m_stream->prepare(streamed);
+    m_inputState = Input::Starting;
+    m_input->start();
 }
 
-// AudioInput::stop() may spin an event loop for the post-roll; the audio it
-// delivers meanwhile still counts, so the input only ends once it returns.
 void RecordingStream::finishListening()
 {
-    if (m_inputState != Input::Listening) {
+    switch (m_inputState) {
+    case Input::Listening:
+        m_inputState = Input::Stopping;
+        m_input->stop();
+        return;
+    case Input::Starting:
+        // Nothing was heard, and no provider prepared.
+        emit listeningFinished();
+        finish();
+        return;
+    case Input::Off:
+        if (m_running) {
+            emit listeningFinished();
+        }
+        return;
+    case Input::Stopping:
         return;
     }
-    m_inputState = Input::Stopping;
-    m_input->stop();
+}
+
+void RecordingStream::endInput()
+{
     m_inputState = Input::Off;
     m_stream->endInput();
     // A stream waiting to reconnect tries once more, now, for the audio that
@@ -233,8 +251,8 @@ void RecordingStream::release()
     m_signInRefused = false;
     if (m_input) {
         disconnect(m_input, nullptr, this, nullptr);
-        if (std::exchange(m_inputState, Input::Off) == Input::Listening) {
-            m_input->stop();
+        if (std::exchange(m_inputState, Input::Off) != Input::Off) {
+            m_input->abort();
         }
     }
 }

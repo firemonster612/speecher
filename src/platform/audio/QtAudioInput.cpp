@@ -2,11 +2,11 @@
 
 #include <QAudioDevice>
 #include <QDebug>
-#include <QEventLoop>
 #include <QMediaDevices>
 #include <QTimer>
 
 #include <algorithm>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -199,6 +199,10 @@ QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent
     , m_captureSettings(settings)
 {
     m_gate.setSizes(bytesForMs(settings.preRollMs), bytesForMs(settings.postRollMs));
+    m_readinessTimer.setSingleShot(true);
+    m_postRollTimer.setSingleShot(true);
+    connect(&m_readinessTimer, &QTimer::timeout, this, &QtAudioInput::readinessTimedOut);
+    connect(&m_postRollTimer, &QTimer::timeout, this, &QtAudioInput::finishStop);
 }
 
 QList<AudioInputDeviceInfo> QtAudioInput::availableInputDevices()
@@ -225,63 +229,131 @@ void QtAudioInput::useDevice(const QString &deviceId)
     m_captureSettings.deviceId = deviceId;
 }
 
-bool QtAudioInput::start(QString *error)
+void QtAudioInput::start()
 {
-    if (m_captureActive) {
-        stop();
+    if (m_capture != Capture::Off) {
+        endCapture();
     }
+    dropReports();
 
     const AudioCaptureSettings settings = currentSettings();
     m_gate.reset(settings.mode == QStringLiteral("warm") && sourceMatches(settings));
     m_captureSettings = settings;
 
-    m_captureActive = true;
-    if (!ensureSourceRunning(settings, error)) {
-        m_captureActive = false;
-        emit levelChanged(0.0f);
+    m_capture = Capture::Starting;
+    QString error;
+    if (!ensureSourceRunning(settings, &error)) {
+        m_capture = Capture::Off;
         stopSource();
-        return false;
+        reportLater([this, error] {
+            emit levelChanged(0.0f);
+            emit failed(error);
+        });
+        return;
     }
+    // A warm source already flowing is ready now.
+    if (m_seenFirstSample) {
+        reportLater([this] { captureStarted(); });
+        return;
+    }
+    m_readinessTimer.start(settings.readinessTimeoutMs);
+}
 
-    if (!settings.vadEnabled) {
+// The first audio since the start: the pre-roll goes out ahead of it.
+void QtAudioInput::captureStarted()
+{
+    if (m_capture != Capture::Starting) {
+        return;
+    }
+    m_readinessTimer.stop();
+    m_capture = Capture::On;
+    emit started();
+    if (!m_captureSettings.vadEnabled) {
         flushPreRoll();
     }
+}
 
-    if (!waitForFirstSample(settings, error)) {
-        m_captureActive = false;
-        emit levelChanged(0.0f);
-        stopSource();
-        return false;
+void QtAudioInput::readinessTimedOut()
+{
+    if (m_capture != Capture::Starting) {
+        return;
     }
-
-    return true;
+    if (m_source && m_source->error() != QAudio::NoError) {
+        failCapture(sourceErrorMessageForLabel(m_currentDeviceLabel, m_source->error()));
+        return;
+    }
+    failCapture(QStringLiteral("Microphone opened but produced no audio within %1 ms. Check microphone permissions and your audio server input settings.")
+                    .arg(m_captureSettings.readinessTimeoutMs));
 }
 
 void QtAudioInput::stop()
 {
-    if (!m_captureActive) {
+    switch (m_capture) {
+    case Capture::Off:
         if (currentSettings().mode != QStringLiteral("warm")) {
             stopSource();
         }
-        emit levelChanged(0.0f);
+        return;
+    case Capture::Stopping:
+        return;
+    case Capture::Starting:
+        endCapture();
+        reportLater([this] {
+            emit levelChanged(0.0f);
+            emit stopped();
+        });
+        return;
+    case Capture::On:
+        break;
+    }
+    m_capture = Capture::Stopping;
+    if (m_captureSettings.postRollMs > 0 && m_source && m_device) {
+        m_postRollTimer.start(m_captureSettings.postRollMs);
+    } else {
+        reportLater([this] { finishStop(); });
+    }
+}
+
+void QtAudioInput::finishStop()
+{
+    if (m_capture != Capture::Stopping) {
         return;
     }
-
-    const AudioCaptureSettings stopSettings = m_captureSettings;
-    waitForPostRoll(stopSettings);
-    if (stopSettings.vadEnabled) {
+    if (m_captureSettings.vadEnabled) {
         flushPendingPostRoll();
+        // A handler of the post-roll may have aborted or started again.
+        if (m_capture != Capture::Stopping) {
+            return;
+        }
     }
-
-    m_captureActive = false;
-    m_gate.reset(false);
+    endCapture();
     emit levelChanged(0.0f);
+    emit stopped();
+}
 
-    const AudioCaptureSettings nextSettings = currentSettings();
-    if (nextSettings.mode == QStringLiteral("warm")) {
-        m_captureSettings = nextSettings;
+void QtAudioInput::abort()
+{
+    dropReports();
+    if (m_capture == Capture::Off) {
+        if (currentSettings().mode != QStringLiteral("warm")) {
+            stopSource();
+        }
+        return;
+    }
+    endCapture();
+    emit levelChanged(0.0f);
+}
+
+void QtAudioInput::endCapture()
+{
+    m_capture = Capture::Off;
+    m_readinessTimer.stop();
+    m_postRollTimer.stop();
+    m_gate.reset(false);
+    const AudioCaptureSettings settings = currentSettings();
+    if (settings.mode == QStringLiteral("warm")) {
         QString error;
-        if (!ensureSourceRunning(nextSettings, &error)) {
+        if (!ensureSourceRunning(settings, &error)) {
             qWarning().noquote() << "warm audio capture could not restart message=" + error;
         }
     } else {
@@ -296,7 +368,7 @@ void QtAudioInput::clearPreRoll()
 
 bool QtAudioInput::isActive() const
 {
-    return m_captureActive;
+    return m_capture != Capture::Off;
 }
 
 void QtAudioInput::keepSilence()
@@ -310,7 +382,7 @@ void QtAudioInput::applySettings(const AudioCaptureSettings &settings)
     m_captureSettings = settings;
     m_captureSettings.vadEnabled = settings.vadEnabled && !m_keepsSilence;
     m_gate.setSizes(bytesForMs(settings.preRollMs), bytesForMs(settings.postRollMs));
-    if (m_captureActive) {
+    if (m_capture != Capture::Off) {
         return;
     }
     if (settings.mode == QStringLiteral("warm")) {
@@ -343,14 +415,14 @@ void QtAudioInput::handleAudioInputsChanged()
             [this](const QAudioDevice &device) {
                 return encodedDeviceId(device) == m_currentDeviceId;
             });
-        if (!currentStillAvailable && m_captureActive) {
+        if (!currentStillAvailable && m_capture != Capture::Off) {
             failCapture(QStringLiteral(
                 "Microphone \"%1\" was disconnected. Reconnect it or choose another input in Settings.")
                             .arg(m_currentDeviceLabel));
             return;
         }
     }
-    if (!m_captureActive) {
+    if (m_capture == Capture::Off) {
         syncWarmSource();
     }
 }
@@ -358,7 +430,7 @@ void QtAudioInput::handleAudioInputsChanged()
 void QtAudioInput::syncWarmSource()
 {
     ensureMediaDevicesInitialized();
-    if (m_captureActive) {
+    if (m_capture != Capture::Off) {
         return;
     }
 
@@ -436,63 +508,6 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     return true;
 }
 
-bool QtAudioInput::waitForFirstSample(const AudioCaptureSettings &settings, QString *error)
-{
-    if (m_seenFirstSample) {
-        return true;
-    }
-    if (!m_source) {
-        if (error) {
-            *error = QStringLiteral("Microphone capture did not start.");
-        }
-        return false;
-    }
-
-    QEventLoop loop;
-    QTimer timeout;
-    timeout.setSingleShot(true);
-    connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-    connect(this, &QtAudioInput::firstSampleObserved, &loop, &QEventLoop::quit);
-    connect(m_source.data(), &QAudioSource::stateChanged, &loop, [&loop](QAudio::State state) {
-        if (state == QAudio::StoppedState) {
-            loop.quit();
-        }
-    });
-    timeout.start(settings.readinessTimeoutMs);
-    loop.exec(QEventLoop::AllEvents);
-
-    if (m_seenFirstSample) {
-        return true;
-    }
-
-    if (m_source && m_source->error() != QAudio::NoError) {
-        if (error) {
-            *error = sourceErrorMessageForLabel(m_currentDeviceLabel, m_source->error());
-        }
-        return false;
-    }
-
-    if (error) {
-        *error = QStringLiteral("Microphone opened but produced no audio within %1 ms. Check microphone permissions and your audio server input settings.")
-            .arg(settings.readinessTimeoutMs);
-    }
-    return false;
-}
-
-void QtAudioInput::waitForPostRoll(const AudioCaptureSettings &settings)
-{
-    if (settings.postRollMs <= 0 || !m_source || !m_device) {
-        return;
-    }
-
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    timer.start(settings.postRollMs);
-    loop.exec(QEventLoop::AllEvents);
-}
-
 void QtAudioInput::stopSource()
 {
     if (!m_source && !m_device) {
@@ -524,11 +539,7 @@ void QtAudioInput::onReadyRead()
         return;
     }
 
-    if (!m_seenFirstSample) {
-        m_seenFirstSample = true;
-        emit firstSampleObserved();
-    }
-
+    m_seenFirstSample = true;
     const AudioPcmConversion conversion = m_converter.convert(data);
     if (!conversion.error.isEmpty()) {
         if (!m_conversionFailed) {
@@ -537,12 +548,15 @@ void QtAudioInput::onReadyRead()
         }
         return;
     }
+    if (m_capture == Capture::Starting) {
+        captureStarted();
+    }
     const QByteArray &pcm = conversion.pcm16Mono16k;
     if (pcm.isEmpty()) {
         return;
     }
 
-    if (!m_captureActive) {
+    if (m_capture == Capture::Off) {
         appendPreRoll(pcm);
         return;
     }
@@ -567,14 +581,18 @@ void QtAudioInput::handleSourceStateChanged(QAudio::State state)
     failCapture(message);
 }
 
+// A capture that was asked to stop reports stopped(), as it was asked.
 void QtAudioInput::failCapture(const QString &message)
 {
-    const bool wasActive = m_captureActive;
-    m_captureActive = false;
+    const Capture was = std::exchange(m_capture, Capture::Off);
+    m_readinessTimer.stop();
+    m_postRollTimer.stop();
     m_gate.reset(false);
     stopSource();
     emit levelChanged(0.0f);
-    if (wasActive) {
+    if (was == Capture::Stopping) {
+        emit stopped();
+    } else if (was != Capture::Off) {
         emit failed(message);
     }
 }
@@ -600,7 +618,7 @@ void QtAudioInput::appendPreRoll(const QByteArray &pcm)
 void QtAudioInput::flushPreRoll()
 {
     const QByteArray preRoll = m_gate.takePreRoll();
-    if (m_captureActive && !preRoll.isEmpty()) {
+    if (m_capture != Capture::Off && !preRoll.isEmpty()) {
         emit audioChunk(preRoll);
     }
 }
@@ -608,7 +626,7 @@ void QtAudioInput::flushPreRoll()
 void QtAudioInput::flushPendingPostRoll()
 {
     const QByteArray postRoll = m_gate.flushPostRoll();
-    if (m_captureActive && !postRoll.isEmpty()) {
+    if (m_capture != Capture::Off && !postRoll.isEmpty()) {
         emit audioChunk(postRoll);
     }
 }

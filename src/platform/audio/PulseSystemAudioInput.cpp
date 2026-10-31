@@ -56,23 +56,35 @@ PulseSystemAudioInput::PulseSystemAudioInput(QObject *parent)
 
 PulseSystemAudioInput::~PulseSystemAudioInput()
 {
-    stop();
+    close();
 }
 
-bool PulseSystemAudioInput::start(QString *error)
+// Waits only for the sound server, on the PulseAudio thread.
+void PulseSystemAudioInput::start()
 {
-    if (m_mainloop) {
-        return true;
-    }
+    abort();
     QString message;
     if (open(&message)) {
-        return true;
+        reportLater([this] { emit started(); });
+        return;
     }
-    stop();
-    if (error) {
-        *error = message;
+    close();
+    reportLater([this, message] { emit failed(message); });
+}
+
+void PulseSystemAudioInput::stop()
+{
+    if (!m_mainloop) {
+        return;
     }
-    return false;
+    close();
+    reportLater([this] { emit stopped(); });
+}
+
+void PulseSystemAudioInput::abort()
+{
+    dropReports();
+    close();
 }
 
 bool PulseSystemAudioInput::open(QString *error)
@@ -156,7 +168,7 @@ bool PulseSystemAudioInput::open(QString *error)
     return true;
 }
 
-void PulseSystemAudioInput::stop()
+void PulseSystemAudioInput::close()
 {
     if (!m_mainloop) {
         return;
@@ -324,7 +336,7 @@ void PulseSystemAudioInput::postStreamFailure(const QString &message)
             {
                 // Decided under the lock, and the stream dropped before it is
                 // released, so a default output change cannot start a
-                // replacement that stop() would then tear down.
+                // replacement that close() would then tear down.
                 MainloopLocker lock(m_mainloop);
                 if (streamGeneration != m_streamGeneration) {
                     return;
@@ -341,7 +353,7 @@ void PulseSystemAudioInput::fail(quint64 generation, const QString &message)
     if (generation != m_generation) {
         return;
     }
-    stop();
+    close();
     emit failed(message);
 }
 

@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/audio_input_waits.h"
 #include "providers/PreparationRunner.h"
 
 #include <QSemaphore>
@@ -465,8 +466,8 @@ private slots:
         speech->emitFinalText(QStringLiteral("captured"));
         session.stopListening();
 
-        QCOMPARE(speech->audioChunks,
-                 QList<QByteArray>({QByteArrayLiteral("pre-roll"), QByteArrayLiteral("post-roll")}));
+        QTRY_COMPARE(speech->audioChunks,
+                     QList<QByteArray>({QByteArrayLiteral("pre-roll"), QByteArrayLiteral("post-roll")}));
     }
 
     void dictationSessionDoesNotResumeAfterCancellationInsideAudioStart()
@@ -528,7 +529,7 @@ private slots:
         QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
         session.stopListening();
 
-        QCOMPARE(message.count(), 1);
+        QTRY_COMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(), QStringLiteral("Sent to the app"));
         QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Inserted);
         QCOMPARE(status.last().first().toString(), QStringLiteral("Sent to the app"));
@@ -556,7 +557,7 @@ private slots:
         speech->emitFinalText(QStringLiteral("copied dictation"));
         message.clear();
         session.stopListening();
-        QCOMPARE(message.count(), 1);
+        QTRY_COMPARE(message.count(), 1);
         QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Copied);
     }
 
@@ -1048,7 +1049,7 @@ private slots:
         QCOMPARE(targetProvider->captureCalls, 0);
         session.popupPresented(generation);
         QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Listening));
     }
 
     void dictationSessionCapturesOptionalScreenshotOnlyForRefinement()
@@ -1297,7 +1298,7 @@ private slots:
         speech->autoCompleteOnFinish = false;
         const quint64 pausedAttempt = speech->currentAttemptId;
 
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         QCOMPARE(int(session.state()), int(DictationState::Paused));
         QCOMPARE(speech->stopCalls, 1);
         QVERIFY(!audio->isActive());
@@ -1353,7 +1354,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         const quint64 pausedAttempt = speech->currentAttemptId;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         if (stoppedFirst) {
             session.stopListening();
@@ -1407,7 +1408,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         const quint64 pausedAttempt = speech->currentAttemptId;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         const QByteArray second(16000 * 2, '\0');
         for (int seconds = 0; seconds < 10; ++seconds) {
@@ -1425,17 +1426,18 @@ private slots:
         };
         session.pause();
 
-        QVERIFY(overflowed);
+        QTRY_VERIFY(overflowed);
         QCOMPARE(speech->startCalls, 2);
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("said before the pause"));
         QCOMPARE(speech->audioChunks, QList<QByteArray>(10, second));
     }
 
-    // A completion inside the stop nested in a second pause's microphone stop
-    // waits for that stop: the post-roll after it, past the budget, never
-    // reaches the attempt that takes what was held.
-    void aCompletionInsideAStopNestedInAPauseKeepsLaterPostRollOut()
+    // A completion inside a second pause's microphone stop, whose post-roll
+    // went past the budget and stopped listening, waits for that stop: the
+    // post-roll after the budget never reaches the attempt that takes what
+    // was held.
+    void aCompletionInsideAPausesStopPastTheBudgetKeepsLaterPostRollOut()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1451,7 +1453,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         const quint64 pausedAttempt = speech->currentAttemptId;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         const QByteArray second(16000 * 2, '\0');
         for (int seconds = 0; seconds < 10; ++seconds) {
@@ -1460,17 +1462,16 @@ private slots:
         int stops = 0;
         audio.onStop = [&] {
             ++stops;
-            if (stops == 1) {
-                audio.pushAudio(second);
-                audio.pushAudio(QByteArrayLiteral("tail"));
-            } else if (stops == 2) {
-                emit speech->finalTranscript(pausedAttempt, QStringLiteral("said before the pause"));
-                speech->emitCompletion();
-            }
+            audio.pushAudio(second);
+            audio.pushAudio(QByteArrayLiteral("tail"));
+            emit speech->finalTranscript(pausedAttempt, QStringLiteral("said before the pause"));
+            speech->emitCompletion();
         };
         session.pause();
 
-        QCOMPARE(stops, 2);
+        QTRY_COMPARE(int(session.state()), int(DictationState::Stopping));
+        QTRY_VERIFY(!audio.active);
+        QCOMPARE(stops, 1);
         QCOMPARE(speech->startCalls, 2);
         QCOMPARE(speech->audioChunks, QList<QByteArray>(10, second));
         speech->emitCompletion();
@@ -1706,7 +1707,7 @@ private slots:
             QCOMPARE(statuses.last().first().toString(), session.lastMessage());
             return;
         }
-        QCOMPARE(int(session.state()), int(DictationState::Paused));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Paused));
         QCOMPARE(speech->startCalls, 1);
         QCOMPARE(delivery.calls, 0);
     }
@@ -1735,8 +1736,8 @@ private slots:
 
         session.pause();
 
+        QTRY_VERIFY(audio.isActive());
         QCOMPARE(int(session.state()), int(DictationState::Listening));
-        QVERIFY(audio.isActive());
     }
 
     // The partial a resume commits as its attempt opens reaches handlers once
@@ -1756,7 +1757,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->ignoresEndedAttempts = true;
         speech->emitPartialText(QStringLiteral("unfinished"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         bool armed = true;
         connect(&session, &DictationSession::previewChanged, &session, [&] {
             if (std::exchange(armed, false)) {
@@ -1790,7 +1791,7 @@ private slots:
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         int starts = 0;
         audio.onStart = [&] { ++starts; };
         bool armed = true;
@@ -1804,39 +1805,9 @@ private slots:
         session.resume();
 
         QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QTRY_COMPARE(starts, 1);
+        QTest::qWait(20);
         QCOMPARE(starts, 1);
-    }
-
-    // A pause and resume inside a pause's microphone stop: the session
-    // listens again, and capture restarts once that stop has returned.
-    void aResumeInsideAPausesMicrophoneStopCapturesAgain()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        FakeAudioInput audio;
-        FakeMediaController media;
-        FakeDelivery delivery;
-        ProviderRegistry registry;
-        FakeSpeechTranscriber *speech = nullptr;
-        registerFakeSpeechProvider(registry, &speech);
-        DictationSession session(&settings, &audio, &media, &delivery, &registry);
-        session.startListening();
-        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        bool nested = false;
-        audio.onStop = [&] {
-            if (!std::exchange(nested, true)) {
-                session.pause();
-                session.resume();
-            }
-        };
-
-        session.pause();
-
-        QVERIFY(nested);
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
-        QVERIFY(audio.isActive());
-        audio.pushAudio(QByteArrayLiteral("after"));
-        QCOMPARE(speech->audioChunks.last(), QByteArrayLiteral("after"));
     }
 
     // A pause and resume from the partial the next attempt commits as it
@@ -1857,7 +1828,7 @@ private slots:
         speech->ignoresEndedAttempts = true;
         speech->autoCompleteOnFinish = false;
         speech->emitPartialText(QStringLiteral("unfinished"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         audio.pushAudio(QByteArrayLiteral("held"));
         bool armed = true;
@@ -1892,7 +1863,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         speech->emitPartialText(QStringLiteral("unfinished"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         audio.pushAudio(QByteArrayLiteral("first"));
         audio.onStop = [&] { audio.pushAudio(QByteArrayLiteral("post")); };
@@ -1906,7 +1877,7 @@ private slots:
         speech->emitCompletion();
         QVERIFY(!armed);
 
-        QCOMPARE(speech->audioChunks, (QList<QByteArray>{QByteArrayLiteral("first"), QByteArrayLiteral("post")}));
+        QTRY_COMPARE(speech->audioChunks, (QList<QByteArray>{QByteArrayLiteral("first"), QByteArrayLiteral("post")}));
         speech->emitCompletion();
         QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
         QCOMPARE(delivery.lastText, QStringLiteral("unfinished"));
@@ -1928,7 +1899,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("kept"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         audio.startResult = false;
         connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
             if (state == DictationState::Stopping) {
@@ -1960,7 +1931,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("kept"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         speech->onStartAttempt = [&] { speech->emitFailure(QStringLiteral("refused")); };
         audio.started = false;
 
@@ -1991,7 +1962,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("before the pause"));
         speech->autoCompleteOnFinish = false;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         QTest::qWait(400);
         session.stopListening();
         QCOMPARE(int(session.state()), int(DictationState::Stopping));
@@ -2054,7 +2025,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("before the pause"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         bool started = false;
         audio->onStart = [&] {
             if (!std::exchange(started, true))
@@ -2087,11 +2058,12 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("before"));
         speech->autoCompleteOnFinish = false;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         audio->pushAudio(QByteArrayLiteral("after"));
         session.stopListening();
         QCOMPARE(speech->stopCalls, 1);
+        QTRY_VERIFY(!audio->isActive());
 
         speech->emitCompletion();
         QCOMPARE(speech->startCalls, 2);
@@ -2123,10 +2095,10 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("before"));
         speech->autoCompleteOnFinish = false;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         audio->pushAudio(QByteArrayLiteral("brief"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         QCOMPARE(speech->stopCalls, 1);
         speech->emitCompletion();
         QCOMPARE(int(session.state()), int(DictationState::Paused));
@@ -2141,44 +2113,29 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("before brief"));
     }
 
-    // A start that lands inside a cancel's microphone stop waits for the stop.
-    // A cancel before it runs drops it; otherwise the new session starts.
-    void aStartDuringTheMicrophoneStopWaitsAndACancelDropsIt()
+    // A cancel stops the microphone at once, so a start right after it
+    // begins straight away and listens.
+    void aStartRightAfterACancelBeginsAtOnce()
     {
         SettingsStore settings;
         settings.raw().clear();
-        auto audio = std::make_unique<FakeAudioInput>();
-        auto media = std::make_unique<FakeMediaController>();
-        auto delivery = std::make_unique<FakeDelivery>();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
         ProviderRegistry registry;
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
-        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        bool startInsideStop = true;
-        audio->onStop = [&] {
-            if (std::exchange(startInsideStop, false)) {
-                session.startListening();
-            }
-        };
-
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        session.cancel();
-        QVERIFY(session.startPending());
-        QCOMPARE(session.stateName(), QStringLiteral("starting"));
-        session.cancel();
-        QTest::qWait(30);
-        QCOMPARE(int(session.state()), int(DictationState::Idle));
-        QVERIFY(!session.startPending());
-        QCOMPARE(speech->startCalls, 1);
 
+        session.cancel();
+        QVERIFY(!audio.active);
         session.startListening();
+
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        startInsideStop = true;
-        session.cancel();
-        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
-        QCOMPARE(speech->startCalls, 3);
-        session.cancel();
+        QVERIFY(audio.active);
     }
 
     // The paused attempt can finish inside the stop's post-roll, with more
@@ -2199,7 +2156,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("before"));
         speech->autoCompleteOnFinish = false;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         audio->pushAudio(QByteArrayLiteral("a"));
         bool stopped = false;
@@ -2211,6 +2168,7 @@ private slots:
             audio->pushAudio(QByteArrayLiteral("b"));
         };
         session.stopListening();
+        QTRY_VERIFY(!audio->isActive());
 
         QCOMPARE(speech->startCalls, 2);
         QCOMPARE(speech->audioChunks, (QList<QByteArray>{QByteArrayLiteral("a"), QByteArrayLiteral("b")}));
@@ -2238,7 +2196,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("kept"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         audio->startResult = false;
         session.resume();
 
@@ -2289,7 +2247,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("hello"));
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         session.resume();
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
@@ -2329,7 +2287,7 @@ private slots:
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         session.togglePause();
-        QCOMPARE(int(session.state()), int(DictationState::Paused));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Paused));
         QVERIFY(!audio->isActive());
         session.togglePause();
         QCOMPARE(int(session.state()), int(DictationState::Listening));
@@ -2356,7 +2314,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("kept"));
         speech->autoCompleteOnFinish = false;
-        session.pause();
+        QVERIFY(pauseAndWait(session));
         speech->emitFailure(QStringLiteral("stream closed"), true, SpeechPhase::Streaming);
         session.stopListening();
 

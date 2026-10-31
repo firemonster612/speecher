@@ -87,7 +87,7 @@ struct CaptureWording {
 // Runs a WinCaptureStream on a thread of its own, which polls it every
 // kLoopbackPollMs, and delivers its audio on the input's thread. A stop keeps
 // capturing for postRollMs, drains the stream and delivers all of it before
-// it returns, as QtAudioInput's does.
+// stopped(), as QtAudioInput's does.
 class WinCaptureInput : public AudioInput {
 public:
     using StreamFactory = std::function<std::unique_ptr<WinCaptureStream>()>;
@@ -95,8 +95,9 @@ public:
     WinCaptureInput(CaptureWording wording, StreamFactory createStream, int postRollMs, QObject *parent = nullptr);
     ~WinCaptureInput() override;
 
-    bool start(QString *error = nullptr) override;
+    void start() override;
     void stop() override;
+    void abort() override;
     bool isActive() const override;
     QString echoCancellationWarning() const override;
 
@@ -117,6 +118,8 @@ private:
     int m_postRollMs;
     std::thread m_thread;
     HANDLE m_stopEvent = nullptr;
+    // A stop's post-roll runs.
+    bool m_stopping = false;
     // Bumped by every stop, so a failure the capture thread queued before it
     // is dropped rather than reaching the next start, and a delivery a stop
     // interrupted ends there. Its audio needs no such guard, as a stop

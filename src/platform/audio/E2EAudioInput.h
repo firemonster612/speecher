@@ -23,15 +23,26 @@ public:
         });
     }
 
-    bool start(QString *) override
+    void start() override
     {
+        abort();
         m_active = true;
         m_timer.start();
-        return true;
+        reportLater([this] { emit started(); });
     }
 
     void stop() override
     {
+        if (!m_active) {
+            return;
+        }
+        abort();
+        reportLater([this] { emit stopped(); });
+    }
+
+    void abort() override
+    {
+        dropReports();
         m_timer.stop();
         m_active = false;
     }

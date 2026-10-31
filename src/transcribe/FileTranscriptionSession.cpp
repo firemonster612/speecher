@@ -261,7 +261,7 @@ bool FileTranscriptionSession::isRunning() const
 
 bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeOptions &options)
 {
-    if (!canStart() || paths.isEmpty()) {
+    if (m_running || paths.isEmpty()) {
         return false;
     }
     m_input = nullptr;
@@ -271,7 +271,7 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
 
 bool FileTranscriptionSession::startListening(AudioInput *input, const TranscribeOptions &options)
 {
-    if (!canStart()) {
+    if (m_running) {
         return false;
     }
     m_input = input;
@@ -282,44 +282,37 @@ bool FileTranscriptionSession::startListening(AudioInput *input, const Transcrib
     return true;
 }
 
-// Not while a batch runs, nor while the session still lets go of one: a
-// start inside a cancel's cleanup, or inside an input's stop, would have
-// that stop close the new batch's microphone once it returns.
-bool FileTranscriptionSession::canStart() const
-{
-    return !m_running && !m_cancelling && m_inputStopDepth == 0;
-}
-
-// The microphone's stop spins an event loop for the post-roll.
-void FileTranscriptionSession::stopInput()
-{
-    ++m_inputStopDepth;
-    m_input->stop();
-    --m_inputStopDepth;
-}
-
-// QtAudioInput::stop() spins an event loop for the post-roll; the audio it
-// delivers meanwhile still counts, so the input only ends once it returns.
+// The post-roll the microphone delivers as it stops still counts: the input
+// ends once it has stopped.
 void FileTranscriptionSession::finishListening()
 {
-    // A finish before the microphone opened, from a handler of the batch's
-    // first notifications: the microphone never opens.
-    if (m_running && m_input && m_microphone == Microphone::Off) {
-        m_finishBeforeListening = true;
+    switch (m_microphone) {
+    case Microphone::Off:
+        // A finish before the microphone opened, from a handler of the
+        // batch's first notifications: the microphone never opens.
+        if (m_running && m_input) {
+            m_finishBeforeListening = true;
+        }
+        return;
+    case Microphone::Starting:
+        m_input->abort();
+        m_microphone = Microphone::Off;
+        listenToNothing();
+        return;
+    case Microphone::Listening:
+        m_microphone = Microphone::Stopping;
+        m_input->stop();
+        return;
+    case Microphone::Stopping:
         return;
     }
-    if (m_microphone != Microphone::Listening) {
-        return;
-    }
-    m_microphone = Microphone::Stopping;
-    const quint64 batch = m_batch;
-    stopInput();
-    // The batch may have been cancelled meanwhile, and another started.
-    if (batch != m_batch) {
-        return;
-    }
-    m_microphone = Microphone::Off;
+}
+
+// The providers prepare for an input that has already ended.
+void FileTranscriptionSession::listenToNothing()
+{
     m_stream->endInput();
+    m_stream->prepare(m_batchSettings);
 }
 
 void FileTranscriptionSession::beginBatch(const QStringList &paths, const TranscribeOptions &options)
@@ -351,13 +344,9 @@ void FileTranscriptionSession::cancel()
     if (!m_running) {
         return;
     }
-    // Ended before the microphone's stop spins its event loop, so a cancel
-    // there finds nothing more to cancel.
     m_running = false;
     ++m_batch;
-    m_cancelling = true;
     releaseFileResources();
-    m_cancelling = false;
     emit batchFinished(m_results, true);
 }
 
@@ -376,8 +365,7 @@ void FileTranscriptionSession::startFile()
         return;
     }
     if (m_input && m_finishBeforeListening) {
-        m_stream->endInput();
-        m_stream->prepare(m_batchSettings);
+        listenToNothing();
         return;
     }
     if (m_input) {
@@ -518,7 +506,8 @@ void FileTranscriptionSession::releaseDecoder()
     m_decoder = nullptr;
 }
 
-// The microphone fills the stream from before the providers prepare.
+// The microphone fills the stream from before the providers prepare, which
+// they do once it has started.
 void FileTranscriptionSession::startMicrophone()
 {
     connect(m_input, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
@@ -526,31 +515,27 @@ void FileTranscriptionSession::startMicrophone()
             m_stream->append(pcm);
         }
     });
+    connect(m_input, &AudioInput::started, this, [this] {
+        m_microphone = Microphone::Listening;
+        m_stream->prepare(m_batchSettings);
+    });
+    connect(m_input, &AudioInput::stopped, this, [this] {
+        m_microphone = Microphone::Off;
+        m_stream->endInput();
+    });
     // As a dictation: a microphone that drops after it heard something still
     // has those words transcribed.
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
+        m_microphone = Microphone::Off;
         if (!m_stream->hasAudio()) {
             failFile(message);
             return;
         }
         m_current.error = message;
-        finishListening();
+        m_stream->endInput();
     });
-    m_microphone = Microphone::Listening;
-    QString error;
-    const quint64 batch = m_batch;
-    const bool started = m_input->start(&error);
-    // Starting spins an event loop, where the batch may have been cancelled
-    // and the microphone stopped.
-    if (batch != m_batch) {
-        return;
-    }
-    if (!started) {
-        m_microphone = Microphone::Off;
-        failFile(error);
-        return;
-    }
-    m_stream->prepare(m_batchSettings);
+    m_microphone = Microphone::Starting;
+    m_input->start();
 }
 
 void FileTranscriptionSession::finishTranscription()
@@ -691,13 +676,8 @@ void FileTranscriptionSession::failFile(const QString &message)
 // Records the current file (if any) and moves on to the next, or ends the batch.
 void FileTranscriptionSession::finishFile()
 {
-    // Stopping the microphone spins an event loop, where the batch may be
-    // cancelled.
     const quint64 batch = m_batch;
     releaseFileResources();
-    if (batch != m_batch) {
-        return;
-    }
     if (m_index >= 0) {
         m_results.append(m_current);
         emit fileFinished(m_index, m_current);
@@ -720,8 +700,8 @@ void FileTranscriptionSession::releaseFileResources()
     releaseDecoder();
     if (m_input) {
         disconnect(m_input, nullptr, this, nullptr);
-        if (std::exchange(m_microphone, Microphone::Off) == Microphone::Listening) {
-            stopInput();
+        if (std::exchange(m_microphone, Microphone::Off) != Microphone::Off) {
+            m_input->abort();
         }
     }
     releaseRefiner();

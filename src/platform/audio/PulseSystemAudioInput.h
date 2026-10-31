@@ -21,13 +21,15 @@ public:
     explicit PulseSystemAudioInput(QObject *parent = nullptr);
     ~PulseSystemAudioInput() override;
 
-    bool start(QString *error = nullptr) override;
+    void start() override;
     void stop() override;
+    void abort() override;
     bool isActive() const override;
 
 private:
-    // Leaves whatever it got as far as for stop() to tear down when it fails.
+    // Leaves whatever it got as far as for close() to tear down when it fails.
     bool open(QString *error);
+    void close();
     // These run with the main loop locked.
     pa_operation *queryDefaultSink();
     bool connectStream(const QByteArray &sinkName);

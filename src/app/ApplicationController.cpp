@@ -529,12 +529,12 @@ const PlatformComposition *ApplicationController::platform() const
 
 DictationState ApplicationController::dictationState() const
 {
-    return m_session->reportedState();
+    return m_session->state();
 }
 
 QString ApplicationController::statusLabel() const
 {
-    return dictationStatusLabel(m_session->reportedState(), m_session->lastMessage());
+    return dictationStatusLabel(m_session->state(), m_session->lastMessage());
 }
 
 QString ApplicationController::lastTranscript() const
@@ -650,7 +650,7 @@ void ApplicationController::updateSessionShortcuts()
     if (!m_session) {
         return;
     }
-    const DictationState state = m_session->reportedState();
+    const DictationState state = m_session->state();
     const ShortcutBinding cancelShortcut = globalShortcut(GlobalShortcutRole::Cancel);
     const SessionKeys wanted = sessionKeysWanted(state, m_session->reviewUp(), m_platform->escapeCancelsDictation(),
                                                  cancelShortcut,
@@ -802,7 +802,7 @@ bool ApplicationController::sessionActive() const
 {
     const DictationState state = m_session->state();
     return state == DictationState::Starting || state == DictationState::Listening
-        || state == DictationState::Paused || m_session->startPending() || m_microphoneStartPending;
+        || state == DictationState::Paused || m_microphoneStartPending;
 }
 
 void ApplicationController::toggle()

@@ -114,7 +114,7 @@ public:
     // window first asks.
     Accounts *accounts() const;
     const PlatformComposition *platform() const;
-    // The Dictation Session's state as it reports it (reportedState).
+    // The Dictation Session's state.
     DictationState dictationState() const;
     // What a status line says about dictation now (dictationStatusLabel);
     // statusChanged carries it.

@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/audio_input_waits.h"
 #include "app/PlatformComposition.h"
 
 #include "core/OutputMethod.h"
@@ -560,25 +561,26 @@ private slots:
         connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(&capture, &AudioInput::failed);
         QString error;
-        if (capture.start(&error)) {
+        const bool started = test::startAndWait(capture, &error);
+        if (started) {
             QVERIFY(capture.isActive());
             // With or without anything playing, the stream keeps time.
             QTRY_VERIFY(pcm.size() >= 16000 * 2 / 2);
-            capture.stop();
+            QVERIFY(test::stopAndWait(capture));
         } else {
             // Runners without a sound output end here.
             qInfo().noquote() << "system audio did not start:" << error;
             QVERIFY(!error.isEmpty());
         }
         QVERIFY(!capture.isActive());
-        // A failed start is reported once, by its return value.
+        // A failed start is reported once.
         QTest::qWait(300);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), started ? 0 : 1);
     }
 
     // record stop ends the last utterance on what the microphone heard up to
     // the stop and its post-roll.
-    void captureDeliversItsLastAudioBeforeStopReturns()
+    void captureDeliversItsLastAudioBeforeStopped()
     {
         std::atomic<int> reads = 0;
         QByteArray heard;
@@ -586,9 +588,9 @@ private slots:
 
         WinCaptureInput capture(kBareWording, counting, 0);
         connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { heard += chunk; });
-        QVERIFY(capture.start());
+        QVERIFY(test::startAndWait(capture));
         // Stopped before its first poll, it still reads what the stream holds.
-        capture.stop();
+        QVERIFY(test::stopAndWait(capture));
         QVERIFY(reads >= 1);
         QCOMPARE(heard.size(), reads.load());
         QCOMPARE(heard.back(), char(reads.load()));
@@ -597,8 +599,8 @@ private slots:
         heard.clear();
         WinCaptureInput rolling(kBareWording, counting, 250);
         connect(&rolling, &AudioInput::audioChunk, &rolling, [&](const QByteArray &chunk) { heard += chunk; });
-        QVERIFY(rolling.start());
-        rolling.stop();
+        QVERIFY(test::startAndWait(rolling));
+        QVERIFY(test::stopAndWait(rolling));
         // The post-roll's polls and the last read.
         QVERIFY2(reads >= 2, qPrintable(QString::number(reads)));
         QCOMPARE(heard.size(), reads.load());
@@ -607,8 +609,8 @@ private slots:
         QCOMPARE(heard.size(), reads.load());
     }
 
-    // A handler that stops and starts again in the middle of a read's
-    // chunks gets the rest of the old capture, in order, before stop returns.
+    // A handler that stops in the middle of a read's chunks gets the rest of
+    // the old capture, in order, before stopped(); a start there goes on.
     void captureStoppedFromItsAudioDeliversTheRestFirst()
     {
         std::atomic<char> captures = 0;
@@ -620,13 +622,17 @@ private slots:
             heard.append(chunk);
             if (heard.size() == 1) {
                 capture.stop();
-                heardBeforeRestart = heard.size();
-                restarted = capture.start();
             }
         });
-        QVERIFY(capture.start());
+        connect(&capture, &AudioInput::stopped, &capture, [&] {
+            if (!std::exchange(restarted, true)) {
+                heardBeforeRestart = heard.size();
+                capture.start();
+            }
+        });
+        QVERIFY(test::startAndWait(capture));
         QTRY_VERIFY(heardBeforeRestart > 0 && heard.size() >= heardBeforeRestart + 3);
-        capture.stop();
+        QVERIFY(test::stopAndWait(capture));
 
         QVERIFY(restarted);
         // The stop's last read follows the first read's three chunks.
@@ -730,14 +736,15 @@ private slots:
         connect(&microphone, &AudioInput::audioChunk, &microphone, [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(&microphone, &AudioInput::failed);
         QString error;
-        if (microphone.start(&error)) {
+        const bool started = test::startAndWait(microphone, &error);
+        if (started) {
             QVERIFY(microphone.isActive());
             qInfo().noquote() << "echo cancellation:"
                               << (microphone.echoCancellationWarning().isEmpty() ? QStringLiteral("on")
                                                                                  : microphone.echoCancellationWarning());
             // Half a second of it.
             QTRY_VERIFY(pcm.size() >= 16000 * 2 / 2);
-            microphone.stop();
+            QVERIFY(test::stopAndWait(microphone));
         } else {
             // Runners without a microphone end here.
             qInfo().noquote() << "recording microphone did not start:" << error;
@@ -745,7 +752,7 @@ private slots:
         }
         QVERIFY(!microphone.isActive());
         QTest::qWait(300);
-        QCOMPARE(failed.count(), 0);
+        QCOMPARE(failed.count(), started ? 0 : 1);
     }
 
     // The recording microphone's reads keep its echo reference on the
@@ -760,11 +767,11 @@ private slots:
             return Microsoft::WRL::ComPtr<IAcousticEchoCancellationControl>(control);
         });
         QString error;
-        if (!microphone.start(&error)) {
+        if (!test::startAndWait(microphone, &error)) {
             QSKIP(qPrintable(QStringLiteral("The recording microphone did not start: %1").arg(error)));
         }
         QTRY_COMPARE(control->sets.load(), 2);
-        microphone.stop();
+        QVERIFY(test::stopAndWait(microphone));
     }
 
     void liveHotkeyTargetAndDeliveryToNotepad()
