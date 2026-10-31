@@ -67,4 +67,23 @@ inline ClipboardRestored restoreAndWait(ClipboardDelivery &clipboard,
         [&](QObject *context, auto done) { clipboard.restore(snapshot, preserveNewCopy, context, done); });
 }
 
+#ifdef SPEECHER_WITH_WAYLAND
+inline ClipboardCopied copyAndWait(WlClipboardDelivery &clipboard, const DeliveryContent &content)
+{
+    return waitForAnswer<ClipboardCopied>([&](QObject *context, auto done) { clipboard.copy(content, context, done); });
+}
+
+inline ClipboardCaptured captureWaylandAndWait()
+{
+    return waitForAnswer<ClipboardCaptured>(
+        [](QObject *context, auto done) { WlClipboardDelivery::capture(context, done); });
+}
+
+inline ClipboardRestored restoreWaylandAndWait(const ClipboardSnapshot &snapshot)
+{
+    return waitForAnswer<ClipboardRestored>(
+        [&](QObject *context, auto done) { WlClipboardDelivery::restore(snapshot, context, done); });
+}
+#endif
+
 } // namespace speecher::test

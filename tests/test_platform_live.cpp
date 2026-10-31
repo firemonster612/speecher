@@ -811,8 +811,8 @@ private slots:
         output.pasteRules = defaultPasteRules();
         const PasteRule rule = resolvePasteRule(output.pasteRules, target);
 
-        ClipboardSnapshot before;
-        const bool capturedBefore = WlClipboardDelivery::capture(&before);
+        const ClipboardCaptured capturedBefore = test::captureWaylandAndWait();
+        const ClipboardSnapshot &before = capturedBefore.snapshot;
         TextDelivery delivery(&provider);
         const DeliveryResult result = test::deliverAndWait(
             delivery, output,
@@ -821,10 +821,10 @@ private slots:
         QVERIFY2(result.ok, qPrintable(result.message));
         QVERIFY(result.receipt != DeliveryReceipt::None);
 
-        ClipboardSnapshot after;
-        const bool capturedAfter = WlClipboardDelivery::capture(&after);
-        const bool restored = capturedBefore
-            && capturedAfter
+        const ClipboardCaptured capturedAfter = test::captureWaylandAndWait();
+        const ClipboardSnapshot &after = capturedAfter.snapshot;
+        const bool restored = capturedBefore.ok
+            && capturedAfter.ok
             && result.receipt == DeliveryReceipt::VerifiedInTarget
             && before.hasData == after.hasData
             && std::all_of(
@@ -870,16 +870,12 @@ private slots:
             QSKIP("Live Wayland clipboard check is opt-in");
         }
 
-        ClipboardSnapshot original;
-        QString error;
-        QVERIFY2(WlClipboardDelivery::capture(&original, &error), qPrintable(error));
+        const ClipboardCaptured captured = test::captureWaylandAndWait();
+        QVERIFY2(captured.ok, qPrintable(captured.error));
+        const ClipboardSnapshot &original = captured.snapshot;
         struct OriginalClipboardRestorer {
             ClipboardSnapshot snapshot;
-            ~OriginalClipboardRestorer()
-            {
-                QString ignored;
-                WlClipboardDelivery::restore(snapshot, &ignored);
-            }
+            ~OriginalClipboardRestorer() { test::restoreWaylandAndWait(snapshot); }
         } restorer{original};
 
         const DeliveryContent content{
@@ -887,12 +883,13 @@ private slots:
             QStringLiteral("<p><strong>Speecher HTML clipboard probe</strong></p>"),
         };
         WlClipboardDelivery clipboard;
-        bool htmlAvailable = false;
-        QVERIFY2(clipboard.copy(content, &htmlAvailable, &error), qPrintable(error));
-        QVERIFY(htmlAvailable);
+        const ClipboardCopied copied = test::copyAndWait(clipboard, content);
+        QVERIFY2(copied.ok, qPrintable(copied.error));
+        QVERIFY(copied.htmlAvailable);
 
-        ClipboardSnapshot published;
-        QVERIFY2(WlClipboardDelivery::capture(&published, &error), qPrintable(error));
+        const ClipboardCaptured capturedPublished = test::captureWaylandAndWait();
+        QVERIFY2(capturedPublished.ok, qPrintable(capturedPublished.error));
+        const ClipboardSnapshot &published = capturedPublished.snapshot;
         const auto part = [&published](const QString &mimeType) {
             return std::find_if(
                 published.parts.cbegin(),
@@ -909,9 +906,11 @@ private slots:
         QCOMPARE(html->data, content.html->toUtf8());
         QVERIFY(plain->data != html->data);
 
-        QVERIFY2(WlClipboardDelivery::restore(original, &error), qPrintable(error));
-        ClipboardSnapshot restored;
-        QVERIFY2(WlClipboardDelivery::capture(&restored, &error), qPrintable(error));
+        const ClipboardRestored putBack = test::restoreWaylandAndWait(original);
+        QVERIFY2(putBack.ok, qPrintable(putBack.error));
+        const ClipboardCaptured capturedRestored = test::captureWaylandAndWait();
+        QVERIFY2(capturedRestored.ok, qPrintable(capturedRestored.error));
+        const ClipboardSnapshot &restored = capturedRestored.snapshot;
         QCOMPARE(restored.hasData, original.hasData);
         for (const ClipboardMimePart &expected : std::as_const(original.parts)) {
             const bool matched = std::any_of(
@@ -946,18 +945,14 @@ private slots:
         }
 
         WlClipboardDelivery clipboard;
-        bool htmlAvailable = true;
-        QString error;
-        QVERIFY2(clipboard.copy(makeDeliveryContent(QStringLiteral("Speecher clipboard probe"),
-                                                    OutputFormat::PlainText),
-                                &htmlAvailable,
-                                &error),
-                 qPrintable(error));
-        QVERIFY(!htmlAvailable);
+        const ClipboardCopied copy = test::copyAndWait(
+            clipboard, makeDeliveryContent(QStringLiteral("Speecher clipboard probe"), OutputFormat::PlainText));
+        QVERIFY2(copy.ok, qPrintable(copy.error));
+        QVERIFY(!copy.htmlAvailable);
 
-        ClipboardSnapshot copied;
-        QVERIFY2(WlClipboardDelivery::capture(&copied, &error), qPrintable(error));
-        QCOMPARE(QString::fromUtf8(copied.data), QStringLiteral("Speecher clipboard probe"));
+        const ClipboardCaptured copied = test::captureWaylandAndWait();
+        QVERIFY2(copied.ok, qPrintable(copied.error));
+        QCOMPARE(QString::fromUtf8(copied.snapshot.data), QStringLiteral("Speecher clipboard probe"));
     }
 
     // The nearby text lies either side of the selection, not of the caret at
