@@ -141,41 +141,55 @@ bool AtSpiTargetProvider::insertText(const Target &target, const QString &plainT
     return m_snapshot->insert(target, plainText, error);
 }
 
-bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
+void AtSpiTargetProvider::verifyInsertion(const Target &target,
+                                          const QString &plainText,
+                                          QObject *context,
+                                          std::function<void(bool)> done)
 {
     if (!m_snapshot || !m_snapshot->valid() || target.secure
         || target.fingerprint != m_snapshot->target().fingerprint
         || plainText.isEmpty()) {
-        return false;
+        done(false);
+        return;
     }
     const quint64 capture = m_captures;
-    std::optional<CorrectionWindow> window;
-    const bool shown = awaitInsertion([&]() -> std::optional<bool> {
-        // A capture during the wait replaces the snapshot being verified.
+    const auto window = std::make_shared<std::optional<CorrectionWindow>>();
+    const auto check = [this, capture, plainText, window]() -> std::optional<bool> {
+        // A capture between checks replaces the snapshot being verified.
         if (m_captures != capture) {
             return std::nullopt;
         }
-        window = m_snapshot->verifiedInsertion(plainText);
-        return window.has_value();
-    });
-    if (!shown) {
-        return false;
-    }
-    const QString &prefix = window->prefix;
-    const QString &suffix = window->suffix;
-    if (m_correctionObservationEnabled && prefix.size() >= correctionMinContextChars
-        && suffix.size() >= correctionMinContextChars) {
-        if (!m_correctionObserver) {
-            m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
+        *window = m_snapshot->verifiedInsertion(plainText);
+        return window->has_value();
+    };
+    awaitInsertion(check, this, [this, window, context = QPointer<QObject>(context), done](bool shown) {
+        if (!context) {
+            return;
         }
-        m_correctionObserver->schedule(
-            this, m_snapshot.get(), *window,
-            [this](const QString &original, const QString &corrected,
-                   const QString &applicationId, double confidence) {
-                emit correctionObserved(original, corrected, applicationId, confidence);
-            });
+        if (shown) {
+            observeCorrections(**window);
+        }
+        done(shown);
+    });
+}
+
+// Watches the inserted span for the person's own edits, which become
+// corrections, when there is enough text around it to find it again.
+void AtSpiTargetProvider::observeCorrections(const CorrectionWindow &window)
+{
+    if (!m_correctionObservationEnabled || window.prefix.size() < correctionMinContextChars
+        || window.suffix.size() < correctionMinContextChars) {
+        return;
     }
-    return true;
+    if (!m_correctionObserver) {
+        m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
+    }
+    m_correctionObserver->schedule(
+        this, m_snapshot.get(), window,
+        [this](const QString &original, const QString &corrected,
+               const QString &applicationId, double confidence) {
+            emit correctionObserved(original, corrected, applicationId, confidence);
+        });
 }
 
 void AtSpiTargetProvider::setCorrectionObservationEnabled(bool enabled)

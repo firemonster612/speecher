@@ -1,6 +1,5 @@
 #include "platform/InsertionBaseline.h"
 
-#include <QEventLoop>
 #include <QTimer>
 
 namespace speecher {
@@ -11,14 +10,22 @@ namespace {
 constexpr int verificationAttempts = 5;
 constexpr int verificationPauseMs = 30;
 
-// Sleeping here would freeze Speecher's own event loop, including the dictation
-// popup. Spinning it instead keeps the UI alive; user input stays excluded so a
-// stray keystroke cannot reach Speecher while the target still has focus.
-void spinEventLoop(int milliseconds)
+// Checks again after a pause, on the event loop's own turns: sleeping would
+// freeze Speecher's UI, and a nested loop would run anything at all inside
+// the caller's step.
+void checkInsertion(int attempt,
+                    std::function<std::optional<bool>()> check,
+                    QObject *context,
+                    std::function<void(bool)> done)
 {
-    QEventLoop wait;
-    QTimer::singleShot(milliseconds, &wait, &QEventLoop::quit);
-    wait.exec(QEventLoop::ExcludeUserInputEvents);
+    const std::optional<bool> shown = check();
+    if (!shown || *shown || attempt + 1 >= verificationAttempts) {
+        done(shown.value_or(false));
+        return;
+    }
+    QTimer::singleShot(verificationPauseMs, context, [attempt, check, context, done] {
+        checkInsertion(attempt + 1, check, context, done);
+    });
 }
 
 } // namespace
@@ -38,37 +45,30 @@ QString InsertionBaseline::expectedAfter(const QString &plainText) const
     return before.left(start) + plainText + before.mid(end);
 }
 
-bool InsertionBaseline::verify(const QString &plainText,
-                               const std::function<std::optional<QString>()> &read) const
+void InsertionBaseline::verify(const QString &plainText,
+                               std::function<std::optional<QString>()> read,
+                               QObject *context,
+                               std::function<void(bool)> done) const
 {
     const QString expected = expectedAfter(plainText);
     if (plainText.isEmpty() || expected == before) {
-        return false;
+        done(false);
+        return;
     }
-    return awaitInsertion([&]() -> std::optional<bool> {
-        const std::optional<QString> value = read();
-        if (!value) {
-            return std::nullopt;
-        }
-        return *value == expected;
-    });
+    awaitInsertion(
+        [read = std::move(read), expected]() -> std::optional<bool> {
+            const std::optional<QString> value = read();
+            if (!value) {
+                return std::nullopt;
+            }
+            return *value == expected;
+        },
+        context, std::move(done));
 }
 
-bool awaitInsertion(const std::function<std::optional<bool>()> &check)
+void awaitInsertion(std::function<std::optional<bool>()> check, QObject *context, std::function<void(bool)> done)
 {
-    for (int attempt = 0; attempt < verificationAttempts; ++attempt) {
-        if (attempt > 0) {
-            spinEventLoop(verificationPauseMs);
-        }
-        const std::optional<bool> shown = check();
-        if (!shown) {
-            return false;
-        }
-        if (*shown) {
-            return true;
-        }
-    }
-    return false;
+    checkInsertion(0, std::move(check), context, std::move(done));
 }
 
 std::optional<CorrectionWindow> InsertionBaseline::correctionWindow(const Target &target,

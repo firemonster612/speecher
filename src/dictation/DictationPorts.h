@@ -178,14 +178,18 @@ public:
         Q_UNUSED(target);
         return true;
     }
-    // May wait in a nested event loop, giving the app time to show the
-    // inserted text. Timers, IPC and D-Bus replies run meanwhile, so a caller
-    // may be re-entered before it returns.
-    virtual bool verifyInsertion(const Target &target, const QString &plainText)
+    // Whether the inserted text shows in the Target. done runs once, unless
+    // context is gone by then; the answer can take a few turns of the event
+    // loop, giving the app time to show the text.
+    virtual void verifyInsertion(const Target &target,
+                                 const QString &plainText,
+                                 QObject *context,
+                                 std::function<void(bool shown)> done)
     {
         Q_UNUSED(target);
         Q_UNUSED(plainText);
-        return false;
+        Q_UNUSED(context);
+        done(false);
     }
     virtual void setCorrectionObservationEnabled(bool enabled)
     {

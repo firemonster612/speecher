@@ -1375,40 +1375,36 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(targetProvider.prepared, waitingCheck == 3 ? 1 : 0);
     }
 
-    void aDeadlineInANestedInsertionCheckLeavesTheClipboard_data()
+    void aDeadlineWhileTheInsertionCheckWaitsLeavesTheClipboard_data()
     {
         QTest::addColumn<bool>("insertsDirectly");
         QTest::newRow("direct insertion") << true;
         QTest::newRow("paste keys") << false;
     }
 
-    // An insertion check that waits in a nested event loop past the deadline
-    // and then confirms the words leaves them on the clipboard: the previous
-    // clipboard comes back only for a delivery still waiting for its answer.
-    // The delivery asked for after it starts only once that loop has
-    // returned, never inside it.
-    void aDeadlineInANestedInsertionCheckLeavesTheClipboard()
+    // The deadline can come while the insertion check waits for the app to
+    // show the words. When the check then confirms them, they stay on the
+    // clipboard: the previous clipboard comes back only for a delivery still
+    // waiting for its answer, and nothing is answered twice.
+    void aDeadlineWhileTheInsertionCheckWaitsLeavesTheClipboard()
     {
         QFETCH(bool, insertsDirectly);
-        class SlowVerification final : public TargetProvider {
+        class LateVerification final : public TargetProvider {
         public:
             void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool stillFocused(const Target &) override { return true; }
             bool canInsertText(const Target &) override { return insertsDirectly; }
             bool insertText(const Target &, const QString &, QString *) override { return true; }
-            bool verifyInsertion(const Target &, const QString &) override
+            void verifyInsertion(const Target &, const QString &, QObject *context, std::function<void(bool)> done) override
             {
-                reentered = reentered || waiting;
-                waiting = true;
-                QEventLoop wait;
-                QTimer::singleShot(100, &wait, &QEventLoop::quit);
-                wait.exec();
-                waiting = false;
-                return true;
+                held = [context = QPointer<QObject>(context), done] {
+                    if (context) {
+                        done(true);
+                    }
+                };
             }
             bool insertsDirectly = false;
-            bool waiting = false;
-            bool reentered = false;
+            std::function<void()> held;
         } targetProvider;
         targetProvider.insertsDirectly = insertsDirectly;
         QList<QString> attempts;
@@ -1424,23 +1420,24 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.restoreClipboardAfterTyping = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-
         QStringList answers;
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result.message; });
-        const DeliveryContent content = makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText);
-        delivery.deliver(settings, content, target);
-        delivery.deliver(settings, content, target);
-        QTRY_COMPARE(answers.size(), 2);
-        QCOMPARE(answers, QStringList(2, QStringLiteral("Delivery did not finish in time")));
-        QTest::qWait(150);
-        QVERIFY(!targetProvider.reentered);
+
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target);
+        QTRY_COMPARE(answers.size(), 1);
+        QCOMPARE(answers.first(), QStringLiteral("Delivery did not finish in time"));
+        QVERIFY(targetProvider.held);
+        targetProvider.held();
+        QTest::qWait(20);
+        QCOMPARE(answers.size(), 1);
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("dictation"));
     }
 
     // The delivery can go while its run is still on the stack: from inside a
-    // nested event loop, as verifyInsertion() can run one (here in a focus
-    // check, the first step), or from the handler of its answer.
+    // provider's own call (here a nested event loop in the first focus
+    // check, which no real provider runs any more), or from the handler of
+    // its answer, which comes from inside the run.
     // The run unwinds without touching it, and nothing is pressed or
     // answered after. A run going too early shows only under AddressSanitizer.
     void aDeliveryCanGoWhileItsRunIsOnTheStack_data()
@@ -1770,10 +1767,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(result.receipt, stillFocused ? DeliveryReceipt::InputSent : DeliveryReceipt::Copied);
     }
 
-    // A delivery asked for while another waits in a nested event loop, here
-    // while the insertion is verified, waits its turn: the answers keep the
-    // order the deliveries were asked in, and neither arrives inside the
-    // first call, though the second waits in a nested loop too.
+    // A delivery asked for while another is under way, here from inside its
+    // insertion check, waits its turn: the answers keep the order the
+    // deliveries were asked in, and neither arrives inside the first call.
     void aDeliveryAskedForMidDeliveryIsAnsweredAfterIt()
     {
         class ReenteringProvider final : public TargetProvider {
@@ -1781,14 +1777,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             void capture(QObject *, std::function<void(const Target &)> done) override { done({}); }
             bool canInsertText(const Target &) override { return true; }
             bool insertText(const Target &, const QString &, QString *) override { return true; }
-            bool verifyInsertion(const Target &, const QString &) override
+            void verifyInsertion(const Target &, const QString &, QObject *, std::function<void(bool)> done) override
             {
                 if (const auto deliverNext = std::exchange(duringVerification, {})) {
                     deliverNext();
-                    return false;
+                    done(false);
+                    return;
                 }
-                QCoreApplication::processEvents();
-                return true;
+                done(true);
             }
             std::function<void()> duringVerification;
         } provider;

@@ -31,7 +31,10 @@ public:
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
     bool preparePaste(const Target &target) override;
-    bool verifyInsertion(const Target &target, const QString &plainText) override;
+    void verifyInsertion(const Target &target,
+                         const QString &plainText,
+                         QObject *context,
+                         std::function<void(bool shown)> done) override;
     void setCorrectionObservationEnabled(bool enabled) override;
 
 private:

@@ -12,6 +12,7 @@ class TargetSnapshot;
 }
 
 class KWinActiveWindow;
+struct CorrectionWindow;
 
 class AtSpiTargetProvider final : public TargetProvider {
     Q_OBJECT
@@ -25,7 +26,10 @@ public:
     void focusMatch(const Target &target, QObject *context, std::function<void(FocusMatch)> done) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
-    bool verifyInsertion(const Target &target, const QString &plainText) override;
+    void verifyInsertion(const Target &target,
+                         const QString &plainText,
+                         QObject *context,
+                         std::function<void(bool shown)> done) override;
     void setCorrectionObservationEnabled(bool enabled) override;
 
     // Identity of a compositor-fallback window: the compositor's own window
@@ -35,6 +39,7 @@ public:
 
 private:
     void clearAccessible();
+    void observeCorrections(const CorrectionWindow &window);
     // The window KWin has in front, or an empty Target off KDE.
     void compositorFallbackTarget(std::function<void(const Target &)> done);
 

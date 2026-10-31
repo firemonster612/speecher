@@ -306,10 +306,12 @@ private:
 // on from its answer. done hears the result once, and nothing runs after
 // stop().
 class TextDelivery::Run final : public QObject {
-    // One of this run's frames on the stack. The deadline can stop the run
-    // from a step's nested event loop, such as verifyInsertion()'s; the run is
-    // deleted only once no frame is left that would return into it, so the
-    // backend it is in stays alive too.
+    // One of this run's frames on the stack. No step waits in a nested event
+    // loop any more, but the run answers from inside a step, and a handler of
+    // that answer may destroy the delivery, as can a provider or backend the
+    // step calls into. Either stops the run; it is deleted only once no frame
+    // is left that would return into it, so the backend it is in stays alive
+    // too, and ~TextDelivery can delete a run with no frame at once.
     class Frame {
     public:
         explicit Frame(Run &run)
@@ -421,29 +423,9 @@ private:
             && provider
             && provider->canInsertText(target)
             && provider->insertText(target, plainText, &insertionError)) {
-            const bool verified = provider->verifyInsertion(target, plainText);
-            if (!m_done) {
-                return;
-            }
-            const auto answer = [this, verified] {
-                const QString message = verified
-                    ? QStringLiteral("Pasted")
-                    : m_copiedInitially
-                        ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
-                        : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(m_initialCopyError);
-                finish({
-                    true,
-                    verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
-                    m_copiedAsPlainText,
-                    m_previousClipboard.annotate(
-                        m_copiedAsPlainText ? message + QStringLiteral(" as plain text") : message),
-                });
-            };
-            if (m_copiedInitially && verified) {
-                m_previousClipboard.restore(this, whileRunning([answer](bool) { answer(); }));
-            } else {
-                answer();
-            }
+            provider->verifyInsertion(target, plainText, this, whileRunning([this](bool verified) {
+                insertedDirectly(verified);
+            }));
             return;
         }
         if (!m_copiedInitially) {
@@ -453,6 +435,39 @@ private:
                         : QStringLiteral("Could not copy or insert the transcription: %1").arg(m_initialCopyError))});
             return;
         }
+        pasteUnlessOnlyInserting(insertionError);
+    }
+
+    // The words went straight into the app; verified says they showed there.
+    void insertedDirectly(bool verified)
+    {
+        const auto answer = [this, verified] {
+            const QString message = verified
+                ? QStringLiteral("Pasted")
+                : m_copiedInitially
+                    ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
+                    : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(m_initialCopyError);
+            finish({
+                true,
+                verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
+                m_copiedAsPlainText,
+                m_previousClipboard.annotate(
+                    m_copiedAsPlainText ? message + QStringLiteral(" as plain text") : message),
+            });
+        };
+        if (m_copiedInitially && verified) {
+            m_previousClipboard.restore(this, whileRunning([answer](bool) { answer(); }));
+        } else {
+            answer();
+        }
+    }
+
+    // Direct insertion was not tried or did not take, and the words are on
+    // the clipboard: the paste keys follow, unless insertion was all that
+    // was asked or focus moved.
+    void pasteUnlessOnlyInserting(const QString &insertionError)
+    {
+        const Target &target = m_request.target;
         if (m_insertion.only) {
             if (!insertionError.isEmpty()) {
                 finish({
@@ -609,12 +624,20 @@ private:
         // A keyboard backend pastes the copy deliver() made.
         const bool downgraded = virtualKeyboardInput ? m_copiedAsPlainText
                                                      : m_request.content.html.has_value() && !htmlAvailable;
-        const bool verified = !copied
-            && provider
-            && provider->verifyInsertion(m_request.target, m_request.content.plainText);
-        if (!m_done) {
+        if (copied || !provider) {
+            answerPaste(copied, downgraded, virtualKeyboardInput, false);
             return;
         }
+        provider->verifyInsertion(m_request.target, m_request.content.plainText, this,
+                                  whileRunning([this, downgraded, virtualKeyboardInput](bool verified) {
+                                      answerPaste(false, downgraded, virtualKeyboardInput, verified);
+                                  }));
+    }
+
+    // The paste went out; the answer says what showed of it, after putting
+    // the previous clipboard back for a verified keyboard paste.
+    void answerPaste(bool copied, bool downgraded, bool virtualKeyboardInput, bool verified)
+    {
         const auto answer = [this, copied, downgraded, verified, virtualKeyboardInput](bool restoredClipboard) {
             // A compositor-fallback target has no accessible node, so there is
             // nothing to read back: the paste can never be confirmed. Saying
@@ -715,8 +738,8 @@ void TextDelivery::deliver(const OutputSettings &settings,
                            const Target &target)
 {
     m_requests.append({settings, content, target});
-    // Never inside this call: a step's nested event loop, verifying an
-    // insertion, could otherwise answer an earlier delivery here.
+    // Never inside this call: with a provider and backends that answer at
+    // once, the run would otherwise answer before deliver() returns.
     QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);
 }
 
@@ -727,8 +750,8 @@ void TextDelivery::startNext()
     }
     Run *run = new Run(*this, m_requests.first(), [this](const DeliveryResult &result) { answer(result); });
     m_run = run;
-    // Only once the run is gone: a stopped one can still have frames in a
-    // nested event loop, which must not start a delivery inside it.
+    // Only once the run is gone: a stopped one can still have frames on the
+    // stack, and the next must not start inside them.
     connect(run, &QObject::destroyed, this, &TextDelivery::startNext, Qt::QueuedConnection);
     QTimer::singleShot(m_answerDeadlineMs, run, [this, run] {
         if (!run->running()) {

@@ -108,4 +108,17 @@ inline std::optional<TargetProvider::FocusMatch> focusMatchAndWait(TargetProvide
     return QTest::qWaitFor([&match] { return match.has_value(); }, timeoutMs) ? match : std::nullopt;
 }
 
+// Asks provider whether plainText shows in target, and waits: false when no
+// answer comes in time.
+inline bool verifyInsertionAndWait(TargetProvider &provider,
+                                   const Target &target,
+                                   const QString &plainText,
+                                   int timeoutMs = 10000)
+{
+    QObject context;
+    std::optional<bool> shown;
+    provider.verifyInsertion(target, plainText, &context, [&shown](bool given) { shown = given; });
+    return QTest::qWaitFor([&shown] { return shown.has_value(); }, timeoutMs) && *shown;
+}
+
 } // namespace speecher::test

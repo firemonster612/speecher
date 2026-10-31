@@ -231,9 +231,9 @@ public:
 
     bool preparePaste(const Target &) override { return pasteReady; }
 
-    bool verifyInsertion(const Target &, const QString &) override
+    void verifyInsertion(const Target &, const QString &, QObject *, std::function<void(bool)> done) override
     {
-        return verified;
+        done(verified);
     }
 
     bool canInsertText(const Target &) override
