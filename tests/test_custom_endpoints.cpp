@@ -1531,6 +1531,31 @@ private slots:
         QCOMPARE(read, QString());
     }
 
+    // A clear asked for while another clear of the same key is under way
+    // isn't misled by the marker that one put in: a key the settings file
+    // alone keeps is cleared with no keyring, twice (r382 Opus7).
+    void twoClearsOfAKeyOnlyTheSettingsFileKeepsGoThrough()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("file-key")));
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+
+        secrets->saveSecret(proxy, {});
+        const quint64 last = secrets->saveSecret(proxy, {});
+
+        QTRY_VERIFY(!finished.isEmpty() && finished.last().at(1).toULongLong() == last);
+        for (const QList<QVariant> &answer : finished) {
+            QVERIFY(answer.at(3).toBool());
+        }
+        QVERIFY(!secrets->deletionPending(proxy));
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), QString());
+    }
+
     // A saveFinished handler's saves wait their turn behind the one it
     // started first, and the newest is the one kept and answered as stored
     // (r382 Sol 2).

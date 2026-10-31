@@ -283,8 +283,11 @@ QString SecretStore::writeRefusal() const
 quint64 SecretStore::save(Secret secret, Request request)
 {
     request.number = ++m_requests;
-    request.marked = deletionPending(secret);
     SecretState &entry = state(secret);
+    // A marker a request still under way put in hid nothing it didn't.
+    request.marked = entry.waiting ? entry.waiting->marked
+        : entry.writing            ? entry.writing->marked
+                                   : deletionPending(secret);
     if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
         // It replaces the requests before it, whose keyring answer then goes
         // unheard.

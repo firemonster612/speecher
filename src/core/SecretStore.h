@@ -130,8 +130,8 @@ private:
         // A startup migration's: written though storage holds it, and
         // reporting nothing (migrateSettingsFallbacks).
         bool migrating = false;
-        // Whether a deletion marker hid the key when it was asked for, before
-        // the request's own (hide).
+        // Whether a deletion marker hid the key when it was asked for, other
+        // than one a request still under way put in (hide).
         bool marked = false;
         quint64 number = 0;
     };
