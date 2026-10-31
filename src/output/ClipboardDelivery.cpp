@@ -9,7 +9,6 @@
 namespace speecher {
 namespace {
 
-
 QClipboard *systemClipboard()
 {
     return qApp ? QGuiApplication::clipboard() : nullptr;
@@ -90,48 +89,39 @@ ClipboardDelivery::ClipboardDelivery(QObject *parent)
 {
 }
 
-bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable, QString *error)
+void ClipboardDelivery::copy(const DeliveryContent &content,
+                             QObject *context,
+                             std::function<void(const ClipboardCopied &)> done)
 {
-    if (htmlAvailable) {
-        *htmlAvailable = false;
-    }
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        return copyWayland(content, htmlAvailable, error);
+        copyWayland(content, context, std::move(done));
+        return;
     }
 #endif
-
-    QString qtError;
-    if (copyQt(content, htmlAvailable, &qtError)) {
-        return true;
-    }
-
-    if (error) {
-        *error = qtError;
-    }
-    return false;
+    copyQt(content, context, std::move(done));
 }
 
 #ifdef SPEECHER_WITH_WAYLAND
-bool ClipboardDelivery::copyWayland(const DeliveryContent &content,
-                                    bool *htmlAvailable,
-                                    QString *error)
+void ClipboardDelivery::copyWayland(const DeliveryContent &content,
+                                    QObject *context,
+                                    std::function<void(const ClipboardCopied &)> done)
 {
-    return m_waylandClipboard.copy(content, htmlAvailable, error);
+    Q_UNUSED(context)
+    ClipboardCopied copied;
+    copied.ok = m_waylandClipboard.copy(content, &copied.htmlAvailable, &copied.error);
+    done(copied);
 }
 #endif
 
-bool ClipboardDelivery::copyQt(const DeliveryContent &content,
-                               bool *htmlAvailable,
-                               QString *error)
+void ClipboardDelivery::copyQt(const DeliveryContent &content,
+                               QObject *context,
+                               std::function<void(const ClipboardCopied &)> done)
 {
-    if (!m_qtClipboard.copy(content, error)) {
-        return false;
-    }
-    if (htmlAvailable) {
-        *htmlAvailable = content.html.has_value();
-    }
-    return true;
+    Q_UNUSED(context)
+    QString error;
+    const bool ok = m_qtClipboard.copy(content, &error);
+    done({ok, ok && content.html.has_value(), error});
 }
 
 bool ClipboardDelivery::canSnapshot() const
@@ -149,37 +139,45 @@ bool ClipboardDelivery::canSnapshot() const
     return systemClipboard() != nullptr;
 }
 
-bool ClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error) const
+void ClipboardDelivery::capture(QObject *context, std::function<void(const ClipboardCaptured &)> done)
 {
+    Q_UNUSED(context)
+    ClipboardCaptured captured;
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        return WlClipboardDelivery::capture(snapshot, error);
+        captured.ok = WlClipboardDelivery::capture(&captured.snapshot, &captured.error);
+        done(captured);
+        return;
     }
 #endif
-    return captureQtClipboard(snapshot, error);
+    captured.ok = captureQtClipboard(&captured.snapshot, &captured.error);
+    done(captured);
 }
 
-bool ClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error,
-                                bool preserveNewCopy, bool *keptNewerCopy)
+void ClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
+                                bool preserveNewCopy,
+                                QObject *context,
+                                std::function<void(const ClipboardRestored &)> done)
 {
-    if (keptNewerCopy) {
-        *keptNewerCopy = false;
-    }
+    Q_UNUSED(context)
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        return preserveNewCopy
-            ? m_waylandClipboard.restorePreservingNewCopy(snapshot, error, keptNewerCopy)
-            : WlClipboardDelivery::restore(snapshot, error);
+        ClipboardRestored restored;
+        restored.ok = preserveNewCopy
+            ? m_waylandClipboard.restorePreservingNewCopy(snapshot, &restored.error, &restored.keptNewerCopy)
+            : WlClipboardDelivery::restore(snapshot, &restored.error);
+        done(restored);
+        return;
     }
 #endif
     if (preserveNewCopy && !m_qtClipboard.ownsClipboardContent()) {
         // Keeping another application's newer copy satisfies automatic restore.
-        if (keptNewerCopy) {
-            *keptNewerCopy = true;
-        }
-        return true;
+        done({true, true, {}});
+        return;
     }
-    return restoreQtClipboard(snapshot, error);
+    ClipboardRestored restored;
+    restored.ok = restoreQtClipboard(snapshot, &restored.error);
+    done(restored);
 }
 
 } // namespace speecher

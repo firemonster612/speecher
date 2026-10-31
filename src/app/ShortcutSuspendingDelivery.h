@@ -13,7 +13,8 @@ namespace speecher {
 // gate events while suspended and drain their sources before the suspension
 // lifts, so nothing injected leaks through after resume either. Every Global
 // Shortcut is suspended: an injected key can match the cancel shortcut as
-// easily as the dictation one.
+// easily as the dictation one. Deliveries that overlap share one suspension,
+// since the binders do not count theirs: it lifts with the last answer.
 class ShortcutSuspendingDelivery : public TextDeliveryAdapter {
     Q_OBJECT
 
@@ -26,8 +27,10 @@ public:
         , m_binders(std::move(binders))
     {
         connect(m_inner, &TextDeliveryAdapter::delivered, this, [this](const DeliveryResult &result) {
-            for (GlobalShortcutBinder *binder : m_binders) {
-                binder->resume();
+            if (--m_unanswered == 0) {
+                for (GlobalShortcutBinder *binder : m_binders) {
+                    binder->resume();
+                }
             }
             emit delivered(result);
         });
@@ -37,8 +40,10 @@ public:
                  const DeliveryContent &content,
                  const Target &target) override
     {
-        for (GlobalShortcutBinder *binder : m_binders) {
-            binder->suspend();
+        if (m_unanswered++ == 0) {
+            for (GlobalShortcutBinder *binder : m_binders) {
+                binder->suspend();
+            }
         }
         m_inner->deliver(settings, content, target);
     }
@@ -46,6 +51,7 @@ public:
 private:
     TextDeliveryAdapter *m_inner;
     QList<GlobalShortcutBinder *> m_binders;
+    int m_unanswered = 0;
 };
 
 } // namespace speecher
