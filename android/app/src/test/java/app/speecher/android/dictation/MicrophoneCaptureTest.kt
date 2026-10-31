@@ -21,7 +21,7 @@ class MicrophoneCaptureTest {
     @After fun clearSource() = ShadowAudioRecord.clearSource()
 
     @Test
-    fun `a resume waits for the paused capture to release the microphone`() {
+    fun `a capture waits for the last one, from any microphone, to release the recorder`() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         val recorders = CopyOnWriteArrayList<AudioRecord>()
@@ -39,24 +39,26 @@ class MicrophoneCaptureTest {
                 ): Int = size.also { Thread.sleep(5) }
             }
         }
-        val microphone = Microphone(app)
         val heard = Semaphore(0)
-        // Each capture is still handling its audio when the pause stops it.
-        fun capture() = thread {
+        // Each capture is still handling its audio when it is stopped.
+        fun capture(microphone: Microphone) = thread {
             microphone.capture({ true }) { _, _ ->
                 heard.release()
                 Thread.sleep(100)
             }
         }
 
-        val paused = capture()
+        // A resume or the next session: each gets a microphone of its own.
+        val first = Microphone(app)
+        val firstCapture = capture(first)
         assertTrue(heard.tryAcquire(5, TimeUnit.SECONDS))
-        microphone.stop()
-        val resumed = capture()
+        first.stop()
+        val next = Microphone(app)
+        val nextCapture = capture(next)
         assertTrue(heard.tryAcquire(5, TimeUnit.SECONDS))
-        microphone.stop()
-        paused.join()
-        resumed.join()
+        next.stop()
+        firstCapture.join()
+        nextCapture.join()
 
         assertEquals(listOf(0, 0), openAtStart)
     }

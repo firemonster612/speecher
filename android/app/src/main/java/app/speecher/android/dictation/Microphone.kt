@@ -13,12 +13,6 @@ import kotlin.math.sqrt
 class Microphone(private val context: Context) {
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var active = false
-    /**
-     * Held by a capture until its recorder is released. A resume right after a pause starts a new
-     * capture while the paused one may still be reading, and a device that allows one recorder at a
-     * time refuses a second.
-     */
-    private val oneRecorder = Any()
 
     fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) =
         synchronized(oneRecorder) { record(shouldContinue, onAudio) }
@@ -112,6 +106,13 @@ class Microphone(private val context: Context) {
     }
 
     private companion object {
+        /**
+         * Held by a capture until its recorder is released, across every microphone in the process.
+         * A resume right after a pause, or a new session right after the last, starts a capture
+         * while the previous one may still be reading, and a device that allows one recorder at a
+         * time refuses a second.
+         */
+        val oneRecorder = Any()
         const val FLOOR_DB = -50f
         const val CEIL_DB = -12f
         const val ATTACK = 0.6f
