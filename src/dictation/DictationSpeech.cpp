@@ -43,7 +43,8 @@ void DictationSpeech::begin()
     m_between.awaitingProvider = true;
     m_microphoneStarting = false;
     m_emptyResumedAttempt = 0;
-    m_inputEnded = false;
+    m_finishOwed = false;
+    m_openOwed = false;
     // A failure that switched the last session's provider says nothing of this one.
     m_switchFailure = {};
     m_phase = Phase::Starting;
@@ -228,17 +229,17 @@ void DictationSpeech::pause()
         return;
     }
     m_phase = Phase::Paused;
-    m_inputEnded = true;
+    // A resume whose attempt has not opened yet leaves none to finish.
+    const bool attemptOpen = !std::exchange(m_openOwed, false);
     // Paused again before the last pause's attempt finished: it is still
     // finishing, and what was heard since waits in m_between. Between
     // providers no attempt is open: the next one's readiness sends the words.
-    if (m_between.finishingPausedAttempt || m_between.awaitingProvider) {
+    if (!attemptOpen || m_between.finishingPausedAttempt || m_between.awaitingProvider) {
         return;
     }
-    // Before the attempt is told: a provider may report it finished from
-    // inside finishInput(), and that must not read as a rollover.
+    // Its end is no rollover, whenever it comes.
     m_between.finishingPausedAttempt = true;
-    m_attempts->finishInput();
+    m_finishOwed = true;
 }
 
 void DictationSpeech::resume()
@@ -247,17 +248,10 @@ void DictationSpeech::resume()
         return;
     }
     m_phase = Phase::Listening;
-    m_inputEnded = false;
     qInfo() << "speech resumes pausedAttemptFinished=" << !m_between.finishingPausedAttempt;
-    // Between providers the attempt opens once the next one is ready.
-    if (m_between.finishingPausedAttempt || m_between.awaitingProvider) {
-        return;
-    }
-    const bool nothingHeld = !m_between.hasHeldAudio();
-    resumeAttempt();
-    if (nothingHeld) {
-        m_emptyResumedAttempt = m_attempts->currentId();
-    }
+    // A paused attempt still finishing opens the next one as it ends; between
+    // providers, the next one's readiness does.
+    m_openOwed = !m_between.finishingPausedAttempt && !m_between.awaitingProvider;
 }
 
 void DictationSpeech::stop()
@@ -265,13 +259,46 @@ void DictationSpeech::stop()
     if (m_phase != Phase::Listening && m_phase != Phase::Paused) {
         return;
     }
+    m_stoppedWhilePaused = m_phase == Phase::Paused || std::exchange(m_openOwed, false);
     m_phase = Phase::Stopping;
     m_microphoneStopped = false;
 }
 
-void DictationSpeech::microphoneStopped()
+void DictationSpeech::proceed()
 {
-    if (m_phase != Phase::Stopping || std::exchange(m_microphoneStopped, true)) {
+    const Phase phase = m_phase;
+    // Unless the paused attempt ended meanwhile. A provider may report it
+    // ended from inside finishInput(), and move the session on.
+    if (std::exchange(m_finishOwed, false) && m_between.finishingPausedAttempt) {
+        m_attempts->finishInput();
+        if (m_phase != phase) {
+            return;
+        }
+    }
+    switch (m_phase) {
+    case Phase::Listening:
+        if (std::exchange(m_openOwed, false) && !m_between.finishingPausedAttempt
+            && !m_between.awaitingProvider) {
+            const bool nothingHeld = !m_between.hasHeldAudio();
+            resumeAttempt();
+            if (nothingHeld) {
+                m_emptyResumedAttempt = m_attempts->currentId();
+            }
+        }
+        break;
+    case Phase::Stopping:
+        finishStop();
+        break;
+    case Phase::Idle:
+    case Phase::Starting:
+    case Phase::Paused:
+        break;
+    }
+}
+
+void DictationSpeech::finishStop()
+{
+    if (std::exchange(m_microphoneStopped, true)) {
         return;
     }
     // The last attempt ended during the stop and the post-roll since waits:
@@ -286,8 +313,8 @@ void DictationSpeech::microphoneStopped()
     if (m_between.finishingPausedAttempt || m_between.awaitingProvider) {
         return;
     }
-    // Stopped while paused: the paused attempt's words are in.
-    if (m_inputEnded) {
+    // The paused attempt's words are in.
+    if (m_stoppedWhilePaused) {
         end();
         return;
     }
@@ -332,6 +359,8 @@ void DictationSpeech::cancel()
     m_settings.reset();
     m_between = {};
     m_emptyResumedAttempt = 0;
+    m_finishOwed = false;
+    m_openOwed = false;
     m_phase = Phase::Idle;
 }
 

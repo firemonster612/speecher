@@ -21,11 +21,13 @@ class TranscriptState;
 // word heard is in the Raw Transcript: the attempts it opens on the provider,
 // through pauses, reconnects and rollovers, the audio held while no attempt
 // can take it, and the walk on to the next speech provider when one fails.
-// The session keeps the microphone and the states the person sees, and tells
-// the speech when the microphone has started and when the person pauses,
-// resumes and stops, before it announces the state, so a handler that reacts
-// at once finds the speech there too. The speech tells the session when the
-// microphone may start, when the speech has ended and when a failure ends it.
+// The session keeps the microphone and the states the person sees. Each
+// change goes in one order: a command sets the speech's phase, with no word
+// to a provider; the session announces its state, so a handler that reacts
+// at once finds the speech there too; then proceed() does what the phase asks
+// of the provider, whose callbacks find the session settled. The speech tells
+// the session when the microphone may start, when the speech has ended and
+// when a failure ends it.
 class DictationSpeech : public QObject {
     Q_OBJECT
 
@@ -43,26 +45,27 @@ public:
     // renews alongside. settings are the session's, which the speech runs
     // with from here on.
     void start(const AppSettings &settings, TranscriptRefiner *refiner);
-    // Once the microphone has started for the first attempt: the speech
-    // listens.
+    // The microphone has started for the first attempt.
     void listen();
     // Audio from the microphone, which the session took for the speech.
     void hear(const QByteArray &pcm);
-    // The person paused, the microphone stopped: the open attempt finishes
-    // the words already spoken, and its end is no rollover.
+    // The person paused, the microphone stopped: the open attempt is to
+    // finish the words already spoken, and its end is no rollover.
     void pause();
-    // The person resumed: opens the next attempt, unless the paused one
+    // The person resumed: the next attempt is to open, unless the paused one
     // still finishes or a provider prepares.
     void resume();
     // The person stopped. While listening, the open attempt takes the
-    // post-roll until microphoneStopped(). Nothing once stopping already.
+    // post-roll until proceed(). Nothing once stopping already.
     void stop();
-    // Once the microphone has stopped for good after stop(), post-roll and
-    // all; at once after a stop while paused. The last attempt is told the
-    // input ended, one that heard nothing since a resume is let go, and audio
-    // held meanwhile goes to an attempt of its own. ended() follows once the
-    // words are in.
-    void microphoneStopped();
+    // Once the session has announced the state the last command stands for,
+    // and after a stop while listening its microphone has stopped for good:
+    // a paused attempt is told the input ended, a resume's attempt opens, and
+    // a stop tells the last attempt the input ended, lets go of one that
+    // heard nothing since a resume, or gives audio held meanwhile an attempt
+    // of its own; ended() follows once the words are in. Its callbacks may
+    // move the session on.
+    void proceed();
     // Nothing running reports back, and nothing held is kept.
     void cancel();
 
@@ -143,6 +146,7 @@ private:
     // The speech ends on what the attempts heard: audio still held gets an
     // attempt of its own first, then ended().
     void end();
+    void finishStop();
     bool offline() const;
 
     SpeechAttempts *m_attempts;
@@ -161,9 +165,13 @@ private:
     bool m_microphoneStarting = false;
     // While stopping: the microphone has stopped, and nothing more is heard.
     bool m_microphoneStopped = false;
-    // A pause told the open attempt, if any, that the input ended; a resume
-    // opens the next one.
-    bool m_inputEnded = false;
+    // The stop came while paused, or before a resume's attempt opened: no
+    // attempt is open to be told the input ended.
+    bool m_stoppedWhilePaused = false;
+    // Owed to the provider at proceed(): pause() left the open attempt to be
+    // told the input ended, resume() the next attempt to open.
+    bool m_finishOwed = false;
+    bool m_openOwed = false;
     // The attempt a resume opened with nothing held for it, until it hears
     // audio; 0 for none.
     quint64 m_emptyResumedAttempt = 0;
