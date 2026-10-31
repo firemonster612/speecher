@@ -22,13 +22,34 @@ QtObject {
         Navigation.pendingRow = ""
         landed()
     }
+    // Each step of a search jump is logged at info level, so a failure shows
+    // which landing fired and whether its target was still there.
+    function _log(step) {
+        console.info("search landing", step, String(landing), "rows:", rowIds,
+                     "pending:", Navigation.pendingRow, "target:", target ? String(target) : "gone")
+    }
     // After the page has slid in and laid out. QML empties a landing it has
-    // begun destroying while its Timer can still fire; such a landing has no
-    // _land, so it does nothing.
-    readonly property Timer _wait: Timer { interval: Theme.ms(260); onTriggered: if (landing._land) landing._land() }
+    // begun destroying, and its Timer can still fire then; such a landing has
+    // no _land, so it only logs.
+    readonly property Timer _wait: Timer {
+        interval: Theme.ms(260)
+        onTriggered: {
+            if (!landing._land) {
+                console.info("search landing fired after QML emptied it; pending:", Navigation.pendingRow)
+                return
+            }
+            landing._log("fires")
+            landing._land()
+        }
+    }
     readonly property Connections _search: Connections {
         target: Navigation
-        function onPendingRowChanged() { if (landing.rowIds.includes(Navigation.pendingRow)) landing._wait.restart() }
+        function onPendingRowChanged() {
+            if (!landing.rowIds.includes(Navigation.pendingRow)) return
+            landing._log("waits again")
+            landing._wait.restart()
+        }
     }
-    Component.onCompleted: if (rowIds.includes(Navigation.pendingRow)) _wait.start()
+    Component.onCompleted: if (rowIds.includes(Navigation.pendingRow)) { _log("waits"); _wait.start() }
+    Component.onDestruction: if (_wait.running) { _log("destroyed while waiting"); _wait.stop() }
 }
