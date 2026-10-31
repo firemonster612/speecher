@@ -169,6 +169,11 @@ class DictationEngine(
     private var interim = ""
     /** Audio heard after a resume while the paused stream finishes; see [Phase.Listening]. */
     private val heardAfterResume = mutableListOf<ByteArray>()
+    /**
+     * The [attempt] of the stream opened, with the microphone off, only for audio a resume heard.
+     * Those words reach no other stream, so its failure fails the dictation.
+     */
+    private var heldAudioStream = 0
     /** This dictation's replacement step, once an Insert ran it; see [replaced]. */
     private var prepared: ReplacedTranscript? = null
     /**
@@ -295,7 +300,7 @@ class DictationEngine(
                 now.finishingPause -> publish(listening(0f))
                 unsent.isNotEmpty() -> {
                     phase = Phase.Listening(Mic.Stopped(cleanup), finishingPause = true)
-                    reopen(session)
+                    sendHeldAudio(session)
                 }
                 else -> insertBest(cleanup)
             }
@@ -533,17 +538,17 @@ class DictationEngine(
                     now.mic == Mic.On -> reopen(current)
                     else -> publish(listening(0f))
                 }
-            // A paused stream that fails to finish, closed during a long pause, has still ended.
-            is SpeechEvent.Failed ->
-                if (now.finishingPause) pausedStreamEnded(current, now.mic)
-                else
-                    streamFailed(
-                        current,
-                        now.mic,
-                        event.retryable,
-                        event.kind,
-                        event.detail.ifEmpty { "Speech connection failed" },
-                    )
+            is SpeechEvent.Failed -> {
+                val detail = event.detail.ifEmpty { "Speech connection failed" }
+                when {
+                    opening == heldAudioStream ->
+                        fail(current, FailureReason.Speech(sourceProvider, event.kind), detail)
+                    // A paused stream that fails to finish, closed during a long pause, has still
+                    // ended.
+                    now.finishingPause -> pausedStreamEnded(current, now.mic)
+                    else -> streamFailed(current, now.mic, event.retryable, event.kind, detail)
+                }
+            }
         }
     }
 
@@ -602,7 +607,7 @@ class DictationEngine(
         unsent.addAll(heardAfterResume)
         heardAfterResume.clear()
         if (openFailure == null && mic != Mic.On && unsent.isNotEmpty()) {
-            reopen(current)
+            sendHeldAudio(current)
             return
         }
         if (openFailure != null && mic is Mic.Stopped && unsent.isNotEmpty()) {
@@ -619,6 +624,12 @@ class DictationEngine(
             Mic.On -> reopen(current)
             Mic.Paused -> publishListening()
         }
+    }
+
+    /** Opens a stream for the audio in [unsent], which ends as it opens; see [heldAudioStream]. */
+    private fun sendHeldAudio(current: Int) {
+        reopen(current)
+        heldAudioStream = attempt
     }
 
     /**

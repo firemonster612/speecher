@@ -523,18 +523,29 @@ class DictationEngineTest {
         online.speak(SpeechEvent.Completed)
         assertEquals(listOf("before after"), online.commits)
 
-        // Still offline, Insert fails rather than put the words in without them.
+        // Still offline, or the stream that took them fails before it finishes them: Insert fails
+        // rather than put the words in without them.
         val offline = pausedWithUnsentWords()
         offline.engine.insert()
+        val failing = pausedWithUnsentWords()
+        failing.connectFailure = null
+        failing.engine.insert()
+        failing.speak(SpeechEvent.Failed(ProviderFailureKind.Network, "closed"))
         assertEquals(
-            DictationState.Failed(
-                FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
-                "Could not connect to the speech provider",
-                "before",
+            listOf(
+                "Could not connect to the speech provider" to listOf<String>(),
+                "closed" to listOf(),
             ),
-            offline.engine.state,
+            listOf(offline, failing).map {
+                val failed = it.engine.state as DictationState.Failed
+                assertEquals(
+                    FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
+                    failed.reason,
+                )
+                assertEquals("before", failed.transcript)
+                failed.detail to it.commits
+            },
         )
-        assertEquals(emptyList<String>(), offline.commits)
     }
 
     @Test
