@@ -1,4 +1,6 @@
 #include "common/test_prelude.h"
+#include "common/test_secrets.h"
+#include "common/test_settings_paths.h"
 #include "common/test_http.h"
 #include "common/test_doubles.h"
 #include "core/EndpointSettings.h"
@@ -29,6 +31,21 @@
 #endif
 
 using namespace speecher::test;
+
+#ifdef Q_OS_LINUX
+// What runs right after any QSettings::clear in this binary, which the Linux
+// build wraps (CMakeLists.txt), so a test can look at the settings then.
+std::function<void()> afterSettingsClear;
+
+extern "C" void __real__ZN9QSettings5clearEv(QSettings *settings);
+extern "C" void __wrap__ZN9QSettings5clearEv(QSettings *settings)
+{
+    __real__ZN9QSettings5clearEv(settings);
+    if (afterSettingsClear) {
+        afterSettingsClear();
+    }
+}
+#endif
 
 namespace {
 
@@ -68,7 +85,6 @@ QByteArray headersOf(const QByteArray &request)
     return request.left(request.indexOf("\r\n\r\n")).toLower();
 }
 
-using SaveResult = SecretStore::SaveResult;
 
 // Set by the ctest that runs this suite against a real keyring.
 bool privateKeyring()
@@ -78,31 +94,14 @@ bool privateKeyring()
 
 const char *const peerSecretVariable = "SPEECHER_TEST_PEER_SECRET";
 const char *const peerRestartsVariable = "SPEECHER_TEST_PEER_RESTARTS";
+const char *const peerMovesVariable = "SPEECHER_TEST_PEER_MOVES_ENDPOINT_TO";
 const QByteArray peerReadMarker = "peer read: ";
-
-// Where this test process keeps its settings files (tests/test_main.cpp).
-QString preferencesPath(SettingsStore &settings)
-{
-    QDir preferences = QFileInfo(settings.raw().fileName()).absoluteDir();
-    preferences.cdUp();
-    return preferences.path();
-}
 
 #ifndef Q_OS_WIN
 // The permissions that let anyone but the owner in.
 constexpr QFile::Permissions openToOthers = QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup
     | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther;
 #endif
-
-// Deleting the settings moves every QSettings made afterwards to a throwaway
-// folder; the guard puts them back here for the tests that come after.
-auto keepSettingsHere(SettingsStore &settings)
-{
-    return qScopeGuard([preferences = preferencesPath(settings)] {
-        QSettings::setPath(QSettings::defaultFormat(), QSettings::UserScope, preferences);
-        QSettings::setPath(QSettings::defaultFormat(), QSettings::SystemScope, preferences);
-    });
-}
 
 #ifdef Q_OS_LINUX
 // A removal of Speecher whose keyring and settings steps act on this store;
@@ -114,13 +113,36 @@ SpeecherRemoval::Steps removalSteps(SettingsStore &settings)
     steps.removeShortcutRegistration = [](QString *) { return true; };
     steps.virtualKeyboardInstalled = [] { return false; };
     steps.keyHelperInstalled = [] { return false; };
-    steps.deleteSecrets = [&settings](QString *) { return settings.secrets()->deleteKeyringSecrets(); };
+    steps.deleteSecrets = [&settings](SpeecherRemoval::Steps::SecretsDeleted done) {
+        settings.secrets()->deleteKeyringSecrets(std::move(done));
+    };
     steps.settingsHideKeys = [&settings] { return !settings.secrets()->deletionMarkers().isEmpty(); };
     steps.deleteSettings = [&settings](QString *path) { return settings.deleteAll(path); };
     steps.deleteSettingsButMarkers = [&settings](QString *path) { return settings.deleteAllButDeletionMarkers(path); };
     return steps;
 }
 #endif
+
+// Runs function of this suite in a peer of this binary, on this process's
+// settings, with variables added to its environment, and returns what it
+// printed once it exited.
+QByteArray runPeer(SettingsStore &settings, const QString &function, const QMap<QString, QString> &variables)
+{
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("SPEECHER_TEST_PREFERENCES_DIR"), preferencesPath(settings));
+    for (auto it = variables.cbegin(); it != variables.cend(); ++it) {
+        environment.insert(it.key(), it.value());
+    }
+    QProcess peer;
+    peer.setProcessEnvironment(environment);
+    peer.setProcessChannelMode(QProcess::MergedChannels);
+    peer.start(QCoreApplication::applicationFilePath(), {QStringLiteral("--suite"), QStringLiteral("custom_endpoints"), function});
+    if (!peer.waitForFinished() || peer.exitCode() != 0) {
+        qWarning().noquote() << "The peer running" << function << "failed:" << peer.readAll();
+        return {};
+    }
+    return peer.readAll();
+}
 
 // Compares what another Speecher process reads for the secret, from this
 // one's settings file and keyring, with expected: a peer of this binary
@@ -138,21 +160,13 @@ void comparePeerRead(SettingsStore &settings, SecretStore::Secret secret, const 
     Q_UNUSED(expected);
     Q_UNUSED(restart);
 #else
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(QStringLiteral("SPEECHER_TEST_PREFERENCES_DIR"), preferencesPath(settings));
-    environment.insert(QString::fromLatin1(peerSecretVariable), QString::number(int(secret)));
+    QMap<QString, QString> variables{{QString::fromLatin1(peerSecretVariable), QString::number(int(secret))}};
     if (restart) {
-        environment.insert(QString::fromLatin1(peerRestartsVariable), QStringLiteral("1"));
+        variables.insert(QString::fromLatin1(peerRestartsVariable), QStringLiteral("1"));
     }
-    QProcess peer;
-    peer.setProcessEnvironment(environment);
-    peer.setProcessChannelMode(QProcess::MergedChannels);
-    peer.start(QCoreApplication::applicationFilePath(),
-               {QStringLiteral("--suite"), QStringLiteral("custom_endpoints"), QStringLiteral("printWhatAPeerReads")});
-    QVERIFY(peer.waitForFinished());
-    const QByteArray output = peer.readAll();
+    const QByteArray output = runPeer(settings, QStringLiteral("printWhatAPeerReads"), variables);
     const qsizetype start = output.indexOf(peerReadMarker + '[');
-    QVERIFY2(peer.exitCode() == 0 && start >= 0, output.constData());
+    QVERIFY2(start >= 0, output.constData());
     const qsizetype value = start + peerReadMarker.size() + 1;
     QCOMPARE(QString::fromUtf8(output.mid(value, output.indexOf(']', value) - value)), expected);
 #endif
@@ -1018,7 +1032,7 @@ private slots:
     // neither key yet.
     void anotherServerDoesNotGetTheCopiedProxyKeyAfterARestart()
     {
-        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
         {
             SettingsStore settings;
             settings.raw().clear();
@@ -1160,9 +1174,13 @@ private slots:
         AppSettings draft = settings.snapshot();
         draft.speech.endpoint.apiKey = QStringLiteral("speech-secret");
         draft.refinement.endpoint.apiKey = QStringLiteral("refinement-secret");
+        QSignalSpy finished(settings.secrets(), &SecretStore::saveFinished);
         settings.applySnapshot(draft);
+        QTRY_COMPARE(finished.count(), 2);
 
         SettingsStore reopened;
+        readSecret(reopened.secrets(), SecretStore::Secret::SpeechEndpointKey);
+        readSecret(reopened.secrets(), SecretStore::Secret::RefinementEndpointKey);
         const AppSettings loaded = reopened.snapshot();
         QCOMPARE(loaded.speech.endpoint.apiKey, QStringLiteral("speech-secret"));
         QCOMPARE(loaded.refinement.endpoint.apiKey, QStringLiteral("refinement-secret"));
@@ -1185,9 +1203,9 @@ private slots:
         draft.speech.endpoint.apiKey.clear();
         draft.refinement.endpoint.apiKey.clear();
         reopened.applySnapshot(draft);
-        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QString());
+        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QString());
+        QTRY_VERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
         QVERIFY(!reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey));
-        QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
 #ifndef Q_OS_WIN
@@ -1210,7 +1228,7 @@ private slots:
             QFile::setPermissions(QFileInfo(file).absolutePath(), openToOthers | QFile::ReadOwner
                                       | QFile::WriteOwner | QFile::ExeOwner);
 
-            QCOMPARE(settings.secrets()->saveSecret(proxy, QStringLiteral("file-key")), SaveResult::Stored);
+            QVERIFY(savedSecret(settings.secrets(), proxy, QStringLiteral("file-key")));
 
             QVERIFY(settings.raw().contains(SecretStore::settingsKey(proxy)));
             settings.raw().setValue(QStringLiteral("test/closing"), true);
@@ -1284,23 +1302,21 @@ private slots:
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
         SettingsStore saved;
         saved.raw().clear();
-        QCOMPARE(saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("old-key")),
-                 SaveResult::Stored);
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("old-key"));
+        QVERIFY(savedSecret(saved.secrets(), SecretStore::Secret::CliproxyApiKey, QStringLiteral("old-key")));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("old-key"));
 
         SettingsStore reopened;
         QVERIFY(!reopened.secrets()->isSecretKnown(SecretStore::Secret::CliproxyApiKey));
-        QCOMPARE(reopened.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {}), SaveResult::Stored);
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
+        QVERIFY(savedSecret(reopened.secrets(), SecretStore::Secret::CliproxyApiKey, {}));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QString());
     }
 
-    // Saving a key waits for the keyring in an event loop, where the same key
-    // can be saved again. The save asked for last is the one kept, by this
-    // store, a fresh one and another process, whatever the cache held then.
-    // Neither call settles its own request: the nested one waits for the
-    // write under way, which then writes it, and saveFinished says how it
-    // went. With a keyring, the saves wait on a real write; without one, on a
-    // refused write that falls back to the settings file.
+    // A save asked for while another write of the same key waits on the
+    // keyring waits its turn. The save asked for last is the one kept, by
+    // this store, a fresh one and another process, whatever the cache held
+    // then, and the only one saveFinished answers. With a keyring, the first
+    // save waits on a real write; without one, on a refused write that falls
+    // back to the settings file.
     void theLastSaveOfAKeyWins_data()
     {
         QTest::addColumn<QString>("before");
@@ -1325,30 +1341,27 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, proxy] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
-            secrets->saveSecret(proxy, {});
+            savedSecret(secrets, proxy, {});
         });
         if (before.isEmpty()) {
             QCOMPARE(secrets->secret(proxy), QString());
         } else {
-            QCOMPARE(secrets->saveSecret(proxy, before), SaveResult::Stored);
+            QVERIFY(savedSecret(secrets, proxy, before));
         }
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
-        std::optional<SaveResult> nestedResult;
-        QTimer::singleShot(0, secrets, [&] {
-            if (nestedRefused) {
-                qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-            }
-            nestedResult = secrets->saveSecret(proxy, nested);
-        });
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("outer-key")), SaveResult::Pending);
+        secrets->saveSecret(proxy, QStringLiteral("outer-key"));
+        if (nestedRefused) {
+            qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        }
+        secrets->saveSecret(proxy, nested);
 
-        QCOMPARE(nestedResult, std::optional(SaveResult::Pending));
-        QCOMPARE(finished.count(), 1);
+        QCOMPARE(secrets->secret(proxy), nested);
+        QTRY_COMPARE(finished.count(), 1);
         QCOMPARE(finished.first().at(2).toBool(), nested.isEmpty());
         QVERIFY(finished.first().at(3).toBool());
         QCOMPARE(secrets->secret(proxy), nested);
-        QCOMPARE(SettingsStore().secrets()->secret(proxy), nested);
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), nested);
         SettingsStore prefetched;
         prefetched.secrets()->prefetch();
         QTRY_COMPARE(prefetched.secrets()->cachedSecret(proxy), nested);
@@ -1365,12 +1378,240 @@ private slots:
             migrateSavedSettings();
         }
         const auto secret = SecretStore::Secret(qEnvironmentVariableIntValue(peerSecretVariable));
-        qInfo().noquote() << peerReadMarker + '[' + SettingsStore().secrets()->secret(secret).toUtf8() + ']';
+        qInfo().noquote() << peerReadMarker + '[' + readSecret(SettingsStore().secrets(), secret).toUtf8() + ']';
+    }
+
+    // Run by aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce only, as a
+    // separate process. It ends without its event loop running again, as a
+    // quit right after the edit does, so the keyring never answers the
+    // edit's clear.
+    void moveTheEndpointInAPeer()
+    {
+        if (!qEnvironmentVariableIsSet(peerMovesVariable)) {
+            QSKIP("Run by aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce");
+        }
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = qEnvironmentVariable(peerMovesVariable)});
+            return true;
+        });
+    }
+
+    // A server change hides the key the endpoint leaves behind in the same
+    // save of the settings file as the new server, so a Speecher that quits
+    // before the keyring deletes the key never sends it there (r382 Sol 1).
+    void aMovedEndpointsKeyStaysBehindWhenSpeecherQuitsAtOnce()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([&settings, secrets, key] {
+            settings.raw().sync();
+            savedSecret(secrets, key, {});
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            return true;
+        });
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("server-a-key")));
+        settings.raw().sync();
+
+        QVERIFY(!runPeer(settings, QStringLiteral("moveTheEndpointInAPeer"),
+                         {{QString::fromLatin1(peerMovesVariable), QStringLiteral("http://server-b.example/v1")}})
+                     .isEmpty());
+
+        settings.raw().sync();
+        QCOMPARE(settings.dictationSnapshot().refinement.endpoint.baseUrl, QStringLiteral("http://server-b.example/v1"));
+        comparePeerRead(settings, key, QString());
+    }
+
+    // A save still under way when the endpoint moves lands hidden behind the
+    // move's clear, in the same save of the settings file, so another
+    // process reading before the clear answers finds no key for the new
+    // server (r382 Sol2 1).
+    void aSaveLandingAfterTheEndpointMovesStaysHidden_data()
+    {
+        QTest::addColumn<QString>("enteredForB");
+        QTest::newRow("cleared") << QString();
+        QTest::newRow("a key entered for the new server") << QStringLiteral("b-key");
+    }
+
+    void aSaveLandingAfterTheEndpointMovesStaysHidden()
+    {
+        QFETCH(QString, enteredForB);
+#ifdef Q_OS_WIN
+        QSKIP("Windows test processes each keep their settings apart");
+#endif
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] {
+            qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
+            savedSecret(secrets, key, {});
+        });
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            return true;
+        });
+        QVERIFY(savedSecret(secrets, key, QStringLiteral("old-key")));
+        // Refused, so its answer comes on the event loop's next turn and the
+        // key goes to the settings file.
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+        secrets->saveSecret(key, QStringLiteral("pending-a"));
+        settings.edit([](AppSettings &draft) {
+            editRefinementEndpoint(draft, {.baseUrl = QStringLiteral("http://server-b.example/v1")});
+            return true;
+        });
+        // A key entered for B replaces the clear waiting behind the older save.
+        if (!enteredForB.isEmpty()) {
+            secrets->saveSecret(key, enteredForB);
+        }
+        bool read = false;
+
+        // Answered in the order asked: after the older save lands, before
+        // the clear it asked for next does.
+        QTimer::singleShot(0, this, [&] {
+            read = true;
+            comparePeerRead(settings, key, QString());
+        });
+
+        QTRY_VERIFY(read);
+        bool settled = false;
+        secrets->afterWrites([&settled] { settled = true; });
+        QTRY_VERIFY(settled);
+        // The last request asked for answers: the clear, or the key for B.
+        QCOMPARE(finished.last().at(2).toBool(), enteredForB.isEmpty());
+        comparePeerRead(settings, key, enteredForB);
+    }
+
+    // A deletion marker that comes while a worker waits on the keyring hides
+    // the key the keyring answers with, as removal's marker does from a
+    // worker that opened the settings before it (r382 Sol5).
+    void aMarkerDuringAWorkersKeyringReadHidesTheKey()
+    {
+        if (!privateKeyring()) {
+            QSKIP("Requires the private keyring suite");
+        }
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
+        QVERIFY(savedApiKey(settings.secrets(), QStringLiteral("hidden-key")));
+        settings.raw().sync();
+        // The worker's read reaches this thread only after it found no
+        // marker: the marker goes in right then, before the keyring answers.
+        struct MarkOnRead : QObject {
+            std::function<void()> mark;
+            bool eventFilter(QObject *watched, QEvent *event) override
+            {
+                if (watched == QCoreApplication::instance() && event->type() == QEvent::MetaCall && mark) {
+                    std::exchange(mark, {})();
+                }
+                return false;
+            }
+        } markOnRead;
+        markOnRead.mark = [&settings, openAi] {
+            settings.raw().setValue(SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion"), true);
+        };
+        QCoreApplication::instance()->installEventFilter(&markOnRead);
+        QString read = QStringLiteral("unread");
+        std::unique_ptr<QThread> worker(QThread::create([&read] { read = SettingsStore().secrets()->apiKey(); }));
+
+        worker->start();
+
+        QTRY_VERIFY(worker->isFinished());
+        QCoreApplication::instance()->removeEventFilter(&markOnRead);
+        QVERIFY(!markOnRead.mark);
+        QCOMPARE(read, QString());
+    }
+
+    // A clear asked for while another clear of the same key is under way
+    // isn't misled by the marker that one put in: a key the settings file
+    // alone keeps is cleared with no keyring, twice (r382 Opus7).
+    void twoClearsOfAKeyOnlyTheSettingsFileKeepsGoThrough()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE"); });
+        qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("file-key")));
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
+
+        secrets->saveSecret(proxy, {});
+        const quint64 last = secrets->saveSecret(proxy, {});
+
+        QTRY_VERIFY(!finished.isEmpty() && finished.last().at(1).toULongLong() == last);
+        for (const QList<QVariant> &answer : finished) {
+            QVERIFY(answer.at(3).toBool());
+        }
+        QVERIFY(!secrets->deletionPending(proxy));
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), QString());
+    }
+
+    // A saveFinished handler's saves wait their turn behind the one it
+    // started first, and the newest is the one kept and answered as stored
+    // (r382 Sol 2).
+    void savesFromASaveFinishedHandlerWaitTheirTurn()
+    {
+        const auto key = SecretStore::Secret::RefinementEndpointKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        const auto restore = qScopeGuard([secrets, key] { savedSecret(secrets, key, {}); });
+        quint64 last = 0;
+        QMap<quint64, bool> answers;
+        QObject handler;
+        connect(secrets, &SecretStore::saveFinished, &handler,
+                [&](SecretStore::Secret secret, quint64 request, bool, bool stored) {
+            if (secret != key) {
+                return;
+            }
+            answers.insert(request, stored);
+            if (last == 0) {
+                // The first needs no keyring, storage holding it already.
+                secrets->saveSecret(key, QStringLiteral("initial"));
+                last = secrets->saveSecret(key, QStringLiteral("last"));
+            }
+        });
+
+        secrets->saveSecret(key, QStringLiteral("initial"));
+
+        QTRY_VERIFY(last != 0 && answers.contains(last));
+        QVERIFY(answers.value(last));
+        QCOMPARE(secrets->cachedSecret(key), QStringLiteral("last"));
+        QCOMPARE(readSecret(SettingsStore().secrets(), key), QStringLiteral("last"));
+    }
+
+    // Quitting Speecher waits for a key save the keyring hasn't answered
+    // yet, so the key is what the next start reads (r382 Sol 3).
+    void quittingWaitsForAKeySaveToSettle()
+    {
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore().raw().clear();
+        ApplicationController controller(true);
+        SecretStore *secrets = controller.settings()->secrets();
+        const auto restore = qScopeGuard([secrets, proxy] { savedSecret(secrets, proxy, {}); });
+        QSignalSpy quit(&controller, &ApplicationController::quitRequested);
+
+        secrets->saveSecret(proxy, QStringLiteral("queued-key"));
+        controller.quitApplication();
+
+        QCOMPARE(quit.count(), 0);
+        QTRY_COMPARE(quit.count(), 1);
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), QStringLiteral("queued-key"));
     }
 
     // A save or clear asked for while another write of the same key waits on
-    // the keyring answers Pending, not success, and the refusal is what
-    // saveFinished reports. The key keeps what storage held; a refused clear
+    // the keyring answers for both, and its refusal is what saveFinished
+    // reports. The key keeps what storage held; a refused clear
     // hides it until a deletion goes through.
     void aRefusedQueuedSaveIsReported_data()
     {
@@ -1393,34 +1634,32 @@ private slots:
         const auto restore = qScopeGuard([secrets, secret] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            secrets->saveSecret(secret, {});
+            savedSecret(secrets, secret, {});
         });
         // As QuickAccounts saves it: the OpenAI key only to the keyring.
         const auto save = [secrets, secret](const QString &value) {
-            return secret == SecretStore::Secret::OpenAiApiKey ? secrets->saveApiKey(value)
-                                                               : secrets->saveSecret(secret, value);
+            secret == SecretStore::Secret::OpenAiApiKey ? secrets->saveApiKey(value) : secrets->saveSecret(secret, value);
         };
-        QCOMPARE(secrets->saveSecret(secret, QStringLiteral("old-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, secret, QStringLiteral("old-key")));
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         // So that, without a keyring too, clearing the key needs one.
         settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
-        std::optional<SaveResult> nestedResult;
-        QTimer::singleShot(0, secrets, [&] { nestedResult = save(nested); });
 
-        QCOMPARE(save(QStringLiteral("middle-key")), SaveResult::Pending);
+        save(QStringLiteral("middle-key"));
+        save(nested);
 
-        QCOMPARE(nestedResult, std::optional(SaveResult::Pending));
-        QCOMPARE(finished.count(), 1);
+        QTRY_COMPARE(finished.count(), 1);
         QCOMPARE(finished.first().at(2).toBool(), nested.isEmpty());
         QVERIFY(!finished.first().at(3).toBool());
         QCOMPARE(secrets->secret(secret), kept);
-        QCOMPARE(SettingsStore().secrets()->secret(secret), kept);
+        QCOMPARE(readSecret(SettingsStore().secrets(), secret), kept);
         comparePeerRead(settings, secret, kept);
     }
 
-    // A save asked for during the wait replaces the whole request, so one that
+    // A save asked for while another waits on the keyring replaces the whole
+    // request, so one that
     // may fall back to the settings file still does after a keyring-only save
     // of the same key that the keyring refused.
     void aQueuedSaveKeepsItsOwnFallback()
@@ -1431,24 +1670,23 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, openAi] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
-            secrets->saveSecret(openAi, {});
+            savedSecret(secrets, openAi, {});
         });
-        QCOMPARE(secrets->saveSecret(openAi, QStringLiteral("old-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, openAi, QStringLiteral("old-key")));
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-        std::optional<SaveResult> nestedResult;
-        QTimer::singleShot(0, secrets, [&] { nestedResult = secrets->saveSecret(openAi, QStringLiteral("new-key")); });
 
-        QCOMPARE(secrets->saveApiKey(QStringLiteral("new-key")), SaveResult::Pending);
+        QVERIFY(storedAfter(secrets, openAi, [&] {
+            secrets->saveApiKey(QStringLiteral("new-key"));
+            secrets->saveSecret(openAi, QStringLiteral("new-key"));
+        }));
 
-        QCOMPARE(nestedResult, std::optional(SaveResult::Pending));
         QCOMPARE(secrets->secret(openAi), QStringLiteral("new-key"));
         QVERIFY(secrets->usesInsecureSettingsFallback());
         comparePeerRead(settings, openAi, QStringLiteral("new-key"));
     }
 
-    // A settings save asks for all its keys before its first keyring wait, so
-    // a save made during one is newer than the settings save's, even one of
-    // the value the key already has.
+    // A save made while a settings save's keys wait on the keyring is newer
+    // than the settings save's, even one of the value the key already has.
     void anOlderSettingsSaveLeavesALaterSaveAlone_data()
     {
         QTest::addColumn<QString>("kept");
@@ -1464,33 +1702,32 @@ private slots:
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, refinement] {
-            secrets->saveSecret(refinement, {});
-            secrets->saveSecret(SecretStore::Secret::SpeechEndpointKey, {});
+            savedSecret(secrets, refinement, {});
+            savedSecret(secrets, SecretStore::Secret::SpeechEndpointKey, {});
         });
         if (kept.isEmpty()) {
             QCOMPARE(secrets->secret(refinement), QString());
         } else {
-            QCOMPARE(secrets->saveSecret(refinement, kept), SaveResult::Stored);
+            QVERIFY(savedSecret(secrets, refinement, kept));
         }
         AppSettings draft = settings.snapshot();
         draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
         draft.refinement.endpoint.apiKey = QStringLiteral("refinement-key");
-        // During the speech key's wait, before the refinement key's.
-        std::optional<SaveResult> nestedResult;
-        QTimer::singleShot(0, secrets, [&] { nestedResult = secrets->saveSecret(refinement, kept); });
 
-        settings.applySnapshot(draft);
+        QVERIFY(storedAfter(secrets, refinement, [&] {
+            settings.applySnapshot(draft);
+            secrets->saveSecret(refinement, kept);
+        }));
 
-        QCOMPARE(nestedResult, std::optional(SaveResult::Stored));
         QCOMPARE(secrets->secret(refinement), kept);
-        QCOMPARE(SettingsStore().secrets()->secret(refinement), kept);
-        QCOMPARE(SettingsStore().secrets()->secret(SecretStore::Secret::SpeechEndpointKey),
-                 QStringLiteral("speech-key"));
+        QCOMPARE(readSecret(SettingsStore().secrets(), refinement), kept);
+        QTRY_COMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::SpeechEndpointKey),
+                     QStringLiteral("speech-key"));
     }
 
     // A read that waits on the keyring gets what the keyring held when it
-    // asked. A save made meanwhile is newer: the read, and every read after
-    // it, returns that.
+    // asked. A save made meanwhile is newer: every read from then on returns
+    // that, and the read's answer is dropped.
     void aSaveDuringAKeyringReadIsKept_data()
     {
         QTest::addColumn<QString>("nested");
@@ -1508,7 +1745,7 @@ private slots:
         {
             SettingsStore saved;
             saved.raw().clear();
-            QCOMPARE(saved.secrets()->saveSecret(proxy, QStringLiteral("old-key")), SaveResult::Stored);
+            QVERIFY(savedSecret(saved.secrets(), proxy, QStringLiteral("old-key")));
             // Without a keyring the key went to the settings file, where a read
             // never waits. Listed as in the keyring, it waits for the refusal.
             if (!privateKeyring()) {
@@ -1520,19 +1757,20 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, proxy] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
-            secrets->saveSecret(proxy, {});
+            savedSecret(secrets, proxy, {});
         });
-        QTimer::singleShot(0, secrets, [&] {
-            if (writeRefused) {
-                qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-            }
-            secrets->saveSecret(proxy, nested);
-        });
+        QCOMPARE(secrets->secret(proxy), QString());
+        QVERIFY(!secrets->isSecretKnown(proxy));
+        if (writeRefused) {
+            qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        }
+        QSignalSpy finished(secrets, &SecretStore::saveFinished);
 
-        QCOMPARE(secrets->secret(proxy), nested);
+        secrets->saveSecret(proxy, nested);
 
+        QTRY_COMPARE(finished.count(), 1);
         QCOMPARE(secrets->cachedSecret(proxy), nested);
-        QCOMPARE(SettingsStore().secrets()->secret(proxy), nested);
+        QCOMPARE(readSecret(SettingsStore().secrets(), proxy), nested);
     }
 
     // A key a save says is stored is what another process reads, the moment
@@ -1548,7 +1786,7 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, proxy] { secrets->saveSecret(proxy, {}); });
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("new-key")));
 
         comparePeerRead(settings, proxy, QStringLiteral("new-key"));
     }
@@ -1566,20 +1804,19 @@ private slots:
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         const auto restore = qScopeGuard([secrets, openAi] {
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            secrets->saveSecret(openAi, {});
+            savedSecret(secrets, openAi, {});
         });
 
-        QCOMPARE(secrets->saveApiKey({}), SaveResult::Refused);
+        QVERIFY(!savedApiKey(secrets, {}));
 
         QVERIFY(secrets->deletionPending(openAi));
         QCOMPARE(secrets->secret(openAi), QString());
-        QCOMPARE(SettingsStore().secrets()->secret(openAi), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), openAi), QString());
         comparePeerRead(settings, openAi, QString());
     }
 
-    // A refused save's reason is its own: a saveFinished handler that saves
-    // another key before the refused call returns changes neither what
-    // lastError() nor what saveFinished says.
+    // A refused save's reason is its own: what saveFinished says, and what
+    // lastError() says when it comes, whatever a handler saves then.
     void aRefusedSaveKeepsItsReason()
     {
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
@@ -1589,25 +1826,27 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, proxy, speech] {
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            secrets->saveSecret(proxy, {});
-            secrets->saveSecret(speech, {});
+            savedSecret(secrets, proxy, {});
+            savedSecret(secrets, speech, {});
         });
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("old-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("old-key")));
         // So that, without a keyring too, clearing the key needs one.
         settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
         QObject handler;
-        connect(secrets, &SecretStore::saveFinished, &handler, [secrets, proxy, speech](SecretStore::Secret secret) {
+        QString reason;
+        connect(secrets, &SecretStore::saveFinished, &handler, [&reason, secrets, proxy, speech](SecretStore::Secret secret) {
             if (secret == proxy) {
+                reason = secrets->lastError();
                 secrets->saveSecret(speech, QStringLiteral("speech-key"));
             }
         });
 
-        QCOMPARE(secrets->saveSecret(proxy, {}), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, proxy, {}));
 
         const QString denied = QStringLiteral("Keyring deletion denied");
-        QCOMPARE(secrets->lastError(), denied);
+        QCOMPARE(reason, denied);
         QCOMPARE(finished.first().at(4).toString(), denied);
     }
 
@@ -1621,20 +1860,20 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, proxy] {
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            secrets->saveSecret(proxy, {});
+            savedSecret(secrets, proxy, {});
         });
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("old-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("old-key")));
         AppSettings draft = settings.snapshot();
         draft.refinement.cliproxyApiKey.clear();
         // So that, without a keyring too, clearing the key needs one.
         settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
-        QTimer::singleShot(0, secrets, [&] {
-            qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
-            settings.applySnapshot(draft);
-        });
         QTest::ignoreMessage(QtWarningMsg, "Could not clear cliproxy-api-key: Keyring deletion denied");
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("outer-key")), SaveResult::Pending);
+        QVERIFY(!storedAfter(secrets, proxy, [&] {
+            secrets->saveSecret(proxy, QStringLiteral("outer-key"));
+            qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+            settings.applySnapshot(draft);
+        }));
     }
 
     // Removing Speecher's secrets drops every save of them under way or
@@ -1650,52 +1889,43 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([secrets, openAi] { secrets->saveSecret(openAi, {}); });
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
-        std::optional<SaveResult> queuedResult;
-        std::optional<SaveResult> lateResult;
-        QTimer::singleShot(0, secrets, [&] {
-            queuedResult = secrets->saveSecret(openAi, QStringLiteral("queued-key"));
-            // During the removal's first keyring wait.
-            QTimer::singleShot(0, secrets, [&] { lateResult = secrets->saveSecret(openAi, QStringLiteral("late-key")); });
-            secrets->deleteKeyringSecrets();
-        });
         for (int refusal = 0; refusal < 2; ++refusal) {
             QTest::ignoreMessage(QtWarningMsg, "Could not save openai-api-key: Speecher's secrets are being removed");
         }
+        secrets->saveSecret(openAi, QStringLiteral("first-key"));
+        secrets->saveSecret(openAi, QStringLiteral("queued-key"));
 
-        QCOMPARE(secrets->saveSecret(openAi, QStringLiteral("first-key")), SaveResult::Pending);
+        std::optional<bool> removed;
+        secrets->deleteKeyringSecrets([&removed](bool deleted, const QString &) { removed = deleted; });
+        secrets->saveSecret(openAi, QStringLiteral("late-key"));
 
-        QCOMPARE(queuedResult, std::optional(SaveResult::Pending));
-        QCOMPARE(lateResult, std::optional(SaveResult::Refused));
         // The removal settled the queued save, and the late one at once.
-        QCOMPARE(finished.count(), 2);
+        QTRY_COMPARE(finished.count(), 2);
         QVERIFY(!finished.at(0).at(3).toBool());
         QVERIFY(!finished.at(1).at(3).toBool());
+        QTRY_VERIFY(removed.has_value());
+        QCOMPARE(finished.count(), 2);
         QCOMPARE(secrets->secret(openAi), QString());
-        QCOMPARE(SettingsStore().secrets()->secret(openAi), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), openAi), QString());
         comparePeerRead(settings, openAi, QString());
     }
 
-    // A removal started while another runs, as a handler called during the
-    // first one's keyring wait may start one, leaves saves refused until the
-    // first one finishes too.
-    void aNestedRemovalKeepsSavesRefused()
+    // A removal asked for while another runs finishes with it, and saves
+    // stay refused until then.
+    void aSecondRemovalFinishesWithTheFirst()
     {
         const auto openAi = SecretStore::Secret::OpenAiApiKey;
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([secrets, openAi] { secrets->saveSecret(openAi, {}); });
-        std::optional<SaveResult> lateResult;
-        // During the first removal's first keyring wait, the OpenAI key's.
-        QTimer::singleShot(0, secrets, [&] {
-            secrets->deleteKeyringSecrets();
-            // During one of the first removal's later waits.
-            QTimer::singleShot(0, secrets, [&] { lateResult = secrets->saveSecret(openAi, QStringLiteral("late-key")); });
-        });
+        int finished = 0;
+        secrets->deleteKeyringSecrets([&finished](bool, const QString &) { ++finished; });
+        secrets->deleteKeyringSecrets([&finished](bool, const QString &) { ++finished; });
+        QTest::ignoreMessage(QtWarningMsg, "Could not save openai-api-key: Speecher's secrets are being removed");
 
-        secrets->deleteKeyringSecrets();
+        QVERIFY(!savedApiKey(secrets, QStringLiteral("late-key")));
 
-        QCOMPARE(lateResult, std::optional(SaveResult::Refused));
+        QTRY_COMPARE(finished, 2);
         QCOMPARE(secrets->secret(openAi), QString());
         comparePeerRead(settings, openAi, QString());
     }
@@ -1715,14 +1945,15 @@ private slots:
         const auto restore = qScopeGuard([secrets, openAi, proxy] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            secrets->saveSecret(openAi, {});
-            secrets->saveSecret(proxy, {});
+            savedSecret(secrets, openAi, {});
+            savedSecret(secrets, proxy, {});
         });
-        QCOMPARE(secrets->saveSecret(openAi, QStringLiteral("hidden-key")), SaveResult::Stored);
+        const auto kept = keepSettingsHere(settings);
+        QVERIFY(savedSecret(secrets, openAi, QStringLiteral("hidden-key")));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
-        QCOMPARE(secrets->saveSecret(openAi, {}), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, openAi, {}));
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("plain-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("plain-key")));
         settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("a term"));
         SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
@@ -1733,44 +1964,130 @@ private slots:
         QCOMPARE(finished.first().first().value<RemovalReport>().steps.last().outcome,
                  RemovalStep::Outcome::KeptHidingKeys);
         QVERIFY(!settings.raw().contains(SettingsKeys::VocabularyEntries));
-        QCOMPARE(SettingsStore().secrets()->secret(openAi), QString());
+        QCOMPARE(readSecret(SettingsStore().secrets(), openAi), QString());
         comparePeerRead(settings, openAi, QString());
         comparePeerRead(settings, proxy, QString());
     }
 
-    // Without a keyring to delete a key from, removal deletes the settings
-    // and the keys they hold: they hide no key a keyring kept.
-    void removalWithoutAKeyringDeletesTheSettings()
+    // A keyring that neither deletes nor reads, as one that doesn't answer,
+    // may still hold the OpenAI key every start looks up: removal keeps the
+    // marker hiding it, and only that, so a start after the keyring answers
+    // again finds no key (r382 Sol3). The settings count as removed, so
+    // nothing saved afterwards comes back beside the marker (r382 Sol4).
+    void removalHidesTheOpenAiKeyFromAKeyringThatDoesNotAnswer()
     {
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([] {
+        const auto unset = [] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
+            qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+        };
+        const auto restore = qScopeGuard([unset] {
+            unset();
+            removedSecrets(SettingsStore().secrets());
         });
         const auto kept = keepSettingsHere(settings);
-        // A private keyring refuses everything, as a missing one does.
+        if (privateKeyring()) {
+            QVERIFY(savedApiKey(secrets, QStringLiteral("kept-key")));
+        }
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("plain-key")));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("plain-key")), SaveResult::Stored);
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
 
         removal.start(true);
 
         QTRY_COMPARE(finished.count(), 1);
-        QVERIFY(finished.first().first().value<RemovalReport>().settingsDeleted());
+        const RemovalReport report = finished.first().first().value<RemovalReport>();
+        QCOMPARE(report.steps.last().outcome, RemovalStep::Outcome::KeptHidingKeys);
+        QVERIFY(report.settingsDeleted());
+        unset();
+        QTest::ignoreMessage(QtWarningMsg, "Could not save refinement-endpoint-key: Speecher's settings were deleted");
+        QVERIFY(!savedSecret(secrets, SecretStore::Secret::RefinementEndpointKey, QStringLiteral("after-removal")));
+        comparePeerRead(settings, openAi, QString(), true);
         comparePeerRead(settings, proxy, QString());
+        comparePeerRead(settings, SecretStore::Secret::RefinementEndpointKey, QString());
     }
+
+    // A build without QtKeychain can't see the keyring, so it never takes a
+    // deletion marker away: the key it hides may still be there. With no
+    // marker, removal has nothing to keep (r382 Sol4).
+    void aBuildWithoutQtKeychainKeepsDeletionMarkers()
+    {
+#ifdef SPEECHER_WITH_QKEYCHAIN
+        QSKIP("Needs a build without QtKeychain");
+#else
+        // No keyring is reached without QtKeychain, so the test refusal can
+        // step aside and let the requests reach the build's own answer.
+        const QByteArray privateKeyringBefore = qgetenv("SPEECHER_TEST_PRIVATE_KEYRING");
+        qputenv("SPEECHER_TEST_PRIVATE_KEYRING", "1");
+        const auto restore = qScopeGuard([privateKeyringBefore] {
+            qputenv("SPEECHER_TEST_PRIVATE_KEYRING", privateKeyringBefore);
+        });
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        // A key Speecher only reads once it recorded writing it to the
+        // keyring, and removal drops that record.
+        const auto proxy = SecretStore::Secret::CliproxyApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore *secrets = settings.secrets();
+        settings.raw().setValue(SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion"), true);
+        settings.raw().setValue(SecretStore::settingsKey(proxy) + QStringLiteral("PendingDeletion"), true);
+
+        QVERIFY(!removedSecrets(secrets));
+        QVERIFY(secrets->deletionPending(openAi));
+        QVERIFY(secrets->deletionPending(proxy));
+        QVERIFY(!savedApiKey(secrets, {}));
+        QVERIFY(secrets->deletionPending(openAi));
+        QVERIFY(!savedSecret(secrets, proxy, {}));
+        QVERIFY(secrets->deletionPending(proxy));
+
+        settings.raw().clear();
+        QVERIFY(removedSecrets(secrets));
+        QVERIFY(secrets->deletionMarkers().isEmpty());
+#endif
+    }
+
+#ifdef Q_OS_LINUX
+    // Closing the settings never takes a deletion marker out of them, even
+    // for a moment: a store already open on them, as a worker's is, would
+    // read the key it hides then (r382 Sol6).
+    void closingTheSettingsKeepsTheirMarkersInPlace()
+    {
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto kept = keepSettingsHere(settings);
+        const QString marker = SecretStore::settingsKey(openAi) + QStringLiteral("PendingDeletion");
+        settings.raw().setValue(marker, true);
+        settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("a term"));
+        SettingsStore reader;
+        QVERIFY(reader.secrets()->deletionPending(openAi));
+        bool unhidden = false;
+        afterSettingsClear = [&] { unhidden = unhidden || !reader.secrets()->deletionPending(openAi); };
+        const auto unhook = qScopeGuard([] { afterSettingsClear = {}; });
+
+        QVERIFY(settings.raw().close({{marker, true}}));
+
+        QVERIFY(!unhidden);
+        QVERIFY(reader.secrets()->deletionPending(openAi));
+        QVERIFY(!reader.raw().contains(SettingsKeys::VocabularyEntries));
+    }
+#endif
 
     // Removal deletes the settings an older Speecher left under its old app
     // id too, which the next start would import again, keys and all, and
     // their emptied folder, though QSettings can't write their file. When
     // they won't go, it says so, naming the current file too when that won't
     // keep only its markers, and keeps the next start from importing them:
-    // either way, Speecher starting again reads none of their keys.
+    // either way, Speecher starting again reads none of their keys. Tried
+    // again once they can go, removal deletes them (r382 Opus5).
     void removalLeavesNoOlderSettingsToImport_data()
     {
         QTest::addColumn<bool>("olderReadOnly");
@@ -1841,13 +2158,31 @@ private slots:
 
         QTRY_COMPARE(finished.count(), 1);
         const RemovalStep step = finished.first().first().value<RemovalReport>().steps.last();
-        QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : RemovalStep::Outcome::Removed);
+        // Only a keyring that answers can say the OpenAI key is gone; until
+        // then a marker hides it, and the settings keep only that.
+        const RemovalStep::Outcome removed =
+            privateKeyring() ? RemovalStep::Outcome::Removed : RemovalStep::Outcome::KeptHidingKeys;
+        QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : removed);
         const QString error = currentStays ? olderFile + QStringLiteral(" or the one at ") + file : olderFile;
         QCOMPARE(step.error, olderStay ? error : QString());
         QCOMPARE(QFileInfo::exists(olderFolder), olderStay);
         if (!currentStays) {
             comparePeerRead(settings, proxy, QString(), true);
         }
+        if (!olderStay) {
+            return;
+        }
+        QFile::setPermissions(olderFolder, permissions);
+        QFile::setPermissions(file, filePermissions);
+        SpeecherRemoval retry(removalSteps(settings));
+        QSignalSpy retried(&retry, &SpeecherRemoval::finished);
+
+        retry.start(true);
+
+        QTRY_COMPARE(retried.count(), 1);
+        QCOMPARE(retried.first().first().value<RemovalReport>().steps.last().outcome, removed);
+        QVERIFY(!QFileInfo::exists(olderFile));
+        comparePeerRead(settings, proxy, QString(), true);
     }
 
     // An OpenAI key the keyring kept when removal couldn't delete it stays
@@ -1864,10 +2199,10 @@ private slots:
         SecretStore *secrets = settings.secrets();
         const auto restore = qScopeGuard([] {
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
-            SettingsStore().secrets()->deleteKeyringSecrets();
+            removedSecrets(SettingsStore().secrets());
         });
         const auto kept = keepSettingsHere(settings);
-        QCOMPARE(secrets->saveApiKey(QStringLiteral("kept-key")), SaveResult::Stored);
+        QVERIFY(savedApiKey(secrets, QStringLiteral("kept-key")));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
@@ -1888,11 +2223,11 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
         const auto kept = keepSettingsHere(settings);
         QTimer::singleShot(0, secrets, [&settings] { QVERIFY(settings.deleteAll(nullptr)); });
 
-        QCOMPARE(secrets->saveApiKey(QStringLiteral("late-key")), SaveResult::Refused);
+        QVERIFY(!savedApiKey(secrets, QStringLiteral("late-key")));
 
         QCOMPARE(secrets->lastError(), QStringLiteral("Speecher's settings were deleted"));
     }
@@ -1906,16 +2241,16 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
         const auto kept = keepSettingsHere(settings);
         QSignalSpy finished(secrets, &SecretStore::saveFinished);
-        QTimer::singleShot(0, secrets, [&settings, secrets, proxy] {
-            QVERIFY(settings.deleteAll(nullptr));
-            QCOMPARE(secrets->saveSecret(proxy, {}), SaveResult::Refused);
-        });
+        secrets->saveSecret(proxy, QStringLiteral("old-key"));
+        QVERIFY(settings.deleteAll(nullptr));
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("old-key")), SaveResult::Pending);
+        QVERIFY(!savedSecret(secrets, proxy, {}));
 
+        // A keyring request asked for now is answered after the older save.
+        readSecret(secrets, SecretStore::Secret::OpenAiApiKey);
         QCOMPARE(finished.count(), 1);
         QCOMPARE(finished.first().at(1).toULongLong(), quint64(2));
         QVERIFY(finished.first().at(2).toBool());
@@ -1929,12 +2264,12 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([] { SettingsStore().secrets()->deleteKeyringSecrets(); });
+        const auto restore = qScopeGuard([] { removedSecrets(SettingsStore().secrets()); });
         const auto kept = keepSettingsHere(settings);
         SettingsStore deleting;
         QVERIFY(deleting.deleteAll(nullptr));
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("new-key")));
 
         comparePeerRead(settings, proxy, QStringLiteral("new-key"));
     }
@@ -1949,11 +2284,11 @@ private slots:
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
         const auto kept = keepSettingsHere(settings);
-        secrets->deleteKeyringSecrets();
+        removedSecrets(secrets);
         QVERIFY(settings.deleteAll(nullptr));
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("late-key")), SaveResult::Refused);
-        QCOMPARE(secrets->saveApiKey(QStringLiteral("late-key")), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("late-key")));
+        QVERIFY(!savedApiKey(secrets, QStringLiteral("late-key")));
 
         QCOMPARE(secrets->secret(proxy), QString());
         comparePeerRead(settings, proxy, QString());
@@ -2029,26 +2364,26 @@ private slots:
         const QFileDevice::Permissions permissions = QFile::permissions(file);
         const auto restore = qScopeGuard([&] {
             QFile::setPermissions(file, permissions);
-            secrets->saveSecret(proxy, {});
-            secrets->saveSecret(SecretStore::Secret::OpenAiApiKey, {});
+            savedSecret(secrets, proxy, {});
+            savedSecret(secrets, SecretStore::Secret::OpenAiApiKey, {});
         });
         QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("new-key")));
         // The retry finds the key written and only the file left to save, so
         // it writes the key no second time.
         QTest::failOnWarning(QRegularExpression(QStringLiteral("keyring unavailable")));
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("new-key")));
         comparePeerRead(settings, proxy, QStringLiteral("old-key"));
         // Clearing a key never saved changes nothing, nor does, with a
         // keyring, a key the settings file never keeps.
-        QCOMPARE(secrets->saveSecret(SecretStore::Secret::SpeechEndpointKey, {}), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, SecretStore::Secret::SpeechEndpointKey, {}));
         if (privateKeyring()) {
-            QCOMPARE(secrets->saveApiKey(QStringLiteral("api-key")), SaveResult::Stored);
+            QVERIFY(savedApiKey(secrets, QStringLiteral("api-key")));
         }
 
         QVERIFY(QFile::setPermissions(file, permissions));
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("new-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("new-key")));
         comparePeerRead(settings, proxy, QStringLiteral("new-key"));
     }
 
@@ -2080,21 +2415,21 @@ private slots:
         const QFileDevice::Permissions permissions = QFile::permissions(file);
         const auto restore = qScopeGuard([&] {
             QFile::setPermissions(file, permissions);
-            secrets->saveSecret(proxy, {});
-            secrets->saveSecret(speech, {});
+            savedSecret(secrets, proxy, {});
+            savedSecret(secrets, speech, {});
         });
         QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("proxy-key")), SaveResult::Refused);
+        QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("proxy-key")));
         QVERIFY(QFile::setPermissions(file, permissions));
         if (byAnotherKey) {
-            QCOMPARE(secrets->saveSecret(speech, QStringLiteral("speech-key")), SaveResult::Stored);
+            QVERIFY(savedSecret(secrets, speech, QStringLiteral("speech-key")));
         } else {
             settings.raw().sync();
         }
         QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
         settings.raw().setValue(SettingsKeys::VocabularyEntries, QStringLiteral("another term"));
 
-        QCOMPARE(secrets->saveSecret(proxy, QStringLiteral("proxy-key")), SaveResult::Stored);
+        QVERIFY(savedSecret(secrets, proxy, QStringLiteral("proxy-key")));
 
         comparePeerRead(settings, proxy, QStringLiteral("proxy-key"));
     }
@@ -2105,18 +2440,19 @@ private slots:
             QSKIP("Requires the private keyring suite");
         SettingsStore saved;
         saved.raw().clear();
-        saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("keep-me"));
+        QVERIFY(savedSecret(saved.secrets(), SecretStore::Secret::CliproxyApiKey, QStringLiteral("keep-me")));
         SettingsStore settings;
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         const AppSettings draft = settings.snapshot();
+        QTRY_VERIFY(!settings.secrets()->readFailure(SecretStore::Secret::CliproxyApiKey).isEmpty());
         qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
         QVERIFY(draft.refinement.cliproxyApiKey.isEmpty());
         settings.secrets()->prefetch();
         QTRY_COMPARE(settings.secrets()->cachedSecret(SecretStore::Secret::CliproxyApiKey),
                      QStringLiteral("keep-me"));
         settings.applySnapshot(draft);
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("keep-me"));
-        saved.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {});
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QStringLiteral("keep-me"));
+        QVERIFY(savedSecret(saved.secrets(), SecretStore::Secret::CliproxyApiKey, {}));
     }
 
     void failedDeletionStaysClearedAfterRestart()
@@ -2125,14 +2461,14 @@ private slots:
             QSKIP("Requires the private keyring suite");
         SettingsStore settings;
         settings.raw().clear();
-        settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("remove-me"));
+        QVERIFY(savedSecret(settings.secrets(), SecretStore::Secret::CliproxyApiKey, QStringLiteral("remove-me")));
         qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
-        QCOMPARE(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {}), SaveResult::Refused);
+        QVERIFY(!savedSecret(settings.secrets(), SecretStore::Secret::CliproxyApiKey, {}));
         QVERIFY(settings.secrets()->lastError().contains(QStringLiteral("denied")));
         SettingsStore reopened;
         reopened.secrets()->prefetch();
-        QCOMPARE(reopened.cliproxyApiKey(), QString());
+        QCOMPARE(readSecret(reopened.secrets(), SecretStore::Secret::CliproxyApiKey), QString());
         QCOMPARE(reopened.snapshot().refinement.cliproxyApiKey, QString());
     }
 
@@ -2256,8 +2592,7 @@ private slots:
                 return true;
             });
             saved.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
-            QCOMPARE(saved.secrets()->saveSecret(SecretStore::Secret::SpeechEndpointKey, QStringLiteral("speech-key")),
-                     SaveResult::Stored);
+            QVERIFY(savedSecret(saved.secrets(), SecretStore::Secret::SpeechEndpointKey, QStringLiteral("speech-key")));
             saved.raw().sync();
         }
         SettingsStore settings;
@@ -2286,11 +2621,11 @@ private slots:
         settings.secrets()->saveSecret(SecretStore::Secret::SpeechEndpointKey, {});
     }
 
-    // The settings window's snapshot shows a saved key for an endpoint that
-    // is not selected; dictation start does not wait for that key; and when
+    // The settings window's snapshot reads a saved key for an endpoint that
+    // is not selected; dictation start does not read that key; and when
     // the keyring does not answer, switching to the endpoint and saving the
     // empty field keeps the stored key.
-    void onlyTheSettingsSnapshotWaitsForUnselectedKeys()
+    void onlyTheSettingsSnapshotReadsUnselectedKeys()
     {
         {
             SettingsStore settings;
@@ -2309,7 +2644,7 @@ private slots:
         QVERIFY2(settings.secrets()->lastError().isEmpty(), qPrintable(settings.secrets()->lastError()));
 
         AppSettings draft = settings.snapshot();
-        QVERIFY(settings.secrets()->lastError().contains(QStringLiteral("timed out")));
+        QTRY_VERIFY(settings.secrets()->lastError().contains(QStringLiteral("timed out")));
         QCOMPARE(draft.speech.endpoint.apiKey, QString());
 
         draft.speech.providerId = QStringLiteral("endpoint");
@@ -2356,18 +2691,23 @@ private slots:
         }
         ApplicationController controller(true);
         SettingsStore &settings = *controller.settings();
-        QCOMPARE(settings.cliproxyApiKey(), QStringLiteral("legacy-proxy-key"));
+        QCOMPARE(settings.secrets()->secret(SecretStore::Secret::CliproxyApiKey), QStringLiteral("legacy-proxy-key"));
         QCOMPARE(settings.snapshot().refinement.cliproxyApiKey, QStringLiteral("legacy-proxy-key"));
-        const bool migrated = settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
-                                  .contains(QStringLiteral("cliproxy-api-key"));
+        const auto inKeyring = [&settings] {
+            return settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
+                .contains(QStringLiteral("cliproxy-api-key"));
+        };
+        // The migration's write answers through the event loop.
+        QTRY_VERIFY(!privateKeyring() || inKeyring());
+        const bool migrated = inKeyring();
         QCOMPARE(settings.raw().contains(SettingsKeys::CliproxyApiKey), !migrated);
         if (qEnvironmentVariableIntValue("SPEECHER_TEST_PRIVATE_KEYRING") == 1) {
             QVERIFY(migrated);
         }
         qInfo() << "cliproxy key migrated to the keyring:" << migrated;
 
-        settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {});
-        QCOMPARE(SettingsStore().cliproxyApiKey(), QString());
+        QVERIFY(savedSecret(settings.secrets(), SecretStore::Secret::CliproxyApiKey, {}));
+        QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QString());
     }
 };
 

@@ -1541,6 +1541,10 @@ if(SPEECHER_BUILD_TESTS)
   # QML modules load from the shared Qt, as in the app.
   target_link_libraries(speecher_tests PRIVATE Qt6::Quick ${SPEECHER_QUICK_PLUGINS})
   set_target_properties(speecher_tests PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Lets a test act right after QSettings::clear (test_custom_endpoints).
+    target_link_options(speecher_tests PRIVATE "LINKER:--wrap=_ZN9QSettings5clearEv")
+  endif()
   if(UNIX AND NOT APPLE)
     target_sources(speecher_tests PRIVATE
       tests/test_keywatch.cpp

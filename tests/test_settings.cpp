@@ -1183,9 +1183,9 @@ private slots:
         QCOMPARE(reconciled, std::optional<bool>(draft.launchAtLogin));
     }
 
-    // Saving a key waits for the keyring in an event loop, which runs other
-    // work. An edit made then outlives the save that was waiting, whether it
-    // saves the key being written or one still to come.
+    // Saving a key waits for the keyring while other work runs. An edit made
+    // then outlives the save that was waiting, whether it saves the key being
+    // written or one still to come.
     void anEditDuringAKeyringWaitIsNotOverwritten()
     {
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
@@ -1206,11 +1206,10 @@ private slots:
 
         settings.applySnapshot(draft);
 
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
-        const AppSettings saved = SettingsStore().snapshot();
-        QCOMPARE(saved.speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
-        QCOMPARE(saved.refinement.cliproxyApiKey, QStringLiteral("nested-proxy-key"));
-        QCOMPARE(saved.refinement.endpoint.apiKey, QStringLiteral("refinement-key"));
+        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
+        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
+        QTRY_COMPARE(SettingsStore().snapshot().refinement.cliproxyApiKey, QStringLiteral("nested-proxy-key"));
+        QTRY_COMPARE(SettingsStore().snapshot().refinement.endpoint.apiKey, QStringLiteral("refinement-key"));
         QCOMPARE(settings.snapshot().speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
         settings.raw().clear();
     }
@@ -1234,8 +1233,8 @@ private slots:
 
         settings.applySnapshot(draft);
 
-        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
+        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
+        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
         settings.raw().clear();
     }
 

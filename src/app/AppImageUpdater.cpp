@@ -253,7 +253,8 @@ void AppImageUpdater::restartApplication()
         while (QLocalSocket *socket = m_restartServer->nextPendingConnection()) {
             socket->setParent(m_restartServer);
         }
-        QCoreApplication::quit();
+        m_replacementConnected = true;
+        quitAfterKeySaves();
     });
 
     m_appImagePath = currentAppImagePath();
@@ -272,15 +273,21 @@ void AppImageUpdater::restartApplication()
         return;
     }
     setState(State::Restarting);
-    QTimer::singleShot(restartHandshakeTimeoutMs, this, [this] {
-        if (!m_restartServer) {
-            return;
-        }
-        delete m_restartServer;
-        m_restartServer = nullptr;
-        setState(State::ReadyToRestart,
-                 QStringLiteral("The updated AppImage did not finish starting."));
-    });
+    QTimer::singleShot(restartHandshakeTimeoutMs, this, &AppImageUpdater::abandonRestart);
+}
+
+// The handshake's deadline: a replacement that never connected failed to
+// start. One that did waits for this process to quit, which can take until
+// the key saves under way settle, so its server stays.
+void AppImageUpdater::abandonRestart()
+{
+    if (!m_restartServer || m_replacementConnected) {
+        return;
+    }
+    delete m_restartServer;
+    m_restartServer = nullptr;
+    setState(State::ReadyToRestart,
+             QStringLiteral("The updated AppImage did not finish starting."));
 }
 
 } // namespace speecher

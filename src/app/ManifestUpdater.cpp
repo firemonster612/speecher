@@ -1,7 +1,9 @@
 #include "app/ManifestUpdater.h"
 
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QFile>
@@ -667,6 +669,11 @@ void ManifestUpdater::setState(State state, const QString &error)
     m_state = state;
     m_error = error;
     emit changed();
+}
+
+void ManifestUpdater::quitAfterKeySaves()
+{
+    m_settings->secrets()->afterWrites(&QCoreApplication::quit);
 }
 
 } // namespace speecher

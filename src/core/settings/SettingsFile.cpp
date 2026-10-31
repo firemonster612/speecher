@@ -53,6 +53,40 @@ QString throwawaySettingsHome()
     return home.path();
 }
 
+// Where QSettings made after SettingsFile::close open the settings'
+// file, in the throwaway folder; nothing where QSettings::setPath doesn't
+// reach, as for the Windows registry and a macOS preferences domain.
+QString throwawayFile(const QSettings &settings)
+{
+#ifdef Q_OS_WIN
+    if (settings.format() == QSettings::NativeFormat) {
+        return {};
+    }
+#endif
+    const QString home = throwawaySettingsHome();
+    if (home.isEmpty() || inPreferencesDomain(settings)) {
+        return {};
+    }
+    const QFileInfo file(settings.fileName());
+    return home + QLatin1Char('/') + file.dir().dirName() + QLatin1Char('/') + file.fileName();
+}
+
+// Makes settings hold kept alone, and writes that. What is kept never leaves
+// them, even for a moment: a reader sharing them could find a key that a
+// deletion marker hides.
+void writeOnly(QSettings &settings, const QVariantMap &kept)
+{
+    for (const QString &key : settings.allKeys()) {
+        if (!kept.contains(key)) {
+            settings.remove(key);
+        }
+    }
+    for (auto it = kept.cbegin(); it != kept.cend(); ++it) {
+        settings.setValue(it.key(), it.value());
+    }
+    settings.sync();
+}
+
 } // namespace
 
 bool makeSettingsPrivate(const QSettings &settings, QString *error)
@@ -92,16 +126,17 @@ SettingsFile::SettingsFile(const QString &organization, const QString &applicati
 
 SettingsFile::~SettingsFile()
 {
-    // ~QSettings saves what changed since; clearing and deleting first leaves
-    // it nothing to save.
-    if (m_deleted) {
-        deleteFile();
+    // ~QSettings saves what changed since; closing again first leaves it
+    // nothing else to save, and deletes the file again for whatever another
+    // QSettings wrote meanwhile.
+    if (m_closed) {
+        close(m_kept);
     }
 }
 
 void SettingsFile::sync()
 {
-    if (!m_deleted) {
+    if (!m_closed) {
         save();
         QSettings::sync();
     }
@@ -109,16 +144,16 @@ void SettingsFile::sync()
 
 bool SettingsFile::save()
 {
-    if (m_deleted) {
+    if (m_closed) {
         return false;
     }
     // A QSettings opened now starts without an error. It shares this one's
     // unsaved changes (Qt keeps one copy of an open file), so the save its
     // sync makes is the one that writes them, and its status judges that
-    // save alone. It opens this object's own file by name: deleteFile on
+    // save alone. It opens this object's own file by name: close on
     // another SettingsFile points the organization and application at a
     // throwaway folder. macOS keeps native settings in a preferences domain,
-    // which deleteFile never moves and a file name would open as a bare
+    // which close never moves and a file name would open as a bare
     // plist, around the preferences daemon.
     const auto saving = inPreferencesDomain(*this)
         ? std::make_unique<QSettings>(format(), scope(), organizationName(), applicationName())
@@ -134,20 +169,26 @@ bool SettingsFile::save()
     return true;
 }
 
-bool SettingsFile::deleteFile()
+bool SettingsFile::close(const QVariantMap &kept)
 {
-    if (!m_deleted) {
+    if (!m_closed) {
+        // Seeded first, so no reader finds it without what is kept: a
+        // deletion marker hides a key from readers made in this process too.
+        if (const QString file = throwawayFile(*this); !file.isEmpty()) {
+            QSettings reader(file, format());
+            writeOnly(reader, kept);
+        }
         // Both scopes: a reader also opens the system scope's file as a
         // fallback, and saves whatever changed in any file it opened.
         const QString home = throwawaySettingsHome();
         QSettings::setPath(format(), QSettings::UserScope, home);
         QSettings::setPath(format(), QSettings::SystemScope, home + QStringLiteral("/system"));
     }
-    m_deleted = true;
-    clear();
-    QSettings::sync();
+    m_closed = true;
+    m_kept = kept;
+    writeOnly(*this, kept);
     const QString file = fileName();
-    return !QFile::exists(file) || QFile::remove(file);
+    return !kept.isEmpty() || !QFile::exists(file) || QFile::remove(file);
 }
 
 bool SettingsFile::event(QEvent *event)
@@ -156,7 +197,7 @@ bool SettingsFile::event(QEvent *event)
     // Swallowed, it leaves the change unsaved, and QSettings posts no other.
     // Otherwise save makes that save first, so saves() counts it.
     if (event->type() == QEvent::UpdateRequest) {
-        if (m_deleted) {
+        if (m_closed) {
             return true;
         }
         save();

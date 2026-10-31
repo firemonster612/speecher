@@ -330,7 +330,7 @@ void RecordingSession::start(const QString &path,
         done(alreadyRecordingText(m_transcript.path()));
         return;
     }
-    const AppSettings settings = m_settings->snapshot();
+    const AppSettings settings = m_settings->dictationSnapshot();
     const SpeechSettings &speech = settings.speech;
     const SpeechTranscriber *provider = m_providers->speechProvider(speech.providerId);
     // Local Models finalize runs of words rather than utterances, and their

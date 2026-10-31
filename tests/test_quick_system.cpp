@@ -1,3 +1,4 @@
+#include "common/test_settings_paths.h"
 #include "common/test_suites.h"
 #include "common/test_system_singletons.h"
 
@@ -113,7 +114,7 @@ SpeecherRemoval::Steps quietRemoval()
     steps.removeVirtualKeyboard = [](QString *) { return true; };
     steps.keyHelperInstalled = [] { return false; };
     steps.removeKeyHelper = [](QString *) { return true; };
-    steps.deleteSecrets = [](QString *) { return true; };
+    steps.deleteSecrets = [](SpeecherRemoval::Steps::SecretsDeleted done) { done(true, {}); };
     steps.settingsHideKeys = [] { return false; };
     steps.deleteSettings = [](QString *) { return true; };
     return steps;
@@ -458,6 +459,7 @@ private slots:
     void deletedSettingsStayDeleted()
     {
         ApplicationController controller(true);
+        const auto kept = keepSettingsHere(*controller.settings());
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
@@ -490,6 +492,7 @@ private slots:
     void removalWaitsForTheKeyboardSetup()
     {
         ApplicationController controller(true);
+        const auto kept = keepSettingsHere(*controller.settings());
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
         QString methodAtStart;
@@ -536,6 +539,7 @@ private slots:
     void closingMainBeforeRemovalFinishesQuits()
     {
         ApplicationController controller(true);
+        const auto kept = keepSettingsHere(*controller.settings());
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);

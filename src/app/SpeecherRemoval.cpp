@@ -10,6 +10,7 @@
 #endif
 
 #include <QDir>
+#include <QPointer>
 #include <QThread>
 
 #include <algorithm>
@@ -21,7 +22,8 @@ namespace speecher {
 bool RemovalReport::settingsDeleted() const
 {
     return std::ranges::any_of(steps, [](const RemovalStep &step) {
-        return step.part == RemovalStep::Part::Settings && step.outcome == RemovalStep::Outcome::Removed;
+        return step.part == RemovalStep::Part::Settings
+            && (step.outcome == RemovalStep::Outcome::Removed || step.outcome == RemovalStep::Outcome::KeptHidingKeys);
     });
 }
 
@@ -67,12 +69,8 @@ std::optional<SpeecherRemoval::Steps> SpeecherRemoval::onThisComputer(Applicatio
     };
     steps.keyHelperInstalled = [] { return KeywatchSetup::probe().state != KeywatchSetupState::NotInstalled; };
     steps.removeKeyHelper = [](QString *error) { return KeywatchSetup::remove(error); };
-    steps.deleteSecrets = [controller](QString *error) {
-        if (controller->secretStore()->deleteKeyringSecrets()) {
-            return true;
-        }
-        *error = controller->secretStore()->lastError();
-        return false;
+    steps.deleteSecrets = [controller](Steps::SecretsDeleted done) {
+        controller->secretStore()->deleteKeyringSecrets(std::move(done));
     };
     steps.settingsHideKeys = [controller] { return !controller->secretStore()->deletionMarkers().isEmpty(); };
     steps.deleteSettings = [controller](QString *error) { return controller->settings()->deleteAll(error); };
@@ -127,18 +125,25 @@ void SpeecherRemoval::finish(RemovalReport report, bool deleteSettings)
 {
     if (!deleteSettings) {
         report.steps.append({Part::Settings, Outcome::Kept, QString()});
-    } else {
-        record(report.steps, Part::Keyring, m_steps.deleteSecrets);
+        m_running = false;
+        emit finished(report);
+        return;
+    }
+    m_steps.deleteSecrets([self = QPointer(this), report](bool deleted, const QString &error) mutable {
+        if (!self) {
+            return;
+        }
+        report.steps.append({Part::Keyring, deleted ? Outcome::Removed : Outcome::Failed, deleted ? QString() : error});
         // A key whose deletion the keyring refused stays hidden only while
         // its deletion marker does.
-        if (m_steps.settingsHideKeys()) {
-            record(report.steps, Part::Settings, m_steps.deleteSettingsButMarkers, Outcome::KeptHidingKeys);
+        if (self->m_steps.settingsHideKeys()) {
+            record(report.steps, Part::Settings, self->m_steps.deleteSettingsButMarkers, Outcome::KeptHidingKeys);
         } else {
-            record(report.steps, Part::Settings, m_steps.deleteSettings);
+            record(report.steps, Part::Settings, self->m_steps.deleteSettings);
         }
-    }
-    m_running = false;
-    emit finished(report);
+        self->m_running = false;
+        emit self->finished(report);
+    });
 }
 
 } // namespace speecher

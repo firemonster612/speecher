@@ -101,15 +101,14 @@ private:
     void recheckAll();
     void readSavedSecrets();
     // Saves value, or clears the secret when it is empty. The answer comes
-    // with SecretStore::saveFinished, during this call or after a write of
-    // the same secret under way, carrying the number the secret waits for.
+    // with SecretStore::saveFinished.
     void write(SecretStore::Secret secret, const QString &value);
     void secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
-                            const QString &error, bool wrote);
+                            const QString &error);
     void finishWrite(SecretStore::Secret secret, bool done, bool saved, const QString &error);
     // Shows on the secret's row what a write no field asked for, or one that
     // replaced a field's, left in storage, checking no sign-in again.
-    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error, bool wrote);
+    void noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error);
     void settingsSaved();
 
     SettingsStore &m_settings;
@@ -131,7 +130,7 @@ private:
     // overwrite.
     QSet<SecretStore::Secret> m_secretsWritten;
     // Secrets whose save or clear waits for the store's answer, with the
-    // number of the request each asked for last (SecretStore::nextRequest).
+    // number of the request each asked for last (SecretStore::saveSecret).
     QMap<SecretStore::Secret, quint64> m_saving;
     // The settings the sign-ins depend on, as last checked.
     QStringList m_signInSettings;

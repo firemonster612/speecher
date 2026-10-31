@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -18,7 +19,7 @@ class SettingsStore;
 // no keyring takes one. Only one store per settings file saves keys, the
 // running app's: every store on the file sees another's changes before the
 // file saves them (QSettings keeps one copy of an open file), so a second
-// store that saved a key it read that way could report Stored for a key the
+// store that saved a key it read that way could report a key stored that the
 // file never saved. Only that store's own SettingsFile deletes the settings
 // (SettingsStore::deleteAll): another handle's deletion would leave this
 // store reading copies it cached of a file that is gone.
@@ -36,47 +37,26 @@ public:
     };
     Q_ENUM(Secret)
 
-    // What a save or clear tells its caller. The keyring's wait runs the
-    // event loop, where the same secret can be saved again; the request asked
-    // for last is the one kept, and only the call that settles a request
-    // knows how it went.
-    enum class SaveResult {
-        // Storage holds what this call asked for, where a new process reads
-        // it too.
-        Stored,
-        // Storage refused what this call asked for, the settings file didn't
-        // save it, Speecher's secrets are being removed
-        // (deleteKeyringSecrets), or its settings were deleted
-        // (SettingsStore::deleteAll), and lastError() says why. A refused
-        // clear still hides the key (deletionPending).
-        Refused,
-        // This call didn't settle its request: it came while another call
-        // waited on the keyring for the same secret, which writes it next, a
-        // newer request came during this call's wait and this call wrote
-        // that one instead, or a removal of Speecher's secrets dropped it.
-        // saveFinished says how the newest went, possibly before this call
-        // returns.
-        Pending,
-    };
-    Q_ENUM(SaveResult)
-
     explicit SecretStore(SettingsStore *settings, QObject *parent = nullptr);
 
     // Where the insecure fallback keeps a secret in the settings file.
     static QString settingsKey(Secret secret);
 
-    // Reads the keyring entries Speecher wrote, other than the OpenAI key,
-    // without waiting, so a dictation that starts later finds them in
-    // memory. The OpenAI key keeps its deferred read (apiKey()).
+    // Starts reading the keyring entries Speecher wrote, other than the
+    // OpenAI key, so a dictation that starts later finds them in memory. The
+    // OpenAI key keeps its deferred read (apiKey()).
     void prefetch();
-    // Blocks on the keyring (1.5 s at most) unless the value is in memory. A
-    // failed read returns an empty string but is never cached as "not set".
-    // Every read, this and the ones below, returns a save's value from the
-    // moment it is asked for, and a keyring answer that arrives after a
-    // newer save is dropped.
-    QString secret(Secret secret) const;
-    // Never blocks: the value in memory, or the settings-file copy of a
-    // secret not in the keyring, else an empty string.
+    // The value in memory, or the settings-file copy of a secret not in the
+    // keyring, else the keyring's. On the main thread, whose event loop
+    // brings the keyring's answers, this never waits: the secret stays
+    // unread (isSecretKnown) until the read it starts answers. Elsewhere it
+    // waits for the keyring (1.5 s at most). A failed read returns an empty
+    // string, is never cached as "not set", and isn't tried again for 5 s.
+    // Every read, this and the ones below, returns the value asked for last
+    // from the moment it is asked for.
+    QString secret(Secret secret);
+    // Never reads the keyring: the value in memory, or the settings-file copy
+    // of a secret not in the keyring, else an empty string.
     QString cachedSecret(Secret secret) const;
     bool isSecretKnown(Secret secret) const;
     // Whether a deletion the keyring refused waits to be retried; the secret
@@ -88,49 +68,55 @@ public:
     // working without one. A key kept in the settings file is what every
     // reader finds until a keyring takes it. A deletion the keyring refuses
     // leaves a marker in the settings file that hides the key until a
-    // deletion goes through.
-    SaveResult saveSecret(Secret secret, const QString &value);
-    // The number the secret's next save or clear gets, which saveFinished
-    // carries. saveFinished can come during the save, so a caller that waits
-    // for its own answer reads this right before saving.
-    quint64 nextRequest(Secret secret) const;
-    // saveSecret for each, all asked for before the first keyring wait, so a
-    // save made during one is newer and stands. A refusal is logged with why
-    // when the request settles, as every save's is.
+    // deletion goes through. Returns the request's number, which
+    // saveFinished carries once storage answers, never during this call. One
+    // secret is written at a time; a request made meanwhile waits its turn,
+    // replacing any other waiting one, and answers for the one being written
+    // too.
+    quint64 saveSecret(Secret secret, const QString &value);
+    // What a settings edit saves: the secrets it changed (saveSecret). First
+    // it saves the settings file for each other secret whose change the file
+    // refused to save before, and reports the ones that saved as stored.
     void saveSecrets(const QList<std::pair<Secret, QString>> &values);
-    // Removes every Speecher entry from the keychain, once any write the
-    // keychain is taking lands. Every save asked for and not yet settled is
-    // dropped, refused for that reason in saveFinished, and none is written
-    // afterwards; a save asked for meanwhile is refused, also during a
-    // removal started while this one waits. A deleted entry's deletion
-    // marker goes, having nothing left to hide; an OpenAI key the keyring
-    // refuses to delete and still holds gets one. The settings file's copies
-    // stay: SettingsStore::deleteAll removes them, after which every save
-    // is refused.
-    bool deleteKeyringSecrets();
+    // Removes every Speecher entry from the keychain, after any write the
+    // keychain is taking. Every save waiting its turn is refused, the answer
+    // of a write under way is dropped, and saves asked for before done runs
+    // are refused. A deleted entry's deletion marker goes, having nothing
+    // left to hide; an OpenAI key the keyring refuses to delete gets one,
+    // unless a read then finds the entry gone. The settings file's copies
+    // stay: SettingsStore::deleteAll removes them, after which every save is
+    // refused. done gets whether every entry went, else the first refusal's
+    // reason; a removal asked for while one runs finishes with it.
+    void deleteKeyringSecrets(std::function<void(bool deleted, const QString &error)> done);
+    // Calls done once no save, clear or removal asked for is still under way
+    // or waiting its turn, during this call when none is, replacing a done
+    // given before. Every keyring request answers within 1.5 s, so it comes.
+    // Quitting waits on it, so what was asked for reaches storage before the
+    // event loop stops.
+    void afterWrites(std::function<void()> done);
     // The settings keys of the deletion markers (deletionPending) in the
     // settings file, each hiding a key the keyring kept.
     QStringList deletionMarkers() const;
 
-    QString apiKey() const;
+    QString apiKey();
     // Unlike saveSecret, refuses to fall back to the settings file.
-    SaveResult saveApiKey(const QString &apiKey);
-    QString status() const;
+    quint64 saveApiKey(const QString &apiKey);
+    QString status();
     QString lastError() const;
     // Why the last read of the secret failed, naming the secret, or nothing
-    // when it was read. Ask right after the read: it carries lastError().
+    // when it was read. Ask right after the read, or its answer on the main
+    // thread: it carries lastError().
     QString readFailure(Secret secret) const;
     bool usesInsecureSettingsFallback() const;
 
 signals:
-    // A save or clear of the secret settled: request is its number
-    // (nextRequest), and storage holds it, or refused it for error's reason.
-    // cleared says it was a clear, and wrote that storage took it, rather
-    // than only holding it already, as when a settings edit saves every key
-    // again unchanged. A request replaced before it settled has no
-    // saveFinished of its own: one with a higher number settled it.
-    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error,
-                      bool wrote);
+    // The newest save or clear of the secret, number request (saveSecret),
+    // settled: storage holds it, or refused it for error's reason. cleared
+    // says it was a clear. A request a newer one replaced, while it waited
+    // its turn or before the keyring answered it, has no saveFinished of its
+    // own. Also comes, as request 0, when an earlier change of the secret
+    // that the settings file didn't save reaches it (saveSecrets).
+    void saveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored, const QString &error);
 
 private:
     // Startup migration belongs to the controller, not temporary settings stores.
@@ -141,6 +127,13 @@ private:
         QString value;
         // Whether the settings file keeps the value when the keyring refuses it.
         bool fallBack = true;
+        // A startup migration's: written though storage holds it, and
+        // reporting nothing (migrateSettingsFallbacks).
+        bool migrating = false;
+        // Whether a deletion marker hid the key when it was asked for, other
+        // than one a request still under way put in (hide).
+        bool marked = false;
+        quint64 number = 0;
     };
 
     struct SecretState {
@@ -148,53 +141,79 @@ private:
         std::optional<QString> stored;
         // Started by a failed keyring read, which isn't retried until it expires.
         QElapsedTimer retryTimer;
-        // The save asked for last, until it settles. Reads return it.
-        std::optional<Request> requested;
-        // Counts the saves asked for, so a write or read that waited on the
-        // keyring can tell whether one came meanwhile.
-        quint64 requests = 0;
-        // Whether a keyring write of the secret is under way.
-        bool writing = false;
+        // Whether the main thread's keyring read is under way.
+        bool reading = false;
+        // The request being written, until it settles or a removal drops it,
+        // and the one waiting its turn. Reads return the newer.
+        std::optional<Request> writing;
+        std::optional<Request> waiting;
+        // Whether the keyring is taking a write of the secret, dropped or
+        // not: the next one waits for it.
+        bool keyringBusy = false;
         // The count of settings file saves (SettingsFile::saves) at which the
         // file holds its last change of what it says about the secret:
         // nothing of that change counts as stored before.
         quint64 savedBy = 0;
-        // The value of the request refused last, until a request settles
-        // stored. Storing that value answers the refusal (saveFinished's
-        // wrote), though storage finds it already in place, as a value whose
-        // settings file commit failed is.
-        std::optional<QString> refused;
+        // Whether the last answer refused a request storage took, only for
+        // the settings file not saving it (saveSecrets).
+        bool commitRefused = false;
     };
+
+    // What a keyring request found: whether it went through, the entry's
+    // value for a read, and why not otherwise. A read or deletion of a
+    // missing entry goes through, a read with nothing.
+    struct KeyringAnswer {
+        bool ok = false;
+        QString value;
+        QString error;
+    };
+    enum class KeyringRequest { Read, Write, Delete };
+    using KeyringDone = std::function<void(const KeyringAnswer &)>;
+
+    // Starts the request on the secret's keyring entry; call it on the main
+    // thread. done runs on context's thread with the keyring's answer, or a
+    // timeout after 1.5 s, and never during this call.
+    static void askKeyring(const QObject *context, KeyringRequest request, Secret secret, const QString &value,
+                           KeyringDone done);
+    static KeyringAnswer waitForKeyring(Secret secret);
+    void deleteKeyringEntry(Secret secret, KeyringDone done);
 
     SecretState &state(Secret secret) const;
     void cacheValue(Secret secret, const QString &value) const;
     std::optional<QString> readWithoutKeyring(Secret secret) const;
+    void startRead(Secret secret);
+    void finishRead(Secret secret, const KeyringAnswer &answer);
     QString settingsFallback(Secret secret) const;
     bool mayBeInKeyring(Secret secret) const;
     void recordKeyringEntry(Secret secret, bool present) const;
-    QString keyringSecret(Secret secret) const;
-    bool writeKeyringSecret(Secret secret, const QString &value) const;
-    bool deleteKeyringSecret(Secret secret) const;
     QString writeRefusal() const;
-    bool refusesWrites() const;
-    quint64 ask(Secret secret, const Request &request);
-    SaveResult save(Secret secret, const Request &request);
-    SaveResult settle(Secret secret, quint64 own);
-    void refuse(Secret secret, quint64 request, const QString &value, const QString &error);
+    quint64 save(Secret secret, Request request);
+    void writeNext(Secret secret);
+    void hide(Secret secret);
+    void finishWrite(Secret secret, const std::optional<KeyringAnswer> &answer);
+    bool writesSettled() const;
+    void notifyIfWritesSettled();
+    bool store(Secret secret, const Request &request, const std::optional<KeyringAnswer> &answer);
+    void settle(Secret secret, const Request &request, bool stored, const QString &error);
     bool holds(Secret secret, const Request &request) const;
-    bool write(Secret secret, const Request &request);
-    void changedInFile(Secret secret) const;
-    bool fileSaved(Secret secret) const;
+    bool keep(Secret secret, const Request &request, const KeyringAnswer &answer);
+    void changedInFile(Secret secret);
+    bool commit(Secret secret);
+    void removeNext(size_t index);
+    void finishRemoval();
     void migrateSettingsFallbacks();
 
     SettingsStore *m_settings;
-    mutable QString m_lastError;
-    // Whether deleteKeyringSecrets runs, refusing every save, until the
-    // outermost one returns.
-    bool m_removing = false;
-    // Counts the removals, so a write that waited on the keyring can tell
-    // whether one ran meanwhile.
-    quint64 m_removals = 0;
+    QString m_lastError;
+    // Numbers every request.
+    quint64 m_requests = 0;
+    // While deleteKeyringSecrets runs, what each of its callers waits for;
+    // empty otherwise.
+    QList<std::function<void(bool, const QString &)>> m_removals;
+    // The first refusal the removal under way met.
+    std::optional<QString> m_removalError;
+    // What afterWrites calls once the writes settle.
+    std::function<void()> m_afterWrites;
     mutable std::array<SecretState, size_t(Secret::RefinementEndpointKey) + 1> m_cache;
 };
 

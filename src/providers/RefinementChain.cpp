@@ -67,7 +67,6 @@ void RefinementChain::prepareNext(const AppSettings &settings, const RefinementS
 
 void RefinementChain::cancel()
 {
-    ++m_walk;
     m_runner->cancel();
 }
 
@@ -106,16 +105,10 @@ void RefinementChain::walk()
 }
 
 // What is left of the current refiner's preparation once its keys and
-// sign-in are in. A refiner that reads a key here may wait for the keyring in
-// an event loop, where a cancel can run; the walk it ended then reports
-// nothing.
+// sign-in are in.
 void RefinementChain::prepareCurrent()
 {
-    const quint64 walk = m_walk;
     const std::optional<ProviderFailure> failure = m_refiner->prepare(currentSettings(), m_settings.accounts);
-    if (walk != m_walk) {
-        return;
-    }
     if (failure) {
         passOver(*failure);
         return;

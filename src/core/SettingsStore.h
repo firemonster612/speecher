@@ -35,9 +35,11 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
-    // Carries every saved endpoint and CLI Proxy API key, so a settings
-    // surface shows and saves them all. A key SecretStore::prefetch has not
-    // cached yet waits for the keyring (1.5 s at most).
+    // Carries the saved endpoint and CLI Proxy API keys, reading each one
+    // the store hasn't as SecretStore::secret does: off the main thread the
+    // read waits for the keyring (1.5 s at most), so the snapshot has them
+    // all; on it, the read only starts, and the key stays in
+    // unreadSecretKeys until it answers.
     AppSettings snapshot() const;
     // Never waits for the keyring on the GUI thread. Startup preparation
     // resolves unread keys for each provider it tries on its worker.
@@ -50,9 +52,10 @@ public:
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
     // Saves the draft's stored fields, unless deleteAll ran. The rest are
-    // ignored; edit refuses a change to one. Its keys go through
-    // SecretStore::saveSecrets: one the keyring refuses is only logged, and
-    // one asked for while a write of it waits on the keyring is saved after it.
+    // ignored; edit refuses a change to one. The keys the draft changed go
+    // through SecretStore::saveSecrets: one the keyring refuses is only
+    // logged, and one asked for while a write of it waits on the keyring is
+    // saved after it.
     void applySnapshot(const AppSettings &draft);
     // Saves what change makes of a dictation snapshot, unless it returns
     // false; returns whether it saved. The snapshot leaves unread keyring
@@ -66,18 +69,20 @@ public:
     // snapshot, a setter, a codec's write or a sync of raw() (SettingsFile),
     // so an edit made before Speecher quits can't bring the file back. A file
     // that won't go puts its path in path; when the older settings won't, it
-    // keeps what deleteAllButDeletionMarkers keeps instead, so the next start
-    // doesn't import them again, and path names the settings file too when
-    // that won't save. Only the running app's store calls it (SettingsFile).
+    // keeps only the deletion markers instead, so the next start doesn't
+    // import them again, and goes on saving, so a removal tried again finds
+    // them; path names the settings file too when that won't save. Only the
+    // running app's store calls it (SettingsFile).
     bool deleteAll(QString *path);
     // Clears every setting but SecretStore's deletion markers, which hide
     // keys the keyring kept, saves that, and deletes the older settings
     // deleteAll does: what removing Speecher with its settings does when
-    // deleting the file would show such a key. Changes made afterwards are
-    // saved. The files that won't save or go put their paths in path.
+    // deleting the file would show such a key. Once all of that went through,
+    // as after deleteAll, nothing the store holds is saved afterwards, and the
+    // settings file keeps the markers. The files that won't save or go put
+    // their paths in path.
     bool deleteAllButDeletionMarkers(QString *path);
     SecretStore *secrets() const;
-    QString cliproxyApiKey() const;
     // Starts Speecher at login, or stops it, as the saved launchAtLogin says.
     // applySnapshot runs it after every save.
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
