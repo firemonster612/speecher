@@ -10,6 +10,8 @@ import android.text.format.DateFormat
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.exposesApiKey
+import app.speecher.android.keyedEndpointHttp
 import app.speecher.android.lacksLocalNetwork
 import app.speecher.android.onLocalNetwork
 import app.speecher.android.provider.CleanupProvider
@@ -255,10 +257,16 @@ fun createDictationEngine(
                         lacksLocalNetwork(context) && onLocalNetwork(settings.speechEndpoint.server)
                     )
                         throw CannotListen(FailureReason.LocalNetworkDenied)
+                    val key = store.apiKey(ApiKey.SpeechEndpoint)
+                    if (exposesApiKey(settings.speechEndpoint.server, key))
+                        throw ProviderFailure(
+                            ProviderFailureKind.Unavailable,
+                            "API key over plain http",
+                        )
                     EndpointSpeechClient(
-                        http,
+                        keyedEndpointHttp(http, settings.speechEndpoint.server, key),
                         settings.speechEndpoint,
-                        store.apiKey(ApiKey.SpeechEndpoint),
+                        key,
                         terms.joinToString(", "),
                         settings.spokenLanguage,
                         context.cacheDir,

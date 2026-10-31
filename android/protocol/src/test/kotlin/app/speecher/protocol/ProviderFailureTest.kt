@@ -1,8 +1,14 @@
 package app.speecher.protocol
 
+import java.security.cert.CertificateException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import mockwebserver3.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class ProviderFailureTest {
@@ -55,5 +61,29 @@ class ProviderFailureTest {
             ),
             ProviderFailureKind.entries.filter { it.permitsFallback }.toSet(),
         )
+    }
+
+    @Test
+    fun `a server whose certificate the system does not trust is a network failure`() {
+        val selfSigned = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        MockWebServer().use { server ->
+            server.useHttps(
+                HandshakeCertificates.Builder()
+                    .heldCertificate(selfSigned)
+                    .build()
+                    .sslSocketFactory()
+            )
+            server.start()
+            val error =
+                assertThrows(Exception::class.java) {
+                    httpPost(
+                        "https://localhost:${server.port}/",
+                        emptyMap(),
+                        HttpBody("text/plain", byteArrayOf()),
+                    )
+                }
+            assertInstanceOf(CertificateException::class.java, error.cause)
+            assertEquals(ProviderFailureKind.Network, failureKind(error))
+        }
     }
 }

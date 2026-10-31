@@ -25,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,6 +42,9 @@ import app.speecher.protocol.importReplacements
 import app.speecher.protocol.normalizedPhrase
 import app.speecher.protocol.replacementProblems
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The desktop's Replacements & snippets page: each spoken phrase and its text, editable in a sheet,
@@ -47,30 +52,37 @@ import java.io.IOException
  */
 @Composable
 internal fun ReplacementSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
-    val context = LocalContext.current
+    val resolver = LocalContext.current.contentResolver
+    val latest by rememberUpdatedState(settings)
+    val scope = rememberCoroutineScope()
     var failure by rememberSaveable { mutableStateOf<String?>(null) }
     // The rule open in the editor; one not in the list yet is being added.
     var editing by remember { mutableStateOf<Replacement?>(null) }
     val import =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            failure =
-                try {
-                    val json =
-                        context.contentResolver.openInputStream(uri)?.use {
-                            it.readBytes().decodeToString()
-                        } ?: throw IOException()
-                    onChange(
-                        settings.copy(
-                            replacements = importReplacements(settings.replacements, json)
+            scope.launch {
+                failure =
+                    try {
+                        // A cloud provider can take its time, so not on the main thread.
+                        val json =
+                            withContext(Dispatchers.IO) {
+                                resolver.openInputStream(uri)?.use {
+                                    it.readBytes().decodeToString()
+                                } ?: throw IOException()
+                            }
+                        onChange(
+                            latest.copy(
+                                replacements = importReplacements(latest.replacements, json)
+                            )
                         )
-                    )
-                    null
-                } catch (e: IllegalArgumentException) {
-                    e.message
-                } catch (_: IOException) {
-                    "The file could not be read."
-                }
+                        null
+                    } catch (e: IllegalArgumentException) {
+                        e.message
+                    } catch (_: IOException) {
+                        "The file could not be read."
+                    }
+            }
         }
     Text(
         "Replace a spoken phrase with exact text, including multi-line snippets. {date} and " +

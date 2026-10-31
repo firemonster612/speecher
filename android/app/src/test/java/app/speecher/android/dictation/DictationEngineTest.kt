@@ -500,6 +500,55 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `words heard after a resume that no stream took are sent on Insert, or the dictation fails`() {
+        fun pausedWithUnsentWords() =
+            TestDictation().apply {
+                engine.start(SpeechProvider.Claude)
+                speak(SpeechEvent.Connected)
+                speak(SpeechEvent.Final("before"))
+                engine.pause()
+                engine.resume()
+                hear(7)
+                engine.pause()
+                connectFailure = IOException("offline")
+                speak(SpeechEvent.Completed)
+            }
+        // Back online, Insert opens a stream for them.
+        val online = pausedWithUnsentWords()
+        online.connectFailure = null
+        online.engine.insert()
+        assertEquals(listOf(listOf<Byte>(7)), online.clients[1].heard)
+        assertTrue(online.clients[1].stopped)
+        online.speak(SpeechEvent.Final("after"))
+        online.speak(SpeechEvent.Completed)
+        assertEquals(listOf("before after"), online.commits)
+
+        // Still offline, or the stream that took them fails before it finishes them: Insert fails
+        // rather than put the words in without them.
+        val offline = pausedWithUnsentWords()
+        offline.engine.insert()
+        val failing = pausedWithUnsentWords()
+        failing.connectFailure = null
+        failing.engine.insert()
+        failing.speak(SpeechEvent.Failed(ProviderFailureKind.Network, "closed"))
+        assertEquals(
+            listOf(
+                "Could not connect to the speech provider" to listOf<String>(),
+                "closed" to listOf(),
+            ),
+            listOf(offline, failing).map {
+                val failed = it.engine.state as DictationState.Failed
+                assertEquals(
+                    FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
+                    failed.reason,
+                )
+                assertEquals("before", failed.transcript)
+                failed.detail to it.commits
+            },
+        )
+    }
+
+    @Test
     fun `pause and resume while the stream connects still end the paused stream`() {
         val tasks = ManualExecutor()
         val t = TestDictation(executor = tasks)
