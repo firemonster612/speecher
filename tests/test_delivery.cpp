@@ -1774,19 +1774,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
     }
 
-#ifdef SPEECHER_WITH_WAYLAND
-    void wlClipboardSnapshotIncludesPrivateFormats()
-    {
-        const QStringList offered{
-            QStringLiteral("text/plain"),
-            QStringLiteral("application/x-libreoffice-embed-source-xml"),
-            QStringLiteral("application/x-qt-image"),
-        };
-
-        QCOMPARE(WlClipboardDelivery::snapshotMimeTypes(offered), offered);
-    }
-
-    void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()
+    void clipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;
         original->setText(QStringLiteral("old clipboard"));
@@ -1794,20 +1782,38 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         original->setData(QStringLiteral("image/png"), QByteArrayLiteral("png-bytes"));
         QApplication::clipboard()->setMimeData(original);
 
+        ClipboardDelivery clipboard;
         ClipboardSnapshot snapshot;
         QString error;
-        QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
+        QVERIFY2(clipboard.capture(&snapshot, &error), qPrintable(error));
         QVERIFY(snapshot.hasData);
         QVERIFY(snapshot.parts.size() >= 3);
 
         QApplication::clipboard()->setText(QStringLiteral("replacement"));
-        QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
+        QVERIFY2(clipboard.restore(snapshot, &error), qPrintable(error));
         const QMimeData *restored = QApplication::clipboard()->mimeData();
         QCOMPARE(restored->text(), QStringLiteral("old clipboard"));
         QCOMPARE(restored->html(), QStringLiteral("<i>old clipboard</i>"));
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("png-bytes"));
     }
 
+    void clipboardSnapshotRestoresEmptyClipboard()
+    {
+        QApplication::clipboard()->setMimeData(new QMimeData);
+        QCoreApplication::processEvents();
+
+        ClipboardDelivery clipboard;
+        ClipboardSnapshot snapshot;
+        QString error;
+        QVERIFY2(clipboard.capture(&snapshot, &error), qPrintable(error));
+        QVERIFY(!snapshot.hasData);
+
+        QApplication::clipboard()->setText(QStringLiteral("replacement"));
+        QVERIFY2(clipboard.restore(snapshot, &error), qPrintable(error));
+        QVERIFY(QApplication::clipboard()->text().isEmpty());
+    }
+
+#ifdef SPEECHER_WITH_WAYLAND
     void wlClipboardRecognisesItsOwnCopyUnderADifferentOfferSet()
     {
         const QByteArray marker = QByteArrayLiteral("{copy-id}");
@@ -1854,21 +1860,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
         QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(copied, otherSpeecherCopy));
         QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, otherSpeecherCopy));
-    }
-
-    void wlClipboardSnapshotRestoresEmptyClipboard()
-    {
-        QApplication::clipboard()->setMimeData(new QMimeData);
-        QCoreApplication::processEvents();
-
-        ClipboardSnapshot snapshot;
-        QString error;
-        QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
-        QVERIFY(!snapshot.hasData);
-
-        QApplication::clipboard()->setText(QStringLiteral("replacement"));
-        QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
-        QVERIFY(QApplication::clipboard()->text().isEmpty());
     }
 
     void ydotoolDeliveryBuildsTypeAndPasteCommands()

@@ -932,9 +932,9 @@ private slots:
                  qPrintable(error));
         QVERIFY(!htmlAvailable);
 
-        QString copiedText;
-        QVERIFY2(WlClipboardDelivery::readText(&copiedText, &error), qPrintable(error));
-        QCOMPARE(copiedText, QStringLiteral("Speecher clipboard probe"));
+        ClipboardSnapshot copied;
+        QVERIFY2(WlClipboardDelivery::capture(&copied, &error), qPrintable(error));
+        QCOMPARE(QString::fromUtf8(copied.data), QStringLiteral("Speecher clipboard probe"));
     }
 
     void liveAtSpiPasswordTargetIsPrivate()
