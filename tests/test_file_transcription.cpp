@@ -3058,6 +3058,27 @@ private slots:
         session.cancel();
     }
 
+    // A batch cancelled while a failed file stops the microphone finishes
+    // once, cancelled, without reporting the file.
+    void aCancelWhileAFailedFileStopsTheMicrophoneFinishesOnce()
+    {
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy files(&session, &FileTranscriptionSession::fileFinished);
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        microphone.onStop = [&session] { session.cancel(); };
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+
+        microphone.emitFailure(QStringLiteral("unplugged"));
+        QTest::qWait(100);
+
+        QCOMPARE(files.count(), 0);
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(finished.first().at(1).toBool(), true);
+        QVERIFY(!session.isRunning());
+    }
+
     void withoutVocabularyTheProviderHearsNone()
     {
         const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));

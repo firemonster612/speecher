@@ -328,9 +328,11 @@ void FileTranscriptionSession::cancel()
     if (!m_running) {
         return;
     }
-    releaseFileResources();
+    // Ended before the microphone's stop spins its event loop, so a cancel
+    // there finds nothing to cancel.
     m_running = false;
     ++m_batch;
+    releaseFileResources();
     emit batchFinished(m_results, true);
 }
 
@@ -659,10 +661,15 @@ void FileTranscriptionSession::failFile(const QString &message)
 // Records the current file (if any) and moves on to the next, or ends the batch.
 void FileTranscriptionSession::finishFile()
 {
+    // Stopping the microphone spins an event loop, where the batch may be
+    // cancelled.
+    const quint64 batch = m_batch;
     releaseFileResources();
+    if (batch != m_batch) {
+        return;
+    }
     if (m_index >= 0) {
         m_results.append(m_current);
-        const quint64 batch = m_batch;
         emit fileFinished(m_index, m_current);
         if (batch != m_batch) {
             return;
