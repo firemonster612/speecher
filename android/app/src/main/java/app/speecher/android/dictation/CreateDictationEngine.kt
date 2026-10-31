@@ -11,6 +11,7 @@ import app.speecher.android.BuildConfig
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.exposesApiKey
+import app.speecher.android.keyedEndpointHttp
 import app.speecher.android.lacksLocalNetwork
 import app.speecher.android.onLocalNetwork
 import app.speecher.android.provider.CleanupProvider
@@ -263,7 +264,7 @@ fun createDictationEngine(
                             "API key over plain http",
                         )
                     EndpointSpeechClient(
-                        http,
+                        keyedEndpointHttp(http, settings.speechEndpoint.server, key),
                         settings.speechEndpoint,
                         key,
                         terms.joinToString(", "),

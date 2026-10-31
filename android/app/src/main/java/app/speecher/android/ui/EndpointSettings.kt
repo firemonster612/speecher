@@ -30,9 +30,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import app.speecher.android.KEY_NEEDS_LOCAL_NETWORK
 import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.exposesApiKey
+import app.speecher.android.keyedEndpointHttp
 import app.speecher.android.mayUseLocalNetwork
 import app.speecher.android.onLocalNetwork
 import app.speecher.android.settings.SpeecherSettings
@@ -71,8 +73,14 @@ internal fun SpeechEndpointSettings(
         scope.launch {
             val result =
                 withContext(Dispatchers.IO) {
-                    if (exposesApiKey(endpoint.server, key)) EndpointCheck(false, KEY_NEEDS_HTTPS)
-                    else checkSpeechEndpoint(sharedHttp, endpoint, key)
+                    if (exposesApiKey(endpoint.server, key))
+                        EndpointCheck(false, KEY_NEEDS_LOCAL_NETWORK)
+                    else
+                        checkSpeechEndpoint(
+                            keyedEndpointHttp(sharedHttp, endpoint.server, key),
+                            endpoint,
+                            key,
+                        )
                 }
             check = result
             checking = false
@@ -117,10 +125,6 @@ internal fun SpeechEndpointSettings(
         }
     }
 }
-
-private const val KEY_NEEDS_HTTPS =
-    "Speecher sends the API key over plain http only to a server on your network. Use https, or " +
-        "remove the key."
 
 private const val LOCAL_NETWORK_REFUSED =
     "Speecher can't reach your network. Test again and allow Speecher to find nearby devices. If " +
