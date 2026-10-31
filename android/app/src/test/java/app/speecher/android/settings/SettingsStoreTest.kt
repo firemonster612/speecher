@@ -137,4 +137,17 @@ class SettingsStoreTest {
                 .filter { it.startsWith(standup.id) },
         )
     }
+
+    @Test
+    fun `a hand-edited update interval outside 5 minutes to 30 days loads clamped`() {
+        val context = RuntimeEnvironment.getApplication()
+        val preferences = context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE)
+        fun loaded(minutes: Int) =
+            preferences.edit().putInt("updateCheckMinutes", minutes).commit().let {
+                SettingsStore(context).load()
+            }
+        assertEquals(43_200, loaded(100_000).updateCheckMinutes)
+        preferences.edit().putString("updateCheckUnit", "Days").commit()
+        assertEquals(5 to null, loaded(0).let { it.updateCheckMinutes to it.updateCheckUnit })
+    }
 }
