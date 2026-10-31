@@ -1433,8 +1433,14 @@ if(TARGET speecher-ydotool-setup)
   install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
 if(TARGET speecher-keywatch-setup)
-  install(TARGETS speecher-keywatch-setup speecher-keywatchd
+  install(TARGETS speecher-keywatch-setup
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+  # The installer checks the daemon against the digest of this build's file,
+  # so it is installed as built: PROGRAMS, unlike TARGETS, is left alone by
+  # cmake --install --strip. Packaging must not strip or patch it either
+  # (README, packaging/verify-appimage.sh).
+  install(PROGRAMS $<TARGET_FILE:speecher-keywatchd>
+    DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
   # The daemon's SELinux module rides beside the installer, which loads it.
   install(FILES src/setup/speecher_keywatchd.cil DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()

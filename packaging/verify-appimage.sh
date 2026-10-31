@@ -117,6 +117,17 @@ mkdir "$EXTRACT_DIR/relocated-helper"
 cp "$HELPER" "$EXTRACT_DIR/relocated-helper/"
 env -u LD_LIBRARY_PATH "$EXTRACT_DIR/relocated-helper/speecher-ydotool-setup" --help >/dev/null
 
+# The key-watch installer refuses a daemon or policy whose SHA-256 differs
+# from the one compiled into it, so packaging must leave both as built.
+KEYWATCH_DIR="$APPDIR/usr/libexec/speecher"
+for payload in speecher-keywatchd speecher_keywatchd.cil; do
+  digest="$(sha256sum "$KEYWATCH_DIR/$payload" | cut -d' ' -f1)"
+  if ! grep -aqF "$digest" "$KEYWATCH_DIR/speecher-keywatch-setup"; then
+    echo "Packaging changed $payload after its digest was compiled into speecher-keywatch-setup." >&2
+    exit 1
+  fi
+done
+
 mkdir "$EXTRACT_DIR/untrusted-launch-directory"
 cat > "$EXTRACT_DIR/untrusted-launch-directory/getconf" <<'EOF'
 #!/bin/sh
