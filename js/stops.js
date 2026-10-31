@@ -52,7 +52,7 @@ export function createStops({ reduced }) {
   const inserts = [native.querySelector(".slab.engine"), native.querySelector(".slab.script")];
   let rise = 0;
 
-  // 4. cli: three commands are typed in turn and their output prints under each.
+  // 4. cli: four commands are typed in turn and their output prints under each.
   // The pill listens at the end of the first one, until its sentence prints.
   const cli = sec[4];
   const cliSlot = cli.querySelector(".slot");
