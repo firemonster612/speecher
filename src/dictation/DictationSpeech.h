@@ -17,33 +17,15 @@ class ProviderRegistry;
 class TranscriptRefiner;
 class TranscriptState;
 
-// What became of one of a Dictation Session's speech providers, for its
-// Provider History.
-struct SpeechProviderNote {
-    enum class Kind {
-        // It prepared and takes the dictation from here.
-        Ready,
-        // An attempt opened on it.
-        Ran,
-        // The service turned its sign-in down.
-        SignInTurnedDown,
-        // The speech passed it over at stage, for failure.
-        PassedOver,
-    };
-    Kind kind = Kind::Ran;
-    QString providerId;
-    ProviderAttemptIssue::Stage stage = ProviderAttemptIssue::Stage::Prepare;
-    ProviderFailure failure;
-};
-
 // A Dictation Session's speech, from its first speech provider until every
 // word heard is in the Raw Transcript: the attempts it opens on the provider,
 // through pauses, reconnects and rollovers, the audio held while no attempt
 // can take it, and the walk on to the next speech provider when one fails.
 // The session keeps the microphone and the states the person sees, and tells
-// the speech when the person pauses, resumes and stops; the speech tells the
-// session when the microphone may start, when the speech has ended and when a
-// failure ends it.
+// the speech when the microphone has started and when the person pauses,
+// resumes and stops, before it announces the state, so a handler that reacts
+// at once finds the speech there too. The speech tells the session when the
+// microphone may start, when the speech has ended and when a failure ends it.
 class DictationSpeech : public QObject {
     Q_OBJECT
 
@@ -61,23 +43,25 @@ public:
     // renews alongside. settings are the session's, which the speech runs
     // with from here on.
     void start(const AppSettings &settings, TranscriptRefiner *refiner);
+    // Once the microphone has started for the first attempt: the speech
+    // listens.
+    void listen();
     // Audio from the microphone, which the session took for the speech.
     void hear(const QByteArray &pcm);
-    // Once the session is Paused, its microphone stopped: the open attempt
-    // finishes the words already spoken, and its end is no rollover.
+    // The person paused, the microphone stopped: the open attempt finishes
+    // the words already spoken, and its end is no rollover.
     void pause();
-    // Once the session listens again after a pause: opens the next attempt,
-    // unless the paused one still finishes or a provider prepares.
+    // The person resumed: opens the next attempt, unless the paused one
+    // still finishes or a provider prepares.
     void resume();
-    // The person stopped. From a pause, the speech ends once the paused
-    // attempt has finished. Otherwise the open attempt takes the post-roll
-    // until microphoneStopped(). Nothing once stopping already.
+    // The person stopped. While listening, the open attempt takes the
+    // post-roll until microphoneStopped(). Nothing once stopping already.
     void stop();
     // Once the microphone has stopped for good after stop(), post-roll and
-    // all: the last attempt is told the input ended, one that heard nothing
-    // since a resume is let go, and post-roll held after an attempt ended
-    // during the stop goes to an attempt of its own. ended() follows once
-    // the words are in.
+    // all; at once after a stop while paused. The last attempt is told the
+    // input ended, one that heard nothing since a resume is let go, and audio
+    // held meanwhile goes to an attempt of its own. ended() follows once the
+    // words are in.
     void microphoneStopped();
     // Nothing running reports back, and nothing held is kept.
     void cancel();
@@ -85,8 +69,6 @@ public:
     // What the system says about the internet; providers that need it are
     // passed over while offline.
     void setReachability(Reachability reachability);
-    // Whether the system says it is offline and providerId needs the internet.
-    bool offlineFor(ProviderRole role, const QString &providerId, const AppSettings &settings) const;
     // The speech providers selected, primary first.
     const QStringList &providerIds() const;
     // Whether the chain has fallbacks and issues says why any provider it
@@ -98,12 +80,17 @@ public:
 
 signals:
     // The first provider is ready and its attempt open: the session starts
-    // the microphone, and once this returns the speech listens, unless it
-    // ended meanwhile. A provider ready while it starts only opens its
-    // attempt.
+    // the microphone, then listen(). A provider ready while it starts only
+    // opens its attempt.
     void readyToListen();
-    // For the session's Provider History.
-    void providerNoted(const speecher::SpeechProviderNote &note);
+    // Whether providerId's sign-in held: it prepared and takes the dictation
+    // from here, or the service turned the sign-in down.
+    void signInObserved(const QString &providerId, bool signedIn);
+    // An attempt opened on providerId.
+    void ran(const QString &providerId);
+    // A provider the speech passed over, and why.
+    void passedOver(const QString &providerId, speecher::ProviderAttemptIssue::Stage stage,
+                    const speecher::ProviderFailure &failure);
     // A provider's sign-in renews before it can take the dictation.
     void renewingSignIn();
     // The keys a provider's preparation read, in the session's settings.
@@ -174,6 +161,9 @@ private:
     bool m_microphoneStarting = false;
     // While stopping: the microphone has stopped, and nothing more is heard.
     bool m_microphoneStopped = false;
+    // A pause told the open attempt, if any, that the input ended; a resume
+    // opens the next one.
+    bool m_inputEnded = false;
     // The attempt a resume opened with nothing held for it, until it hears
     // audio; 0 for none.
     quint64 m_emptyResumedAttempt = 0;

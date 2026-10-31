@@ -78,7 +78,19 @@ DictationSession::DictationSession(SettingsStore *settings,
     connect(m_refinementChain, &RefinementChain::ready, this, &DictationSession::startRefiner);
     connect(m_refinementChain, &RefinementChain::exhausted, this, &DictationSession::deliverWithoutRefinement);
     connect(m_speech, &DictationSpeech::renewingSignIn, this, &DictationSession::popupOAuthRefreshRequested);
-    connect(m_speech, &DictationSpeech::providerNoted, this, &DictationSession::noteSpeechProvider);
+    connect(m_speech, &DictationSpeech::passedOver, this,
+            [this](const QString &providerId, Stage stage, const ProviderFailure &failure) {
+                noteProviderIssue(ProviderRole::Speech, providerId, stage, failure);
+            });
+    connect(m_speech, &DictationSpeech::signInObserved, this, [this](const QString &providerId, bool signedIn) {
+        // The preview starts over with the provider that takes the dictation.
+        if (signedIn) {
+            emit previewDisplayChanged({});
+        }
+        noteSignIn(providerId, signedIn);
+    });
+    connect(m_speech, &DictationSpeech::ran, this,
+            [this](const QString &providerId) { noteRan(ProviderRole::Speech, providerId); });
     connect(m_speech, &DictationSpeech::secretsResolved, this, [this](const AppSettings &settings) {
         if (m_sessionSettings) {
             m_sessionSettings = settings;
@@ -458,25 +470,6 @@ void DictationSession::speechChainExhausted(const SpeechFailure &switchFailure)
     failStartup(message, {ErrorFix::SettingsPage, QStringLiteral("speech")});
 }
 
-void DictationSession::noteSpeechProvider(const SpeechProviderNote &note)
-{
-    switch (note.kind) {
-    case SpeechProviderNote::Kind::Ready:
-        emit previewDisplayChanged({});
-        noteSignIn(note.providerId, true);
-        break;
-    case SpeechProviderNote::Kind::Ran:
-        noteRan(ProviderRole::Speech, note.providerId);
-        break;
-    case SpeechProviderNote::Kind::SignInTurnedDown:
-        noteSignIn(note.providerId, false);
-        break;
-    case SpeechProviderNote::Kind::PassedOver:
-        noteProviderIssue(ProviderRole::Speech, note.providerId, note.stage, note.failure);
-        break;
-    }
-}
-
 void DictationSession::noteProviderIssue(ProviderRole role,
                                          const QString &providerId,
                                          Stage stage,
@@ -503,7 +496,8 @@ void DictationSession::noteProviderIssue(ProviderRole role,
 
 bool DictationSession::offlineFor(ProviderRole role, const QString &providerId) const
 {
-    return m_sessionSettings && m_speech->offlineFor(role, providerId, *m_sessionSettings);
+    return m_sessionSettings && m_reachability == Reachability::Offline
+        && needsInternet(role, providerId, *m_sessionSettings);
 }
 
 void DictationSession::noteSignIn(const QString &providerId, bool signedIn)
@@ -535,6 +529,7 @@ void DictationSession::setReviewKeys(const ReviewKeys &keys)
 
 void DictationSession::setReachability(Reachability reachability)
 {
+    m_reachability = reachability;
     m_speech->setReachability(reachability);
     m_refinementChain->setReachability(reachability);
 }
@@ -574,9 +569,13 @@ void DictationSession::stopListening()
     if (m_state == DictationState::Paused) {
         // The microphone is already off; deliver once the paused attempt's
         // words, and any heard after a resume, are in.
+        m_speech->stop();
+        const quint64 generation = m_generation;
         setState(DictationState::Stopping, m_lastMessage);
         resumePausedMedia();
-        m_speech->stop();
+        if (generation == m_generation && m_state == DictationState::Stopping) {
+            m_speech->microphoneStopped();
+        }
         return;
     }
     if (m_state == DictationState::Starting) {
@@ -589,10 +588,10 @@ void DictationSession::stopListening()
     if (m_state != DictationState::Listening) {
         return;
     }
-    setState(DictationState::Stopping, m_lastMessage);
     m_speech->stop();
-    qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     const quint64 generation = m_generation;
+    setState(DictationState::Stopping, m_lastMessage);
+    qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     // Stopping still takes the post-roll that arrives while the microphone
     // stops. Paused media resumes only after it, so the post-roll does not
     // pick it up from the speakers.
@@ -720,9 +719,16 @@ void DictationSession::pause()
     if (m_state != DictationState::Listening) {
         return;
     }
-    setState(DictationState::Paused);
-    emit audioLevelChanged(0.0f);
+    // Paused before the session says so, as a handler may stop at once; a
+    // provider may report the attempt ended from inside it.
     m_speech->pause();
+    if (generation != m_generation || m_state != DictationState::Listening) {
+        return;
+    }
+    setState(DictationState::Paused);
+    if (generation == m_generation && m_state == DictationState::Paused) {
+        emit audioLevelChanged(0.0f);
+    }
 }
 
 void DictationSession::togglePause()
@@ -742,9 +748,16 @@ void DictationSession::resume()
     qInfo() << "resume requested";
     const quint64 generation = m_generation;
     // Listening, with the next attempt open, before the microphone starts:
-    // its first samples arrive while it starts.
-    setState(DictationState::Listening);
+    // its first samples arrive while it starts. The attempt can fail as it
+    // opens, and a handler can act on Listening at once.
     m_speech->resume();
+    if (generation != m_generation || m_state != DictationState::Paused) {
+        return;
+    }
+    setState(DictationState::Listening);
+    if (generation != m_generation || m_state != DictationState::Listening) {
+        return;
+    }
     // What a warm microphone kept rolling during the pause stays out.
     m_audio->clearPreRoll();
     QString audioError;
@@ -880,6 +893,7 @@ void DictationSession::continueStartupAfterPreparation()
         return;
     }
     qInfo() << "audio capture started";
+    m_speech->listen();
     setState(DictationState::Listening);
 }
 

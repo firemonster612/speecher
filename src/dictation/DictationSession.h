@@ -152,7 +152,6 @@ private:
     void continueStartupAfterPopup(quint64 generation);
     bool selectProviders();
     void speechChainExhausted(const SpeechFailure &switchFailure);
-    void noteSpeechProvider(const SpeechProviderNote &note);
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
     bool offlineFor(ProviderRole role, const QString &providerId) const;
     void noteSignIn(const QString &providerId, bool signedIn);
@@ -248,6 +247,8 @@ private:
     // asked for.
     bool m_usedRawTranscript = false;
     ProviderHistory m_providerHistory;
+    // What the system last said about the internet.
+    Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
