@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Speecher: dictation that types what you meant</title>
-<meta name="description" content="Native dictation for Windows, macOS and Linux. Press a shortcut, talk, and clean text is typed into the focused app. Runs on your Claude Code or ChatGPT sign-in.">
+<meta name="description" content="Native dictation for Windows, macOS and Linux. Press a shortcut, talk, and clean text is typed into the focused app. Runs on your Claude Code or ChatGPT sign-in, or on a local model.">
 <link rel="canonical" href="https://firemonster612.github.io/speecher/">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#f5f0e6">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Speecher">
 <meta property="og:title" content="Speecher: dictation that types what you meant">
-<meta property="og:description" content="Native dictation for Windows, macOS and Linux. Runs on your existing Claude Code or ChatGPT sign-in. Open source, MIT.">
+<meta property="og:description" content="Native dictation for Windows, macOS and Linux. Runs on your existing Claude Code or ChatGPT sign-in, or on a local model. Open source, MIT.">
 <meta property="og:url" content="https://firemonster612.github.io/speecher/">
 <meta property="og:image" content="https://firemonster612.github.io/speecher/og.png">
 <meta property="og:image:width" content="1200">
@@ -25,7 +25,7 @@
   "name": "Speecher",
   "operatingSystem": "Windows, macOS, Linux",
   "applicationCategory": "UtilitiesApplication",
-  "softwareVersion": "0.2.0",
+  "softwareVersion": "0.3.0",
   "license": "https://opensource.org/license/mit",
   "downloadUrl": "https://github.com/firemonster612/speecher/releases/latest",
   "url": "https://firemonster612.github.io/speecher/",
@@ -89,7 +89,7 @@
       <p class="acct">ChatGPT</p>
     </div>
     <div class="foot">
-      <p class="line">Sign in with Claude Code or ChatGPT, and dictation runs on that&nbsp;plan.</p>
+      <p class="line">Sign in with Claude Code or ChatGPT, and dictation runs on that plan. No account? Run a speech model on your own&nbsp;computer.</p>
       <div class="nots">
         <p class="nots-label">Not needed</p>
         <p class="nope"><s>New subscription</s><svg viewBox="0 0 200 30" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M3 19 C 50 12, 110 17, 197 9"/></svg></p>
@@ -128,11 +128,29 @@
     </div>
     <div class="copy">
       <h2>Native C++. No browser&nbsp;inside.</h2>
-      <p class="line">A C++ app with a Qt interface, not a web&nbsp;page.</p>
+      <p class="line">A C++ app with one Qt Quick interface on Linux, macOS and&nbsp;Windows.</p>
     </div>
   </section></div>
 
-  <div class="track" id="android" style="--hold: 60svh"><section class="stop android" data-stop="4">
+  <div class="track" id="terminal" style="--hold: 100svh"><section class="stop cli" data-stop="4">
+    <div class="copy">
+      <h2>It works in your terminal&nbsp;too.</h2>
+      <p class="line">Print what you say. Turn audio files into subtitles. Record a call to a transcript a coding agent can&nbsp;read.</p>
+    </div>
+    <div class="shell" role="img" aria-label="A terminal: speecher listen prints a spoken sentence, speecher transcribe saves subtitles for an audio file, and speecher record start writes a call transcript with lines for me and them.">
+      <p class="run"><span class="dim">$</span> <span class="typed">speecher listen</span> <span class="slot"></span></p>
+      <p class="print">Can we push the meeting to Friday?</p>
+      <p class="run"><span class="dim">$</span> <span class="typed">speecher transcribe --model local --srt talk.mp3</span></p>
+      <p class="print dim">talk.mp3: saved /home/sam/talk-transcribed.srt</p>
+      <p class="run"><span class="dim">$</span> <span class="typed">speecher record start --to call.md</span></p>
+      <p class="print dim">/home/sam/call.md</p>
+      <p class="run"><span class="dim">$</span> <span class="typed">tail -f call.md</span></p>
+      <p class="print"><span class="dim">[00:12:03]</span> <b class="them">them:</b> Can you look at the retry logic before Friday?</p>
+      <p class="print"><span class="dim">[00:12:09]</span> <b class="me">me:</b> Yes, I'll check it today.</p>
+    </div>
+  </section></div>
+
+  <div class="track" id="android" style="--hold: 60svh"><section class="stop android" data-stop="5">
     <h2><span class="h-a">Same dictation,</span> <span class="h-b">on your phone.</span></h2>
     <p class="line">A dictation button beside your keyboard, signed in with ChatGPT or&nbsp;Claude.</p>
     <p class="note">Android 12 or newer. Installed from an APK.</p>
@@ -148,7 +166,7 @@
     </div>
   </section></div>
 
-  <div class="track" id="download"><section class="stop download" data-stop="5">
+  <div class="track" id="download"><section class="stop download" data-stop="6">
     <div class="dl-words">
       <h2>Download Speecher</h2>
       <footer>Open source, <a href="https://github.com/firemonster612/speecher/blob/master/LICENSE">MIT</a>. <a href="https://github.com/firemonster612/speecher">GitHub</a> · <a href="blog/">Blog</a></footer>
@@ -158,7 +176,7 @@
       <p class="dl-req">AppImage, x86_64, Wayland. glibc 2.43 or newer.</p>
       <ul class="rows">
         <li data-os="linux"><b>Linux</b><span>AppImage, x86_64, Wayland. glibc 2.43 or newer.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-x86_64.AppImage">AppImage</a></li>
-        <li data-os="mac"><b>macOS</b><span>Apple Silicon, macOS 26 or later.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/speecher.dmg">DMG</a></li>
+        <li data-os="mac"><b>macOS</b><span>Apple Silicon, macOS 15 or later.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/speecher.dmg">DMG</a></li>
         <li data-os="windows"><b>Windows</b><span>x64, Windows 11.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-Setup-x64.exe">Installer</a></li>
         <li data-os="android"><b>Android</b><span>Android 12 or newer. Not on the Play Store.</span><a href="https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk">APK</a></li>
         <li><b>From source</b><span><code>make install</code>, from the README.</span><a href="https://github.com/firemonster612/speecher#readme">GitHub</a></li>
