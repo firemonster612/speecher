@@ -981,7 +981,13 @@ void DictationSession::startRefiner()
     const RefinementSettings refinement = m_refinementChain->currentSettings();
     noteSignIn(refinement.providerId, true);
 
+    const quint64 generation = m_generation;
     enterRefining();
+    // A handler of Refining may have stopped or cancelled the session, and
+    // with it dropped the settings the refiner runs with.
+    if (generation != m_generation || m_state != DictationState::Refining) {
+        return;
+    }
     m_refinementStream.clear();
     m_previewReplacements = BindingProcessor::replacementsByPlaceholder(m_transcriptPipeline.bindingResult.placeholders);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
@@ -1012,8 +1018,10 @@ void DictationSession::enterRefining()
     if (m_state == DictationState::Refining) {
         return;
     }
-    setState(DictationState::Refining, m_lastMessage);
+    // Before the state is announced: a handler that ends the session leaves
+    // no refinement of its generation behind.
     m_refinementGeneration = m_generation;
+    setState(DictationState::Refining, m_lastMessage);
 }
 
 // A refiner that fails to answer for want of a service makes way for the

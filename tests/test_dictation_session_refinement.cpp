@@ -1621,6 +1621,48 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("raw transcript"));
     }
 
+    // A cancel as the session says it refines ends the session there: the
+    // refiner, ready at once or after its sign-in renews, is never asked.
+    void aCancelAsRefiningBeginsAsksNoRefiner_data()
+    {
+        QTest::addColumn<bool>("renews");
+        QTest::newRow("ready at once") << false;
+        QTest::newRow("renewing") << true;
+    }
+
+    void aCancelAsRefiningBeginsAsksNoRefiner()
+    {
+        QFETCH(bool, renews);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        setCleanupLevel(settings, QStringLiteral("light_cleanup"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        connect(&session, &DictationSession::stateChanged, &session, [&session](DictationState state) {
+            if (state == DictationState::Refining) {
+                session.cancel();
+            }
+        });
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        refiner->refreshRequired = renews;
+        speech->emitFinalText(QStringLiteral("rough text"));
+        session.stopListening();
+        QTest::qWait(100);
+
+        QCOMPARE(session.state(), DictationState::Idle);
+        QCOMPARE(refiner->refineCalls, 0);
+        QCOMPARE(delivery.calls, 0);
+    }
+
     void dictationSessionStopsOnEmptyAudioFailure()
     {
         SettingsStore settings;

@@ -89,13 +89,15 @@ void RefinementChain::walk()
             continue;
         }
         if (SettingsStore::hasUnreadProviderSecrets(m_settings, ProviderRole::Refinement, providerId)) {
-            emit preparing();
+            // Started first: a handler of preparing() that cancels the walk
+            // cancels the job with it.
             m_runner->resolveSecrets(ProviderRole::Refinement, providerId, m_settings);
+            emit preparing();
             return;
         }
         if (std::optional<PreparationJob> refresh = m_refiner->createRefreshJob(currentSettings(), m_settings.accounts)) {
-            emit preparing();
             m_runner->prepareRefiner(std::move(*refresh));
+            emit preparing();
             return;
         }
         prepareCurrent();
