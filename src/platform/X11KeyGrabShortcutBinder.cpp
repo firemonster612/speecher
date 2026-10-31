@@ -5,7 +5,6 @@
 
 #include <QSocketNotifier>
 
-#include <algorithm>
 #include <optional>
 
 // Xlib last: its macros (None, Bool, KeyPress) collide with Qt names.
@@ -100,23 +99,19 @@ public:
     QList<X11KeyHold *> holds;
     int xiOpcode = 0;
 
-    // Ends an active grab the leaving hold's key left behind, so keys pressed
-    // while it is still down reach the focused app. The server may have
-    // started one whose press Speecher has not read yet, so this never asks
-    // whether one is on. That key's release goes to the app too, so the
-    // leaving hold must not go on waiting for it.
+    // Ends an active grab a held key left behind, so keys pressed while it is
+    // still down reach the focused app. The server may have started one whose
+    // press Speecher has not read yet, so this never asks whether one is on.
+    // The leaving hold's key may still be down, and its release then goes to
+    // the app, so that hold must not go on waiting for it.
     //
-    // A grab another hold's key started is that hold's: its key is down and
-    // it still acts, and the key's own release ends the grab. Ending it here
-    // would let the server's key repeat start it again as a fresh press. A
-    // key still held when that grab ends sends its release to the app, so
-    // the raw releases readEvents() watches are what clear its hold.
+    // Another hold whose key is down keeps its latch: the server's key repeat
+    // may take its passive grab again, and that press must not act twice.
+    // Its release, wherever it goes, reaches the raw releases readEvents()
+    // watches.
     void releaseKeyboard(X11KeyHold *leaving)
     {
         leaving->m_down = false;
-        if (std::any_of(holds.cbegin(), holds.cend(), [](const X11KeyHold *hold) { return hold->m_down; })) {
-            return;
-        }
         XUngrabKeyboard(display, CurrentTime);
     }
 

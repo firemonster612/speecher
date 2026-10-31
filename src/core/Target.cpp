@@ -155,6 +155,14 @@ void Target::setNearbyText(const QString &text, int start, int end)
 {
     nearbyTextBefore = text.left(start).right(nearbyTextChars);
     nearbyTextAfter = text.mid(end, nearbyTextChars);
+    // The cut counts UTF-16 units, so it can fall inside a character such as
+    // an emoji; never keep half of one.
+    if (!nearbyTextBefore.isEmpty() && nearbyTextBefore.front().isLowSurrogate()) {
+        nearbyTextBefore.remove(0, 1);
+    }
+    if (!nearbyTextAfter.isEmpty() && nearbyTextAfter.back().isHighSurrogate()) {
+        nearbyTextAfter.chop(1);
+    }
 }
 
 QList<AppRecognitionRule> builtInAppRecognitionRules()

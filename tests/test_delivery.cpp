@@ -545,6 +545,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(target.nearbyTextAfter, QStringLiteral(" after"));
     }
 
+    // A cut that falls inside an emoji drops the half it would keep.
+    void nearbyTextNeverSplitsACharacter()
+    {
+        Target target;
+        const QString emoji = QString::fromUtf8("\xF0\x9F\x98\x80");
+        const QString before = emoji + QString(nearbyTextChars - 1, QLatin1Char('b'));
+        const QString after = QString(nearbyTextChars - 1, QLatin1Char('a')) + emoji;
+        target.setNearbyText(before + after, before.size(), before.size());
+        QCOMPARE(target.nearbyTextBefore, QString(nearbyTextChars - 1, QLatin1Char('b')));
+        QCOMPARE(target.nearbyTextAfter, QString(nearbyTextChars - 1, QLatin1Char('a')));
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;
