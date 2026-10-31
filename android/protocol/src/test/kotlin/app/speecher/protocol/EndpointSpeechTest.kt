@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class EndpointSpeechTest {
     private val http = OkHttpClient()
+    @TempDir lateinit var cache: File
 
     /** Records audio, stops, and returns every event up to the last. */
     private fun transcribe(
@@ -24,7 +26,8 @@ class EndpointSpeechTest {
         pcm: ByteArray = byteArrayOf(1, 2),
     ): List<SpeechEvent> {
         val events = LinkedBlockingQueue<SpeechEvent>()
-        val client = EndpointSpeechClient(http, endpoint, apiKey, prompt, language, events::put)
+        val client =
+            EndpointSpeechClient(http, endpoint, apiKey, prompt, language, cache, events::put)
         client.sendAudio(pcm)
         client.stop()
         return buildList {
@@ -198,7 +201,8 @@ class EndpointSpeechTest {
     }
 
     @Test
-    fun `the recording waits on disk until it is sent whole or cancelled`() {
+    fun `the recording waits on disk until it is sent whole or cancelled, and a dead process's goes`() {
+        val leftover = File(cache, "speech-endpoint123.pcm").apply { writeBytes(byteArrayOf(9)) }
         val pcm = byteArrayOf(1, 2, -1, 127)
         MockWebServer().use { server ->
             server.enqueue(MockResponse.Builder().body("{\"text\":\"\"}").build())
@@ -207,22 +211,25 @@ class EndpointSpeechTest {
             val body = server.takeRequest().body!!.string(Charsets.ISO_8859_1)
             assertTrue(String(wavFromPcm16Mono(pcm, 16000), Charsets.ISO_8859_1) in body)
         }
-        EndpointSpeechClient(http, SpeechEndpoint("http://unused"), "", "", "", {}).run {
+        assertFalse(leftover.exists())
+        awaitNoRecordings()
+        EndpointSpeechClient(http, SpeechEndpoint("http://unused"), "", "", "", cache, {}).run {
             sendAudio(pcm)
-            assertTrue(recordings().isNotEmpty())
+            assertEquals(1, recordings().size)
             cancel()
         }
+        awaitNoRecordings()
+    }
+
+    private fun recordings() = cache.listFiles { file -> file.name.startsWith("speech-endpoint") }!!
+
+    private fun awaitNoRecordings() {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (recordings().isNotEmpty()) {
             assertTrue(System.nanoTime() < deadline)
             Thread.sleep(10)
         }
     }
-
-    private fun recordings() =
-        File(System.getProperty("java.io.tmpdir")).listFiles { file ->
-            file.name.startsWith("speech-endpoint")
-        }!!
 
     @Test
     fun `the server base drops trailing slashes and v1 segments`() {

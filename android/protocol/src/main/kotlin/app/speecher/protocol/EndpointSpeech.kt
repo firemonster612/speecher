@@ -63,8 +63,8 @@ val endpointSpeechLanguages: List<String> =
 
 /**
  * Transcription through the speech Custom Endpoint: the whole recording, as a WAV file, POSTed to
- * the server once [stop] is called. The recording waits in a temporary file, deleted once sent or
- * cancelled, so a long dictation does not sit in memory. A server that streams answers with
+ * the server once [stop] is called. The recording waits in a file in [cacheDir], deleted once sent
+ * or cancelled, so a long dictation does not sit in memory. A server that streams answers with
  * server-sent events, shown as they arrive. The audio is sent once, so a failure ends the
  * dictation, keeping any text the stream already produced. [prompt] goes in the OpenAI `prompt`
  * field, left out when empty, and [language] in `language`, left out for Automatic.
@@ -78,11 +78,12 @@ class EndpointSpeechClient(
     private val apiKey: String,
     private val prompt: String,
     private val language: String,
+    cacheDir: File,
     private val events: (SpeechEvent) -> Unit,
     private val inactivityMillis: Long = 60_000,
     private val deadlineMillis: Long = 300_000,
 ) : SpeechClient {
-    private val recordingFile = File.createTempFile("speech-endpoint", ".pcm")
+    private val recordingFile = newRecording(cacheDir)
     private val recording = recordingFile.outputStream().buffered()
     /** Why the recording could not be written, as when the disk is full; reported at [stop]. */
     private var writeFailure: IOException? = null
@@ -228,6 +229,24 @@ class EndpointSpeechClient(
         return done.ifEmpty { streamed.toString() }
     }
 }
+
+/** Directories whose recordings left by a process that died mid-dictation are deleted. */
+private val clearedDirs = mutableSetOf<File>()
+
+/**
+ * A new, empty recording file in [cacheDir]. The first in each directory in a process deletes the
+ * recordings a dead process left there; no recording of this process exists yet.
+ */
+private fun newRecording(cacheDir: File): File =
+    synchronized(clearedDirs) {
+        if (clearedDirs.add(cacheDir))
+            cacheDir
+                .listFiles { file -> file.name.startsWith(RECORDING_PREFIX) }
+                ?.forEach { it.delete() }
+        File.createTempFile(RECORDING_PREFIX, ".pcm", cacheDir)
+    }
+
+private const val RECORDING_PREFIX = "speech-endpoint"
 
 /** [pcm], 16 kHz mono PCM16, as a WAV file read from disk as it is sent. */
 private fun wavBody(pcm: File): RequestBody =
