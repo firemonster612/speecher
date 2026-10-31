@@ -393,21 +393,25 @@ void SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
     if (saved.correctionLearningEnabled != previous.correctionLearningEnabled) {
         emit correctionLearningEnabledChanged(saved.correctionLearningEnabled);
     }
-    // Last, since the keyring answers through an event loop, which can run an
-    // edit of its own: one made then must find this draft's settings already
-    // written, or the rest of this one would overwrite it.
     using Secret = SecretStore::Secret;
-    QList<std::pair<Secret, QString>> secrets{
-        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey},
-        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey},
-        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey},
+    const std::tuple<Secret, QString, QString> keys[] = {
+        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey},
+        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey, previous.refinement.cliproxyApiKey},
+        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey, previous.refinement.endpoint.apiKey},
     };
-    // An empty key the draft never read came from a skipped read, not from
-    // the person.
-    secrets.removeIf([&draft](const std::pair<Secret, QString> &secret) {
-        return secret.second.trimmed().isEmpty()
-            && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret.first));
-    });
+    QList<std::pair<Secret, QString>> secrets;
+    for (const auto &[secret, value, before] : keys) {
+        const QString key = SecretStore::settingsKey(secret);
+        // An empty key the draft never read came from a skipped read, not
+        // from the person. A key the edit left as it read it stays as it is:
+        // saving it again would replace a field's save waiting its turn.
+        const bool unchanged = draft.unreadSecretKeys.contains(key)
+            ? value.trimmed().isEmpty()
+            : !previous.unreadSecretKeys.contains(key) && value.trimmed() == before.trimmed();
+        if (!unchanged) {
+            secrets.append({secret, value});
+        }
+    }
     m_secrets->saveSecrets(secrets);
     emit snapshotApplied(previous);
 }

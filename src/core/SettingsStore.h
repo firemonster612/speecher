@@ -37,7 +37,9 @@ public:
     explicit SettingsStore(QObject *parent = nullptr);
     // Carries every saved endpoint and CLI Proxy API key, so a settings
     // surface shows and saves them all. A key SecretStore::prefetch has not
-    // cached yet waits for the keyring (1.5 s at most).
+    // cached yet is read as SecretStore::secret reads it: on the main thread
+    // it stays unread while its read starts; elsewhere the read waits (1.5 s
+    // at most).
     AppSettings snapshot() const;
     // Never waits for the keyring on the GUI thread. Startup preparation
     // resolves unread keys for each provider it tries on its worker.
@@ -50,9 +52,10 @@ public:
     // an error if one is unreadable.
     static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
     // Saves the draft's stored fields, unless deleteAll ran. The rest are
-    // ignored; edit refuses a change to one. Its keys go through
-    // SecretStore::saveSecrets: one the keyring refuses is only logged, and
-    // one asked for while a write of it waits on the keyring is saved after it.
+    // ignored; edit refuses a change to one. The keys the draft changed go
+    // through SecretStore::saveSecrets: one the keyring refuses is only
+    // logged, and one asked for while a write of it waits on the keyring is
+    // saved after it.
     void applySnapshot(const AppSettings &draft);
     // Saves what change makes of a dictation snapshot, unless it returns
     // false; returns whether it saved. The snapshot leaves unread keyring

@@ -68,6 +68,7 @@ public:
     // The helper steps run off the calling thread; installed checks and the
     // rest run on it.
     struct Steps {
+        using SecretsDeleted = std::function<void(bool deleted, const QString &error)>;
         std::function<DesktopIntegrationRemoval()> removeDesktopIntegration;
         std::function<bool(QString *error)> removeShortcutRegistration;
         std::function<bool()> virtualKeyboardInstalled;
@@ -75,7 +76,8 @@ public:
         std::function<bool(QString *error)> removeVirtualKeyboard;
         std::function<bool()> keyHelperInstalled;
         std::function<bool(QString *error)> removeKeyHelper;
-        std::function<bool(QString *error)> deleteSecrets;
+        // Calls done once the keyring's secrets went, or with why not.
+        std::function<void(SecretsDeleted done)> deleteSecrets;
         // Whether the settings hold a deletion marker, which hides a key the
         // keyring kept (SecretStore::deletionMarkers).
         std::function<bool()> settingsHideKeys;

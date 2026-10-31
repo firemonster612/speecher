@@ -239,42 +239,34 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    SecretStore *secrets = m_settings.secrets();
-    // Its number before any keyring wait: the edit below asks for its secrets
-    // before it waits on one.
-    m_saving.insert(secret, secrets->nextRequest(secret));
-    // The endpoint key is saved with the server it belongs to, in one edit:
-    // an edit or key entered while the keyring makes this one wait comes
-    // after it and stands. A key entered while the CLI Proxy preset shows
-    // belongs to the proxy's server, not the Custom server saved behind it.
-    // Deleted settings take no edit; storeSecret refuses with why.
+    // A key entered while the CLI Proxy preset shows belongs to the proxy's
+    // server, not the Custom server saved behind it. Deleted settings take
+    // no edit; storeSecret refuses with why.
     if (secret == SecretStore::Secret::RefinementEndpointKey && !m_settings.raw().deleted()) {
-        m_settings.edit([&value](AppSettings &draft) {
-            if (draft.refinement.endpoint.preset == QStringLiteral("cliproxy")) {
-                detachRefinementEndpoint(draft);
+        m_settings.edit([](AppSettings &draft) {
+            if (draft.refinement.endpoint.preset != QStringLiteral("cliproxy")) {
+                return false;
             }
-            draft.refinement.endpoint.apiKey = value;
-            draft.unreadSecretKeys.removeAll(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey));
+            detachRefinementEndpoint(draft);
             return true;
         });
-        return;
     }
-    storeSecret(secrets, secret, value);
+    // After the edit: its own clear of the key is no answer to this save.
+    m_saving.insert(secret, value.isEmpty());
+    storeSecret(m_settings.secrets(), secret, value);
 }
 
-// The keyring's wait runs the event loop, where the UI or another caller can
-// save the same secret again. The store writes the one asked for last next
-// and answers only once it settles, so a field lets go of its key only once
-// the save it asked for last is kept. One a newer save from elsewhere
-// replaced was never written: the field stops waiting and keeps its key,
-// unless what replaced it was a clear, as a server change makes: the key the
-// field still holds was entered for the server before.
-void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, bool cleared, bool stored,
-                                  const QString &error, bool wrote)
+// The store answers only a secret's newest request, so a field lets go of
+// its key once the save it asked for last is kept. One a newer request from
+// elsewhere replaced while it waited its turn was never written: the field
+// stops waiting and keeps its key, unless what replaced it was a clear, as a
+// server change makes: the key the field still holds was entered for the
+// server before.
+void Accounts::secretSaveFinished(SecretStore::Secret secret, bool cleared, bool stored, const QString &error)
 {
     const auto waiting = m_saving.constFind(secret);
     const bool fieldWaited = waiting != m_saving.cend();
-    const bool own = fieldWaited && *waiting == request;
+    const bool own = fieldWaited && *waiting == cleared;
     if (fieldWaited) {
         m_saving.erase(waiting);
     }
@@ -285,13 +277,13 @@ void Accounts::secretSaveFinished(SecretStore::Secret secret, quint64 request, b
         }
         return;
     }
-    noteOtherWrite(secret, cleared, stored, error, wrote);
+    noteOtherWrite(secret, cleared, stored, error);
     if (fieldWaited && cleared) {
         emit draftSettled(secret);
     }
 }
 
-void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error, bool wrote)
+void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool stored, const QString &error)
 {
     const auto state = [this, secret] {
         return std::tuple(m_savedSecrets.value(secret, true), m_savedSecrets.contains(secret),
@@ -302,11 +294,7 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
     m_secretsWritten.insert(secret);
     m_pendingClears.insert(secret, m_settings.secrets()->deletionPending(secret));
     if (stored) {
-        // Every settings edit stores each key it holds again: only a write
-        // storage took succeeds where the row's failure didn't.
-        if (wrote) {
-            m_writeFailures.remove(secret);
-        }
+        m_writeFailures.remove(secret);
         m_savedSecrets.insert(secret, !cleared);
     } else {
         // A refused clear still hides the key (deletionPending).
@@ -315,7 +303,6 @@ void Accounts::noteOtherWrite(SecretStore::Secret secret, bool cleared, bool sto
         }
         m_writeFailures.insert(secret, {cleared, error});
     }
-    // Mostly no change, as above.
     if (state() != before) {
         emit secretsChanged();
     }

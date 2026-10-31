@@ -1,5 +1,6 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "providers/OpenAiRefiner.h"
 
@@ -27,7 +28,11 @@ std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const Re
     // made for, which may never have come: settings can have changed since.
     m_authResolvedByJob = false;
     const OpenAiAuthProvider signIn = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings);
-    if (!signIn.mayUseCodexOauth()) {
+    // This thread's store only starts a keyring read, so a settings API key
+    // it hasn't read is read on the worker too.
+    const bool unreadApiKey = accounts.openAiAuthMode == OpenAiAuthMode::Settings && m_secretStore
+        && !m_secretStore->isSecretKnown(SecretStore::Secret::OpenAiApiKey);
+    if (!signIn.mayUseCodexOauth() && !unreadApiKey) {
         return std::nullopt;
     }
 
