@@ -111,6 +111,15 @@ QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
     return nullptr;
 }
 
+// The caption of the Section item sits in.
+QString sectionCaption(QQuickItem *item)
+{
+    while (item && !item->property("caption").isValid()) {
+        item = item->parentItem();
+    }
+    return item ? item->property("caption").toString() : QStringLiteral("(no section)");
+}
+
 // The sidebar entry for pageId in window, or null.
 QQuickItem *sidebarEntry(QQuickWindow *window, const QString &pageId)
 {
@@ -574,6 +583,38 @@ private slots:
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
         // Scrolled into the window.
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
+        // Nothing uses the endpoint, so its section claims no role.
+        QCOMPARE(sectionCaption(row), QString());
+    }
+
+    // A search for a row whose section is hidden on purpose, such as the
+    // Global Shortcut where the desktop gives none, leaves it hidden.
+    void searchLeavesHiddenSectionsHidden()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->goToRow(QStringLiteral("shortcuts"), QStringLiteral("globalShortcut"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("globalShortcut"))));
+        QQuickItem *page = row;
+        while (page && !page->property("noShortcuts").isValid()) {
+            page = page->parentItem();
+        }
+        QVERIFY(page);
+        if (!page->property("noShortcuts").toBool()) {
+            QSKIP("This desktop gives global shortcuts, so the section shows anyway");
+        }
+        // Past the landing's wait and any Reveal's growth.
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+        QTest::qWait(kSettleMs);
+        QVERIFY(!row->isVisible());
     }
 
     // A service a Writing Profile chooses for itself shows its settings on
@@ -583,7 +624,11 @@ private slots:
         ApplicationController controller(true);
         QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
         controller.settings()->edit([](AppSettings &draft) {
-            draft.refinement.writingProfiles.first().speechProvider = QStringLiteral("endpoint");
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == QLatin1String("email")) {
+                    profile.speechProvider = QStringLiteral("endpoint");
+                }
+            }
             return true;
         });
         TrayIcon tray(&controller);
@@ -597,6 +642,7 @@ private slots:
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        QCOMPARE(sectionCaption(row), QStringLiteral("Used by your Email profile."));
     }
 
     // A proof keeps the text's own spacing, and closes up only the gap a
