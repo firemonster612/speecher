@@ -225,7 +225,11 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
         }
     });
     connect(m_stream, &SpeechStream::progress, this, [this](qint64 bytesSent) {
+        const quint64 batch = m_batch;
         reportProgress(bytesSent);
+        if (batch != m_batch) {
+            return;
+        }
         readDecodedAudio();
     });
     connect(m_stream, &SpeechStream::finished, this, &FileTranscriptionSession::finishTranscription);
@@ -286,7 +290,12 @@ void FileTranscriptionSession::finishListening()
         return;
     }
     m_microphone = Microphone::Stopping;
+    const quint64 batch = m_batch;
     m_input->stop();
+    // The batch may have been cancelled meanwhile, and another started.
+    if (batch != m_batch) {
+        return;
+    }
     m_microphone = Microphone::Off;
     m_stream->endInput();
 }
@@ -329,8 +338,12 @@ void FileTranscriptionSession::startFile()
 {
     m_current = {};
     m_current.path = m_paths.at(m_index);
-    m_stream->reset();
+    // Clearing the transcript reports it as the file's partial text.
     const quint64 batch = m_batch;
+    m_stream->reset();
+    if (batch != m_batch) {
+        return;
+    }
     emit fileStarted(m_index, m_current.path);
     if (batch != m_batch) {
         return;
@@ -372,12 +385,13 @@ void FileTranscriptionSession::streamFile()
 {
     m_streamedBytes = 0;
     m_streamDecoded = false;
+    const quint64 batch = m_batch;
     const bool decoding = decodeFile(
         [this](const QByteArray &pcm) {
             m_streamedBytes += pcm.size();
             m_stream->append(pcm);
         },
-        [this] {
+        [this, batch] {
             if (m_streamedBytes == 0) {
                 failFile(QStringLiteral("The file contains no audio"));
                 return;
@@ -387,12 +401,16 @@ void FileTranscriptionSession::streamFile()
             // The stream says nothing more when all of it was sent already.
             if (m_stream->unsentBytes() == 0) {
                 reportProgress(m_fileBytes);
+                if (batch != m_batch) {
+                    return;
+                }
             }
             m_stream->endInput();
         });
     // A decoder that failed at once has moved the batch on: the stream is the
-    // next file's now.
-    if (decoding) {
+    // next file's now. Its first buffers can report progress, where the
+    // batch may be cancelled.
+    if (decoding && batch == m_batch) {
         m_stream->prepare(m_batchSettings);
     }
 }
@@ -626,8 +644,13 @@ void FileTranscriptionSession::completeFile(const QString &text)
 void FileTranscriptionSession::failFile(const QString &message)
 {
     qWarning().noquote() << "file transcription failed path=" + m_current.path << "message=" + message;
-    // The provider will never finish the partial now.
+    // The provider will never finish the partial now. Committing it reports
+    // the text, where the batch may be cancelled.
+    const quint64 batch = m_batch;
     m_stream->attempts()->commitPartial();
+    if (batch != m_batch) {
+        return;
+    }
     m_current.raw = m_transcript->text();
     m_current.error = message;
     finishFile();
