@@ -9,7 +9,7 @@
 #include <QPointer>
 #include <QProcess>
 
-namespace speecher {
+namespace speecher::WaylandClipboardOwner {
 
 namespace {
 
@@ -58,7 +58,7 @@ QByteArray ownerPayload(const QList<ClipboardMimePart> &parts)
 
 } // namespace
 
-bool WaylandClipboardOwner::start(const QList<ClipboardMimePart> &parts, QString *error)
+bool start(const QList<ClipboardMimePart> &parts, QString *error)
 {
     static const bool cleanupRegistered = [] {
         qAddPostRoutine(stopActiveClipboardOwner);
@@ -113,4 +113,4 @@ bool WaylandClipboardOwner::start(const QList<ClipboardMimePart> &parts, QString
     return true;
 }
 
-} // namespace speecher
+} // namespace speecher::WaylandClipboardOwner

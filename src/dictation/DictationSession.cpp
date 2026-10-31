@@ -10,17 +10,25 @@
 #include "providers/RefinementChain.h"
 
 #include <QDebug>
+#include <QScopedValueRollback>
 #include <QTimer>
 
 #include <utility>
 
 namespace speecher {
 namespace {
+// A failure while finishing says what went wrong; a service that never took
+// the audio in time took too long to start; any other dropped the stream.
 QString partMissingWarning(const SpeechFailure &failure)
 {
-    return failure.phase == SpeechPhase::Finalize
-        ? QStringLiteral("Part of the dictation may be missing. ") + failure.message
-        : QStringLiteral("Part of the dictation may be missing. The connection dropped.");
+    const QString missing = QStringLiteral("Part of the dictation may be missing. ");
+    if (failure.phase == SpeechPhase::Finalize) {
+        return missing + failure.message;
+    }
+    if (failure.phase == SpeechPhase::Connect && failure.kind == ProviderFailureKind::Timeout) {
+        return missing + QStringLiteral("A speech service took too long to start.");
+    }
+    return missing + QStringLiteral("The connection dropped.");
 }
 }
 
@@ -138,17 +146,21 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
 
         qWarning().noquote() << "audio capture failed transcriptEmpty=" << m_transcript->isEmpty()
-                             << "message=" + message;
-        if (!m_transcript->isEmpty()) {
+                             << "heardSpeech=" << m_heardSpeech << "message=" + message;
+        // Speech heard may have no text yet: a provider that answers once the
+        // input ends, as an endpoint does, still holds it.
+        if (!m_transcript->isEmpty() || m_heardSpeech) {
             m_lastMessage = message;
             m_usedRawTranscript = true;
             stopListening();
             return;
         }
 
-        m_speech->cancel();
-        failSession(message);
-        stopAudio();
+        letGoOfMicrophone([this, &message] {
+            m_speech->cancel();
+            failSession(message);
+            stopAudio();
+        });
     });
 }
 
@@ -287,7 +299,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     // not apply. One that lands while the microphone stops waits as any start
     // does, the review shown as it is until it begins.
     if (m_state == DictationState::Reviewing && !m_review.followingUp()) {
-        if (m_audioStopDepth > 0) {
+        if (startWaits()) {
             m_pendingStart = SessionOverrides{};
         } else {
             startFollowUp();
@@ -298,10 +310,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     if (m_state != DictationState::Idle && m_state != DictationState::Error && !followUp) {
         return;
     }
-    if (m_audioStopDepth > 0) {
-        // A start that lands inside the microphone's stop (a cancel's nested
-        // event loop) would open it only for the stop to close it again. It
-        // waits for the stop instead, and a stop or cancel meanwhile drops it.
+    if (startWaits()) {
         m_pendingStart = overrides;
         return;
     }
@@ -331,7 +340,10 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_usedRawTranscript = false;
     m_providerHistory = {};
     m_listeningMs = 0;
-    setState(DictationState::Starting);
+    const quint64 step = setState(DictationState::Starting);
+    if (step != m_step) {
+        return;
+    }
     qInfo().noquote() << "startListening credentialsPath=" + settings.accounts.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_speechWarning.clear();
@@ -339,6 +351,11 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_transcript->clear();
     m_transcriptPipeline = {};
     emit previewDisplayChanged({});
+    // The transcript announced itself cleared, and the preview went blank:
+    // a handler of either may have stopped or cancelled the start.
+    if (step != m_step) {
+        return;
+    }
     emit popupShowRequested(generation);
     QTimer::singleShot(s_popupPaintFallbackMs, this, [this, generation] {
         continueStartupAfterPopup(generation);
@@ -551,11 +568,12 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Refining) {
+        // First: cancelling can make a refiner emit at once.
+        m_refinementGeneration = 0;
         m_refinementChain->cancel();
         if (m_refiner) {
             m_refiner->cancel();
         }
-        m_refinementGeneration = 0;
         if (m_transcriptPipeline.editsSelection) {
             forgetSession();
             emit popupHideRequested();
@@ -579,10 +597,12 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Starting) {
-        discard();
-        emit popupHideRequested();
-        setState(DictationState::Idle);
-        stopAudio();
+        letGoOfMicrophone([this] {
+            discard();
+            emit popupHideRequested();
+            setState(DictationState::Idle);
+            stopAudio();
+        });
         return;
     }
     if (m_state != DictationState::Listening) {
@@ -613,14 +633,45 @@ void DictationSession::cancelForShutdown()
     if (m_state == DictationState::Idle) {
         return;
     }
-    m_review.end();
-    discard();
-    emit popupHideRequested();
-    setState(DictationState::Idle);
-    stopAudio();
+    letGoOfMicrophone([this] {
+        m_review.end();
+        discard();
+        emit popupHideRequested();
+        setState(DictationState::Idle);
+        stopAudio();
+    });
+}
+
+// A start made while the session is still letting go of its microphone,
+// inside the microphone's stop or anywhere in an end that announces Idle or
+// Error before it stops it, would open the microphone only for that stop to
+// close it again. It waits until the session has let go instead, and a stop
+// or cancel meanwhile drops it.
+bool DictationSession::startWaits() const
+{
+    return m_audioStopDepth > 0 || m_lettingGoOfMicrophone;
+}
+
+// Runs end, which announces the session's end and then stops the microphone,
+// and starts what waited for it once the outermost such end is over; a stop
+// still running starts it itself.
+void DictationSession::letGoOfMicrophone(const std::function<void()> &end)
+{
+    {
+        const QScopedValueRollback<bool> lettingGo(m_lettingGoOfMicrophone, true);
+        end();
+    }
+    if (!m_lettingGoOfMicrophone && m_audioStopDepth == 0) {
+        startPendingLater();
+    }
 }
 
 void DictationSession::cancel()
+{
+    letGoOfMicrophone([this] { cancelSession(); });
+}
+
+void DictationSession::cancelSession()
 {
     const bool startDropped = std::exchange(m_pendingStart, std::nullopt).has_value();
     if (m_state == DictationState::Idle || m_state == DictationState::Delivering) {
@@ -654,15 +705,19 @@ void DictationSession::cancel()
     }
     qInfo().noquote() << "cancel requested state=" + stateName();
     discard();
-    setState(DictationState::Idle);
-    emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
-    const quint64 generation = m_generation;
-    // The live setting: discard() has already dropped the session snapshot.
-    QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this, [this, generation] {
-        if (generation == m_generation && m_state == DictationState::Idle) {
-            emit popupHideRequested();
-        }
-    });
+    // A handler of Idle may start another session, which the receipt of
+    // this one must not cover; the microphone still stops last.
+    if (const quint64 step = setState(DictationState::Idle); step == m_step) {
+        emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
+        const quint64 generation = m_generation;
+        // The live setting: discard() has already dropped the session snapshot.
+        QTimer::singleShot(m_settings->dictationSnapshot().output.completionStatusDurationMs, Qt::PreciseTimer, this,
+                           [this, generation] {
+                               if (generation == m_generation && m_state == DictationState::Idle) {
+                                   emit popupHideRequested();
+                               }
+                           });
+    }
     stopAudio();
 }
 
@@ -798,14 +853,24 @@ void DictationSession::stopAudio()
     if (const quint64 step = std::exchange(m_restartStep, 0); step != 0 && step == m_step) {
         restartMicrophone(step);
     }
-    if (m_pendingStart) {
-        // After the caller has settled the session it stopped the microphone for.
-        QTimer::singleShot(0, this, [this] {
-            if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
-                startSession(*overrides);
-            }
-        });
+    // letGoOfMicrophone() starts it once its whole end is over.
+    if (!m_lettingGoOfMicrophone) {
+        startPendingLater();
     }
+}
+
+// After the caller has settled the session it ended or stopped the
+// microphone for.
+void DictationSession::startPendingLater()
+{
+    if (!m_pendingStart) {
+        return;
+    }
+    QTimer::singleShot(0, this, [this] {
+        if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
+            startSession(*overrides);
+        }
+    });
 }
 
 bool DictationSession::startAudio(QString *error)
@@ -913,7 +978,11 @@ void DictationSession::continueStartupAfterPreparation()
 void DictationSession::failStartup(const QString &message, const PopupErrorAction &fix)
 {
     qWarning().noquote() << "speech unavailable message=" + message;
+    const quint64 step = m_step;
     emit previewDisplayChanged({});
+    if (step != m_step) {
+        return;
+    }
     failSession(message, fix);
 }
 
@@ -979,9 +1048,13 @@ void DictationSession::beginRefinement(quint64 generation)
 void DictationSession::startRefiner()
 {
     const RefinementSettings refinement = m_refinementChain->currentSettings();
+    // A handler of the sign-in or of Refining may have stopped or cancelled
+    // the session, and with it dropped the settings the refiner runs with.
+    const quint64 step = m_step;
     noteSignIn(refinement.providerId, true);
-
-    enterRefining();
+    if (step != m_step || !enterRefining()) {
+        return;
+    }
     m_refinementStream.clear();
     m_previewReplacements = BindingProcessor::replacementsByPlaceholder(m_transcriptPipeline.bindingResult.placeholders);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
@@ -1007,13 +1080,16 @@ void DictationSession::startRefiner()
                       m_sessionSettings->accounts);
 }
 
-void DictationSession::enterRefining()
+bool DictationSession::enterRefining()
 {
     if (m_state == DictationState::Refining) {
-        return;
+        return true;
     }
-    setState(DictationState::Refining, m_lastMessage);
+    // Before the state is announced: a handler that ends the session leaves
+    // no refinement of its generation behind.
     m_refinementGeneration = m_generation;
+    const quint64 step = setState(DictationState::Refining, m_lastMessage);
+    return step == m_step;
 }
 
 // A refiner that fails to answer for want of a service makes way for the
@@ -1022,7 +1098,12 @@ void DictationSession::enterRefining()
 void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
 {
     if (permitsProviderFallback(failure.kind)) {
+        const quint64 step = m_step;
         passOverRefiner(m_refinementChain->currentId(), Stage::Connect, failure);
+        // Its sign-in and the emptied preview are announced first.
+        if (step != m_step) {
+            return;
+        }
         m_refinementChain->prepareNext(*m_sessionSettings, m_transcriptPipeline.refinementSettings);
         return;
     }
@@ -1096,7 +1177,11 @@ void DictationSession::startFollowUp()
 {
     qInfo() << "follow-up requested";
     m_review.startFollowUp();
+    const quint64 step = m_step;
     emitReview();
+    if (step != m_step) {
+        return;
+    }
     startSession({});
 }
 
@@ -1121,7 +1206,9 @@ void DictationSession::enterReview()
     // The controller takes the review's keys as the state changes; when that
     // changes their names, setReviewKeys has already shown the review.
     const ReviewKeys keys = m_review.keys();
-    setState(DictationState::Reviewing);
+    if (const quint64 step = setState(DictationState::Reviewing); step != m_step) {
+        return;
+    }
     if (m_review.keys() == keys) {
         emitReview();
     }
@@ -1191,7 +1278,6 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         return;
     }
     const AppSettings settings = *m_sessionSettings;
-    const quint64 generation = m_generation;
     const QString appName = !m_target.applicationName.isEmpty() ? m_target.applicationName
         : !m_target.processName.isEmpty()                      ? m_target.processName
                                                                : QStringLiteral("Unknown app");
@@ -1307,8 +1393,10 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     const PopupErrorAction fix = m_speech->triedFallbacks(m_providerHistory.issues)
         ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")}
         : PopupErrorAction{};
-    failSession(message, fix);
-    stopAudio();
+    letGoOfMicrophone([this, &message, &fix] {
+        failSession(message, fix);
+        stopAudio();
+    });
 }
 
 bool DictationSession::selectTranscriptRefiner(const QString &providerId)
@@ -1381,7 +1469,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             // Target acts on the review as it does during a manual Replace.
             reviseSelectionEdit(*refined);
             m_refinementGeneration = 0;
-            setState(DictationState::Reviewing);
+            if (const quint64 step = setState(DictationState::Reviewing); step != m_step) {
+                return;
+            }
             replaceWithRevision();
         } else if (refined) {
             deliverFinal(*refined);

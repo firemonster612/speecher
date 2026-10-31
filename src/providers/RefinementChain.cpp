@@ -54,6 +54,7 @@ void RefinementChain::setReachability(Reachability reachability)
 
 void RefinementChain::prepare(const AppSettings &settings, const RefinementSettings &refinement)
 {
+    ++m_walkGeneration;
     m_settings = settings;
     m_refinement = refinement;
     walk();
@@ -67,6 +68,7 @@ void RefinementChain::prepareNext(const AppSettings &settings, const RefinementS
 
 void RefinementChain::cancel()
 {
+    ++m_walkGeneration;
     m_runner->cancel();
 }
 
@@ -75,10 +77,14 @@ void RefinementChain::cancel()
 // exhausted(), which a session may answer by walking again.
 void RefinementChain::walk()
 {
+    const quint64 generation = m_walkGeneration;
     for (; m_index < m_providerIds.size(); ++m_index) {
         const QString providerId = m_providerIds.at(m_index);
         if (m_reachability == Reachability::Offline && needsInternet(ProviderRole::Refinement, providerId, m_settings)) {
             emit passedOver(providerId, Stage::Prepare, noInternetFailure());
+            if (generation != m_walkGeneration) {
+                return;
+            }
             continue;
         }
         m_refiner = m_acquire(providerId);
@@ -86,16 +92,21 @@ void RefinementChain::walk()
             emit passedOver(providerId, Stage::Prepare,
                             {ProviderFailureKind::Unavailable,
                              QStringLiteral("Unknown refinement provider: %1").arg(providerId)});
+            if (generation != m_walkGeneration) {
+                return;
+            }
             continue;
         }
         if (SettingsStore::hasUnreadProviderSecrets(m_settings, ProviderRole::Refinement, providerId)) {
-            emit preparing();
+            // Started first: a handler of preparing() that cancels the walk
+            // cancels the job with it.
             m_runner->resolveSecrets(ProviderRole::Refinement, providerId, m_settings);
+            emit preparing();
             return;
         }
         if (std::optional<PreparationJob> refresh = m_refiner->createRefreshJob(currentSettings(), m_settings.accounts)) {
-            emit preparing();
             m_runner->prepareRefiner(std::move(*refresh));
+            emit preparing();
             return;
         }
         prepareCurrent();
@@ -118,7 +129,11 @@ void RefinementChain::prepareCurrent()
 
 void RefinementChain::passOver(const ProviderFailure &failure)
 {
+    const quint64 generation = m_walkGeneration;
     emit passedOver(currentId(), Stage::Prepare, failure);
+    if (generation != m_walkGeneration) {
+        return;
+    }
     ++m_index;
     walk();
 }
@@ -139,7 +154,11 @@ void RefinementChain::useResolvedSecrets(const std::optional<ProviderFailure> &f
         return;
     }
     m_settings = settings;
+    const quint64 generation = m_walkGeneration;
     emit secretsResolved(m_settings);
+    if (generation != m_walkGeneration) {
+        return;
+    }
     walk();
 }
 

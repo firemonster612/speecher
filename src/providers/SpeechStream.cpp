@@ -95,6 +95,7 @@ void SpeechStream::reset()
 
 void SpeechStream::prepare(const AppSettings &settings)
 {
+    ++m_generation;
     m_settings = settings;
     SpeechChain *chain = m_attempts->chain();
     chain->begin(m_settings.speech.providerId, m_settings.speech.fallbackProviderIds);
@@ -198,6 +199,7 @@ void SpeechStream::resume()
 
 void SpeechStream::release()
 {
+    ++m_generation;
     hold();
     m_attempts->chain()->cancel();
     m_attempts->release();
@@ -208,8 +210,15 @@ void SpeechStream::release()
 // The provider takes the input from the oldest audio kept.
 void SpeechStream::beginStreaming()
 {
+    const quint64 generation = m_generation;
     m_transcript->clear();
+    if (generation != m_generation) {
+        return;
+    }
     emit startedOver();
+    if (generation != m_generation) {
+        return;
+    }
     rewindTo(m_pcmDropped);
     m_inputFinished = false;
     m_attemptStart = m_sent;
@@ -260,7 +269,11 @@ void SpeechStream::sendNextChunk()
         return;
     }
     markUtterancesOnceSent();
+    const quint64 generation = m_generation;
     emit progress(m_sent);
+    if (generation != m_generation) {
+        return;
+    }
     // Once a stream has connected, no other provider takes the input from its
     // start (see handleFailure) and its next stream picks up at the next
     // unsent chunk, so what it was sent is never needed again.

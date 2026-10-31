@@ -4,11 +4,9 @@
 #include "output/WaylandClipboardOwner.h"
 #include "output/WaylandClipboardProcess.h"
 
-#include <QGuiApplication>
-#include <QClipboard>
 #include <QElapsedTimer>
 #include <QGuiApplication>
-#include <QMimeData>
+#include <QStringList>
 #include <QUuid>
 
 #include <utility>
@@ -98,11 +96,8 @@ bool copyBytes(const QByteArray &data, const QString &mimeType, QString *error)
 
 WlClipboardDelivery::WlClipboardDelivery(QObject *parent)
     : QObject(parent)
-    , m_owner(std::make_unique<WaylandClipboardOwner>())
 {
 }
-
-WlClipboardDelivery::~WlClipboardDelivery() = default;
 
 bool WlClipboardDelivery::isAvailable()
 {
@@ -121,49 +116,7 @@ bool WlClipboardDelivery::isWaylandSession()
 
 bool WlClipboardDelivery::canSnapshot()
 {
-    if (isWaylandSession()) {
-        return !WaylandClipboardProcess::wlPasteExecutable().isEmpty();
-    }
-    return qApp && QGuiApplication::clipboard();
-}
-
-bool WlClipboardDelivery::readText(QString *text, QString *error)
-{
-    if (!text) {
-        if (error) {
-            *error = QStringLiteral("No clipboard text destination");
-        }
-        return false;
-    }
-    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
-        *text = QGuiApplication::clipboard()->text(QClipboard::Clipboard);
-        return true;
-    }
-
-    const QString executable = WaylandClipboardProcess::wlPasteExecutable();
-    if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("wl-paste is not installed");
-        }
-        return false;
-    }
-    QByteArray output;
-    if (!WaylandClipboardProcess::run(
-            executable,
-            QStringLiteral("wl-paste"),
-            {QStringLiteral("--no-newline"), QStringLiteral("--type"), QStringLiteral("text/plain")},
-            nullptr,
-            &output,
-            error)) {
-        return false;
-    }
-    *text = QString::fromUtf8(output);
-    return true;
-}
-
-QStringList WlClipboardDelivery::snapshotMimeTypes(const QStringList &offeredMimeTypes)
-{
-    return offeredMimeTypes;
+    return !WaylandClipboardProcess::wlPasteExecutable().isEmpty();
 }
 
 bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable,
@@ -184,7 +137,7 @@ bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailab
 
     m_copiedParts.clear();
     parts.append({copyMarkerMimeType(), QUuid::createUuid().toByteArray()});
-    if (m_owner->start(parts, error)) {
+    if (WaylandClipboardOwner::start(parts, error)) {
         m_copiedParts = parts;
         if (htmlAvailable) {
             *htmlAvailable = content.html.has_value();
@@ -211,24 +164,6 @@ bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
         return false;
     }
     *snapshot = {};
-
-    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
-        const QMimeData *mime = QGuiApplication::clipboard()->mimeData(QClipboard::Clipboard);
-        if (mime) {
-            for (const QString &format : mime->formats()) {
-                const QByteArray data = mime->data(format);
-                if (!data.isEmpty()) {
-                    snapshot->parts.append({format, data});
-                }
-            }
-            if (!snapshot->parts.isEmpty()) {
-                snapshot->hasData = true;
-                snapshot->mimeType = snapshot->parts.first().mimeType;
-                snapshot->data = snapshot->parts.first().data;
-            }
-            return true;
-        }
-    }
 
     const QString executable = WaylandClipboardProcess::wlPasteExecutable();
     if (executable.isEmpty()) {
@@ -259,23 +194,17 @@ bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
         return false;
     }
 
-    QStringList offeredMimeTypes;
+    // Every offered format, private ones too: restoring less than the owner
+    // offered would drop images or app-private data.
+    QStringList mimeTypes;
     for (const QString &line : QString::fromUtf8(typeOutput).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QString mimeType = line.trimmed();
         if (!mimeType.isEmpty()) {
-            offeredMimeTypes << mimeType;
+            mimeTypes << mimeType;
         }
-    }
-    const QStringList mimeTypes = snapshotMimeTypes(offeredMimeTypes);
-
-    if (offeredMimeTypes.isEmpty()) {
-        return true;
     }
     if (mimeTypes.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("The current clipboard has no restorable formats");
-        }
-        return false;
+        return true;
     }
 
     qsizetype capturedBytes = 0;
@@ -377,29 +306,9 @@ bool WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snap
 
 bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error)
 {
-    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
-        if (!snapshot.hasData) {
-            QGuiApplication::clipboard()->clear(QClipboard::Clipboard);
-            return true;
-        }
-        auto *mime = new QMimeData;
-        const QList<ClipboardMimePart> parts = snapshot.parts.isEmpty()
-            ? QList<ClipboardMimePart>{{snapshot.mimeType, snapshot.data}}
-            : snapshot.parts;
-        for (const ClipboardMimePart &part : parts) {
-            mime->setData(
-                part.mimeType.isEmpty() ? QStringLiteral("application/octet-stream")
-                                        : part.mimeType,
-                part.data);
-        }
-        QGuiApplication::clipboard()->setMimeData(mime, QClipboard::Clipboard);
-        return true;
-    }
-
     if (!snapshot.hasData) {
         if (!WaylandClipboardProcess::helperExecutable().isEmpty()) {
-            WaylandClipboardOwner owner;
-            return owner.start({}, error);
+            return WaylandClipboardOwner::start({}, error);
         }
         const QString executable = WaylandClipboardProcess::wlCopyExecutable();
         if (executable.isEmpty()) {
@@ -424,8 +333,7 @@ bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *er
           }}
         : snapshot.parts;
     if (!WaylandClipboardProcess::helperExecutable().isEmpty()) {
-        WaylandClipboardOwner owner;
-        return owner.start(parts, error);
+        return WaylandClipboardOwner::start(parts, error);
     }
     if (parts.size() == 1) {
         return copyBytes(parts.first().data, parts.first().mimeType, error);

@@ -725,7 +725,8 @@ private slots:
 
     // The session holds no more than the connect budget's worth of audio,
     // ten seconds, for a provider still preparing: past it the speech ends
-    // with what was heard, and the provider is passed over.
+    // with what was heard, the provider is passed over, and the warning says
+    // it took too long.
     void aProviderPreparingPastTheConnectBudgetEndsTheSpeech()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
@@ -747,7 +748,8 @@ private slots:
         QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
         QCOMPARE(outcome.first().at(0).toString(),
                  QStringLiteral("Used raw transcript • Sent to the app • ChatGPT Codex couldn't be reached and Local Model "
-                                "didn't answer. • Part of the dictation may be missing. The connection dropped."));
+                                "didn't answer. • Part of the dictation may be missing. A speech service took too long "
+                                "to start."));
         QTest::qWait(400);
         QCOMPARE(local->startCalls, 0);
     }
@@ -1375,19 +1377,24 @@ private slots:
 
     // The microphone failing after words were heard delivers them, as it
     // always has: as the raw transcript, unless refinement then cleans them up.
+    // So does speech a provider holds without text until the input ends.
     void aCaptureFailureAfterWordsDeliversThem_data()
     {
         QTest::addColumn<bool>("refines");
+        QTest::addColumn<bool>("heldUntilTheEnd");
         QTest::addColumn<QString>("message");
         QTest::addColumn<int>("outcome");
         QTest::newRow("without refinement")
-            << false << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
-        QTest::newRow("refined") << true << QStringLiteral("Sent to the app") << int(PopupOutcome::Inserted);
+            << false << false << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
+        QTest::newRow("refined") << true << false << QStringLiteral("Sent to the app") << int(PopupOutcome::Inserted);
+        QTest::newRow("held by the provider")
+            << false << true << QStringLiteral("Used raw transcript • Sent to the app") << int(PopupOutcome::Fallback);
     }
 
     void aCaptureFailureAfterWordsDeliversThem()
     {
         QFETCH(bool, refines);
+        QFETCH(bool, heldUntilTheEnd);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")},
                      refines ? QStringList{QStringLiteral("openai")} : QStringList{QStringLiteral("none")});
         if (refines) {
@@ -1396,13 +1403,67 @@ private slots:
         }
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
-        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        if (heldUntilTheEnd) {
+            emit rig.audio.levelChanged(0.5f);
+            codex->onFinishInput = [codex] { codex->emitFinalText(QStringLiteral("spoken words")); };
+        } else {
+            codex->emitFinalText(QStringLiteral("spoken words"));
+        }
         rig.audio.emitFailure(QStringLiteral("The microphone was disconnected"));
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(rig.delivery.lastText, refines ? QStringLiteral("Spoken words.") : QStringLiteral("spoken words"));
         QTEST(outcome.first().at(0).toString(), "message");
         QTEST(int(outcome.first().at(1).value<PopupOutcome>()), "outcome");
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
+    }
+
+    // A cancel or stop as a refiner is passed over, from the emptied
+    // preview, ends refinement there: the fallback is never prepared or
+    // asked, and no error follows. A stop delivers what was heard.
+    void aCancelOrStopAsARefinerIsPassedOverPreparesNoFallback_data()
+    {
+        QTest::addColumn<bool>("failsToAnswer");
+        QTest::addColumn<bool>("stops");
+        QTest::newRow("fails to prepare") << false << false;
+        QTest::newRow("fails to answer") << true << false;
+        QTest::newRow("stopped as it fails to answer") << true << true;
+    }
+
+    void aCancelOrStopAsARefinerIsPassedOverPreparesNoFallback()
+    {
+        QFETCH(bool, failsToAnswer);
+        QFETCH(bool, stops);
+        ChainRig rig({QStringLiteral("local")}, {QStringLiteral("openai"), QStringLiteral("endpoint")});
+        FakeRefiner *primary = rig.refiners[QStringLiteral("openai")];
+        FakeRefiner *fallback = rig.refiners[QStringLiteral("endpoint")];
+        if (!failsToAnswer) {
+            primary->prepareFailure = ProviderFailure{Network, QStringLiteral("offline")};
+        }
+        rig.listen();
+        bool ended = false;
+        connect(rig.session.get(), &DictationSession::popupRefinementPreviewChanged, rig.session.get(), [&] {
+            if (!std::exchange(ended, true)) {
+                stops ? rig.session->stopListening() : rig.session->cancel();
+            }
+        });
+        QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        if (failsToAnswer) {
+            QTRY_COMPARE(primary->refineCalls, 1);
+            primary->emitFailure(QStringLiteral("offline"), Network);
+        }
+        QTest::qWait(100);
+
+        QVERIFY(ended);
+        QCOMPARE(rig.session->state(), stops ? DictationState::Delivering : DictationState::Idle);
+        for (const QList<QVariant> &state : std::as_const(states)) {
+            QVERIFY(state.first().value<DictationState>() != DictationState::Error);
+        }
+        QCOMPARE(fallback->prepareCalls, 0);
+        QCOMPARE(fallback->refineCalls, 0);
+        QCOMPARE(rig.delivery.calls, stops ? 1 : 0);
     }
 
     // A sign-in turned down: a successful outcome with Open Accounts, up

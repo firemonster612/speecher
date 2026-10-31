@@ -17,6 +17,7 @@
 #include <QPointer>
 #include <QVector>
 
+#include <functional>
 #include <optional>
 
 class QTimer;
@@ -88,7 +89,8 @@ public slots:
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
     // While a selection edit is reviewed it keeps the original, silently.
     // Dismisses an error; does nothing while idle or delivering, when the text
-    // is already out.
+    // is already out. A start made while it lets go of the microphone begins
+    // once it has; a cancel made then drops that start.
     void cancel();
     // Ends a review by putting the edit in place of the selection, or on the
     // clipboard when the selection is no longer the one it was made from.
@@ -164,7 +166,8 @@ private:
     void failSession(const QString &message, const PopupErrorAction &fix = {});
     void beginRefinement(quint64 generation);
     void startRefiner();
-    void enterRefining();
+    // False when a handler of Refining moved the session on.
+    bool enterRefining();
     void handleRefinementFailure(const ProviderFailure &failure);
     void passOverRefiner(const QString &providerId, Stage stage, const ProviderFailure &failure);
     void retireRefiner();
@@ -183,6 +186,10 @@ private:
     // which commands and provider signals are dispatched. Callers settle the
     // session before stopping and recheck it afterwards.
     void stopAudio();
+    bool startWaits() const;
+    void letGoOfMicrophone(const std::function<void()> &end);
+    void startPendingLater();
+    void cancelSession();
     bool startAudio(QString *error);
     void restartMicrophone(quint64 step);
     void setMicrophoneOpen(bool open);
@@ -226,14 +233,20 @@ private:
     QString m_lastTranscript;
     EditReview m_review;
     TranscriptPipelineResult m_transcriptPipeline;
+    // Two counters say whether the session moved on. m_step answers it for
+    // code that just ran something synchronous, such as an emit or a call
+    // into a provider: every stop, cancel and failure goes through
+    // setState(), so a changed m_step means a handler moved the session on.
+    // m_generation, which moves on as a session starts and as one is
+    // discarded, is for what answers later: timers, a popup that was
+    // painted, a screenshot, a refiner's revision.
     quint64 m_generation = 0;
     // The step the microphone was last started at; 0 once stopped.
     quint64 m_audioStep = 0;
     // A resume's step whose microphone restarts once the outermost stop
     // returns; 0 for none.
     quint64 m_restartStep = 0;
-    // Bumped by every setState(), so any announcement, even of the same
-    // state, tells a caller the session moved on under it.
+    // Bumped by every setState(), even to the same state.
     quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
@@ -259,9 +272,11 @@ private:
     ProviderHistory m_providerHistory;
     // What the system last said about the internet.
     Reachability m_reachability = Reachability::Unknown;
-    // Inside stopAudio(); a session start waits in m_pendingStart until it
-    // returns, unless a stop or cancel drops it first.
+    // Inside stopAudio(), or inside letGoOfMicrophone(): a session start
+    // waits in m_pendingStart until it is over, unless a stop or cancel drops
+    // it first.
     int m_audioStopDepth = 0;
+    bool m_lettingGoOfMicrophone = false;
     bool m_microphoneOpen = false;
     bool m_microphoneHeld = false;
     bool m_listening = false;

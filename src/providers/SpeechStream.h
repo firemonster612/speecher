@@ -155,6 +155,10 @@ private:
     bool m_streaming = false;
     // Why each speech provider the stream passed could not help.
     QList<ProviderAttemptIssue> m_issues;
+    // Moves on as the stream is released or prepared again. A handler of any
+    // signal the stream emits may do either, so the stream checks it after
+    // each one it goes on from.
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher
