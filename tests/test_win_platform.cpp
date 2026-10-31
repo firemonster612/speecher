@@ -514,11 +514,11 @@ private slots:
         QApplication::clipboard()->setMimeData(original);
 
         ClipboardDelivery clipboard;
-        ClipboardSnapshot snapshot;
-        QString error;
-        QVERIFY2(clipboard.capture(&snapshot, &error), qPrintable(error));
+        const ClipboardCaptured captured = test::captureAndWait(clipboard);
+        QVERIFY2(captured.ok, qPrintable(captured.error));
         QApplication::clipboard()->setText(QStringLiteral("after"));
-        QVERIFY2(clipboard.restore(snapshot, &error), qPrintable(error));
+        const ClipboardRestored putBack = test::restoreAndWait(clipboard, captured.snapshot);
+        QVERIFY2(putBack.ok, qPrintable(putBack.error));
 
         const QMimeData *restored = QApplication::clipboard()->mimeData();
         QCOMPARE(restored->text(), QStringLiteral("before"));

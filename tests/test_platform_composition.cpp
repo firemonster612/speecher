@@ -2974,6 +2974,24 @@ private slots:
         QCOMPARE(deliveredOk, std::optional<bool>(true));
     }
 
+    // Deliveries that overlap share one suspension, which lifts with the last
+    // answer: the binders do not count theirs.
+    void overlappingDeliveriesKeepShortcutsSuspendedUntilTheLastAnswer()
+    {
+        FakeGlobalShortcutBinder dictation;
+        FakeDelivery inner;
+        inner.holdsAnswer = true;
+        ShortcutSuspendingDelivery delivery(&inner, {&dictation});
+
+        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {});
+        QCOMPARE(dictation.suspendCount, 1);
+        inner.answer();
+        QCOMPARE(dictation.resumeCount, 0);
+        inner.answer();
+        QCOMPARE(dictation.resumeCount, 1);
+    }
+
 #ifdef Q_OS_LINUX
     // The desktop-service binders take combinations only, so each turns a
     // single-key binding away with a reason the UI can show, while
