@@ -1449,6 +1449,44 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
     }
 
+    // A failure that switched one session's speech provider is not the next
+    // session's: when its chain runs out, nothing had switched it.
+    void aSwitchFailureDoesNotCarryIntoTheNextSession()
+    {
+        ProviderRegistry registry;
+        std::map<QString, FakeSpeechTranscriber *> speech;
+        for (const QString id : {QStringLiteral("claude"), QStringLiteral("codex")}) {
+            registerFakeSpeechProvider(registry, &speech[id], id);
+            registry.speechProvider(id);
+        }
+        TranscriptState transcript;
+        DictationSpeech dictation(&registry, &transcript);
+        QList<SpeechFailure> switchFailures;
+        connect(&dictation, &DictationSpeech::exhausted, this,
+                [&](const SpeechFailure &failure) { switchFailures << failure; });
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("en");
+        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.fallbackProviderIds = {QStringLiteral("codex")};
+
+        dictation.begin();
+        QVERIFY(dictation.selectProviders(settings.speech));
+        dictation.start(settings, nullptr);
+        speech[QStringLiteral("claude")]->emitFailure(QStringLiteral("claude is down"), false, SpeechPhase::Streaming,
+                                                      ProviderFailureKind::Server);
+        QCOMPARE(speech[QStringLiteral("codex")]->startCalls, 1);
+
+        speech[QStringLiteral("codex")]->prepareFailure =
+            ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("codex is down")};
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {};
+        dictation.begin();
+        QVERIFY(dictation.selectProviders(settings.speech));
+        dictation.start(settings, nullptr);
+        QCOMPARE(switchFailures.size(), 1);
+        QCOMPARE(switchFailures.first().message, QString());
+    }
+
     void noSpeechServiceNamesEachProviderAndWhy()
     {
         QCOMPARE(noSpeechServiceText({speechIssue(QStringLiteral("codex"), Stage::Prepare, ProviderFailureKind::Network),

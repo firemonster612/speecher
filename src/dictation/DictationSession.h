@@ -152,6 +152,7 @@ private:
     void continueStartupAfterPopup(quint64 generation);
     bool selectProviders();
     void speechChainExhausted(const SpeechFailure &switchFailure);
+    void noteSpeechProvider(const SpeechProviderNote &note);
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
     bool offlineFor(ProviderRole role, const QString &providerId) const;
     void noteSignIn(const QString &providerId, bool signedIn);
