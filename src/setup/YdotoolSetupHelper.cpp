@@ -1,5 +1,4 @@
 #include "HelperCommands.h"
-#include "YdotoolSetupState.h"
 #include "YdotoolSetupTransaction.h"
 
 #include <chrono>
@@ -98,14 +97,6 @@ bool installYdotoolPackage(std::string &error)
     return false;
 }
 
-bool writeState(bool packageWasInstalled, const std::string &user, std::string &error)
-{
-    return writeFile(std::string(stateFilePath),
-                     speecher::ydotoolSetupStateText(
-                         packageWasInstalled, serviceFilePath(), user),
-                     error);
-}
-
 bool fileExists(const std::string &path)
 {
     std::error_code ignored;
@@ -136,10 +127,18 @@ bool writeSetupFile(const std::string &path,
     return true;
 }
 
-bool serviceEnabledForEveryAccount()
+// The other accounts the virtual keyboard is set up for: the group's members
+// besides user.
+std::vector<std::string> otherConfiguredUsers(const std::string &user)
 {
-    std::string ignored;
-    return run("systemctl", {"--global", "is-enabled", std::string(serviceName)}, ignored);
+    std::vector<std::string> others;
+    const struct group *configured = getgrnam(std::string(groupName).c_str());
+    for (char **member = configured ? configured->gr_mem : nullptr; member && *member; ++member) {
+        if (user != *member) {
+            others.emplace_back(*member);
+        }
+    }
+    return others;
 }
 
 bool install(const std::string &user, std::string &error)
@@ -212,17 +211,13 @@ bool install(const std::string &user, std::string &error)
                         error)) {
         return failed();
     }
-    const bool alreadyEnabled = serviceEnabledForEveryAccount();
-    if (!run("systemctl", {"--global", "enable", std::string(serviceName)}, error)) {
-        return failed();
-    }
-    if (!alreadyEnabled) {
-        transaction.record("enabled " + std::string(serviceName) + " for every account", [] {
-            std::string ignored;
-            return run("systemctl", {"--global", "disable", std::string(serviceName)}, ignored);
-        });
-    }
-    if (!writeState(packageMissingBeforeInstall, user, error)) {
+    // The app enables the service for this account alone (systemctl --user).
+    // Earlier releases enabled it here for every account, where it fails in
+    // a loop for each one without the group; take that away.
+    std::string ignored;
+    run("systemctl", {"--global", "disable", std::string(serviceName)}, ignored, false, true);
+    // The app reads only whether this file exists: the setup is Speecher's.
+    if (!writeFile(std::string(stateFilePath), "{}\n", error)) {
         return failed();
     }
     return true;
@@ -234,6 +229,18 @@ bool install(const std::string &user, std::string &error)
 // still there, so what did not come off has to reach the person.
 bool remove(const std::string &user, std::string &error)
 {
+    // The service file, udev rule and group serve every account set up, so
+    // removing them for one would leave the others' running daemons holding
+    // /dev/uinput with a setup that is gone.
+    if (const std::vector<std::string> others = otherConfiguredUsers(user); !others.empty()) {
+        std::string names;
+        for (const std::string &other : others) {
+            names += (names.empty() ? "" : ", ") + other;
+        }
+        error = "The virtual keyboard is also set up for " + names
+            + ". Remove it from those accounts first; removing it here would take it from them too.";
+        return false;
+    }
     std::vector<std::string> problems;
     const auto attempt = [&problems](const std::string &what, bool succeeded, const std::string &why) {
         if (!succeeded) {
@@ -242,8 +249,9 @@ bool remove(const std::string &user, std::string &error)
     };
 
     std::string stepError;
-    // Without systemctl the global enablement link stays, and new sessions
-    // keep starting the daemon; that is a leftover, not a step to skip.
+    // An earlier release enabled the service for every account. Without
+    // systemctl that link stays, and new sessions keep starting the daemon;
+    // that is a leftover, not a step to skip.
     attempt("could not stop starting the service for new sessions",
             run("systemctl", {"--global", "disable", std::string(serviceName)}, stepError),
             stepError);
@@ -251,6 +259,12 @@ bool remove(const std::string &user, std::string &error)
         stepError.clear();
         attempt("could not remove " + user + " from the " + std::string(groupName) + " group",
                 run("gpasswd", {"-d", user, std::string(groupName)}, stepError),
+                stepError);
+    }
+    if (getgrnam(std::string(groupName).c_str())) {
+        stepError.clear();
+        attempt("could not delete the " + std::string(groupName) + " group",
+                run("groupdel", {std::string(groupName)}, stepError),
                 stepError);
     }
     for (const std::string &path :
@@ -315,9 +329,14 @@ int main(int argc, char **argv)
         std::cerr << "This helper must run as root through pkexec\n";
         return 3;
     }
+    if (doInstall == doRemove) {
+        std::cerr << "Choose exactly one action\n";
+        return 2;
+    }
     std::string error;
-    if (doInstall == doRemove || !validateUser(user, error)) {
-        std::cerr << (error.empty() ? "Choose exactly one action\n" : error + '\n');
+    user = targetUser(std::getenv("PKEXEC_UID"), user, error);
+    if (user.empty()) {
+        std::cerr << error << '\n';
         return 2;
     }
     if (!(doInstall ? install(user, error) : remove(user, error))) {

@@ -2,12 +2,9 @@
 #include "common/test_doubles.h"
 #include "output/HelperPath.h"
 #include "platform/ScreenshotImage.h"
-#include "setup/YdotoolSetupState.h"
 #include "setup/YdotoolSetupTransaction.h"
 
 #include <QImage>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QScopeGuard>
 #include <QTimer>
 
@@ -234,23 +231,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  QStringLiteral("Could not write udev rule\nChanges left behind:\n"
                                 "- wrote /etc/modules-load.d/speecher-uinput.conf\n"
                                 "- added efox to speecher-uinput"));
-    }
-
-    void ydotoolSetupStateEscapesJsonStrings()
-    {
-        const std::string state = ydotoolSetupStateText(
-            true, R"(/usr/lib/systemd/user/service\"name)", "user\\name\n");
-        QJsonParseError error;
-        const QJsonDocument document = QJsonDocument::fromJson(
-            QByteArray::fromStdString(state), &error);
-
-        QCOMPARE(error.error, QJsonParseError::NoError);
-        QCOMPARE(document.object().value(QStringLiteral("packageInstalledBySpeecher")).toBool(),
-                 true);
-        QCOMPARE(document.object().value(QStringLiteral("serviceFile")).toString(),
-                 QStringLiteral("/usr/lib/systemd/user/service\\\"name"));
-        QCOMPARE(document.object().value(QStringLiteral("targetUser")).toString(),
-                 QStringLiteral("user\\name\n"));
     }
 
 #ifndef Q_OS_WIN

@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -261,53 +262,21 @@ bool ensureSystemUser(bool &created, std::string &error)
     return true;
 }
 
-// Copies the bundled daemon to its system path. Only the copy: the caller
-// records the installed file before making it executable, so a failure there
-// still reports it.
-bool copyDaemon(std::string &error)
+// Puts the bundled daemon at its system path whole or not at all: a copy
+// made beside it is synced and renamed over it, so a crash or a full disk
+// mid-install never leaves a truncated binary there. The rename also replaces
+// a running daemon's file without touching that process, which opening the
+// file to overwrite would refuse (ETXTBSY); install() then restarts the
+// socket to bring up the new binary.
+bool installDaemon(std::string &error)
 {
-    const std::string source = bundledPath("speecher-keywatchd");
-    if (source.empty()) {
-        error = "Could not locate the bundled speecher-keywatchd";
+    std::ifstream bundled(bundledPath("speecher-keywatchd"), std::ios::binary);
+    std::ostringstream daemon;
+    if (!bundled || !(daemon << bundled.rdbuf())) {
+        error = "Could not read the bundled speecher-keywatchd";
         return false;
     }
-    std::error_code directoryError;
-    std::filesystem::create_directories(
-        std::filesystem::path(std::string(daemonInstallPath)).parent_path(), directoryError);
-    if (directoryError) {
-        error = "Could not create the daemon directory";
-        return false;
-    }
-    // Unlink first: opening a running daemon's binary for overwrite fails with
-    // ETXTBSY, and repair runs exactly when a wedged daemon may still be
-    // alive. A fresh inode replaces the path without touching that process;
-    // the socket restart below then brings up the new binary.
-    std::error_code removeError;
-    std::filesystem::remove(std::string(daemonInstallPath), removeError);
-    std::filesystem::copy_file(source, std::string(daemonInstallPath),
-                               std::filesystem::copy_options::overwrite_existing, directoryError);
-    if (directoryError) {
-        error = "Could not install speecher-keywatchd";
-        return false;
-    }
-    return true;
-}
-
-bool makeDaemonExecutable(std::string &error)
-{
-    std::error_code permissionsError;
-    std::filesystem::permissions(std::string(daemonInstallPath),
-                                 std::filesystem::perms::owner_all
-                                     | std::filesystem::perms::group_read
-                                     | std::filesystem::perms::group_exec
-                                     | std::filesystem::perms::others_read
-                                     | std::filesystem::perms::others_exec,
-                                 permissionsError);
-    if (permissionsError) {
-        error = "Could not set the permissions of " + std::string(daemonInstallPath);
-        return false;
-    }
-    return true;
+    return writeFile(std::string(daemonInstallPath), daemon.str(), error, 0755);
 }
 
 bool install(const std::string &user, std::string &error)
@@ -334,13 +303,10 @@ bool install(const std::string &user, std::string &error)
     if (userCreated) {
         transaction.record("created system user " + std::string(userName));
     }
-    if (!copyDaemon(error)) {
+    if (!installDaemon(error)) {
         return failed();
     }
     transaction.record("installed " + std::string(daemonInstallPath));
-    if (!makeDaemonExecutable(error)) {
-        return failed();
-    }
     if (selinuxEnabled()) {
         if (!run("semodule", {"-i", bundledPath(policyFileName)}, error)) {
             return failed();
@@ -481,9 +447,14 @@ int main(int argc, char **argv)
         std::cerr << "This helper must run as root through pkexec\n";
         return 3;
     }
+    if (doInstall == doRemove) {
+        std::cerr << "Choose exactly one action\n";
+        return 2;
+    }
     std::string error;
-    if (doInstall == doRemove || !validateUser(user, error)) {
-        std::cerr << (error.empty() ? "Choose exactly one action\n" : error + '\n');
+    user = targetUser(std::getenv("PKEXEC_UID"), user, error);
+    if (user.empty()) {
+        std::cerr << error << '\n';
         return 2;
     }
     if (!(doInstall ? install(user, error) : remove(user, error))) {
