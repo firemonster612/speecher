@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QMimeDatabase>
 
 #include <algorithm>
 #include <utility>
@@ -65,8 +66,8 @@ TranscribeQueue::TranscribeQueue(SettingsStore *settings,
     connect(session, &FileTranscriptionSession::fileDecoded, this,
             [this](int index, const QVector<float> &peaks, qint64 durationMs) {
                 // A retry's file is its result's.
-                m_durationsMs.insert(m_retrying >= 0 ? m_results.value(m_retrying).path : m_batch.value(index),
-                                     durationMs);
+                m_listed[m_retrying >= 0 ? m_results.value(m_retrying).path : m_batch.value(index)].durationMs =
+                    durationMs;
                 if (!followsBatch()) {
                     return;
                 }
@@ -87,7 +88,7 @@ TranscribeQueue::TranscribeQueue(SettingsStore *settings,
             return;
         }
         m_partial = text;
-        emit fileChanged();
+        emit partialChanged();
     });
     connect(session, &FileTranscriptionSession::fileRefining, this, [this] {
         if (followsBatch()) {
@@ -146,8 +147,11 @@ void TranscribeQueue::addFiles(const QStringList &paths)
             continue;
         }
         m_files << absolute;
+        const QFileInfo info(absolute);
+        m_listed.insert(absolute,
+                        {QMimeDatabase().mimeTypeForFile(info).name().startsWith(QStringLiteral("video/")), info.size()});
         probeAudioDuration(absolute, this, [this, absolute](qint64 durationMs) {
-            m_durationsMs.insert(absolute, durationMs);
+            m_listed[absolute].durationMs = durationMs;
             emit filesChanged();
         });
     }
@@ -161,9 +165,9 @@ void TranscribeQueue::removeFile(const QString &path)
     }
 }
 
-qint64 TranscribeQueue::durationMs(const QString &path) const
+TranscribeQueue::ListedFile TranscribeQueue::listedFile(const QString &path) const
 {
-    return m_durationsMs.value(path, -1);
+    return m_listed.value(path);
 }
 
 const TranscribeOptions &TranscribeQueue::options() const
@@ -451,6 +455,7 @@ void TranscribeQueue::resetFile()
     m_fileDone = false;
     m_peaks.clear();
     m_partial.clear();
+    emit partialChanged();
 }
 
 void TranscribeQueue::enter(TranscribePhase phase)

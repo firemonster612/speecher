@@ -3630,7 +3630,7 @@ private slots:
         queue.addFiles({audio, m_dir.path() + QStringLiteral("/./memo.wav"), notes});
 
         QCOMPARE(queue.files(), QStringList{audio});
-        QTRY_VERIFY_WITH_TIMEOUT(qAbs(queue.durationMs(audio) - 500) <= 50, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(queue.listedFile(audio).durationMs - 500) <= 50, 10000);
         queue.removeFile(audio);
         QVERIFY(queue.files().isEmpty());
     }
@@ -3816,7 +3816,7 @@ private slots:
         QCOMPARE(queue.step(), TranscribeQueue::Step::Export);
         QVERIFY(!queue.results().at(0).failed());
         QCOMPARE(queue.results().at(0).path, broken);
-        QVERIFY(qAbs(queue.durationMs(broken) - 500) <= 50);
+        QVERIFY(qAbs(queue.listedFile(broken).durationMs - 500) <= 50);
         QCOMPARE(queue.results().at(1).raw, kept.raw);
         QCOMPARE(queue.results().at(1).path, good);
     }

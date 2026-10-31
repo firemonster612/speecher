@@ -44,14 +44,23 @@ public:
 
     Step step() const;
 
+    // What the page shows of a listed file, read once when it is listed.
+    struct ListedFile {
+        bool video = false;
+        qint64 bytes = 0;
+        // -1 until the file's length is known.
+        qint64 durationMs = -1;
+    };
+
     // Setup: the files the next batch transcribes, by absolute path.
     const QStringList &files() const;
     // Lists each file the decoder may take, once. Files added over finished
     // results start the next batch's list.
     void addFiles(const QStringList &paths);
     void removeFile(const QString &path);
-    // A file's length once known, otherwise -1.
-    qint64 durationMs(const QString &path) const;
+    // A file listed now or for an earlier batch; for any other, no size and
+    // an unknown length.
+    ListedFile listedFile(const QString &path) const;
 
     // The next batch's choices, seeded from the settings dictation uses and
     // never written back to them. Until one is chosen here they follow the
@@ -119,8 +128,10 @@ signals:
     void filesChanged();
     void optionsChanged();
     void stepChanged();
-    // The current file started, entered a phase, was decoded or heard more.
+    // The current file started, entered a phase or was decoded.
     void fileChanged();
+    // The current file's partial transcript grew, or emptied as a file started.
+    void partialChanged();
     void resultsChanged();
     void problemChanged();
     // holdsUnsavedResults may have changed.
@@ -142,7 +153,7 @@ private:
     Refusal m_refusal;
     Step m_step = Step::Configure;
     QStringList m_files;
-    QHash<QString, qint64> m_durationsMs;
+    QHash<QString, ListedFile> m_listed;
     TranscribeOptions m_options;
     // A choice was made here since the options were last seeded.
     bool m_optionsChosen = false;

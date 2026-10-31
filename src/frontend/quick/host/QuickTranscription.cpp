@@ -7,7 +7,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QMimeDatabase>
 #include <QRegularExpression>
 
 #include <utility>
@@ -122,12 +121,10 @@ QuickTranscription::QuickTranscription(ApplicationController *controller, QObjec
         emit resultsChanged();
         emit stepChanged();
     });
+    connect(&m_queue, &TranscribeQueue::partialChanged, this, &QuickTranscription::partialChanged);
     connect(&m_queue, &TranscribeQueue::filesChanged, this, &QuickTranscription::filesChanged);
     connect(&m_queue, &TranscribeQueue::optionsChanged, this, &QuickTranscription::optionsChanged);
-    connect(&m_queue, &TranscribeQueue::resultsChanged, this, [this] {
-        emit resultsChanged();
-        emit fileChanged();
-    });
+    connect(&m_queue, &TranscribeQueue::resultsChanged, this, &QuickTranscription::resultsChanged);
     connect(&m_queue, &TranscribeQueue::problemChanged, this, &QuickTranscription::problemChanged);
     // The refiner's model and the seeded language follow the settings.
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickTranscription::optionsChanged);
@@ -145,18 +142,14 @@ int QuickTranscription::step() const
 
 namespace {
 
-QVariantMap fileMap(const QString &path, qint64 durationMs)
+QVariantMap fileMap(const QString &path, const TranscribeQueue::ListedFile &file)
 {
-    static const QMimeDatabase mimes;
-    const QFileInfo info(path);
     return {
         {QStringLiteral("path"), path},
-        {QStringLiteral("name"), info.fileName()},
-        {QStringLiteral("kind"), mimes.mimeTypeForFile(info).name().startsWith(QStringLiteral("video/"))
-                                     ? QStringLiteral("video")
-                                     : QStringLiteral("audio")},
-        {QStringLiteral("bytes"), info.size()},
-        {QStringLiteral("durationMs"), durationMs},
+        {QStringLiteral("name"), QFileInfo(path).fileName()},
+        {QStringLiteral("kind"), file.video ? QStringLiteral("video") : QStringLiteral("audio")},
+        {QStringLiteral("bytes"), file.bytes},
+        {QStringLiteral("durationMs"), file.durationMs},
     };
 }
 
@@ -166,7 +159,7 @@ QVariantList QuickTranscription::files() const
 {
     QVariantList files;
     for (const QString &path : m_queue.files()) {
-        files << fileMap(path, m_queue.durationMs(path));
+        files << fileMap(path, m_queue.listedFile(path));
     }
     return files;
 }
@@ -209,7 +202,7 @@ QVariantMap QuickTranscription::batch() const
 {
     QVariantList files;
     for (const QString &path : m_queue.batch()) {
-        files << fileMap(path, m_queue.durationMs(path));
+        files << fileMap(path, m_queue.listedFile(path));
     }
     const TranscribeOptions &options = m_queue.batchOptions();
     return {
@@ -266,7 +259,7 @@ QVariantList QuickTranscription::results() const
 {
     QVariantList results;
     for (const TranscribeFileResult &result : m_queue.results()) {
-        QVariantMap map = fileMap(result.path, m_queue.durationMs(result.path));
+        QVariantMap map = fileMap(result.path, m_queue.listedFile(result.path));
         const QString text = shownTranscript(result, m_showRaw);
         map.insert({
             {QStringLiteral("failed"), result.failed()},
@@ -439,6 +432,7 @@ void QuickTranscription::exportAll(const QString &format, const QUrl &folder)
         return;
     }
     QStringList errors;
+    bool saved = false;
     for (int index = 0; index < m_queue.results().size(); ++index) {
         const TranscribeFileResult &result = m_queue.results().at(index);
         if (!canExportAs(result, *chosen)) {
@@ -450,10 +444,13 @@ void QuickTranscription::exportAll(const QString &format, const QUrl &folder)
             errors << error;
         } else {
             m_queue.markExported(index);
+            saved = true;
         }
     }
     m_queue.setProblem(errors.join(QLatin1Char('\n')));
-    if (errors.isEmpty()) {
+    // Confirmed only once something was written; with every file failed,
+    // or none with the format, nothing was.
+    if (saved && errors.isEmpty()) {
         emit exported(-1);
     }
 }
