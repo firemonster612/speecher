@@ -475,6 +475,41 @@ private slots:
         QCOMPARE(changed.count(), 2);
     }
 
+#ifdef Q_OS_UNIX
+    // A model whose file could not be deleted keeps its speed result and
+    // stays the one dictation uses.
+    void aModelThatStaysKeepsItsSettings()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        const LocalModel &model = *findLocalModel("cohere");
+        {
+            QFile file(models.modelPath(model));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QVERIFY(file.resize(model.sizeBytes));
+        }
+        const QString speedKey = localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}});
+        settings.edit([&](AppSettings &draft) {
+            draft.speech.local.modelId = model.id;
+            draft.speech.local.speedTestSeconds.insert(speedKey, 0.8);
+            return true;
+        });
+        QFile folder(QFileInfo(models.modelPath(model)).absolutePath());
+        const QFile::Permissions writable = folder.permissions();
+        QVERIFY(folder.setPermissions(QFile::ReadOwner | QFile::ExeOwner));
+        const auto restore = qScopeGuard([&] { folder.setPermissions(writable); });
+
+        QVERIFY(!setup.removeModel(model));
+        const LocalSpeechSettings local = settings.dictationSnapshot().speech.local;
+        QCOMPARE(local.modelId, model.id);
+        QCOMPARE(local.speedTestSeconds.value(speedKey), 0.8);
+    }
+#endif
+
     void catalogEntriesArePinned()
     {
         for (const LocalModel &model : localModelCatalog()) {

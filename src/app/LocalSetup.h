@@ -100,6 +100,7 @@ public:
     void download(const LocalModel &model);
     void cancelDownload(const QString &modelId);
     // Deleting the model dictation uses moves it to another downloaded one.
+    // False when a file stayed; a model still downloaded keeps its settings.
     bool removeModel(const LocalModel &model);
     // Bytes received and total for a running download.
     std::optional<std::pair<qint64, qint64>> downloadProgress(const QString &modelId) const;
