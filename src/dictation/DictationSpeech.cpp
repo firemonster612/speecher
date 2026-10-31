@@ -230,11 +230,12 @@ void DictationSpeech::pause()
         return;
     }
     m_phase = Phase::Paused;
-    // A resume whose attempt has not opened yet leaves none to finish.
+    // Nothing is owed to the provider when no attempt is open to finish: a
+    // resume's attempt has not opened yet, or, between providers, the next
+    // one's readiness sends the words. Nor when paused again before the last
+    // pause's attempt finished: it is still finishing, and what was heard
+    // since waits in m_between.
     const bool attemptOpen = !std::exchange(m_openOwed, false);
-    // Paused again before the last pause's attempt finished: it is still
-    // finishing, and what was heard since waits in m_between. Between
-    // providers no attempt is open: the next one's readiness sends the words.
     if (!attemptOpen || m_between.finishingPausedAttempt || m_between.awaitingProvider) {
         return;
     }
@@ -277,8 +278,9 @@ void DictationSpeech::stop()
 void DictationSpeech::proceed()
 {
     const Phase phase = m_phase;
-    // Unless the paused attempt ended meanwhile. A provider may report it
-    // ended from inside finishInput(), and move the session on.
+    // A pause owes the open attempt the end of its input, unless the attempt
+    // ended meanwhile. The provider may report its end from inside
+    // finishInput() and move the session on, which ends this call.
     if (std::exchange(m_finishOwed, false) && m_between.finishingPausedAttempt) {
         endInput();
         if (m_phase != phase) {

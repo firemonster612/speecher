@@ -101,8 +101,8 @@ signals:
     void secretsResolved(const speecher::AppSettings &settings);
     // An attempt ended by failure, before its last words may have arrived.
     void wordsMayBeMissing(const speecher::SpeechFailure &failure);
-    // Too much was said while an attempt finished; what follows is dropped
-    // until an attempt takes what is held.
+    // Too much was said while an attempt finished: nothing more is held for
+    // the rest of the session, so the session stops listening.
     void heldPastTheBudget();
     // Every word heard is in the transcript.
     void ended();
