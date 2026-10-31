@@ -1418,19 +1418,22 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
     }
 
-    // A cancel as a refiner is passed over, from the emptied preview, ends
-    // the session there: the fallback is never prepared or asked, and no
-    // error follows.
-    void aCancelAsARefinerIsPassedOverPreparesNoFallback_data()
+    // A cancel or stop as a refiner is passed over, from the emptied
+    // preview, ends refinement there: the fallback is never prepared or
+    // asked, and no error follows. A stop delivers what was heard.
+    void aCancelOrStopAsARefinerIsPassedOverPreparesNoFallback_data()
     {
         QTest::addColumn<bool>("failsToAnswer");
-        QTest::newRow("fails to prepare") << false;
-        QTest::newRow("fails to answer") << true;
+        QTest::addColumn<bool>("stops");
+        QTest::newRow("fails to prepare") << false << false;
+        QTest::newRow("fails to answer") << true << false;
+        QTest::newRow("stopped as it fails to answer") << true << true;
     }
 
-    void aCancelAsARefinerIsPassedOverPreparesNoFallback()
+    void aCancelOrStopAsARefinerIsPassedOverPreparesNoFallback()
     {
         QFETCH(bool, failsToAnswer);
+        QFETCH(bool, stops);
         ChainRig rig({QStringLiteral("local")}, {QStringLiteral("openai"), QStringLiteral("endpoint")});
         FakeRefiner *primary = rig.refiners[QStringLiteral("openai")];
         FakeRefiner *fallback = rig.refiners[QStringLiteral("endpoint")];
@@ -1438,10 +1441,10 @@ private slots:
             primary->prepareFailure = ProviderFailure{Network, QStringLiteral("offline")};
         }
         rig.listen();
-        bool cancelled = false;
+        bool ended = false;
         connect(rig.session.get(), &DictationSession::popupRefinementPreviewChanged, rig.session.get(), [&] {
-            if (!std::exchange(cancelled, true)) {
-                rig.session->cancel();
+            if (!std::exchange(ended, true)) {
+                stops ? rig.session->stopListening() : rig.session->cancel();
             }
         });
         QSignalSpy states(rig.session.get(), &DictationSession::stateChanged);
@@ -1453,14 +1456,14 @@ private slots:
         }
         QTest::qWait(100);
 
-        QVERIFY(cancelled);
-        QCOMPARE(rig.session->state(), DictationState::Idle);
+        QVERIFY(ended);
+        QCOMPARE(rig.session->state(), stops ? DictationState::Delivering : DictationState::Idle);
         for (const QList<QVariant> &state : std::as_const(states)) {
             QVERIFY(state.first().value<DictationState>() != DictationState::Error);
         }
         QCOMPARE(fallback->prepareCalls, 0);
         QCOMPARE(fallback->refineCalls, 0);
-        QCOMPARE(rig.delivery.calls, 0);
+        QCOMPARE(rig.delivery.calls, stops ? 1 : 0);
     }
 
     // A sign-in turned down: a successful outcome with Open Accounts, up

@@ -340,7 +340,8 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_usedRawTranscript = false;
     m_providerHistory = {};
     m_listeningMs = 0;
-    if (const quint64 step = setState(DictationState::Starting); step != m_step) {
+    const quint64 step = setState(DictationState::Starting);
+    if (step != m_step) {
         return;
     }
     qInfo().noquote() << "startListening credentialsPath=" + settings.accounts.claudeCredentialsPath
@@ -350,8 +351,9 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_transcript->clear();
     m_transcriptPipeline = {};
     emit previewDisplayChanged({});
-    // Clearing the transcript announces the empty preview too.
-    if (generation != m_generation) {
+    // The transcript announced itself cleared, and the preview went blank:
+    // a handler of either may have stopped or cancelled the start.
+    if (step != m_step) {
         return;
     }
     emit popupShowRequested(generation);
@@ -432,10 +434,6 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     }
     if (settings.ui.pauseMediaDuringTranscription) {
         m_mediaController->pausePlaying();
-    }
-    // A capture may answer at once.
-    if (step != m_step) {
-        return;
     }
 
     // Walks the speech chain on from the provider it is on, never back: the
@@ -1009,13 +1007,9 @@ void DictationSession::startRefiner()
     const RefinementSettings refinement = m_refinementChain->currentSettings();
     // A handler of the sign-in or of Refining may have stopped or cancelled
     // the session, and with it dropped the settings the refiner runs with.
-    const quint64 generation = m_generation;
+    const quint64 step = m_step;
     noteSignIn(refinement.providerId, true);
-    if (generation != m_generation) {
-        return;
-    }
-    enterRefining();
-    if (generation != m_generation || m_state != DictationState::Refining) {
+    if (step != m_step || !enterRefining()) {
         return;
     }
     m_refinementStream.clear();
@@ -1043,15 +1037,16 @@ void DictationSession::startRefiner()
                       m_sessionSettings->accounts);
 }
 
-void DictationSession::enterRefining()
+bool DictationSession::enterRefining()
 {
     if (m_state == DictationState::Refining) {
-        return;
+        return true;
     }
     // Before the state is announced: a handler that ends the session leaves
     // no refinement of its generation behind.
     m_refinementGeneration = m_generation;
-    setState(DictationState::Refining, m_lastMessage);
+    const quint64 step = setState(DictationState::Refining, m_lastMessage);
+    return step == m_step;
 }
 
 // A refiner that fails to answer for want of a service makes way for the
@@ -1060,10 +1055,10 @@ void DictationSession::enterRefining()
 void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
 {
     if (permitsProviderFallback(failure.kind)) {
-        const quint64 generation = m_generation;
+        const quint64 step = m_step;
         passOverRefiner(m_refinementChain->currentId(), Stage::Connect, failure);
         // Its sign-in and the emptied preview are announced first.
-        if (generation != m_generation) {
+        if (step != m_step) {
             return;
         }
         m_refinementChain->prepareNext(*m_sessionSettings, m_transcriptPipeline.refinementSettings);
@@ -1240,7 +1235,6 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
         return;
     }
     const AppSettings settings = *m_sessionSettings;
-    const quint64 generation = m_generation;
     const QString appName = !m_target.applicationName.isEmpty() ? m_target.applicationName
         : !m_target.processName.isEmpty()                      ? m_target.processName
                                                                : QStringLiteral("Unknown app");

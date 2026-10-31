@@ -164,7 +164,8 @@ private:
     void failSession(const QString &message, const PopupErrorAction &fix = {});
     void beginRefinement(quint64 generation);
     void startRefiner();
-    void enterRefining();
+    // False when a handler of Refining moved the session on.
+    bool enterRefining();
     void handleRefinementFailure(const ProviderFailure &failure);
     void passOverRefiner(const QString &providerId, Stage stage, const ProviderFailure &failure);
     void retireRefiner();
@@ -226,14 +227,20 @@ private:
     QString m_lastTranscript;
     EditReview m_review;
     TranscriptPipelineResult m_transcriptPipeline;
+    // Two counters say whether the session moved on. m_step answers it for
+    // code that just ran something synchronous, such as an emit or a call
+    // into a provider: every stop, cancel and failure goes through
+    // setState(), so a changed m_step means a handler moved the session on.
+    // m_generation, which moves on as a session starts and as one is
+    // discarded, is for what answers later: timers, a popup that was
+    // painted, a screenshot, a refiner's revision.
     quint64 m_generation = 0;
     // The step the microphone was last started at; 0 once stopped.
     quint64 m_audioStep = 0;
     // A resume's step whose microphone restarts once the outermost stop
     // returns; 0 for none.
     quint64 m_restartStep = 0;
-    // Bumped by every setState(), so any announcement, even of the same
-    // state, tells a caller the session moved on under it.
+    // Bumped by every setState(), even to the same state.
     quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;

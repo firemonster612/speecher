@@ -1621,22 +1621,26 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("raw transcript"));
     }
 
-    // A cancel as the session says it refines, or notes the refiner's
-    // sign-in, ends the session there: the refiner, ready at once or after
-    // its sign-in renews, is never asked.
-    void aCancelAsRefiningBeginsAsksNoRefiner_data()
+    // A cancel as the session says it refines, or a cancel or stop as it
+    // notes the refiner's sign-in, ends refinement there: the refiner, ready
+    // at once or after its sign-in renews, is never asked. A stop delivers
+    // what was heard.
+    void aCancelOrStopAsRefiningBeginsAsksNoRefiner_data()
     {
         QTest::addColumn<bool>("renews");
         QTest::addColumn<bool>("onSignIn");
-        QTest::newRow("ready at once") << false << false;
-        QTest::newRow("renewing") << true << false;
-        QTest::newRow("as the sign-in is noted") << false << true;
+        QTest::addColumn<bool>("stops");
+        QTest::newRow("ready at once") << false << false << false;
+        QTest::newRow("renewing") << true << false << false;
+        QTest::newRow("as the sign-in is noted") << false << true << false;
+        QTest::newRow("stopped as the sign-in is noted") << true << true << true;
     }
 
-    void aCancelAsRefiningBeginsAsksNoRefiner()
+    void aCancelOrStopAsRefiningBeginsAsksNoRefiner()
     {
         QFETCH(bool, renews);
         QFETCH(bool, onSignIn);
+        QFETCH(bool, stops);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
@@ -1650,17 +1654,18 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        const auto end = [&session, stops] { stops ? session.stopListening() : session.cancel(); };
         if (onSignIn) {
             // The speech provider's sign-in is noted as the session starts.
-            connect(&session, &DictationSession::providerSignInObserved, &session, [&session] {
-                if (session.state() == DictationState::Stopping) {
-                    session.cancel();
+            connect(&session, &DictationSession::providerSignInObserved, &session, [&session, end] {
+                if (session.state() == DictationState::Stopping || session.state() == DictationState::Refining) {
+                    end();
                 }
             });
         } else {
-            connect(&session, &DictationSession::stateChanged, &session, [&session](DictationState state) {
+            connect(&session, &DictationSession::stateChanged, &session, [end](DictationState state) {
                 if (state == DictationState::Refining) {
-                    session.cancel();
+                    end();
                 }
             });
         }
@@ -1671,9 +1676,15 @@ private slots:
         session.stopListening();
         QTest::qWait(100);
 
-        QCOMPARE(session.state(), DictationState::Idle);
         QCOMPARE(refiner->refineCalls, 0);
-        QCOMPARE(delivery.calls, 0);
+        if (stops) {
+            QCOMPARE(session.state(), DictationState::Delivering);
+            QCOMPARE(delivery.calls, 1);
+            QCOMPARE(delivery.lastText, QStringLiteral("rough text"));
+        } else {
+            QCOMPARE(session.state(), DictationState::Idle);
+            QCOMPARE(delivery.calls, 0);
+        }
     }
 
     void dictationSessionStopsOnEmptyAudioFailure()
