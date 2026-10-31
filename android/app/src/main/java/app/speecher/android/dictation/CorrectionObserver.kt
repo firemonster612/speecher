@@ -59,6 +59,7 @@ class CorrectionObserver(
     private var applicationId = ""
     private val checkLanding = Runnable { checkLanding() }
     private val read = Runnable { sample() }
+    private val end = Runnable { cancel() }
 
     /**
      * Starts watching for an edit to [window] in the app [applicationId], ending any earlier watch.
@@ -72,6 +73,8 @@ class CorrectionObserver(
         val delays =
             CORRECTION_FIRST_SAMPLE_MS..CORRECTION_WINDOW_MS step CORRECTION_SAMPLE_INTERVAL_MS
         delays.forEach { handler.postDelayed(read, it) }
+        // Posted after the last read, which runs first at the same time.
+        handler.postDelayed(end, CORRECTION_WINDOW_MS)
     }
 
     /**
@@ -96,6 +99,7 @@ class CorrectionObserver(
         if (field != null) watchTextChanges(false)
         handler.removeCallbacks(checkLanding)
         handler.removeCallbacks(read)
+        handler.removeCallbacks(end)
         field = null
         window = null
         tracker = null
