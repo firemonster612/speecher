@@ -164,6 +164,35 @@ private slots:
         const QVariantMap custom = settings.values().value(QStringLiteral("updateCheckCustomInterval")).toMap();
         QCOMPARE(custom.value(QStringLiteral("number")).toInt(), 3);
         QCOMPARE(custom.value(QStringLiteral("unit")).toString(), QStringLiteral("days"));
+
+        // Every frequency the row lists reads back as itself.
+        QQmlEngine engine;
+        auto *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        QVariantList options;
+        for (const QVariant &row : schema->property("rows").value<QJSValue>().toVariant().toList()) {
+            if (row.toMap().value(QStringLiteral("id")) == QStringLiteral("updateCheckInterval")) {
+                options = row.toMap().value(QStringLiteral("options")).toList();
+            }
+        }
+        QVERIFY(!options.isEmpty());
+        for (const QVariant &option : options) {
+            const QString id = option.toMap().value(QStringLiteral("id")).toString();
+            settings.set(QStringLiteral("updateCheckInterval"), id);
+            QCOMPARE(settings.values().value(QStringLiteral("updateCheckInterval")).toString(), id);
+        }
+
+        // An interval the row doesn't list, saved without a unit as an older
+        // settings file or the CLI may, is Custom with its value.
+        SettingsStore *store = controller.settings();
+        AppSettings draft = store->dictationSnapshot();
+        draft.updates.checkIntervalMinutes = 90;
+        draft.updates.checkIntervalUnit.clear();
+        store->applySnapshot(draft);
+        QCOMPARE(settings.values().value(QStringLiteral("updateCheckInterval")).toString(), QStringLiteral("custom"));
+        const QVariantMap unlisted = settings.values().value(QStringLiteral("updateCheckCustomInterval")).toMap();
+        QCOMPARE(unlisted.value(QStringLiteral("number")).toInt(), 90);
+        QCOMPARE(unlisted.value(QStringLiteral("unit")).toString(), QStringLiteral("minutes"));
     }
 
     void rowsNotSavedYetAreRefused()
