@@ -1552,6 +1552,38 @@ private slots:
         QVERIFY(audio.active);
     }
 
+    // A speech failure as Stopping is announced moves the same session on,
+    // to delivery: the stop still stops its microphone.
+    void aSpeechFailureAsStoppingIsAnnouncedStillStopsTheMicrophone()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("heard"));
+        bool failed = false;
+        connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
+            if (state == DictationState::Stopping && !std::exchange(failed, true)) {
+                speech->emitFailure(QStringLiteral("dropped"));
+            }
+        });
+
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QVERIFY(failed);
+        QTRY_VERIFY(!audio.active);
+        QCOMPARE(delivery.lastText, QStringLiteral("heard"));
+    }
+
     // So does one started as a microphone that failed before anything was
     // heard ends the session in Error.
     void aStartAsAFailureEndsListensOnceTheMicrophoneStopped()
