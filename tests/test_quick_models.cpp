@@ -311,7 +311,10 @@ private slots:
         QCOMPARE(check.value(QStringLiteral("models")).toStringList(), QStringList({"whisper-1", "distil"}));
         QVERIFY(!check.value(QStringLiteral("status")).toString().isEmpty());
 
-        server.close();
+        // Port 1, where nothing listens: a port let go could be taken by a
+        // server in another test process.
+        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1");
+        controller.settings()->applySnapshot(draft);
         models.testSpeechEndpoint();
         QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());
         check = models.speechEndpoint();
@@ -370,7 +373,8 @@ private slots:
                      QStringLiteral("ready"));
         QVERIFY(transcription().value(QStringLiteral("done")).toBool());
 
-        server.close();
+        // Port 1, where nothing listens, as above.
+        settings.set(QStringLiteral("speechEndpointUrl"), QStringLiteral("http://127.0.0.1:1"));
         models.testSpeechEndpoint();
         QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());
         QVERIFY(!transcription().value(QStringLiteral("done")).toBool());

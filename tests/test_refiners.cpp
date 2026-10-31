@@ -485,8 +485,10 @@ private slots:
         QFETCH(int, httpStatus);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
-        if (response.isEmpty()) server.close();
+        // With no response, port 1, where nothing listens: a port let go
+        // could be taken by a server in another test process.
+        const QString endpoint =
+            QStringLiteral("http://127.0.0.1:%1/v1").arg(response.isEmpty() ? 1 : server.serverPort());
         connect(&server, &QTcpServer::newConnection, this, [&server, response] {
             QTcpSocket *socket = server.nextPendingConnection();
             connect(socket, &QTcpSocket::readyRead, socket, [socket, response] {

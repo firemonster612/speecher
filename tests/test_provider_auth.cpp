@@ -1073,8 +1073,10 @@ private slots:
         QFETCH(int, httpStatus);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        const QByteArray tokenUrl = QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8();
-        if (response.isEmpty()) server.close();
+        // With no response, port 1, where nothing listens: a port let go
+        // could be taken by a server in another test process.
+        const QByteArray tokenUrl =
+            QStringLiteral("http://127.0.0.1:%1/token").arg(response.isEmpty() ? 1 : server.serverPort()).toUtf8();
         connect(&server, &QTcpServer::newConnection, this, [&server, response] {
             QTcpSocket *socket = server.nextPendingConnection();
             connect(socket, &QTcpSocket::readyRead, socket, [socket, response] {
