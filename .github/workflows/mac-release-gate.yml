@@ -1,0 +1,77 @@
+name: macOS release gate
+
+# The release gate in docs/macos.md on an Apple Silicon runner: updates the
+# shipped DMG to a release candidate through Sparkle, with no person, and
+# checks that grants, settings, the Keychain key and the login item carry over
+# (packaging/macos/release-gate.py). Start release.yml by hand for the
+# candidate first; it publishes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: ID of the hand-started Release run whose macos-release artifact is the candidate
+        required: true
+      shipped_tag:
+        description: The release whose speecher.dmg users have installed
+        default: v0.2.0
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  gate:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CANDIDATE_RUN: ${{ inputs.candidate_run }}
+      SHIPPED_TAG: ${{ inputs.shipped_tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch the shipped and candidate DMGs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p evidence
+          # The released DMGs are arm64 only.
+          test "$(uname -m)" = arm64
+          sw_vers > evidence/runner.txt
+          gh release download "$SHIPPED_TAG" --pattern speecher.dmg --dir "$RUNNER_TEMP/shipped"
+          gh run view "$CANDIDATE_RUN" --json workflowName,event,headSha,headBranch,conclusion,url \
+            > evidence/candidate-run.json
+          cat evidence/candidate-run.json
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-release
+          run-id: ${{ inputs.candidate_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Run the gate
+        run: |
+          SPEECHER_DISPOSABLE_MACHINE=1 python3 packaging/macos/release-gate.py \
+            "$RUNNER_TEMP/shipped/speecher.dmg" "$RUNNER_TEMP/candidate/speecher.dmg" \
+            "$RUNNER_TEMP/candidate/sparkle-signature.txt" evidence
+
+      - name: Summarize
+        if: always()
+        run: |
+          pkill -x speecher || true
+          {
+            echo "## Release gate: $SHIPPED_TAG to candidate run $CANDIDATE_RUN"
+            echo
+            echo '```'
+            cat evidence/summary.txt 2>/dev/null || echo 'gate=FAIL the gate script wrote no summary'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-gate-evidence
+          path: evidence
+          if-no-files-found: error
