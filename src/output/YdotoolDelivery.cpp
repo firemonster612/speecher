@@ -203,7 +203,9 @@ void YdotoolDelivery::pasteFromClipboard(const QString &text,
                               .timeoutMs = timeoutMs,
                               .environment = env};
     };
-    const ProcessCommand release = ydotool(modifierReleaseArguments(), modifierTimeoutMs);
+    ProcessCommand release = ydotool(modifierReleaseArguments(), modifierTimeoutMs);
+    // A modifier left down would turn the person's next keys into shortcuts.
+    release.finishesAtShutdown = true;
     const ProcessCommand paste = ydotool(pasteShortcutArguments(method), shortcutTimeoutMs);
     runProcess(release, this, [this, clearToInject, paste, release, done](const ProcessResult &) {
         // The release took a turn of the event loop or more; the user may

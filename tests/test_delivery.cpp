@@ -64,7 +64,8 @@ static QString virtualKeyboardMethod()
 // The only ydotool on PATH for its lifetime, so no real one presses keys on
 // the desktop running the tests. It logs each call's arguments, takes
 // releaseDelay seconds to let go of the modifiers and pasteDelay to press the
-// paste keys, and logs a paste as sent only once that delay is over.
+// paste keys, and logs a release or a paste as done only once its delay is
+// over.
 class FakeYdotool {
 public:
     explicit FakeYdotool(const char *releaseDelay, const char *pasteDelay = "0")
@@ -73,7 +74,8 @@ public:
         QFile script(m_dir.filePath(QStringLiteral("ydotool")));
         m_ready = m_dir.isValid() && script.open(QIODevice::WriteOnly)
             && script.write("#!/bin/sh\necho \"$*\" >> '" + QFile::encodeName(log(QStringLiteral("calls")))
-                            + "'\ncase \"$*\" in\n*'29:0 97:0'*) /bin/sleep " + QByteArray(releaseDelay) + ";;\n"
+                            + "'\ncase \"$*\" in\n*'29:0 97:0'*) /bin/sleep " + QByteArray(releaseDelay) + "; echo \"$*\" >> '"
+                            + QFile::encodeName(log(QStringLiteral("released"))) + "';;\n"
                             "*'47:1'*) /bin/sleep " + QByteArray(pasteDelay) + "; echo \"$*\" >> '"
                             + QFile::encodeName(log(QStringLiteral("sent"))) + "';;\nesac\n") > 0;
         script.close();
@@ -87,6 +89,8 @@ public:
     QStringList calls() const { return lines(QStringLiteral("calls")); }
     // The paste keystrokes that went out.
     QStringList sentPastes() const { return lines(QStringLiteral("sent")); }
+    // The modifier releases that ran to their end.
+    QStringList releases() const { return lines(QStringLiteral("released")); }
 
 private:
     QString log(const QString &name) const { return m_dir.filePath(name); }
@@ -1570,6 +1574,38 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY2(std::none_of(calls.cbegin(), calls.cend(),
                               [](const QString &call) { return call.contains(QStringLiteral("47:1")); }),
                  qPrintable(calls.join(QStringLiteral(" | "))));
+    }
+
+    // The paste can go while its keys are down with the application ending
+    // straight after, as at quit. The release that follows still runs to its
+    // end before the application is gone. The application is the child's own.
+    void ydotoolReleaseFinishesAsTheApplicationEnds()
+    {
+        if (QCoreApplication::instance()) {
+            QProcess child;
+            child.setProcessChannelMode(QProcess::MergedChannels);
+            child.start(QCoreApplication::applicationFilePath(),
+                        {QStringLiteral("--t4-wayland"), QStringLiteral("ydotoolReleaseFinishesAsTheApplicationEnds")});
+            QVERIFY(child.waitForFinished(20000));
+            QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0, child.readAll().constData());
+            return;
+        }
+        int argc = 1;
+        char name[] = "speecher_tests";
+        char *argv[] = {name, nullptr};
+        auto *app = new QCoreApplication(argc, argv);
+        const FakeYdotool ydotool("0.1", "5");
+        QVERIFY(ydotool.ready());
+        auto *delivery = new YdotoolDelivery;
+        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste, [] { return true; },
+                                     [](bool, const QString &) {});
+        // The paste keys are going out.
+        QTRY_COMPARE(ydotool.calls().size(), 2);
+        delete delivery;
+        delete app;
+        // The first release, and the one after the stopped paste.
+        QCOMPARE(ydotool.releases().size(), 2);
+        QVERIFY(ydotool.sentPastes().isEmpty());
     }
 
     // The deadline can come while ydotool presses the paste keys: those keys

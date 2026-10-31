@@ -1,10 +1,12 @@
 #include "output/ProcessRunner.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QProcess>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -55,12 +57,20 @@ public:
         QTimer::singleShot(m_command.timeoutMs, this, [this] {
             answer({false, {}, QStringLiteral("%1 timed out").arg(m_command.tool)});
         });
+        m_running.start();
         m_process.start(m_command.executable, m_command.arguments);
     }
 
-    // The application ends one still running: its process dies with it and
-    // says finished, which must not reach the members gone before it.
-    ~RunningCommand() override { m_process.disconnect(this); }
+    // Only the application ending destroys one still running. Its process
+    // dies with it and says finished, which must not reach the members gone
+    // before it; one that finishes at shutdown gets the rest of its time.
+    ~RunningCommand() override
+    {
+        m_process.disconnect(this);
+        if (m_command.finishesAtShutdown && m_process.state() != QProcess::NotRunning) {
+            m_process.waitForFinished(std::max(0, m_command.timeoutMs - int(m_running.elapsed())));
+        }
+    }
 
     void stop() { answer({false, {}, QStringLiteral("%1 was stopped").arg(m_command.tool)}); }
 
@@ -99,6 +109,7 @@ private:
     QPointer<QObject> m_context;
     std::function<void(const ProcessResult &)> m_done;
     QByteArray m_output;
+    QElapsedTimer m_running;
 };
 
 } // namespace

@@ -30,6 +30,10 @@ struct ProcessCommand {
     qsizetype maximumOutputBytes = 16 * 1024 * 1024;
     // Speecher's own environment when none is given.
     std::optional<QProcessEnvironment> environment;
+    // For a command that must not be cut off, such as one letting go of held
+    // keys: when the application ends while it runs, the application waits
+    // out the rest of its time limit before killing it.
+    bool finishesAtShutdown = false;
 };
 
 struct ProcessResult {
