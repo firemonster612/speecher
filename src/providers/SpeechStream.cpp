@@ -81,7 +81,6 @@ void SpeechStream::setMostKeptBytes(qsizetype bytes)
 
 void SpeechStream::reset()
 {
-    m_transcript->clear();
     m_pcm.clear();
     m_pcmDropped = 0;
     m_sent = 0;
@@ -91,6 +90,9 @@ void SpeechStream::reset()
     m_inputEnded = false;
     m_inputFinished = false;
     m_issues.clear();
+    // Last: a handler of the cleared transcript may start the stream over,
+    // and finish its input, which nothing here may undo.
+    m_transcript->clear();
 }
 
 void SpeechStream::prepare(const AppSettings &settings)

@@ -609,7 +609,14 @@ void DictationSession::stopListening()
         return;
     }
     m_speech->stop();
+    const quint64 generation = m_generation;
     const quint64 step = setState(DictationState::Stopping, m_lastMessage);
+    // A handler of Stopping that cancelled has stopped this microphone, and
+    // the one it is on now may be a replacement session's. One that moved
+    // this session on, as a speech failure does, still leaves it to stop.
+    if (generation != m_generation) {
+        return;
+    }
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     // Stopping still takes the post-roll that arrives while the microphone
     // stops. Paused media resumes only after it, so the post-roll does not

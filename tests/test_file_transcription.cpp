@@ -3032,6 +3032,64 @@ private slots:
         QCOMPARE(m_script.attempts, 0);
     }
 
+    // A listening batch finished as it starts never opens its microphone,
+    // and ends on its own.
+    void aListeningBatchFinishedAsItStartsNeverListens_data()
+    {
+        QTest::addColumn<bool>("asTheTranscriptClears");
+        QTest::newRow("as the transcript clears") << true;
+        QTest::newRow("as the file starts") << false;
+    }
+
+    void aListeningBatchFinishedAsItStartsNeverListens()
+    {
+        QFETCH(bool, asTheTranscriptClears);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        const auto finish = [&session] { session.finishListening(); };
+        if (asTheTranscriptClears) {
+            QObject::connect(&session, &FileTranscriptionSession::filePartialText, &session, finish,
+                             Qt::SingleShotConnection);
+        } else {
+            QObject::connect(&session, &FileTranscriptionSession::fileStarted, &session, finish);
+        }
+
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+
+        QVERIFY(!microphone.started);
+        QCOMPARE(finished.first().at(1).toBool(), false);
+        QVERIFY(!session.isRunning());
+    }
+
+    // A batch cancelled as its stream clears the transcript, and replaced
+    // there by one finished as it starts, ends: what the old stream's reset
+    // had left to do does not undo the replacement's finish.
+    void aReplacementFinishedAsTheOldStreamResetsEnds()
+    {
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        int partials = 0;
+        QObject::connect(&session, &FileTranscriptionSession::filePartialText, &session, [&] {
+            if (++partials == 1) {
+                session.cancel();
+                QVERIFY(session.startListening(&microphone, speechOnly()));
+            } else {
+                session.finishListening();
+            }
+        });
+
+        QVERIFY(session.startListening(&microphone, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 5000);
+
+        QVERIFY(!session.isRunning());
+        QVERIFY(!microphone.active);
+    }
+
     // A start inside an earlier stop of the same microphone, from the
     // batchFinished of a cancel made there, is refused: the outer stop would
     // close the new batch's microphone once it returns. That stop then ends
