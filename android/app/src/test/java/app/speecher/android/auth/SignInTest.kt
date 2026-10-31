@@ -6,7 +6,9 @@ import androidx.core.content.edit
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
 import java.net.ConnectException
+import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.NetworkInterface
 import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -18,8 +20,11 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,7 +65,7 @@ class SignInTest {
     fun restorePendingAttempt() {
         pending.edit(commit = true) {
             putString("provider", OAuthProvider.Claude.name)
-            putString("verifier", "verifier")
+            putString("verifier", tokens.encrypt("verifier"))
             putString("state", "state")
         }
         signIn = SignIn(app, tokenEndpoint, tokens) { accepted.countDown() }
@@ -106,6 +111,28 @@ class SignInTest {
             assertTrue(System.nanoTime() < deadline)
             Thread.sleep(10)
         }
+    }
+
+    @Test
+    fun `a pending attempt's verifier is saved encrypted and restored`() {
+        val attempt = signIn.start(OAuthProvider.Claude, "Claude") {}
+
+        assertNotEquals(attempt.verifier, pending.getString("verifier", null))
+        assertEquals(OAuthProvider.Claude, SignIn(app, tokenEndpoint, tokens).pendingProvider)
+    }
+
+    @Test
+    fun `the listener cannot be reached from off the device`() {
+        val lan =
+            NetworkInterface.getNetworkInterfaces()
+                .toList()
+                .flatMap { it.inetAddresses.toList() }
+                .firstOrNull { it is Inet4Address && !it.isLoopbackAddress }
+        assumeTrue("no network address to test from", lan != null)
+        signIn.start(OAuthProvider.Claude, "Claude") {}
+        browser().close()
+
+        assertThrows(ConnectException::class.java) { Socket(lan, CLAUDE_LISTENER_PORT) }
     }
 
     @Test
