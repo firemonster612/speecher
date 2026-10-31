@@ -191,12 +191,14 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
 // Ollama unloads an idle model after five minutes, and reloading it costs
 // seconds. Its Chat Completions API takes no keep_alive, but a keep_alive a
 // request sets stays on the loaded model, so a model-load request (empty
-// prompt) beside the cleanup keeps it resident whichever finishes first.
+// prompt) beside the cleanup keeps it resident whichever finishes first. Half
+// an hour spans the pauses between dictations without holding the model's
+// memory once dictation has stopped.
 void LocalRunnerRefiner::keepOllamaModelLoaded(const QString &model)
 {
     QNetworkRequest request = endpointRequest(QUrl(localRunnerOrigin(QStringLiteral("ollama")) + QStringLiteral("/api/generate")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    const QJsonObject body{{QStringLiteral("model"), model}, {QStringLiteral("keep_alive"), -1}};
+    const QJsonObject body{{QStringLiteral("model"), model}, {QStringLiteral("keep_alive"), QStringLiteral("30m")}};
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
 }
