@@ -852,7 +852,7 @@ private slots:
                 || result.receipt == DeliveryReceipt::InputSent);
         if (result.receipt == DeliveryReceipt::InputSent) {
             QTest::qWait(500);
-            QVERIFY(targetProvider.verifyInsertion(target, inserted));
+            QVERIFY(test::verifyInsertionAndWait(targetProvider, target, inserted));
         }
         qInfo().noquote() << "windows live delivery text=" + inserted;
     }

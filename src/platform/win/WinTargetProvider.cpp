@@ -4,6 +4,7 @@
 #include "output/win/WinPasteDelivery.h"
 
 #include <QFileInfo>
+#include <QPointer>
 #include <QSet>
 
 #include <windows.h>
@@ -426,25 +427,35 @@ bool WinTargetProvider::preparePaste(const Target &target)
     return stillFocused(target);
 }
 
-bool WinTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
+void WinTargetProvider::verifyInsertion(const Target &target,
+                                        const QString &plainText,
+                                        QObject *context,
+                                        std::function<void(bool)> done)
 {
     if (!m_native->focused || !m_insertionBaseline || target.secure || !stillFocused(target)) {
-        return false;
+        done(false);
+        return;
     }
-    // A copy, because a capture during verify's nested event loop resets the member.
+    // A copy, because a capture before the answer resets the member.
     const InsertionBaseline baseline = *m_insertionBaseline;
-    if (!baseline.verify(plainText, [this, &target]() -> std::optional<QString> {
-            if (!stillFocused(target)) {
-                return std::nullopt;
-            }
-            return currentText(m_native->focused.Get());
-        })) {
-        return false;
-    }
-    if (const auto window = baseline.correctionWindow(target, plainText)) {
-        observeCorrections(*window);
-    }
-    return true;
+    const auto read = [this, target]() -> std::optional<QString> {
+        if (!m_native->focused || !stillFocused(target)) {
+            return std::nullopt;
+        }
+        return currentText(m_native->focused.Get());
+    };
+    baseline.verify(plainText, read, this,
+                    [this, baseline, target, plainText, context = QPointer<QObject>(context), done](bool shown) {
+                        if (!context) {
+                            return;
+                        }
+                        if (shown) {
+                            if (const auto window = baseline.correctionWindow(target, plainText)) {
+                                observeCorrections(*window);
+                            }
+                        }
+                        done(shown);
+                    });
 }
 
 void WinTargetProvider::observeCorrections(const CorrectionWindow &window)

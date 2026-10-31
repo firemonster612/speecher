@@ -738,15 +738,15 @@ private slots:
         const Target target = test::captureAndWait(provider);
         QVERIFY(target.hasIdentity());
         QVERIFY(provider.canInsertText(target));
-        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, QStringLiteral("text")));
         const QString inserted = QString::fromUtf8("🌍 text ");
         QString error;
         QVERIFY2(provider.insertText(target, inserted, &error), qPrintable(error));
-        QVERIFY(provider.verifyInsertion(target, inserted));
+        QVERIFY(test::verifyInsertionAndWait(provider, target, inserted));
         // Another matching occurrence and a different value at the anchor
         // cannot stand in for the requested insertion.
-        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("suffix text")));
-        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, QStringLiteral("suffix text")));
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, QStringLiteral("text")));
     }
 
     // A capture while verification waits starts the next dictation's
@@ -766,7 +766,7 @@ private slots:
             const Target next = test::captureAndWait(provider);
             provider.insertText(next, inserted);
         });
-        QVERIFY(!provider.verifyInsertion(target, inserted));
+        QVERIFY(!test::verifyInsertionAndWait(provider, target, inserted));
     }
 
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
@@ -789,7 +789,7 @@ private slots:
 
         QString error;
         QVERIFY2(provider.insertText(target, QStringLiteral("inserted"), &error), qPrintable(error));
-        QVERIFY(provider.verifyInsertion(target, QStringLiteral("inserted")));
+        QVERIFY(test::verifyInsertionAndWait(provider, target, QStringLiteral("inserted")));
     }
 
     void livePlasmaDeliveryToFocusedControl()

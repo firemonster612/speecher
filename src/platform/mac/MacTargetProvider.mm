@@ -2,6 +2,7 @@
 
 #include "platform/mac/MacCorrectionObserver.h"
 
+#include <QPointer>
 #include <QSet>
 
 #import <AppKit/AppKit.h>
@@ -388,22 +389,35 @@ bool MacTargetProvider::preparePaste(const Target &target)
     return true;
 }
 
-bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
+void MacTargetProvider::verifyInsertion(const Target &target,
+                                        const QString &plainText,
+                                        QObject *context,
+                                        std::function<void(bool)> done)
 {
     if (!m_focusedElement || !m_insertionBaseline || target.secure || !stillFocused(target)) {
-        return false;
+        done(false);
+        return;
     }
-    // A copy, because a capture during verify's nested event loop resets the member.
+    // A copy, because a capture before the answer resets the member.
     const InsertionBaseline baseline = *m_insertionBaseline;
-    if (!baseline.verify(plainText, [this]() -> std::optional<QString> {
-            return stringAttribute(static_cast<AXUIElementRef>(m_focusedElement), kAXValueAttribute);
-        })) {
-        return false;
-    }
-    if (const auto window = baseline.correctionWindow(target, plainText)) {
-        observeCorrections(*window);
-    }
-    return true;
+    const auto read = [this]() -> std::optional<QString> {
+        if (!m_focusedElement) {
+            return std::nullopt;
+        }
+        return stringAttribute(static_cast<AXUIElementRef>(m_focusedElement), kAXValueAttribute);
+    };
+    baseline.verify(plainText, read, this,
+                    [this, baseline, target, plainText, context = QPointer<QObject>(context), done](bool shown) {
+                        if (!context) {
+                            return;
+                        }
+                        if (shown) {
+                            if (const auto window = baseline.correctionWindow(target, plainText)) {
+                                observeCorrections(*window);
+                            }
+                        }
+                        done(shown);
+                    });
 }
 
 void MacTargetProvider::observeCorrections(const CorrectionWindow &window)

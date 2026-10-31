@@ -1,9 +1,24 @@
 #include "common/test_suites.h"
 #include "platform/InsertionBaseline.h"
 
+#include <QTest>
+
+#include <optional>
+
 using namespace speecher;
 
 namespace {
+
+// Verifies through baseline and waits for the answer: false when none comes.
+bool verifiedAndWait(const InsertionBaseline &baseline,
+                     const QString &plainText,
+                     std::function<std::optional<QString>()> read)
+{
+    QObject context;
+    std::optional<bool> shown;
+    baseline.verify(plainText, std::move(read), &context, [&shown](bool given) { shown = given; });
+    return QTest::qWaitFor([&shown] { return shown.has_value(); }, 5000) && *shown;
+}
 
 class InsertionBaselineTests : public QObject {
     Q_OBJECT
@@ -16,21 +31,29 @@ private slots:
         QVERIFY(baseline);
         QVERIFY(!InsertionBaseline::forSelection(before, 12, 40));
 
-        // A control that shows the write a turn late still verifies.
+        // A control that shows the write a turn late still verifies. The
+        // second read comes on a later turn of the event loop, not inside
+        // the call.
         QStringList reads{before, QStringLiteral("before text Qt after text")};
-        QVERIFY(baseline->verify(QStringLiteral("Qt"), [&reads]() -> std::optional<QString> {
-            return reads.size() > 1 ? reads.takeFirst() : reads.first();
-        }));
+        QObject context;
+        std::optional<bool> shown;
+        baseline->verify(
+            QStringLiteral("Qt"),
+            [&reads]() -> std::optional<QString> { return reads.size() > 1 ? reads.takeFirst() : reads.first(); },
+            &context, [&shown](bool given) { shown = given; });
+        QVERIFY(!shown);
+        QCOMPARE(reads.size(), 1);
+        QTRY_COMPARE(shown, std::optional<bool>(true));
         // So does nothing else: a change beyond the selection, text identical to
         // what it replaced, or a control that can no longer be read.
-        QVERIFY(!baseline->verify(QStringLiteral("Qt"), []() -> std::optional<QString> {
+        QVERIFY(!verifiedAndWait(*baseline, QStringLiteral("Qt"), []() -> std::optional<QString> {
             return QStringLiteral("before text Qt after text!");
         }));
-        QVERIFY(!baseline->verify(QStringLiteral("cute"), [&before]() -> std::optional<QString> {
+        QVERIFY(!verifiedAndWait(*baseline, QStringLiteral("cute"), [&before]() -> std::optional<QString> {
             return before;
         }));
         int readCount = 0;
-        QVERIFY(!baseline->verify(QStringLiteral("Qt"), [&readCount]() -> std::optional<QString> {
+        QVERIFY(!verifiedAndWait(*baseline, QStringLiteral("Qt"), [&readCount]() -> std::optional<QString> {
             ++readCount;
             return std::nullopt;
         }));

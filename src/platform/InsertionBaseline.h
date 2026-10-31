@@ -2,6 +2,7 @@
 
 #include "platform/CorrectionDiff.h"
 
+#include <QObject>
 #include <QString>
 
 #include <functional>
@@ -25,11 +26,15 @@ struct InsertionBaseline {
     QString expectedAfter(const QString &plainText) const;
 
     // Reads the control until it shows exactly expectedAfter(plainText), so a
-    // background edit or an ignored paste never verifies. `read` returns
-    // nothing to give up, such as when focus has moved. Reads are spaced as
-    // awaitInsertion() spaces its checks. Text identical to the replaced
-    // selection changes nothing and never verifies.
-    bool verify(const QString &plainText, const std::function<std::optional<QString>()> &read) const;
+    // background edit or an ignored paste never verifies, and done hears
+    // whether it did. `read` returns nothing to give up, such as when focus
+    // has moved. Reads are spaced as awaitInsertion() spaces its checks.
+    // Text identical to the replaced selection changes nothing and never
+    // verifies.
+    void verify(const QString &plainText,
+                std::function<std::optional<QString>()> read,
+                QObject *context,
+                std::function<void(bool shown)> done) const;
 
     // The inserted span pinned by the text around it, or nothing when either
     // side has too little context to find the span again once edited.
@@ -39,9 +44,10 @@ struct InsertionBaseline {
 
 // Asks `check` whether an insertion shows yet, a few times over about a tenth
 // of a second: some controls publish a write only on their next event-loop
-// turn. Between checks this runs a nested event loop, user input excluded, so
-// Speecher's own UI stays live; whatever that loop runs may change the
-// caller's state. `check` returns nothing to give up at once.
-bool awaitInsertion(const std::function<std::optional<bool>()> &check);
+// turn. The first check is at once, the rest on later turns of context's
+// event loop, so whatever runs between them may change the caller's state.
+// `check` returns nothing to give up at once. done hears whether the
+// insertion showed, unless context is gone first.
+void awaitInsertion(std::function<std::optional<bool>()> check, QObject *context, std::function<void(bool shown)> done);
 
 } // namespace speecher
