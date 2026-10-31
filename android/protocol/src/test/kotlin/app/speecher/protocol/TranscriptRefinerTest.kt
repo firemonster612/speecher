@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
@@ -275,6 +276,51 @@ class TranscriptRefinerTest {
             assertEquals(
                 Triple(ProviderFailureKind.RateLimited, 429, 1),
                 Triple(failure.kind, failure.httpStatus, server.requestCount),
+            )
+        }
+    }
+
+    @Test
+    fun `refined text reaches onText as it streams, before the reply ends`() {
+        val firstShown = CountDownLatch(1)
+        var streamedBeforeEnd = false
+        fun chunk(event: String, delta: String) =
+            "event: $event\ndata: {\"delta\":\"$delta\"}\n\n"
+                .let { "${it.length.toString(16)}\r\n$it\r\n" }
+        val body =
+            object : MockResponseBody {
+                override val contentLength = -1L
+
+                override fun writeTo(sink: okio.BufferedSink) {
+                    sink.writeUtf8(chunk("response.output_text.delta", "Hello")).flush()
+                    // The rest waits for the first text, so a reader that takes the reply whole
+                    // leaves streamedBeforeEnd false.
+                    streamedBeforeEnd = firstShown.await(3, TimeUnit.SECONDS)
+                    sink
+                        .writeUtf8(chunk("response.output_text.delta", " there."))
+                        .writeUtf8(chunk("response.completed", ""))
+                        .writeUtf8("0\r\n\r\n")
+                        .flush()
+                }
+            }
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder().addHeader("Transfer-Encoding", "chunked").body(body).build()
+            )
+            server.start()
+            val shown = mutableListOf<String>()
+            val result =
+                refine(
+                    server,
+                    OAuthProvider.ChatGpt,
+                    onText = {
+                        shown.add(it)
+                        firstShown.countDown()
+                    },
+                )
+            assertEquals(
+                Triple(true, listOf("Hello", "Hello there."), "Hello there."),
+                Triple(streamedBeforeEnd, shown, result),
             )
         }
     }

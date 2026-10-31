@@ -97,6 +97,9 @@ internal class FakeSpeechClient(val events: (SpeechEvent) -> Unit) : SpeechClien
     var stopped = false
     var cancelled = false
     val audio = mutableListOf<ByteArray>()
+    /** [audio] as lists, which compare by value. */
+    val heard: List<List<Byte>>
+        get() = audio.map { it.toList() }
 
     override fun sendAudio(pcm: ByteArray) {
         audio.add(pcm)
