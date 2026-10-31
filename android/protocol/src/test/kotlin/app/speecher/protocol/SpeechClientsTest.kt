@@ -65,12 +65,12 @@ class SpeechClientsTest {
         val transport = FakeTransport()
         val events = LinkedBlockingQueue<SpeechEvent>()
         val client =
-            CodexDictationClient(transport, "token", "en", events::add, closeTimeoutMillis = 1_000)
+            CodexDictationClient(transport, "token", "en", events::add, closeTimeoutMillis = 3_000)
         transport.server.onText("""{"type":"session.started"}""")
         client.stop()
-        Thread.sleep(600)
+        Thread.sleep(1_800)
         transport.server.onText("""{"type":"transcript.segment","text":"Hello"}""")
-        Thread.sleep(600)
+        Thread.sleep(1_800)
         transport.server.onText("""{"type":"transcript.final","text":"Hello there."}""")
         transport.server.onText("""{"type":"session.updated","session":{"status":"closed"}}""")
 

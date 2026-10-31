@@ -48,7 +48,7 @@ class CommitToFieldTest {
             shadowOf(Looper.getMainLooper()).idle()
             session.end()
             ActiveDictation.watchCorrections = null
-            listOf(committed, latestTranscript, watched)
+            listOf(committed, latestTranscript, watched).also { latestTranscript = null }
         }
 
     @Test
