@@ -354,7 +354,7 @@ quint64 SecretStore::ask(Secret secret, const Request &request)
     const quint64 number = ++entry.requests;
     if (const QString refusal = writeRefusal(); !refusal.isEmpty()) {
         entry.requested.reset();
-        refuse(secret, number, request.value.isEmpty(), refusal);
+        refuse(secret, number, request.value, refusal);
     } else {
         entry.requested = request;
     }
@@ -392,7 +392,7 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
         // A file that won't save refuses the request without another write.
         const bool held = holds(secret, request);
         stored = (held || write(secret, request)) && fileSaved(secret);
-        wrote = wrote || (stored && !held);
+        wrote = wrote || (stored && (!held || entry.refused == request.value));
     } while (entry.requested && entry.requests != written);
     entry.writing = false;
     // The removal already answered for what was asked.
@@ -403,9 +403,10 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
     const bool cleared = request.value.isEmpty();
     const QString error = m_lastError;
     if (stored) {
+        entry.refused.reset();
         emit saveFinished(secret, written, cleared, true, QString(), wrote);
     } else {
-        refuse(secret, written, cleared, error);
+        refuse(secret, written, request.value, error);
     }
     // A saveFinished handler may have saved another secret, which sets lastError().
     m_lastError = error;
@@ -415,10 +416,12 @@ SecretStore::SaveResult SecretStore::settle(Secret secret, quint64 own)
     return stored ? SaveResult::Stored : SaveResult::Refused;
 }
 
-// Logs that request number of the secret was refused for error's reason, and
-// tells saveFinished.
-void SecretStore::refuse(Secret secret, quint64 request, bool cleared, const QString &error)
+// Logs that request number of the secret, asking for value (a clear when
+// empty), was refused for error's reason, notes it, and tells saveFinished.
+void SecretStore::refuse(Secret secret, quint64 request, const QString &value, const QString &error)
 {
+    state(secret).refused = value;
+    const bool cleared = value.isEmpty();
     qWarning().noquote() << "Could not" << (cleared ? "clear" : "save") << keyringEntry(secret) + QLatin1Char(':')
                          << error;
     emit saveFinished(secret, request, cleared, false, error, false);
@@ -674,7 +677,7 @@ bool SecretStore::deleteKeyringSecrets()
         // A keyring read under way drops its answer, as for a request.
         ++entry.requests;
         if (const std::optional<Request> request = std::exchange(entry.requested, std::nullopt)) {
-            refuse(row.secret, dropped, request->value.isEmpty(), writeRefusal());
+            refuse(row.secret, dropped, request->value, writeRefusal());
         }
     }
     bool ok = true;

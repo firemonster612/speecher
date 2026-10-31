@@ -606,6 +606,60 @@ private slots:
 
         QCOMPARE(accounts.secretErrors().value(QStringLiteral("cliproxyApiKey")), kept ? refusal : QVariant());
     }
+
+    // A save whose settings-file commit failed leaves the key in place but
+    // unsaved. A retry that commits it, made directly or by a settings edit
+    // that saves the file, is a save that went through, and ends the
+    // failure, though it finds the key already in place.
+    void aRetryThatCommitsARefusedSaveEndsItsFailure_data()
+    {
+        QTest::addColumn<bool>("throughAnEdit");
+        QTest::newRow("saved again") << false;
+        QTest::newRow("a settings edit") << true;
+    }
+
+    void aRetryThatCommitsARefusedSaveEndsItsFailure()
+    {
+        QFETCH(bool, throughAnEdit);
+        if (getuid() == 0) {
+            QSKIP("Root writes to a read-only folder");
+        }
+        ApplicationController controller(true);
+        QuickAccounts accounts(&controller);
+        SettingsStore &settings = *controller.settings();
+        settings.edit([](AppSettings &draft) {
+            draft.ui.previewWords = 12;
+            return true;
+        });
+        const QString folder = QFileInfo(settings.raw().fileName()).absolutePath();
+        const auto writable = qScopeGuard([folder] {
+            QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        // Qt writes the file through a temporary one beside it.
+        QVERIFY(QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner));
+        accounts.saveSecret(QStringLiteral("cliproxyApiKey"), QStringLiteral("new-key"));
+        QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        const QString reason = accounts.secretErrors()
+                                   .value(QStringLiteral("cliproxyApiKey"))
+                                   .toMap()
+                                   .value(QStringLiteral("reason"))
+                                   .toString();
+        QVERIFY2(reason.contains(QStringLiteral("Could not save the settings file")), qPrintable(reason));
+
+        if (throughAnEdit) {
+            settings.edit([](AppSettings &draft) {
+                draft.ui.previewWords = 13;
+                return true;
+            });
+        } else {
+            QCOMPARE(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, QStringLiteral("new-key")),
+                     SecretStore::SaveResult::Stored);
+        }
+
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("new-key"));
+        QCOMPARE(accounts.savedSecrets().value(QStringLiteral("cliproxyApiKey")), QVariant(true));
+        QVERIFY(!accounts.secretErrors().contains(QStringLiteral("cliproxyApiKey")));
+    }
 #endif
 
     // The key field still holds what was submitted for server A while the
