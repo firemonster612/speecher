@@ -17,6 +17,7 @@
 #include <QPointer>
 #include <QVector>
 
+#include <functional>
 #include <optional>
 
 class QTimer;
@@ -88,8 +89,8 @@ public slots:
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
     // While a selection edit is reviewed it keeps the original, silently.
     // Dismisses an error; does nothing while idle or delivering, when the text
-    // is already out. A start made while it cleans up begins once it is done;
-    // a cancel made then drops that start.
+    // is already out. A start made while it lets go of the microphone begins
+    // once it has; a cancel made then drops that start.
     void cancel();
     // Ends a review by putting the edit in place of the selection, or on the
     // clipboard when the selection is no longer the one it was made from.
@@ -186,6 +187,7 @@ private:
     // session before stopping and recheck it afterwards.
     void stopAudio();
     bool startWaits() const;
+    void letGoOfMicrophone(const std::function<void()> &end);
     void startPendingLater();
     void cancelSession();
     bool startAudio(QString *error);
@@ -270,11 +272,11 @@ private:
     ProviderHistory m_providerHistory;
     // What the system last said about the internet.
     Reachability m_reachability = Reachability::Unknown;
-    // Inside stopAudio(), or inside cancel()'s cleanup: a session start waits
-    // in m_pendingStart until it is over, unless a stop or cancel drops it
-    // first.
+    // Inside stopAudio(), or inside letGoOfMicrophone(): a session start
+    // waits in m_pendingStart until it is over, unless a stop or cancel drops
+    // it first.
     int m_audioStopDepth = 0;
-    bool m_cancelling = false;
+    bool m_lettingGoOfMicrophone = false;
     bool m_microphoneOpen = false;
     bool m_microphoneHeld = false;
     bool m_listening = false;

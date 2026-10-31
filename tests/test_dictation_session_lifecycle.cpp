@@ -1510,6 +1510,37 @@ private slots:
         QVERIFY(audio.active);
     }
 
+    // So does one started as a microphone that failed before anything was
+    // heard ends the session in Error.
+    void aStartAsAFailureEndsListensOnceTheMicrophoneStopped()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        connect(&session, &DictationSession::popupShowRequested, &session,
+                [&session](quint64 generation) { session.popupPresented(generation); });
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        bool restarted = false;
+        connect(&session, &DictationSession::stateChanged, &session, [&](DictationState state) {
+            if (state == DictationState::Error && !std::exchange(restarted, true)) {
+                session.startListening();
+            }
+        });
+
+        audio.emitFailure(QStringLiteral("unplugged"));
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+
+        QVERIFY(restarted);
+        QVERIFY(audio.active);
+    }
+
     // A handler that stops, or pauses, as the session first says it listens
     // finds the speech listening.
     void actingOnTheFirstListeningStillDelivers_data()

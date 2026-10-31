@@ -156,9 +156,11 @@ DictationSession::DictationSession(SettingsStore *settings,
             return;
         }
 
-        m_speech->cancel();
-        failSession(message);
-        stopAudio();
+        letGoOfMicrophone([this, &message] {
+            m_speech->cancel();
+            failSession(message);
+            stopAudio();
+        });
     });
 }
 
@@ -595,10 +597,12 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Starting) {
-        discard();
-        emit popupHideRequested();
-        setState(DictationState::Idle);
-        stopAudio();
+        letGoOfMicrophone([this] {
+            discard();
+            emit popupHideRequested();
+            setState(DictationState::Idle);
+            stopAudio();
+        });
         return;
     }
     if (m_state != DictationState::Listening) {
@@ -629,32 +633,42 @@ void DictationSession::cancelForShutdown()
     if (m_state == DictationState::Idle) {
         return;
     }
-    m_review.end();
-    discard();
-    emit popupHideRequested();
-    setState(DictationState::Idle);
-    stopAudio();
+    letGoOfMicrophone([this] {
+        m_review.end();
+        discard();
+        emit popupHideRequested();
+        setState(DictationState::Idle);
+        stopAudio();
+    });
 }
 
-// A start that lands inside the microphone's stop, or anywhere in a cancel's
-// cleanup, such as from a handler of the Idle it announces, would open the
-// microphone only for that cleanup to close it again. It waits for the
-// cleanup instead, and a stop or cancel meanwhile drops it.
+// A start made while the session is still letting go of its microphone,
+// inside the microphone's stop or anywhere in an end that announces Idle or
+// Error before it stops it, would open the microphone only for that stop to
+// close it again. It waits until the session has let go instead, and a stop
+// or cancel meanwhile drops it.
 bool DictationSession::startWaits() const
 {
-    return m_audioStopDepth > 0 || m_cancelling;
+    return m_audioStopDepth > 0 || m_lettingGoOfMicrophone;
+}
+
+// Runs end, which announces the session's end and then stops the microphone,
+// and starts what waited for it once the outermost such end is over; a stop
+// still running starts it itself.
+void DictationSession::letGoOfMicrophone(const std::function<void()> &end)
+{
+    {
+        const QScopedValueRollback<bool> lettingGo(m_lettingGoOfMicrophone, true);
+        end();
+    }
+    if (!m_lettingGoOfMicrophone && m_audioStopDepth == 0) {
+        startPendingLater();
+    }
 }
 
 void DictationSession::cancel()
 {
-    {
-        const QScopedValueRollback<bool> cancelling(m_cancelling, true);
-        cancelSession();
-    }
-    // The outermost cleanup is over; a stop still running starts it itself.
-    if (!m_cancelling && m_audioStopDepth == 0) {
-        startPendingLater();
-    }
+    letGoOfMicrophone([this] { cancelSession(); });
 }
 
 void DictationSession::cancelSession()
@@ -1376,8 +1390,10 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     const PopupErrorAction fix = m_speech->triedFallbacks(m_providerHistory.issues)
         ? PopupErrorAction{ErrorFix::SettingsPage, QStringLiteral("speech")}
         : PopupErrorAction{};
-    failSession(message, fix);
-    stopAudio();
+    letGoOfMicrophone([this, &message, &fix] {
+        failSession(message, fix);
+        stopAudio();
+    });
 }
 
 bool DictationSession::selectTranscriptRefiner(const QString &providerId)
