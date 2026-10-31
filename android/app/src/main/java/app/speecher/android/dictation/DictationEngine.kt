@@ -253,7 +253,7 @@ class DictationEngine(
                     // A stream opened while a pause finishes, after this dictation has streamed:
                     // a blip ends it like a paused stream that failed, and the words stay.
                     if (now.finishingPause && streamed && !kind.needsSignIn)
-                        pausedStreamEnded(current, now.mic, opened = false)
+                        pausedStreamEnded(current, now.mic, openFailure = kind)
                     else
                         streamFailed(
                             current,
@@ -289,8 +289,16 @@ class DictationEngine(
         phase = now.copy(mic = Mic.Stopped(cleanup))
         if (now.mic == Mic.Paused) {
             resumeMedia()
-            // An Insert while paused takes what was heard once the paused stream has ended.
-            if (!now.finishingPause) insertBest(cleanup) else publish(listening(0f))
+            // An Insert while paused takes what was heard once the paused stream has ended, and
+            // once words a resume heard, left when no stream for them could open, reach one.
+            when {
+                now.finishingPause -> publish(listening(0f))
+                unsent.isNotEmpty() -> {
+                    phase = Phase.Listening(Mic.Stopped(cleanup), finishingPause = true)
+                    reopen(session)
+                }
+                else -> insertBest(cleanup)
+            }
             return true
         }
         stopCapture()
@@ -580,15 +588,29 @@ class DictationEngine(
     /**
      * The paused stream ended. What was heard after a resume goes to the next stream: one that
      * keeps listening, or, with the microphone off again, one that ends as it opens and is waited
-     * on like the paused one. Only then does an Insert go ahead. A stream that never [opened]
-     * leaves that audio in [unsent] for the next resume rather than retrying while paused.
+     * on like the paused one. Only then does an Insert go ahead. A stream that could not open, as
+     * [openFailure] says, leaves that audio in [unsent] for the next resume or Insert rather than
+     * retrying while paused; with an Insert waiting, the dictation fails instead of putting the
+     * words in without it.
      */
-    private fun pausedStreamEnded(current: Int, mic: Mic, opened: Boolean = true) {
+    private fun pausedStreamEnded(
+        current: Int,
+        mic: Mic,
+        openFailure: ProviderFailureKind? = null,
+    ) {
         client = null
         unsent.addAll(heardAfterResume)
         heardAfterResume.clear()
-        if (opened && mic != Mic.On && unsent.isNotEmpty()) {
+        if (openFailure == null && mic != Mic.On && unsent.isNotEmpty()) {
             reopen(current)
+            return
+        }
+        if (openFailure != null && mic is Mic.Stopped && unsent.isNotEmpty()) {
+            fail(
+                current,
+                FailureReason.Speech(sourceProvider, openFailure),
+                "Could not connect to the speech provider",
+            )
             return
         }
         phase = Phase.Listening(mic)
