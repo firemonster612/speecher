@@ -135,13 +135,13 @@
   <div class="track" id="terminal" style="--hold: 100svh"><section class="stop cli" data-stop="4">
     <div class="copy">
       <h2>It works in your terminal&nbsp;too.</h2>
-      <p class="line">Print what you say. Turn audio files into subtitles. Record a call to a transcript a coding agent can&nbsp;read.</p>
+      <p class="line">Print what you say. Turn audio files into text. Record a call to a transcript a coding agent can&nbsp;read.</p>
     </div>
-    <div class="shell" role="img" aria-label="A terminal: speecher listen prints a spoken sentence, speecher transcribe saves subtitles for an audio file, and speecher record start writes a call transcript with lines for me and them.">
+    <div class="shell" role="img" aria-label="A terminal: speecher listen prints a spoken sentence, speecher transcribe saves a transcript of an audio file, and speecher record start writes a call transcript with lines for me and them.">
       <p class="run"><span class="dim">$</span> <span class="typed">speecher listen</span> <span class="slot"></span></p>
       <p class="print">Can we push the meeting to Friday?</p>
-      <p class="run"><span class="dim">$</span> <span class="typed">speecher transcribe --model local --srt talk.mp3</span></p>
-      <p class="print dim">talk.mp3: saved /home/sam/talk-transcribed.srt</p>
+      <p class="run"><span class="dim">$</span> <span class="typed">speecher transcribe --headless talk.mp3</span></p>
+      <p class="print dim">talk.mp3: saved /home/sam/talk-transcribed.txt</p>
       <p class="run"><span class="dim">$</span> <span class="typed">speecher record start --to call.md</span></p>
       <p class="print dim">/home/sam/call.md</p>
       <p class="run"><span class="dim">$</span> <span class="typed">tail -f call.md</span></p>
