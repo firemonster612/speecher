@@ -4,13 +4,19 @@
 
 <h1 align="center">speecher</h1>
 
-<p align="center">Speech-to-text for Linux, macOS, and Windows that reuses your existing subscriptions.</p>
+<p align="center">Speech-to-text for Linux, macOS, and Windows that reuses your existing subscriptions, or runs a model on your own computer.</p>
 
 ## Quick start
 
 ### Prerequisites
 
-Sign in to at least one transcription service: Claude Code for Claude, or the ChatGPT app or Codex CLI for ChatGPT. Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
+Speecher needs one way to turn speech into text:
+
+- A sign-in: Claude Code for Claude, or the ChatGPT app or Codex CLI for ChatGPT.
+- A Local Model, which the setup assistant downloads and which runs on your computer with no account. Release packages include local speech; a source build needs `-DSPEECHER_WITH_LOCAL_SPEECH=ON` (see [Build](#build)).
+- A Custom Endpoint: a speech server you host.
+
+Speecher can refresh expired OAuth logins and save rotated tokens back to the selected store. macOS Codex Keychain logins and oversized Claude Keychain entries require the owning CLI to refresh them.
 
 ```sh
 # Arch
@@ -340,7 +346,7 @@ On Windows, uninstall Speecher from **Settings > Apps > Installed apps**.
 
 ## Transcription
 
-Choose Claude or ChatGPT under the transcription settings. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
+Choose Claude, ChatGPT, a Local Model or a Custom Endpoint under Speech to text. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
 
 ChatGPT dictation uses the same streaming protocol as the Codex CLI and reuses its ChatGPT OAuth session. An OpenAI API key cannot authorize this endpoint. Sign in with `codex login` or the ChatGPT app before using it.
 
