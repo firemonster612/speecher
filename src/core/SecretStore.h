@@ -82,11 +82,11 @@ public:
     // keychain is taking. Every save waiting its turn is refused, the answer
     // of a write under way is dropped, and saves asked for before done runs
     // are refused. A deleted entry's deletion marker goes, having nothing
-    // left to hide; an OpenAI key the keyring refuses to delete and still
-    // holds gets one. The settings file's copies stay: SettingsStore::deleteAll
-    // removes them, after which every save is refused. done gets whether every
-    // entry went, else the first refusal's reason; a removal asked for while
-    // one runs finishes with it.
+    // left to hide; an OpenAI key the keyring refuses to delete gets one,
+    // unless a read then finds the entry gone. The settings file's copies
+    // stay: SettingsStore::deleteAll removes them, after which every save is
+    // refused. done gets whether every entry went, else the first refusal's
+    // reason; a removal asked for while one runs finishes with it.
     void deleteKeyringSecrets(std::function<void(bool deleted, const QString &error)> done);
     // Calls done once no save, clear or removal asked for is still under way
     // or waiting its turn, during this call when none is, replacing a done

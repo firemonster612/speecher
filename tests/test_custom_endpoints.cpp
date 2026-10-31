@@ -1904,30 +1904,44 @@ private slots:
         comparePeerRead(settings, proxy, QString());
     }
 
-    // Without a keyring to delete a key from, removal deletes the settings
-    // and the keys they hold: they hide no key a keyring kept.
-    void removalWithoutAKeyringDeletesTheSettings()
+    // A keyring that neither deletes nor reads, as one that doesn't answer,
+    // may still hold the OpenAI key every start looks up: removal keeps the
+    // marker hiding it, and only that, so a start after the keyring answers
+    // again finds no key (r382 Sol3).
+    void removalHidesTheOpenAiKeyFromAKeyringThatDoesNotAnswer()
     {
+        const auto openAi = SecretStore::Secret::OpenAiApiKey;
         const auto proxy = SecretStore::Secret::CliproxyApiKey;
         SettingsStore settings;
         settings.raw().clear();
         SecretStore *secrets = settings.secrets();
-        const auto restore = qScopeGuard([] {
+        const auto unset = [] {
             qunsetenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE");
             qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE");
+            qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+        };
+        const auto restore = qScopeGuard([unset] {
+            unset();
+            removedSecrets(SettingsStore().secrets());
         });
         const auto kept = keepSettingsHere(settings);
-        // A private keyring refuses everything, as a missing one does.
+        if (privateKeyring()) {
+            QVERIFY(savedApiKey(secrets, QStringLiteral("kept-key")));
+        }
         qputenv("SPEECHER_TEST_KEYRING_WRITE_FAILURE", "1");
-        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
         QVERIFY(savedSecret(secrets, proxy, QStringLiteral("plain-key")));
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         SpeecherRemoval removal(removalSteps(settings));
         QSignalSpy finished(&removal, &SpeecherRemoval::finished);
 
         removal.start(true);
 
         QTRY_COMPARE(finished.count(), 1);
-        QVERIFY(finished.first().first().value<RemovalReport>().settingsDeleted());
+        QCOMPARE(finished.first().first().value<RemovalReport>().steps.last().outcome,
+                 RemovalStep::Outcome::KeptHidingKeys);
+        unset();
+        comparePeerRead(settings, openAi, QString(), true);
         comparePeerRead(settings, proxy, QString());
     }
 
@@ -2007,7 +2021,11 @@ private slots:
 
         QTRY_COMPARE(finished.count(), 1);
         const RemovalStep step = finished.first().first().value<RemovalReport>().steps.last();
-        QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : RemovalStep::Outcome::Removed);
+        // Only a keyring that answers can say the OpenAI key is gone; until
+        // then a marker hides it, and the settings keep only that.
+        const RemovalStep::Outcome removed =
+            privateKeyring() ? RemovalStep::Outcome::Removed : RemovalStep::Outcome::KeptHidingKeys;
+        QCOMPARE(step.outcome, olderStay ? RemovalStep::Outcome::Failed : removed);
         const QString error = currentStays ? olderFile + QStringLiteral(" or the one at ") + file : olderFile;
         QCOMPARE(step.error, olderStay ? error : QString());
         QCOMPARE(QFileInfo::exists(olderFolder), olderStay);

@@ -49,6 +49,11 @@ public:
         return updater.m_restartServer;
     }
 
+    static void passHandshakeDeadline(AppImageUpdater &updater)
+    {
+        updater.abandonRestart();
+    }
+
     static QProcessEnvironment restartEnvironment(const QStringList &arguments,
                                                    QProcessEnvironment environment)
     {
@@ -744,6 +749,53 @@ private slots:
         AppImageUpdaterTestAccess::restartAppImage(updater);
 
         QCOMPARE(AppImageUpdaterTestAccess::restartServer(updater), firstServer);
+    }
+
+    // Once the replacement connects, the handshake's deadline passing while
+    // quitting waits for key saves keeps its server and socket, so the
+    // replacement goes on waiting for this process to exit (r382 Sol3).
+    void aConnectedReplacementOutlastsTheHandshakeDeadline()
+    {
+        const QByteArray previousAppImage = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QByteArrayLiteral("/bin/true"));
+        const auto restoreAppImage = qScopeGuard([previousAppImage] {
+            previousAppImage.isNull() ? qunsetenv("APPIMAGE")
+                                      : qputenv("APPIMAGE", previousAppImage);
+        });
+        UpdateTestContext context;
+        AppImageUpdater updater(&context.settings);
+        AppImageUpdaterTestAccess::restartAppImage(updater);
+        const QPointer<QLocalServer> server = AppImageUpdaterTestAccess::restartServer(updater);
+        QVERIFY(server);
+        QLocalSocket replacement;
+        replacement.connectToServer(server->fullServerName());
+        QTRY_VERIFY(server->findChild<QLocalSocket *>());
+
+        AppImageUpdaterTestAccess::passHandshakeDeadline(updater);
+
+        QVERIFY(server);
+        QCOMPARE(AppImageUpdaterTestAccess::restartServer(updater), server.data());
+        QCOMPARE(updater.state(), UpdateController::State::Restarting);
+        QCOMPARE(replacement.state(), QLocalSocket::ConnectedState);
+    }
+
+    // Without a connection the deadline means the replacement failed.
+    void anUnansweredHandshakeGivesUpAtItsDeadline()
+    {
+        const QByteArray previousAppImage = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QByteArrayLiteral("/bin/true"));
+        const auto restoreAppImage = qScopeGuard([previousAppImage] {
+            previousAppImage.isNull() ? qunsetenv("APPIMAGE")
+                                      : qputenv("APPIMAGE", previousAppImage);
+        });
+        UpdateTestContext context;
+        AppImageUpdater updater(&context.settings);
+        AppImageUpdaterTestAccess::restartAppImage(updater);
+
+        AppImageUpdaterTestAccess::passHandshakeDeadline(updater);
+
+        QVERIFY(!AppImageUpdaterTestAccess::restartServer(updater));
+        QCOMPARE(updater.state(), UpdateController::State::ReadyToRestart);
     }
 #endif
 

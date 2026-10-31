@@ -700,15 +700,15 @@ void SecretStore::removeNext(size_t index)
             m_removalError = answer.error;
         }
         // Every start reads the OpenAI entry (mayBeInKeyring), so a key the
-        // keyring kept would come back after a reinstall; a marker hides it.
-        // A keyring that can't be read either, as where there is none, gets
-        // no marker, so removal still deletes every setting.
+        // keyring kept would come back after a reinstall; a marker hides it
+        // unless a read finds the entry gone. A keyring that can't be read
+        // may hold the key still, once it answers again.
         if (!m_settings || secret != Secret::OpenAiApiKey) {
             removeNext(index + 1);
             return;
         }
         askKeyring(this, KeyringRequest::Read, secret, {}, [this, index, secret](const KeyringAnswer &read) {
-            if (read.ok && !read.value.isEmpty()) {
+            if (!read.ok || !read.value.isEmpty()) {
                 m_settings->raw().setValue(pendingDeletionKey(secret), true);
                 changedInFile(secret);
             }

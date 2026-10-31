@@ -50,10 +50,14 @@ private:
     static QProcessEnvironment restartEnvironment(const QStringList &arguments,
                                                    QProcessEnvironment environment);
     static QString currentAppImagePath();
+    void abandonRestart();
 
     std::optional<AppImageFileIdentity> m_appImageIdentity;
     QString m_appImagePath;
     QLocalServer *m_restartServer = nullptr;
+    // Whether the replacement connected to m_restartServer, which then stays
+    // until the application goes.
+    bool m_replacementConnected = false;
 };
 
 } // namespace speecher
