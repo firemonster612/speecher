@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Speecher: dictation that types what you meant</title>
-<meta name="description" content="Native dictation for Windows, macOS and Linux. Press a shortcut, talk, and clean text is typed into the focused app. Runs on your Claude Code or ChatGPT sign-in, or on a local model.">
+<title>Speecher: dictation on the plan you already pay for</title>
+<meta name="description" content="Native dictation for Linux, macOS and Windows. Press a shortcut, talk, and clean text is typed into the focused app. Runs on your Claude Code or ChatGPT sign-in, or on a local model.">
 <link rel="canonical" href="https://firemonster612.github.io/speecher/">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#f5f0e6">
+<meta name="theme-color" content="#000000">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Speecher">
-<meta property="og:title" content="Speecher: dictation that types what you meant">
-<meta property="og:description" content="Native dictation for Windows, macOS and Linux. Runs on your existing Claude Code or ChatGPT sign-in, or on a local model. Open source, MIT.">
+<meta property="og:title" content="Speecher: dictation on the plan you already pay for">
+<meta property="og:description" content="Native dictation for Linux, macOS and Windows. Runs on your existing Claude Code or ChatGPT sign-in, or on a local model. Open source, MIT.">
 <meta property="og:url" content="https://firemonster612.github.io/speecher/">
 <meta property="og:image" content="https://firemonster612.github.io/speecher/og.png">
 <meta property="og:image:width" content="1200">
@@ -32,159 +32,346 @@
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
-<link rel="preload" href="fonts/MonaSans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css">
-<script>document.documentElement.classList.add("js");</script>
+<link rel="preload" href="fonts/Unbounded.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/SpaceGrotesk.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face { font-family: "Unbounded"; src: url("fonts/Unbounded.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+  @font-face { font-family: "Space Grotesk"; src: url("fonts/SpaceGrotesk.woff2") format("woff2"); font-weight: 300 700; font-display: swap; }
+  :root {
+    --black: #000;
+    --bone: #efe9dc;
+    --mag: #ff2d95;
+    --cyan: #19e6ff;
+    --acid: #f2ff3d;
+    --ease: cubic-bezier(.2, .7, .1, 1);
+    /* Bayer 4x4 at three densities, as tiling SVG. The ink is currentColor via mask, so any color works. */
+    --d25: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect x='0' y='0' width='1' height='1'/%3E%3Crect x='2' y='2' width='1' height='1'/%3E%3Crect x='2' y='0' width='1' height='1'/%3E%3Crect x='0' y='2' width='1' height='1'/%3E%3C/svg%3E");
+    --d50: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect x='0' y='0' width='1' height='1'/%3E%3Crect x='2' y='0' width='1' height='1'/%3E%3Crect x='1' y='1' width='1' height='1'/%3E%3Crect x='3' y='1' width='1' height='1'/%3E%3Crect x='0' y='2' width='1' height='1'/%3E%3Crect x='2' y='2' width='1' height='1'/%3E%3Crect x='1' y='3' width='1' height='1'/%3E%3Crect x='3' y='3' width='1' height='1'/%3E%3C/svg%3E");
+    --d75: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='4' height='4'/%3E%3Crect x='1' y='0' width='1' height='1' fill='%23fff'/%3E%3Crect x='3' y='2' width='1' height='1' fill='%23fff'/%3E%3Crect x='3' y='0' width='1' height='1' fill='%23fff'/%3E%3Crect x='1' y='2' width='1' height='1' fill='%23fff'/%3E%3C/svg%3E");
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { -webkit-font-smoothing: antialiased; }
+  body { font-family: "Space Grotesk", system-ui, sans-serif; background: var(--black); color: var(--bone); font-size: 1.0625rem; line-height: 1.5; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--acid); outline-offset: 4px; }
+  h1, h2, .disp { font-family: "Unbounded", sans-serif; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  code { font: inherit; font-weight: 700; color: var(--acid); }
+  .wrap { padding-inline: clamp(16px, 4vw, 56px); }
+
+  /* a dithered surface: paint a color through a Bayer mask */
+  .dth { -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; }
+  .dth.l { -webkit-mask-image: var(--d25); mask-image: var(--d25); }
+  .dth.h { -webkit-mask-image: var(--d75); mask-image: var(--d75); }
+
+  .bar { position: fixed; inset: 0 0 auto; z-index: 40; display: flex; align-items: center; justify-content: space-between; padding: 14px clamp(16px, 4vw, 56px); }
+  .bar a { background: var(--black); padding: 6px 10px; }
+  .mark { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: "Unbounded", sans-serif; font-weight: 700; font-size: 1rem; }
+  .mark img { width: 28px; height: 28px; image-rendering: pixelated; }
+  .bar nav { display: flex; gap: 8px; font-weight: 500; }
+  .bar nav a { position: relative; text-decoration: none; padding-bottom: 3px; }
+  .bar nav a::after { content: ""; position: absolute; left: 10px; right: 100%; bottom: 4px; height: 4px; background: currentColor; -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; transition: right .35s steps(6); }
+  .bar nav a:hover::after { right: 10px; }
+
+  /* 1. hero: a cloud of noise that quantizes into a word */
+  .hero { position: relative; height: 230vh; }
+  .hero .pin { position: sticky; top: 0; height: 100svh; overflow: hidden; }
+  .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+  .hero .text { position: absolute; left: clamp(16px, 4vw, 56px); right: clamp(16px, 4vw, 56px); bottom: clamp(24px, 6vh, 64px); display: grid; grid-template-columns: minmax(0, 36rem) auto; gap: 24px 48px; align-items: end; justify-content: space-between; padding: clamp(18px, 3vh, 32px) clamp(18px, 2.5vw, 32px); background: var(--black); }
+  .hero h1 { font-size: clamp(2.4rem, 6vw, 5.6rem); font-weight: 900; margin-bottom: .35em; overflow: hidden; }
+  .hero p { max-width: 32rem; font-size: clamp(1.05rem, 1.3vw, 1.2rem); }
+  .hero .hint { position: absolute; right: clamp(16px, 4vw, 56px); top: 40%; padding: 6px 10px; background: var(--black); color: var(--cyan); font-weight: 500; font-size: .95rem; transform: rotate(90deg); transform-origin: right center; }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { position: relative; isolation: isolate; display: inline-flex; align-items: center; padding: .8em 1.3em; font-weight: 700; text-decoration: none; color: var(--black); background: var(--bone); overflow: hidden; }
+  .btn::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--acid); -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; transform: translateX(-100%); transition: transform .4s steps(8); }
+  .btn::after { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--acid); transform: translateX(-100%); transition: transform .4s steps(8) .12s; }
+  .btn:hover::before, .btn:hover::after { transform: none; }
+  .btn.o { color: var(--bone); background: transparent; box-shadow: inset 0 0 0 2px var(--bone); }
+  .btn.o:hover { color: var(--black); }
+
+  /* 2. your plan: three cartridges */
+  .plan { padding-block: clamp(80px, 14vh, 160px); }
+  .plan h2 { font-size: clamp(2rem, 4.6vw, 4.2rem); max-width: 16ch; }
+  .plan > .wrap > p { margin-top: 20px; max-width: 34rem; font-size: 1.15rem; }
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 2vw, 28px); margin-top: clamp(36px, 6vh, 64px); }
+  .slot { position: relative; height: clamp(220px, 32vh, 340px); border-top: 4px solid var(--bone); overflow: hidden; cursor: default; }
+  .cart { position: absolute; inset: 22px 0 0; padding: 22px 20px; background: var(--c); color: var(--black); transform: translateY(34%); transition: transform .5s var(--ease); font-weight: 700; }
+  .slot:hover .cart, .slot:focus-within .cart { transform: translateY(0); }
+  .cart .fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--f, .18) * 100%); background: var(--black); -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; pointer-events: none; transition: height .15s steps(4); }
+  .cart .fill.l { -webkit-mask-image: var(--d25); mask-image: var(--d25); height: calc((var(--f, .18) + .2) * 100%); }
+  .cart b { position: relative; display: block; font-family: "Unbounded", sans-serif; font-size: clamp(1.3rem, 2.2vw, 2rem); line-height: 1.05; }
+  .cart span { position: relative; display: block; margin-top: 8px; font-weight: 500; }
+  .cart .lamp { position: absolute; top: 20px; right: 20px; width: 12px; height: 12px; background: var(--black); }
+  .slot:hover .lamp { background: var(--acid); box-shadow: 0 0 12px var(--acid); animation: lamp .6s steps(2) infinite; }
+  @keyframes lamp { 50% { opacity: .3; } }
+  .plan .more { margin-top: clamp(24px, 4vh, 40px); max-width: 40rem; font-size: 1.05rem; opacity: .85; }
+  .slot .tag { position: absolute; left: 0; top: 0; font-weight: 500; font-size: .95rem; color: var(--bone); padding-top: 6px; }
+
+  /* 3. clean up: rough and clean, split by your cursor */
+  .cmp { position: relative; height: clamp(420px, 70vh, 720px); overflow: hidden; cursor: col-resize; background: var(--mag); touch-action: pan-y; }
+  .cmp .side { position: absolute; inset: 0; padding: clamp(40px, 8vh, 80px) clamp(16px, 4vw, 56px); display: flex; flex-direction: column; justify-content: space-between; }
+  .cmp .rough { color: var(--black); }
+  .cmp .rough::before { content: ""; position: absolute; inset: 0; background: var(--black); -webkit-mask: var(--d25) 0 0 / 4px 4px; mask: var(--d25) 0 0 / 4px 4px; pointer-events: none; }
+  .cmp .clean { background: var(--cyan); color: var(--black); clip-path: inset(0 0 0 var(--x, 50%)); }
+  .cmp .big { position: relative; font-family: "Unbounded", sans-serif; font-weight: 700; font-size: clamp(1.5rem, 4vw, 3.8rem); line-height: 1.05; max-width: 22ch; }
+  .cmp .rough .big { font-weight: 500; }
+  .cmp .lbl { position: relative; font-weight: 700; }
+  .cmp .div { position: absolute; top: 0; bottom: 0; left: var(--x, 50%); width: 4px; margin-left: -2px; background: var(--black); pointer-events: none; }
+  .cmp .div::after { content: "\2039  \203A"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 6px 10px; background: var(--black); color: var(--bone); font-weight: 700; font-size: .85rem; }
+  .cmp .side .lbl { opacity: .85; }
+
+  /* 4. native: a marquee and a sprite */
+  .native { padding-block: clamp(80px, 14vh, 160px) 0; overflow: hidden; }
+  .marq { display: flex; white-space: nowrap; font-family: "Unbounded", sans-serif; font-weight: 900; font-size: clamp(3rem, 11vw, 11rem); line-height: 1; color: var(--black); -webkit-text-stroke: 2px var(--bone); }
+  .marq span { padding-right: .25em; animation: marq 22s linear infinite; }
+  .marq span:nth-child(odd) { color: var(--bone); -webkit-text-stroke: 0; }
+  .marq:hover span { animation-play-state: paused; }
+  @keyframes marq { to { transform: translateX(-100%); } }
+  .native .grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 40px clamp(32px, 6vw, 96px); align-items: center; margin-top: clamp(40px, 8vh, 96px); }
+  .native h2 { font-size: clamp(1.9rem, 4vw, 3.6rem); max-width: 14ch; }
+  .native p { margin-top: 18px; max-width: 32rem; font-size: 1.15rem; }
+  .specs { display: grid; grid-template-columns: auto 1fr; gap: 8px 24px; margin-top: 28px; }
+  .specs dt { font-weight: 700; color: var(--acid); }
+  .sprite { --px: clamp(5px, .9vw, 11px); display: grid; grid-template-columns: repeat(16, var(--px)); grid-auto-rows: var(--px); gap: 0; padding: var(--px); background: var(--mag); }
+  .sprite i { background: var(--black); }
+  .sprite i.o { background: var(--bone); }
+  .sprite i.b { background: var(--black); animation: bars 1s steps(1) infinite; animation-delay: calc(var(--k) * .12s); }
+  @keyframes bars { 0%, 60% { background: var(--black); } 61%, 100% { background: var(--bone); } }
+  .sprite:hover i.b { animation-duration: .35s; }
+
+  /* 5. android */
+  .droid { padding-block: clamp(80px, 14vh, 160px); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 40px clamp(32px, 6vw, 96px); align-items: center; }
+  .droid h2 { font-size: clamp(1.9rem, 4vw, 3.6rem); max-width: 12ch; }
+  .droid p { margin-top: 18px; max-width: 30rem; font-size: 1.15rem; }
+  .phone { position: relative; width: min(290px, 78vw); aspect-ratio: 9 / 18.5; padding: 10px; background: var(--bone); }
+  .phone .scr { position: relative; height: 100%; background: var(--black); display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; overflow: hidden; }
+  .phone .field { padding: 12px; min-height: 84px; color: var(--acid); font-weight: 500; box-shadow: inset 0 0 0 2px var(--acid); }
+  .phone .kbd { margin-top: 10px; display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+  .phone .kbd i { height: 26px; background: var(--bone); -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; }
+  .phone .mic { grid-column: span 2; position: relative; height: 26px; background: var(--mag); }
+  .phone .ring { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border: 3px solid var(--mag); -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; opacity: 0; pointer-events: none; }
+  .phone:hover .ring { animation: ring 1.4s steps(10) infinite; }
+  .phone:hover .ring:nth-child(2) { animation-delay: .45s; }
+  .phone:hover .ring:nth-child(3) { animation-delay: .9s; }
+  @keyframes ring { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(40); } }
+
+  /* 6. downloads: color bands, dither sweeps out from the cursor */
+  .get h2 { font-size: clamp(2.4rem, 7vw, 7rem); font-weight: 900; padding: clamp(40px, 8vh, 96px) clamp(16px, 4vw, 56px) 32px; }
+  .bands { list-style: none; padding: 0; }
+  .band { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(8rem, 1fr) 2fr auto; gap: 24px; align-items: baseline; padding: clamp(22px, 4vh, 40px) clamp(16px, 4vw, 56px); text-decoration: none; background: var(--c); color: var(--black); overflow: hidden; }
+  .band::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--black); -webkit-mask: var(--d50) 0 0 / 4px 4px; mask: var(--d50) 0 0 / 4px 4px; transform-origin: var(--x, 50%) 50%; transform: scaleX(0); transition: transform .5s steps(10); }
+  .band:hover::before { transform: scaleX(1); }
+  .band b { font-family: "Unbounded", sans-serif; font-size: clamp(1.6rem, 3.6vw, 3rem); font-weight: 700; line-height: 1; }
+  .band em { font-style: normal; font-weight: 700; }
+  .band:hover { color: var(--bone); }
+  .band.src { background: transparent; color: var(--bone); box-shadow: inset 0 2px 0 var(--bone); }
+  .band.src::before { background: var(--bone); }
+  .band.src:hover { color: var(--black); }
+  .band.src code { color: inherit; }
+  footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 28px; padding: 36px clamp(16px, 4vw, 56px) 48px; }
+
+  @media (max-width: 800px) {
+    .hero .text, .native .grid, .droid { grid-template-columns: 1fr; }
+    .slots { grid-template-columns: 1fr; }
+    .slot { height: 200px; }
+    .band { grid-template-columns: 1fr; gap: 4px; }
+    .hero .hint, .bar nav a:first-child { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marq span, .slot .lamp, .sprite i.b, .phone .ring { animation: none !important; }
+    .cart, .btn::before, .btn::after, .band::before, .bar nav a::after { transition: none; }
+  }
+</style>
 </head>
 <body>
-<canvas class="layer clips" aria-hidden="true"></canvas>
-<canvas class="layer pill" aria-hidden="true"></canvas>
-
-<header class="nav">
-  <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="28" height="28">Speecher</a>
-  <nav>
-    <a href="#download">Download</a>
-    <a href="https://github.com/firemonster612/speecher">GitHub</a>
-  </nav>
+<header class="bar">
+  <a class="mark" href="#top"><img src="assets/icon.svg" alt="" width="28" height="28">Speecher</a>
+  <nav><a href="https://github.com/firemonster612/speecher">GitHub</a><a href="#get">Download</a></nav>
 </header>
 
 <main id="top">
-  <div class="track"><section class="stop hero" data-stop="0">
-    <div class="hero-copy">
-      <h1>You talk.<br> It types what you <span class="mark">meant.<svg viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M4 15 C 60 9, 140 7, 210 10 S 280 16, 296 9"/></svg></span></h1>
-      <p class="sub">Dictation that runs on the Claude Code or ChatGPT plan you already pay&nbsp;for.</p>
-      <p class="ctas"><a class="btn" href="#download">Download</a><a class="btn ghost" href="https://github.com/firemonster612/speecher">GitHub</a></p>
-    </div>
-    <div class="slot" aria-hidden="true"></div>
-    <div class="out">
-      <figure class="piece chat" style="--c: var(--lilac)">
-        <figcaption><span class="tag">Slack, #team</span></figcaption>
-        <div class="msg"><span class="av" aria-hidden="true">Y</span><p class="say">Can we push the meeting to Friday?</p></div>
-      </figure>
-      <figure class="piece cmd" style="--c: var(--sage)">
-        <figcaption><span class="tag">Terminal</span></figcaption>
-        <div class="term"><p class="say"><span class="dim">$</span> git commit -m "Fix the overlay closing on paste"</p></div>
-      </figure>
-      <figure class="piece mail" style="--c: var(--butter)">
-        <figcaption><span class="tag">Gmail, to Sam</span></figcaption>
-        <div class="sheet">
-          <p class="say">Hi Sam,</p>
-          <p class="say">The invoice for March is attached. Let me know if anything looks off.</p>
-          <p class="say">Cheers</p>
+  <section class="hero" id="hero">
+    <div class="pin">
+      <canvas id="c" aria-hidden="true"></canvas>
+      <p class="hint" id="hint">scroll to quantize</p>
+      <div class="text">
+        <div>
+          <h1 id="h1">Your voice,<br>quantized.</h1>
+          <p>Speecher is dictation for Linux, macOS and Windows. Press your shortcut, talk, and clean text lands wherever your cursor is. It runs on the Claude or ChatGPT plan you already pay for, or on a model on your own computer.</p>
         </div>
-      </figure>
-      <figure class="piece agent" style="--c: var(--coral)">
-        <figcaption><span class="tag">Claude Code</span></figcaption>
-        <div class="prompt"><p class="say"><span class="dim">&gt;</span> Run <code>kubectl get pods</code> in the staging namespace and tell me which ones are crash looping.</p></div>
-      </figure>
-    </div>
-    <p class="fine">Examples are illustrative.</p>
-  </section></div>
-
-  <div class="track" id="plan" style="--hold: 100svh"><section class="stop plan" data-stop="1">
-    <h2><span class="h-a">Bring the account</span> <span class="h-b">you&nbsp;have.</span></h2>
-    <div class="slot" aria-hidden="true"></div>
-    <div class="accts">
-      <p class="acct">Claude Code</p>
-      <p class="acct">ChatGPT</p>
-    </div>
-    <div class="foot">
-      <p class="line">Sign in with Claude Code or ChatGPT, and dictation runs on that plan. No account? Run a speech model on your own&nbsp;computer.</p>
-      <div class="nots">
-        <p class="nots-label">Not needed</p>
-        <p class="nope"><s>New subscription</s><svg viewBox="0 0 200 30" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M3 19 C 50 12, 110 17, 197 9"/></svg></p>
-        <p class="nope"><s>API key</s><svg viewBox="0 0 200 30" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M3 12 C 60 20, 130 9, 197 17"/></svg></p>
+        <div class="btns"><a class="btn" href="#get">Download Speecher</a><a class="btn o" href="https://github.com/firemonster612/speecher">Read the source</a></div>
       </div>
     </div>
-  </section></div>
+  </section>
 
-  <div class="track" id="vocabulary" style="--hold: 80svh"><section class="stop words" data-stop="2">
-    <div class="copy">
-      <h2>Your words come out&nbsp;right.</h2>
-      <p class="line">Add names and jargon. Correct a word once and it&nbsp;sticks.</p>
-    </div>
-    <p class="said"><span class="slot" aria-hidden="true"></span></p>
-    <div class="vocab">
-      <p class="label">Your words</p>
-      <ul class="chips">
-        <li class="chip">staging</li><li class="chip">namespace</li><li class="chip">Sam</li><li class="chip">#team</li>
-        <li class="chip learned">kubectl <b class="kept">Kept</b></li>
-      </ul>
-      <ul class="chips adds"><li class="chip add">+ Add a word</li><li class="chip add">Import a list</li></ul>
-    </div>
-  </section></div>
-
-  <div class="track" id="native" style="--hold: 90svh"><section class="stop native" data-stop="3">
-    <div class="cake" role="img" aria-label="A browser-based app is a web page running in a browser engine, on top of your OS. Speecher, in C++, runs directly on your OS.">
-      <div class="stack web">
-        <p class="slab app">Browser-based app</p>
-        <p class="slab script">Web page</p>
-        <p class="slab engine">Browser engine</p>
+  <section class="plan">
+    <div class="wrap">
+      <h2>Runs on the plan you already pay for.</h2>
+      <p>Pick a source and sign in once. No new subscription, no API key. Hover a slot to load it.</p>
+      <div class="slots">
+        <div class="slot" tabindex="0" style="--c: var(--mag)"><span class="tag">source 1</span><div class="cart"><div class="fill l"></div><div class="fill"></div><i class="lamp"></i><b>Claude Code</b><span>Your Claude plan. Nothing extra.</span></div></div>
+        <div class="slot" tabindex="0" style="--c: var(--cyan)"><span class="tag">source 2</span><div class="cart"><div class="fill l"></div><div class="fill"></div><i class="lamp"></i><b>ChatGPT</b><span>Your ChatGPT plan. Nothing extra.</span></div></div>
+        <div class="slot" tabindex="0" style="--c: var(--acid)"><span class="tag">source 3</span><div class="cart"><div class="fill l"></div><div class="fill"></div><i class="lamp"></i><b>Local model</b><span>Parakeet, Whisper and more, on your computer. No account.</span></div></div>
       </div>
-      <div class="stack ours">
-        <p class="slab speecher"><span class="name">Speecher <b class="tag">C++</b></span><span class="slot"></span></p>
+      <p class="more">Pick more than one and Speecher moves to the next when one is unavailable. Cloud sources are skipped while you're offline. Or send speech to a server you host.</p>
+    </div>
+  </section>
+
+  <section class="cmp" id="cmp" aria-label="Rough speech on the left, the typed result on the right. Move the divider.">
+    <div class="side rough"><span class="lbl">what you said</span><p class="big">um so can we push the demo to friday, I mean thursday, and ask sam to check the kube cuddle logs</p><span class="lbl">filler, a correction, a misheard name</span></div>
+    <div class="side clean"><span class="lbl">what gets typed</span><p class="big">Can we push the demo to Thursday, and ask Sam to check the kubectl logs?</p><span class="lbl">a word you fix once stays fixed</span></div>
+    <div class="div"></div>
+  </section>
+
+  <section class="native">
+    <div class="marq" aria-hidden="true"><span>Linux macOS Windows Linux macOS Windows </span><span>Linux macOS Windows Linux macOS Windows </span></div>
+    <div class="wrap grid">
+      <div class="sprite" id="sprite" aria-hidden="true"></div>
+      <div>
+        <h2>Native. No browser inside.</h2>
+        <p>A C++ app with one Qt Quick interface on Linux, macOS and Windows. It sits in your tray, starts fast, and works from your terminal too.</p>
+        <dl class="specs"><dt>Linux</dt><dd>Wayland, x86_64 AppImage</dd><dt>macOS</dt><dd>Apple Silicon, macOS 15 or later</dd><dt>Windows</dt><dd>Windows 11, x64</dd><dt>Language</dt><dd>Yours, not only English</dd><dt>Terminal</dt><dd><code>speecher listen</code> prints what you say</dd><dt>Files</dt><dd><code>speecher transcribe</code> turns audio and video into text</dd><dt>Calls</dt><dd><code>speecher record start</code> writes a transcript, with you as "me" and the call as "them"</dd></dl>
       </div>
-      <p class="slab os">Your OS</p>
     </div>
-    <div class="copy">
-      <h2>Native C++. No browser&nbsp;inside.</h2>
-      <p class="line">A C++ app with one Qt Quick interface on Linux, macOS and&nbsp;Windows.</p>
-    </div>
-  </section></div>
+  </section>
 
-  <div class="track" id="terminal" style="--hold: 100svh"><section class="stop cli" data-stop="4">
-    <div class="copy">
-      <h2>It works in your terminal&nbsp;too.</h2>
-      <p class="line">Print what you say. Turn audio files into text. Record a call to a transcript a coding agent can&nbsp;read.</p>
+  <section class="droid wrap">
+    <div>
+      <h2>Also on Android.</h2>
+      <p>A dictation button beside your keyboard, signed in to the same Claude or ChatGPT account. Tap, talk, insert. Scan a QR code to bring over your vocabulary and profiles; accounts and keys never leave your computer. Android 12 or newer.</p>
     </div>
-    <div class="shell" role="img" aria-label="A terminal: speecher listen prints a spoken sentence, speecher transcribe saves a transcript of an audio file, and speecher record start writes a call transcript with lines for me and them.">
-      <p class="run"><span class="dim">$</span> <span class="typed">speecher listen</span> <span class="slot"></span></p>
-      <p class="print">Can we push the meeting to Friday?</p>
-      <p class="run"><span class="dim">$</span> <span class="typed">speecher transcribe --headless talk.mp3</span></p>
-      <p class="print dim">talk.mp3: saved /home/sam/talk-transcribed.txt</p>
-      <p class="run"><span class="dim">$</span> <span class="typed">speecher record start --to call.md</span></p>
-      <p class="print dim">/home/sam/call.md</p>
-      <p class="run"><span class="dim">$</span> <span class="typed">tail -f call.md</span></p>
-      <p class="print"><span class="dim">[00:12:03]</span> <b class="them">them:</b> Can you look at the retry logic before Friday?</p>
-      <p class="print"><span class="dim">[00:12:09]</span> <b class="me">me:</b> Yes, I'll check it today.</p>
-    </div>
-  </section></div>
-
-  <div class="track" id="android" style="--hold: 60svh"><section class="stop android" data-stop="5">
-    <h2><span class="h-a">Same dictation,</span> <span class="h-b">on your phone.</span></h2>
-    <p class="line">A dictation button beside your keyboard, signed in with ChatGPT or&nbsp;Claude.</p>
-    <p class="note">Android 12 or newer. Installed from an APK.</p>
     <div class="phone" aria-hidden="true">
-      <div class="screen">
-        <p class="to"><span class="tag">#team</span></p>
-        <p class="field"><span class="text">Can we push the meeting to Friday?</span></p>
-        <div class="kb">
-          <div class="tools"><i></i><i></i><i></i><div class="slot"></div></div>
-          <div class="keys"></div>
-        </div>
+      <div class="scr">
+        <div class="field" id="pf"></div>
+        <div class="kbd"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><span class="mic"><i class="ring"></i><i class="ring"></i><i class="ring"></i></span><i></i><i></i><i></i><i></i></div>
       </div>
     </div>
-  </section></div>
+  </section>
 
-  <div class="track" id="download"><section class="stop download" data-stop="6">
-    <div class="dl-words">
-      <h2>Download Speecher</h2>
-      <footer>Open source, <a href="https://github.com/firemonster612/speecher/blob/master/LICENSE">MIT</a>. <a href="https://github.com/firemonster612/speecher">GitHub</a> · <a href="blog/">Blog</a></footer>
-    </div>
-    <div class="dl-list">
-      <a class="main-dl" href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-x86_64.AppImage"><span>Download for <b>Linux</b></span></a>
-      <p class="dl-req">AppImage, x86_64, Wayland. glibc 2.43 or newer.</p>
-      <ul class="rows">
-        <li data-os="linux"><b>Linux</b><span>AppImage, x86_64, Wayland. glibc 2.43 or newer.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-x86_64.AppImage">AppImage</a></li>
-        <li data-os="mac"><b>macOS</b><span>Apple Silicon, macOS 15 or later.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/speecher.dmg">DMG</a></li>
-        <li data-os="windows"><b>Windows</b><span>x64, Windows 11.</span><a href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-Setup-x64.exe">Installer</a></li>
-        <li data-os="android"><b>Android</b><span>Android 12 or newer. Not on the Play Store.</span><a href="https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk">APK</a></li>
-        <li><b>From source</b><span><code>make install</code>, from the README.</span><a href="https://github.com/firemonster612/speecher#readme">GitHub</a></li>
-      </ul>
-    </div>
-  </section></div>
+  <section class="get" id="get">
+    <h2>Get Speecher.</h2>
+    <ul class="bands">
+      <li><a class="band" style="--c: var(--mag)" href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-x86_64.AppImage"><b>Linux</b><span>x86_64 on Wayland. Needs glibc 2.43 or newer.</span><em>AppImage</em></a></li>
+      <li><a class="band" style="--c: var(--cyan)" href="https://github.com/firemonster612/speecher/releases/latest/download/speecher.dmg"><b>macOS</b><span>Apple Silicon, macOS 15 or later.</span><em>DMG</em></a></li>
+      <li><a class="band" style="--c: var(--acid)" href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-Setup-x64.exe"><b>Windows</b><span>Windows 11, x64. Per-user install, no admin.</span><em>Installer</em></a></li>
+      <li><a class="band" style="--c: var(--bone)" href="https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk"><b>Android</b><span>Android 12 or newer. Not on the Play Store.</span><em>APK</em></a></li>
+      <li><a class="band src" href="https://github.com/firemonster612/speecher#readme"><b>From source</b><span><code>make install</code>, from the README.</span><em>GitHub</em></a></li>
+    </ul>
+  </section>
 </main>
+<footer>
+  <span>Free and open source under the <a href="https://github.com/firemonster612/speecher/blob/master/LICENSE">MIT license</a>.</span>
+  <span><a href="blog/">Blog</a>&emsp;<a href="https://github.com/firemonster612/speecher">github.com/firemonster612/speecher</a></span>
+</footer>
 
-<script type="module" src="js/main.js"></script>
+<script src="js/lenis.min.js"></script>
+<script>
+(() => {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduce) {
+    const lenis = window.lenis = new Lenis({ lerp: 0.09 });
+    const raf = t => { lenis.raf(t); requestAnimationFrame(raf); };
+    requestAnimationFrame(raf);
+  }
+  const clamp01 = t => (t < 0 ? 0 : t > 1 ? 1 : t);
+  const smooth = (a, b, t) => { t = clamp01((t - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+  // 1. The hero: a field of noise, ordered-dithered into four inks, that quantizes into a word as you scroll.
+  const hero = document.getElementById("hero"), canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+  const h1 = document.getElementById("h1"), hint = document.getElementById("hint");
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + .5) / 16);
+  const INK = [[0, 0, 0], [255, 45, 149], [25, 230, 255], [242, 255, 61], [239, 233, 220]];
+  let W, H, S, img, mask, px, h1Height = 0;
+  const off = document.createElement("canvas"), octx = off.getContext("2d", { willReadFrequently: true });
+  function build() {
+    S = innerWidth < 800 ? 4 : 3;
+    W = Math.ceil(canvas.clientWidth / S); H = Math.ceil(canvas.clientHeight / S);
+    canvas.width = W; canvas.height = H;
+    img = ctx.createImageData(W, H); px = img.data;
+    off.width = W; off.height = H;
+    octx.clearRect(0, 0, W, H); octx.fillStyle = "#fff"; octx.textAlign = "center"; octx.textBaseline = "middle";
+    const fs = Math.min(W * .21, H * .5);
+    octx.font = `900 ${fs}px Unbounded`; octx.fillText("Typed.", W / 2, H * .42);
+    mask = octx.getImageData(0, 0, W, H).data;
+    h1.style.height = ""; h1.style.marginBottom = ""; h1Height = h1.offsetHeight;
+  }
+  let mx = -1e4, my = -1e4, intro = reduce ? 1 : 0;
+  hero.addEventListener("pointermove", e => { const r = canvas.getBoundingClientRect(); mx = (e.clientX - r.left) / S; my = (e.clientY - r.top) / S; });
+  hero.addEventListener("pointerleave", () => { mx = my = -1e4; });
+
+  function heroFrame(t) {
+    const r = hero.getBoundingClientRect();
+    if (r.bottom < 0) return;
+    const p = clamp01(-r.top / (r.height - innerHeight));
+    const q = smooth(.05, .85, p);          // how far the noise has quantized into the word
+    const levels = 4 - Math.round(q * 2);   // fewer inks as it resolves, down to two
+    if (intro < 1) intro = Math.min(1, intro + 1 / 80);
+    // the headline fades and gives up its space, so the panel behind the copy shrinks out of the word's way
+    const fade = smooth(.3, .6, p);
+    h1.style.opacity = 1 - fade; h1.style.height = h1Height * (1 - fade) + "px"; h1.style.marginBottom = `calc(.35em * ${1 - fade})`;
+    hint.style.opacity = 1 - smooth(.1, .4, p);
+    const s = reduce ? 0 : t / 1000, cx = W / 2, cy = H / 2;
+    let i = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++, i += 4) {
+        // the field: slow interference plus a ripple that follows the pointer
+        let v = .5 + .25 * Math.sin(x * .045 + s * .9 + Math.sin(y * .03 + s * .5) * 2) + .25 * Math.cos(y * .05 - s * .7 + Math.sin(x * .02 - s) * 2);
+        const dx = x - mx, dy = y - my, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 90 && !reduce) v += Math.sin(d * .35 - s * 7) * (1 - d / 90) * .6;
+        // entrance: the cloud grows from the center
+        const dc = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / Math.sqrt(cx * cx + cy * cy);
+        v *= smooth(dc, dc + .35, intro * 1.35);
+        // quantize toward the word: inside it goes bright, outside goes dark
+        const m = mask[i + 3] / 255;
+        v = v + (m * 1.1 - v * (1 - .35 * m) - .15) * q;
+        const th = BAYER[(y & 3) * 4 + (x & 3)];
+        let k = Math.floor(clamp01(v) * levels + th - .5); if (k < 0) k = 0; if (k > 4) k = 4;
+        if (levels === 2 && k > 0) k = m > .5 ? 4 : 1;
+        const c = INK[k]; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // 2. Cartridges: the dither fill follows the cursor's height inside the slot.
+  document.querySelectorAll(".slot").forEach(slot => {
+    slot.addEventListener("pointermove", e => { const r = slot.getBoundingClientRect(); slot.style.setProperty("--f", clamp01((e.clientY - r.top) / r.height).toFixed(3)); });
+    slot.addEventListener("pointerleave", () => slot.style.removeProperty("--f"));
+  });
+
+  // 3. Compare: the divider sits under the pointer.
+  const cmp = document.getElementById("cmp");
+  cmp.addEventListener("pointermove", e => { const r = cmp.getBoundingClientRect(); cmp.style.setProperty("--x", (clamp01((e.clientX - r.left) / r.width) * 100).toFixed(2) + "%"); });
+  cmp.addEventListener("pointerleave", () => cmp.style.setProperty("--x", "50%"));
+  if (reduce) cmp.style.setProperty("--x", "50%");
+
+  // 4. The tray icon as a 16x16 sprite, with the bars blinking like a level meter.
+  const SPR = [
+    "0000000000000000", "0000000000000000", "0000011111100000", "0001111111111000", "0011111111111100", "0111101011011110",
+    "0111101011011110", "1111101011011111", "1111101011011111", "0111101011011110", "0111101011011110", "0011111111111100",
+    "0001111111111000", "0000011111100000", "0000000000000000", "0000000000000000"];
+  const sprite = document.getElementById("sprite");
+  const BARS = [[5, 10], [7, 8], [9, 10], [11, 9]];
+  SPR.forEach((row, y) => [...row].forEach((ch, x) => {
+    const i = document.createElement("i");
+    if (ch === "1") i.className = "o";
+    const b = BARS.findIndex(([bx]) => bx === x);
+    if (ch === "0" && b >= 0 && y >= 5 && y <= 10) { i.className = "b"; i.style.setProperty("--k", b); }
+    sprite.append(i);
+  }));
+
+  // 5. The phone types the sentence while on screen.
+  const pf = document.getElementById("pf"), SENT = "Running ten minutes late, start without me.";
+  if (reduce) pf.textContent = SENT;
+  else { let timer; new IntersectionObserver(([e]) => { clearInterval(timer); if (!e.isIntersecting) return; let n = 0; timer = setInterval(() => { pf.textContent = SENT.slice(0, ++n); if (n > SENT.length + 30) n = 0; }, 45); }, { threshold: .5 }).observe(pf); }
+
+  // 6. Bands: the sweep starts where the pointer entered.
+  document.querySelectorAll(".band").forEach(b => b.addEventListener("pointerenter", e => { const r = b.getBoundingClientRect(); b.style.setProperty("--x", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%"); }));
+
+  let rt;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(build, 150); });
+  const loop = t => { heroFrame(t); requestAnimationFrame(loop); };
+  document.fonts.load('900 64px Unbounded').then(() => document.fonts.ready).then(() => { build(); requestAnimationFrame(loop); });
+})();
+</script>
 </body>
 </html>
