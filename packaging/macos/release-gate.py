@@ -378,9 +378,16 @@ def check_after_update(summary, evidence, candidate, csreq):
     screenshot(evidence, 'key-check')
     if not saved:
         ui(evidence, 'dump')
+    asked = ''
+    if prompt not in ('', '0'):
+        # What the Keychain dialog says: which app asks for which item.
+        asked = run('osascript', '-e', 'tell application "System Events" to get value of static texts '
+                    'of windows of process "SecurityAgent"').stdout.strip()
+        (evidence / 'keychain-prompt.txt').write_text(asked + '\n')
     summary.check('after.openai_key_without_prompt', saved and prompt in ('', '0'),
                   f'Accounts page {"opened" if opened else "not found"}; API key field '
-                  f'{"reads Saved" if saved else "does not read Saved"}; SecurityAgent windows {prompt or 0}')
+                  f'{"reads Saved" if saved else "does not read Saved"}; SecurityAgent windows {prompt or 0}'
+                  + (f'; it says: {asked}' if asked else ''))
 
     login = update.login_item()
     (evidence / 'login-item-after-gate.txt').write_text(login + '\n')
