@@ -23,6 +23,7 @@ import os
 import plistlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -94,6 +95,21 @@ def ui(evidence, *args):
         log.write(f'{started}-{time.strftime("%H:%M:%S")} {args[:2]} -> exit {result.returncode}\n'
                   f'{result.stdout}{result.stderr}\n')
     return result.returncode == 0
+
+
+def app_listening():
+    """Whether a Speecher accepts commands on its socket. 0.2.0's `speecher
+    status` says idle whether or not one answers, and its `speecher settings`
+    starts an app of its own when none does."""
+    for directory in {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}:
+        for path in directory.glob('speecher-*'):
+            with socket.socket(socket.AF_UNIX) as client:
+                try:
+                    client.connect(str(path))
+                    return True
+                except OSError:
+                    continue
+    return False
 
 
 def screenshot(evidence, label):
@@ -207,7 +223,7 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
 
     update.run('open', '-a', update.APP)
     try:
-        update.wait_for(lambda: update.cli('status').returncode == 0, 60, 'the shipped app did not answer')
+        update.wait_for(app_listening, 60, 'the shipped app did not listen')
         trusted = update.wait_for(lambda: accessibility_lines(shipped['CDHash']), 30, 'no accessibility line')
     except TimeoutError as error:
         trusted = []
@@ -263,9 +279,7 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
             button = 'install' if 'GET /appcast-stable.xml' in served else 'check'
             if pressed[button] is not None and time.monotonic() - pressed[button] < 60:
                 continue
-            # Before the old app listens, 0.2.0's `speecher settings` starts an
-            # app of its own in the foreground instead of asking it.
-            if update.cli('status').returncode != 0:
+            if not app_listening():
                 continue
             update.cli('settings')
             time.sleep(3)

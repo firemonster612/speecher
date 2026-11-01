@@ -175,12 +175,12 @@ gh workflow run mac-release-gate.yml -f candidate_run=<Release run ID>
 
 The runner's TCC databases are writable, so the gate records the grants
 against the shipped app's designated requirement as macOS does when a user
-allows them. It saves a dummy OpenAI key in the old app's Accounts pane and
-presses Install and restart through System Events. After the relaunch it
-checks that `speecher.log` reads `trusted=1` for the candidate's cdhash, that
-the TCC records still allow it, that the settings carried over, that
-`speecher providers` reads the key with no Keychain prompt and that Speecher
-has one login item. The job summary marks each check PASS or FAIL, and the
+allows them. It saves a dummy OpenAI key in the old app's Accounts pane, and
+presses Check now and then Install and restart through System Events. After
+the relaunch it checks that `speecher.log` reads `trusted=1` for the
+candidate's cdhash, that the TCC records still allow it, that the settings
+carried over, that the new app's Accounts page shows the key as saved with no
+Keychain prompt and that Speecher has one login item. The job summary marks each check PASS or FAIL, and the
 `release-gate-evidence` artifact keeps what step 8 asks for.
 
 The summary marks what a runner can't check NOT_VERIFIED, never PASS: real
