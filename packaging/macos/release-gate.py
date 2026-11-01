@@ -252,6 +252,10 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     (evidence / 'keychain-item-before.txt').write_text(item.stdout + item.stderr)
     if not saved:
         ui(evidence, 'dump')
+    # 0.2.0 reopens Settings on the pane last shown, and reopened on Accounts
+    # after a relaunch it crashed in SwiftUI on the runner (EXC_BAD_ACCESS in
+    # DynamicContainerInfo.updateItems), before the update could be offered.
+    ui(evidence, 'select', 'General')
     summary.check('setup.openai_key_saved_by_shipped_app', saved and item.returncode == 0,
                   'Accounts > OpenAI API key typed; Keychain item speecher/openai-api-key '
                   + ('present' if item.returncode == 0 else 'missing'))
@@ -401,8 +405,10 @@ def main():
         summary.record(f'manual.{name}', 'NOT_VERIFIED', reason)
     if LOG.exists():
         shutil.copyfile(LOG, evidence / 'speecher.log')
-    for report in (Path.home() / 'Library/Logs/DiagnosticReports').glob('speecher*'):
+    reports = sorted((Path.home() / 'Library/Logs/DiagnosticReports').glob('speecher*'))
+    for report in reports:
         shutil.copyfile(report, evidence / report.name)
+    summary.check('no_crashes', not reports, ', '.join(report.name for report in reports))
     unified = run('log', 'show', '--last', '60m', '--style', 'compact', '--predicate', 'process == "speecher"')
     (evidence / 'unified.log').write_text(unified.stdout + unified.stderr)
     summary.record('gate', 'FAIL' if summary.failed else 'PASS')
