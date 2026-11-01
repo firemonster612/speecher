@@ -252,10 +252,6 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     (evidence / 'keychain-item-before.txt').write_text(item.stdout + item.stderr)
     if not saved:
         ui(evidence, 'dump')
-    # 0.2.0 reopens Settings on the pane last shown, and reopened on Accounts
-    # after a relaunch it crashed in SwiftUI on the runner (EXC_BAD_ACCESS in
-    # DynamicContainerInfo.updateItems), before the update could be offered.
-    ui(evidence, 'select', 'General')
     summary.check('setup.openai_key_saved_by_shipped_app', saved and item.returncode == 0,
                   'Accounts > OpenAI API key typed; Keychain item speecher/openai-api-key '
                   + ('present' if item.returncode == 0 else 'missing'))
@@ -268,6 +264,10 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     # removes the socket the new one just made, leaving it deaf to the CLI.
     update.cli('quit')
     update.wait_for(lambda: not update.speecher_pids(), 60, 'the shipped app did not quit')
+    # 0.2.0 checks for updates on its own timer, which App Nap held off for
+    # 15 minutes on the runner. Settings opened before that check crashed it
+    # (EXC_BAD_ACCESS in SwiftUI), so the gate waits for the timer.
+    update.run('defaults', 'write', update.SPARKLE_DOMAIN, 'NSAppSleepDisabled', '-bool', 'true')
     return csreq
 
 
@@ -281,39 +281,24 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
             [sys.executable, HERE / 'verify-dmg-update.py', shipped_dmg, candidate_dmg, signature_file, out,
              '--keep-state'],
             stdout=output, stderr=subprocess.STDOUT, env=dict(os.environ, SPEECHER_DISPOSABLE_MACHINE='1'))
-        # When each button was last pressed; a press that a minute later still
-        # shows nothing served has missed, so it is pressed again.
-        pressed = {'check': None, 'install': None}
-        dumped, started = False, None
+        # Pressed again when a minute later still nothing was downloaded.
+        pressed_at, dumped = None, False
         while script.poll() is None:
             time.sleep(10)
-            if started is None and (out / 'summary.txt').exists() and 'old.running=' in (out / 'summary.txt').read_text():
-                started = time.monotonic()
             served = requests.read_text() if requests.exists() else ''
-            # Left alone for its first half minute: asked for settings sooner
-            # after the script opened it, 0.2.0 went away on the runner.
-            if started is None or time.monotonic() - started < 30 or 'GET /speecher.dmg' in served:
+            if 'GET /appcast-stable.xml' not in served or 'GET /speecher.dmg' in served:
                 continue
-            button = 'install' if 'GET /appcast-stable.xml' in served else 'check'
-            if pressed[button] is not None and time.monotonic() - pressed[button] < 60:
+            if pressed_at is not None and time.monotonic() - pressed_at < 60:
                 continue
             if len(update.speecher_pids()) != 1 or not app_listening():
                 continue
             update.cli('settings')
             time.sleep(3)
-            if button == 'check':
-                # 0.2.0's own timer checks only when App Nap lets it; a person
-                # presses Check for updates (General > Updates) instead.
-                ui(evidence, 'select', 'General')
-                time.sleep(2)
-                if ui(evidence, 'press', 'Check for updates'):
-                    pressed['check'] = time.monotonic()
-                continue
             screenshot(evidence, 'offer')
             # 0.2.0's banner buttons have no accessible title; Install and
             # restart is the first after the offer (UpdateBannerContent).
             if ui(evidence, 'press-after', ' is available'):
-                pressed['install'] = time.monotonic()
+                pressed_at = time.monotonic()
             elif not dumped:
                 dumped = ui(evidence, 'dump')
         status = script.wait()
