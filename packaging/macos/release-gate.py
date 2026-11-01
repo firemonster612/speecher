@@ -252,23 +252,36 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
             [sys.executable, HERE / 'verify-dmg-update.py', shipped_dmg, candidate_dmg, signature_file, out,
              '--keep-state'],
             stdout=output, stderr=subprocess.STDOUT, env=dict(os.environ, SPEECHER_DISPOSABLE_MACHINE='1'))
-        pressed_at, dumped = None, False
+        # When each button was last pressed; a press that a minute later still
+        # shows nothing served has missed, so it is pressed again.
+        pressed = {'check': None, 'install': None}
+        dumped = False
         while script.poll() is None:
             time.sleep(10)
+            started = (out / 'summary.txt').exists() and 'old.running=' in (out / 'summary.txt').read_text()
             served = requests.read_text() if requests.exists() else ''
-            if 'GET /speecher.dmg' in served or 'GET /appcast-stable.xml' not in served:
+            if not started or 'GET /speecher.dmg' in served:
                 continue
-            # Pressed and still no download: the press missed, so try again.
-            if pressed_at is None or time.monotonic() - pressed_at > 60:
-                update.cli('settings')
-                time.sleep(3)
-                screenshot(evidence, 'offer')
-                # 0.2.0's banner buttons have no accessible title; Install and
-                # restart is the first after the offer (UpdateBannerContent).
-                if ui(evidence, 'press-after', ' is available'):
-                    pressed_at = time.monotonic()
-                elif not dumped:
-                    dumped = ui(evidence, 'dump')
+            button = 'install' if 'GET /appcast-stable.xml' in served else 'check'
+            if pressed[button] is not None and time.monotonic() - pressed[button] < 60:
+                continue
+            update.cli('settings')
+            time.sleep(3)
+            if button == 'check':
+                # 0.2.0's own timer checks only when App Nap lets it; a person
+                # presses Check for updates (General > Updates) instead.
+                ui(evidence, 'select', 'General')
+                time.sleep(2)
+                if ui(evidence, 'press', 'Check for updates'):
+                    pressed['check'] = time.monotonic()
+                continue
+            screenshot(evidence, 'offer')
+            # 0.2.0's banner buttons have no accessible title; Install and
+            # restart is the first after the offer (UpdateBannerContent).
+            if ui(evidence, 'press-after', ' is available'):
+                pressed['install'] = time.monotonic()
+            elif not dumped:
+                dumped = ui(evidence, 'dump')
         status = script.wait()
     for line in (out / 'summary.txt').read_text().splitlines() if (out / 'summary.txt').exists() else []:
         name, _, rest = line.partition('=')
