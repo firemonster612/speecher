@@ -172,6 +172,7 @@ def compare_bundles(summary, evidence, shipped_dmg, candidate_dmg):
     summary.check('plist.CFBundleVersion',
                   int(candidate_info['CFBundleVersion']) > int(shipped_info['CFBundleVersion']),
                   f'shipped {shipped_info["CFBundleVersion"]}, candidate {candidate_info["CFBundleVersion"]}')
+    candidate['version'] = candidate_info['CFBundleVersion']
     return shipped, candidate
 
 
@@ -252,7 +253,10 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     login = update.login_item()
     (evidence / 'login-item-setup.txt').write_text(login + '\n')
     summary.check('setup.login_item', update.login_item_enabled(login), 'see login-item-setup.txt')
+    # Gone before verify-dmg-update.py opens it again: an app still quitting
+    # removes the socket the new one just made, leaving it deaf to the CLI.
     update.cli('quit')
+    update.wait_for(lambda: not update.speecher_pids(), 60, 'the shipped app did not quit')
     return csreq
 
 
@@ -310,6 +314,10 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
 # --- Step 5: what the new app kept --------------------------------------------
 
 def check_after_update(summary, evidence, candidate, csreq):
+    installed = plistlib.loads((update.APP / 'Contents/Info.plist').read_bytes())['CFBundleVersion']
+    if not summary.check('after.candidate_installed', installed == candidate['version'],
+                         f'{update.APP} is build {installed}, the candidate {candidate["version"]}'):
+        return
     trusted = accessibility_lines(candidate['CDHash'])
     summary.check('after.accessibility_trusted', trusted and set(trusted) == {'1'},
                   f'speecher.log trusted={trusted} for the candidate cdhash {candidate["CDHash"]}')
