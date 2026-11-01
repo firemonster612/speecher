@@ -6,15 +6,17 @@
 //   osascript -l JavaScript release-gate-ui.js press-after TEXT
 //   osascript -l JavaScript release-gate-ui.js select LABEL
 //   osascript -l JavaScript release-gate-ui.js type LABEL TEXT
+//   osascript -l JavaScript release-gate-ui.js find LABEL
 //   osascript -l JavaScript release-gate-ui.js dump
 //
-// press: AXPress on the button named LABEL. press-after: AXPress on the
-// first button after the text containing TEXT, beside it in the same group,
-// for SwiftUI buttons that expose no title. select: selects the list row
-// showing LABEL, such as a settings sidebar pane.
-// type: focuses the text field labelled LABEL, types TEXT and presses Return.
-// dump: every element's role and labels, for working out what to match.
-// Prints what it did; exits non-zero when nothing matched.
+// press: AXPress on the element named LABEL that can be pressed (a button, a
+// Qt Quick sidebar tab). press-after: AXPress on the first button after the
+// text containing TEXT, for SwiftUI buttons that expose no title. select:
+// selects the list row showing LABEL, such as a SwiftUI sidebar pane. type:
+// focuses the text field labelled LABEL, types TEXT and presses Return. find:
+// whether any element shows LABEL. dump: every element's role and labels, for
+// working out what to match. Prints what it did; exits non-zero when nothing
+// matched.
 
 function labels(element) {
     const found = [];
@@ -40,28 +42,44 @@ function role(element) {
     }
 }
 
-// Every element under element, depth first. Asked level by level rather
-// than through entireContents, which missed a banner SwiftUI had just shown.
-function* descendants(element) {
-    for (const child of element.uiElements()) {
-        yield child;
-        yield* descendants(child);
+function pressable(element) {
+    try {
+        return element.actions.name().includes('AXPress');
+    } catch (error) {
+        return false;
     }
 }
 
-function find(process, label, roles, matches = (found) => found.includes(label)) {
+// Every element of the process's windows in document order, depth first.
+// Asked level by level rather than through entireContents, which missed a
+// banner SwiftUI had just shown.
+function* elements(process) {
+    function* under(element) {
+        for (const child of element.uiElements()) {
+            yield child;
+            yield* under(child);
+        }
+    }
     for (const window of process.windows()) {
-        for (const element of descendants(window)) {
-            if ((!roles || roles.includes(role(element))) && matches(labels(element))) {
-                return element;
-            }
+        yield* under(window);
+    }
+}
+
+function find(process, matches) {
+    for (const element of elements(process)) {
+        if (matches(element)) {
+            return element;
         }
     }
     return null;
 }
 
-function parent(element) {
-    return element.attributes.byName('AXParent').value();
+function named(label) {
+    return (element) => labels(element).includes(label);
+}
+
+function press(element) {
+    element.actions.byName('AXPress').perform();
 }
 
 function run(argv) {
@@ -72,39 +90,41 @@ function run(argv) {
     delay(0.5);
     if (action === 'dump') {
         const lines = [];
-        speecher.windows().forEach((window, index) => {
-            lines.push(`window ${index}: ${labels(window).join(' | ')}`);
-            for (const element of descendants(window)) {
-                lines.push(`  ${role(element)}: ${labels(element).join(' | ')}`);
-            }
-        });
+        for (const element of elements(speecher)) {
+            lines.push(`${role(element)}: ${labels(element).join(' | ')}`);
+        }
         return lines.join('\n');
     }
     if (action === 'press-after') {
-        const text = find(speecher, label, ['AXStaticText'], (found) => found.some((value) => value.includes(label)));
-        const siblings = text ? parent(text).uiElements() : [];
-        const index = siblings.findIndex((sibling) => labels(sibling).some((value) => value.includes(label)));
-        const button = siblings.slice(index + 1).find((sibling) => role(sibling) === 'AXButton');
+        let seen = false;
+        const button = find(speecher, (element) => {
+            seen = seen || labels(element).some((value) => value.includes(label));
+            return seen && role(element) === 'AXButton';
+        });
         if (!button) {
             throw new Error(`no button after a text containing "${label}"`);
         }
-        button.actions.byName('AXPress').perform();
-        return `pressed the first button after "${labels(siblings[index])[0]}"`;
+        press(button);
+        return `pressed the first button after "${label}"`;
     }
-    const element = find(speecher, label,
-                         action === 'press' ? ['AXButton'] : action === 'type' ? ['AXTextField'] : null);
+    const element = find(speecher, {
+        press: (candidate) => named(label)(candidate) && pressable(candidate),
+        select: named(label),
+        type: (candidate) => named(label)(candidate) && role(candidate) === 'AXTextField',
+        find: named(label),
+    }[action]);
     if (!element) {
-        throw new Error(`no element labelled "${label}" in ${speecher.windows().length} Speecher windows`);
+        throw new Error(`${action}: no element labelled "${label}" in ${speecher.windows().length} Speecher windows`);
     }
     if (action === 'press') {
-        element.actions.byName('AXPress').perform();
-        return `pressed "${label}"`;
+        press(element);
+        return `pressed "${label}" (${role(element)})`;
     }
     if (action === 'select') {
         // A synthetic click on a SwiftUI sidebar row's text doesn't select it.
         let row = element;
         while (role(row) !== 'AXRow') {
-            row = parent(row);
+            row = row.attributes.byName('AXParent').value();
         }
         row.selected = true;
         return `selected the row showing "${label}"`;
@@ -116,5 +136,5 @@ function run(argv) {
         events.keyCode(36);
         return `typed ${text.length} characters into "${label}"`;
     }
-    throw new Error(`unknown action ${action}`);
+    return `found "${label}" (${role(element)})`;
 }

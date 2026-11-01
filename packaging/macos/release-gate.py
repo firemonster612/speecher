@@ -51,9 +51,6 @@ AUTOMATION_TARGET = 'com.apple.Music'
 DUMMY_OPENAI_KEY = 'sk-release-gate-dummy-0000000000000000'
 # QtKeychain's generic password for the OpenAI key (src/core/SecretStore.cpp).
 KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT = 'speecher', 'openai-api-key'
-# Long enough for a Keychain read the app times out itself; a prompt nobody
-# answers would hold it far longer.
-ANSWER_TIMEOUT = 60
 NOT_COVERED = {
     'microphone_audio': 'the runner has no microphone; only the TCC record is checked',
     'shortcut_and_paste': 'dictating with the shortcut into TextEdit needs a person and audio',
@@ -91,9 +88,10 @@ def run(*args):
 
 def ui(evidence, *args):
     """release-gate-ui.js with args, logged to ui.log; whether it matched."""
+    started = time.strftime('%H:%M:%S')
     result = run('osascript', '-l', 'JavaScript', HERE / 'release-gate-ui.js', *args)
     with open(evidence / 'ui.log', 'a') as log:
-        log.write(f'{time.strftime("%H:%M:%S")} {args[:2]} -> exit {result.returncode}\n'
+        log.write(f'{started}-{time.strftime("%H:%M:%S")} {args[:2]} -> exit {result.returncode}\n'
                   f'{result.stdout}{result.stderr}\n')
     return result.returncode == 0
 
@@ -319,24 +317,27 @@ def check_after_update(summary, evidence, candidate, csreq):
         update.run('open', '-a', update.APP)
         with contextlib.suppress(TimeoutError):
             update.wait_for(update.speecher_pids, 60, 'the new app did not start')
-    # Through the running app, which reads the key the old app saved. A
-    # Keychain prompt nobody answers shows up as no answer.
-    try:
-        answer = subprocess.run([str(update.EXECUTABLE), 'providers', '--json'], capture_output=True,
-                                text=True, timeout=ANSWER_TIMEOUT).stdout.strip()
-    except subprocess.TimeoutExpired:
-        answer = None
+    # The new app reads the saved keys when its Accounts page first opens and
+    # gives up on a Keychain read after 1.5 s, as it does on a prompt nobody
+    # answers; the key field reads "Saved" only when the read succeeded.
+    update.cli('settings')
+    time.sleep(3)
+    opened = ui(evidence, 'press', 'Accounts')
+    if not opened:
+        # Accounts sits under General, listed once General is open.
+        ui(evidence, 'press', 'General')
+        time.sleep(2)
+        opened = ui(evidence, 'press', 'Accounts')
+    time.sleep(5)
+    saved = opened and ui(evidence, 'find', 'Saved')
     prompt = run('osascript', '-e', 'tell application "System Events" to if exists process "SecurityAgent" '
                  'then return count windows of process "SecurityAgent"').stdout.strip()
     screenshot(evidence, 'key-check')
-    (evidence / 'providers-after.json').write_text(f'{answer}\nSecurityAgent windows: {prompt}\n')
-    openai = next((entry for entry in json.loads(answer or '[]')
-                   if entry['id'] == 'openai' and entry['role'] == 'refinement'), None)
-    no_prompt = prompt in ('', '0')
-    summary.check('after.openai_key_without_prompt', answer is not None and bool(openai)
-                  and openai['signedIn'] is True and no_prompt,
-                  'no answer in 60 s: a Keychain prompt is likely waiting' if answer is None
-                  else f'openai {openai}; SecurityAgent windows {prompt or 0}')
+    if not saved:
+        ui(evidence, 'dump')
+    summary.check('after.openai_key_without_prompt', saved and prompt in ('', '0'),
+                  f'Accounts page {"opened" if opened else "not found"}; API key field '
+                  f'{"reads Saved" if saved else "does not read Saved"}; SecurityAgent windows {prompt or 0}')
 
     login = update.login_item()
     (evidence / 'login-item-after-gate.txt').write_text(login + '\n')
