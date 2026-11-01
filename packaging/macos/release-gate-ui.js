@@ -6,17 +6,17 @@
 //   osascript -l JavaScript release-gate-ui.js press-after TEXT
 //   osascript -l JavaScript release-gate-ui.js select LABEL
 //   osascript -l JavaScript release-gate-ui.js type LABEL TEXT
-//   osascript -l JavaScript release-gate-ui.js find LABEL
+//   osascript -l JavaScript release-gate-ui.js field-after LABEL TEXT
 //   osascript -l JavaScript release-gate-ui.js dump
 //
 // press: AXPress on the element named LABEL that can be pressed (a button, a
 // Qt Quick sidebar tab). press-after: AXPress on the first button after the
 // text containing TEXT, for SwiftUI buttons that expose no title. select:
 // selects the list row showing LABEL, such as a SwiftUI sidebar pane. type:
-// focuses the text field labelled LABEL, types TEXT and presses Return. find:
-// whether any element shows LABEL. dump: every element's role and labels, for
-// working out what to match. Prints what it did; exits non-zero when nothing
-// matched.
+// focuses the text field labelled LABEL, types TEXT and presses Return.
+// field-after: whether the first text field after the element named LABEL
+// shows TEXT. dump: every element's role and labels, for working out what to
+// match. Prints what it did; exits non-zero when nothing matched.
 
 function labels(element) {
     const found = [];
@@ -78,6 +78,16 @@ function named(label) {
     return (element) => labels(element).includes(label);
 }
 
+// The first element with the role wanted at or after the first one matching
+// seen, in document order.
+function after(process, seen, wanted) {
+    let passed = false;
+    return find(process, (element) => {
+        passed = passed || seen(element);
+        return passed && role(element) === wanted;
+    });
+}
+
 function press(element) {
     element.actions.byName('AXPress').perform();
 }
@@ -96,22 +106,26 @@ function run(argv) {
         return lines.join('\n');
     }
     if (action === 'press-after') {
-        let seen = false;
-        const button = find(speecher, (element) => {
-            seen = seen || labels(element).some((value) => value.includes(label));
-            return seen && role(element) === 'AXButton';
-        });
+        const button = after(speecher, (element) => labels(element).some((value) => value.includes(label)),
+                             'AXButton');
         if (!button) {
             throw new Error(`no button after a text containing "${label}"`);
         }
         press(button);
         return `pressed the first button after "${label}"`;
     }
+    if (action === 'field-after') {
+        const field = after(speecher, named(label), 'AXTextField');
+        if (!field || !labels(field).includes(text)) {
+            const shown = field ? labels(field).join(' | ') : 'no text field';
+            throw new Error(`after "${label}": ${shown}, not "${text}"`);
+        }
+        return `the first text field after "${label}" shows "${text}"`;
+    }
     const element = find(speecher, {
         press: (candidate) => named(label)(candidate) && pressable(candidate),
         select: named(label),
         type: (candidate) => named(label)(candidate) && role(candidate) === 'AXTextField',
-        find: named(label),
     }[action]);
     if (!element) {
         throw new Error(`${action}: no element labelled "${label}" in ${speecher.windows().length} Speecher windows`);
@@ -129,12 +143,9 @@ function run(argv) {
         row.selected = true;
         return `selected the row showing "${label}"`;
     }
-    if (action === 'type') {
-        element.focused = true;
-        delay(0.3);
-        events.keystroke(text);
-        events.keyCode(36);
-        return `typed ${text.length} characters into "${label}"`;
-    }
-    return `found "${label}" (${role(element)})`;
+    element.focused = true;
+    delay(0.3);
+    events.keystroke(text);
+    events.keyCode(36);
+    return `typed ${text.length} characters into "${label}"`;
 }

@@ -175,22 +175,28 @@ gh workflow run mac-release-gate.yml -f candidate_run=<Release run ID>
 
 The runner's TCC databases are writable, so the gate records the grants
 against the shipped app's designated requirement as macOS does when a user
-allows them. It saves a dummy OpenAI key in the old app's Accounts pane,
-waits for the old app's own update check and presses Install and restart
-through System Events. After
-the relaunch it checks that `speecher.log` reads `trusted=1` for the
-candidate's cdhash, that the TCC records still allow it, that the settings
-carried over, that the new app's Accounts page shows the key as saved with no
-Keychain prompt and that Speecher has one login item. The job summary marks each check PASS or FAIL, and the
-`release-gate-evidence` artifact keeps what step 8 asks for. 0.2.0 crashed on
-the runner now and then before offering the update; the gate then starts the
-update again, up to three times, and lists the crash reports as NOTED.
+allows them. It saves a dummy OpenAI key in the old app's Accounts pane, waits
+for the old app's own update check and presses Install and restart through
+System Events. After the relaunch it checks that `speecher.log` reads
+`trusted=1` for the candidate's cdhash, that the TCC records still allow it,
+that the settings carried over, that the new app's Accounts page shows the key
+as saved with no Keychain prompt and that Speecher has one login item. The job
+summary marks each check PASS or FAIL, and the `release-gate-evidence`
+artifact keeps what step 8 asks for. 0.2.0 crashed on the runner now and then
+before offering the update; the gate then starts the update over, three
+attempts in all, and lists the crash reports as NOTED.
 
-The summary marks what a runner can't check NOT_VERIFIED, never PASS: real
-microphone audio, the shortcut pasting into TextEdit, Music pausing and
-screenshot refinement without a prompt (only their TCC records are checked),
-the Claude Code and Codex sign-ins, a LaunchServices start taking typed keys,
-and steps 6 and 7. Check those by hand.
+A self-signed candidate always fails `after.openai_key_without_prompt`: macOS
+asks once for the Keychain item after each such update, as CLI login Keychain
+prompts above explains.
+
+The summary marks what a runner can't check NOT_VERIFIED, never PASS: the
+setup assistant and first dictation of step 3, real microphone audio, the
+shortcut pasting into TextEdit, Music pausing and screenshot refinement
+without a prompt (only their TCC records are checked), permission prompts
+other than the Keychain's, the Claude Code and Codex sign-ins, a
+LaunchServices start taking typed keys, and steps 6 and 7. Check those by
+hand.
 
 ### The checklist
 
@@ -238,7 +244,9 @@ and steps 6 and 7. Check those by hand.
      Audio Recording prompt, and System Settings still lists Speecher there,
      on.
    - Accounts shows the OpenAI key as saved, and Claude and ChatGPT as signed
-     in, with no Keychain prompt and no request to sign in again.
+     in, with no request to sign in again. A self-signed build asks once for
+     your Mac password to read the OpenAI key (see CLI login Keychain
+     prompts); any other Keychain prompt is a failure.
    - System Settings > General > Login Items lists Speecher once.
    - Quit it and start it from Finder or Launchpad, which is how LaunchServices
      starts it at login too: its window takes clicks and typed keys. On a

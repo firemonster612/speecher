@@ -42,6 +42,9 @@ jobs:
           gh run view "$CANDIDATE_RUN" --json workflowName,event,headSha,headBranch,conclusion,url \
             > evidence/candidate-run.json
           cat evidence/candidate-run.json
+          jq -e '.workflowName == "Release" and .event == "workflow_dispatch" and .conclusion == "success"' \
+            evidence/candidate-run.json \
+            || { echo "::error::$CANDIDATE_RUN is not a successful, hand-started Release run"; exit 1; }
 
       - uses: actions/download-artifact@v8
         with:
@@ -64,7 +67,8 @@ jobs:
             echo "## Release gate: $SHIPPED_TAG to candidate run $CANDIDATE_RUN"
             echo
             echo '```'
-            cat evidence/summary.txt 2>/dev/null || echo 'gate=FAIL the gate script wrote no summary'
+            cat evidence/summary.txt 2>/dev/null || true
+            grep -qs '^gate=' evidence/summary.txt || echo 'gate=FAIL the gate script stopped before its verdict'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

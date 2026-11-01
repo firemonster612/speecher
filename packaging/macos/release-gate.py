@@ -62,6 +62,8 @@ NOT_COVERED = {
     'login_starts_speecher': 'needs a log out and back in',
     'launchservices_start_takes_input': 'needs a person to click and type in a window LaunchServices opened',
     'accessibility_off_before_update': 'step 7 needs a second update with the grant removed',
+    'setup_assistant_and_first_dictation': 'step 3 needs a person and audio; the gate seeds the settings and grants',
+    'no_other_permission_prompt': 'only the Keychain prompt and the Accessibility trust are checked after the update',
 }
 
 
@@ -88,6 +90,13 @@ def run(*args):
     return update.run(*args, check_status=False)
 
 
+def sockets():
+    """The Unix sockets a Speecher may listen on. The gate's own speecher-*
+    work directories sit beside them."""
+    return [path for directory in {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}
+            for path in directory.glob('speecher-*') if path.is_socket()]
+
+
 def ui(evidence, *args):
     """release-gate-ui.js with args, logged to ui.log; whether it matched."""
     started = time.strftime('%H:%M:%S')
@@ -98,10 +107,8 @@ def ui(evidence, *args):
         if result.returncode != 0:
             # Which Speecher processes and sockets there were when it missed.
             processes = run('ps', '-axo', 'pid,ppid,lstart,command').stdout.splitlines()
-            sockets = [path for directory in {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}
-                       for path in directory.glob('speecher-*')]
             log.write(''.join(f'  {line}\n' for line in processes if 'speecher.app' in line)
-                      + ''.join(f'  socket {path}\n' for path in sockets))
+                      + ''.join(f'  socket {path}\n' for path in sockets()))
     return result.returncode == 0
 
 
@@ -109,14 +116,13 @@ def app_listening():
     """Whether a Speecher accepts commands on its socket. 0.2.0's `speecher
     status` says idle whether or not one answers, and its `speecher settings`
     starts an app of its own when none does."""
-    for directory in {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}:
-        for path in directory.glob('speecher-*'):
-            with socket.socket(socket.AF_UNIX) as client:
-                try:
-                    client.connect(str(path))
-                    return True
-                except OSError:
-                    continue
+    for path in sockets():
+        with socket.socket(socket.AF_UNIX) as client:
+            try:
+                client.connect(str(path))
+                return True
+            except OSError:
+                continue
     return False
 
 
@@ -190,10 +196,19 @@ def sql_text(value):
     return "'" + value.replace("'", "''") + "'"
 
 
+def grant_target(service):
+    """The indirect_object_identifier grant() records for service: the target
+    app for Automation, which TCC records per target."""
+    return AUTOMATION_TARGET if service == 'kTCCServiceAppleEvents' else 'UNUSED'
+
+
 def tcc_rows(database):
-    query = f'select service, auth_value, hex(csreq) from access where client = {sql_text(BUNDLE_ID)}'
+    """Speecher's rows in database, keyed 'service target'."""
+    query = ('select service, indirect_object_identifier, auth_value, hex(csreq) from access '
+             f'where client = {sql_text(BUNDLE_ID)}')
     rows = run('sudo', 'sqlite3', '-separator', '|', database, query).stdout.splitlines()
-    return {service: (int(value), csreq) for service, value, csreq in (row.split('|') for row in rows)}
+    return {f'{service} {target}': (int(value), csreq)
+            for service, target, value, csreq in (row.split('|') for row in rows)}
 
 
 def grant(evidence, requirement):
@@ -203,12 +218,11 @@ def grant(evidence, requirement):
     update.run('csreq', '-r=' + requirement, '-b', compiled)
     csreq = compiled.read_bytes().hex().upper()
     for service, database in GRANTS.items():
-        target = AUTOMATION_TARGET if service == 'kTCCServiceAppleEvents' else 'UNUSED'
         update.run('sudo', 'sqlite3', database,
                    'insert or replace into access (service, client, client_type, auth_value, auth_reason, '
                    'auth_version, csreq, indirect_object_identifier_type, indirect_object_identifier, flags, '
                    f'last_modified) values ({sql_text(service)}, {sql_text(BUNDLE_ID)}, 0, 2, 3, 1, '
-                   f"X'{csreq}', 0, {sql_text(target)}, 0, {int(time.time())})")
+                   f"X'{csreq}', 0, {sql_text(grant_target(service))}, 0, {int(time.time())})")
     # tccd caches decisions; restart both the system and the user instance.
     run('sudo', 'killall', 'tccd')
     return csreq
@@ -216,6 +230,10 @@ def grant(evidence, requirement):
 
 def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
     run('pkill', '-x', 'speecher')
+    # Left by an earlier run on a reused Mac, either would pass the checks below
+    # without the shipped app having done anything.
+    run('security', 'delete-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT)
+    LOG.unlink(missing_ok=True)
     for domain in (update.APP_DOMAIN, update.SPARKLE_DOMAIN):
         run('defaults', 'delete', domain)
     shutil.rmtree(update.APP, ignore_errors=True)
@@ -348,7 +366,8 @@ def check_after_update(summary, evidence, candidate, csreq):
         compiled.flush()
         requirement = run('csreq', '-r', compiled.name, '-t').stdout.strip()
     satisfied = run('codesign', '--verify', '-R=' + requirement, update.APP).returncode == 0
-    rows = {service: tcc_rows(database).get(service) for service, database in GRANTS.items()}
+    rows = {service: tcc_rows(database).get(f'{service} {grant_target(service)}')
+            for service, database in GRANTS.items()}
     (evidence / 'tcc-after.json').write_text(json.dumps(rows))
     for service, row in rows.items():
         summary.check(f'after.tcc.{service}', row == (2, csreq) and satisfied,
@@ -362,7 +381,9 @@ def check_after_update(summary, evidence, candidate, csreq):
             update.wait_for(update.speecher_pids, 60, 'the new app did not start')
     # The new app reads the saved keys when its Accounts page first opens and
     # gives up on a Keychain read after 1.5 s, as it does on a prompt nobody
-    # answers; the key field reads "Saved" only when the read succeeded.
+    # answers; the OpenAI API key field reads "Saved" only when the read
+    # succeeded. It is the first text field after the row labelled API key;
+    # other secrets, such as the CLI Proxy API key, read "Saved" too.
     update.cli('settings')
     time.sleep(3)
     opened = ui(evidence, 'press', 'Accounts')
@@ -372,9 +393,12 @@ def check_after_update(summary, evidence, candidate, csreq):
         time.sleep(2)
         opened = ui(evidence, 'press', 'Accounts')
     time.sleep(5)
-    saved = opened and ui(evidence, 'find', 'Saved')
-    prompt = run('osascript', '-e', 'tell application "System Events" to if exists process "SecurityAgent" '
-                 'then return count windows of process "SecurityAgent"').stdout.strip()
+    saved = opened and ui(evidence, 'field-after', 'API key', 'Saved')
+    inspected = run('osascript', '-e', 'tell application "System Events" to if exists process "SecurityAgent" '
+                    'then return count windows of process "SecurityAgent"')
+    prompt = inspected.stdout.strip()
+    # A failed inspection proves nothing, so it fails the check.
+    no_prompt = inspected.returncode == 0 and prompt in ('', '0')
     screenshot(evidence, 'key-check')
     if not saved:
         ui(evidence, 'dump')
@@ -384,9 +408,11 @@ def check_after_update(summary, evidence, candidate, csreq):
         asked = run('osascript', '-e', 'tell application "System Events" to get value of static texts '
                     'of windows of process "SecurityAgent"').stdout.strip()
         (evidence / 'keychain-prompt.txt').write_text(asked + '\n')
-    summary.check('after.openai_key_without_prompt', saved and prompt in ('', '0'),
-                  f'Accounts page {"opened" if opened else "not found"}; API key field '
-                  f'{"reads Saved" if saved else "does not read Saved"}; SecurityAgent windows {prompt or 0}'
+    windows = (f'SecurityAgent windows {prompt or 0}' if inspected.returncode == 0
+               else f'SecurityAgent not inspected: {inspected.stderr.strip()}')
+    summary.check('after.openai_key_without_prompt', saved and no_prompt,
+                  f'Accounts page {"opened" if opened else "not found"}; OpenAI API key field '
+                  f'{"reads Saved" if saved else "does not read Saved"}; {windows}'
                   + (f'; it says: {asked}' if asked else ''))
 
     login = update.login_item()
