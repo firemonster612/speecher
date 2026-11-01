@@ -94,6 +94,13 @@ def ui(evidence, *args):
     with open(evidence / 'ui.log', 'a') as log:
         log.write(f'{started}-{time.strftime("%H:%M:%S")} {args[:2]} -> exit {result.returncode}\n'
                   f'{result.stdout}{result.stderr}\n')
+        if result.returncode != 0:
+            # Which Speecher processes and sockets there were when it missed.
+            processes = run('ps', '-axo', 'pid,ppid,lstart,command').stdout.splitlines()
+            sockets = [path for directory in {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}
+                       for path in directory.glob('speecher-*')]
+            log.write(''.join(f'  {line}\n' for line in processes if 'speecher.app' in line)
+                      + ''.join(f'  socket {path}\n' for path in sockets))
     return result.returncode == 0
 
 
@@ -273,17 +280,20 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
         # When each button was last pressed; a press that a minute later still
         # shows nothing served has missed, so it is pressed again.
         pressed = {'check': None, 'install': None}
-        dumped = False
+        dumped, started = False, None
         while script.poll() is None:
             time.sleep(10)
-            started = (out / 'summary.txt').exists() and 'old.running=' in (out / 'summary.txt').read_text()
+            if started is None and (out / 'summary.txt').exists() and 'old.running=' in (out / 'summary.txt').read_text():
+                started = time.monotonic()
             served = requests.read_text() if requests.exists() else ''
-            if not started or 'GET /speecher.dmg' in served:
+            # Left alone for its first half minute: asked for settings sooner
+            # after the script opened it, 0.2.0 went away on the runner.
+            if started is None or time.monotonic() - started < 30 or 'GET /speecher.dmg' in served:
                 continue
             button = 'install' if 'GET /appcast-stable.xml' in served else 'check'
             if pressed[button] is not None and time.monotonic() - pressed[button] < 60:
                 continue
-            if not app_listening():
+            if len(update.speecher_pids()) != 1 or not app_listening():
                 continue
             update.cli('settings')
             time.sleep(3)
@@ -391,6 +401,10 @@ def main():
         summary.record(f'manual.{name}', 'NOT_VERIFIED', reason)
     if LOG.exists():
         shutil.copyfile(LOG, evidence / 'speecher.log')
+    for report in (Path.home() / 'Library/Logs/DiagnosticReports').glob('speecher*'):
+        shutil.copyfile(report, evidence / report.name)
+    unified = run('log', 'show', '--last', '60m', '--style', 'compact', '--predicate', 'process == "speecher"')
+    (evidence / 'unified.log').write_text(unified.stdout + unified.stderr)
     summary.record('gate', 'FAIL' if summary.failed else 'PASS')
     return 1 if summary.failed else 0
 
