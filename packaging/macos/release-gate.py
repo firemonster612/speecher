@@ -50,6 +50,7 @@ GRANTS = {
 }
 AUTOMATION_TARGET = 'com.apple.Music'
 DUMMY_OPENAI_KEY = 'sk-release-gate-dummy-0000000000000000'
+UPDATE_ATTEMPTS = 3
 # QtKeychain's generic password for the OpenAI key (src/core/SecretStore.cpp).
 KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT = 'speecher', 'openai-api-key'
 NOT_COVERED = {
@@ -273,10 +274,15 @@ def set_up_shipped_app(summary, evidence, shipped_dmg, shipped):
 
 # --- Step 4: the update, with Install and restart pressed ----------------------
 
-def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
-    out = evidence / 'update'
+def crash_reports():
+    return set((Path.home() / 'Library/Logs/DiagnosticReports').glob('speecher*'))
+
+
+def update_once(evidence, out, shipped_dmg, candidate_dmg, signature_file):
+    """verify-dmg-update.py into out, pressing Install and restart when the old
+    app offers the candidate; its exit status."""
     requests = out / 'https-requests.log'
-    with open(evidence / 'update-output.txt', 'w') as output:
+    with open(out.with_name(out.name + '-output.txt'), 'w') as output:
         script = subprocess.Popen(
             [sys.executable, HERE / 'verify-dmg-update.py', shipped_dmg, candidate_dmg, signature_file, out,
              '--keep-state'],
@@ -301,12 +307,28 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
                 pressed_at = time.monotonic()
             elif not dumped:
                 dumped = ui(evidence, 'dump')
-        status = script.wait()
-    for line in (out / 'summary.txt').read_text().splitlines() if (out / 'summary.txt').exists() else []:
+        return script.wait()
+
+
+def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
+    # 0.2.0 crashed now and then on the runner before offering the update
+    # (main-thread SwiftUI and CoreGraphics faults); a person would open it
+    # again, so the update starts over. The crashes stay in the summary.
+    for attempt in range(1, UPDATE_ATTEMPTS + 1):
+        out = evidence / f'update-{attempt}'
+        crashed_before = crash_reports()
+        status = update_once(evidence, out, shipped_dmg, candidate_dmg, signature_file)
+        result = (out / 'summary.txt').read_text() if (out / 'summary.txt').exists() else ''
+        crashes = crash_reports() - crashed_before
+        if status == 0 or 'old.downloaded=PASS' in result or not crashes:
+            break
+        summary.record(f'update.attempt_{attempt}', 'RETRIED',
+                       f'the shipped app crashed before the download: {", ".join(c.name for c in crashes)}')
+    for line in result.splitlines():
         name, _, rest = line.partition('=')
         verdict, _, detail = rest.partition(' ')
         summary.record(f'update.{name}', verdict, detail)
-    summary.check('update.script', status == 0, f'verify-dmg-update.py exit {status}; see update-output.txt')
+    summary.check('update.script', status == 0, f'verify-dmg-update.py exit {status}; see {out.name}-output.txt')
     screenshot(evidence, 'after-update')
 
 
@@ -390,10 +412,14 @@ def main():
         summary.record(f'manual.{name}', 'NOT_VERIFIED', reason)
     if LOG.exists():
         shutil.copyfile(LOG, evidence / 'speecher.log')
-    reports = sorted((Path.home() / 'Library/Logs/DiagnosticReports').glob('speecher*'))
-    for report in reports:
+    crashed = {'shipped': [], 'candidate': []}
+    for report in sorted(crash_reports()):
         shutil.copyfile(report, evidence / report.name)
-    summary.check('no_crashes', not reports, ', '.join(report.name for report in reports))
+        build = json.loads(report.read_text().split('\n', 1)[0]).get('build_version')
+        crashed['candidate' if build == candidate['version'] else 'shipped'].append(report.name)
+    summary.check('crashes.candidate', not crashed['candidate'], ', '.join(crashed['candidate']))
+    if crashed['shipped']:
+        summary.record('crashes.shipped', 'NOTED', ', '.join(crashed['shipped']))
     unified = run('log', 'show', '--last', '60m', '--style', 'compact', '--predicate', 'process == "speecher"')
     (evidence / 'unified.log').write_text(unified.stdout + unified.stderr)
     summary.record('gate', 'FAIL' if summary.failed else 'PASS')

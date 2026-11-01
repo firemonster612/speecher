@@ -182,7 +182,9 @@ the relaunch it checks that `speecher.log` reads `trusted=1` for the
 candidate's cdhash, that the TCC records still allow it, that the settings
 carried over, that the new app's Accounts page shows the key as saved with no
 Keychain prompt and that Speecher has one login item. The job summary marks each check PASS or FAIL, and the
-`release-gate-evidence` artifact keeps what step 8 asks for.
+`release-gate-evidence` artifact keeps what step 8 asks for. 0.2.0 crashed on
+the runner now and then before offering the update; the gate then starts the
+update again, up to three times, and lists the crash reports as NOTED.
 
 The summary marks what a runner can't check NOT_VERIFIED, never PASS: real
 microphone audio, the shortcut pasting into TextEdit, Music pausing and
