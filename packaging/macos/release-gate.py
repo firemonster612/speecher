@@ -265,6 +265,10 @@ def run_update(summary, evidence, shipped_dmg, candidate_dmg, signature_file):
             button = 'install' if 'GET /appcast-stable.xml' in served else 'check'
             if pressed[button] is not None and time.monotonic() - pressed[button] < 60:
                 continue
+            # Before the old app listens, 0.2.0's `speecher settings` starts an
+            # app of its own in the foreground instead of asking it.
+            if update.cli('status').returncode != 0:
+                continue
             update.cli('settings')
             time.sleep(3)
             if button == 'check':
