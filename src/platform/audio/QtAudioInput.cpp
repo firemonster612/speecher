@@ -523,9 +523,9 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 9, 2)
     // This sizes Qt's ring buffer between the audio thread and readyRead()
-    // here, which drops what doesn't fit. The GUI thread drains it, so it holds two
-    // seconds: a UI stall longer than the buffer loses speech. Only its size;
-    // audio still arrives as the device delivers it.
+    // here, which drops what doesn't fit. The GUI thread drains it, so it
+    // holds two seconds: a UI stall longer than the buffer loses speech. Only
+    // its size; audio still arrives as the device delivers it.
     m_source->setBufferSize(format.bytesForDuration(2'000'000));
 #else
     // Before Qt 6.9.2 this sized PulseAudio's fragment and WASAPI's buffer,
