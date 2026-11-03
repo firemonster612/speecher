@@ -11,9 +11,10 @@ import Speecher.App
 // going back slides it in from the left.
 ClientWindow {
     id: window
-    width: 960
-    // Tall enough for the longest step, Refinement, to show whole.
-    height: 764
+    // Tall enough for the longest step, Refinement, to show whole, and
+    // smaller on a screen without the room, as Main is.
+    width: Math.min(960, Screen.desktopAvailableWidth)
+    height: Math.min(764, Screen.desktopAvailableHeight)
     minimumWidth: 860
     minimumHeight: 600
     visible: true

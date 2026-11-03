@@ -1,5 +1,7 @@
 #include "platform/audio/SilenceGate.h"
 
+#include "platform/audio/AudioPcmConverter.h"
+
 #include <utility>
 
 namespace speecher {
@@ -24,6 +26,19 @@ void SilenceGate::holdQuiet(const QByteArray &pcm)
     if (m_preRoll.size() > m_preRollBytes) {
         m_preRoll.remove(0, m_preRoll.size() - m_preRollBytes);
     }
+}
+
+QList<QByteArray> SilenceGate::passWindows(const QByteArray &pcm, int windowBytes, int thresholdPercent)
+{
+    QList<QByteArray> out;
+    for (qsizetype offset = 0; offset < pcm.size();) {
+        const qsizetype rest = pcm.size() - offset;
+        const qsizetype length = rest < 2 * windowBytes ? rest : windowBytes;
+        const QByteArray window = pcm.mid(offset, length);
+        out += pass(window, isVoiced(rmsForPcm16(window), thresholdPercent));
+        offset += length;
+    }
+    return out;
 }
 
 QList<QByteArray> SilenceGate::pass(const QByteArray &pcm, bool voiced)

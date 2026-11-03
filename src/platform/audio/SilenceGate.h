@@ -17,6 +17,10 @@ public:
     void holdQuiet(const QByteArray &pcm);
     // Takes one chunk and returns the audio to send on, in order.
     QList<QByteArray> pass(const QByteArray &pcm, bool voiced);
+    // Takes 16-bit PCM of any length and judges each window of windowBytes
+    // against the threshold on its own, so silence around speech can't
+    // average it away. A tail shorter than a window joins the last one.
+    QList<QByteArray> passWindows(const QByteArray &pcm, int windowBytes, int thresholdPercent);
     // Hands over the held quiet audio.
     QByteArray takePreRoll();
     // Hands over the quiet since speech last stopped, up to the post-roll, for

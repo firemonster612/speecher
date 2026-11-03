@@ -56,7 +56,7 @@ private:
     void onReadyRead();
     void handleSourceStateChanged(QAudio::State state);
     void failCapture(const QString &message);
-    void processOutputChunk(const QByteArray &pcm, float rms);
+    void processOutputChunk(const QByteArray &pcm);
     void appendPreRoll(const QByteArray &pcm);
     void flushPreRoll();
     void flushPendingPostRoll();

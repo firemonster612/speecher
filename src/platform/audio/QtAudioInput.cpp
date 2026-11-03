@@ -5,6 +5,10 @@
 #include <QMediaDevices>
 #include <QTimer>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacAudioDevice.h"
+#endif
+
 #include <algorithm>
 #include <utility>
 
@@ -14,6 +18,7 @@ namespace {
 constexpr int kOutputSampleRate = 16000;
 constexpr int kOutputBytesPerSample = int(sizeof(qint16));
 constexpr int kOutputBytesPerMs = kOutputSampleRate * kOutputBytesPerSample / 1000;
+constexpr int kVadWindowMs = 20;
 
 QString encodedDeviceId(const QAudioDevice &device)
 {
@@ -51,6 +56,20 @@ bool usableFormat(const QAudioFormat &format)
 QAudioFormat sourceFormatForDevice(const QAudioDevice &device)
 {
     const QAudioFormat target = outputFormat();
+#ifdef Q_OS_MACOS
+    // At any other rate Qt converts with an AudioConverter that, up to Qt
+    // 6.12.0, converts each buffer more than once (QTBUG-151918): 48 kHz audio
+    // asked for at 16 kHz comes out longer, garbled by repeats. At the
+    // device's own rate there is nothing for Qt to convert, and
+    // AudioPcmConverter resamples.
+    if (const std::optional<int> rate = mac::nominalSampleRate(device.id())) {
+        QAudioFormat native = target;
+        native.setSampleRate(*rate);
+        if (device.isFormatSupported(native)) {
+            return native;
+        }
+    }
+#endif
     if (device.isFormatSupported(target)) {
         return target;
     }
@@ -502,8 +521,17 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     m_seenFirstSample = false;
     m_conversionFailed = false;
 
-    const int bufferBytes = std::clamp(format.sampleRate() * format.bytesPerFrame() / 20, 4096, 32768);
-    m_source->setBufferSize(bufferBytes);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 2)
+    // This sizes Qt's ring buffer between the audio thread and readyRead()
+    // here, which drops what doesn't fit. The GUI thread drains it, so it
+    // holds two seconds: a UI stall longer than the buffer loses speech. Only
+    // its size; audio still arrives as the device delivers it.
+    m_source->setBufferSize(format.bytesForDuration(2'000'000));
+#else
+    // Before Qt 6.9.2 this sized PulseAudio's fragment and WASAPI's buffer,
+    // so it set how long audio took to arrive.
+    m_source->setBufferSize(std::clamp(format.sampleRate() * format.bytesPerFrame() / 20, 4096, 32768));
+#endif
     connect(m_source.data(), &QAudioSource::stateChanged, this, &QtAudioInput::handleSourceStateChanged);
 
     m_device = m_source->start();
@@ -584,7 +612,7 @@ void QtAudioInput::onReadyRead()
 
     emit levelChanged(std::min(1.0f, conversion.rms * 8.0f));
     if (capture == m_captureId) {
-        processOutputChunk(pcm, conversion.rms);
+        processOutputChunk(pcm);
     }
 }
 
@@ -624,14 +652,17 @@ void QtAudioInput::failCapture(const QString &message)
     }
 }
 
-void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
+void QtAudioInput::processOutputChunk(const QByteArray &pcm)
 {
     if (!m_captureSettings.vadEnabled) {
         emit audioChunk(pcm);
         return;
     }
 
-    const QList<QByteArray> chunks = m_gate.pass(pcm, isVoiced(rms, m_captureSettings.vadThresholdPercent));
+    // A chunk can hold a stalled GUI thread's worth of audio, so the gate
+    // judges it in short windows.
+    const QList<QByteArray> chunks =
+        m_gate.passWindows(pcm, bytesForMs(kVadWindowMs), m_captureSettings.vadThresholdPercent);
     const quint64 capture = m_captureId;
     for (const QByteArray &chunk : chunks) {
         if (capture != m_captureId) {
