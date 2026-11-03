@@ -520,8 +520,11 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     m_seenFirstSample = false;
     m_conversionFailed = false;
 
-    const int bufferBytes = std::clamp(format.sampleRate() * format.bytesPerFrame() / 20, 4096, 32768);
-    m_source->setBufferSize(bufferBytes);
+    // Qt's ring buffer between the audio thread and readyRead() here, which
+    // drops what doesn't fit. The GUI thread drains it, so it holds two
+    // seconds: a UI stall longer than the buffer loses speech. Only its size;
+    // audio still arrives as the device delivers it.
+    m_source->setBufferSize(int(format.bytesForDuration(2'000'000)));
     connect(m_source.data(), &QAudioSource::stateChanged, this, &QtAudioInput::handleSourceStateChanged);
 
     m_device = m_source->start();
