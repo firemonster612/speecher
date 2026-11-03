@@ -539,6 +539,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
 
 set(SPEECHER_PLATFORM_MAC_SOURCES
   src/output/mac/MacPasteDelivery.mm
+  src/platform/mac/MacAudioDevice.mm
   src/platform/mac/MacSessionKeyGrab.mm
   src/platform/mac/MacCorrectionObserver.mm
   src/platform/mac/MacGlobalShortcutBinder.mm
@@ -557,6 +558,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
   src/output/mac/MacPasteDelivery.h
+  src/platform/mac/MacAudioDevice.h
   src/platform/mac/MacSessionKeyGrab.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
@@ -1007,6 +1009,7 @@ if(APPLE)
     "-framework AppKit"
     "-framework Carbon"
     "-framework ApplicationServices"
+    "-framework CoreAudio"
     "-framework CoreMedia"
     "-framework ScreenCaptureKit"
   )

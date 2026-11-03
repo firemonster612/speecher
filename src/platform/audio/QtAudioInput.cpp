@@ -5,6 +5,10 @@
 #include <QMediaDevices>
 #include <QTimer>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacAudioDevice.h"
+#endif
+
 #include <algorithm>
 #include <utility>
 
@@ -51,6 +55,20 @@ bool usableFormat(const QAudioFormat &format)
 QAudioFormat sourceFormatForDevice(const QAudioDevice &device)
 {
     const QAudioFormat target = outputFormat();
+#ifdef Q_OS_MACOS
+    // At any other rate Qt converts with an AudioConverter that, up to Qt
+    // 6.12.0, converts each buffer more than once (QTBUG-151918): 48 kHz audio
+    // asked for at 16 kHz comes out a third longer, garbled by repeats. At the
+    // device's own rate there is nothing for Qt to convert, and
+    // AudioPcmConverter resamples.
+    if (const std::optional<int> rate = mac::nominalSampleRate(device.id())) {
+        QAudioFormat native = target;
+        native.setSampleRate(*rate);
+        if (device.isFormatSupported(native)) {
+            return native;
+        }
+    }
+#endif
     if (device.isFormatSupported(target)) {
         return target;
     }
