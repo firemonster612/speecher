@@ -57,11 +57,13 @@ private slots:
         };
         const QByteArray silence = pcm(3200, 0);
         const QByteArray speech = pcm(640, 3000);
-        const QByteArray chunk = silence + speech + silence;
+        // Shorter than a window, so it is judged with the speech before it.
+        const QByteArray tail = pcm(100, 0);
+        const QByteArray chunk = silence + speech + tail;
         QVERIFY(!isVoiced(rmsForPcm16(chunk), 5));
 
         SilenceGate gate;
-        QCOMPARE(gate.passWindows(chunk, 640, 5).join(), speech);
+        QCOMPARE(gate.passWindows(chunk, 640, 5).join(), speech + tail);
     }
 };
 
