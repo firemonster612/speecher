@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/SilenceGate.h"
 
 using namespace speecher;
@@ -41,6 +42,26 @@ private slots:
 
         // Resumed speech is led in only by quiet the post-roll didn't send.
         QCOMPARE(gate.pass("ss", true), (QList<QByteArray>{"ghijkl", "ss"}));
+    }
+
+    // A chunk a stalled GUI thread let build up: a little speech in a lot of
+    // silence, quieter than the threshold on average, still comes through.
+    void judgesSpeechInWindows()
+    {
+        const auto pcm = [](int samples, qint16 level) {
+            QByteArray bytes;
+            for (int i = 0; i < samples; ++i) {
+                bytes.append(reinterpret_cast<const char *>(&level), sizeof(level));
+            }
+            return bytes;
+        };
+        const QByteArray silence = pcm(3200, 0);
+        const QByteArray speech = pcm(640, 3000);
+        const QByteArray chunk = silence + speech + silence;
+        QVERIFY(!isVoiced(rmsForPcm16(chunk), 5));
+
+        SilenceGate gate;
+        QCOMPARE(gate.passWindows(chunk, 640, 5).join(), speech);
     }
 };
 

@@ -522,8 +522,8 @@ bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     m_conversionFailed = false;
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 9, 2)
-    // Qt's ring buffer between the audio thread and readyRead() here, which
-    // drops what doesn't fit. The GUI thread drains it, so it holds two
+    // This sizes Qt's ring buffer between the audio thread and readyRead()
+    // here, which drops what doesn't fit. The GUI thread drains it, so it holds two
     // seconds: a UI stall longer than the buffer loses speech. Only its size;
     // audio still arrives as the device delivers it.
     m_source->setBufferSize(format.bytesForDuration(2'000'000));
@@ -659,20 +659,16 @@ void QtAudioInput::processOutputChunk(const QByteArray &pcm)
         return;
     }
 
-    // A chunk can hold a stalled GUI thread's worth of audio. Voice is judged
-    // in short windows, so silence beside speech can't average it away.
+    // A chunk can hold a stalled GUI thread's worth of audio, so the gate
+    // judges it in short windows.
+    const QList<QByteArray> chunks =
+        m_gate.passWindows(pcm, bytesForMs(kVadWindowMs), m_captureSettings.vadThresholdPercent);
     const quint64 capture = m_captureId;
-    const int window = bytesForMs(kVadWindowMs);
-    for (qsizetype offset = 0; offset < pcm.size(); offset += window) {
-        const QByteArray part = pcm.mid(offset, window);
-        const QList<QByteArray> chunks =
-            m_gate.pass(part, isVoiced(rmsForPcm16(part), m_captureSettings.vadThresholdPercent));
-        for (const QByteArray &chunk : chunks) {
-            if (capture != m_captureId) {
-                return;
-            }
-            emit audioChunk(chunk);
+    for (const QByteArray &chunk : chunks) {
+        if (capture != m_captureId) {
+            return;
         }
+        emit audioChunk(chunk);
     }
 }
 
