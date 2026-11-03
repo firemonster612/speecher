@@ -7,8 +7,10 @@
 
 #include <QAudioSink>
 #include <QBuffer>
+#include <QElapsedTimer>
 #include <QMediaDevices>
 #include <QScopeGuard>
+#include <QThread>
 #include <QTimer>
 
 #include <cmath>
@@ -409,6 +411,38 @@ private slots:
             QVERIFY(test::stopAndWait(capture));
         }
         QCOMPARE(opens, 1);
+    }
+
+    // The microphone's audio keeps pace with the clock: nothing repeated by a
+    // sample-rate conversion (QTBUG-151918 on macOS) and nothing dropped
+    // while the GUI thread stalls for longer than a short buffer would hold.
+    void liveAudioCaptureKeepsPaceThroughAStall()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_AUDIO") != QStringLiteral("1")) {
+            QSKIP("Live audio-capture check is opt-in");
+        }
+        AudioCaptureSettings audio;
+        audio.mode = QStringLiteral("on_demand");
+        audio.vadEnabled = false;
+        audio.preRollMs = 0;
+        audio.postRollMs = 0;
+        QtAudioInput capture(audio);
+        qsizetype bytes = 0;
+        connect(&capture, &AudioInput::audioChunk, this, [&bytes](const QByteArray &pcm) { bytes += pcm.size(); });
+
+        QString error;
+        QVERIFY2(test::startAndWait(capture, &error), qPrintable(error));
+        QElapsedTimer clock;
+        clock.start();
+        QTest::qWait(1000);
+        QThread::msleep(1500);
+        QTest::qWait(1000);
+        QVERIFY(test::stopAndWait(capture));
+
+        const double heard = double(bytes) / (16000 * sizeof(qint16));
+        const double elapsed = clock.elapsed() / 1000.0;
+        QVERIFY2(std::abs(heard - elapsed) < elapsed * 0.15,
+                 qPrintable(QStringLiteral("%1 s of audio in %2 s").arg(heard).arg(elapsed)));
     }
 
 #ifdef SPEECHER_WITH_PULSE
