@@ -287,6 +287,12 @@ bool QuickSystem::canRemove() const
     return m_removal->available();
 }
 
+bool QuickSystem::canDisablePermanentAccessibility() const
+{
+    return m_controller->platform()->canDisablePermanentAccessibility()
+        && m_controller->accessibility()->persistent();
+}
+
 bool QuickSystem::canLaunchAtLogin() const
 {
     return m_controller->platform()->canLaunchAtLogin();
@@ -352,6 +358,19 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
 void QuickSystem::clearFailures(const QString &id)
 {
     if (m_failures.remove(id) > 0) {
+        emit changed();
+    }
+}
+
+void QuickSystem::disablePermanentAccessibility()
+{
+    if (m_removal->running()) {
+        return;
+    }
+    clearFailures(accessibilityId);
+    QString error;
+    if (!m_controller->accessibility()->disablePermanently(&error)) {
+        m_failures[accessibilityId] = {failureEntry(QStringLiteral("disable"), error)};
         emit changed();
     }
 }

@@ -64,6 +64,13 @@ bool AccessibilityMonitor::enablePermanently(QString *error)
     return enabled;
 }
 
+bool AccessibilityMonitor::disablePermanently(QString *error)
+{
+    const bool disabled = m_platform.disablePermanentAccessibility(error);
+    refresh();
+    return disabled;
+}
+
 void AccessibilityMonitor::refresh()
 {
     const AccessibilityState state = m_platform.accessibilityState();

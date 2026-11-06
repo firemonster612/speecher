@@ -22,7 +22,31 @@ Page {
             helpLink: noMicrophone ? Schema.page("dictation").title + " › " + Schema.page("microphone").title : ""
             onHelpLinkActivated: Navigation.go("microphone")
         }
-        HealthRow { rowId: "desktopAccessibility" }
+        // Where Speecher keeps it on, the help says how Chromium apps join
+        // in, and a menu, as the virtual keyboard's on Pasting, undoes it.
+        HealthRow {
+            rowId: "desktopAccessibility"
+            help: Health.failure(check) || (System.canDisablePermanentAccessibility
+                                            ? Schema.row("desktopAccessibility").keptOnHelp : Health.detail(check))
+            Reveal {
+                sideways: true
+                open: System.canDisablePermanentAccessibility
+                anchors.verticalCenter: parent.verticalCenter
+                IconButton {
+                    iconName: "ellipsis"
+                    size: 28
+                    tooltip: Words.more
+                    onClicked: accessibilityMenu.open()
+                    Menu {
+                        id: accessibilityMenu
+                        width: 240
+                        items: [{ id: "disable", label: "Stop keeping on", icon: "power-off",
+                                  help: "Turns off when you sign out. Chromium apps stop once restarted." }]
+                        onPicked: System.disablePermanentAccessibility()
+                    }
+                }
+            }
+        }
         HealthRow { rowId: "globalShortcuts" }
         HealthRow { rowId: "virtualKeyboardHealth" }
         VirtualKeyboardTest {}

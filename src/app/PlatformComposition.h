@@ -121,6 +121,15 @@ public:
     }
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
+    // Whether disablePermanentAccessibility has something to undo: on Linux,
+    // the files enableAccessibilityPermanently writes. macOS and Windows keep
+    // nothing of Speecher's own.
+    virtual bool canDisablePermanentAccessibility() const { return false; }
+    virtual bool disablePermanentAccessibility(QString *error = nullptr) const
+    {
+        Q_UNUSED(error);
+        return true;
+    }
     // Whether setLaunchAtLogin starts Speecher at login: macOS and Windows.
     virtual bool canLaunchAtLogin() const { return false; }
     virtual bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const

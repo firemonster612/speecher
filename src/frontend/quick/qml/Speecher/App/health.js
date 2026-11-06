@@ -45,7 +45,10 @@ var words = {
 
 // What went wrong in a fix, by the check's id and the failure's step.
 var failures = {
-    desktopAccessibility: { enable: "Desktop accessibility could not be turned on" },
+    desktopAccessibility: {
+        enable: "Desktop accessibility could not be turned on",
+        disable: "Speecher could not stop keeping desktop accessibility on"
+    },
     virtualKeyboardHealth: {
         setUp: "Setup failed",
         start: "The virtual keyboard service could not start",
