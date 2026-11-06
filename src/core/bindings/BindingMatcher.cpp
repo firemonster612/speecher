@@ -121,22 +121,25 @@ const QRegularExpression &exactPlaceholderRegex()
     return regex;
 }
 
-// A placeholder the model reworded: any case, with or without separators,
-// such as "speecherbinding0" or "Speecher Binding0".
-const QRegularExpression &rewordedPlaceholderRegex()
+// The placeholder-like text in text, each with the word characters around
+// it, so a glued or cut-off copy of a placeholder never passes for the
+// placeholder itself: every run holding SPEECHER_BINDING as written, and
+// every reworded one, such as "speecherbinding0" or "Speecher Binding0", in
+// lower case.
+QSet<QString> placeholderLikeRuns(const QString &text)
 {
-    static const QRegularExpression regex(QStringLiteral("speecher[\\s_-]*binding[\\s_-]*[0-9]+"),
-                                          QRegularExpression::CaseInsensitiveOption);
-    return regex;
-}
-
-// The placeholder-like runs in text, exact or reworded, in lower case.
-QSet<QString> rewordedPlaceholders(const QString &text)
-{
-    QSet<QString> found;
-    QRegularExpressionMatchIterator iterator = rewordedPlaceholderRegex().globalMatch(text);
-    while (iterator.hasNext()) found.insert(iterator.next().captured(0).toLower());
-    return found;
+    static const QRegularExpression exact(QStringLiteral("[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*"));
+    static const QRegularExpression reworded(
+        QStringLiteral("[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*"),
+        QRegularExpression::CaseInsensitiveOption);
+    QSet<QString> runs;
+    for (QRegularExpressionMatchIterator it = exact.globalMatch(text); it.hasNext();) {
+        runs.insert(it.next().captured(0));
+    }
+    for (QRegularExpressionMatchIterator it = reworded.globalMatch(text); it.hasNext();) {
+        runs.insert(it.next().captured(0).toLower());
+    }
+    return runs;
 }
 
 // The index of each "speecher binding <index>" in text's words, such as
@@ -245,6 +248,12 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
                                                          const QList<BindingPlaceholder> &placeholders,
                                                          const QString &sourceText)
 {
+    const QSet<QString> sourceRuns = placeholderLikeRuns(sourceText);
+    // A placeholder that is also the source's own text can't be told apart
+    // from it, so restoring it could overwrite the source's literal.
+    for (const BindingPlaceholder &placeholder : placeholders) {
+        if (sourceRuns.contains(placeholder.placeholder)) return {false, {}};
+    }
     const QHash<QString, QString> replacementByPlaceholder = replacementsByPlaceholder(placeholders);
     const QRegularExpression &exactPlaceholder = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = exactPlaceholder.globalMatch(refinedText);
@@ -255,7 +264,8 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
         const QRegularExpressionMatch match = iterator.next();
         const QString placeholder = match.captured(0);
         const auto replacement = replacementByPlaceholder.constFind(placeholder);
-        // One no binding produced stays as written, for the checks below.
+        // A placeholder no binding produced stays in the text for the checks
+        // below.
         if (replacement == replacementByPlaceholder.constEnd()) continue;
         const qsizetype start = match.capturedStart(0);
         const qsizetype end = match.capturedEnd(0);
@@ -266,9 +276,7 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
     }
     restored += refinedText.mid(cursor);
     residue += refinedText.mid(cursor);
-    const QString prefix = QStringLiteral("SPEECHER_BINDING");
-    if (residue.contains(prefix, Qt::CaseSensitive) && !sourceText.contains(prefix, Qt::CaseSensitive)) return {false, {}};
-    if (!rewordedPlaceholders(sourceText).contains(rewordedPlaceholders(residue))) return {false, {}};
+    if (!sourceRuns.contains(placeholderLikeRuns(residue))) return {false, {}};
     if (!spokenPlaceholderIndexes(sourceText).contains(spokenPlaceholderIndexes(residue))) return {false, {}};
     return {true, restored};
 }

@@ -86,6 +86,19 @@ class ReplacementsTest {
             replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_0\";", document),
         )
         assertNull(replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_1\";", document))
+        // A glued or cut-off copy of the document's placeholder is not it.
+        listOf("xSPEECHER_BINDING_0", "SPEECHER_BINDING_", "speecherbinding0y").forEach {
+            assertNull(replaced.restoreEdit("constexpr auto token = \"$it\";", document))
+        }
+        // A phrase's placeholder that is also the document's text could be restored over the
+        // document's literal, so the edit is refused.
+        assertNull(
+            replaceSpoken("add my email above it", listOf(email))
+                .restoreEdit(
+                    "SPEECHER_BINDING_0\n\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"",
+                    "\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"",
+                ),
+        )
     }
 
     @Test

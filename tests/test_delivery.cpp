@@ -653,6 +653,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
         agentInTerminal.role = QStringLiteral("terminal");
         agentInTerminal.aiCodingToolActive = true;
+        agentInTerminal.category = classifyTarget(agentInTerminal, {});
+        QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
+        QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);
+
         // How a terminal outside accessibility, known only by its window,
         // finds the coding agent in it.
         Target titledTerminal;
@@ -660,9 +664,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(terminalTitleNamesAiCodingTool(titledTerminal));
         titledTerminal.windowTitle = QStringLiteral("zsh — ~/project");
         QVERIFY(!terminalTitleNamesAiCodingTool(titledTerminal));
-        agentInTerminal.category = classifyTarget(agentInTerminal, {});
-        QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
-        QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);
 
         RefinementContext context;
         context.target = target;
@@ -1057,6 +1058,26 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  std::optional<QString>(QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_0\";")));
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
                      edit, QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_1\";")),
+                 std::nullopt);
+        // A glued or cut-off copy of the document's placeholder is not it.
+        for (const QString &mangled : {QStringLiteral("xSPEECHER_BINDING_0"), QStringLiteral("SPEECHER_BINDING_"),
+                                       QStringLiteral("speecherbinding0y")}) {
+            QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                         edit, QStringLiteral("constexpr auto token = \"%1\";").arg(mangled)),
+                     std::nullopt);
+        }
+
+        // A binding's placeholder that is also the document's text could be
+        // restored over the document's literal, so the edit is refused.
+        AppSettings withBinding;
+        withBinding.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+        selection.selectedText = QStringLiteral("\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"");
+        selection.selectionEnd = selection.selectedText.size();
+        const TranscriptPipelineResult colliding = TranscriptPipeline::prepare(
+            QStringLiteral("add my email above it"), withBinding, {}, selection, withBinding.speech.language);
+        QCOMPARE(colliding.refinementInput, QStringLiteral("add SPEECHER_BINDING_0 above it"));
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                     colliding, QStringLiteral("SPEECHER_BINDING_0\n\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"")),
                  std::nullopt);
     }
 

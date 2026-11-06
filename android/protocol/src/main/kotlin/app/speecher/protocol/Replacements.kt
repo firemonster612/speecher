@@ -235,12 +235,18 @@ private val EXACT_PLACEHOLDER = Regex("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(
 
 private val PLACEHOLDER = Regex("SPEECHER_BINDING_[0-9]+")
 
+/** Each run of word characters holding SPEECHER_BINDING as written. */
+private val EXACT_PLACEHOLDER_RUN = Regex("[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*")
+
 /**
- * A placeholder the model reworded: any case, with or without separators, such as
- * "speecherbinding0" or "Speecher Binding0".
+ * A placeholder the model reworded, with the word characters around it: any case, with or without
+ * separators, such as "speecherbinding0" or "Speecher Binding0".
  */
-private val REWORDED_PLACEHOLDER =
-    Regex("speecher[\\s_-]*binding[\\s_-]*[0-9]+", RegexOption.IGNORE_CASE)
+private val REWORDED_PLACEHOLDER_RUN =
+    Regex(
+        "[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*",
+        RegexOption.IGNORE_CASE,
+    )
 
 /**
  * The blank lines before a revised selection and the whitespace after it. Its first line keeps its
@@ -251,9 +257,14 @@ private val BLANK_EDGES = Regex("^\\s*\\n|\\s+$")
 private val INDEX_WORDS =
     setOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
-/** The placeholder-like runs in [text], exact or reworded, in lower case. */
-private fun rewordedPlaceholders(text: String): Set<String> =
-    REWORDED_PLACEHOLDER.findAll(text).mapTo(mutableSetOf()) { it.value.lowercase() }
+/**
+ * The placeholder-like text in [text], each with the word characters around it, so a glued or
+ * cut-off copy of a placeholder never passes for the placeholder itself: runs as written, and
+ * reworded ones in lower case. The desktop's placeholderLikeRuns.
+ */
+private fun placeholderLikeRuns(text: String): Set<String> =
+    EXACT_PLACEHOLDER_RUN.findAll(text).mapTo(mutableSetOf()) { it.value } +
+        REWORDED_PLACEHOLDER_RUN.findAll(text).map { it.value.lowercase() }
 
 /** The index of each "speecher binding <index>" in [text]'s words, such as "0" or "zero". */
 private fun spokenPlaceholderIndexes(text: String): Set<String> {
@@ -348,11 +359,15 @@ internal constructor(
      * about "speecher binding zero".
      */
     private fun restorePlaceholders(refined: String, source: String): String? {
+        val sourceRuns = placeholderLikeRuns(source)
+        // A placeholder that is also the source's own text can't be told apart from it, so
+        // restoring it could overwrite the source's literal.
+        if (placeholders.keys.any(sourceRuns::contains)) return null
         val restored = StringBuilder()
         val residue = StringBuilder()
         var cursor = 0
         for (token in EXACT_PLACEHOLDER.findAll(refined)) {
-            // One no phrase produced stays as written, for the checks below.
+            // A placeholder no phrase produced stays in the text for the checks below.
             val replacement = placeholders[token.value] ?: continue
             restored.append(refined, cursor, token.range.first).append(replacement)
             residue.append(refined, cursor, token.range.first)
@@ -361,8 +376,7 @@ internal constructor(
         restored.append(refined, cursor, refined.length)
         residue.append(refined, cursor, refined.length)
         val left = residue.toString()
-        if ("SPEECHER_BINDING" in left && "SPEECHER_BINDING" !in source) return null
-        if (!rewordedPlaceholders(source).containsAll(rewordedPlaceholders(left))) return null
+        if (!sourceRuns.containsAll(placeholderLikeRuns(left))) return null
         if (!spokenPlaceholderIndexes(source).containsAll(spokenPlaceholderIndexes(left)))
             return null
         return restored.toString()
