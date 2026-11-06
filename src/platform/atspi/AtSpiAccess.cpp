@@ -35,6 +35,12 @@ QString accessibilityEnvironmentPath()
         + QStringLiteral("/environment.d/90-speecher-atspi.conf");
 }
 
+// The data directories whose Chromium apps get launchers, the user's first.
+QStringList launcherDataDirs()
+{
+    return withAppExportDirs(QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation));
+}
+
 // Whether the environment.d file is there as enableAccessibilityPermanently()
 // wrote it.
 bool hasSpeechersEnvironment()
@@ -159,8 +165,7 @@ bool enableAccessibilityPermanently(QString *error)
         return false;
     }
 
-    if (!writeAccessibleLaunchers(QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation),
-                                  error)) {
+    if (!writeAccessibleLaunchers(launcherDataDirs(), error)) {
         return false;
     }
 
@@ -175,8 +180,7 @@ void refreshPermanentAccessibility()
         return;
     }
     QString error;
-    if (!writeAccessibleLaunchers(QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation),
-                                  &error)) {
+    if (!writeAccessibleLaunchers(launcherDataDirs(), &error)) {
         qWarning().noquote() << "Chromium app launchers not refreshed:" << error;
     }
 }

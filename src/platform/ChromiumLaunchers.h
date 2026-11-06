@@ -26,13 +26,19 @@ bool launchesChromium(const QString &execLine);
 // the app rather than flatpak. A line that has the flag comes back unchanged.
 QString withAccessibilityFlag(const QString &execLine);
 
+// dataDirs, the user's first, then the directories Flatpak and Snap export
+// their apps' desktop entries into, each once. A daemon started from a
+// systemd user service may not have those in its data directories.
+QStringList withAppExportDirs(const QStringList &dataDirs);
+
 // For each Chromium or Electron app with a desktop entry in the applications
 // directory of dataDirs after the first, writes a copy into the first's, the
 // user's, with withAccessibilityFlag() on each Exec line that starts the app
 // and a mark that it is Speecher's. A desktop entry or symlink already in the
 // user's directory stays, unless it is a copy of Speecher's that no one
-// changed: that one is written again, and deleted when its entry is in none of
-// the other dataDirs or no longer starts a Chromium or Electron app. The first of the other dataDirs holding an entry is the
+// changed: that one is written again, and deleted when its entry no longer
+// starts a Chromium or Electron app, or is in none of the other dataDirs while
+// all of their applications directories could be listed. The first of the other dataDirs holding an entry is the
 // one copied, as the desktop reads them. The apps pick the flag up once
 // started again from their launcher.
 bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error = nullptr);

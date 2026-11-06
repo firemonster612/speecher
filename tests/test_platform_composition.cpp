@@ -2865,6 +2865,48 @@ private slots:
         QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/mine.desktop")), usersOwn);
     }
 
+    // A daemon started from a systemd user service may lack Flatpak's
+    // export directory in its data directories; the copy of an app exported
+    // there stays.
+    void accessibleLaunchersKeepExportedApps()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString exports = home + QStringLiteral("/flatpak/exports/share");
+        QVERIFY(writeFixtureFile(exports + QStringLiteral("/applications/com.slack.Slack.desktop"),
+                                 "[Desktop Entry]\nName=Slack\nExec=flatpak run com.slack.Slack\n"));
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({home, exports}, &error), qPrintable(error));
+        const QString copy = home + QStringLiteral("/applications/com.slack.Slack.desktop");
+        QVERIFY(QFile::exists(copy));
+
+        QVERIFY2(writeAccessibleLaunchers(withAppExportDirs({home, root.filePath(QStringLiteral("system"))}), &error),
+                 qPrintable(error));
+        QVERIFY(QFile::exists(copy));
+    }
+
+    // Copies stay when a directory that may hold their entries can't be listed.
+    void accessibleLaunchersStayWhileEntriesCannotBeListed()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString system = root.filePath(QStringLiteral("system"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+        const QString applications = system + QStringLiteral("/applications");
+        QVERIFY(QFile::setPermissions(applications, QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther));
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(applications, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+        QVERIFY(QFile::exists(home + QStringLiteral("/applications/chromium.desktop")));
+    }
+
     // Stopping is offered while a file Speecher wrote for it is left, and not
     // for accessibility the user's own settings keep on.
     void stoppingAccessibilityFollowsSpeechersFiles()

@@ -306,6 +306,21 @@ QString withAccessibilityFlag(const QString &execLine)
     return QString(execLine).insert(end->start, accessibilityFlag + QLatin1Char(' '));
 }
 
+QStringList withAppExportDirs(const QStringList &dataDirs)
+{
+    if (dataDirs.isEmpty()) {
+        return {};
+    }
+    QStringList dirs = dataDirs;
+    dirs << dataDirs.first() + QStringLiteral("/flatpak/exports/share")
+         << QStringLiteral("/var/lib/flatpak/exports/share") << QStringLiteral("/var/lib/snapd/desktop");
+    for (QString &dir : dirs) {
+        dir = QDir::cleanPath(dir);
+    }
+    dirs.removeDuplicates();
+    return dirs;
+}
+
 bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
 {
     if (dataDirs.isEmpty()) {
@@ -323,10 +338,14 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
         return false;
     };
     QSet<QString> seen;
+    bool listedAll = true;
     for (const QString &dataDir : dataDirs.mid(1)) {
         const QDir applications(dataDir + QStringLiteral("/applications"));
         if (applications == userApplications) {
             continue;
+        }
+        if (applications.exists() && !QFileInfo(applications.path()).isReadable()) {
+            listedAll = false;
         }
         for (const QString &name : desktopEntries(applications)) {
             if (seen.contains(name)) {
@@ -354,6 +373,10 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
         }
     }
     // A copy of an entry that is gone would keep showing an uninstalled app.
+    // Where a directory could not be listed, its entries may not be gone.
+    if (!listedAll) {
+        return true;
+    }
     for (const QString &name : desktopEntries(userApplications)) {
         if (!seen.contains(name) && !removeCopy(userApplications.filePath(name))) {
             return false;
