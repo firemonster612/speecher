@@ -299,9 +299,11 @@ Target MacTargetProvider::captureNow()
                     target.selectedText = stringAttribute(focused, kAXSelectedTextAttribute);
                 }
 
-                const QString value = stringAttribute(focused, kAXValueAttribute);
-                if (start <= value.size() && length <= value.size() - start) {
-                    target.setNearbyText(value, start, start + length);
+                // A value that can't be read leaves the nearby text unread,
+                // not empty.
+                const std::optional<QString> value = readStringAttribute(focused, kAXValueAttribute);
+                if (value && start <= value->size() && length <= value->size() - start) {
+                    target.setNearbyText(*value, start, start + length);
                 }
             }
         }

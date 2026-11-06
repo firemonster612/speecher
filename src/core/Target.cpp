@@ -153,6 +153,7 @@ bool Target::hasSelection() const
 
 void Target::setNearbyText(const QString &text, int start, int end)
 {
+    nearbyTextRead = true;
     nearbyTextBefore = text.left(start).right(nearbyTextChars);
     nearbyTextAfter = text.mid(end, nearbyTextChars);
     // The cut counts UTF-16 units, so it can fall inside a character such as

@@ -227,6 +227,8 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementContext.target = target;
     result.refinementContext.spokenLanguage = spokenLanguage;
     result.refinementContext.writingProfile = writingProfile;
+    result.refinementContext.writingProfileName =
+        writingProfileLabel(writingProfile, result.refinementSettings.writingProfiles);
     result.refinementVocabulary = refinementVocabulary(settings,
                                                        choices.vocabulary,
                                                        result.refinementContext.writingProfile,

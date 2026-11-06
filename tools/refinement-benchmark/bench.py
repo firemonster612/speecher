@@ -56,6 +56,17 @@ SAMPLES = {
         [("drops hmm", r"(?i)\bhmm\b", False), ("drops 'let me think'", r"(?i)let me think", False), ("keeps the message", r"(?i)contract looks fine", True)]),
     "email": ("hi sarah just following up on the invoice from last month we haven't received payment yet could you check with accounting when it might go out thanks",
         [("Sarah capitalised", r"\bSarah\b", True), ("keeps the request", r"(?i)accounting", True), ("adds no sign-off name", r"(?i)best regards|sincerely", False)]),
+    # These carry the target context and vocabulary in contexts.json.
+    "vocabulary": ("um so deploy the con vex functions and then update the clerk web hook",
+        [("Convex from the vocabulary", r"\bConvex\b", True), ("Clerk from the vocabulary", r"\bClerk\b", True), ("no split 'con vex'", r"(?i)con vex", False)]),
+    "midsentence": ("move the launch to next week",
+        [("continues the sentence in lowercase", r"^move\b", True), ("keeps the point", r"launch to next week", True)]),
+    "between": ("three thirty",
+        [("3:30", r"3:30", True), ("no period before the text after the caret", r"\.\s*$", False)]),
+    "terminal": ("get status and then get push origin main",
+        [("git status", r"\bgit status\b", True), ("git push origin main", r"\bgit push origin main\b", True)]),
+    "fieldstart": ("hey are you free tonight",
+        [("starts the field capitalised", r"^Hey\b", True), ("ends with ?", r"\?\s*$", True)]),
 }
 
 
@@ -90,19 +101,27 @@ def stream(url, body, headers):
     return first, time.monotonic() - start, "".join(text)
 
 
-def request(provider, transcript):
-    user = USER.replace("__TRANSCRIPT__", transcript)
+def prompts(sample):
+    """The system and user prompts for sample: its own when dump wrote them, else the defaults."""
+    if os.path.exists(f"system-{sample}.txt"):
+        return open(f"system-{sample}.txt").read(), open(f"user-{sample}.txt").read()
+    return SYSTEM, USER
+
+
+def request(provider, transcript, sample=None):
+    system, user = prompts(sample)
+    user = user.replace("__TRANSCRIPT__", transcript)
     auth = {"Authorization": f"Bearer {KEY}"}
     api, _, model = provider.partition(":")
     if api == "openai":
         effort = "low" if model.startswith("gpt-6.1-sol") else "none"
         return stream(f"{PROXY}/v1/responses", {
-            "model": model, "reasoning": {"effort": effort}, "instructions": SYSTEM,
+            "model": model, "reasoning": {"effort": effort}, "instructions": system,
             "input": [{"role": "user", "content": user}], "stream": True, "store": False,
             "service_tier": "fast"}, auth)
     if api == "anthropic":
         body = {"model": model, "max_tokens": 4096, "stream": True,
-                "system": SYSTEM, "messages": [{"role": "user", "content": user}]}
+                "system": system, "messages": [{"role": "user", "content": user}]}
         if "haiku-4" not in model:  # Haiku 4.5 is the only listed model without them
             body |= {"thinking": {"type": "adaptive", "display": "omitted"}, "output_config": {"effort": "low"}}
         return stream(f"{PROXY}/v1/messages", body, {**auth, "anthropic-version": "2023-06-01"})
@@ -133,7 +152,7 @@ def main():
         for name, (transcript, checks) in SAMPLES.items():
             for provider in PROVIDERS:
                 try:
-                    first, total, text = request(provider, transcript)
+                    first, total, text = request(provider, transcript, name)
                 except Exception as error:  # noqa: BLE001
                     results.append({"provider": provider, "sample": name, "run": run, "error": str(error)})
                     print("ERR", provider, name, error)

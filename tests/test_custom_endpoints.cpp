@@ -633,7 +633,7 @@ private slots:
         QCOMPARE(messages.size(), 2);
         QCOMPARE(messages.at(0).toObject().value(QStringLiteral("role")).toString(), QStringLiteral("system"));
         QVERIFY(messages.at(0).toObject().value(QStringLiteral("content")).toString()
-                    .startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+                    .startsWith(QStringLiteral("You clean up dictation.")));
         QCOMPARE(messages.at(1).toObject().value(QStringLiteral("role")).toString(), QStringLiteral("user"));
         const QString user = messages.at(1).toObject().value(QStringLiteral("content")).toString();
         QVERIFY(user.contains(QStringLiteral("hello there")));
@@ -802,7 +802,7 @@ private slots:
         const QJsonObject body = server.jsonBody(0);
         QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("qwen3.5:4b"));
         QVERIFY(body.value(QStringLiteral("system")).toString()
-                    .startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+                    .startsWith(QStringLiteral("You clean up dictation.")));
         QVERIFY(!body.contains(QStringLiteral("thinking")));
         QVERIFY(!body.contains(QStringLiteral("speed")));
 

@@ -772,9 +772,13 @@ void populateText(Target *target, AtspiAccessible *object)
     const int end = selected ? target->selectionEnd : caret;
     const int from = qMax(0, start - nearbyTextChars);
     const QString around = takeString(atspi_text_get_text(text, from, qMin(count, end + nearbyTextChars), &error));
+    // A failed read leaves the nearby text unread, not empty.
+    const bool read = !error;
     clearError(&error);
-    target->setNearbyText(around, stringIndex(*target, around, start - from),
-                          stringIndex(*target, around, end - from));
+    if (read) {
+        target->setNearbyText(around, stringIndex(*target, around, start - from),
+                              stringIndex(*target, around, end - from));
+    }
     g_object_unref(text);
 }
 
@@ -890,6 +894,7 @@ bool TargetSnapshot::matches(const Target &target, bool requireFocus) const
     Target current = m_target;
     current.nearbyTextBefore.clear();
     current.nearbyTextAfter.clear();
+    current.nearbyTextRead = false;
     current.selectedText.clear();
     current.caretOffset = current.selectionStart = current.selectionEnd = -1;
     populateText(&current, m_accessible.get());

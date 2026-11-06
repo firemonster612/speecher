@@ -8,12 +8,13 @@
 namespace speecher {
 
 // The dictation prompt: the built-in rules for the style, or the context's
-// custom system prompt followed by the tone rule, then the user's instructions
-// and the target context.
+// custom system prompt followed by the tone and a custom level's
+// instructions, then the language, the user's instructions and the target
+// context.
 QString dictationRefinementSystemPrompt(const QString &style,
                                         const RefinementContext &context = {});
-// The built-in dictation rules at Medium cleanup with no tone, which a custom
-// system prompt starts from and resets to.
+// The built-in dictation rules at Balanced cleanup with no tone, which a
+// custom system prompt starts from and resets to.
 QString builtInDictationSystemPrompt();
 QString selectedDocumentEditingSystemPrompt(const QString &style,
                                             const RefinementContext &context = {});

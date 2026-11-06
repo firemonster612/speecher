@@ -42,22 +42,13 @@ import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
+import app.speecher.protocol.builtInProfileLabels
 import app.speecher.protocol.builtInRules
 import app.speecher.protocol.cleanupLevelId
 import app.speecher.protocol.customChoiceId
 import app.speecher.protocol.toneId
 import app.speecher.protocol.withCleanupLevel
 import app.speecher.protocol.withTone
-
-// Labels from the desktop's Target.cpp, in its order.
-private val profileLabels =
-    mapOf(
-        WritingProfile.Work to "Work",
-        WritingProfile.Email to "Email",
-        WritingProfile.Personal to "Personal",
-        WritingProfile.AiCoding to "AI coding",
-        WritingProfile.Other to "Other",
-    )
 
 // The app types, in the order the desktop's rules offer them.
 private val appTypeLabels =
@@ -100,7 +91,7 @@ internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
 
 /** Every profile, by id: the built-ins, then the custom ones by name. */
 internal fun profileChoices(settings: SpeecherSettings): Map<WritingProfile, String> =
-    profileLabels +
+    builtInProfileLabels +
         settings.writingProfiles.filterKeys { !it.isBuiltIn }.mapValues { it.value.name }
 
 /** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
