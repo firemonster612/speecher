@@ -27,9 +27,10 @@ public:
     explicit MacTargetProvider(QObject *parent = nullptr);
     ~MacTargetProvider() override;
 
-    // Answers at once, except when the control's text can't be read in an app
-    // not yet asked for its accessibility tree: that capture asks, then looks
-    // again for up to 2.5 s while the tree builds.
+    // Answers at once, except when the control's text can't be read in a
+    // Chromium or Electron app not yet asked for its accessibility tree: that
+    // capture asks, then looks again for up to 2.5 s while the tree builds and
+    // the control keeps focus.
     void capture(QObject *context, std::function<void(const Target &)> done) override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;

@@ -197,6 +197,33 @@ QString focusedWindowTitle(pid_t processId)
     return title;
 }
 
+// Whether the app's bundle holds Chromium, as Chrome, Edge, Brave and every
+// Electron app do: a framework under Contents/Frameworks that is a known
+// one, or another that carries Chromium's chrome_100_percent.pak.
+bool bundlesChromium(pid_t processId)
+{
+    // Built once and kept: this file is not ARC, and setWithArray's set would
+    // go with the first autorelease pool.
+    static NSSet<NSString *> *const knownFrameworks = [[NSSet alloc] initWithArray:@[
+        @"Electron Framework.framework", @"Chromium Framework.framework", @"Google Chrome Framework.framework",
+        @"Microsoft Edge Framework.framework", @"Brave Browser Framework.framework",
+    ]];
+    NSURL *bundle = [NSRunningApplication runningApplicationWithProcessIdentifier:processId].bundleURL;
+    NSURL *frameworks = [bundle URLByAppendingPathComponent:@"Contents/Frameworks" isDirectory:YES];
+    NSFileManager *files = [NSFileManager defaultManager];
+    for (NSString *name in [files contentsOfDirectoryAtPath:frameworks.path error:nil]) {
+        if ([knownFrameworks containsObject:name]) {
+            return true;
+        }
+        if ([name hasSuffix:@"Framework.framework"]
+            && [files fileExistsAtPath:[frameworks.path stringByAppendingFormat:@"/%@/Resources/chrome_100_percent.pak",
+                                                                               name]]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether the attribute can be set; nothing when the element can't say.
 std::optional<bool> attributeSettable(AXUIElementRef element, CFStringRef attribute)
 {
@@ -244,12 +271,13 @@ MacTargetProvider::~MacTargetProvider()
     }
 }
 
-// Asks the app, once, to build its accessibility tree, and says whether this
-// call asked. Native apps refuse both attributes as unsupported, which costs
-// nothing, so no app is singled out. The tree stays on for the app's life.
+// Asks a Chromium or Electron app, once, to build its accessibility tree, and
+// says whether this call asked. Other apps are not asked, so a capture in
+// them never waits. The tree stays on for the app's life.
 bool MacTargetProvider::requestAccessibilityTree(qint64 processId)
 {
-    if (processId <= 0 || !AXIsProcessTrusted() || m_treeRequested.contains(processId)) {
+    if (processId <= 0 || !AXIsProcessTrusted() || m_treeRequested.contains(processId)
+        || !bundlesChromium(static_cast<pid_t>(processId))) {
         return false;
     }
     AXUIElementRef application = AXUIElementCreateApplication(static_cast<pid_t>(processId));
@@ -266,9 +294,10 @@ bool MacTargetProvider::requestAccessibilityTree(qint64 processId)
     if (enhanced) {
         CFRelease(enhanced);
     }
-    if (!alreadyEnhanced
-        && AXUIElementSetAttributeValue(application, enhancedUserInterfaceAttribute, kCFBooleanTrue)
-            == kAXErrorSuccess) {
+    // Chrome answers kAXErrorNotImplemented while the setting takes effect,
+    // so whatever the answer, it is Speecher's to turn off.
+    if (!alreadyEnhanced) {
+        AXUIElementSetAttributeValue(application, enhancedUserInterfaceAttribute, kCFBooleanTrue);
         m_enhancedInterfaceEnabled.insert(processId);
     }
     CFRelease(application);
@@ -301,6 +330,7 @@ void MacTargetProvider::capture(QObject *context, std::function<void(const Targe
 }
 
 // Answers with the first look that reads the control's text, or the last.
+// Once focus leaves the captured control, it answers with what it had.
 void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
                                   std::function<void(const Target &)> done)
 {
@@ -312,7 +342,8 @@ void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &targe
         }
         // A later capture tracks its own control, which another look here
         // would replace.
-        if (m_captures != capture) {
+        // Focus that moved, here or to another app, is no longer the target.
+        if (m_captures != capture || !stillFocused(target)) {
             done(target);
             return;
         }
