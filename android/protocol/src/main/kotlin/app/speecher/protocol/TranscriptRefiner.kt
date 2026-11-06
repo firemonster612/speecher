@@ -18,6 +18,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+/**
+ * Claude's output budget, the desktop's kMaxOutputTokens: thinking and the reply share it, and a
+ * selection edit replies with the whole revised document.
+ */
+private const val MAX_OUTPUT_TOKENS = 16384
+
 fun refineTranscript(
     http: OkHttpClient,
     provider: OAuthProvider,
@@ -312,7 +318,7 @@ private fun claudeRequest(
     }
     val body = buildJsonObject {
         put("model", JsonPrimitive(model))
-        put("max_tokens", JsonPrimitive(4096))
+        put("max_tokens", JsonPrimitive(MAX_OUTPUT_TOKENS))
         put("stream", JsonPrimitive(true))
         if (fast) put("speed", JsonPrimitive("fast"))
         if (modelSupportsAdaptiveEffort(model)) {

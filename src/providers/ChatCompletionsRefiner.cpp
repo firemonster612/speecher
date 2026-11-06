@@ -86,8 +86,9 @@ ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
     });
     connect(&m_stream, &StreamingRefinement::completed, this, &ChatCompletionsRefiner::completed);
     connect(&m_stream, &StreamingRefinement::failed, this, [this](const ProviderFailure &failure) {
-        // Text already delivered must never be replayed.
-        if (failure.httpStatus == 400 && m_sentReasoningFields && !m_streamedOutput
+        // Text already delivered must never be replayed. Servers built on
+        // FastAPI reject an unknown field with 422 rather than 400.
+        if ((failure.httpStatus == 400 || failure.httpStatus == 422) && m_sentReasoningFields && !m_streamedOutput
             && namesReasoningField(failure.message)) {
             qInfo().noquote() << "chat completions server rejected the reasoning fields,"
                               << "retrying without them:" << failure.message;

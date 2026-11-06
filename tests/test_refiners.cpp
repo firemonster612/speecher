@@ -1158,6 +1158,8 @@ private slots:
         const QJsonObject body = QJsonDocument::fromJson(payload, &parseError).object();
         QCOMPARE(parseError.error, QJsonParseError::NoError);
         QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("claude-sonnet-5"));
+        // Room for a long selection edit and the thinking before it.
+        QCOMPARE(body.value(QStringLiteral("max_tokens")).toInt(), 16384);
         QCOMPARE(body.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("adaptive"));
         QCOMPARE(body.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("display")).toString(), QStringLiteral("omitted"));
         QCOMPARE(body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(), QStringLiteral("low"));

@@ -675,11 +675,19 @@ private slots:
         QVERIFY(!user.contains(QStringLiteral("\"term99\"")));
     }
 
+    void chatCompletionsRetriesOnceWithoutTheReasoningFields_data()
+    {
+        QTest::addColumn<QByteArray>("status");
+        QTest::newRow("400") << QByteArrayLiteral("400 Bad Request");
+        QTest::newRow("422") << QByteArrayLiteral("422 Unprocessable Entity");
+    }
+
     void chatCompletionsRetriesOnceWithoutTheReasoningFields()
     {
+        QFETCH(QByteArray, status);
         FakeServer server;
         server.route("POST /v1/chat/completions",
-                     httpResponse("400 Bad Request", "application/json",
+                     httpResponse(status, "application/json",
                                   "{\"error\":{\"message\":\"Unrecognized request argument supplied: reasoning_effort\"}}"));
         server.route("POST /v1/chat/completions",
                      sse({chatChunk(QStringLiteral("Fine."), QStringLiteral("stop")), "[DONE]"}));

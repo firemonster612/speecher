@@ -473,7 +473,8 @@ static QString compactDictationRules(const QString &style, const QString &tone)
     QStringList rules{QStringLiteral("You clean up dictated text. The user message holds a raw speech-to-text transcript. "
                                      "Rewrite it as the text the speaker meant to write.")};
     if (style != QStringLiteral("light_cleanup")) {
-        rules << QStringLiteral("- Remove filler words (um, uh, like, you know), false starts and repeated words.");
+        rules << QStringLiteral("- Remove filler words (um, uh, you know), false starts and repeated words. Keep \"like\" "
+                                "where it means \"about\" or introduces what someone said.");
     }
     rules << QStringLiteral("- Fix punctuation, capitalization and obvious speech-to-text mistakes. Start sentences "
                             "with a capital letter.");
