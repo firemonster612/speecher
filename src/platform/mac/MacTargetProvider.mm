@@ -2,8 +2,9 @@
 
 #include "platform/mac/MacCorrectionObserver.h"
 
-#include <QPointer>
 #include <QTimer>
+
+#include <array>
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -17,9 +18,10 @@ namespace speecher {
 namespace {
 
 // Chromium and Electron build their accessibility tree only once an assistive
-// app asks for it, and build it in the background: this is how long a capture
-// waits before it looks at the app again.
-constexpr int accessibilityTreeBuildMs = 250;
+// app asks for it, and build it in the background: when, after asking, a
+// capture looks at the app again. Electron apps such as VS Code show their
+// text within about 50 ms; Chrome takes about 2 s.
+constexpr std::array<int, 3> accessibilityTreeLooksMs = {250, 1000, 2500};
 // Electron's request for the tree, and Chromium's.
 const CFStringRef manualAccessibilityAttribute = CFSTR("AXManualAccessibility");
 const CFStringRef enhancedUserInterfaceAttribute = CFSTR("AXEnhancedUserInterface");
@@ -295,16 +297,32 @@ void MacTargetProvider::capture(QObject *context, std::function<void(const Targe
         done(target);
         return;
     }
+    lookAgain(context, target, 0, std::move(done));
+}
+
+// Answers with the first look that reads the control's text, or the last.
+void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
+                                  std::function<void(const Target &)> done)
+{
     const quint64 capture = m_captures;
-    QTimer::singleShot(accessibilityTreeBuildMs, this,
-                       [this, capture, target, context = QPointer<QObject>(context), done] {
-                           if (!context) {
-                               return;
-                           }
-                           // A later capture tracks its own control, which a
-                           // second look here would replace.
-                           done(m_captures == capture ? captureNow() : target);
-                       });
+    const int wait = accessibilityTreeLooksMs[look] - (look > 0 ? accessibilityTreeLooksMs[look - 1] : 0);
+    QTimer::singleShot(wait, this, [this, capture, target, context, look, done = std::move(done)] {
+        if (!context) {
+            return;
+        }
+        // A later capture tracks its own control, which another look here
+        // would replace.
+        if (m_captures != capture) {
+            done(target);
+            return;
+        }
+        const Target again = captureNow();
+        if (again.nearbyTextRead || look + 1 == accessibilityTreeLooksMs.size()) {
+            done(again);
+            return;
+        }
+        lookAgain(context, again, look + 1, done);
+    });
 }
 
 Target MacTargetProvider::captureNow()

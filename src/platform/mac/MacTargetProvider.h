@@ -3,6 +3,7 @@
 #include "dictation/DictationPorts.h"
 #include "platform/InsertionBaseline.h"
 
+#include <QPointer>
 #include <QSet>
 #include <QString>
 
@@ -27,8 +28,8 @@ public:
     ~MacTargetProvider() override;
 
     // Answers at once, except when the control's text can't be read in an app
-    // not yet asked for its accessibility tree: that capture asks, then answers
-    // from a second look once the tree has had time to build.
+    // not yet asked for its accessibility tree: that capture asks, then looks
+    // again for up to 2.5 s while the tree builds.
     void capture(QObject *context, std::function<void(const Target &)> done) override;
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
@@ -43,6 +44,8 @@ public:
 private:
     Target captureNow();
     bool requestAccessibilityTree(qint64 processId);
+    void lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
+                   std::function<void(const Target &)> done);
     void releaseFocusedElement();
     void observeCorrections(const CorrectionWindow &window);
 
