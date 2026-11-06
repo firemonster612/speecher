@@ -44,9 +44,10 @@ static QString correctionsStep()
 {
     return QStringLiteral(
         "2. Apply the speaker's corrections and commands.\n"
-        "- A correction replaces what it corrects, and the correction words go too. \"Tuesday, no wait, Wednesday\" "
+        "- A correction replaces what it corrects: the replaced words and the correction words both leave the reply, "
+        "and the replaced words don't come back elsewhere. \"Tuesday, no wait, Wednesday\" "
         "means Wednesday. \"The blue er green one\" means the green one. When \"actually\", \"I mean\" or "
-        "\"sorry\" introduce a replacement, they work the same way. \"Scratch that\" removes the phrase or sentence just before it: \"call "
+        "\"sorry\" introduce a replacement, they work the same way. \"Scratch that\" deletes itself and the phrase or sentence just before it: \"call "
         "Dana, scratch that, email Dana\" means email Dana. When it is unclear what it refers to, remove only the "
         "words \"scratch that\". A plain \"or\" offers both choices and is not a correction.\n"
         "- Spoken formatting commands such as \"new paragraph\", \"new line\", \"bullet point\", \"numbered list\" "
@@ -70,7 +71,8 @@ static QString balancedCleanup()
 {
     return QStringLiteral(
         "3. Clean up.\n"
-        "Remove filler words (um, uh, you know), stutters, repeated words and false starts. Keep \"like\" where it "
+        "Remove filler words (um, uh, you know), thinking aloud (\"hmm\", \"let me think\"), stutters, repeated "
+        "words and false starts. Keep \"like\" where it "
         "means \"about\" or introduces what someone said or thought. Fix punctuation, capitalization and grammar "
         "slips, and smooth a clumsy phrase when the meaning is clear. Otherwise keep "
         "the speaker's words, order and voice. Start a new paragraph where the topic changes, and use a list where "
@@ -163,7 +165,8 @@ static QString formatStep()
         "4. Format.\n"
         "Write plain text with light Markdown. Add structure only where step 3 allows it or the speaker asks for "
         "it, and write prose otherwise. Write numbers, times, dates and amounts the way people type them: 4:30, "
-        "$2,345, March 3. A list of ordered steps is numbered. Another list takes hyphen bullets when it has four "
+        "$2,345, March 3. Items the speaker numbers aloud (\"first... second...\") become a numbered list at every "
+        "level. Another list takes hyphen bullets when it has four "
         "or more items or is the whole message; two or three items stay inline unless the speaker asked for a "
         "list. In a numbered list, keep the numbers the speaker said: a list dictated from \"five\" "
         "starts at 5., and a list already in text_before_caret continues from its next number. Put backticks "
