@@ -58,8 +58,8 @@ public:
     // for the keyboard; error is why, in the words of the part that failed,
     // or empty. They stay until the next try.
     QVariantList checks() const;
-    // Whether accessibility stays on past sign-out through what Speecher set
-    // up, which disablePermanentAccessibility undoes: Linux only.
+    // Whether something Speecher set up to keep accessibility on past sign-out
+    // is left for disablePermanentAccessibility to undo: Linux only.
     bool canDisablePermanentAccessibility() const;
     // What can be done to a virtual keyboard that is set up: disable, remove.
     QStringList virtualKeyboardActions() const;

@@ -6,6 +6,7 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusVariant>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -32,6 +33,14 @@ QString accessibilityEnvironmentPath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
         + QStringLiteral("/environment.d/90-speecher-atspi.conf");
+}
+
+// Whether the environment.d file is there as enableAccessibilityPermanently()
+// wrote it.
+bool hasSpeechersEnvironment()
+{
+    QFile file(accessibilityEnvironmentPath());
+    return file.open(QIODevice::ReadOnly) && file.readAll() == accessibilityEnvironment;
 }
 
 bool valueEnablesAccessibility(const QString &value)
@@ -158,6 +167,24 @@ bool enableAccessibilityPermanently(QString *error)
     qputenv(accessibilityVariable, "1");
     return requestAccessibility(error);
 #endif
+}
+
+void refreshPermanentAccessibility()
+{
+    if (!hasSpeechersEnvironment()) {
+        return;
+    }
+    QString error;
+    if (!writeAccessibleLaunchers(QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation),
+                                  &error)) {
+        qWarning().noquote() << "Chromium app launchers not refreshed:" << error;
+    }
+}
+
+bool canDisablePermanentAccessibility()
+{
+    return hasSpeechersEnvironment()
+        || hasAccessibleLaunchers(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
 }
 
 bool disablePermanentAccessibility(QString *error)

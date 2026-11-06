@@ -34,7 +34,8 @@ public:
     AccessibilityState accessibilityState() const override;
     bool requestAccessibility(QString *error = nullptr) const override;
     bool enableAccessibilityPermanently(QString *error = nullptr) const override;
-    bool canDisablePermanentAccessibility() const override { return true; }
+    void refreshPermanentAccessibility() const override;
+    bool canDisablePermanentAccessibility() const override;
     bool disablePermanentAccessibility(QString *error = nullptr) const override;
 };
 

@@ -121,9 +121,12 @@ public:
     }
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
+    // Brings what enableAccessibilityPermanently set up in line with the apps
+    // installed now: on Linux, the Chromium app launchers.
+    virtual void refreshPermanentAccessibility() const {}
     // Whether disablePermanentAccessibility has something to undo: on Linux,
-    // the files enableAccessibilityPermanently writes. macOS and Windows keep
-    // nothing of Speecher's own.
+    // any file enableAccessibilityPermanently wrote that is still there.
+    // macOS and Windows keep nothing of Speecher's own.
     virtual bool canDisablePermanentAccessibility() const { return false; }
     virtual bool disablePermanentAccessibility(QString *error = nullptr) const
     {

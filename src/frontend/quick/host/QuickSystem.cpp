@@ -289,8 +289,7 @@ bool QuickSystem::canRemove() const
 
 bool QuickSystem::canDisablePermanentAccessibility() const
 {
-    return m_controller->platform()->canDisablePermanentAccessibility()
-        && m_controller->accessibility()->persistent();
+    return m_controller->platform()->canDisablePermanentAccessibility();
 }
 
 bool QuickSystem::canLaunchAtLogin() const
@@ -371,8 +370,9 @@ void QuickSystem::disablePermanentAccessibility()
     QString error;
     if (!m_controller->accessibility()->disablePermanently(&error)) {
         m_failures[accessibilityId] = {failureEntry(QStringLiteral("disable"), error)};
-        emit changed();
     }
+    // The files may be gone while the state the monitor reports stays.
+    emit changed();
 }
 
 void QuickSystem::disableVirtualKeyboard()

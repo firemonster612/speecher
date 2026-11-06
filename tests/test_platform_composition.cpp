@@ -5,6 +5,9 @@
 
 #include "app/AccessibilityMonitor.h"
 #include "app/AppFrontEnd.h"
+#ifdef Q_OS_LINUX
+#include "app/LinuxComposition.h"
+#endif
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
@@ -2846,6 +2849,37 @@ private slots:
         QVERIFY(readFixtureFile(home + QStringLiteral("/applications/chromium.desktop")).contains("Name=Chromium Web\n"));
         QVERIFY(!QFile::exists(home + QStringLiteral("/applications/chromium-browser.desktop")));
         QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/mine.desktop")), usersOwn);
+    }
+
+    // Stopping is offered while a file Speecher wrote for it is left, and not
+    // for accessibility the user's own settings keep on.
+    void stoppingAccessibilityFollowsSpeechersFiles()
+    {
+        const QString environment = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+            + QStringLiteral("/environment.d/");
+        const QString dataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+        QTemporaryDir system;
+        QVERIFY(system.isValid());
+        const auto cleanUp = qScopeGuard([&] {
+            QFile::remove(environment + QStringLiteral("50-mine.conf"));
+            QFile::remove(environment + QStringLiteral("90-speecher-atspi.conf"));
+            QFile::remove(dataHome + QStringLiteral("/applications/chromium.desktop"));
+        });
+        const auto platform = linuxComposition();
+        QVERIFY(writeFixtureFile(environment + QStringLiteral("50-mine.conf"), "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\n"));
+        QVERIFY(!platform->canDisablePermanentAccessibility());
+
+        QVERIFY(writeFixtureFile(system.filePath(QStringLiteral("applications/chromium.desktop")),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({dataHome, system.path()}, &error), qPrintable(error));
+        QVERIFY(platform->canDisablePermanentAccessibility());
+
+        QVERIFY(QFile::remove(dataHome + QStringLiteral("/applications/chromium.desktop")));
+        QVERIFY(writeFixtureFile(environment + QStringLiteral("90-speecher-atspi.conf"),
+                                 "# Enable AT-SPI for Speecher target-aware desktop integration.\n"
+                                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1\n"));
+        QVERIFY(platform->canDisablePermanentAccessibility());
     }
 
     // Removal takes back the session-wide accessibility switch Speecher
