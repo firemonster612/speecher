@@ -84,6 +84,7 @@ void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Targ
         target.compositorWindowId = window->internalId;
         target.compositorActive = true;
         target.terminalHost = isTerminalTarget(target);
+        target.aiCodingToolActive = target.terminalHost && terminalTitleNamesAiCodingTool(target);
         done(target);
     });
 }

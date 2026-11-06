@@ -653,6 +653,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
         agentInTerminal.role = QStringLiteral("terminal");
         agentInTerminal.aiCodingToolActive = true;
+        // How a terminal outside accessibility, known only by its window,
+        // finds the coding agent in it.
+        QVERIFY(terminalTitleNamesAiCodingTool(agentInTerminal));
+        Target shell = agentInTerminal;
+        shell.windowTitle = QStringLiteral("zsh — ~/project");
+        QVERIFY(!terminalTitleNamesAiCodingTool(shell));
         agentInTerminal.category = classifyTarget(agentInTerminal, {});
         QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
         QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);

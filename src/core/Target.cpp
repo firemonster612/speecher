@@ -396,6 +396,13 @@ bool isAiCodingProcess(const QString &processName, const QStringList &commandLin
     return classifyTarget(probe) == AppCategory::AiCoding;
 }
 
+bool terminalTitleNamesAiCodingTool(const Target &target)
+{
+    Target titleProbe;
+    titleProbe.applicationName = target.windowTitle;
+    return classifyTarget(titleProbe) == AppCategory::AiCoding;
+}
+
 QString inferWritingProfile(const Target &target, const QString &fallback)
 {
     // The category already encodes the precedence classifyTarget decided:

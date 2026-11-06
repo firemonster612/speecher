@@ -150,10 +150,11 @@ static QString formatStep()
 {
     return QStringLiteral(
         "4. Format.\n"
-        "Write plain text with light Markdown, and default to prose. Write numbers, times, dates and amounts the "
-        "way people type them: 4:30, $2,345, March 3. Use a numbered list for ordered steps and "
-        "hyphen bullets for other lists of four or more items, or a list that is the whole message; keep two or "
-        "three items inline. In a numbered list, keep the numbers the speaker said: a list dictated from \"five\" "
+        "Write plain text with light Markdown. Add structure only where step 3 allows it or the speaker asks for "
+        "it, and write prose otherwise. Write numbers, times, dates and amounts the way people type them: 4:30, "
+        "$2,345, March 3. A list of ordered steps is numbered. Another list takes hyphen bullets when it has four "
+        "or more items or is the whole message; two or three items stay inline unless the speaker asked for a "
+        "list. In a numbered list, keep the numbers the speaker said: a list dictated from \"five\" "
         "starts at 5., and a list already in text_before_caret continues from its next number. Put backticks "
         "around commands, paths, code and identifiers only, and leave product and app names plain. Leave out "
         "tables, bold labels and code fences unless the speaker asks for them. Use a comma, period, colon or "

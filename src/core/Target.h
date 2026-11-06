@@ -195,6 +195,10 @@ AppCategory classifyTarget(const Target &target,
 // command line. Only the first two arguments count: the executable, or an
 // interpreter and the script it runs.
 bool isAiCodingProcess(const QString &processName, const QStringList &commandLine);
+// Whether a terminal's window title names an AI coding tool, such as "Claude
+// Code". Only for terminals: the AI coding rules otherwise ignore titles,
+// which a browser tab or a document can carry.
+bool terminalTitleNamesAiCodingTool(const Target &target);
 QString inferWritingProfile(const Target &target, const QString &fallback = WritingProfile::Other);
 QString resolveWritingProfile(const Target &target,
                               const QList<WritingProfileOverride> &overrides,

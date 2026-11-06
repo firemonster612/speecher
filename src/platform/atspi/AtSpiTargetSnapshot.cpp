@@ -689,9 +689,7 @@ bool processHasTerminalAncestor(qint64 processId)
 
 bool terminalHasAiCodingTool(const Target &target)
 {
-    Target titleProbe;
-    titleProbe.applicationName = target.windowTitle;
-    if (classifyTarget(titleProbe) == AppCategory::AiCoding) {
+    if (terminalTitleNamesAiCodingTool(target)) {
         return true;
     }
 
