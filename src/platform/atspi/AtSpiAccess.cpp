@@ -2,9 +2,11 @@
 
 #include "platform/LinuxDesktopIntegration.h"
 
+#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusVariant>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -67,20 +69,63 @@ bool persistentAccessibilityConfigured()
     return configured.value_or(false);
 }
 
-bool runtimeAccessibilityEnabled()
+QDBusMessage callStatusProperties(const QString &method, const QVariantList &arguments)
 {
     QDBusMessage request = QDBusMessage::createMethodCall(
         QStringLiteral("org.a11y.Bus"),
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
-        QStringLiteral("Get"));
-    request.setArguments({QStringLiteral("org.a11y.Status"), QStringLiteral("IsEnabled")});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        request, QDBus::Block, accessibilityCallTimeoutMs);
+        method);
+    request.setArguments(QVariantList{QStringLiteral("org.a11y.Status")} + arguments);
+    return QDBusConnection::sessionBus().call(request, QDBus::Block, accessibilityCallTimeoutMs);
+}
+
+// Nothing when the bus launcher is unreachable or has no such property.
+std::optional<bool> statusFlag(const QString &name)
+{
+    const QDBusMessage reply = callStatusProperties(QStringLiteral("Get"), {name});
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return false;
+        return std::nullopt;
     }
     return reply.arguments().first().value<QDBusVariant>().variant().toBool();
+}
+
+QDBusMessage setStatusFlag(const QString &name, bool value)
+{
+    return callStatusProperties(QStringLiteral("Set"), {name, QVariant::fromValue(QDBusVariant(value))});
+}
+
+bool runtimeAccessibilityEnabled()
+{
+    return statusFlag(QStringLiteral("IsEnabled")).value_or(false);
+}
+
+// Chromium and Electron apps build their accessibility tree only for a
+// screen reader, which they learn of from ScreenReaderEnabled; IsEnabled does
+// not move them. The flag stands in for the screen-reader-enabled GSetting,
+// which GNOME may start Orca from, hence mayAnnounceScreenReader(). That
+// setting outlives the session, so Speecher sets it back on a clean quit, but
+// only when it was the one to turn it on. at-spi2-core 2.61 dropped the flag;
+// there the Get finds nothing and nothing is set.
+void announceScreenReader()
+{
+    const QString flag = QStringLiteral("ScreenReaderEnabled");
+    auto *app = QCoreApplication::instance();
+    if (!app || !mayAnnounceScreenReader(qEnvironmentVariable("XDG_CURRENT_DESKTOP"))) {
+        return;
+    }
+    // Missing, or already on: either way not Speecher's to change.
+    const std::optional<bool> announced = statusFlag(flag);
+    if (announced != false) {
+        return;
+    }
+    const QDBusMessage reply = setStatusFlag(flag, true);
+    if (reply.type() == QDBusMessage::ErrorMessage) {
+        qWarning().noquote() << "Could not announce a screen reader to Chromium apps:"
+                             << reply.errorMessage();
+        return;
+    }
+    QObject::connect(app, &QCoreApplication::aboutToQuit, app, [flag] { setStatusFlag(flag, false); });
 }
 
 } // namespace
@@ -100,16 +145,7 @@ AccessibilityState accessibilityState()
 
 bool requestAccessibility(QString *error)
 {
-    QDBusMessage request = QDBusMessage::createMethodCall(
-        QStringLiteral("org.a11y.Bus"),
-        QStringLiteral("/org/a11y/bus"),
-        QStringLiteral("org.freedesktop.DBus.Properties"),
-        QStringLiteral("Set"));
-    request.setArguments({QStringLiteral("org.a11y.Status"),
-                          QStringLiteral("IsEnabled"),
-                          QVariant::fromValue(QDBusVariant(true))});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        request, QDBus::Block, accessibilityCallTimeoutMs);
+    const QDBusMessage reply = setStatusFlag(QStringLiteral("IsEnabled"), true);
     if (reply.type() == QDBusMessage::ErrorMessage) {
         if (error) {
             *error = reply.errorMessage().isEmpty()
@@ -118,7 +154,16 @@ bool requestAccessibility(QString *error)
         }
         return false;
     }
+    announceScreenReader();
     return true;
+}
+
+bool mayAnnounceScreenReader(const QString &currentDesktop)
+{
+    // Untested on GNOME, where Shell may start Orca the moment the flag turns
+    // on. XDG_CURRENT_DESKTOP is a colon-separated list, such as ubuntu:GNOME.
+    const QStringList desktops = currentDesktop.split(QLatin1Char(':'));
+    return !desktops.contains(QStringLiteral("GNOME"), Qt::CaseInsensitive);
 }
 
 bool enableAccessibilityPermanently(QString *error)

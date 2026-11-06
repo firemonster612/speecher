@@ -3,7 +3,7 @@
 #include "platform/mac/MacCorrectionObserver.h"
 
 #include <QPointer>
-#include <QSet>
+#include <QTimer>
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -15,6 +15,14 @@
 
 namespace speecher {
 namespace {
+
+// Chromium and Electron build their accessibility tree only once an assistive
+// app asks for it, and build it in the background: this is how long a capture
+// waits before it looks at the app again.
+constexpr int accessibilityTreeBuildMs = 250;
+// Electron's request for the tree, and Chromium's.
+const CFStringRef manualAccessibilityAttribute = CFSTR("AXManualAccessibility");
+const CFStringRef enhancedUserInterfaceAttribute = CFSTR("AXEnhancedUserInterface");
 
 // The built-in recognition rules name Linux terminals; on macOS the bundle
 // identifier is what tells a terminal apart, and paste rules key off that.
@@ -224,6 +232,45 @@ MacTargetProvider::MacTargetProvider(QObject *parent)
 MacTargetProvider::~MacTargetProvider()
 {
     releaseFocusedElement();
+    // AXEnhancedUserInterface slows window managers such as Rectangle and
+    // Magnet, and the app's own animations, so it goes when Speecher does.
+    for (const qint64 processId : std::as_const(m_enhancedInterfaceEnabled)) {
+        if (AXUIElementRef application = AXUIElementCreateApplication(static_cast<pid_t>(processId))) {
+            AXUIElementSetAttributeValue(application, enhancedUserInterfaceAttribute, kCFBooleanFalse);
+            CFRelease(application);
+        }
+    }
+}
+
+// Asks the app, once, to build its accessibility tree, and says whether this
+// call asked. Native apps refuse both attributes as unsupported, which costs
+// nothing, so no app is singled out. The tree stays on for the app's life.
+bool MacTargetProvider::requestAccessibilityTree(qint64 processId)
+{
+    if (processId <= 0 || !AXIsProcessTrusted() || m_treeRequested.contains(processId)) {
+        return false;
+    }
+    AXUIElementRef application = AXUIElementCreateApplication(static_cast<pid_t>(processId));
+    if (!application) {
+        return false;
+    }
+    m_treeRequested.insert(processId);
+    AXUIElementSetAttributeValue(application, manualAccessibilityAttribute, kCFBooleanTrue);
+    // VoiceOver may have turned it on already; then it is not Speecher's to
+    // turn off.
+    CFTypeRef enhanced = nullptr;
+    AXUIElementCopyAttributeValue(application, enhancedUserInterfaceAttribute, &enhanced);
+    const bool alreadyEnhanced = enhanced && CFEqual(enhanced, kCFBooleanTrue);
+    if (enhanced) {
+        CFRelease(enhanced);
+    }
+    if (!alreadyEnhanced
+        && AXUIElementSetAttributeValue(application, enhancedUserInterfaceAttribute, kCFBooleanTrue)
+            == kAXErrorSuccess) {
+        m_enhancedInterfaceEnabled.insert(processId);
+    }
+    CFRelease(application);
+    return true;
 }
 
 void MacTargetProvider::releaseFocusedElement()
@@ -243,8 +290,21 @@ void MacTargetProvider::releaseFocusedElement()
 
 void MacTargetProvider::capture(QObject *context, std::function<void(const Target &)> done)
 {
-    Q_UNUSED(context);
-    done(captureNow());
+    const Target target = captureNow();
+    if (target.nearbyTextRead || !requestAccessibilityTree(target.processId)) {
+        done(target);
+        return;
+    }
+    const quint64 capture = m_captures;
+    QTimer::singleShot(accessibilityTreeBuildMs, this,
+                       [this, capture, target, context = QPointer<QObject>(context), done] {
+                           if (!context) {
+                               return;
+                           }
+                           // A later capture tracks its own control, which a
+                           // second look here would replace.
+                           done(m_captures == capture ? captureNow() : target);
+                       });
 }
 
 Target MacTargetProvider::captureNow()

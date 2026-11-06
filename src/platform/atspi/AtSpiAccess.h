@@ -15,7 +15,13 @@ struct DesktopIntegrationRemoval;
 namespace speecher::atspi {
 
 AccessibilityState accessibilityState();
+// Turns on AT-SPI for this session, and on desktops mayAnnounceScreenReader()
+// allows, also tells Chromium and Electron apps a screen reader is running,
+// until Speecher quits.
 bool requestAccessibility(QString *error = nullptr);
+// Whether the desktop XDG_CURRENT_DESKTOP names is safe to tell a screen
+// reader is running.
+bool mayAnnounceScreenReader(const QString &currentDesktop);
 bool enableAccessibilityPermanently(QString *error = nullptr);
 // Undoes enableAccessibilityPermanently() for removal: deletes its
 // environment.d file unless someone changed it, and records the outcome in

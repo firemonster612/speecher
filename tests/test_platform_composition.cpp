@@ -2677,6 +2677,16 @@ private slots:
         QVERIFY(!QFile::exists(icon));
     }
 
+    // GNOME may start Orca when anything claims a screen reader is running,
+    // so Speecher makes that claim only elsewhere.
+    void screenReaderAnnouncementSkipsGnome()
+    {
+        QVERIFY(atspi::mayAnnounceScreenReader(QStringLiteral("KDE")));
+        QVERIFY(atspi::mayAnnounceScreenReader(QString()));
+        QVERIFY(!atspi::mayAnnounceScreenReader(QStringLiteral("GNOME")));
+        QVERIFY(!atspi::mayAnnounceScreenReader(QStringLiteral("ubuntu:GNOME")));
+    }
+
     // Removal takes back the session-wide accessibility switch Speecher
     // turned on, but not a file someone has since added their own settings to.
     void removalDeletesSpeechersAccessibilitySettingOnly()
