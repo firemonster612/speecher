@@ -5,6 +5,7 @@
 
 #include <QDateTime>
 #include <QLocale>
+#include <QRegularExpression>
 #include <QSet>
 
 namespace speecher {
@@ -152,6 +153,15 @@ void fillUserInstructions(RefinementContext &context,
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
 
+// A revised selection without the blank lines before it and the whitespace
+// after it. Its first line keeps its indentation, which in code or a nested
+// list is part of the text.
+QString trimmedKeepingIndentation(const QString &text)
+{
+    static const QRegularExpression blankEdges(QStringLiteral("^\\s*\\n|\\s+$"));
+    return QString(text).remove(blankEdges);
+}
+
 } // namespace
 
 void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline)
@@ -268,7 +278,9 @@ std::optional<QString> TranscriptPipeline::restoreRefinedResult(
     const TranscriptPipelineResult &pipeline,
     const QString &refinedText)
 {
-    const QString refined = refinedText.trimmed();
+    const QString refined = pipeline.editsSelection
+        ? trimmedKeepingIndentation(refinedText)
+        : refinedText.trimmed();
     if (refined.isEmpty()) {
         return std::nullopt;
     }

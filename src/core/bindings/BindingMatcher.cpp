@@ -121,6 +121,15 @@ const QRegularExpression &exactPlaceholderRegex()
     return regex;
 }
 
+// A placeholder the model reworded: any case, with or without separators,
+// such as "speecherbinding0" or "Speecher Binding0".
+const QRegularExpression &rewordedPlaceholderRegex()
+{
+    static const QRegularExpression regex(QStringLiteral("speecher[\\s_-]*binding[\\s_-]*[0-9]+"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    return regex;
+}
+
 } // namespace
 
 QStringList BindingMatcher::normalizedTokens(const QString &text)
@@ -207,7 +216,6 @@ QString BindingMatcher::applyOutsidePlaceholders(const QString &text, const QLis
 
 BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedText, const QList<BindingPlaceholder> &placeholders)
 {
-    if (placeholders.isEmpty()) return {true, refinedText};
     const QHash<QString, QString> replacementByPlaceholder = replacementsByPlaceholder(placeholders);
     const QRegularExpression &exactPlaceholder = exactPlaceholderRegex();
     QRegularExpressionMatchIterator iterator = exactPlaceholder.globalMatch(refinedText);
@@ -228,7 +236,8 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
     }
     restored += refinedText.mid(cursor);
     residue += refinedText.mid(cursor);
-    if (residue.contains(QStringLiteral("SPEECHER_BINDING"), Qt::CaseSensitive)) return {false, {}};
+    if (residue.contains(QStringLiteral("SPEECHER_BINDING"), Qt::CaseSensitive)
+        || residue.contains(rewordedPlaceholderRegex())) return {false, {}};
     const QStringList residueTokens = normalizedTokens(residue);
     for (int index = 0; index + 2 < residueTokens.size(); ++index) {
         if (residueTokens.at(index) == QStringLiteral("speecher") && residueTokens.at(index + 1) == QStringLiteral("binding") && isPlaceholderIndexToken(residueTokens.at(index + 2))) return {false, {}};

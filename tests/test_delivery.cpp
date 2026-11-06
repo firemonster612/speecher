@@ -1018,6 +1018,24 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  QStringLiteral("{date}"));
     }
 
+    void selectionEditKeepsFirstLineIndentation()
+    {
+        const AppSettings settings;
+        Target selection;
+        selection.selectedText = QStringLiteral("return x;");
+        selection.selectionStart = 0;
+        selection.selectionEnd = 9;
+        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+            QStringLiteral("rename x to value"), settings, {}, selection, settings.speech.language);
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(edit, QStringLiteral("\n \n\t    return value;\n  \n")),
+                 std::optional<QString>(QStringLiteral("\t    return value;")));
+
+        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+            QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(dictation, QStringLiteral("\n    Hello.\n")),
+                 std::optional<QString>(QStringLiteral("Hello.")));
+    }
+
     void aSessionWritingProfileBeatsTheAppOverride()
     {
         AppSettings settings;

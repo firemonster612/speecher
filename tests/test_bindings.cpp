@@ -167,6 +167,19 @@ private slots:
                      {{QStringLiteral("speecher binding"), QStringLiteral("bound")}}),
                  QStringLiteral("SPEECHER_BINDING_0 and bound"));
     }
+
+    void restoreRefusesPlaceholderWhenNoBindingMatched()
+    {
+        QVERIFY(BindingProcessor::restorePlaceholders(QStringLiteral("Send Alex."), {}).ok);
+        QVERIFY(!BindingProcessor::restorePlaceholders(QStringLiteral("Send SPEECHER_BINDING_0."), {}).ok);
+    }
+
+    void restoreRefusesGluedPlaceholder()
+    {
+        const QList<BindingPlaceholder> placeholders{{QStringLiteral("SPEECHER_BINDING_0"), QStringLiteral("efox@example.com")}};
+        QVERIFY(!BindingProcessor::restorePlaceholders(QStringLiteral("Send speecherbinding0."), placeholders).ok);
+        QVERIFY(!BindingProcessor::restorePlaceholders(QStringLiteral("Send Speecher Binding0."), placeholders).ok);
+    }
 };
 
 int runBindingsTests(int argc, char **argv)
