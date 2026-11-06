@@ -32,7 +32,7 @@ class RefinementInstructionsTest {
                 customCleanupLevels = listOf(level),
                 writingProfiles =
                     SpeecherSettings().writingProfiles + (WritingProfile.Email to chosen),
-            )
+            ),
         )
         val loaded = store.load()
         assertEquals(listOf(tone), loaded.customTones)
@@ -66,7 +66,7 @@ class RefinementInstructionsTest {
                         RecognitionRule("zulip", null, standup),
                         RecognitionRule("mattermost", AppCategory.Browser, standup),
                     ),
-            )
+            ),
         )
         val loaded = store.load()
         assertEquals("Standup", loaded.writingProfiles.getValue(standup).name)

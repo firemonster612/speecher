@@ -302,7 +302,7 @@ fun insightTiles(summary: InsightsSummary): List<InsightTile> {
             audio.substringAfterLast(' '),
             listOf(
                 if (summary.dictations == 0) "Nothing yet"
-                else "Average dictation ${clockText(summary.averageAudioMillis)}"
+                else "Average dictation ${clockText(summary.averageAudioMillis)}",
             ),
         ),
         InsightTile(
@@ -311,7 +311,7 @@ fun insightTiles(summary: InsightsSummary): List<InsightTile> {
             "wpm",
             listOf(
                 if (summary.dictations == 0) "No dictation in this period."
-                else "Your speaking pace"
+                else "Your speaking pace",
             ),
         ),
     )

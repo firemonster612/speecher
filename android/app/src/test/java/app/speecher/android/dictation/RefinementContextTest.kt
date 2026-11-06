@@ -56,7 +56,7 @@ class RefinementContextTest {
                         writingProfiles =
                             WritingProfile.entries.associateWith {
                                 WritingProfileSettings(CleanupStrength.None)
-                            }
+                            },
                     ),
                     messages,
                 ),
@@ -114,7 +114,7 @@ class RefinementContextTest {
             listOf("email subject", "multi-line text", "number", ""),
             listOf(
                 controlRole(
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT,
                 ),
                 controlRole(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE),
                 controlRole(InputType.TYPE_CLASS_NUMBER),

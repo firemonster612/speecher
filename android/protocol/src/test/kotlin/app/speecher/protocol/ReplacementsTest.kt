@@ -108,7 +108,7 @@ class ReplacementsTest {
                     Replacement("MY email", "two"),
                     Replacement("++", "symbols only"),
                     Replacement("empty replacement", "   "),
-                )
+                ),
             ),
         )
     }
@@ -121,7 +121,7 @@ class ReplacementsTest {
                 listOf(
                     Replacement("my,email", "efox@example.com"),
                     Replacement("speecher repo", "/home/efox/projects/speecher3"),
-                )
+                ),
             ),
         )
     }

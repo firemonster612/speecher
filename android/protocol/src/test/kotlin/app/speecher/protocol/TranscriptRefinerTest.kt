@@ -64,7 +64,7 @@ class TranscriptRefinerTest {
             responses.forEach {
                 enqueue(
                     if (it is Int) MockResponse.Builder().code(it).build()
-                    else MockResponse.Builder().body(it as String).build()
+                    else MockResponse.Builder().body(it as String).build(),
                 )
             }
             start()
@@ -305,7 +305,7 @@ class TranscriptRefinerTest {
             }
         MockWebServer().use { server ->
             server.enqueue(
-                MockResponse.Builder().addHeader("Transfer-Encoding", "chunked").body(body).build()
+                MockResponse.Builder().addHeader("Transfer-Encoding", "chunked").body(body).build(),
             )
             server.start()
             val shown = mutableListOf<String>()
@@ -416,15 +416,15 @@ class TranscriptRefinerTest {
                             override fun writeTo(sink: okio.BufferedSink) {
                                 while (true) {
                                     sink.writeUtf8(
-                                        "${progress.length.toString(16)}\r\n$progress\r\n"
+                                        "${progress.length.toString(16)}\r\n$progress\r\n",
                                     )
                                     sink.flush()
                                     Thread.sleep(50)
                                 }
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             // What a standard-speed retry would get, had it been sent.
             server.enqueue(MockResponse.Builder().body(OK).build())

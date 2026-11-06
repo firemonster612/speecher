@@ -33,7 +33,7 @@ animalsniffer { sourceSets = listOf(project.sourceSets.main.get()) }
 val live = sourceSets.create("live")
 
 configurations[live.implementationConfigurationName].extendsFrom(
-    configurations.implementation.get()
+    configurations.implementation.get(),
 )
 
 live.compileClasspath += sourceSets.main.get().output

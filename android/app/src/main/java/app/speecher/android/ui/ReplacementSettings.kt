@@ -73,8 +73,8 @@ internal fun ReplacementSettings(settings: SpeecherSettings, onChange: (Speecher
                             }
                         onChange(
                             latest.copy(
-                                replacements = importReplacements(latest.replacements, json)
-                            )
+                                replacements = importReplacements(latest.replacements, json),
+                            ),
                         )
                         null
                     } catch (e: IllegalArgumentException) {
@@ -106,9 +106,9 @@ internal fun ReplacementSettings(settings: SpeecherSettings, onChange: (Speecher
             headlineContent = { Text(rule.phrase) },
             supportingContent = { Text(rule.text, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             trailingContent = {
-                IconButton({
-                    onChange(settings.copy(replacements = settings.replacements - rule))
-                }) {
+                IconButton(
+                    { onChange(settings.copy(replacements = settings.replacements - rule)) },
+                ) {
                     Icon(
                         painterResource(R.drawable.ic_close),
                         contentDescription = "Remove ${rule.phrase}",
@@ -226,8 +226,8 @@ internal fun SettingsReplacementsPreview() = SpeecherTheme {
                         Replacement("my email", "efox@example.com"),
                         Replacement("sign off", "Thanks,\nEnzo Fox\nSent on {date} at {time}"),
                         Replacement("home address", "123 Main Street\nSpringfield"),
-                    )
-            )
+                    ),
+            ),
         )
     }
     SpeecherScreen(SettingsPage.Replacements.title, onBack = {}) {

@@ -193,10 +193,12 @@ internal fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherS
     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilledTonalButton({ editing = "" }) { Text("Add") }
         // Any type, as a CSV file often comes labelled as something else; the parser decides.
-        OutlinedButton({
-            importError = null
-            import.launch(arrayOf("*/*"))
-        }) {
+        OutlinedButton(
+            {
+                importError = null
+                import.launch(arrayOf("*/*"))
+            },
+        ) {
             Text("Import CSV…")
         }
     }
@@ -333,7 +335,7 @@ private fun WordEditor(
                 placeholder = {
                     Text(
                         "What it means and when it applies, such as \"the container platform, " +
-                            "when I talk about clusters or deploys\"."
+                            "when I talk about clusters or deploys\".",
                     )
                 },
                 supportingText = {
@@ -378,7 +380,7 @@ private fun WordEditor(
                         context = context.trim(),
                         profiles = if (limited) chosen else emptySet(),
                         keyTerm = keyTerm,
-                    )
+                    ),
                 )
             }
         }
@@ -467,7 +469,7 @@ private fun VocabularyPreview(vocabulary: List<VocabularyWord>) = SpeecherTheme 
                     SpeecherSettings().writingProfiles +
                         (previewStandup to WritingProfileSettings(name = "Standup notes")),
                 vocabulary = normalizedVocabulary(vocabulary),
-            )
+            ),
         )
     }
     SpeecherScreen(SettingsPage.Vocabulary.title, onBack = {}) {
@@ -515,7 +517,7 @@ internal fun SettingsVocabularyPreview() =
                 keyTerm = false,
                 source = "csv",
             ),
-        )
+        ),
     )
 
 @PreviewLightDark

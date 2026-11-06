@@ -29,7 +29,7 @@ class VocabularyTest {
     fun `words stored as bare terms load as key terms for every profile`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
-            commit = true
+            commit = true,
         ) {
             putString("vocabulary", """["Speecher","Priya Raman"]""")
         }
@@ -80,7 +80,7 @@ class VocabularyTest {
                         VocabularyWord("Speecher"),
                         kubernetes,
                         VocabularyWord("Lúcia", "My sister.", setOf(WritingProfile.Personal)),
-                    )
+                    ),
             )
         assertEquals(
             listOf(kubernetes, VocabularyWord("Speecher")),
@@ -98,7 +98,7 @@ class VocabularyTest {
                         VocabularyWord("Grafana", keyTerm = false),
                         VocabularyWord("PR", priority = true),
                         VocabularyWord("Lúcia", profiles = setOf(WritingProfile.Personal)),
-                    )
+                    ),
             )
         assertEquals(
             listOf("PR", "Speecher"),

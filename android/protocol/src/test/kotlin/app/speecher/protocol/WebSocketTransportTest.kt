@@ -21,9 +21,9 @@ class WebSocketTransportTest {
                                 webSocket.send("reply:$text")
                                 webSocket.close(1000, "done")
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val events = LinkedBlockingQueue<String>()
@@ -100,7 +100,7 @@ class WebSocketWireTest {
                     2,
                     0,
                     1,
-                )
+                ),
             )
             output.flush()
             assertEquals(0x8a, input.readUnsignedByte())
@@ -174,7 +174,7 @@ class WebSocketWireTest {
                 .getOutputStream()
                 .write(
                     "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: wrong\r\n\r\n"
-                        .toByteArray()
+                        .toByteArray(),
                 )
             assertEquals("failure:null", events.poll(3, TimeUnit.SECONDS))
         }
@@ -192,7 +192,7 @@ class WebSocketWireTest {
     }
 
     private fun withPeer(
-        block: (WebSocketTransport, java.net.Socket, LinkedBlockingQueue<String>) -> Unit
+        block: (WebSocketTransport, java.net.Socket, LinkedBlockingQueue<String>) -> Unit,
     ) {
         java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
             server.soTimeout = 3000
@@ -242,7 +242,7 @@ class WebSocketWireTest {
     private fun readHeaders(input: java.io.DataInputStream): String {
         val bytes = java.io.ByteArrayOutputStream()
         while (!bytes.toString("US-ASCII").endsWith("\r\n\r\n")) bytes.write(
-            input.readUnsignedByte()
+            input.readUnsignedByte(),
         )
         return bytes.toString("US-ASCII")
     }
@@ -259,11 +259,11 @@ class WebSocketWireTest {
             java.util.Base64.getEncoder()
                 .encodeToString(
                     java.security.MessageDigest.getInstance("SHA-1")
-                        .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray())
+                        .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()),
                 )
         output.write(
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n"
-                .toByteArray()
+                .toByteArray(),
         )
         output.flush()
     }

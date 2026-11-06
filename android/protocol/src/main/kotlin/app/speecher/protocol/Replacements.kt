@@ -253,7 +253,7 @@ internal constructor(
         val trimmed = refined.trim()
         if (trimmed.isEmpty()) return null
         return restorePlaceholders(
-            if (replacesAfterRefinement) replaceOutsidePlaceholders(trimmed) else trimmed
+            if (replacesAfterRefinement) replaceOutsidePlaceholders(trimmed) else trimmed,
         )
     }
 
@@ -425,7 +425,7 @@ private fun excludedPhrases(
                         matches
                             .filter { it.endWord <= directive.startWord }
                             .filter { directive.startWord - it.endWord <= 8 }
-                            .minByOrNull { directive.startWord - it.endWord }
+                            .minByOrNull { directive.startWord - it.endWord },
                 )
             }
         }

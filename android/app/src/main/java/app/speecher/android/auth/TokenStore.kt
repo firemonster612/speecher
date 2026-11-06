@@ -24,7 +24,7 @@ import org.json.JSONObject
 
 /** A key the person typed for a server or an API, by the slot it is saved under. */
 enum class ApiKey {
-    SpeechEndpoint
+    SpeechEndpoint,
 }
 
 /**
@@ -52,7 +52,7 @@ class TokenStore(context: Context, secretKey: Lazy<SecretKey> = lazy(::keystoreK
                     .put("id", tokens.idToken)
                     .put("expiry", tokens.expiresAtMillis)
                     .put("scope", tokens.scope)
-                    .toString()
+                    .toString(),
             )
         synchronized(signIns) {
             preferences.edit(commit = true) {
@@ -203,7 +203,7 @@ private fun keystoreKey(): SecretKey {
                         )
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                        .build()
+                        .build(),
                 )
             }
             .generateKey()

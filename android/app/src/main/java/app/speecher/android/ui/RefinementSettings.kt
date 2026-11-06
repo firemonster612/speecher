@@ -114,7 +114,7 @@ internal fun RefinementSettings(
                 Text(
                     if (modelSupportsFastMode(choice.model))
                         "Faster refinement for a little more usage."
-                    else "Only works with Opus models."
+                    else "Only works with Opus models.",
                 )
             },
             trailingContent = {
@@ -194,7 +194,7 @@ private fun ModelField(
         val typed = value.trim()
         onChange(
             if (typed.isEmpty()) default
-            else models.entries.firstOrNull { it.value == typed }?.key ?: typed
+            else models.entries.firstOrNull { it.value == typed }?.key ?: typed,
         )
     }
     ExposedDropdownMenuBox(
@@ -217,7 +217,7 @@ private fun ModelField(
                     onDone = {
                         expanded = false
                         focus.clearFocus()
-                    }
+                    },
                 ),
             singleLine = true,
         )

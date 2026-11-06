@@ -28,7 +28,7 @@ class SettingsUpgradeTest {
     fun `a chip offset saved for the smaller chip window moves once to keep the pill in place`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
-            commit = true
+            commit = true,
         ) {
             putBoolean("chipDockOnMic", false)
             putInt("chipOffsetX", -200)
@@ -45,7 +45,7 @@ class SettingsUpgradeTest {
     fun `providers saved as accounts load as the same speech and cleanup choices`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
-            commit = true
+            commit = true,
         ) {
             putString("transcription", "Claude")
             putString("refinementProvider", "Claude")
@@ -61,7 +61,7 @@ class SettingsUpgradeTest {
     fun `a model saved on Haiku 4_5 loads on Haiku 5_5, which replaced it`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
-            commit = true
+            commit = true,
         ) {
             putString("ClaudeRefinementModel", "claude-haiku-4-5-20251001")
         }
@@ -72,7 +72,7 @@ class SettingsUpgradeTest {
     fun `lists stored by the previous release load as they were`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
-            commit = true
+            commit = true,
         ) {
             putString(
                 "vocabulary",

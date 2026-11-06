@@ -102,7 +102,7 @@ class DictationEngineTest {
             t.speak(SpeechEvent.Connected)
             t.speak(SpeechEvent.Final("part ${stream + 1}"))
             t.speak(
-                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1006", retryable = true)
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1006", retryable = true),
             )
         }
         assertEquals(listOf(1_000L, 3_000L), t.pauses)
@@ -181,10 +181,12 @@ class DictationEngineTest {
                     speak(SpeechEvent.Failed(ProviderFailureKind.Authentication, "HTTP 401"))
                 },
                 // No sign-in.
-                failure({
-                    connectFailure =
-                        ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
-                }),
+                failure(
+                    {
+                        connectFailure =
+                            ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
+                    },
+                ),
                 failure({ connectFailure = CannotListen(language) }),
                 // Not as the provider's failure.
                 failure({ microphoneFailure = IllegalStateException("Microphone unavailable") }),
@@ -331,7 +333,7 @@ class DictationEngineTest {
                     onText("Hello there.")
                     shown += t.engine.state
                     "Hello there."
-                }
+                },
             )
         t.dictate("hello there", SpeechProvider.ChatGpt)
         assertEquals(
@@ -375,7 +377,7 @@ class DictationEngineTest {
                 refine = { _, raw, _, _ ->
                     refined.add(raw)
                     raw.uppercase()
-                }
+                },
             )
         t.engine.start(SpeechProvider.Endpoint)
         assertEquals(DictationState.Listening(textAfterStop = true), t.engine.state)
@@ -577,7 +579,7 @@ class DictationEngineTest {
                 refine = { _, raw, _, _ ->
                     t.engine.cancel()
                     raw
-                }
+                },
             )
         assertTrue(t.dictate("never inserted").commits.isEmpty())
     }
@@ -602,7 +604,7 @@ class DictationEngineTest {
                     if (++attempts == 1)
                         throw ProviderFailure(ProviderFailureKind.RateLimited, "HTTP 429", 429)
                     else "$raw refined"
-                }
+                },
             )
         t.dictate("save me")
         assertEquals(
@@ -771,7 +773,7 @@ class DictationEngineTest {
             .dictate("thanks sign off")
         assertEquals(listOf("thanks SPEECHER_BINDING_0"), sent)
         assertTrue(
-            DictationState.Refining("thanks sign off", "Thanks, Regards,\nEfox.") in refined.states
+            DictationState.Refining("thanks sign off", "Thanks, Regards,\nEfox.") in refined.states,
         )
         assertEquals(
             listOf("thanks Regards,\nEfox", "Thanks, Regards,\nEfox."),

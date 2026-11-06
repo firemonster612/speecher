@@ -30,7 +30,7 @@ class SignInListenerService : Service() {
         val provider = Provider.valueOf(requireNotNull(intent?.getStringExtra(PROVIDER_EXTRA)))
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(
-                NotificationChannel(CHANNEL, "Sign-in", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, "Sign-in", NotificationManager.IMPORTANCE_LOW),
             )
         val notification =
             Notification.Builder(this, CHANNEL)
@@ -80,7 +80,7 @@ class SignInListenerService : Service() {
             this.onTimedOut = onTimedOut
             context.startForegroundService(
                 Intent(context, SignInListenerService::class.java)
-                    .putExtra(PROVIDER_EXTRA, provider.name)
+                    .putExtra(PROVIDER_EXTRA, provider.name),
             )
             unstarted++
         }

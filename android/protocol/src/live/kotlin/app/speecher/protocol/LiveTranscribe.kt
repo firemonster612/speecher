@@ -14,7 +14,7 @@ import okhttp3.OkHttpClient
 fun main() {
     val tokens =
         Json.parseToJsonElement(
-                Files.readString(Path.of(System.getProperty("user.home"), ".codex/auth.json"))
+                Files.readString(Path.of(System.getProperty("user.home"), ".codex/auth.json")),
             )
             .jsonObject
             .getValue("tokens")
@@ -55,7 +55,7 @@ fun main() {
         }
         println(
             "refinement $model effort=$effort: " +
-                result.fold({ "\"$it\"" }, { "FAILED ${it.message}" })
+                result.fold({ "\"$it\"" }, { "FAILED ${it.message}" }),
         )
         result.isFailure
     }
@@ -78,7 +78,7 @@ fun main() {
     println(
         "refinement fast mode: \"$fastResult\" " +
             if (fast.get()) "(service_tier=priority accepted)"
-            else "(service_tier=priority rejected, standard-speed fallback answered)"
+            else "(service_tier=priority rejected, standard-speed fallback answered)",
     )
 
     // A populated target context: Messages, casual tone, text around a selected word.

@@ -730,7 +730,7 @@ class DictationEngine(
                     sourceProvider,
                     cleanupsCalled.toList(),
                     if (edited != null) prepared?.text ?: text else text,
-                )
+                ),
             )
         } else failCommit(FailureReason.Commit, "Could not insert text", text)
     }

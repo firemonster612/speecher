@@ -115,7 +115,7 @@ fun createDictationEngine(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
+                    .build(),
             )
             .build()
     // The replacement step's rules: the user's own, {date} and {time} as the phone shows them now,

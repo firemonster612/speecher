@@ -66,7 +66,7 @@ fun normalizedVocabulary(words: List<VocabularyWord>): List<VocabularyWord> {
         compareBy<VocabularyWord> { !(it.priority && it.keyTerm) }
             .thenByDescending { it.frequency }
             .thenByDescending { it.lastUsedMs }
-            .thenBy { foldCase(it.term) }
+            .thenBy { foldCase(it.term) },
     )
 }
 
@@ -212,7 +212,7 @@ fun parseVocabularyCsv(csv: String): List<VocabularyWord> {
                 frequency = field(frequency).toIntOrNull() ?: 0,
                 lastUsedMs = field(lastUsed).toLongOrNull() ?: 0,
             )
-        }
+        },
     )
 }
 

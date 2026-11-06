@@ -54,7 +54,7 @@ class CodexTranscribeTest {
                 MockResponse.Builder()
                     .addHeader("Content-Encoding", "gzip")
                     .chunkedBody(Buffer().write(gzipped.toByteArray()), 7)
-                    .build()
+                    .build(),
             )
             server.start()
             val text =

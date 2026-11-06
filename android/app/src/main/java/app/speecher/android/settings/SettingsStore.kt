@@ -226,7 +226,7 @@ class SettingsStore(private val context: Context) {
             object : DefaultLifecycleObserver {
                 override fun onDestroy(owner: LifecycleOwner) =
                     preferences.unregisterOnSharedPreferenceChangeListener(listener)
-            }
+            },
         )
     }
 
@@ -381,7 +381,7 @@ class SettingsStore(private val context: Context) {
 @Serializable
 private data class StoredRule(val match: String, val category: String, val profile: String) {
     constructor(
-        rule: RecognitionRule
+        rule: RecognitionRule,
     ) : this(rule.match, rule.category?.id.orEmpty(), rule.profile?.id.orEmpty())
 
     val rule: RecognitionRule

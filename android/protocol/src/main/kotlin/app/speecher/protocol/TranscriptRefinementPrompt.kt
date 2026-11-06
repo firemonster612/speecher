@@ -185,7 +185,7 @@ private fun builtInDictationRules(context: RefinementContext) = buildList {
             cleanupStep(context),
             FORMAT_STEP,
             LITERALS_STEP,
-        )
+        ),
     )
     if (context.profile == WritingProfile.AiCoding) add(aiCodingSection(context.style))
     add(DICTATION_EXAMPLES)
@@ -237,7 +237,7 @@ internal fun dictationSystemPrompt(context: RefinementContext): String {
             add(
                 DICTATION_CONTEXT_HEADING +
                     (if (context.screenshotJpeg != null) SCREENSHOT_LINE else "") +
-                    contextJson(context)
+                    contextJson(context),
             )
         }
         .joinToString("\n\n")
@@ -322,7 +322,7 @@ internal fun refinementUserMessage(
         put(
             "mode",
             JsonPrimitive(
-                if (selectedText != null) "edit_selected_document" else "refine_dictation"
+                if (selectedText != null) "edit_selected_document" else "refine_dictation",
             ),
         )
         put(
@@ -335,7 +335,7 @@ internal fun refinementUserMessage(
                             put("context", JsonPrimitive(it.context))
                             put("term", JsonPrimitive(it.term))
                         }
-                }
+                },
             ),
         )
         if (selectedText == null) put("raw_transcript", JsonPrimitive(raw))

@@ -102,7 +102,7 @@ fun Home(
                         else ->
                             "$transcribing, refining with " +
                                 refinement.accountLabel(status.sessionEnded)
-                    }
+                    },
                 )
             },
             trailingContent = { Chevron() },
@@ -219,7 +219,7 @@ private fun UpdateCard(state: UpdateState, onUpdate: () -> Unit, onDismiss: () -
             is UpdateState.WaitingForDictation -> INSTALLING_AFTER_DICTATION
             is UpdateState.Installing -> installingText(state)
             else -> availableText(update)
-        }
+        },
     ) {
         if (state is UpdateState.InstallFailed) {
             Text(
@@ -347,7 +347,7 @@ internal fun HomeUpdateInstallingPreview() =
 @Composable
 internal fun HomeUpdateStableReplacementPreview() =
     HomeUpdatePreview(
-        UpdateState.Available(previewUpdate.copy(version = "0.2.0", replacesNightly = true))
+        UpdateState.Available(previewUpdate.copy(version = "0.2.0", replacesNightly = true)),
     )
 
 @PreviewLightDark

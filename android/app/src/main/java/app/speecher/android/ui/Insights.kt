@@ -228,10 +228,12 @@ private fun ClearHistory(onClear: () -> Unit, failed: Boolean) {
     }
     Row(Modifier.padding(horizontal = 4.dp)) {
         TextButton({ confirming = false }) { Text("Cancel") }
-        TextButton({
-            confirming = false
-            onClear()
-        }) {
+        TextButton(
+            {
+                confirming = false
+                onClear()
+            },
+        ) {
             Text("Delete history")
         }
     }

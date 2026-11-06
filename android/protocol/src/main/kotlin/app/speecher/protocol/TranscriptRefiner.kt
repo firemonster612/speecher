@@ -215,7 +215,7 @@ private fun refineOnce(
                         context,
                         fast,
                         base,
-                    )
+                    ),
                 )
         return timing.cancellation.request(call::cancel, timing.deadlineNanos) {
             call.execute().use { response ->
@@ -307,13 +307,13 @@ private fun claudeRequest(
                     "text",
                     JsonPrimitive("You are Claude Code, Anthropic's official CLI for Claude."),
                 )
-            }
+            },
         )
         add(
             buildJsonObject {
                 put("type", JsonPrimitive("text"))
                 put("text", JsonPrimitive(refinementSystemPrompt(context)))
-            }
+            },
         )
     }
     val body = buildJsonObject {
@@ -355,7 +355,7 @@ private fun claudeRequest(
                                 context,
                             ),
                         )
-                    }
+                    },
                 )
             },
         )
@@ -415,7 +415,7 @@ private fun chatGptBody(
                             context,
                         ),
                     )
-                }
+                },
             )
         },
     )
@@ -429,7 +429,7 @@ private fun claudeContent(message: String, context: RefinementContext): JsonElem
             buildJsonObject {
                 put("type", JsonPrimitive("text"))
                 put("text", JsonPrimitive(message))
-            }
+            },
         )
         add(
             buildJsonObject {
@@ -442,7 +442,7 @@ private fun claudeContent(message: String, context: RefinementContext): JsonElem
                         put("data", JsonPrimitive(screenshot))
                     },
                 )
-            }
+            },
         )
     }
 }
@@ -455,14 +455,14 @@ private fun chatGptContent(message: String, context: RefinementContext): JsonEle
             buildJsonObject {
                 put("type", JsonPrimitive("input_text"))
                 put("text", JsonPrimitive(message))
-            }
+            },
         )
         add(
             buildJsonObject {
                 put("type", JsonPrimitive("input_image"))
                 put("image_url", JsonPrimitive("data:$SCREENSHOT_MEDIA_TYPE;base64,$screenshot"))
                 put("detail", JsonPrimitive("low"))
-            }
+            },
         )
     }
 }

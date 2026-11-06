@@ -91,7 +91,7 @@ class UpdateStatusTest {
             ),
             noteLines(
                 "## Added\r\n\r\n- Check for updates from Settings, and read\r\n  these notes.\r\n" +
-                    "- A Nightly channel.\r\n\r\nInstall and update instructions: https://example.com"
+                    "- A Nightly channel.\r\n\r\nInstall and update instructions: https://example.com",
             ),
         )
     }

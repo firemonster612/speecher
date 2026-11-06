@@ -77,7 +77,7 @@ internal fun TranscriptionSettings(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
                 Text(
-                    "Transcribes the whole recording again before inserting. More accurate, slower."
+                    "Transcribes the whole recording again before inserting. More accurate, slower.",
                 )
             },
             trailingContent = {

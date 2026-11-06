@@ -135,8 +135,8 @@ private fun WhatsNewPreview(onViewReleases: (() -> Unit)?) = SpeecherTheme {
                             .trimIndent(),
                         "",
                         null,
-                    )
-                )
+                    ),
+                ),
             ),
             {},
             onViewReleases,

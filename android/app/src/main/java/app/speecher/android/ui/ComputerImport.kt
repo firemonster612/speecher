@@ -217,7 +217,7 @@ private fun ImportPreviewList(
                 bold(computer.computer)
                 append(
                     ". Nothing on this phone is deleted. Where both have the same item, the " +
-                        "computer's version replaces the phone's."
+                        "computer's version replaces the phone's.",
                 )
             },
             Modifier.padding(16.dp),

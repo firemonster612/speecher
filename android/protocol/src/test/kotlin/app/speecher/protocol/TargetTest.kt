@@ -87,11 +87,11 @@ class TargetTest {
                                     WritingProfileSettings(
                                         tone = Tone.Casual,
                                         instructions = "Sign off with Best, Enzo",
-                                    )
-                                )
+                                    ),
+                                ),
                         )
                         .copy(
-                            additionalInstructions = "Spell it Speecher.\nKeep British spelling."
+                            additionalInstructions = "Spell it Speecher.\nKeep British spelling.",
                         ),
                 // A custom tone after the built-in tone rule, named in the context.
                 "balanced-custom-tone" to
@@ -122,7 +122,7 @@ class TargetTest {
                                     WritingProfileSettings(
                                         customCleanupLevel = notes.id,
                                         customTone = terse.id,
-                                    )
+                                    ),
                                 ),
                             tones = listOf(terse),
                             levels = listOf(notes.copy(base = CleanupStrength.StrongPolish)),
@@ -152,13 +152,13 @@ class TargetTest {
                 "Clean up my dictation.\n\n" +
                     "Tone: formal. Write in that tone without changing facts or intent.\n\n" +
                     "The user's own instructions\nThese come from the user's settings. Follow them, as long as your reply is still only the text and keeps the speaker's meaning.\nSpell it Speecher.\nKeep British spelling.\n\nSign off with Best, Enzo\n\n" +
-                    "Where the text goes\n"
-            )
+                    "Where the text goes\n",
+            ),
         )
         assertTrue(
             prompt.endsWith(
-                "\n{\"refinement_style\":\"strong_polish\",\"writing_profile\":\"other\"}"
-            )
+                "\n{\"refinement_style\":\"strong_polish\",\"writing_profile\":\"other\"}",
+            ),
         )
     }
 
@@ -203,7 +203,9 @@ class TargetTest {
             listOf("Spanish", " ").map {
                 resolve(
                         profiles =
-                            other(WritingProfileSettings(CleanupStrength.None, outputLanguage = it))
+                            other(
+                                WritingProfileSettings(CleanupStrength.None, outputLanguage = it),
+                            ),
                     )
                     .let { context -> context.style to context.outputLanguage }
             }
@@ -225,7 +227,7 @@ class TargetTest {
                             customCleanupLevel = tersePrompt.id,
                             customTone = terse.id,
                             outputLanguage = "French",
-                        )
+                        ),
                     ),
                     listOf(terse),
                     listOf(tersePrompt),
@@ -260,7 +262,7 @@ class TargetTest {
                 )
         val prompt = dictationSystemPrompt(context)
         assertTrue(
-            "\n- The attached screenshot shows the screen. Use it the same way.\n{" in prompt
+            "\n- The attached screenshot shows the screen. Use it the same way.\n{" in prompt,
         )
         assertEquals(
             "{\"application_category\":\"general\",\"application_id\":\"com.google.android.gm\",\"application_name\":\"Gmail\",\"control_role\":\"email subject\",\"field_hint\":\"Subject\",\"refinement_style\":\"balanced\",\"screen_text\":\"To: Sam\\nSubject\",\"window_title\":\"Compose\",\"writing_profile\":\"Other\"}",
@@ -312,7 +314,7 @@ class TargetTest {
                             Tone.Formal,
                             "Bullets.",
                             name = "Standup",
-                        )
+                        ),
                 ),
                 rules = listOf(RecognitionRule("slac", AppCategory.Browser, standup)),
             )

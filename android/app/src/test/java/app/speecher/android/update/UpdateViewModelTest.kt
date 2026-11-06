@@ -31,7 +31,7 @@ class UpdateViewModelTest {
                     "9.9.9",
                     "https://example.com/Speecher-9.9.9.apk",
                     "https://example.com/android-v9.9.9",
-                )
+                ),
             ),
             updates.state,
         )

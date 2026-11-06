@@ -183,7 +183,7 @@ fun refreshTokens(
         put(
             "client_id",
             JsonPrimitive(
-                if (provider == OAuthProvider.Claude) CLAUDE_CLIENT_ID else CHATGPT_CLIENT_ID
+                if (provider == OAuthProvider.Claude) CLAUDE_CLIENT_ID else CHATGPT_CLIENT_ID,
             ),
         )
         if (provider == OAuthProvider.Claude)

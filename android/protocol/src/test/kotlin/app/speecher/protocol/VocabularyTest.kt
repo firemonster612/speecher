@@ -41,7 +41,7 @@ class VocabularyTest {
                     VocabularyWord("ılık"),
                     VocabularyWord("Ilık"),
                     VocabularyWord("   "),
-                )
+                ),
             ),
         )
     }
@@ -61,7 +61,7 @@ class VocabularyTest {
                     VocabularyWord("not sent", keyTerm = false, frequency = 3),
                     VocabularyWord("two words", frequency = 2),
                     VocabularyWord("one", frequency = 1),
-                )
+                ),
             ),
         )
     }
@@ -102,7 +102,7 @@ class VocabularyTest {
                 "\uFEFFContext,Term,Starred,Frequency,Last Used\r\n" +
                     "\"The container platform, \"\"k8s\"\".\nOr clusters.\",Kubernetes,yes,4,1700\r\n" +
                     " , \r\n" +
-                    ",Grafana,no,x,\r\n"
+                    ",Grafana,no,x,\r\n",
             ),
         )
         assertEquals(
@@ -114,7 +114,7 @@ class VocabularyTest {
                     source = "learned",
                     frequency = 2,
                     lastUsedMs = 3,
-                )
+                ),
             ),
             parseVocabularyCsv("Speecher,learned,1,2,3,My app"),
         )

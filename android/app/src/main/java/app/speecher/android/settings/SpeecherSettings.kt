@@ -183,7 +183,7 @@ data class SpeecherSettings(
      * applies to every profile.
      */
     fun withWritingProfiles(
-        profiles: Map<WritingProfile, WritingProfileSettings> = writingProfiles
+        profiles: Map<WritingProfile, WritingProfileSettings> = writingProfiles,
     ): SpeecherSettings =
         copy(
             writingProfiles = profiles,

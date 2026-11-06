@@ -57,10 +57,12 @@ class LearnedCorrectionsTest {
     fun `a correction counts once two readings agree`() {
         val tracker = CorrectionTracker(window)
         assertNull(
-            tracker.sample("before text, long enough I use cute every day after text, long enough.")
+            tracker.sample(
+                "before text, long enough I use cute every day after text, long enough.",
+            ),
         )
         assertNull(
-            tracker.sample("before text, long enough I use Qt every day after text, long enough.")
+            tracker.sample("before text, long enough I use Qt every day after text, long enough."),
         )
         assertEquals(
             CorrectionEvidence("cute", "Qt", 0.75),
@@ -91,7 +93,7 @@ class LearnedCorrectionsTest {
         val repeated = CorrectionTracker(window)
         repeated.sample(
             "before text, long enough I use Qt every day after text, long enough. " +
-                "before text, long enough again"
+                "before text, long enough again",
         )
         assertFalse(repeated.active)
     }
@@ -133,7 +135,8 @@ class LearnedCorrectionsTest {
         val once = record(Corrections(), medium, "org.kde.kate", 100)
         assertEquals(
             Corrections(
-                pending = listOf(PendingCorrection("cute", "Qt", "org.kde.kate", 1, 100, 100, 0.75))
+                pending =
+                    listOf(PendingCorrection("cute", "Qt", "org.kde.kate", 1, 100, 100, 0.75)),
             ),
             once,
         )
@@ -141,8 +144,8 @@ class LearnedCorrectionsTest {
         assertEquals(
             Corrections(
                 listOf(
-                    LearnedCorrection("id0", "cute", "Qt", "org.kde.kate", 100, 0.75, true, 2, 200)
-                )
+                    LearnedCorrection("id0", "cute", "Qt", "org.kde.kate", 100, 0.75, true, 2, 200),
+                ),
             ),
             twice,
         )

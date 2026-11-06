@@ -76,7 +76,7 @@ class CodexDictationClient(
                 put("type", JsonPrimitive("session.start"))
                 put("config", config)
             }
-                .toString()
+                .toString(),
         )
     }
 
@@ -148,7 +148,7 @@ class CodexDictationClient(
                 put("type", JsonPrimitive("audio.append"))
                 put("audio", JsonPrimitive(Base64.getEncoder().encodeToString(pcm)))
             }
-                .toString()
+                .toString(),
         )
     }
 

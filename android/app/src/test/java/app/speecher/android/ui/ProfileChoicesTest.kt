@@ -17,7 +17,7 @@ class ProfileChoicesTest {
                 customTones = listOf(CustomTone("custom_terse", "Terse", "Short.")),
                 customCleanupLevels =
                     listOf(
-                        CustomCleanupLevel("custom_notes", "Notes", CleanupStrength.Balanced, "")
+                        CustomCleanupLevel("custom_notes", "Notes", CleanupStrength.Balanced, ""),
                     ),
             )
         assertEquals(
@@ -51,7 +51,7 @@ class ProfileChoicesTest {
                 writingProfiles =
                     SpeecherSettings().writingProfiles +
                         (WritingProfile("custom_standup") to
-                            WritingProfileSettings(name = "Standup"))
+                            WritingProfileSettings(name = "Standup")),
             )
         assertEquals(
             listOf("Work", "Email", "Personal", "AI coding", "Other", "Standup"),

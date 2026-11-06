@@ -108,7 +108,7 @@ fun <T> httpPostStreaming(
                 ("POST $path HTTP/1.1\r\n" +
                         fields.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
                         "\r\n")
-                    .toByteArray(Charsets.UTF_8)
+                    .toByteArray(Charsets.UTF_8),
             )
             output.write(body.bytes)
             output.flush()
