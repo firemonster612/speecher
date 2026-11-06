@@ -490,6 +490,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/LinuxSessionKeyGrab.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
+  src/platform/ChromiumLaunchers.cpp
   src/platform/LinuxDesktopIntegration.cpp
   src/platform/MediaPauseController.cpp
   src/platform/PlasmaDesktopColors.cpp
@@ -521,6 +522,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/LinuxSessionKeyGrab.h
   src/platform/KeywatchSetup.h
   src/platform/KeywatchShortcutBinder.h
+  src/platform/ChromiumLaunchers.h
   src/platform/LinuxDesktopIntegration.h
   src/platform/MediaPauseController.h
   src/platform/PlasmaDesktopColors.h

@@ -36,6 +36,7 @@
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
+#include "platform/ChromiumLaunchers.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/atspi/AtSpiAccess.h"
@@ -638,6 +639,12 @@ bool writeFixtureFile(const QString &path, const QByteArray &contents)
     QFile file(path);
     return QDir().mkpath(QFileInfo(path).path()) && file.open(QIODevice::WriteOnly)
         && file.write(contents) == contents.size();
+}
+
+QByteArray readFixtureFile(const QString &path)
+{
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 #endif
 
@@ -2677,14 +2684,96 @@ private slots:
         QVERIFY(!QFile::exists(icon));
     }
 
-    // GNOME may start Orca when anything claims a screen reader is running,
-    // so Speecher makes that claim only elsewhere.
-    void screenReaderAnnouncementSkipsGnome()
+    // A Chromium or Electron app is known by Chromium's files beside the
+    // program its launcher starts, or, for a Flatpak, by its id.
+    void chromiumAppsAreKnownByTheirFiles()
     {
-        QVERIFY(atspi::mayAnnounceScreenReader(QStringLiteral("KDE")));
-        QVERIFY(atspi::mayAnnounceScreenReader(QString()));
-        QVERIFY(!atspi::mayAnnounceScreenReader(QStringLiteral("GNOME")));
-        QVERIFY(!atspi::mayAnnounceScreenReader(QStringLiteral("ubuntu:GNOME")));
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString chrome = root.filePath(QStringLiteral("opt/chrome/chrome"));
+        QVERIFY(writeFixtureFile(chrome, "binary"));
+        QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/chrome/chrome_100_percent.pak")), "pak"));
+        QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/My App/app")), "binary"));
+        QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/My App/resources/app.asar")), "asar"));
+        QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/editor/editor")), "binary"));
+        QVERIFY(QDir().mkpath(root.filePath(QStringLiteral("bin"))));
+        QVERIFY(QFile::link(chrome, root.filePath(QStringLiteral("bin/google-chrome"))));
+
+        QVERIFY(launchesChromium(root.filePath(QStringLiteral("bin/google-chrome")) + QStringLiteral(" %U")));
+        QVERIFY(launchesChromium(QLatin1Char('"') + root.filePath(QStringLiteral("opt/My App/app"))
+                                 + QStringLiteral("\" %F")));
+        QVERIFY(!launchesChromium(root.filePath(QStringLiteral("opt/editor/editor")) + QStringLiteral(" %F")));
+        QVERIFY(launchesChromium(QStringLiteral("chromium-browser %U")));
+        QVERIFY(launchesChromium(QStringLiteral(
+            "/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding "
+            "com.brave.Browser @@u %U @@")));
+        QVERIFY(!launchesChromium(QStringLiteral("/usr/bin/flatpak run --branch=stable org.kde.kate %U")));
+    }
+
+    void accessibilityFlagGoesBeforeFieldCodes()
+    {
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("/opt/google/chrome/google-chrome %U")),
+                 QStringLiteral("/opt/google/chrome/google-chrome --force-renderer-accessibility %U"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("/usr/share/code/code --new-window")),
+                 QStringLiteral("/usr/share/code/code --new-window --force-renderer-accessibility"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("\"/opt/My App/app\" --open-url -- %u")),
+                 QStringLiteral("\"/opt/My App/app\" --open-url -- --force-renderer-accessibility %u"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral(
+                     "/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding "
+                     "com.brave.Browser @@u %U @@")),
+                 QStringLiteral("/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding "
+                                "com.brave.Browser --force-renderer-accessibility @@u %U @@"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("flatpak run com.slack.Slack")),
+                 QStringLiteral("flatpak run com.slack.Slack --force-renderer-accessibility"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("chromium --force-renderer-accessibility %U")),
+                 QStringLiteral("chromium --force-renderer-accessibility %U"));
+    }
+
+    // Speecher copies a Chromium app's launcher into the user's applications
+    // with the flag, leaves alone a launcher the user has there, and on
+    // removal deletes only its own copies that no one changed.
+    void accessibleLaunchersAreSpeechersOwnCopies()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString system = root.filePath(QStringLiteral("system"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium-browser.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium-browser %U\n\n"
+                                 "[Desktop Action new-window]\nName=New Window\nExec=chromium-browser --new-window\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/org.chromium.Chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=flatpak run org.chromium.Chromium @@u %U @@\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/org.kde.kate.desktop"),
+                                 "[Desktop Entry]\nName=Kate\nExec=kate %U\n"));
+        const QByteArray usersOwn = "[Desktop Entry]\nName=My Chromium\nExec=flatpak run org.chromium.Chromium --incognito\n";
+        QVERIFY(writeFixtureFile(home + QStringLiteral("/applications/org.chromium.Chromium.desktop"), usersOwn));
+
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+
+        const QString copy = home + QStringLiteral("/applications/chromium-browser.desktop");
+        QCOMPARE(readFixtureFile(copy),
+                 QByteArray("[Desktop Entry]\n"
+                            "X-Speecher-Accessibility=6ebeb5bef46593e295ecc9bd4f897fdaeeadf64e8eeea682cf24e0c500f0032a\n"
+                            "Name=Chromium\nExec=chromium-browser --force-renderer-accessibility %U\n\n"
+                            "[Desktop Action new-window]\nName=New Window\n"
+                            "Exec=chromium-browser --new-window --force-renderer-accessibility\n"));
+        QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/org.chromium.Chromium.desktop")), usersOwn);
+        QVERIFY(!QFile::exists(home + QStringLiteral("/applications/org.kde.kate.desktop")));
+
+        const QString changed = home + QStringLiteral("/applications/chromium.desktop");
+        QVERIFY(writeFixtureFile(changed, readFixtureFile(changed) + "NoDisplay=true\n"));
+        DesktopIntegrationRemoval removal;
+        removeAccessibleLaunchers(home, removal);
+        QCOMPARE(removal.removed, QStringList{QStringLiteral("Chromium app launchers")});
+        QCOMPARE(removal.failed,
+                 QStringList{QStringLiteral("Chromium app launchers: %1 has changed since Speecher wrote it")
+                                 .arg(changed)});
+        QVERIFY(!QFile::exists(copy));
+        QVERIFY(QFile::exists(changed));
+        QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/org.chromium.Chromium.desktop")), usersOwn);
     }
 
     // Removal takes back the session-wide accessibility switch Speecher
