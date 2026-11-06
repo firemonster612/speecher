@@ -79,24 +79,12 @@ QDBusMessage callStatusProperties(const QString &method, const QVariantList &arg
     return QDBusConnection::sessionBus().call(request, QDBus::Block, accessibilityCallTimeoutMs);
 }
 
-// Nothing when the bus launcher is unreachable or has no such property.
-std::optional<bool> statusFlag(const QString &name)
-{
-    const QDBusMessage reply = callStatusProperties(QStringLiteral("Get"), {name});
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return std::nullopt;
-    }
-    return reply.arguments().first().value<QDBusVariant>().variant().toBool();
-}
-
-QDBusMessage setStatusFlag(const QString &name, bool value)
-{
-    return callStatusProperties(QStringLiteral("Set"), {name, QVariant::fromValue(QDBusVariant(value))});
-}
-
+// False too when the bus launcher is unreachable.
 bool runtimeAccessibilityEnabled()
 {
-    return statusFlag(QStringLiteral("IsEnabled")).value_or(false);
+    const QDBusMessage reply = callStatusProperties(QStringLiteral("Get"), {QStringLiteral("IsEnabled")});
+    return reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()
+        && reply.arguments().first().value<QDBusVariant>().variant().toBool();
 }
 
 } // namespace
@@ -116,7 +104,8 @@ AccessibilityState accessibilityState()
 
 bool requestAccessibility(QString *error)
 {
-    const QDBusMessage reply = setStatusFlag(QStringLiteral("IsEnabled"), true);
+    const QDBusMessage reply = callStatusProperties(
+        QStringLiteral("Set"), {QStringLiteral("IsEnabled"), QVariant::fromValue(QDBusVariant(true))});
     if (reply.type() == QDBusMessage::ErrorMessage) {
         if (error) {
             *error = reply.errorMessage().isEmpty()
