@@ -14,7 +14,8 @@ struct DesktopIntegrationRemoval;
 
 // Whether an Exec line starts a Chromium or Electron app: a Flatpak with a
 // known app id, or a program, the one after env and its options and variables
-// where the line starts with env, that resolves, through PATH and symlinks, into
+// where the line starts with env, that resolves, through PATH and symlinks, or
+// env's -C directory and PATH variable where it gives them, into
 // a directory holding Chromium's chrome_100_percent.pak or resources.pak, or
 // an Electron app's resources/app.asar, or a distribution's chromium wrapper.
 bool launchesChromium(const QString &execLine);

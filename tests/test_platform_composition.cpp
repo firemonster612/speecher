@@ -2695,6 +2695,7 @@ private slots:
         QVERIFY(root.isValid());
         const QString chrome = root.filePath(QStringLiteral("opt/chrome/chrome"));
         QVERIFY(writeFixtureFile(chrome, "binary"));
+        QVERIFY(QFile::setPermissions(chrome, QFile::permissions(chrome) | QFile::ExeOwner));
         QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/chrome/chrome_100_percent.pak")), "pak"));
         QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/My App/app")), "binary"));
         QVERIFY(writeFixtureFile(root.filePath(QStringLiteral("opt/My App/resources/app.asar")), "asar"));
@@ -2713,6 +2714,10 @@ private slots:
         QVERIFY(!launchesChromium(QStringLiteral("/usr/bin/flatpak run --branch=stable org.kde.kate %U")));
         QVERIFY(launchesChromium(QStringLiteral("env -u GTK_THEME BAMF_DESKTOP_FILE_HINT=/x.desktop ")
                                  + root.filePath(QStringLiteral("bin/google-chrome")) + QStringLiteral(" %U")));
+        QVERIFY(launchesChromium(QStringLiteral("env -C ") + root.filePath(QStringLiteral("opt/chrome"))
+                                 + QStringLiteral(" ./chrome %U")));
+        QVERIFY(launchesChromium(QStringLiteral("env PATH=/nowhere:") + root.filePath(QStringLiteral("opt/chrome"))
+                                 + QStringLiteral(" chrome %U")));
     }
 
     void accessibilityFlagGoesBeforeFieldCodes()
@@ -2734,6 +2739,8 @@ private slots:
                                 "com.brave.Browser --force-renderer-accessibility @@u %U @@"));
         QCOMPARE(withAccessibilityFlag(QStringLiteral("flatpak run com.slack.Slack")),
                  QStringLiteral("flatpak run com.slack.Slack --force-renderer-accessibility"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("env -C \"/opt/My App\" ./app %U")),
+                 QStringLiteral("env -C \"/opt/My App\" ./app --force-renderer-accessibility %U"));
         QCOMPARE(withAccessibilityFlag(QStringLiteral("chromium --force-renderer-accessibility %U")),
                  QStringLiteral("chromium --force-renderer-accessibility %U"));
     }

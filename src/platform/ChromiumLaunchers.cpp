@@ -90,10 +90,13 @@ bool isFieldCode(const QString &argument)
 
 // What an Exec line starts, as indexes into its arguments, or -1: the
 // program, past an env prefix's options and assignments, and when that
-// program is flatpak, the app id it runs.
+// program is flatpak, the app id it runs. Also the directory env -C starts
+// the program in and the PATH env sets for it, empty where it sets none.
 struct Launch {
     qsizetype program = -1;
     qsizetype flatpakApp = -1;
+    QString directory;
+    QStringList searchPath;
 };
 
 Launch launchOf(const QList<ExecArgument> &arguments)
@@ -101,9 +104,6 @@ Launch launchOf(const QList<ExecArgument> &arguments)
     const auto named = [](const ExecArgument &argument, QLatin1String name) {
         return QFileInfo(argument.text).fileName() == name;
     };
-    // env's options that take the next argument as their value.
-    static const QSet<QString> envValueOptions{QStringLiteral("-u"), QStringLiteral("--unset"),
-                                               QStringLiteral("-C"), QStringLiteral("--chdir")};
     Launch launch;
     qsizetype i = 0;
     if (!arguments.isEmpty() && named(arguments.first(), QLatin1String("env"))) {
@@ -112,8 +112,12 @@ Launch launchOf(const QList<ExecArgument> &arguments)
             const QString &argument = arguments.at(i).text;
             if (options && argument == QLatin1String("--")) {
                 options = false;
-            } else if (options && envValueOptions.contains(argument)) {
+            } else if (options && (argument == QLatin1String("-C") || argument == QLatin1String("--chdir"))) {
+                launch.directory = arguments.value(++i).text;
+            } else if (options && (argument == QLatin1String("-u") || argument == QLatin1String("--unset"))) {
                 ++i;
+            } else if (argument.startsWith(QLatin1String("PATH="))) {
+                launch.searchPath = argument.mid(5).split(QLatin1Char(':'), Qt::SkipEmptyParts);
             } else if (!(options && argument.startsWith(QLatin1Char('-')))
                        && !argument.contains(QLatin1Char('='))) {
                 break;
@@ -273,7 +277,11 @@ bool launchesChromium(const QString &execLine)
     if (chromiumWrappers().contains(QFileInfo(program).fileName())) {
         return true;
     }
-    const QString path = QFileInfo(program).isAbsolute() ? program : QStandardPaths::findExecutable(program);
+    // As exec has it, a program named with a slash is a path, here from the
+    // directory env -C gives, and one without is looked up in PATH.
+    const QString path = program.contains(QLatin1Char('/'))
+        ? QDir(launch.directory).absoluteFilePath(program)
+        : QStandardPaths::findExecutable(program, launch.searchPath);
     const QString resolved = QFileInfo(path).canonicalFilePath();
     return !resolved.isEmpty() && holdsChromium(QFileInfo(resolved).absoluteDir());
 }
