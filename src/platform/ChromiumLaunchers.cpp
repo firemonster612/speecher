@@ -312,6 +312,16 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
         return true;
     }
     const QDir userApplications(dataDirs.first() + QStringLiteral("/applications"));
+    // Deletes the copy at path if it is Speecher's and no one changed it.
+    const auto removeCopy = [&](const QString &path) {
+        if (ownerOfFile(path) != Owner::Speecher || QFile::remove(path)) {
+            return true;
+        }
+        if (error) {
+            *error = QStringLiteral("Could not delete %1").arg(path);
+        }
+        return false;
+    };
     QSet<QString> seen;
     for (const QString &dataDir : dataDirs.mid(1)) {
         const QDir applications(dataDir + QStringLiteral("/applications"));
@@ -323,23 +333,29 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
                 continue;
             }
             seen.insert(name);
-            const QByteArray copy = accessibleCopy(readFile(applications.filePath(name)));
-            if (copy.isEmpty()) {
+            // An entry that can't be read leaves its copy as it is.
+            QFile entry(applications.filePath(name));
+            if (!entry.open(QIODevice::ReadOnly)) {
                 continue;
             }
-            if (!QDir().mkpath(userApplications.path())
-                || !writeCopy(userApplications.filePath(name), copy, error)) {
+            const QByteArray copy = accessibleCopy(entry.readAll());
+            const QString target = userApplications.filePath(name);
+            // A copy of an entry that no longer starts a Chromium app, or is
+            // no longer a desktop entry, would go on standing in for it.
+            if (copy.isEmpty()) {
+                if (!removeCopy(target)) {
+                    return false;
+                }
+                continue;
+            }
+            if (!QDir().mkpath(userApplications.path()) || !writeCopy(target, copy, error)) {
                 return false;
             }
         }
     }
     // A copy of an entry that is gone would keep showing an uninstalled app.
     for (const QString &name : desktopEntries(userApplications)) {
-        const QString path = userApplications.filePath(name);
-        if (!seen.contains(name) && ownerOfFile(path) == Owner::Speecher && !QFile::remove(path)) {
-            if (error) {
-                *error = QStringLiteral("Could not delete %1").arg(path);
-            }
+        if (!seen.contains(name) && !removeCopy(userApplications.filePath(name))) {
             return false;
         }
     }

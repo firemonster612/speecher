@@ -2832,7 +2832,8 @@ private slots:
     }
 
     // Written again, Speecher's copies follow their entries, and a copy whose
-    // entry is gone goes too; the user's own launchers stay.
+    // entry is gone, or no longer starts a Chromium app, goes too; the user's
+    // own launchers stay.
     void accessibleLaunchersFollowTheirEntries()
     {
         QTemporaryDir root;
@@ -2843,6 +2844,8 @@ private slots:
                                  "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
         QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium-browser.desktop"),
                                  "[Desktop Entry]\nName=Chromium\nExec=chromium-browser %U\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/web.desktop"),
+                                 "[Desktop Entry]\nName=Web\nExec=chromium --app=https://example.org\n"));
         const QByteArray usersOwn = "[Desktop Entry]\nName=Mine\nExec=chromium --app=https://example.org\n";
         QVERIFY(writeFixtureFile(home + QStringLiteral("/applications/mine.desktop"), usersOwn));
         QString error;
@@ -2851,10 +2854,14 @@ private slots:
         QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
                                  "[Desktop Entry]\nName=Chromium Web\nExec=chromium %U\n"));
         QVERIFY(QFile::remove(system + QStringLiteral("/applications/chromium-browser.desktop")));
+        QVERIFY(QFile::exists(home + QStringLiteral("/applications/web.desktop")));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/web.desktop"),
+                                 "[Desktop Entry]\nName=Web\nExec=firefox https://example.org\n"));
         QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
 
         QVERIFY(readFixtureFile(home + QStringLiteral("/applications/chromium.desktop")).contains("Name=Chromium Web\n"));
         QVERIFY(!QFile::exists(home + QStringLiteral("/applications/chromium-browser.desktop")));
+        QVERIFY(!QFile::exists(home + QStringLiteral("/applications/web.desktop")));
         QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/mine.desktop")), usersOwn);
     }
 

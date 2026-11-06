@@ -32,7 +32,7 @@ QString withAccessibilityFlag(const QString &execLine);
 // and a mark that it is Speecher's. A desktop entry or symlink already in the
 // user's directory stays, unless it is a copy of Speecher's that no one
 // changed: that one is written again, and deleted when its entry is in none of
-// the other dataDirs. The first of the other dataDirs holding an entry is the
+// the other dataDirs or no longer starts a Chromium or Electron app. The first of the other dataDirs holding an entry is the
 // one copied, as the desktop reads them. The apps pick the flag up once
 // started again from their launcher.
 bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error = nullptr);
