@@ -251,6 +251,13 @@ bool takesTyping(AXUIElementRef element)
     return selectedTextIsSettable(element);
 }
 
+// Whether the app with processId is the one in front.
+bool isFrontmost(qint64 processId)
+{
+    NSRunningApplication *frontmost = [NSWorkspace sharedWorkspace].frontmostApplication;
+    return processId > 0 && frontmost && frontmost.processIdentifier == processId;
+}
+
 } // namespace
 
 MacTargetProvider::MacTargetProvider(QObject *parent)
@@ -330,7 +337,7 @@ void MacTargetProvider::capture(QObject *context, std::function<void(const Targe
 }
 
 // Answers with the first look that reads the control's text, or the last.
-// Once focus leaves the captured control, it answers with what it had.
+// Once another app comes to the front, it answers with what it had.
 void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
                                   std::function<void(const Target &)> done)
 {
@@ -341,9 +348,10 @@ void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &targe
             return;
         }
         // A later capture tracks its own control, which another look here
-        // would replace.
-        // Focus that moved, here or to another app, is no longer the target.
-        if (m_captures != capture || !stillFocused(target)) {
+        // would replace. Only the app is compared: until Chrome builds its
+        // tree there is no focused control to compare, and the built tree
+        // may answer with a different element for the same control.
+        if (m_captures != capture || !isFrontmost(target.processId)) {
             done(target);
             return;
         }
@@ -429,11 +437,7 @@ Target MacTargetProvider::captureNow()
 
 bool MacTargetProvider::stillFocused(const Target &target)
 {
-    if (target.processId <= 0) {
-        return false;
-    }
-    NSRunningApplication *frontmost = [NSWorkspace sharedWorkspace].frontmostApplication;
-    if (!frontmost || frontmost.processIdentifier != target.processId) return false;
+    if (!isFrontmost(target.processId)) return false;
     // AX identifies editable panels and popovers as well as normal windows.
     if (m_focusedElement) return isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement));
     return m_windowId != kCGNullWindowID && singleOwnedWindow(target.processId) == m_windowId;
