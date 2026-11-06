@@ -62,8 +62,12 @@ public:
     static QStringList explicitNoBindPhrases(const QString &transcript, const QList<BindingRule> &rules);
     static BindingProcessingResult process(const QString &transcript, const QList<BindingRule> &rules);
     static QString applyBindingsOutsidePlaceholders(const QString &text, const QList<BindingRule> &rules);
+    // The refined text with its placeholders restored; not ok when it holds
+    // placeholder-like text that sourceText, what refinement was given before
+    // placeholders went in, does not.
     static BindingRestoreResult restorePlaceholders(const QString &refinedText,
-                                                    const QList<BindingPlaceholder> &placeholders);
+                                                    const QList<BindingPlaceholder> &placeholders,
+                                                    const QString &sourceText = {});
     static QHash<QString, QString> replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders);
     // restorePlaceholders for a refinement still streaming, given the
     // replacements by placeholder once for the whole stream.

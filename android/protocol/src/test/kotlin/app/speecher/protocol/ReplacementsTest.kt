@@ -73,8 +73,29 @@ class ReplacementsTest {
         assertEquals(
             "\t    return value;",
             replaceSpoken("rename x to value", emptyList())
-                .restoreEdit("\n \n\t    return value;\n  \n"),
+                .restoreEdit("\n \n\t    return value;\n  \n", "return x;"),
         )
+    }
+
+    @Test
+    fun `a selection edit keeps the document's placeholder text`() {
+        val replaced = replaceSpoken("make it constexpr", emptyList())
+        val document = "const auto token = \"SPEECHER_BINDING_0\";"
+        assertEquals(
+            "constexpr auto token = \"SPEECHER_BINDING_0\";",
+            replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_0\";", document),
+        )
+        assertNull(replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_1\";", document))
+    }
+
+    @Test
+    fun `a dictation about placeholders keeps them`() {
+        val replaced = replaceSpoken("rename the speecher binding zero placeholder", emptyList())
+        assertEquals(
+            "Rename the speecher binding zero placeholder.",
+            replaced.restore("Rename the speecher binding zero placeholder."),
+        )
+        assertNull(replaced.restore("Rename the SPEECHER_BINDING_0 placeholder."))
     }
 
     @Test

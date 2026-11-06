@@ -1043,6 +1043,37 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  std::optional<QString>(QStringLiteral("Hello.")));
     }
 
+    void selectionEditKeepsADocumentsPlaceholderText()
+    {
+        const AppSettings settings;
+        Target selection;
+        selection.selectedText = QStringLiteral("const auto token = \"SPEECHER_BINDING_0\";");
+        selection.selectionStart = 0;
+        selection.selectionEnd = selection.selectedText.size();
+        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+            QStringLiteral("make it constexpr"), settings, {}, selection, settings.speech.language);
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                     edit, QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_0\";")),
+                 std::optional<QString>(QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_0\";")));
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                     edit, QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_1\";")),
+                 std::nullopt);
+    }
+
+    void dictationAboutPlaceholdersKeepsThem()
+    {
+        const AppSettings settings;
+        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+            QStringLiteral("rename the speecher binding zero placeholder"), settings, {}, Target{},
+            settings.speech.language);
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                     dictation, QStringLiteral("Rename the speecher binding zero placeholder.")),
+                 std::optional<QString>(QStringLiteral("Rename the speecher binding zero placeholder.")));
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(
+                     dictation, QStringLiteral("Rename the SPEECHER_BINDING_0 placeholder.")),
+                 std::nullopt);
+    }
+
     void aSessionWritingProfileBeatsTheAppOverride()
     {
         AppSettings settings;

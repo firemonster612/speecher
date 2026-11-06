@@ -251,6 +251,23 @@ private val BLANK_EDGES = Regex("^\\s*\\n|\\s+$")
 private val INDEX_WORDS =
     setOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
+/** The placeholder-like runs in [text], exact or reworded, in lower case. */
+private fun rewordedPlaceholders(text: String): Set<String> =
+    REWORDED_PLACEHOLDER.findAll(text).mapTo(mutableSetOf()) { it.value.lowercase() }
+
+/** The index of each "speecher binding <index>" in [text]'s words, such as "0" or "zero". */
+private fun spokenPlaceholderIndexes(text: String): Set<String> {
+    val words = words(text).map { it.text }
+    return words.indices
+        .drop(2)
+        .filter {
+            words[it - 2] == "speecher" &&
+                words[it - 1] == "binding" &&
+                (words[it].toIntOrNull() != null || words[it] in INDEX_WORDS)
+        }
+        .mapTo(mutableSetOf()) { words[it] }
+}
+
 /** What a dictation inserts once [replaceSpoken] has run, and what refinement gets instead. */
 class ReplacedTranscript
 internal constructor(
@@ -260,6 +277,8 @@ internal constructor(
     val refinementInput: String,
     /** Every word was a phrase, so a model has nothing to clean up. */
     val skipsRefinement: Boolean,
+    /** The transcript as heard, before the placeholders went in. */
+    private val transcript: String,
     private val placeholders: Map<String, String>,
     /** The rules left once a no-bind directive excluded some, matched again after refinement. */
     private val rules: List<Replacement>,
@@ -274,15 +293,19 @@ internal constructor(
         if (trimmed.isEmpty()) return null
         return restorePlaceholders(
             if (replacesAfterRefinement) replaceOutsidePlaceholders(trimmed) else trimmed,
+            transcript,
         )
     }
 
     /**
-     * [restore] for a revised selection. Its words are the document's, not the dictation's, so no
-     * phrase in them is replaced, as on the desktop; only the placeholders are restored.
+     * [restore] for a revision of the [selected] text. Its words are the document's, not the
+     * dictation's, so no phrase in them is replaced, as on the desktop; only the placeholders are
+     * restored.
      */
-    fun restoreEdit(revised: String): String? =
-        revised.replace(BLANK_EDGES, "").takeIf(String::isNotEmpty)?.let(::restorePlaceholders)
+    fun restoreEdit(revised: String, selected: String): String? =
+        revised.replace(BLANK_EDGES, "").takeIf(String::isNotEmpty)?.let {
+            restorePlaceholders(it, "$transcript\n$selected")
+        }
 
     /**
      * The refined text streamed so far, for the panel: complete placeholders show their text and
@@ -318,29 +341,31 @@ internal constructor(
         }
     }
 
-    private fun restorePlaceholders(refined: String): String? {
+    /**
+     * Placeholder-like text left once the known placeholders are restored is a lost or invented
+     * snippet, unless [source], what the person gave refinement before placeholders went in, holds
+     * the same text: a selected document can contain SPEECHER_BINDING_0, and a dictation can be
+     * about "speecher binding zero".
+     */
+    private fun restorePlaceholders(refined: String, source: String): String? {
         val restored = StringBuilder()
         val residue = StringBuilder()
         var cursor = 0
         for (token in EXACT_PLACEHOLDER.findAll(refined)) {
-            val replacement = placeholders[token.value] ?: return null
+            // One no phrase produced stays as written, for the checks below.
+            val replacement = placeholders[token.value] ?: continue
             restored.append(refined, cursor, token.range.first).append(replacement)
             residue.append(refined, cursor, token.range.first)
             cursor = token.range.last + 1
         }
         restored.append(refined, cursor, refined.length)
         residue.append(refined, cursor, refined.length)
-        // A placeholder the model reworded, such as "speecher binding two", is a lost snippet.
-        if ("SPEECHER_BINDING" in residue || REWORDED_PLACEHOLDER.containsMatchIn(residue))
+        val left = residue.toString()
+        if ("SPEECHER_BINDING" in left && "SPEECHER_BINDING" !in source) return null
+        if (!rewordedPlaceholders(source).containsAll(rewordedPlaceholders(left))) return null
+        if (!spokenPlaceholderIndexes(source).containsAll(spokenPlaceholderIndexes(left)))
             return null
-        val left = words(residue.toString()).map { it.text }
-        val reworded =
-            left.indices.drop(2).any {
-                left[it - 2] == "speecher" &&
-                    left[it - 1] == "binding" &&
-                    (left[it].toIntOrNull() != null || left[it] in INDEX_WORDS)
-            }
-        return if (reworded) null else restored.toString()
+        return restored.toString()
     }
 }
 
@@ -357,6 +382,7 @@ fun replaceSpoken(transcript: String, rules: List<Replacement>): ReplacedTranscr
         text = replaceMatches(transcript, matches) { _, match -> match.rule.text },
         refinementInput = replaceMatches(transcript, matches) { index, _ -> placeholder(index) },
         skipsRefinement = matches.isNotEmpty() && coversEveryWord(transcript, matches),
+        transcript = transcript,
         placeholders =
             matches.withIndex().associate { (index, match) ->
                 placeholder(index) to match.rule.text

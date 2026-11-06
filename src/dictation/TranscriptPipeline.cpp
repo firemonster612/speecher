@@ -230,6 +230,9 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         ? target.selectedText
         : result.bindingResult.boundText;
     result.refinementInput = result.bindingResult.placeholderText;
+    result.refinementSource = result.editsSelection
+        ? rawTranscript + QLatin1Char('\n') + target.selectedText
+        : rawTranscript;
     if (result.editsSelection) {
         result.allowPostRefinementBindings = false;
     }
@@ -290,7 +293,8 @@ std::optional<QString> TranscriptPipeline::restoreRefinedResult(
         : refined;
     const BindingRestoreResult restored = BindingProcessor::restorePlaceholders(
         postBound,
-        pipeline.bindingResult.placeholders);
+        pipeline.bindingResult.placeholders,
+        pipeline.refinementSource);
     return restored.ok ? std::optional<QString>(restored.text) : std::nullopt;
 }
 

@@ -32,6 +32,9 @@ struct TranscriptPipelineResult {
     RefinementContext refinementContext;
     QString deliveryFallback;
     QString refinementInput;
+    // What the user gave refinement before placeholders went in: the raw
+    // transcript, then for a selection edit the selected text.
+    QString refinementSource;
     bool allowPostRefinementBindings = true;
     bool editsSelection = false;
 };

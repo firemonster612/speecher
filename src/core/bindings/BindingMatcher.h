@@ -20,7 +20,8 @@ public:
     static BindingProcessingResult process(const QString &transcript, const QList<BindingRule> &rules);
     static QString applyOutsidePlaceholders(const QString &text, const QList<BindingRule> &rules);
     static BindingRestoreResult restorePlaceholders(const QString &refinedText,
-                                                    const QList<BindingPlaceholder> &placeholders);
+                                                    const QList<BindingPlaceholder> &placeholders,
+                                                    const QString &sourceText);
     static QHash<QString, QString> replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders);
     static QString restorePlaceholdersForPreview(const QString &streamedText,
                                                  const QHash<QString, QString> &replacements);

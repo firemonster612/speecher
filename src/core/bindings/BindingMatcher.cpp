@@ -130,6 +130,28 @@ const QRegularExpression &rewordedPlaceholderRegex()
     return regex;
 }
 
+// The placeholder-like runs in text, exact or reworded, in lower case.
+QSet<QString> rewordedPlaceholders(const QString &text)
+{
+    QSet<QString> found;
+    QRegularExpressionMatchIterator iterator = rewordedPlaceholderRegex().globalMatch(text);
+    while (iterator.hasNext()) found.insert(iterator.next().captured(0).toLower());
+    return found;
+}
+
+// The index of each "speecher binding <index>" in text's words, such as
+// "0" or "zero".
+QSet<QString> spokenPlaceholderIndexes(const QString &text)
+{
+    const QStringList tokens = BindingMatcher::normalizedTokens(text);
+    QSet<QString> indexes;
+    for (qsizetype index = 2; index < tokens.size(); ++index) {
+        if (tokens.at(index - 2) == QStringLiteral("speecher") && tokens.at(index - 1) == QStringLiteral("binding")
+            && isPlaceholderIndexToken(tokens.at(index))) indexes.insert(tokens.at(index));
+    }
+    return indexes;
+}
+
 } // namespace
 
 QStringList BindingMatcher::normalizedTokens(const QString &text)
@@ -214,7 +236,14 @@ QString BindingMatcher::applyOutsidePlaceholders(const QString &text, const QLis
     return output;
 }
 
-BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedText, const QList<BindingPlaceholder> &placeholders)
+// Placeholder-like text left once the known placeholders are restored is a
+// lost or invented snippet, unless sourceText, what the user gave refinement
+// before placeholders went in, holds the same text: a selected document can
+// contain SPEECHER_BINDING_0, and a dictation can be about "speecher binding
+// zero".
+BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedText,
+                                                         const QList<BindingPlaceholder> &placeholders,
+                                                         const QString &sourceText)
 {
     const QHash<QString, QString> replacementByPlaceholder = replacementsByPlaceholder(placeholders);
     const QRegularExpression &exactPlaceholder = exactPlaceholderRegex();
@@ -226,7 +255,8 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
         const QRegularExpressionMatch match = iterator.next();
         const QString placeholder = match.captured(0);
         const auto replacement = replacementByPlaceholder.constFind(placeholder);
-        if (replacement == replacementByPlaceholder.constEnd()) return {false, {}};
+        // One no binding produced stays as written, for the checks below.
+        if (replacement == replacementByPlaceholder.constEnd()) continue;
         const qsizetype start = match.capturedStart(0);
         const qsizetype end = match.capturedEnd(0);
         restored += refinedText.mid(cursor, start - cursor);
@@ -236,12 +266,10 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
     }
     restored += refinedText.mid(cursor);
     residue += refinedText.mid(cursor);
-    if (residue.contains(QStringLiteral("SPEECHER_BINDING"), Qt::CaseSensitive)
-        || residue.contains(rewordedPlaceholderRegex())) return {false, {}};
-    const QStringList residueTokens = normalizedTokens(residue);
-    for (int index = 0; index + 2 < residueTokens.size(); ++index) {
-        if (residueTokens.at(index) == QStringLiteral("speecher") && residueTokens.at(index + 1) == QStringLiteral("binding") && isPlaceholderIndexToken(residueTokens.at(index + 2))) return {false, {}};
-    }
+    const QString prefix = QStringLiteral("SPEECHER_BINDING");
+    if (residue.contains(prefix, Qt::CaseSensitive) && !sourceText.contains(prefix, Qt::CaseSensitive)) return {false, {}};
+    if (!rewordedPlaceholders(sourceText).contains(rewordedPlaceholders(residue))) return {false, {}};
+    if (!spokenPlaceholderIndexes(sourceText).contains(spokenPlaceholderIndexes(residue))) return {false, {}};
     return {true, restored};
 }
 
