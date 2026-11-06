@@ -235,8 +235,12 @@ private val EXACT_PLACEHOLDER = Regex("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(
 
 private val PLACEHOLDER = Regex("SPEECHER_BINDING_[0-9]+")
 
-/** Each run of word characters holding SPEECHER_BINDING as written. */
-private val EXACT_PLACEHOLDER_RUN = Regex("[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*")
+/**
+ * Each run of word characters holding SPEECHER_BINDING as written. Both runs are anchored at a
+ * word's start: without it each position inside a long word would rescan the rest of it.
+ */
+private val EXACT_PLACEHOLDER_RUN =
+    Regex("(?<![A-Za-z0-9_])[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*")
 
 /**
  * A placeholder the model reworded, with the word characters around it: any case, with or without
@@ -244,7 +248,7 @@ private val EXACT_PLACEHOLDER_RUN = Regex("[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0
  */
 private val REWORDED_PLACEHOLDER_RUN =
     Regex(
-        "[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*",
+        "(?<![A-Za-z0-9_])[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*",
         RegexOption.IGNORE_CASE,
     )
 

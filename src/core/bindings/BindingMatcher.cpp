@@ -128,9 +128,11 @@ const QRegularExpression &exactPlaceholderRegex()
 // lower case.
 QSet<QString> placeholderLikeRuns(const QString &text)
 {
-    static const QRegularExpression exact(QStringLiteral("[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*"));
+    // Anchored at a word's start: without it each position inside a long
+    // word would rescan the rest of it.
+    static const QRegularExpression exact(QStringLiteral("(?<![A-Za-z0-9_])[A-Za-z0-9_]*SPEECHER_BINDING[A-Za-z0-9_]*"));
     static const QRegularExpression reworded(
-        QStringLiteral("[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*"),
+        QStringLiteral("(?<![A-Za-z0-9_])[A-Za-z0-9_]*speecher[\\s_-]*binding[\\s_-]*[0-9]+[A-Za-z0-9_]*"),
         QRegularExpression::CaseInsensitiveOption);
     QSet<QString> runs;
     for (QRegularExpressionMatchIterator it = exact.globalMatch(text); it.hasNext();) {
