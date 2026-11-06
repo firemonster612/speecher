@@ -179,21 +179,45 @@ CGWindowID singleOwnedWindow(pid_t processId)
     return result;
 }
 
-QString focusedWindowTitle(pid_t processId)
+// The app's focused AX window, owned by the caller, or null.
+AXUIElementRef copyFocusedWindow(pid_t processId)
 {
     if (!AXIsProcessTrusted()) {
-        return {};
+        return nullptr;
     }
     AXUIElementRef application = AXUIElementCreateApplication(processId);
     if (!application) {
-        return {};
+        return nullptr;
     }
     AXUIElementRef window = copyElementAttribute(application, kAXFocusedWindowAttribute);
+    CFRelease(application);
+    return window;
+}
+
+// Whether the app's focused window is still window. A window the app could not
+// name, then or now, counts as the same: Chrome answers for its windows before
+// its tree is built, and a failed query mid-build is no window change.
+bool stillInWindow(qint64 processId, const void *window)
+{
+    if (!window) {
+        return true;
+    }
+    AXUIElementRef current = copyFocusedWindow(static_cast<pid_t>(processId));
+    if (!current) {
+        return true;
+    }
+    const bool same = CFEqual(current, static_cast<AXUIElementRef>(window));
+    CFRelease(current);
+    return same;
+}
+
+QString focusedWindowTitle(pid_t processId)
+{
+    AXUIElementRef window = copyFocusedWindow(processId);
     const QString title = stringAttribute(window, kAXTitleAttribute);
     if (window) {
         CFRelease(window);
     }
-    CFRelease(application);
     return title;
 }
 
@@ -333,25 +357,32 @@ void MacTargetProvider::capture(QObject *context, std::function<void(const Targe
         done(target);
         return;
     }
-    lookAgain(context, target, 0, std::move(done));
+    const std::shared_ptr<const void> window(copyFocusedWindow(static_cast<pid_t>(target.processId)),
+                                             [](const void *window) {
+                                                 if (window) CFRelease(static_cast<AXUIElementRef>(window));
+                                             });
+    lookAgain(context, target, 0, window, std::move(done));
 }
 
 // Answers with the first look that reads the control's text, or the last.
-// Once another app comes to the front, it answers with what it had.
+// Once another app or window comes to the front, it answers with what it had.
 void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
-                                  std::function<void(const Target &)> done)
+                                  std::shared_ptr<const void> window, std::function<void(const Target &)> done)
 {
     const quint64 capture = m_captures;
     const int wait = accessibilityTreeLooksMs[look] - (look > 0 ? accessibilityTreeLooksMs[look - 1] : 0);
-    QTimer::singleShot(wait, this, [this, capture, target, context, look, done = std::move(done)] {
+    QTimer::singleShot(wait, this, [this, capture, target, context, look, window, done = std::move(done)] {
         if (!context) {
             return;
         }
         // A later capture tracks its own control, which another look here
-        // would replace. Only the app is compared: until Chrome builds its
-        // tree there is no focused control to compare, and the built tree
-        // may answer with a different element for the same control.
-        if (m_captures != capture || !isFrontmost(target.processId)) {
+        // would replace. The app and its window are compared, not the
+        // control: until Chrome builds its tree there is no focused control
+        // to compare, and the built tree may answer with a different element
+        // for the same control. Another control in the same window within
+        // the looks is taken as the same.
+        if (m_captures != capture || !isFrontmost(target.processId)
+            || !stillInWindow(target.processId, window.get())) {
             done(target);
             return;
         }
@@ -360,7 +391,7 @@ void MacTargetProvider::lookAgain(QPointer<QObject> context, const Target &targe
             done(again);
             return;
         }
-        lookAgain(context, again, look + 1, done);
+        lookAgain(context, again, look + 1, window, done);
     });
 }
 

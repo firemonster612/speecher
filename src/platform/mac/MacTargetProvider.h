@@ -45,8 +45,10 @@ public:
 private:
     Target captureNow();
     bool requestAccessibilityTree(qint64 processId);
+    // window is the AX window the dictation started in, null when the app
+    // had none to give; the looks stay with it.
     void lookAgain(QPointer<QObject> context, const Target &target, std::size_t look,
-                   std::function<void(const Target &)> done);
+                   std::shared_ptr<const void> window, std::function<void(const Target &)> done);
     void releaseFocusedElement();
     void observeCorrections(const CorrectionWindow &window);
 

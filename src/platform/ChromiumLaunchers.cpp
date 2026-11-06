@@ -11,6 +11,10 @@
 #include <QStandardPaths>
 
 #include <algorithm>
+#include <cerrno>
+
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace speecher {
 namespace {
@@ -117,7 +121,7 @@ Launch launchOf(const QList<ExecArgument> &arguments)
             } else if (options && (argument == QLatin1String("-u") || argument == QLatin1String("--unset"))) {
                 ++i;
             } else if (argument.startsWith(QLatin1String("PATH="))) {
-                launch.searchPath = argument.mid(5).split(QLatin1Char(':'), Qt::SkipEmptyParts);
+                launch.searchPath = argument.mid(5).split(QLatin1Char(':'));
             } else if (!(options && argument.startsWith(QLatin1Char('-')))
                        && !argument.contains(QLatin1Char('='))) {
                 break;
@@ -261,6 +265,19 @@ QStringList desktopEntries(const QDir &directory)
     return directory.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
 }
 
+// Whether the directory at path may hold entries that can't be listed: it
+// exists but can't be read, or permissions hide whether it exists at all. A
+// directory known to be missing holds none.
+bool hidesEntries(const QString &path)
+{
+    const QByteArray name = QFile::encodeName(path);
+    struct stat info;
+    if (::stat(name.constData(), &info) != 0) {
+        return errno != ENOENT && errno != ENOTDIR;
+    }
+    return S_ISDIR(info.st_mode) && ::access(name.constData(), R_OK | X_OK) != 0;
+}
+
 } // namespace
 
 bool launchesChromium(const QString &execLine)
@@ -279,9 +296,16 @@ bool launchesChromium(const QString &execLine)
     }
     // As exec has it, a program named with a slash is a path, here from the
     // directory env -C gives, and one without is looked up in PATH.
+    // A relative PATH entry is relative to that directory too, and an empty
+    // one is that directory itself.
+    const QDir directory(launch.directory);
+    QStringList searchPath;
+    for (const QString &entry : launch.searchPath) {
+        searchPath << directory.absoluteFilePath(entry.isEmpty() ? QStringLiteral(".") : entry);
+    }
     const QString path = program.contains(QLatin1Char('/'))
-        ? QDir(launch.directory).absoluteFilePath(program)
-        : QStandardPaths::findExecutable(program, launch.searchPath);
+        ? directory.absoluteFilePath(program)
+        : QStandardPaths::findExecutable(program, searchPath);
     const QString resolved = QFileInfo(path).canonicalFilePath();
     return !resolved.isEmpty() && holdsChromium(QFileInfo(resolved).absoluteDir());
 }
@@ -344,7 +368,7 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
         if (applications == userApplications) {
             continue;
         }
-        if (applications.exists() && !QFileInfo(applications.path()).isReadable()) {
+        if (hidesEntries(applications.path())) {
             listedAll = false;
         }
         for (const QString &name : desktopEntries(applications)) {
@@ -361,8 +385,10 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
             const QString target = userApplications.filePath(name);
             // A copy of an entry that no longer starts a Chromium app, or is
             // no longer a desktop entry, would go on standing in for it.
+            // Not while an unlisted directory may hold the entry this one
+            // stands behind.
             if (copy.isEmpty()) {
-                if (!removeCopy(target)) {
+                if (listedAll && !removeCopy(target)) {
                     return false;
                 }
                 continue;

@@ -2718,6 +2718,10 @@ private slots:
                                  + QStringLiteral(" ./chrome %U")));
         QVERIFY(launchesChromium(QStringLiteral("env PATH=/nowhere:") + root.filePath(QStringLiteral("opt/chrome"))
                                  + QStringLiteral(" chrome %U")));
+        // A relative PATH entry, as exec reads it, is relative to where env
+        // -C starts the program.
+        QVERIFY(launchesChromium(QStringLiteral("env -C ") + root.filePath(QStringLiteral("opt"))
+                                 + QStringLiteral(" PATH=chrome chrome %U")));
     }
 
     void accessibilityFlagGoesBeforeFieldCodes()
@@ -2899,11 +2903,30 @@ private slots:
         QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
         const QString applications = system + QStringLiteral("/applications");
         QVERIFY(QFile::setPermissions(applications, QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther));
-        const auto restore = qScopeGuard([&] {
+        auto restore = qScopeGuard([&] {
             QFile::setPermissions(applications, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         });
 
         QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+        QVERIFY(QFile::exists(home + QStringLiteral("/applications/chromium.desktop")));
+        restore.dismiss();
+        QVERIFY(QFile::setPermissions(applications, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+
+        // A data directory that can't be searched hides its applications
+        // directory as surely as one that can't be listed.
+        QVERIFY(QFile::setPermissions(system, QFile::ReadOwner));
+        const auto restoreSystem = qScopeGuard([&] {
+            QFile::setPermissions(system, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+        QVERIFY(QFile::exists(home + QStringLiteral("/applications/chromium.desktop")));
+
+        // Nor does a same-named entry it shadows, which no longer starts
+        // Chromium, stand in for the hidden one.
+        const QString lower = root.filePath(QStringLiteral("lower"));
+        QVERIFY(writeFixtureFile(lower + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Firefox\nExec=firefox %U\n"));
+        QVERIFY2(writeAccessibleLaunchers({home, system, lower}, &error), qPrintable(error));
         QVERIFY(QFile::exists(home + QStringLiteral("/applications/chromium.desktop")));
     }
 
