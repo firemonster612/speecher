@@ -55,6 +55,29 @@ class ReplacementsTest {
     }
 
     @Test
+    fun `a placeholder no phrase produced is refused`() {
+        val replaced = replaceSpoken("send it", listOf(email))
+        assertEquals("Send Alex.", replaced.restore("Send Alex."))
+        assertNull(replaced.restore("Send SPEECHER_BINDING_0."))
+    }
+
+    @Test
+    fun `a glued placeholder is refused`() {
+        val replaced = replaceSpoken("send my email", listOf(email))
+        assertNull(replaced.restore("Send speecherbinding0."))
+        assertNull(replaced.restore("Send Speecher Binding0."))
+    }
+
+    @Test
+    fun `a revised selection keeps its first line's indentation`() {
+        assertEquals(
+            "\t    return value;",
+            replaceSpoken("rename x to value", emptyList())
+                .restoreEdit("\n \n\t    return value;\n  \n"),
+        )
+    }
+
+    @Test
     fun `the preview shows each placeholder's text and hides one still streaming in`() {
         val replaced = replaceSpoken("send my email", listOf(email))
         assertEquals("Send efox@example.com now", replaced.preview("Send SPEECHER_BINDING_0 now"))

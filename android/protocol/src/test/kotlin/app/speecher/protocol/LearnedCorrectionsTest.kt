@@ -202,15 +202,31 @@ class LearnedCorrectionsTest {
     fun `corrections replace after the person's own rules, this app's first`() {
         val rules = listOf(Replacement("cute", "user choice"))
         val spoken = "cute uses post grass and open ai on get hub"
+        fun inApp(applicationId: String) =
+            withLearnedCorrections(rules, learned, applicationId, emptyList(), WritingProfile.Other)
         assertEquals(
             "user choice uses Postgres and OpenAI on get hub",
-            replaceSpoken(spoken, withLearnedCorrections(rules, learned, "ORG.KDE.KATE")).text,
+            replaceSpoken(spoken, inApp("ORG.KDE.KATE")).text,
         )
         assertEquals(
             "user choice uses global choice and OpenAI on get hub",
-            replaceSpoken(spoken, withLearnedCorrections(rules, learned, "org.mozilla.firefox"))
-                .text,
+            replaceSpoken(spoken, inApp("org.mozilla.firefox")).text,
         )
+    }
+
+    @Test
+    fun `a correction to a word limited to other profiles does not replace`() {
+        val vocabulary =
+            listOf(VocabularyWord("PR", "Pull request.", setOf(WritingProfile.AiCoding)))
+        val corrections = listOf(LearnedCorrection("1", "pee are", "pr", "", 1, 0.98, true, 1, 1))
+        fun replaced(profile: WritingProfile) =
+            replaceSpoken(
+                    "pee are",
+                    withLearnedCorrections(emptyList(), corrections, "", vocabulary, profile),
+                )
+                .text
+        assertEquals("pee are", replaced(WritingProfile.Work))
+        assertEquals("pr", replaced(WritingProfile.AiCoding))
     }
 
     @Test

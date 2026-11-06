@@ -119,10 +119,7 @@ fun refinementVocabulary(
     val learned =
         corrections
             .map { it.copy(corrected = it.corrected.simplified()) }
-            .filter { correction ->
-                correction.enabled &&
-                    words.none { sameTerm(it.term, correction.corrected) && !it.appliesTo(profile) }
-            }
+            .filter { it.enabled && !vocabularyTermExcluded(words, it.corrected, profile) }
             .map { VocabularyWord(it.corrected, source = "learned") }
     val kept = mutableListOf<VocabularyWord>()
     for (word in learned + words.filter { it.appliesTo(profile) }) {
@@ -133,6 +130,17 @@ fun refinementVocabulary(
     }
     return kept
 }
+
+/**
+ * Whether [term] is one of the [normalized][normalizedVocabulary] [words] limited to profiles other
+ * than [profile], so a correction that writes it stays out with it. The desktop's
+ * vocabularyTermExcluded.
+ */
+internal fun vocabularyTermExcluded(
+    words: List<VocabularyWord>,
+    term: String,
+    profile: WritingProfile,
+): Boolean = words.any { sameTerm(it.term, term.simplified()) && !it.appliesTo(profile) }
 
 /**
  * Whether a dictation under [profile] uses this word: it is limited to no profile or to that one.

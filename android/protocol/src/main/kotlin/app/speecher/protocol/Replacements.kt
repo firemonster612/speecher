@@ -98,19 +98,26 @@ fun withVariablesFilled(rules: List<Replacement>, date: String, time: String): L
 /**
  * [rules], the person's own, then each enabled correction as a replacement: those learned in the
  * app [applicationId] first, then those for every app. A phrase already claimed stays with its
- * rule. A correction's text goes in as typed, braces and all, so fill [rules]' variables first. The
- * desktop's activeBindings.
+ * rule, and a correction that writes a [vocabulary] word limited to profiles other than [profile]
+ * stays out with it. A correction's text goes in as typed, braces and all, so fill [rules]'
+ * variables first. The desktop's activeBindings.
  */
 fun withLearnedCorrections(
     rules: List<Replacement>,
     corrections: List<LearnedCorrection>,
     applicationId: String,
+    vocabulary: List<VocabularyWord>,
+    profile: WritingProfile,
 ): List<Replacement> {
     val claimed = rules.mapTo(mutableSetOf()) { normalizedPhrase(it.phrase) }
+    val words = normalizedVocabulary(vocabulary)
+    val usable = corrections.filter {
+        it.enabled && !vocabularyTermExcluded(words, it.corrected, profile)
+    }
     val learned =
-        corrections.filter {
-            it.enabled && it.applicationId.isNotEmpty() && sameTerm(it.applicationId, applicationId)
-        } + corrections.filter { it.enabled && it.applicationId.isEmpty() }
+        usable.filter {
+            it.applicationId.isNotEmpty() && sameTerm(it.applicationId, applicationId)
+        } + usable.filter { it.applicationId.isEmpty() }
     return rules +
         learned
             .filter {
@@ -228,6 +235,19 @@ private val EXACT_PLACEHOLDER = Regex("(?<![A-Za-z0-9_])SPEECHER_BINDING_[0-9]+(
 
 private val PLACEHOLDER = Regex("SPEECHER_BINDING_[0-9]+")
 
+/**
+ * A placeholder the model reworded: any case, with or without separators, such as
+ * "speecherbinding0" or "Speecher Binding0".
+ */
+private val REWORDED_PLACEHOLDER =
+    Regex("speecher[\\s_-]*binding[\\s_-]*[0-9]+", RegexOption.IGNORE_CASE)
+
+/**
+ * The blank lines before a revised selection and the whitespace after it. Its first line keeps its
+ * indentation, which in code or a nested list is part of the text.
+ */
+private val BLANK_EDGES = Regex("^\\s*\\n|\\s+$")
+
 private val INDEX_WORDS =
     setOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
@@ -262,7 +282,7 @@ internal constructor(
      * phrase in them is replaced, as on the desktop; only the placeholders are restored.
      */
     fun restoreEdit(revised: String): String? =
-        revised.trim().takeIf(String::isNotEmpty)?.let(::restorePlaceholders)
+        revised.replace(BLANK_EDGES, "").takeIf(String::isNotEmpty)?.let(::restorePlaceholders)
 
     /**
      * The refined text streamed so far, for the panel: complete placeholders show their text and
@@ -299,7 +319,6 @@ internal constructor(
     }
 
     private fun restorePlaceholders(refined: String): String? {
-        if (placeholders.isEmpty()) return refined
         val restored = StringBuilder()
         val residue = StringBuilder()
         var cursor = 0
@@ -312,7 +331,8 @@ internal constructor(
         restored.append(refined, cursor, refined.length)
         residue.append(refined, cursor, refined.length)
         // A placeholder the model reworded, such as "speecher binding two", is a lost snippet.
-        if ("SPEECHER_BINDING" in residue) return null
+        if ("SPEECHER_BINDING" in residue || REWORDED_PLACEHOLDER.containsMatchIn(residue))
+            return null
         val left = words(residue.toString()).map { it.text }
         val reworded =
             left.indices.drop(2).any {

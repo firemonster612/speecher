@@ -130,6 +130,8 @@ fun createDictationEngine(
             ),
             settings.learnedCorrections,
             session.target?.packageName.orEmpty(),
+            settings.vocabulary,
+            writingProfile(settings, session.target),
         )
     }
     // The sign-in each account's latest request went out with, the one a rejection ends.
