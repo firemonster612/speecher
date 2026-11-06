@@ -2708,6 +2708,8 @@ private slots:
             "/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding "
             "com.brave.Browser @@u %U @@")));
         QVERIFY(!launchesChromium(QStringLiteral("/usr/bin/flatpak run --branch=stable org.kde.kate %U")));
+        QVERIFY(launchesChromium(QStringLiteral("env -u GTK_THEME BAMF_DESKTOP_FILE_HINT=/x.desktop ")
+                                 + root.filePath(QStringLiteral("bin/google-chrome")) + QStringLiteral(" %U")));
     }
 
     void accessibilityFlagGoesBeforeFieldCodes()
@@ -2717,7 +2719,11 @@ private slots:
         QCOMPARE(withAccessibilityFlag(QStringLiteral("/usr/share/code/code --new-window")),
                  QStringLiteral("/usr/share/code/code --new-window --force-renderer-accessibility"));
         QCOMPARE(withAccessibilityFlag(QStringLiteral("\"/opt/My App/app\" --open-url -- %u")),
-                 QStringLiteral("\"/opt/My App/app\" --open-url -- --force-renderer-accessibility %u"));
+                 QStringLiteral("\"/opt/My App/app\" --open-url --force-renderer-accessibility -- %u"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("/opt/app/app --label %% %U")),
+                 QStringLiteral("/opt/app/app --label %% --force-renderer-accessibility %U"));
+        QCOMPARE(withAccessibilityFlag(QStringLiteral("env -- FOO=\"a b\"  chromium %U")),
+                 QStringLiteral("env -- FOO=\"a b\"  chromium --force-renderer-accessibility %U"));
         QCOMPARE(withAccessibilityFlag(QStringLiteral(
                      "/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding "
                      "com.brave.Browser @@u %U @@")),
@@ -2740,7 +2746,8 @@ private slots:
         const QString system = root.filePath(QStringLiteral("system"));
         QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium-browser.desktop"),
                                  "[Desktop Entry]\nName=Chromium\nExec=chromium-browser %U\n\n"
-                                 "[Desktop Action new-window]\nName=New Window\nExec=chromium-browser --new-window\n"));
+                                 "[Desktop Action new-window]\nName=New Window\nExec=chromium-browser --new-window\n\n"
+                                 "[Desktop Action help]\nName=Help\nExec=xdg-open https://example.org/help\n"));
         QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
                                  "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
         QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/org.chromium.Chromium.desktop"),
@@ -2756,10 +2763,11 @@ private slots:
         const QString copy = home + QStringLiteral("/applications/chromium-browser.desktop");
         QCOMPARE(readFixtureFile(copy),
                  QByteArray("[Desktop Entry]\n"
-                            "X-Speecher-Accessibility=6ebeb5bef46593e295ecc9bd4f897fdaeeadf64e8eeea682cf24e0c500f0032a\n"
+                            "X-Speecher-Accessibility=ac711947152403ac97147b933d03a8abdc1d3f8982d3ffaf14bf17e2f96b7a9b\n"
                             "Name=Chromium\nExec=chromium-browser --force-renderer-accessibility %U\n\n"
                             "[Desktop Action new-window]\nName=New Window\n"
-                            "Exec=chromium-browser --new-window --force-renderer-accessibility\n"));
+                            "Exec=chromium-browser --new-window --force-renderer-accessibility\n\n"
+                            "[Desktop Action help]\nName=Help\nExec=xdg-open https://example.org/help\n"));
         QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/org.chromium.Chromium.desktop")), usersOwn);
         QVERIFY(!QFile::exists(home + QStringLiteral("/applications/org.kde.kate.desktop")));
 
@@ -2774,6 +2782,70 @@ private slots:
         QVERIFY(!QFile::exists(copy));
         QVERIFY(QFile::exists(changed));
         QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/org.chromium.Chromium.desktop")), usersOwn);
+    }
+
+    // A launcher in the user's applications that is a symlink is theirs, even
+    // one to a copy of Speecher's or to nothing: never written through or
+    // deleted.
+    void accessibleLaunchersLeaveSymlinksAlone()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString other = root.filePath(QStringLiteral("other"));
+        const QString system = root.filePath(QStringLiteral("system"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium-browser.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium-browser %U\n"));
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({other, system}, &error), qPrintable(error));
+        const QString otherCopy = other + QStringLiteral("/applications/chromium.desktop");
+        const QByteArray otherContents = readFixtureFile(otherCopy);
+        const QString link = home + QStringLiteral("/applications/chromium.desktop");
+        const QString dangling = home + QStringLiteral("/applications/chromium-browser.desktop");
+        QVERIFY(QDir().mkpath(home + QStringLiteral("/applications")));
+        QVERIFY(QFile::link(otherCopy, link));
+        QVERIFY(QFile::link(root.filePath(QStringLiteral("missing.desktop")), dangling));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium Web\nExec=chromium %U\n"));
+
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+        DesktopIntegrationRemoval removal;
+        removeAccessibleLaunchers(home, removal);
+
+        QVERIFY(QFileInfo(link).isSymLink());
+        QVERIFY(QFileInfo(dangling).isSymLink());
+        QCOMPARE(readFixtureFile(otherCopy), otherContents);
+        QVERIFY(!QFile::exists(root.filePath(QStringLiteral("missing.desktop"))));
+        QCOMPARE(removal.absent, QStringList{QStringLiteral("Chromium app launchers")});
+    }
+
+    // Written again, Speecher's copies follow their entries, and a copy whose
+    // entry is gone goes too; the user's own launchers stay.
+    void accessibleLaunchersFollowTheirEntries()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString system = root.filePath(QStringLiteral("system"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium %U\n"));
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium-browser.desktop"),
+                                 "[Desktop Entry]\nName=Chromium\nExec=chromium-browser %U\n"));
+        const QByteArray usersOwn = "[Desktop Entry]\nName=Mine\nExec=chromium --app=https://example.org\n";
+        QVERIFY(writeFixtureFile(home + QStringLiteral("/applications/mine.desktop"), usersOwn));
+        QString error;
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+
+        QVERIFY(writeFixtureFile(system + QStringLiteral("/applications/chromium.desktop"),
+                                 "[Desktop Entry]\nName=Chromium Web\nExec=chromium %U\n"));
+        QVERIFY(QFile::remove(system + QStringLiteral("/applications/chromium-browser.desktop")));
+        QVERIFY2(writeAccessibleLaunchers({home, system}, &error), qPrintable(error));
+
+        QVERIFY(readFixtureFile(home + QStringLiteral("/applications/chromium.desktop")).contains("Name=Chromium Web\n"));
+        QVERIFY(!QFile::exists(home + QStringLiteral("/applications/chromium-browser.desktop")));
+        QCOMPARE(readFixtureFile(home + QStringLiteral("/applications/mine.desktop")), usersOwn);
     }
 
     // Removal takes back the session-wide accessibility switch Speecher

@@ -81,10 +81,60 @@ QList<ExecArgument> execArguments(const QString &execLine)
 }
 
 // A field code such as %U, or Flatpak's file-forwarding marks around one.
+// %% is a literal percent sign.
 bool isFieldCode(const QString &argument)
 {
-    return (argument.size() == 2 && argument.startsWith(QLatin1Char('%')))
+    return (argument.size() == 2 && argument.startsWith(QLatin1Char('%')) && argument != QLatin1String("%%"))
         || argument.startsWith(QStringLiteral("@@"));
+}
+
+// What an Exec line starts, as indexes into its arguments, or -1: the
+// program, past an env prefix's options and assignments, and when that
+// program is flatpak, the app id it runs.
+struct Launch {
+    qsizetype program = -1;
+    qsizetype flatpakApp = -1;
+};
+
+Launch launchOf(const QList<ExecArgument> &arguments)
+{
+    const auto named = [](const ExecArgument &argument, QLatin1String name) {
+        return QFileInfo(argument.text).fileName() == name;
+    };
+    // env's options that take the next argument as their value.
+    static const QSet<QString> envValueOptions{QStringLiteral("-u"), QStringLiteral("--unset"),
+                                               QStringLiteral("-C"), QStringLiteral("--chdir")};
+    Launch launch;
+    qsizetype i = 0;
+    if (!arguments.isEmpty() && named(arguments.first(), QLatin1String("env"))) {
+        bool options = true;
+        for (++i; i < arguments.size(); ++i) {
+            const QString &argument = arguments.at(i).text;
+            if (options && argument == QLatin1String("--")) {
+                options = false;
+            } else if (options && envValueOptions.contains(argument)) {
+                ++i;
+            } else if (!(options && argument.startsWith(QLatin1Char('-')))
+                       && !argument.contains(QLatin1Char('='))) {
+                break;
+            }
+        }
+    }
+    if (i >= arguments.size()) {
+        return launch;
+    }
+    launch.program = i;
+    if (named(arguments.at(i), QLatin1String("flatpak"))) {
+        const auto run = std::find_if(arguments.cbegin() + i, arguments.cend(),
+                                      [](const ExecArgument &a) { return a.text == QLatin1String("run"); });
+        const auto appId = std::find_if(run, arguments.cend(), [](const ExecArgument &a) {
+            return a.text != QLatin1String("run") && !a.text.startsWith(QLatin1Char('-'));
+        });
+        if (appId != arguments.cend()) {
+            launch.flatpakApp = appId - arguments.cbegin();
+        }
+    }
+    return launch;
 }
 
 bool holdsChromium(const QDir &directory)
@@ -94,23 +144,15 @@ bool holdsChromium(const QDir &directory)
         || directory.exists(QStringLiteral("resources/app.asar"));
 }
 
-QString firstExecLine(const QByteArray &entry)
-{
-    for (const QByteArray &line : entry.split('\n')) {
-        if (line.startsWith("Exec=")) {
-            return QString::fromUtf8(line.mid(5));
-        }
-    }
-    return {};
-}
-
 QByteArray checksum(const QByteArray &contents)
 {
     return QCryptographicHash::hash(contents, QCryptographicHash::Sha256).toHex();
 }
 
-// The entry with withAccessibilityFlag() on each Exec line and Speecher's
-// mark under its group header, or nothing when it has no such header.
+// The entry with withAccessibilityFlag() on each Exec line that starts a
+// Chromium or Electron app, the main one's or an action's, and Speecher's mark
+// under its group header; or nothing when no line starts one or it has no
+// such header.
 QByteArray accessibleCopy(const QByteArray &entry)
 {
     QList<QByteArray> lines = entry.split('\n');
@@ -118,10 +160,19 @@ QByteArray accessibleCopy(const QByteArray &entry)
     if (header < 0) {
         return {};
     }
+    bool startsChromium = false;
     for (QByteArray &line : lines) {
-        if (line.startsWith("Exec=")) {
-            line = "Exec=" + withAccessibilityFlag(QString::fromUtf8(line.mid(5))).toUtf8();
+        if (!line.startsWith("Exec=")) {
+            continue;
         }
+        const QString execLine = QString::fromUtf8(line.mid(5));
+        if (launchesChromium(execLine)) {
+            startsChromium = true;
+            line = "Exec=" + withAccessibilityFlag(execLine).toUtf8();
+        }
+    }
+    if (!startsChromium) {
+        return {};
     }
     const QByteArray copy = lines.join('\n');
     lines.insert(header + 1, markKey + checksum(copy));
@@ -149,6 +200,58 @@ QByteArray readFile(const QString &path)
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
+// Whether something, a file or a symlink, even one to nothing, is at path.
+bool occupied(const QString &path)
+{
+    const QFileInfo info(path);
+    return info.exists() || info.isSymLink();
+}
+
+// Whose the desktop entry at path is. A symlink is the user's, wherever it
+// points, so Speecher never writes through one or deletes it.
+Owner ownerOfFile(const QString &path)
+{
+    return QFileInfo(path).isSymLink() ? Owner::Someone : ownerOf(readFile(path));
+}
+
+// Writes copy to target, unless target is someone else's, including a file
+// that appears there while this runs. False, with error, when the write fails.
+bool writeCopy(const QString &target, const QByteArray &copy, QString *error)
+{
+    const auto fail = [&](const QString &reason) {
+        if (error) {
+            *error = QStringLiteral("Could not write %1: %2").arg(target, reason);
+        }
+        return false;
+    };
+    if (!occupied(target)) {
+        // NewOnly refuses, rather than replaces, a file made since the check.
+        QFile file(target);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+            return occupied(target) || fail(file.errorString());
+        }
+        if (file.write(copy) != copy.size() || !file.flush()) {
+            const QString reason = file.errorString();
+            file.remove();
+            return fail(reason);
+        }
+        return true;
+    }
+    if (ownerOfFile(target) != Owner::Speecher) {
+        return true;
+    }
+    QSaveFile file(target);
+    if (!file.open(QIODevice::WriteOnly) || file.write(copy) != copy.size()) {
+        return fail(file.errorString());
+    }
+    // Someone may have edited the copy while this one was written.
+    if (ownerOfFile(target) != Owner::Speecher) {
+        file.cancelWriting();
+        return true;
+    }
+    return file.commit() || fail(file.errorString());
+}
+
 QStringList desktopEntries(const QDir &directory)
 {
     return directory.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
@@ -159,18 +262,14 @@ QStringList desktopEntries(const QDir &directory)
 bool launchesChromium(const QString &execLine)
 {
     const QList<ExecArgument> arguments = execArguments(execLine);
-    if (arguments.isEmpty()) {
+    const Launch launch = launchOf(arguments);
+    if (launch.program < 0) {
         return false;
     }
-    const QString program = arguments.first().text;
-    if (QFileInfo(program).fileName() == QLatin1String("flatpak")) {
-        const auto run = std::find_if(arguments.cbegin(), arguments.cend(),
-                                      [](const ExecArgument &a) { return a.text == QLatin1String("run"); });
-        const auto appId = std::find_if(run, arguments.cend(), [](const ExecArgument &a) {
-            return a.text != QLatin1String("run") && !a.text.startsWith(QLatin1Char('-'));
-        });
-        return appId != arguments.cend() && chromiumFlatpaks().contains(appId->text);
+    if (launch.flatpakApp >= 0) {
+        return chromiumFlatpaks().contains(arguments.at(launch.flatpakApp).text);
     }
+    const QString program = arguments.at(launch.program).text;
     if (chromiumWrappers().contains(QFileInfo(program).fileName())) {
         return true;
     }
@@ -186,12 +285,17 @@ QString withAccessibilityFlag(const QString &execLine)
                     [](const ExecArgument &a) { return a.text == accessibilityFlag; })) {
         return execLine;
     }
-    const auto fieldCode = std::find_if(arguments.cbegin(), arguments.cend(),
-                                        [](const ExecArgument &a) { return isFieldCode(a.text); });
-    if (fieldCode == arguments.cend()) {
+    // Past what the line starts, so the flag reaches the app rather than env
+    // or flatpak, and before -- or a field code, after which come files.
+    const Launch launch = launchOf(arguments);
+    const auto end = std::find_if(arguments.cbegin() + std::max(launch.program, launch.flatpakApp) + 1,
+                                  arguments.cend(), [](const ExecArgument &a) {
+                                      return a.text == QLatin1String("--") || isFieldCode(a.text);
+                                  });
+    if (end == arguments.cend()) {
         return execLine + QLatin1Char(' ') + accessibilityFlag;
     }
-    return QString(execLine).insert(fieldCode->start, accessibilityFlag + QLatin1Char(' '));
+    return QString(execLine).insert(end->start, accessibilityFlag + QLatin1Char(' '));
 }
 
 bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
@@ -211,29 +315,36 @@ bool writeAccessibleLaunchers(const QStringList &dataDirs, QString *error)
                 continue;
             }
             seen.insert(name);
-            const QByteArray entry = readFile(applications.filePath(name));
-            if (!launchesChromium(firstExecLine(entry))) {
-                continue;
-            }
-            const QString target = userApplications.filePath(name);
-            if (QFile::exists(target) && ownerOf(readFile(target)) != Owner::Speecher) {
-                continue;
-            }
-            const QByteArray copy = accessibleCopy(entry);
+            const QByteArray copy = accessibleCopy(readFile(applications.filePath(name)));
             if (copy.isEmpty()) {
                 continue;
             }
-            QSaveFile file(target);
-            if (!QDir().mkpath(userApplications.path()) || !file.open(QIODevice::WriteOnly)
-                || file.write(copy) != copy.size() || !file.commit()) {
-                if (error) {
-                    *error = QStringLiteral("Could not write %1: %2").arg(target, file.errorString());
-                }
+            if (!QDir().mkpath(userApplications.path())
+                || !writeCopy(userApplications.filePath(name), copy, error)) {
                 return false;
             }
         }
     }
+    // A copy of an entry that is gone would keep showing an uninstalled app.
+    for (const QString &name : desktopEntries(userApplications)) {
+        const QString path = userApplications.filePath(name);
+        if (!seen.contains(name) && ownerOfFile(path) == Owner::Speecher && !QFile::remove(path)) {
+            if (error) {
+                *error = QStringLiteral("Could not delete %1").arg(path);
+            }
+            return false;
+        }
+    }
     return true;
+}
+
+bool hasAccessibleLaunchers(const QString &dataHome)
+{
+    const QDir applications(dataHome + QStringLiteral("/applications"));
+    const QStringList names = desktopEntries(applications);
+    return std::any_of(names.cbegin(), names.cend(), [&](const QString &name) {
+        return ownerOfFile(applications.filePath(name)) == Owner::Speecher;
+    });
 }
 
 void removeAccessibleLaunchers(const QString &dataHome, DesktopIntegrationRemoval &removal)
@@ -244,7 +355,7 @@ void removeAccessibleLaunchers(const QString &dataHome, DesktopIntegrationRemova
     bool foundAny = false;
     for (const QString &entryName : desktopEntries(applications)) {
         const QString path = applications.filePath(entryName);
-        switch (ownerOf(readFile(path))) {
+        switch (ownerOfFile(path)) {
         case Owner::Someone:
             break;
         case Owner::ChangedSinceSpeecher:
