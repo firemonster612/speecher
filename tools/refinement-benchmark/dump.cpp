@@ -39,6 +39,7 @@ int main()
         context.target.applicationId = sample.value("application_id").toString();
         context.target.category = appCategoryFromName(sample.value("category").toString());
         context.writingProfile = inferWritingProfile(context.target);
+        context.writingProfileName = writingProfileLabel(context.writingProfile, {});
         // A sample without text around the caret is one whose text could not be read.
         context.includeNearbyText = sample.contains("before");
         if (context.includeNearbyText) {
