@@ -780,9 +780,10 @@ private slots:
     }
 
     // What this computer lacks, the virtual keyboard and removal off Linux,
-    // is gone alike from its pages, search and setup: General's keyboard
-    // row and Remove Speecher, Pasting's keyboard row and its Virtual
-    // keyboard only choice, which leaves Paste with nothing to choose.
+    // is gone alike from its pages, search and setup: Home's keyboard check
+    // and Remove Speecher, which General says how to do instead, Pasting's
+    // keyboard row and its Virtual keyboard only choice, which leaves Paste
+    // with nothing to choose.
     void whatTheComputerLacksIsGoneFromPagesSearchAndSetup()
     {
 #ifdef Q_OS_LINUX
@@ -796,8 +797,9 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard virtualKeyboard;
         StandInSystem standIn(&controller, virtualKeyboard);
-        // General reads Insights, Pasting and setup Models, setup Audio, as
+        // The pages and setup read Dictation, Insights, Models and Audio, as
         // the host always has them.
+        QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -826,10 +828,13 @@ private slots:
             }
             return shown;
         };
-        const QHash<QString, bool> permissions = rowsShown("PermissionsPage");
-        QCOMPARE(permissions.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
-        QVERIFY(permissions.value(QStringLiteral("microphoneAccess")));
-        QCOMPARE(rowsShown("GeneralPage").value(QStringLiteral("removeSpeecher")), onLinux);
+        // Home lists every check while one fails, as the missing microphone does here.
+        const QHash<QString, bool> home = rowsShown("HomePage");
+        QCOMPARE(home.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
+        QVERIFY(home.value(QStringLiteral("microphoneAccess")));
+        const QHash<QString, bool> general = rowsShown("GeneralPage");
+        QCOMPARE(general.value(QStringLiteral("removeSpeecher")), onLinux);
+        QCOMPARE(general.value(QStringLiteral("removeSpeecherGuide")), !onLinux);
         const QHash<QString, bool> pasting = rowsShown("PastingPage");
         QCOMPARE(pasting.value(QStringLiteral("virtualKeyboard")), onLinux);
         QCOMPARE(pasting.value(QStringLiteral("outputMethod")), onLinux);
@@ -841,7 +846,7 @@ private slots:
             import Speecher.Wording
             QtObject {
                 readonly property var keyboard: Schema.search("keyboard", 50, need => System[need]).map(r => r.id)
-                readonly property var remove: Schema.search("remove", 50, need => System[need]).map(r => r.id)
+                readonly property var remove: Schema.search("remove speecher", 50, need => System[need]).map(r => r.id)
                 readonly property var pasteWith: Schema.options(Schema.row("outputMethod"), need => System[need]).map(o => o.id)
             }
         )");
@@ -850,7 +855,9 @@ private slots:
         QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboardHealth")), onLinux);
         QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboard")), onLinux);
         QCOMPARE(keyboard.contains(QStringLiteral("outputMethod")), onLinux);
-        QCOMPARE(plain(probe->property("remove")).toStringList().contains(QStringLiteral("removeSpeecher")), onLinux);
+        const QStringList remove = plain(probe->property("remove")).toStringList();
+        QCOMPARE(remove.contains(QStringLiteral("removeSpeecher")), onLinux);
+        QCOMPARE(remove.contains(QStringLiteral("removeSpeecherGuide")), !onLinux);
         const QStringList pasteWith = onLinux ? QStringList{QStringLiteral("automatic"), QStringLiteral("ydotool")}
                                               : QStringList{QStringLiteral("automatic")};
         QCOMPARE(plain(probe->property("pasteWith")).toStringList(), pasteWith);

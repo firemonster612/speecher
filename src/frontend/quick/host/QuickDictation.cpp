@@ -63,14 +63,15 @@ QString outcomeName(PopupOutcome outcome)
     return {};
 }
 
-// The page the popup's fix opens. A refused permission opens Permissions &
-// health, whose row opens the system's own settings where it has them.
+// The page the popup's fix opens. A refused permission opens the page whose
+// row shows it, which opens the system's own settings where it has them:
+// Microphone for microphone access, Pasting for accessibility.
 QString fixPage(const PopupErrorAction &fix)
 {
     switch (fix.fix) {
     case ErrorFix::SettingsPage: return fix.pageId;
-    case ErrorFix::MicrophonePermission:
-    case ErrorFix::AccessibilityPermission: return QStringLiteral("permissions");
+    case ErrorFix::MicrophonePermission: return QStringLiteral("microphone");
+    case ErrorFix::AccessibilityPermission: return QStringLiteral("pasting");
     case ErrorFix::None: break;
     }
     return {};

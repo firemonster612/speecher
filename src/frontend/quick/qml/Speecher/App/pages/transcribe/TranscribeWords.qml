@@ -74,7 +74,7 @@ QtObject {
         { id: "folder", label: "One folder…", icon: "folder" }
     ]
     function destinationHint(destination) {
-        return destination === "beside" ? "Each transcript is saved as ⟨name⟩-transcribed.txt"
+        return destination === "beside" ? "For meeting.m4a, the transcript is meeting-transcribed.txt"
              : destination === "none" ? "Copy or export from the results afterwards" : ""
     }
     // Each format with the file type its save dialog names.

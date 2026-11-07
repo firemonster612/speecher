@@ -117,7 +117,7 @@ QString resolveAccountFileName(const QString &directory,
     if (error) {
         *error = accounts.isEmpty()
             ? QStringLiteral("No CLI Proxy API %1 accounts found in %2").arg(type, directory)
-            : QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under General › Accounts").arg(type);
+            : QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one on the Accounts page").arg(type);
     }
     return {};
 }
@@ -336,7 +336,7 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
         }
         if (accounts.size() > 1) {
             return {false, {}, {},
-                    QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one under General › Accounts").arg(type)};
+                    QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one on the Accounts page").arg(type)};
         }
         resolvedFileName = accounts.first().fileName;
     }

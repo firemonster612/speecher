@@ -11,8 +11,7 @@ Page {
     id: page
     objectName: "generalPage"
     title: Schema.page("general").title
-    // Startup shows only where Speecher can start at login.
-    subtitle: System.canLaunchAtLogin ? Schema.page("general").subtitle : Schema.page("general").subtitleNoStartup
+    subtitle: Schema.page("general").subtitle
 
     property bool _phoneOpen: false
     property bool _confirmClear: false
@@ -58,15 +57,11 @@ Page {
     }
     Component.onDestruction: Phone.stop()
 
-    SubpageRows { pageId: "general" }
-
-    // Only where Speecher can start at login.
-    Reveal {
-        open: System.canLaunchAtLogin
-        Section {
-            title: Schema.row("launchAtLogin").section
-            SchemaRow { rowId: "launchAtLogin" }
-        }
+    // The switch where Speecher can start at login, else how to do it by hand.
+    Section {
+        title: Schema.row("launchAtLogin").section
+        SchemaRow { rowId: "launchAtLogin" }
+        SchemaRow { rowId: "launchAtLoginGuide" }
     }
 
     // Two short groups side by side.
@@ -173,8 +168,14 @@ Page {
     }
 
     Section {
-        visible: System.canRemove
+        title: Schema.row("runSetup").section
+        SchemaRow { rowId: "runSetup" }
+    }
+
+    // Removing Speecher where it can remove itself, else how the system does.
+    Section {
         title: Schema.row("removeSpeecher").section
+        SchemaRow { rowId: "removeSpeecherGuide" }
         SchemaRow {
             rowId: "removeSpeecher"
             Button {
@@ -208,4 +209,6 @@ Page {
             RemovalReport { inset: Theme.rowInset }
         }
     }
+
+    SubpageRows { pageId: "general" }
 }

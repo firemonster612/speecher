@@ -279,8 +279,9 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
-    // A refused microphone's fix is Permissions & health, on every platform.
-    void aMicrophonePermissionErrorOpensPermissions()
+    // A refused microphone's fix is the Microphone page, whose first row is
+    // microphone access, on every platform.
+    void aMicrophonePermissionErrorOpensTheMicrophonePage()
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
@@ -288,10 +289,10 @@ private slots:
 
         dictation.showError(QStringLiteral("Microphone access is off"), {ErrorFix::MicrophonePermission});
         QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("page")).toString(),
-                 QStringLiteral("permissions"));
+                 QStringLiteral("microphone"));
         emit dictation.errorActionRequested();
         QCOMPARE(pages.count(), 1);
-        QCOMPARE(pages.first().first().toString(), QStringLiteral("permissions"));
+        QCOMPARE(pages.first().first().toString(), QStringLiteral("microphone"));
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 

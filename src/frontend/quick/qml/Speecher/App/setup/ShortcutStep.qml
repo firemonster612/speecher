@@ -4,7 +4,7 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// The same shortcut rows as the Shortcuts page: what starts dictation, what
+// The same shortcut rows as the Dictation page: what starts dictation, what
 // pressing it does, and an optional key to throw a dictation away.
 StepPage {
     id: page
@@ -27,7 +27,7 @@ StepPage {
         }
         Reveal {
             open: !page.unsupported
-            SchemaRow { rowId: "cancelShortcut"; note: Setup.text.cancelShortcutHelp }
+            SchemaRow { rowId: "cancelShortcut"; note: Setup.text.optional + " " + spec.help }
         }
     }
 }

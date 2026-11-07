@@ -16,9 +16,9 @@ import "home/words.js" as T
 // line says so in their place. The words are home/words.js's.
 Page {
     id: page
-    // Whether the chosen speech service is signed in, for what stands in
-    // the way.
-    Component.onCompleted: ModelText.checkUnknownSignIns([Settings.values.speechProvider])
+    // Whether the speech chain's services are signed in, for whether
+    // Speecher is ready.
+    Component.onCompleted: ModelText.checkUnknownSignIns([Settings.values.speechProvider].concat(Settings.values.speechFallbackList || []))
 
     readonly property var t: T.text
     readonly property var summary: Insights.summary
@@ -99,7 +99,7 @@ Page {
             SettingRow {
                 title: Insights.state === "off" ? page.t.offTitle : page.t.emptyTitle
                 help: Insights.state === "off" ? page.t.offBody : page.t.emptyBody
-                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.go("general") }
+                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("general", "insightsEnabled") }
             }
         }
     }
@@ -290,7 +290,7 @@ Page {
                     width: parent.width
                     spacing: Theme.space2
                     Txt { text: page.t.privacyNote; variant: "small"; tone: "tertiary" }
-                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.go("general") }
+                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("general", "insightsEnabled") }
                 }
             }
         }

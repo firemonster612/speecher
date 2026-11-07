@@ -61,6 +61,11 @@ QVariantMap microphoneCheck(const PlatformComposition *platform)
 
 QVariantMap accessibilityCheck(const ApplicationController *controller)
 {
+#ifdef Q_OS_WIN
+    // UI Automation needs no permission, so there is nothing to check.
+    Q_UNUSED(controller);
+    return checkEntry(accessibilityId, "ok", "notNeeded");
+#else
     if (!controller->accessibility()->supported()) {
         return checkEntry(accessibilityId, "off", "unsupported");
     }
@@ -70,7 +75,9 @@ QVariantMap accessibilityCheck(const ApplicationController *controller)
     if (!controller->accessibility()->persistent()) {
         return checkEntry(accessibilityId, "attention", "sessionOnly", "enable");
     }
-    return checkEntry(accessibilityId, "ok", "on");
+    // Kept on by what Speecher set up, which Chromium apps join on restart.
+    return checkEntry(accessibilityId, "ok", controller->platform()->canDisablePermanentAccessibility() ? "keptOn" : "on");
+#endif
 }
 
 QVariantMap shortcutCheck(const ApplicationController *controller)
@@ -216,7 +223,9 @@ QVariantList QuickSystem::checks() const
     }
     QVariantList checks;
     for (QVariantMap check : entries) {
-        check.insert(QStringLiteral("failures"), m_failures.value(check.value(QStringLiteral("id")).toString()));
+        const QString id = check.value(QStringLiteral("id")).toString();
+        check.insert(QStringLiteral("needed"), id == microphoneId);
+        check.insert(QStringLiteral("failures"), m_failures.value(id));
         checks.append(check);
     }
     return checks;
@@ -277,6 +286,11 @@ bool QuickSystem::hasVirtualKeyboard() const
     return OutputMethod::hasVirtualKeyboard;
 }
 
+bool QuickSystem::hasGlobalShortcuts() const
+{
+    return !m_controller->globalShortcutSupportKnown() || m_controller->globalShortcutsSupported();
+}
+
 bool QuickSystem::canOpenShortcutSettings() const
 {
     return !m_controller->platform()->shortcutSettingsCommand().isEmpty();
@@ -300,6 +314,15 @@ bool QuickSystem::canLaunchAtLogin() const
 QString QuickSystem::computerName() const
 {
     return QSysInfo::machineHostName();
+}
+
+QString QuickSystem::desktop() const
+{
+#ifdef Q_OS_LINUX
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").section(QLatin1Char(':'), 0, 0).toLower();
+#else
+    return {};
+#endif
 }
 
 QVariantMap QuickSystem::check(const QString &id) const

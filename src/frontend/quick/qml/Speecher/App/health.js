@@ -17,14 +17,16 @@ var words = {
     },
     desktopAccessibility: {
         unsupported: { status: "Not available", detail: "This Speecher build does not include desktop accessibility." },
+        notNeeded: { status: "Not needed", detail: "Windows lets Speecher read and write other apps without a permission." },
         off: { status: "Off", detail: "Speecher can't tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
         sessionOnly: { status: "On for now", detail: "It turns off when you sign out, and paste rules and context with it.", fix: "Keep on" },
-        on: { status: "On", detail: "Paste rules, context and learning can see the app you are in." }
+        on: { status: "On", detail: "Paste rules, context and learning can see the app you are in." },
+        keptOn: { status: "On", detail: "Paste rules, context and learning can see the app you are in. Restart Chrome, VS Code and other Chromium apps from their launcher so Speecher can read them." }
     },
     globalShortcuts: {
         checking: { status: "Checking…", detail: "" },
-        unsupported: { status: "Not available", detail: "Your desktop gives Speecher no shortcut, so start dictation with the speecher command." },
-        notSet: { status: "Not set", detail: "Choose a shortcut in Dictation › Shortcuts." },
+        unsupported: { status: "Not available", detail: "Your desktop has no global shortcut service for apps, so Speecher can't take a key of its own. Bind the speecher command to a key instead." },
+        notSet: { status: "Not set", detail: "Choose a dictation shortcut on the Dictation page." },
         registered: { status: "Registered", detail: "Your desktop delivers the shortcut in every app." }
     },
     virtualKeyboardHealth: {
@@ -82,15 +84,12 @@ function failure(check) {
     }).join(" ");
 }
 
-// The caption over the checks: "All 4 checks pass." or "3 of 4 checks pass."
 // A check that can't pass on this desktop and has a way round, so there is
 // nothing to fix: no global shortcut, where the start command works. It is
-// said in plain ink and not counted.
+// said in plain ink.
 function settledHere(check) { return check.id === "globalShortcuts" && check.reason === "unsupported"; }
 
-function summary(checks) {
-    const counted = checks.filter(c => !settledHere(c));
-    const passing = counted.filter(c => c.state === "ok").length;
-    const said = (passing === counted.length ? "All " + counted.length : passing + " of " + counted.length) + " checks pass.";
-    return counted.length < checks.length ? said + " Global shortcuts aren't offered on this desktop." : said;
-}
+// Whether the check asks nothing of this computer: one to leave out of lists.
+function applies(check) { return check.reason !== "notNeeded"; }
+// Whether the check is as good as this computer gets.
+function passes(check) { return check.state === "ok" || settledHere(check); }

@@ -47,8 +47,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   platform's `WindowBackdrop` (Wayland's `ext_background_effect`, or KWin's
   older `org_kde_kwin_blur`; macOS's `NSVisualEffectView`; Windows 11's Mica)
   to blur behind a window.
-- `System.checks` are `{id, state, reason, fix, failures}`; `Health`
+- `System.checks` are `{id, state, reason, fix, needed, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
+  Each check has a schema row of the same id, which places it and names it.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
   follow the checks. `System.fix(id)` runs the fix (`fixFromSetup` in the
   setup assistant). The virtual keyboard turns on only after its typing test
@@ -399,14 +400,15 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- The sidebar is one list with no headings: seven top-level pages (Home,
+- The sidebar is one list with no headings: eight top-level pages (Home,
   Transcribe files, Dictation, Speech to text, Refinement, Pasting,
-  General), in the order a dictation goes, and their subpages. A page sits
-  under another (`parent` in `schema/pages.js`) when it is a part of that
-  page a person looks for on its own: Shortcuts, Microphone and Popup &
-  sounds under Dictation, Local models under Speech to text, Writing
-  profiles and Vocabulary under Refinement, App rules under Pasting, and
-  Appearance, Accounts, Permissions & health and Updates under General.
+  Accounts, General), in the order a dictation goes, and their subpages. A
+  page sits under another (`parent` in `schema/pages.js`) when it is a part
+  of that page a person looks for on its own: Microphone and Popup & sounds
+  under Dictation, Local models under Speech to text, Writing profiles and
+  Vocabulary under Refinement, the app pages under Pasting, and Appearance
+  and Updates under General. Every page has settings of its own; none only lists its
+  subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
   starting right of the guide.
@@ -419,13 +421,19 @@ Layout:
   subpage that had keyboard focus hands it to the parent when its group
   closes. Up and Down step through the entries that show, Right and Left
   open and close a parent's subpages.
-- A subpage's title leads with the path to it ("Dictation › Shortcuts"),
+- A subpage's title leads with the path to it ("Dictation › Microphone"),
   each step a quiet link to that page, and search gives a subpage and its
-  rows the same path. A parent lists its subpages in a `SubpageRows` card:
-  at its end, or first where the page is mostly a way into them (General,
-  Dictation). Dictation's rows say how each is set now (the shortcut's
-  keys, the microphone, live text and sounds) in place of the subtitle. A
-  subpage keeps its id, so links to it still land.
+  rows the same path. A parent lists its subpages in a `SubpageRows` card
+  at its end. Dictation's rows say how each is set now (the microphone,
+  live text and sounds) in place of the subtitle. A subpage keeps its id,
+  so links to it still land.
+- A check (`System.checks`) shows on the page of what it gates, as a
+  `HealthRow` with its fix: microphone access on Microphone, global
+  shortcuts on Dictation, accessibility and the virtual keyboard on
+  Pasting. Home's session card lists every check that applies, grouped as
+  what dictation needs (a check marked `needed`, a microphone, a working
+  speech service) and what it works without, each row opening its page;
+  while all pass it is one line with Run setup again.
 
 Things to avoid, because they read as generated:
 
@@ -580,7 +588,7 @@ In Speecher.App, besides SchemaRow:
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Speech to text's Local Model and Custom Endpoint sections do through the page's `searched`.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
-- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
+- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
 - `RefinerSignInRow { providerId }`: under the cards that choose a refinement provider, while its sign-in isn't ready, how to sign in with Open Accounts, or, where Accounts couldn't read the keychain, Check again.
 - `CommandChip { command }`: a command in code type with a copy button.

@@ -57,7 +57,7 @@ var rows = [
       keywords: "look for detect scan find runners again" },
 
     { id: "refinementEndpointServer", page: "refinement", section: "Custom Endpoint", kind: "choice",
-      label: "Server", help: "Your own server, or the CLI Proxy API server set up under General › Accounts.",
+      label: "Server", help: "Your own server, or the CLI Proxy API server set up on Accounts.",
       keywords: "endpoint cli proxy api self-hosted",
       options: [ { id: "custom", label: "Custom" }, { id: "cliproxy", label: "CLI Proxy API" } ] },
     { id: "refinementEndpointFormat", page: "refinement", section: "Custom Endpoint", kind: "choice", control: "select",
@@ -83,7 +83,7 @@ var rows = [
 
     { id: "targetContextControl", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "Text around your cursor", help: "Lets cleanup fit what you are writing.",
-      disabledHelp: "Turn on desktop accessibility to send the app's text.",
+      disabledHelp: "Turn on desktop accessibility to send the app's text.", needsAccessibility: true,
       keywords: "context surrounding text accessibility" },
     { id: "includeScreenshotContext", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "A screenshot", help: "Kept only for the current dictation. Only ChatGPT and Claude can read it.",

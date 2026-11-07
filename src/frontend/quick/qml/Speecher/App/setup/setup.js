@@ -23,7 +23,7 @@ var steps = [
 
 var text = {
     title: "Set up Speecher",
-    runAgain: "You can run setup again any time from General › Permissions & health.",
+    runAgain: "You can run setup again any time from Home or General.",
     skip: "Skip setup",
     back: "Back",
     getStarted: "Get started",
@@ -48,7 +48,7 @@ var text = {
     clipboardInstead: "Copy to the clipboard instead",
     clipboardInsteadHelp: "Skip the virtual keyboard. Speecher copies your words and you paste them yourself.",
     clipboardOnly: "Clipboard only",
-    cancelShortcutHelp: "Optional. Throws away the dictation in progress.",
+    optional: "Optional.",
     commandOnly: "The speecher command"
 };
 
