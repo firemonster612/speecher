@@ -27,6 +27,7 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     QML_SINGLETON
     Q_PROPERTY(bool accessibility READ accessibility NOTIFY changed)
     Q_PROPERTY(QVariantList checks READ checks NOTIFY changed)
+    Q_PROPERTY(bool canDisablePermanentAccessibility READ canDisablePermanentAccessibility NOTIFY changed)
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
@@ -52,11 +53,14 @@ public:
     // says which of the check's cases it is; fix is the action fix(id) runs,
     // or empty where there is nothing to run; the microphone's, openSettings,
     // opens the system's privacy settings. failures are what went wrong in
-    // the last thing tried on the check, [{step, error}]: step is enable
-    // for accessibility, and setUp, start, type, stop, remove or filesLeft
+    // the last thing tried on the check, [{step, error}]: step is enable or
+    // disable for accessibility, and setUp, start, type, stop, remove or filesLeft
     // for the keyboard; error is why, in the words of the part that failed,
     // or empty. They stay until the next try.
     QVariantList checks() const;
+    // Whether something Speecher set up to keep accessibility on past sign-out
+    // is left for disablePermanentAccessibility to undo: Linux only.
+    bool canDisablePermanentAccessibility() const;
     // What can be done to a virtual keyboard that is set up: disable, remove.
     QStringList virtualKeyboardActions() const;
     // The typing test that turns the keyboard on: off, ready (waiting for its
@@ -90,6 +94,9 @@ public:
     // fix, for the setup assistant: a virtual keyboard it sets up pastes
     // Automatically.
     Q_INVOKABLE void fixFromSetup(const QString &id);
+    // Stops keeping accessibility on past sign-out, and Chromium and Electron
+    // apps building their accessibility tree; it stays on for this session.
+    Q_INVOKABLE void disablePermanentAccessibility();
     Q_INVOKABLE void disableVirtualKeyboard();
     Q_INVOKABLE void removeVirtualKeyboard();
     // Types the test text into whatever has focus, which the caller focused

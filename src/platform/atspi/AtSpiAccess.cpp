@@ -1,10 +1,12 @@
 #include "platform/atspi/AtSpiAccess.h"
 
+#include "platform/ChromiumLaunchers.h"
 #include "platform/LinuxDesktopIntegration.h"
 
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusVariant>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -31,6 +33,20 @@ QString accessibilityEnvironmentPath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
         + QStringLiteral("/environment.d/90-speecher-atspi.conf");
+}
+
+// The data directories whose Chromium apps get launchers, the user's first.
+QStringList launcherDataDirs()
+{
+    return withAppExportDirs(QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation));
+}
+
+// Whether the environment.d file is there as enableAccessibilityPermanently()
+// wrote it.
+bool hasSpeechersEnvironment()
+{
+    QFile file(accessibilityEnvironmentPath());
+    return file.open(QIODevice::ReadOnly) && file.readAll() == accessibilityEnvironment;
 }
 
 bool valueEnablesAccessibility(const QString &value)
@@ -67,20 +83,23 @@ bool persistentAccessibilityConfigured()
     return configured.value_or(false);
 }
 
-bool runtimeAccessibilityEnabled()
+QDBusMessage callStatusProperties(const QString &method, const QVariantList &arguments)
 {
     QDBusMessage request = QDBusMessage::createMethodCall(
         QStringLiteral("org.a11y.Bus"),
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
-        QStringLiteral("Get"));
-    request.setArguments({QStringLiteral("org.a11y.Status"), QStringLiteral("IsEnabled")});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        request, QDBus::Block, accessibilityCallTimeoutMs);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return false;
-    }
-    return reply.arguments().first().value<QDBusVariant>().variant().toBool();
+        method);
+    request.setArguments(QVariantList{QStringLiteral("org.a11y.Status")} + arguments);
+    return QDBusConnection::sessionBus().call(request, QDBus::Block, accessibilityCallTimeoutMs);
+}
+
+// False too when the bus launcher is unreachable.
+bool runtimeAccessibilityEnabled()
+{
+    const QDBusMessage reply = callStatusProperties(QStringLiteral("Get"), {QStringLiteral("IsEnabled")});
+    return reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()
+        && reply.arguments().first().value<QDBusVariant>().variant().toBool();
 }
 
 } // namespace
@@ -100,16 +119,8 @@ AccessibilityState accessibilityState()
 
 bool requestAccessibility(QString *error)
 {
-    QDBusMessage request = QDBusMessage::createMethodCall(
-        QStringLiteral("org.a11y.Bus"),
-        QStringLiteral("/org/a11y/bus"),
-        QStringLiteral("org.freedesktop.DBus.Properties"),
-        QStringLiteral("Set"));
-    request.setArguments({QStringLiteral("org.a11y.Status"),
-                          QStringLiteral("IsEnabled"),
-                          QVariant::fromValue(QDBusVariant(true))});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        request, QDBus::Block, accessibilityCallTimeoutMs);
+    const QDBusMessage reply = callStatusProperties(
+        QStringLiteral("Set"), {QStringLiteral("IsEnabled"), QVariant::fromValue(QDBusVariant(true))});
     if (reply.type() == QDBusMessage::ErrorMessage) {
         if (error) {
             *error = reply.errorMessage().isEmpty()
@@ -154,16 +165,51 @@ bool enableAccessibilityPermanently(QString *error)
         return false;
     }
 
-    qputenv(accessibilityVariable, "1");
-    if (!requestAccessibility(error)) {
+    if (!writeAccessibleLaunchers(launcherDataDirs(), error)) {
         return false;
     }
-    return true;
+
+    qputenv(accessibilityVariable, "1");
+    return requestAccessibility(error);
 #endif
+}
+
+void refreshPermanentAccessibility()
+{
+    if (!hasSpeechersEnvironment()) {
+        return;
+    }
+    QString error;
+    if (!writeAccessibleLaunchers(launcherDataDirs(), &error)) {
+        qWarning().noquote() << "Chromium app launchers not refreshed:" << error;
+    }
+}
+
+bool canDisablePermanentAccessibility()
+{
+    return hasSpeechersEnvironment()
+        || hasAccessibleLaunchers(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
+}
+
+bool disablePermanentAccessibility(QString *error)
+{
+    DesktopIntegrationRemoval removal;
+    removePermanentAccessibility(removal);
+    // persistentAccessibilityConfigured() reads the variable before the
+    // files, so it would go on saying the setting is there.
+    qunsetenv(accessibilityVariable);
+    if (removal.failed.isEmpty()) {
+        return true;
+    }
+    if (error) {
+        *error = removal.failed.join(QStringLiteral("; "));
+    }
+    return false;
 }
 
 void removePermanentAccessibility(DesktopIntegrationRemoval &removal)
 {
+    removeAccessibleLaunchers(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation), removal);
     const QString name = QStringLiteral("accessibility setting");
     const QString path = accessibilityEnvironmentPath();
     QFile file(path);

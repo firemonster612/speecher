@@ -42,6 +42,7 @@ bool AccessibilityMonitor::persistent() const
 
 void AccessibilityMonitor::checkAtStartup()
 {
+    m_platform.refreshPermanentAccessibility();
     const AccessibilityState state = m_platform.accessibilityState();
     const bool requestSucceeded = state.persistent && m_platform.requestAccessibility();
     m_supported = state.supported;
@@ -62,6 +63,13 @@ bool AccessibilityMonitor::enablePermanently(QString *error)
     const bool enabled = m_platform.enableAccessibilityPermanently(error);
     refresh();
     return enabled;
+}
+
+bool AccessibilityMonitor::disablePermanently(QString *error)
+{
+    const bool disabled = m_platform.disablePermanentAccessibility(error);
+    refresh();
+    return disabled;
 }
 
 void AccessibilityMonitor::refresh()

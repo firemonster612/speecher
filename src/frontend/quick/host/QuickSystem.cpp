@@ -287,6 +287,11 @@ bool QuickSystem::canRemove() const
     return m_removal->available();
 }
 
+bool QuickSystem::canDisablePermanentAccessibility() const
+{
+    return m_controller->platform()->canDisablePermanentAccessibility();
+}
+
 bool QuickSystem::canLaunchAtLogin() const
 {
     return m_controller->platform()->canLaunchAtLogin();
@@ -354,6 +359,20 @@ void QuickSystem::clearFailures(const QString &id)
     if (m_failures.remove(id) > 0) {
         emit changed();
     }
+}
+
+void QuickSystem::disablePermanentAccessibility()
+{
+    if (m_removal->running()) {
+        return;
+    }
+    clearFailures(accessibilityId);
+    QString error;
+    if (!m_controller->accessibility()->disablePermanently(&error)) {
+        m_failures[accessibilityId] = {failureEntry(QStringLiteral("disable"), error)};
+    }
+    // The files may be gone while the state the monitor reports stays.
+    emit changed();
 }
 
 void QuickSystem::disableVirtualKeyboard()

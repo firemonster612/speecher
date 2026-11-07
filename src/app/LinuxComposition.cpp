@@ -259,6 +259,21 @@ bool LinuxComposition::enableAccessibilityPermanently(QString *error) const
     return atspi::enableAccessibilityPermanently(error);
 }
 
+void LinuxComposition::refreshPermanentAccessibility() const
+{
+    atspi::refreshPermanentAccessibility();
+}
+
+bool LinuxComposition::canDisablePermanentAccessibility() const
+{
+    return atspi::canDisablePermanentAccessibility();
+}
+
+bool LinuxComposition::disablePermanentAccessibility(QString *error) const
+{
+    return atspi::disablePermanentAccessibility(error);
+}
+
 std::shared_ptr<const LinuxComposition> linuxComposition()
 {
     return std::make_shared<LinuxComposition>();

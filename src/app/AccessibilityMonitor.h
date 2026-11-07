@@ -22,8 +22,11 @@ public:
     bool persistent() const;
     // Reads the grant once startup is out of the way, asking for it where the
     // platform keeps it across runs, and reports it whether or not it changed.
+    // First it refreshes what the platform keeps for it across runs.
     void checkAtStartup();
     bool enablePermanently(QString *error = nullptr);
+    // Undoes enablePermanently where the platform kept something to undo.
+    bool disablePermanently(QString *error = nullptr);
     // Reads the grant again and reports it if it changed. Platforms that do not
     // push grants to a running process poll this.
     void refresh();
