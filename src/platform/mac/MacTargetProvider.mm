@@ -480,7 +480,8 @@ bool MacTargetProvider::canInsertText(const Target &target)
     // WebKit lets the selected text of a read-only control be set too, so
     // that alone does not make the control take the insertion. Chromium and
     // Electron answer the write with success while VS Code's editor and T3
-    // Code's composer show nothing of it, so they get the paste keys.
+    // Code's composer show nothing of it, so every app that bundles Chromium
+    // gets the paste keys.
     return !target.secure
         && !bundlesChromium(static_cast<pid_t>(target.processId))
         && stillFocused(target)
