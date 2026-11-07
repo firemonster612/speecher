@@ -39,16 +39,17 @@ var rows = [
 
     // The checks: each row's state, status and fix come from System.checks,
     // by the same id, and each sits on the page of what it gates. Home lists
-    // them all.
+    // them all. A check whose row there is a delivery step names it in
+    // opens: Home opens that row, and search finds the step instead.
     { id: "microphoneAccess", page: "microphone", section: "Input", kind: "custom",
       label: "Microphone access", keywords: "permission privacy recording input" },
     { id: "desktopAccessibility", page: "pasting", section: "", kind: "custom",
-      label: "Desktop accessibility",
+      label: "Desktop accessibility", opens: "insertThroughAccessibility",
       keywords: "at-spi permission paste rules context learning target app chromium electron chrome" },
     { id: "globalShortcuts", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
       label: "Global shortcuts", keywords: "hotkey portal kde registered permission" },
     { id: "virtualKeyboardHealth", page: "pasting", section: "", kind: "custom",
-      label: "Virtual keyboard", keywords: "typing uinput ydotool delivery paste password",
+      label: "Virtual keyboard", opens: "pressPasteKeys", keywords: "typing uinput ydotool delivery paste password",
       needs: "hasVirtualKeyboard" },
 
     { id: "runSetup", page: "general", section: "Setup assistant", kind: "action",

@@ -119,10 +119,15 @@ inline const QString RefinementEndpointBaseUrl = QStringLiteral("endpoint/refine
 inline const QString RefinementEndpointModel = QStringLiteral("endpoint/refinement/model");
 inline const QString LocalRunner = QStringLiteral("localRunner/runner");
 inline const QString LocalRunnerModel = QStringLiteral("localRunner/model");
+// Retired: the delivery steps replaced them, and migrateDeliverySteps
+// removes them.
 inline const QString OutputMethod = QStringLiteral("output/method");
+inline const QString RestoreClipboardAfterTyping = QStringLiteral("output/restoreClipboardAfterTyping");
+inline const QString InsertThroughAccessibility = QStringLiteral("output/insertThroughAccessibility");
+inline const QString PressPasteKeys = QStringLiteral("output/pressPasteKeys");
+inline const QString KeepOnClipboard = QStringLiteral("output/keepOnClipboard");
 inline const QString OutputFormat = QStringLiteral("output/format");
 inline const QString YdotoolEnabled = QStringLiteral("output/ydotoolEnabled");
-inline const QString RestoreClipboardAfterTyping = QStringLiteral("output/restoreClipboardAfterTyping");
 inline const QString CompletionStatusDurationMs = QStringLiteral("output/completionStatusDurationMs");
 inline const QString PasteRules = QStringLiteral("output/pasteRules");
 inline const QString UpdatesChannel = QStringLiteral("updates/channel");

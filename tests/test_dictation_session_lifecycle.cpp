@@ -406,8 +406,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("one two three four five six seven eight nine"));
-        QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
-        QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
+        QCOMPARE(delivery->lastSettings.steps, DeliverySteps{});
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }

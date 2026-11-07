@@ -151,7 +151,8 @@ function Check-State([string]$Label) {
         "app/setupCompleted" = "true"; "app/launchAtLogin" = "true"; "shortcuts/activationMode" = "toggle"
         "audio/preRollMs" = "400"; "refinement/provider" = "anthropic"; "refinement/defaultWritingProfile" = "work"
         "openai/model" = "gpt-6-luna"; "anthropic/model" = "claude-opus-5-5"; "anthropic/auth/mode" = "cliproxy"
-        "output/method" = "automatic"; "output/format" = "html"; "updates/channel" = "stable"
+        "output/insertThroughAccessibility" = "false"; "output/pressPasteKeys" = "false"; "output/keepOnClipboard" = "true"
+        "output/format" = "html"; "updates/channel" = "stable"
         "cliproxy/baseUrl" = "http://127.0.0.1:8317"; "shortcuts/toggleDictation" = $Shortcut
     }
     $wrong = @($expected.Keys | Where-Object { (Setting $_) -ne $expected[$_] } | ForEach-Object { "$_=$(Setting $_)" })

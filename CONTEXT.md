@@ -44,8 +44,12 @@ _Avoid_: Style, voice preset
 The user's own text added to the refinement prompt: once for every refinement, then once per Writing Profile.
 _Avoid_: Custom prompt, system prompt
 
+**Delivery Step**:
+One way Speecher gets words out, which the person turns on or off: Insert through accessibility, Press the paste keys (copies the words and presses Ctrl+V, or ⌘V), and Keep the words on the clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards, and off, Speecher puts the previous clipboard back after a confirmed paste. At least one is on.
+_Avoid_: Output method, paste mode
+
 **Paste Rule**:
-A setting that chooses how Speecher attempts insertion for an application or application category.
+A setting that narrows the Delivery Steps for an application or application category: the same steps with a terminal's paste keys, insertion only, or the clipboard only. It never turns on a step that is off.
 _Avoid_: Output route, injection rule
 
 **Vocabulary Entry**:

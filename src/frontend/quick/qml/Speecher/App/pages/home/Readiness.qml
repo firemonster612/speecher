@@ -45,7 +45,7 @@ Column {
             first: checkRow.index === 0
             rowId: checkRow.key
             clickable: true
-            onClicked: Navigation.goToRow(checkRow.spec.page, checkRow.key)
+            onClicked: Navigation.goToRow(checkRow.spec.page, checkRow.spec.opens || checkRow.key)
             AccessibilityMenu { offered: checkRow.key === "desktopAccessibility" }
         }
     }

@@ -1151,7 +1151,7 @@ void DictationSession::deliverRevision(bool selectionUnchanged)
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
     if (!selectionUnchanged) {
-        m_sessionSettings->output.pasteRules = {{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}};
+        m_sessionSettings->output.steps = {.insert = false, .press = false, .keep = true};
         deliverFinal(review.edit, selectionChangedNote(), review.spokenWords);
         return;
     }

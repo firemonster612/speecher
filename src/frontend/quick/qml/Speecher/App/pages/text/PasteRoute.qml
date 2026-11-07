@@ -3,24 +3,29 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 
-// The Pasting page's picture: the steps a dictation takes into an app with
-// the current settings, ending in the app with the words written in blue
-// pencil. When a setting changes the route, the new steps fade in and the
+// The Pasting page's picture: the steps a dictation takes with the current
+// settings, ending in an example app with the words written in blue pencil,
+// or on the clipboard when no step gets them further. A step this computer
+// can't run yet carries a warning dot. When a setting changes the route, the new steps fade in and the
 // row recentres, then a dot runs along it once and the words write
 // themselves in. A change while that plays lets it carry on; under reduced
 // motion the dot stays put and only the words write in.
 Plate {
     id: root
 
-    property var steps: []         // [{ icon, label }], tried in order
-    property string appName
+    property var steps: []         // [{ id, icon, label, ready }], tried in order
+    property string appName        // empty when the words end on the clipboard
+    property string appCaption     // beside the app's name, such as "For example"
+    property string clipboardLabel // the end's name when there is no app
     property string sample         // empty when the words never reach the app
     property string caption
     // Words under the start, over the first step when there are several,
-    // and over each step after it.
+    // over each step tried after it, and over keeping the words, which
+    // happens alongside rather than after.
     property string startLabel
     property string firstLabel
     property string fallbackLabel
+    property string keptLabel
 
     property real _travel: 1       // 0 to 1 along the route
     property int _typed: sample.length
@@ -102,10 +107,18 @@ Plate {
                         Icon { name: step.modelData.icon; size: 14; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
                         Txt { text: step.modelData.label; variant: "labelSmall"; anchors.verticalCenter: parent.verticalCenter }
                     }
+                    StatusDot {
+                        visible: step.modelData.ready === false
+                        color: Theme.warning
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: -3
+                    }
                 }
                 Txt {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: step.index === 0 ? (root.steps.length > 1 ? root.firstLabel : "") : root.fallbackLabel
+                    text: step.index === 0 ? (root.steps.length > 1 ? root.firstLabel : "")
+                        : step.modelData.id === "keep" ? root.keptLabel : root.fallbackLabel
                     variant: "caption"
                     tone: "secondary"
                 }
@@ -128,8 +141,20 @@ Plate {
             x: 12
             y: 10
             spacing: 7
-            AppIcon { name: root.appName; size: 18; anchors.verticalCenter: parent.verticalCenter }
-            Txt { text: root.appName; variant: "small"; strong: true; anchors.verticalCenter: parent.verticalCenter }
+            AppIcon {
+                name: root.appName
+                iconName: root.appName ? "" : "clipboard"
+                size: 18
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Txt { text: root.appName || root.clipboardLabel; variant: "small"; strong: true; anchors.verticalCenter: parent.verticalCenter }
+            Txt {
+                visible: root.appName.length > 0
+                text: root.appCaption
+                variant: "caption"
+                tone: "secondary"
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
         Rectangle { y: 36; width: parent.width; height: 1; color: Theme.rule }
         // A TextEdit, so the caret can find the end of the text.

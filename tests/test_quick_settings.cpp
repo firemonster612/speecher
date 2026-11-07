@@ -338,12 +338,11 @@ private slots:
         };
         const auto value = [&settings](const char *id) { return settings.values().value(QLatin1String(id)); };
 
-        QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("terminal_paste"));
+        QCOMPARE(value("categoryPasteRule_terminal").toString(),
+                 terminalKeysDiffer ? QStringLiteral("terminal_paste") : QStringLiteral("inherit"));
         QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("inherit"));
-        settings.set(QStringLiteral("globalPasteRule"), QStringLiteral("clipboard_only"));
         settings.set(QStringLiteral("categoryPasteRule_browser"), QStringLiteral("direct_insert"));
         settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
-        QCOMPARE(rule(PasteRuleScope::Global, "")->method, PasteMethod::ClipboardOnly);
         QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
         QVERIFY(!rule(PasteRuleScope::Category, "terminal"));
         QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("inherit"));
@@ -364,7 +363,7 @@ private slots:
         // Two rules for one app are refused with core's reason, and nothing is saved.
         settings.set(QStringLiteral("applicationPasteRules"), apps + apps);
         QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
-        QCOMPARE(SettingsStore().dictationSnapshot().output.pasteRules.size(), 3);
+        QCOMPARE(SettingsStore().dictationSnapshot().output.pasteRules.size(), 2);
         settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
         QVERIFY(!rule(PasteRuleScope::Application, "org.kde.konsole"));
         QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
@@ -372,6 +371,20 @@ private slots:
 
     // Each save is a whole snapshot through the store, so a drag saves once,
     // when it lets go; a key press saves its one step.
+    // Each delivery step is a switch, and the last one on stays on.
+    void deliveryStepsSaveAndKeepOneOn()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        const auto steps = [] { return SettingsStore().dictationSnapshot().output.steps; };
+        settings.set(QStringLiteral("insertThroughAccessibility"), false);
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        QCOMPARE(steps(), (DeliverySteps{.insert = false, .press = true, .keep = false}));
+        settings.set(QStringLiteral("pressPasteKeys"), false);
+        QCOMPARE(steps(), (DeliverySteps{.insert = false, .press = true, .keep = false}));
+        QCOMPARE(settings.values().value(QStringLiteral("pressPasteKeys")).toBool(), true);
+    }
+
     void aSliderSavesWhenLetGo()
     {
         ApplicationController controller(true);

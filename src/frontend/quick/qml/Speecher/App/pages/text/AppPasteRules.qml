@@ -6,26 +6,29 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// Rules for single apps: the add form, then each app with its paste method
-// and a switch, on the App rules page. The list is the applicationPasteRules
-// setting, [{ app, method, enabled }], saved whole on every change.
+// Rules for single apps: the add form, then each app with its rule and a
+// switch, on the Pasting page. The list is the applicationPasteRules
+// setting, [{ app, method, enabled }], saved whole on every change. An app
+// is named as this platform's targets report it (Schema.pasting.appId).
 // --pasting-form=rule opens the form.
 Section {
     id: section
     objectName: "appPasteRules"
 
-    readonly property var methods: Schema.row("globalPasteRule").options
+    // A rule's Same as above is Standard paste, which keeps it a rule of
+    // its own over the app's type.
+    readonly property var methods: Schema.pasting.ruleOptions("standard_paste")
     readonly property var rules: Settings.values.applicationPasteRules || []
     readonly property var t: ({
         addRule: "Add rule",
-        newRule: "New paste rule",
-        ruleApp: "Application ID",
-        ruleAppHelp: "The app's desktop ID, such as org.kde.konsole.",
-        ruleAppPlaceholder: "org.kde.konsole",
-        ruleMethod: "Paste method",
+        newRule: "New app rule",
+        ruleApp: Schema.pasting.appId.label,
+        ruleAppHelp: Schema.pasting.appId.help,
+        ruleAppPlaceholder: Schema.pasting.appId.example,
+        ruleMethod: "Steps",
         deleteRule: "Delete rule",
         noRules: "No rules for single apps",
-        noRulesHelp: "Add one to paste differently into one application."
+        noRulesHelp: "Add one to deliver differently into one app."
     })
 
     function save(next) { Settings.set("applicationPasteRules", next) }
@@ -57,10 +60,11 @@ Section {
         cancelText: Words.cancel
         id: ruleForm
         objectName: "ruleForm"
-        property string method: "standard_paste"
+        // The first override, as Same as above is no change.
+        property string method: section.methods[1].id
         // Why this form's last rule was refused; a new form starts without it.
         property string refusal: ""
-        function startAdd() { ruleApp.text = ""; method = "standard_paste"; refusal = ""; open = true }
+        function startAdd() { ruleApp.text = ""; method = section.methods[1].id; refusal = ""; open = true }
         title: section.t.newRule
         saveText: section.t.addRule
         canSave: ruleApp.text.trim().length > 0
@@ -121,7 +125,13 @@ Section {
                 opacity: ruleRow.dim
                 Behavior on opacity { Ease {} }
                 Txt { text: section.appName(ruleRow.rule.app); variant: "label" }
-                Txt { text: ruleRow.rule.app; variant: "code"; tone: "secondary" }
+                // The step the rule relies on that's off, else the app's ID.
+                Txt {
+                    readonly property string needs: System.stepRuleNeeds(ruleRow.rule.method)
+                    text: needs ? Schema.pasting.needsStep(needs) : ruleRow.rule.app
+                    variant: needs ? "small" : "code"
+                    tone: "secondary"
+                }
             }
             Row {
                 anchors.right: parent.right

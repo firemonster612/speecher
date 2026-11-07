@@ -21,6 +21,7 @@ Section {
     caption: Schema.row("appRecognitionRules").help
     actions: [ Button { text: Library.pastingText.addMatch; iconName: "plus"; size: "small"; onClicked: matchForm.startAdd("") } ]
     SearchLanding { rowIds: ["appRecognitionRules"]; target: section }
+    AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can tell which app you're in. Matches you save apply once it can." }
 
     InlineForm {
         cancelText: Words.cancel

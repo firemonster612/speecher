@@ -6,7 +6,6 @@
 
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
-#include "core/OutputMethod.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
@@ -1168,18 +1167,22 @@ void SettingsCodecs::setAnthropicFastMode(bool value)
     m_settings.setValue(SettingsKeys::AnthropicFastMode, value);
 }
 
-QString SettingsCodecs::outputMethod() const
+DeliverySteps SettingsCodecs::deliverySteps() const
 {
-    const QString method = OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
-    if (!OutputMethod::hasVirtualKeyboard && method == QString::fromLatin1(OutputMethod::Ydotool)) {
-        return QString::fromLatin1(OutputMethod::Automatic);
-    }
-    return method;
+    const DeliverySteps steps{
+        .insert = value(SettingsKeys::InsertThroughAccessibility, true).toBool(),
+        .press = value(SettingsKeys::PressPasteKeys, true).toBool(),
+        .keep = value(SettingsKeys::KeepOnClipboard, true).toBool(),
+    };
+    // A file edited by hand to turn every step off still delivers somehow.
+    return steps.any() ? steps : DeliverySteps{.insert = false, .press = false, .keep = true};
 }
 
-void SettingsCodecs::setOutputMethod(const QString &value)
+void SettingsCodecs::setDeliverySteps(const DeliverySteps &value)
 {
-    m_settings.setValue(SettingsKeys::OutputMethod, OutputMethod::normalized(value));
+    m_settings.setValue(SettingsKeys::InsertThroughAccessibility, value.insert);
+    m_settings.setValue(SettingsKeys::PressPasteKeys, value.press);
+    m_settings.setValue(SettingsKeys::KeepOnClipboard, value.keep);
 }
 
 OutputFormat SettingsCodecs::outputFormat() const
@@ -1201,19 +1204,6 @@ bool SettingsCodecs::ydotoolEnabled() const
 void SettingsCodecs::setYdotoolEnabled(bool value)
 {
     m_settings.setValue(SettingsKeys::YdotoolEnabled, value);
-    if (!value && outputMethod() == QString::fromLatin1(OutputMethod::Ydotool)) {
-        setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
-    }
-}
-
-bool SettingsCodecs::restoreClipboardAfterTyping() const
-{
-    return value(SettingsKeys::RestoreClipboardAfterTyping, false).toBool();
-}
-
-void SettingsCodecs::setRestoreClipboardAfterTyping(bool value)
-{
-    m_settings.setValue(SettingsKeys::RestoreClipboardAfterTyping, value);
 }
 
 int SettingsCodecs::completionStatusDurationMs() const
@@ -1246,7 +1236,7 @@ QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded)
         rule.enabled = object.value(QStringLiteral("enabled")).toBool(true);
         rules.append(rule);
     }
-    return rules.isEmpty() ? defaultPasteRules() : rules;
+    return rules;
 }
 
 QByteArray pasteRulesToJson(const QList<PasteRule> &rules)
@@ -1265,7 +1255,11 @@ QByteArray pasteRulesToJson(const QList<PasteRule> &rules)
 
 QList<PasteRule> SettingsCodecs::pasteRules() const
 {
-    return pasteRulesFromJson(value(SettingsKeys::PasteRules, QByteArray()).toByteArray());
+    QList<PasteRule> rules = pasteRulesFromJson(value(SettingsKeys::PasteRules, QByteArray()).toByteArray());
+    // The delivery steps are the global rule now; migrateDeliverySteps read
+    // any that was stored.
+    rules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Global; });
+    return rules;
 }
 
 void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)

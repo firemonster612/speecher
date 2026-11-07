@@ -7,7 +7,7 @@
 #include "app/SingleInstanceIpc.h"
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
-#include "core/OutputMethod.h"
+#include "core/PasteKeys.h"
 #include "core/OutputFormat.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"

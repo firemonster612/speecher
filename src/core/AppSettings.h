@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
 #include "core/PasteRules.h"
 #include "core/LearnedCorrection.h"
@@ -415,10 +416,10 @@ struct AccountSettings {
 };
 
 struct OutputSettings {
-    QString method = QStringLiteral("automatic");
+    DeliverySteps steps;
     OutputFormat format = OutputFormat::PlainText;
+    // The virtual keyboard is set up for Linux's Press step.
     bool ydotoolEnabled = false;
-    bool restoreClipboardAfterTyping = false;
     int completionStatusDurationMs = 500;
     QList<PasteRule> pasteRules = defaultPasteRules();
 

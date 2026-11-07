@@ -85,7 +85,6 @@ Page {
             note: page.refines ? spec.help : spec.noRefinerHelp
         }
         SchemaRow { rowId: "resultDuration" }
-        SchemaRow { rowId: "reviewSelectionEdits" }
         SchemaRow {
             id: voiceDisplay
             rowId: "boringMode"

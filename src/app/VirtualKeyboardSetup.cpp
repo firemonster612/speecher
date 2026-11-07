@@ -1,6 +1,5 @@
 #include "app/VirtualKeyboardSetup.h"
 
-#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #ifdef Q_OS_LINUX
 #include "output/YdotoolDelivery.h"
@@ -63,7 +62,7 @@ void VirtualKeyboardSetup::refresh()
     emit changed();
 }
 
-void VirtualKeyboardSetup::setUp(AfterSetUp after)
+void VirtualKeyboardSetup::setUp()
 {
     if (m_operation != Operation::None) {
         return;
@@ -87,16 +86,10 @@ void VirtualKeyboardSetup::setUp(AfterSetUp after)
                 system.startService(&result->serviceError);
             }
         },
-        [this, result, after] {
+        [this, result] {
             if (!result->installed) {
                 emit failed(Failure::SetUp, result->helperError);
                 return;
-            }
-            if (after == AfterSetUp::PasteAutomatically) {
-                m_settings->edit([](AppSettings &settings) {
-                    settings.output.method = QString::fromLatin1(OutputMethod::Automatic);
-                    return true;
-                });
             }
             if (!result->serviceError.isEmpty()) {
                 emit failed(Failure::Start, result->serviceError);

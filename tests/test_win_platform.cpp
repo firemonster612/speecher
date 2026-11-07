@@ -3,7 +3,7 @@
 #include "common/delivery_waits.h"
 #include "app/PlatformComposition.h"
 
-#include "core/OutputMethod.h"
+#include "core/PasteKeys.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
@@ -839,11 +839,7 @@ private slots:
         QVERIFY(target.role.contains(QStringLiteral("document"), Qt::CaseInsensitive));
 
         OutputSettings output;
-        output.method = QString::fromLatin1(OutputMethod::Automatic);
-        output.restoreClipboardAfterTyping = false;
-        output.pasteRules = {
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
+        output.pasteRules = {};
         const QString inserted = QStringLiteral("Speecher Windows delivery verified");
         TextDelivery delivery(&targetProvider);
         const DeliveryResult result = test::deliverAndWait(

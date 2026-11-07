@@ -10,6 +10,7 @@ scripts read them; JSON values compare as JSON.
 
 import json
 import re
+import sys
 
 # Values the new app moves or rewrites on purpose, or that change by running:
 # secrets go to the keyring, update bookkeeping and migration versions move on.
@@ -27,10 +28,42 @@ REPLACED_MODELS = [
     ('anthropic/model', 'claude-sonnet-5', 'claude-opus-5-5', 1),
     ('anthropic/model', 'claude-sonnet-5', 'claude-sonnet-5-5', 2),
 ]
-# Under these output methods Speecher never pasted: a pasting rule inserted
-# only, or copied only.
-PASTE_UNDER_METHOD = {'direct_insert': 'direct_insert', 'wl-copy': 'clipboard_only',
-                      'clipboard': 'clipboard_only', 'qt-clipboard': 'clipboard_only', 'qt': 'clipboard_only'}
+# The stored output methods that never used a delivery step
+# (migrateDeliverySteps).
+KEYBOARD_ONLY = {'ydotool', 'mac-paste', 'win-paste'}
+INSERT_ONLY = {'direct_insert'}
+COPY_ONLY = {'wl-copy', 'clipboard', 'qt-clipboard', 'qt'}
+# macOS presses ⌘V in terminals too, so Terminal paste rules mean nothing there.
+TERMINAL_KEYS_DIFFER = sys.platform != 'darwin'
+
+
+def _truthy(value):
+    return str(value).strip().lower() in ('true', '1')
+
+
+def _delivery_steps(before, after):
+    """The delivery steps the new app turns the old output method, global
+    paste rule and clipboard restore switch into."""
+    method = before.get('output/method', '')
+    rules = json.loads(before.get('output/pasteRules') or '[]')
+    stored_global = [rule for rule in rules if rule.get('scope') == 'global']
+    turned_on = [rule for rule in stored_global if rule.get('enabled', True)]
+    default = turned_on[0]['method'] if turned_on else 'clipboard_only' if stored_global else 'standard_paste'
+    insert = method not in KEYBOARD_ONLY | COPY_ONLY and default != 'clipboard_only'
+    press = method not in INSERT_ONLY | COPY_ONLY and default not in ('direct_insert', 'clipboard_only')
+    keep = not _truthy(before.get('output/restoreClipboardAfterTyping')) or not (insert or press)
+    after.pop('output/method', None)
+    after.pop('output/restoreClipboardAfterTyping', None)
+    for key, on in (('insertThroughAccessibility', insert), ('pressPasteKeys', press), ('keepOnClipboard', keep)):
+        after['output/' + key] = 'true' if on else 'false'
+    rules = [rule for rule in rules if rule.get('scope') != 'global']
+    if not TERMINAL_KEYS_DIFFER:
+        rules = [rule for rule in rules if not (rule.get('scope') == 'category' and rule.get('method') == 'terminal_paste')]
+        for rule in rules:
+            if rule.get('method') == 'terminal_paste':
+                rule['method'] = 'standard_paste'
+    if 'output/pasteRules' in before:
+        after['output/pasteRules'] = json.dumps(rules)
 
 
 def migrated(before):
@@ -40,19 +73,8 @@ def migrated(before):
     for key, old, new, below in REPLACED_MODELS:
         if version < below and after.get(key, '').strip() == old:
             after[key] = new
-    paste = PASTE_UNDER_METHOD.get(before.get('output/method', ''))
-    if paste:
-        after['output/method'] = 'automatic'
-        rules = json.loads(before.get('output/pasteRules') or '[]')
-        for rule in rules:
-            if rule.get('method') in ('standard_paste', 'terminal_paste'):
-                rule['method'] = paste
-        # With none saved, the app reads its default rules and saves them
-        # rewritten: a key it adds, so not compared.
-        if rules:
-            after['output/pasteRules'] = json.dumps(rules)
-        else:
-            after.pop('output/pasteRules', None)
+    if 'output/method' in before or 'output/restoreClipboardAfterTyping' in before:
+        _delivery_steps(before, after)
     return after
 
 

@@ -6,7 +6,9 @@ import Speecher.App
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()
 // writes them back. A step is done when its check passes, or for
-// accessibility and delivery settles (Setup.settled), and one rule gates
+// accessibility and delivery settles (Setup.settled), or when the delivery
+// steps chosen don't need it; on macOS declining Accessibility is a valid
+// choice that leaves the words on the clipboard. One rule gates
 // Continue, Finish, Skip and the rail: a step can be reached once every step
 // before it is done. A check only asks for what its step shows and lets you
 // fix there. Refinement passes with None or a provider that works.
@@ -23,16 +25,22 @@ QtObject {
 
     property string speech: Settings.values.speechProvider || ""
     property string cleanup: Settings.values.refinementProvider || "none"
-    property bool clipboardOnly: Settings.values.globalPasteRule === "clipboard_only"
+    // The delivery steps, by step id (DeliveryStep).
+    property bool insert: Settings.values.insertThroughAccessibility ?? true
+    property bool press: Settings.values.pressPasteKeys ?? true
+    property bool keep: Settings.values.keepOnClipboard ?? true
 
     signal goTo(string stepId)
 
     // Setup.steps, each with done and verdict: what was chosen once it
-    // passes, or what is missing. Delivery sets up the virtual keyboard, so
-    // it goes where there is none.
+    // passes, or what is missing. Windows asks for no accessibility.
     readonly property var steps: Setup.steps
-        .filter(s => s.id !== "delivery" || System.hasVirtualKeyboard)
+        .filter(s => s.id !== "accessibility" || Qt.platform.os !== "windows")
         .map(s => Object.assign({}, s, _status(s.id)))
+
+    // Whether the delivery steps chosen need accessibility: inserting does,
+    // and on macOS pressing ⌘V does too.
+    readonly property bool accessibilityNeeded: insert || (press && Qt.platform.os === "osx")
 
     function _status(id) {
         switch (id) {
@@ -59,10 +67,21 @@ QtObject {
             return { done: access.state === "ok" && present && Audio.heard,
                      verdict: access.state !== "ok" ? Health.status(access) : present && !Audio.heard ? Schema.row("microphoneTest").notHeardText : device ? device.label : "" }
         }
-        case "accessibility":
         case "delivery": {
-            const check = Health.find(System.checks, id === "delivery" ? "virtualKeyboardHealth" : "desktopAccessibility")
-            if (id === "delivery" && clipboardOnly) return { done: true, verdict: Setup.text.clipboardOnly }
+            // Pressing the keys on Linux needs the virtual keyboard set up.
+            const keyboard = Health.find(System.checks, "virtualKeyboardHealth")
+            if (press && System.hasVirtualKeyboard && keyboard.state !== "ok")
+                return { done: Setup.settled(keyboard), verdict: Health.status(keyboard) }
+            return { done: true, verdict: ["insert", "press", "keep"].filter(step => choices[step])
+                                              .map(step => Setup.text.stepNames[step]).join(", ") }
+        }
+        case "accessibility": {
+            const check = Health.find(System.checks, "desktopAccessibility")
+            if (!accessibilityNeeded) return { done: true, verdict: Setup.text.notNeeded }
+            if (Qt.platform.os === "osx") {
+                const need = Schema.row("insertThroughAccessibility").need
+                return { done: true, verdict: check.state === "ok" ? need.ready : need.notReady }
+            }
             return { done: Setup.settled(check), verdict: Health.status(check) }
         }
         case "refinement": {
@@ -90,7 +109,9 @@ QtObject {
     function finish() {
         Settings.set("speechProvider", speech)
         Settings.set("refinementProvider", cleanup)
-        if (clipboardOnly) Settings.set("globalPasteRule", "clipboard_only")
-        else if (Settings.values.globalPasteRule === "clipboard_only") Settings.set("globalPasteRule", "standard_paste")
+        // Steps turned on first, so the last one on never goes off.
+        const drafts = { insertThroughAccessibility: insert, pressPasteKeys: press, keepOnClipboard: keep }
+        for (const id in drafts) if (drafts[id]) Settings.set(id, true)
+        for (const id in drafts) if (!drafts[id]) Settings.set(id, false)
     }
 }

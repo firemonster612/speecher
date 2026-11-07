@@ -212,66 +212,6 @@ private slots:
                  QStringLiteral("claude-sonnet-5"));
     }
 
-    // Paste with no longer offers inserting directly or copying only. Under
-    // either, a rule that said to paste only inserted, or only copied, so those
-    // rules take that method now.
-    void outputMethodMigrationMovesPastingRulesToTheOldMethod()
-    {
-        using Scope = PasteRuleScope;
-        using Method = PasteMethod;
-        QTemporaryDir dir;
-        QVERIFY(dir.isValid());
-        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        const QList<PasteRule> stored{
-            {Scope::Category, QStringLiteral("terminal"), Method::TerminalPaste, true},
-            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-            {Scope::Application, QStringLiteral("org.kde.kate"), Method::StandardPaste, false},
-            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-            {Scope::Global, QString(), Method::StandardPaste, true},
-        };
-        const auto migrated = [&settings, &stored](const QString &method) {
-            settings.setValue(QStringLiteral("output/method"), method);
-            settings.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(stored));
-            migrateOutputMethod(settings);
-            return pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray());
-        };
-
-        QCOMPARE(migrated(QStringLiteral("direct_insert")),
-                 (QList<PasteRule>{
-                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
-                     {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-                     {Scope::Application, QStringLiteral("org.kde.kate"), Method::DirectInsert, false},
-                     {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-                     {Scope::Global, QString(), Method::DirectInsert, true},
-                 }));
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
-
-        const QList<PasteRule> copyOnly{
-            {Scope::Category, QStringLiteral("terminal"), Method::ClipboardOnly, true},
-            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-            {Scope::Application, QStringLiteral("org.kde.kate"), Method::ClipboardOnly, false},
-            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-            {Scope::Global, QString(), Method::ClipboardOnly, true},
-        };
-        QCOMPARE(migrated(QStringLiteral("qt-clipboard")), copyOnly);
-        QCOMPARE(migrated(QStringLiteral("wl-copy")), copyOnly);
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
-
-        // Nothing stored means the default rules, which migrate the same way.
-        settings.remove(QStringLiteral("output/pasteRules"));
-        settings.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
-        migrateOutputMethod(settings);
-        QCOMPARE(pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray()),
-                 (QList<PasteRule>{
-                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
-                     {Scope::Global, QString(), Method::DirectInsert, true},
-                 }));
-
-        // Automatic and keyboard paste are left alone.
-        QCOMPARE(migrated(QStringLiteral("ydotool")), stored);
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("ydotool"));
-    }
-
     // Old installs hold QKeySequence text under shortcuts/toggleDictation, so
     // that form must keep reading as a combination while a single key gets its
     // own prefix.
@@ -433,11 +373,10 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.speech.codexFinalRetranscribe = false; return true; });
         QCOMPARE(settings.dictationSnapshot().speech.codexFinalRetranscribe, false);
         QCOMPARE(settings.snapshot().speech.language, QStringLiteral("en"));
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = true, .press = true, .keep = true}));
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
         QCOMPARE(settings.dictationSnapshot().output.pasteRules, defaultPasteRules());
         QCOMPARE(settings.dictationSnapshot().output.ydotoolEnabled, false);
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, false);
         QCOMPARE(settings.snapshot().output.completionStatusDurationMs, 500);
         const AudioCaptureSettings audio = settings.dictationSnapshot().audio;
         QCOMPARE(audio.deviceId, QString());
@@ -668,36 +607,16 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().ui.pauseMediaDuringTranscription, false);
 
         settings.edit([](AppSettings &draft) {
-            draft.output.method = QString::fromLatin1(OutputMethod::DirectInsert);
+            draft.output.steps = {.insert = false, .press = true, .keep = false};
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::DirectInsert));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("ydotool"); return true; });
-#ifdef Q_OS_LINUX
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Ydotool));
-#else
-        // Only Linux has the virtual keyboard; elsewhere Speecher pastes
-        // Automatically, rather than only copying every dictation.
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-#endif
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("wtype"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("unknown"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("clipboard"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::WlCopy));
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = false, .press = true, .keep = false}));
+        // A file that turns every step off still keeps the words.
+        settings.raw().setValue(QStringLiteral("output/pressPasteKeys"), false);
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
         settings.setYdotoolEnabled(true);
         QCOMPARE(settings.dictationSnapshot().output.ydotoolEnabled, true);
-        settings.edit([](AppSettings &draft) {
-            draft.output.method = QString::fromLatin1(OutputMethod::Ydotool);
-            return true;
-        });
         settings.setYdotoolEnabled(false);
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.restoreClipboardAfterTyping = true; return true; });
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, true);
-        settings.edit([](AppSettings &draft) { draft.output.restoreClipboardAfterTyping = false; return true; });
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, false);
         settings.edit([](AppSettings &draft) { draft.output.format = OutputFormat::Html; return true; });
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::Html);
         settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
@@ -705,7 +624,7 @@ private slots:
         settings.edit([](AppSettings &draft) {
             draft.output.pasteRules = {
                 {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::DirectInsert, true},
-                {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+                {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::StandardPaste, true},
             };
             return true;
         });
@@ -1531,12 +1450,12 @@ private slots:
             s.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
             s.accounts.anthropicCliproxyAccount = QStringLiteral("claude-b.json");
             s.accounts.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
-            s.output.method = QString::fromLatin1(OutputMethod::DirectInsert);
+            s.output.steps = {.insert = true, .press = false, .keep = false};
             s.output.format = OutputFormat::Html;
-            s.output.pasteRules = {{.scope = PasteRuleScope::Global,
+            s.output.pasteRules = {{.scope = PasteRuleScope::Category,
+                                    .match = QStringLiteral("browser"),
                                     .method = PasteMethod::ClipboardOnly,
                                     .enabled = true}};
-            s.output.restoreClipboardAfterTyping = true;
             s.output.completionStatusDurationMs = 2000;
             s.shortcutActivationMode = ShortcutActivationMode::Toggle;
             s.updates = {.channel = UpdateChannel::Nightly,
@@ -1654,9 +1573,9 @@ private slots:
             draft.output.format = OutputFormat::Html;
             draft.output.pasteRules = {
                 {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-                {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+                {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
             };
-            draft.output.restoreClipboardAfterTyping = true;
+            draft.output.steps.keep = false;
             draft.output.completionStatusDurationMs = 900;
             draft.audio = {
                 QStringLiteral("device-1"),
@@ -1715,10 +1634,9 @@ private slots:
         // Claude Code's config directory, as CLAUDE_CONFIG_DIR (set by test_main) moves it.
         QCOMPARE(snapshot.accounts.claudeCredentialsPath,
                  QDir(qEnvironmentVariable("CLAUDE_CONFIG_DIR")).filePath(QStringLiteral(".credentials.json")));
-        QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(snapshot.output.steps, (DeliverySteps{.insert = true, .press = true, .keep = false}));
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
-        QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
         QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
         QCOMPARE(snapshot.output.pasteRules.size(), 2);
         QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);

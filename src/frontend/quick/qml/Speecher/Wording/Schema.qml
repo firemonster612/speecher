@@ -46,6 +46,9 @@ QtObject {
                                           Accounts.rows, Models.rows, General.rows, Updates.rows)
     // The app types Speecher sorts apps into, for paste rules and recognition.
     readonly property var appCategories: Pasting.categories
+    // Delivery's wording beyond its rows: the paste keys, rule options,
+    // how an app is named, and a rule's missing step (schema/pasting.js).
+    readonly property var pasting: Pasting
     // Each row's Since Version, by row id: { rowId: "0.2.1" }.
     readonly property var since: Updates.since
 
@@ -132,7 +135,7 @@ QtObject {
         for (const r of rows) {
             const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
-            if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
+            if (s > 0 && !r.opens && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
                                       trail: rowTrail(r), score: s })
         }
         results.forEach((r, i) => r.order = i)

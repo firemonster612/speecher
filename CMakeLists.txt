@@ -241,11 +241,11 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/LearnedCorrection.cpp
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
-  src/core/OutputMethod.cpp
   src/core/ProviderChain.cpp
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
+  src/core/DeliverySteps.cpp
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
@@ -288,7 +288,8 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/LocalModelCatalog.h
-  src/core/OutputMethod.h
+  src/core/PasteKeys.h
+  src/core/DeliverySteps.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/ProviderAttemptIssue.h

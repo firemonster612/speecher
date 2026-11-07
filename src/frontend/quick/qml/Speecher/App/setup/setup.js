@@ -1,7 +1,10 @@
 .pragma library
 
-// The setup assistant's wording: its steps in order, as they run on Linux,
-// and the words around them.
+// The setup assistant's wording: its steps in order, and the words around
+// them. Pasting comes before Accessibility, so the assistant asks only for
+// what the chosen delivery steps need; Windows needs no Accessibility step.
+
+var os = Qt.platform.os;
 
 var steps = [
     { id: "welcome", title: "Welcome",
@@ -10,10 +13,12 @@ var steps = [
       description: "Choose the service that turns your speech into text, and the language you speak." },
     { id: "microphone", title: "Microphone",
       description: "Choose the microphone Speecher should record, then speak to check that the level moves." },
-    { id: "accessibility", title: "Accessibility",
-      description: "Speecher pastes into the app you are using and reads the text around your cursor so cleanup understands the context. On Linux both work through the desktop accessibility service, which also lets Speecher learn your corrections." },
     { id: "delivery", title: "Pasting",
-      description: "To type for you, Speecher installs a small virtual keyboard. Speecher itself never runs privileged." },
+      description: "Choose how your words get into the app you're using. Speecher tries these in order, and asks only for what the ones you keep need." },
+    { id: "accessibility", title: "Accessibility",
+      description: os === "osx"
+          ? "Accessibility lets Speecher insert your words, press ⌘V for you, read the text around your cursor so cleanup understands it, and tell apps apart. Without it, your words wait on the clipboard for you to paste."
+          : "The desktop accessibility service lets Speecher insert your words, tell apps apart, read the text around your cursor so cleanup understands it, and learn your corrections." },
     { id: "refinement", title: "Refinement",
       description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Choose a service, or skip cleanup." },
     { id: "shortcut", title: "Shortcut",
@@ -45,13 +50,14 @@ var text = {
     noSignIns: "No sign-ins found yet. The next step helps you choose a service.",
     downloadModel: "Download a model to continue",
     downloadModelHelp: "The download keeps going while you finish setup.",
-    clipboardInstead: "Copy to the clipboard instead",
-    clipboardInsteadHelp: "Skip the virtual keyboard. Speecher copies your words and you paste them yourself.",
-    clipboardOnly: "Clipboard only",
     optional: "Optional.",
     cleanupNotReady: "Cleanup isn't ready",
     cleanupNotReadyHelp: "Fix it above to continue, or skip cleanup and Speecher pastes your words as spoken.",
     skipCleanup: "Skip cleanup",
+    // The Pasting step's verdict, by the steps on, and the Accessibility
+    // step's where those steps don't need it.
+    stepNames: { insert: "Insert", press: "Paste keys", keep: "Clipboard" },
+    notNeeded: "Not needed for your steps",
     commandOnly: "The speecher command"
 };
 

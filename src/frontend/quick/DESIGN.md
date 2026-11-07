@@ -54,13 +54,17 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   follow the checks. `System.fix(id)` runs the fix (`fixFromSetup` in the
   setup assistant). The virtual keyboard turns on only after its typing test
   (`VirtualKeyboardTest`) puts core's test text in the field.
-  `System.pasteRoute` is the steps core's delivery takes (insert, press,
-  copy), `pasteNeed` what they need of the computer and `wordsStayCopied`
-  whether that is missing, so words only reach the clipboard. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
+  `System.pasteRoute` is the delivery steps that are on, in the order core
+  tries them (insert, press, keep), `deliverySteps` each step with whether
+  it is on and whether this computer can run it, `stepRuleNeeds(method)`
+  the step a paste rule relies on that is off, and `wordsStayCopied`
+  whether Insert or Press is on but neither can run. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
   and `QrCode` draws it through the host's `image://qr` provider.
   `Removal.start(keepSettings)` reports in `Removal.report` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in
-  Main once the settings are deleted. The paste rules are Settings rows: `globalPasteRule`,
+  Main once the settings are deleted. The delivery steps are Settings rows
+  (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
+  core keeps one on. The paste rules narrow them:
   `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
   `applicationPasteRules`, a list of `{app, method, enabled}`.
 - `Models` is what core knows about the providers and running models here,
@@ -406,7 +410,7 @@ Layout:
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: Microphone and Popup & sounds
   under Dictation, Local models under Speech to text, Writing profiles and
-  Vocabulary under Refinement, the app pages under Pasting, and Appearance
+  Vocabulary under Refinement, App recognition under Pasting, and Appearance
   and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide

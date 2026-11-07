@@ -3,10 +3,13 @@
 #include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
-#include "core/OutputMethod.h"
+#include "core/DeliverySteps.h"
+#include "core/PasteKeys.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickRemoval.h"
-#include "output/TextDelivery.h"
+#ifdef SPEECHER_WITH_WAYLAND
+#include "output/WlClipboardDelivery.h"
+#endif
 
 #include <QClipboard>
 #include <QDebug>
@@ -173,10 +176,15 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
-// What the default paste needs of the computer with these settings.
-TextDelivery::PasteNeed defaultPasteNeed(const OutputSettings &output)
+// Whether Keep can leave words on the clipboard: a Wayland session needs
+// Speecher's clipboard helper or wl-copy, everywhere else Qt's clipboard does.
+bool clipboardReady()
 {
-    return TextDelivery::pasteNeed(output, globalPasteMethod(output.pasteRules));
+#ifdef SPEECHER_WITH_WAYLAND
+    return !WlClipboardDelivery::isWaylandSession() || WlClipboardDelivery::isAvailable();
+#else
+    return true;
+#endif
 }
 
 } // namespace
@@ -218,7 +226,7 @@ QVariantList QuickSystem::checks() const
 {
     QList<QVariantMap> entries{microphoneCheck(m_controller->platform()), accessibilityCheck(m_controller),
                                shortcutCheck(m_controller)};
-    if constexpr (OutputMethod::hasVirtualKeyboard) {
+    if constexpr (PasteKeys::hasVirtualKeyboard) {
         entries.append(virtualKeyboardCheck(*m_virtualKeyboard));
     }
     QVariantList checks;
@@ -253,37 +261,59 @@ QString QuickSystem::virtualKeyboardTest() const
 
 QStringList QuickSystem::pasteRoute() const
 {
-    const OutputSettings output = m_controller->settings()->dictationSnapshot().output;
-    return TextDelivery::pasteRoute(output, globalPasteMethod(output.pasteRules));
+    return DeliveryPlan{m_controller->settings()->dictationSnapshot().output.steps}.route();
 }
 
-QString QuickSystem::pasteNeed() const
+QVariantList QuickSystem::deliverySteps() const
 {
-    switch (defaultPasteNeed(m_controller->settings()->dictationSnapshot().output)) {
-    case TextDelivery::PasteNeed::Accessibility:
-        return QStringLiteral("accessibility");
-    case TextDelivery::PasteNeed::VirtualKeyboard:
-        return QStringLiteral("keyboard");
-    case TextDelivery::PasteNeed::Either:
-        return QStringLiteral("either");
-    case TextDelivery::PasteNeed::Nothing:
-        break;
-    }
-    return {};
+    const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
+    // Accessibility on only for the session counts; on Windows it is always on.
+    const bool accessibility = this->accessibility();
+#if defined(Q_OS_MACOS)
+    // ⌘V reaches another app only through the Accessibility grant.
+    const bool pressReady = accessibility;
+#elif defined(Q_OS_WIN)
+    const bool pressReady = true;
+#else
+    // Ready as its health row says: set up, with no setup or typing test
+    // under way.
+    const bool pressReady =
+        virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
+#endif
+    const auto entry = [&steps](DeliveryStep step, bool ready) {
+        return QVariantMap{{QStringLiteral("id"), deliveryStepName(step)},
+                           {QStringLiteral("on"), steps.has(step)},
+                           {QStringLiteral("ready"), ready}};
+    };
+    return {entry(DeliveryStep::Insert, accessibility), entry(DeliveryStep::Press, pressReady),
+            entry(DeliveryStep::Keep, clipboardReady())};
 }
 
 bool QuickSystem::wordsStayCopied() const
 {
-    // Ready as its health row says: set up, with no setup or typing test
-    // under way.
-    const bool keyboard = virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
-    return TextDelivery::wordsStayCopied(defaultPasteNeed(m_controller->settings()->dictationSnapshot().output),
-                                         accessibility(), keyboard);
+    bool reachesApps = false;
+    bool getsPastClipboard = false;
+    for (const QVariant &entry : deliverySteps()) {
+        const QVariantMap step = entry.toMap();
+        if (step.value(QStringLiteral("id")) == QLatin1String("keep") || !step.value(QStringLiteral("on")).toBool()) {
+            continue;
+        }
+        reachesApps = true;
+        getsPastClipboard = getsPastClipboard || step.value(QStringLiteral("ready")).toBool();
+    }
+    return reachesApps && !getsPastClipboard;
+}
+
+QString QuickSystem::stepRuleNeeds(const QString &method) const
+{
+    const auto step = speecher::stepRuleNeeds(m_controller->settings()->dictationSnapshot().output.steps,
+                                              pasteMethodFromName(method));
+    return step ? deliveryStepName(*step) : QString();
 }
 
 bool QuickSystem::hasVirtualKeyboard() const
 {
-    return OutputMethod::hasVirtualKeyboard;
+    return PasteKeys::hasVirtualKeyboard;
 }
 
 bool QuickSystem::hasGlobalShortcuts() const
@@ -336,17 +366,12 @@ QVariantMap QuickSystem::check(const QString &id) const
     return {};
 }
 
-void QuickSystem::fix(const QString &id)
-{
-    runFix(id, VirtualKeyboardSetup::AfterSetUp::KeepOutputMethod);
-}
-
 void QuickSystem::fixFromSetup(const QString &id)
 {
-    runFix(id, VirtualKeyboardSetup::AfterSetUp::PasteAutomatically);
+    fix(id);
 }
 
-void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp)
+void QuickSystem::fix(const QString &id)
 {
     if (m_removal->running()) {
         return;
@@ -369,7 +394,7 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         return;
     }
     if (action == QLatin1String("setUp")) {
-        m_virtualKeyboard->setUp(afterSetUp);
+        m_virtualKeyboard->setUp();
     } else if (action == QLatin1String("start")) {
         m_virtualKeyboard->startService();
     } else if (action == QLatin1String("enable")) {
