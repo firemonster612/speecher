@@ -616,11 +616,12 @@ int main(int argc, char **argv)
         controller.reopenMainWindowAfterUpdate();
         if (!daemon && decision.transcribeFiles.isEmpty()) {
             // A launch that opens files brings up the Transcribe window alone.
-            // macOS hands Finder's files over as events once the loop runs,
-            // so let those arrive before deciding.
-            // Files arriving later still replace it; see showDefaultMainWindow.
+            // macOS hands Finder's files over as events once the loop runs;
+            // those arriving after this still replace Main, see
+            // showDefaultMainWindow. Never processEvents() here: on macOS,
+            // events processed this early leave the app unresponsive to the
+            // window server for good, a beach ball until Force Quit.
             QTimer::singleShot(0, &controller, [&controller] {
-                QCoreApplication::processEvents();
                 if (!controller.filesOpened()) {
                     controller.showDefaultMainWindow();
                 }
