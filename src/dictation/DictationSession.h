@@ -282,6 +282,7 @@ private:
         QString note;
         int words = 0;
         QString appName;
+        QString applicationId;
         QString profile;
         QString profileName;
         int completionStatusDurationMs = 0;

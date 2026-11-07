@@ -23,6 +23,10 @@ struct DictationRecord {
     // when a fallback stood in. Empty in records from before they were kept.
     QStringList speechProviders;
     QStringList refinementProviders;
+    // The app's ID as paste rules name it (Target::applicationId), so a rule
+    // can be added for the app just dictated into. Only in memory: the log
+    // never keeps it.
+    QString applicationId;
 };
 
 // Words as a reader counts them: word-boundary segments that contain a letter

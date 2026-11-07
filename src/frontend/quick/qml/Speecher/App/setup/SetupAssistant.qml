@@ -29,7 +29,7 @@ ClientWindow {
     readonly property int _limit: steps.findIndex(s => !s.done) < 0 ? steps.length - 1 : steps.findIndex(s => !s.done)
     readonly property var _files: ({
         welcome: "WelcomeStep.qml", transcription: "TranscriptionStep.qml", microphone: "MicrophoneStep.qml",
-        accessibility: "AccessibilityStep.qml", delivery: "DeliveryStep.qml", refinement: "RefinementStep.qml",
+        delivery: "DeliveryStep.qml", refinement: "RefinementStep.qml",
         shortcut: "ShortcutStep.qml", ready: "ReadyStep.qml"
     })
 
@@ -42,9 +42,11 @@ ClientWindow {
     }
 
     function go(index) { if (choices.reachable(index)) step = Math.max(0, Math.min(steps.length - 1, index)) }
-    // Finish writes the choices, says setup is done, then closes; closing
-    // any other way leaves setup to run again.
+    // Finish writes the choices, says setup is done, then closes; later
+    // writes them and closes, and closing any way but finish leaves setup to
+    // run again.
     function finish() { choices.finish(); Settings.completeSetup(); close() }
+    function later() { choices.finish(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------
@@ -131,29 +133,32 @@ ClientWindow {
             // In line with the step's content above.
             Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
-            // Skip and Back fade where they stand rather than reflowing the
-            // footer; the main button's label rolls to its new wording. Skip
-            // only passes steps that are already done, never goes around one.
-            Button {
+            // Set up later saves what was chosen and closes, leaving setup to
+            // open again; once every step passes it becomes Skip, which
+            // finishes. Beside it, why Continue waits. Back fades where it
+            // stands rather than reflowing the footer; the main button's
+            // label rolls to its new wording.
+            Row {
                 x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
-                text: Setup.text.skip
-                variant: "ghost"
-                enabled: !window._last && window._limit === window.steps.length - 1
-                onClicked: window.finish()
-                opacity: enabled ? 1 : 0
+                spacing: Theme.space4
+                opacity: window._last ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { Ease {} }
-            }
-            // Why Continue waits, where Skip would stand.
-            Txt {
-                x: Theme.pageInset
-                anchors.verticalCenter: parent.verticalCenter
-                text: Setup.text.waits
-                tone: "secondary"
-                opacity: !window._last && window._limit === window.step ? 1 : 0
-                visible: opacity > 0
-                Behavior on opacity { Ease {} }
+                Button {
+                    readonly property bool skips: window._limit === window.steps.length - 1
+                    text: skips ? Setup.text.skip : Setup.text.later
+                    variant: "ghost"
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: skips ? window.finish() : window.later()
+                }
+                Txt {
+                    text: Setup.text.waits
+                    tone: "secondary"
+                    anchors.verticalCenter: parent.verticalCenter
+                    opacity: window._limit === window.step ? 1 : 0
+                    Behavior on opacity { Ease {} }
+                }
             }
             Row {
                 anchors.right: parent.right

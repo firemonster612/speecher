@@ -159,8 +159,9 @@ void TextDelivery::useDefaultBackendFactory()
 }
 
 // The clipboard as it was before a paste borrowed it, put back once the paste
-// is verified, and what the receipt says about it. Both steps answer through
-// next once the clipboard has, unless context is gone by then.
+// is verified or no keys went out, and what the receipt says about it. Both
+// steps answer through next once the clipboard has, unless context is gone by
+// then.
 class TextDelivery::PreviousClipboard {
 public:
     explicit PreviousClipboard(ClipboardDelivery &clipboard)
@@ -168,33 +169,31 @@ public:
     {
     }
 
-    // Saves the clipboard when wanted, or notes why it could not.
-    void save(bool wanted, QObject *context, std::function<void()> next)
+    // Saves the clipboard. next hears why it could not, as a reason to put
+    // after "Not delivered: ", or nothing once it is saved.
+    void save(QObject *context, std::function<void(const QString &failure)> next)
     {
-        if (!wanted) {
-            next();
-            return;
-        }
         if (!m_clipboard.canSnapshot()) {
-            m_warning = QStringLiteral("Previous clipboard could not be saved because snapshots are unavailable");
-            next();
+#ifdef SPEECHER_WITH_WAYLAND
+            if (WlClipboardDelivery::isWaylandSession()) {
+                next(QStringLiteral("saving your clipboard first needs wl-paste"));
+                return;
+            }
+#endif
+            next(QStringLiteral("your clipboard could not be saved first, since this computer can't read it"));
             return;
         }
         m_clipboard.capture(context, [this, next](const ClipboardCaptured &captured) {
             m_saved = captured.ok;
             m_snapshot = captured.snapshot;
-            if (!m_saved) {
-                m_warning = captured.error.isEmpty()
-                    ? QStringLiteral("Previous clipboard could not be saved")
-                    : QStringLiteral("Previous clipboard could not be saved: %1").arg(captured.error);
-            }
-            next();
+            next(m_saved ? QString()
+                 : captured.error.isEmpty() ? QStringLiteral("your clipboard could not be saved first")
+                                            : QStringLiteral("your clipboard could not be saved first: %1").arg(captured.error));
         });
     }
 
-    // Puts the saved clipboard back after a verified paste. next hears false
-    // when nothing was saved, or when it could not be put back, which the
-    // receipt then says.
+    // Puts the saved clipboard back. next hears false when nothing was
+    // saved, or when it could not be put back, which the receipt then says.
     void restore(QObject *context, std::function<void(bool restored)> next)
     {
         if (!m_saved) {
@@ -235,11 +234,11 @@ private:
 };
 
 // One delivery, step by step, as its plan says: copy first when Keep is on,
-// then insert straight into the app, else copy (when Keep is off, saving the
-// previous clipboard first) and press the paste keys, and put the previous
-// clipboard back after a verified paste when Keep is off. A step that waits
-// on a helper goes on from its answer. done hears the result once, and
-// nothing runs after stop().
+// then insert straight into the app, else copy and press the paste keys.
+// When Keep is off the paste borrows the clipboard: only once the previous
+// one is saved, and it goes back after a verified paste or once the keys are
+// known not to have gone out. A step that waits on a helper goes on from its
+// answer. done hears the result once, and nothing runs after stop().
 class TextDelivery::Run final : public QObject {
     // One of this run's frames on the stack. No step waits in a nested event
     // loop any more, but the run answers from inside a step, and a handler of
@@ -428,9 +427,13 @@ private:
             pressCopied();
             return;
         }
-        // The paste borrows the clipboard: what was there goes back once the
-        // paste is verified.
-        m_previousClipboard.save(true, this, whileRunning([this] {
+        // The paste borrows the clipboard, and only one Speecher could save:
+        // without it, the keys can't run, as without a backend.
+        m_previousClipboard.save(this, whileRunning([this](const QString &failure) {
+            if (!failure.isEmpty()) {
+                finishUndelivered(copiedMessage(), failure);
+                return;
+            }
             copy([this] { pressCopied(); });
         }));
     }
@@ -477,13 +480,18 @@ private:
                     return;
                 }
                 if (!focusGated) {
+                    self->m_keysCleared = true;
                     reply(true);
                     return;
                 }
                 Frame frame(*self);
                 self->m_targetProvider->focusMatch(
                     self->m_request.target, self, [self, reply](TargetProvider::FocusMatch focus) {
-                        reply(focus == TargetProvider::FocusMatch::Same && self && self->m_done);
+                        const bool clear = focus == TargetProvider::FocusMatch::Same && self && self->m_done;
+                        if (clear) {
+                            self->m_keysCleared = true;
+                        }
+                        reply(clear);
                     });
             });
         m_backend->deliver(m_request.content, clearToInject,
@@ -582,8 +590,28 @@ private:
     }
 
     // The keys did not go out, or failed; the words are on the clipboard
-    // from the copy made for them.
+    // from the copy made for them. One that borrowed the clipboard gives it
+    // back where no key can have gone out: a backend asks the gate before it
+    // presses any.
     void finishPressFailed(const QString &error)
+    {
+        if (!steps().keep && !m_keysCleared) {
+            m_previousClipboard.restore(this, whileRunning([this, error](bool restored) {
+                if (!restored) {
+                    finishCopiedAfterPress(error);
+                    return;
+                }
+                const QString reason = error.isEmpty() ? QStringLiteral("the paste keys did not go out")
+                                                       : error.at(0).toLower() + error.mid(1);
+                finish({false, DeliveryReceipt::None, false,
+                        m_previousClipboard.annotate(QStringLiteral("Not delivered: %1").arg(reason))});
+            }));
+            return;
+        }
+        finishCopiedAfterPress(error);
+    }
+
+    void finishCopiedAfterPress(const QString &error)
     {
         finish({
             true,
@@ -603,6 +631,8 @@ private:
     PlanChoice m_choice;
     TargetProvider::FocusMatch m_focus = TargetProvider::FocusMatch::Different;
     bool m_targetFocused = false;
+    // The gate let the paste keys go out, so they may have.
+    bool m_keysCleared = false;
     bool m_copied = false;
     bool m_copiedAsPlainText = false;
     QString m_copyError;

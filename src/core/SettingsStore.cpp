@@ -136,15 +136,11 @@ void migrateRefinementModels(QSettings &settings)
 
 void migrateDeliverySteps(QSettings &settings)
 {
-    if (!settings.contains(SettingsKeys::OutputMethod) && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::DeliveryStepsMigrationVersion).toInt() >= currentMigrationVersion) {
         return;
     }
-    // The stored names, older spellings included.
-    const QString method = settings.value(SettingsKeys::OutputMethod).toString();
-    const bool keyboardOnly = method == u"ydotool" || method == u"mac-paste" || method == u"win-paste";
-    const bool insertOnly = method == u"direct_insert";
-    const bool copyOnly = method == u"wl-copy" || method == u"clipboard" || method == u"qt-clipboard" || method == u"qt";
-
+    settings.setValue(SettingsKeys::DeliveryStepsMigrationVersion, currentMigrationVersion);
     QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
     // The global rule as delivery read it: the first one turned on, and
     // Clipboard only where none was.
@@ -158,7 +154,16 @@ void migrateDeliverySteps(QSettings &settings)
             }
         }
     }
+    if (!storedGlobal && !settings.contains(SettingsKeys::OutputMethod)
+        && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
+        return;
+    }
     const PasteMethod global = globalMethod.value_or(storedGlobal ? PasteMethod::ClipboardOnly : PasteMethod::StandardPaste);
+    // The stored names, older spellings included.
+    const QString method = settings.value(SettingsKeys::OutputMethod).toString();
+    const bool keyboardOnly = method == u"ydotool" || method == u"mac-paste" || method == u"win-paste";
+    const bool insertOnly = method == u"direct_insert";
+    const bool copyOnly = method == u"wl-copy" || method == u"clipboard" || method == u"qt-clipboard" || method == u"qt";
 
     DeliverySteps steps;
     steps.insert = !keyboardOnly && !copyOnly && global != PasteMethod::ClipboardOnly;
@@ -167,7 +172,20 @@ void migrateDeliverySteps(QSettings &settings)
     steps.keep = !settings.value(SettingsKeys::RestoreClipboardAfterTyping).toBool() || (!steps.insert && !steps.press);
 
     rules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Global; });
-    if constexpr (!terminalKeysDiffer) {
+    if constexpr (terminalKeysDiffer) {
+        // There is no global rule to choose now, so every app type that
+        // followed it keeps its keys with a rule of its own.
+        if (global == PasteMethod::TerminalPaste) {
+            for (const AppCategory category : {AppCategory::Terminal, AppCategory::Browser, AppCategory::Email,
+                                               AppCategory::Office, AppCategory::CodeEditor, AppCategory::AiCoding,
+                                               AppCategory::General}) {
+                const PasteRule *own = findPasteRule(rules, PasteRuleScope::Category, appCategoryName(category));
+                if (!own || !own->enabled) {
+                    setPasteRule(rules, PasteRuleScope::Category, appCategoryName(category), PasteMethod::TerminalPaste);
+                }
+            }
+        }
+    } else {
         // A category with Standard paste is no rule of its own.
         rules.removeIf([](const PasteRule &rule) {
             return rule.scope == PasteRuleScope::Category && rule.method == PasteMethod::TerminalPaste;

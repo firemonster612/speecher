@@ -96,6 +96,7 @@ Page {
         open: !Insights.hasData
         Section {
             title: page.t.yourDictation
+            LatestDictation {}
             SettingRow {
                 title: Insights.state === "off" ? page.t.offTitle : page.t.emptyTitle
                 help: Insights.state === "off" ? page.t.offBody : page.t.emptyBody
@@ -117,6 +118,7 @@ Page {
                     currentId: Insights.period
                     onActivated: id => Insights.period = id
                 }
+                LatestDictation {}
                 Figures { rows: page.summary ? T.figures(page.summary, Insights.period, Insights.today) : [] }
             }
 

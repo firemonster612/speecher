@@ -54,9 +54,10 @@ class QuickInsights final : public QObject, public HostSingleton<QuickInsights> 
     // desktop lets Speecher see edits), recent: the newest three as
     // [{ heard, fixed }] }.
     Q_PROPERTY(QVariantMap corrections READ corrections NOTIFY correctionsChanged)
-    // The latest transcript, kept in memory only: { text, words, app,
-    // profile, date }, where app, profile and date are empty or null unless
-    // insights recorded it. Null before the first.
+    // The latest transcript, kept in memory only: { text, words, app, appId,
+    // profile, date }, where app, appId (the ID paste rules name the app by),
+    // profile and date are empty or null unless insights recorded it. Null
+    // before the first.
     Q_PROPERTY(QVariant latest READ latest NOTIFY latestChanged)
 
 public:

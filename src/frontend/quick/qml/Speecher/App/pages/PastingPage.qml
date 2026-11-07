@@ -8,14 +8,15 @@ import Speecher.App
 import "text"
 
 // How words get into apps: the delivery steps in the order core tries
-// them, each with what it needs here; then the format, selection edits, and
-// the rules that narrow the steps for an app type or a single app.
+// them, each with what it relies on here; then the options, and the
+// exceptions that narrow the steps for an app type or a single app.
 Page {
     id: page
     title: Schema.page("pasting").title
     subtitle: Schema.page("pasting").subtitle
 
     readonly property var _steps: System.deliverySteps
+    function _runs(id) { return _steps.some(s => s.id === id && s.on && s.ready) }
     readonly property bool _keeps: _steps.some(s => s.id === "keep" && s.on)
     // The steps that are on, in words, each marked where this computer
     // can't run it yet: [{ icon, label, ready }].
@@ -25,19 +26,27 @@ Page {
         keep: { icon: "clipboard", label: "Keep on clipboard" }
     })[s.id]))
     // Whether the words can get past the clipboard into the app.
-    readonly property bool _reachesApp: _steps.some(s => s.id !== "keep" && s.on && s.ready)
+    readonly property bool _reachesApp: _runs("insert") || _runs("press")
     readonly property string _routeCaption: {
-        // What the steps that are on but can't run yet need, by name.
-        const waiting = [...new Set(_steps.filter(s => s.on && !s.ready && s.id !== "keep")
-                                          .map(s => Schema.row(Schema.pasting.rowOf[s.id]).need.label))].join(" or ")
+        // What the steps that are on but can't run yet wait for, by name.
+        const waiting = [...new Set([].concat(..._steps.filter(s => s.on && s.id !== "keep").map(s => s.waiting))
+                                      .map(n => Schema.pasting.needs[n].label))].join(" or ")
         if (!_reachesApp && _keeps)
             return waiting ? "Your words stay on the clipboard until " + waiting + " is ready."
                            : "Your words stay on the clipboard for you to paste."
         if (!_reachesApp)
             return "Nothing delivers your words until " + waiting + " is ready."
-        return (Settings.values.outputFormat === "html" ? "Delivers formatted text" : "Delivers plain text")
-            + (_keeps ? " and leaves it on your clipboard." : ", then puts back what was on your clipboard.")
+        // Insertion writes plain text whatever the format.
+        const formatted = Settings.values.outputFormat === "html"
+        const delivers = !formatted || !_runs("press") ? "Delivers plain text"
+                       : _runs("insert") ? "Plain text when inserted, formatted when pasted" : "Delivers formatted text"
+        if (_keeps) return delivers + ", and leaves a copy on your clipboard."
+        if (!_runs("press")) return delivers + ", and leaves your clipboard alone."
+        return delivers + ". After a paste your clipboard goes back, unless Speecher can't confirm the paste, which leaves your words there."
     }
+    // Whether the steps can replace selected text: Linux inserts without
+    // replacing a selection, so there only the paste keys can.
+    readonly property bool _editsSelections: Qt.platform.os === "linux" ? _runs("press") : _reachesApp
 
     Section {
         plain: true
@@ -47,8 +56,8 @@ Page {
             appName: page._reachesApp ? "Slack" : ""
             appCaption: "For example"
             clipboardLabel: "Your clipboard"
-            // Words that stay on the clipboard never reach the app.
-            sample: page._reachesApp ? "Can you send me last quarter's numbers by Friday?" : ""
+            // Words that stay on the clipboard show there instead.
+            sample: page._reachesApp || page._keeps ? "Can you send me last quarter's numbers by Friday?" : ""
             startLabel: "Your words"
             firstLabel: "First"
             fallbackLabel: "If that fails"
@@ -94,40 +103,14 @@ Page {
     Section {
         title: Schema.row("outputFormat").section
         SchemaRow { rowId: "outputFormat" }
-    }
-
-    Section {
-        title: Schema.row("reviewSelectionEdits").section
-        SchemaRow { rowId: "reviewSelectionEdits" }
-    }
-
-    Section {
-        title: Schema.row("categoryPasteRule_terminal").section
-        caption: "Narrow the steps above for every app of one type. A rule can't turn on a step that's off."
-        AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can tell which app you're in. Rules you set apply once it can." }
-        // Two columns of rows, so seven types don't make a tall stack. The
-        // rows go across in pairs, so each pair's dividers line up. Where a
-        // column would leave a type's name and examples less than 120 px
-        // beside its choice, as at the window's narrowest, one column.
-        Grid {
-            id: typeGrid
-            readonly property real narrowestColumn: Theme.rowInset * 2 + 120 + 20 + Theme.selectWidth
-            columns: width >= narrowestColumn * 2 ? 2 : 1
-            width: parent.width
-            Repeater {
-                model: Schema.appCategories
-                SchemaRow {
-                    id: typeRow
-                    required property var modelData
-                    required property int index
-                    width: typeGrid.width / typeGrid.columns
-                    first: index < typeGrid.columns
-                    rowId: "categoryPasteRule_" + modelData.id
-                    // A rule that relies on a step that's off says so.
-                    readonly property string _needs: System.stepRuleNeeds(Settings.values[rowId] || "")
-                    note: _needs ? Schema.pasting.needsStep(_needs) : modelData.examples
-                }
-            }
+        SchemaRow {
+            rowId: "reviewSelectionEdits"
+            // A saved preference the steps can't act on says so.
+            note: spec.help + (!page._editsSelections && Settings.values.reviewSelectionEdits
+                ? " " + (Qt.platform.os === "linux"
+                         ? "Your steps can't replace selected text now: on Linux that needs Press the paste keys, ready and on."
+                         : "Your steps can't replace selected text now: neither Insert nor Press can run.")
+                : "")
         }
     }
 

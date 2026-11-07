@@ -25,16 +25,23 @@ var text = {
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
     checking: "Checking the speech service…",
-    wordsOnClipboard: "Words stay on the clipboard",
+    // Where dictated words end up, by System.pastingOutcome, and what the
+    // delivery steps that are on wait for, by name.
+    pasting: { delivers: "Works", clipboard: "Your words stay on the clipboard", nothing: "Nothing can deliver your words" },
+    needs: labels => labels.length ? "Needs " + (labels.length > 1 ? labels.slice(0, -1).join(", ") + " and " + labels[labels.length - 1] : labels[0]) + "." : "",
     // The readiness card: one line while everything passes, else its groups.
     allWorking: "Everything Speecher checks works",
     runSetupAgain: "Run setup again",
+    setupAssistant: "Setup assistant",
+    setupAgainHelp: "Goes through each of these with you.",
     needsThese: "Dictation needs these",
     worksWithout: "Works without these",
     takesOver: label => label + " takes over",
     // What dictation needs, as the caption names it.
     aMicrophone: "a microphone",
+    yourMicrophone: "the microphone you chose",
     aSpeechService: "a working speech service",
+    aWayToDeliver: "a way to deliver your words",
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",

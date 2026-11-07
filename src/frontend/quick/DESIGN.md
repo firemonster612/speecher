@@ -56,17 +56,21 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`VirtualKeyboardTest`) puts core's test text in the field.
   `System.pasteRoute` is the delivery steps that are on, in the order core
   tries them (insert, press, keep), `deliverySteps` each step with whether
-  it is on and whether this computer can run it, `stepRuleNeeds(method)`
-  the step a paste rule relies on that is off, and `wordsStayCopied`
-  whether Insert or Press is on but neither can run. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
+  it is on, what it relies on here by need id and which of those are
+  missing (`Schema.pasting.needs` words them, as "<need>: <state>"),
+  `rulePlan(method)` what a paste rule leaves of the steps and the off step
+  it relies on, and `pastingOutcome` where the words end up: `delivers`,
+  `clipboard` or `nothing`. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
   and `QrCode` draws it through the host's `image://qr` provider.
   `Removal.start(keepSettings)` reports in `Removal.report` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in
   Main once the settings are deleted. The delivery steps are Settings rows
   (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
-  core keeps one on. The paste rules narrow them:
-  `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
-  `applicationPasteRules`, a list of `{app, method, enabled}`.
+  core keeps one on. The paste rules narrow them, and Pasting lists only
+  those that do as Exceptions: `categoryPasteRule_<type>` (`inherit` is no
+  rule of its own) and `applicationPasteRules`, a list of `{app, method,
+  enabled}`. `Insights.latest.appId` is the app last dictated into, for an
+  exception.
 - `Models` is what core knows about the providers and running models here,
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
@@ -434,10 +438,14 @@ Layout:
 - A check (`System.checks`) shows on the page of what it gates, as a
   `HealthRow` with its fix: microphone access on Microphone, global
   shortcuts on Dictation, accessibility and the virtual keyboard on
-  Pasting. Home's session card lists every check that applies, grouped as
-  what dictation needs (a check marked `needed`, a microphone, a working
-  speech service) and what it works without, each row opening its page;
-  while all pass it is one line with Run setup again.
+  Pasting, as the needs of the delivery steps. Home's session card lists
+  the checks that apply, grouped as what dictation needs (a check marked
+  `needed`, a microphone, a working speech service, a way to deliver the
+  words) and what it works without, each row opening its page. Delivery is
+  one Pasting row naming what is missing, with the first fix; the virtual
+  keyboard never has a row of its own, and accessibility has one only
+  while no delivery step that is on relies on it. While all pass the card
+  is one line; Run setup again shows either way.
 
 Things to avoid, because they read as generated:
 

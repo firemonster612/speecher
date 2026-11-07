@@ -8,36 +8,40 @@ import Speecher.App
 import "words.js" as T
 
 // The dictation itself, at the top of Home: whether Speecher is ready and
-// its shortcut, then the latest thing said, set large. While dictating, the
-// level meter and the session's buttons take the shortcut's place and the
-// words heard so far take the latest dictation's.
+// its shortcut. While dictating, the level meter and the session's buttons
+// take the shortcut's place and the words heard so far take the readiness
+// card's.
 Section {
     id: session
     objectName: "homeSession"
 
     readonly property var t: T.text
     readonly property bool live: Dictation.state === "listening" || Dictation.state === "paused"
-    readonly property var latest: Insights.latest
     readonly property var shortcutKeys: Settings.values.globalShortcut || []
     readonly property bool hasShortcut: shortcutKeys.length > 0
     // The desktop gives Speecher no shortcut, so there is none to set.
     readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     // Every check that applies here, by id, in two groups: what dictation
     // can't start without (a check core marks needed, such as microphone
-    // access) and what it works without.
-    readonly property var checks: System.checks.filter(Health.applies)
+    // access) and what it works without. The virtual keyboard is Pasting's,
+    // and so is accessibility while a delivery step that is on relies on it.
+    readonly property var steps: System.deliverySteps
+    readonly property bool pastingNeedsAccessibility: steps.some(s => s.on && s.needs.includes("accessibility"))
+    readonly property var checks: System.checks.filter(c => Health.applies(c) && c.id !== "virtualKeyboardHealth"
+                                                             && (c.id !== "desktopAccessibility" || !pastingNeedsAccessibility))
     readonly property var neededChecks: checks.filter(c => c.needed).map(c => c.id)
     readonly property var optionalChecks: checks.filter(c => !c.needed).map(c => c.id)
 
     // The speech chain, the service then its fallbacks: dictation works while
     // any of them does. Checking while none works and one is being checked;
-    // a service nobody has checked yet stands in nobody's way.
+    // a service nobody has checked yet stands in nobody's way, but one whose
+    // check failed does.
     readonly property var chain: [Settings.values.speechProvider || ""]
         .concat(Settings.values.speechFallbackList || []).map(id => ModelText.service(id))
     readonly property var working: chain.find(s => s.state === "ready")
     readonly property string speechState: working ? "ok"
         : chain.some(s => s.signInChecking) ? "checking"
-        : chain.some(s => s.state === "unknown") ? "notChecked" : "attention"
+        : chain.some(s => s.state === "unknown" && !s.signInCheckFailure) ? "notChecked" : "attention"
     readonly property var speechItem: ({
         id: "speech", title: Schema.page("speech").title, state: speechState, page: "speech", row: "",
         status: working ? (working === chain[0] ? ModelText.status(working) : t.takesOver(working.label))
@@ -50,20 +54,35 @@ Section {
         status: !Audio.hasMicrophones ? Schema.row("audioDevice").noneLabel
               : Microphones.deviceMissing ? Schema.row("audioDevice").missingLabel : Microphones.deviceName
     })
-    // Where words can neither be inserted nor pasted with keys, they only
-    // reach the clipboard.
-    readonly property var optionalItems: System.wordsStayCopied
-        ? [{ id: "pasting", title: Schema.page("pasting").title, status: t.wordsOnClipboard, state: "attention", page: "pasting", row: "" }] : []
+    // Pasting, one row while a step that is on waits for something: where
+    // the words end up, what is missing by name, and the first fix.
+    readonly property var waiting: [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))]
+    readonly property var fixFor: waiting.map(n => Schema.pasting.needs[n])
+        .find(need => need.check && Health.fix(Health.find(System.checks, need.check))) || null
+    readonly property var pastingItem: ({
+        id: "pasting", title: Schema.page("pasting").title, page: "pasting", row: "",
+        state: System.pastingOutcome === "nothing" ? "off" : "attention",
+        status: t.pasting[System.pastingOutcome],
+        help: t.needs(waiting.map(n => Schema.pasting.needs[n].label)),
+        fixLabel: fixFor ? fixFor.fix || Health.fix(Health.find(System.checks, fixFor.check)) : "",
+        fixCheck: fixFor ? fixFor.check : ""
+    })
+    readonly property bool pastingDegraded: waiting.length > 0 || System.pastingOutcome !== "delivers"
+    // With nothing to deliver the words, dictation is for nothing.
+    readonly property bool pastingNeeded: System.pastingOutcome === "nothing"
 
-    // What dictation needs and doesn't have, as the caption names it.
+    // What dictation needs and doesn't have, as the caption names it, from
+    // the same results as the rows.
     readonly property var missing: checks.filter(c => c.needed && !Health.passes(c)).map(c => Schema.row(c.id).label.toLowerCase())
-        .concat(Audio.hasMicrophones ? [] : [t.aMicrophone], speechState === "attention" ? [t.aSpeechService] : [])
+        .concat(!Audio.hasMicrophones ? [t.aMicrophone] : Microphones.deviceMissing ? [t.yourMicrophone] : [],
+                speechState === "attention" ? [t.aSpeechService] : [],
+                pastingNeeded ? [t.aWayToDeliver] : [])
     // Without microphone access or a microphone nothing can start; with no
     // working speech service it can, to try again, but isn't ready.
     readonly property bool cantStart: checks.some(c => c.needed && !Health.passes(c)) || !Audio.hasMicrophones
     readonly property bool blocked: missing.length > 0
     readonly property bool allPass: !blocked && checks.every(Health.passes) && microphoneItem.state === "ok"
-                                    && speechState === "ok" && optionalItems.length === 0
+                                    && speechState === "ok" && !pastingDegraded
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
@@ -127,56 +146,13 @@ Section {
         travel: 0
         currentIndex: session.live ? 1 : 0
 
-        // How ready Speecher is, over the latest dictation, where it went,
-        // and Copy.
-        Column {
-            width: parent.width
-            Readiness {
-                allPass: session.allPass
-                neededChecks: session.neededChecks
-                optionalChecks: session.optionalChecks
-                neededItems: [session.microphoneItem, session.speechItem]
-                optionalItems: session.optionalItems
-            }
-            Rectangle { x: Theme.rowInset; width: parent.width - 2 * Theme.rowInset; height: 1; color: Theme.rule }
-            Column {
-                width: parent.width
-                padding: Theme.space5
-                topPadding: Theme.space4
-                bottomPadding: Theme.space3
-                spacing: Theme.space2
-                Txt {
-                    width: parent.width - 2 * parent.padding
-                    text: session.latest ? session.latest.text : session.t.nothingYet
-                    tone: session.latest ? "primary" : "tertiary"
-                    variant: "lead"
-                    wrapMode: Text.WordWrap
-                }
-                Reveal {
-                    open: session.latest !== null
-                    width: parent.width - 2 * parent.padding
-                    Item {
-                        width: parent.width
-                        height: copy.height
-                        Txt {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: session.latest ? T.latestDetail(session.latest, Insights.today) : ""
-                            variant: "small"
-                            tone: "secondary"
-                        }
-                        CopyButton {
-                            id: copy
-                            anchors.right: parent.right
-                            anchors.rightMargin: -Theme.space1
-                            text: session.t.copy
-                            copiedText: Words.copied
-                            size: "small"
-                            variant: "ghost"
-                            onCopied: Insights.copyLatest()
-                        }
-                    }
-                }
-            }
+        // How ready Speecher is.
+        Readiness {
+            allPass: session.allPass
+            neededChecks: session.neededChecks
+            optionalChecks: session.optionalChecks
+            neededItems: [session.microphoneItem, session.speechItem].concat(session.pastingDegraded && session.pastingNeeded ? [session.pastingItem] : [])
+            optionalItems: session.pastingDegraded && !session.pastingNeeded ? [session.pastingItem] : []
         }
         // What is being heard now.
         Txt {

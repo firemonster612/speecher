@@ -888,6 +888,7 @@ private slots:
         auto targetProvider = std::make_unique<FakeTargetProvider>();
         targetProvider->target.applicationName = QStringLiteral("Kate");
         targetProvider->target.processName = QStringLiteral("kate");
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
         auto delivery = std::make_unique<FakeDelivery>();
         if (!delivered) {
             delivery->result = {false, DeliveryReceipt::None, false, QStringLiteral("No target")};
@@ -912,6 +913,7 @@ private slots:
             const auto record = recorded.first().first().value<DictationRecord>();
             QCOMPARE(record.words, 3);
             QCOMPARE(record.appName, QStringLiteral("Kate"));
+            QCOMPARE(record.applicationId, QStringLiteral("org.kde.kate"));
             QVERIFY(record.audioMs > 0);
         }
     }

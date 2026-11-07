@@ -5,10 +5,11 @@ import Speecher.App
 
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()
-// writes them back. A step is done when its check passes, or for
-// accessibility and delivery settles (Setup.settled), or when the delivery
-// steps chosen don't need it; on macOS declining Accessibility is a valid
-// choice that leaves the words on the clipboard. One rule gates
+// writes them back. A step is done when its check passes: speech once the
+// chosen service or one of its fallbacks works, Pasting once a step that is
+// on can get words into the app, or waits only for what this computer can't
+// do before the next sign-in (Setup.settled), or once only Keep is on and
+// can run, which continueWithClipboardOnly chooses. One rule gates
 // Continue, Finish, Skip and the rail: a step can be reached once every step
 // before it is done. A check only asks for what its step shows and lets you
 // fix there. Refinement passes with None or a provider that works.
@@ -33,14 +34,25 @@ QtObject {
     signal goTo(string stepId)
 
     // Setup.steps, each with done and verdict: what was chosen once it
-    // passes, or what is missing. Windows asks for no accessibility.
-    readonly property var steps: Setup.steps
-        .filter(s => s.id !== "accessibility" || Qt.platform.os !== "windows")
-        .map(s => Object.assign({}, s, _status(s.id)))
+    // passes, or what is missing.
+    readonly property var steps: Setup.steps.map(s => Object.assign({}, s, _status(s.id)))
 
-    // Whether the delivery steps chosen need accessibility: inserting does,
-    // and on macOS pressing ⌘V does too.
-    readonly property bool accessibilityNeeded: insert || (press && Qt.platform.os === "osx")
+    // Whether a delivery step can run as the drafts choose it: nothing it
+    // waits for but what settles. Saving the clipboard is Keep off's need,
+    // and Keep only needs the clipboard to take the words, as Press does.
+    function stepRuns(id) {
+        if (id === "keep") return !System.deliverySteps.some(s => (s.waiting || []).includes("clipboard"))
+        const step = System.deliverySteps.find(s => s.id === id) || {}
+        return (step.waiting || []).every(n => (n === "clipboardSave" && keep) || Setup.settled(n, System.checks))
+    }
+    // Words left on the clipboard is all that can run: Keep can, and
+    // Insert and Press are off.
+    function continueWithClipboardOnly() {
+        insert = false
+        press = false
+        keep = true
+        goTo(steps[steps.findIndex(s => s.id === "delivery") + 1].id)
+    }
 
     function _status(id) {
         switch (id) {
@@ -52,8 +64,13 @@ QtObject {
             // doesn't, until it answers; one that couldn't reach the service
             // says why.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
-            const done = !!service && (service.state === "ready" || downloading)
-            return { done: done, verdict: !service ? Setup.text.notChosen : done ? service.label
+            // A fallback that works carries dictation while the service can't.
+            const fallback = (Settings.values.speechFallbackList || []).filter(id => id !== speech)
+                .map(id => ModelText.service(id)).find(s => s.state === "ready")
+            const ready = !!service && (service.state === "ready" || downloading)
+            return { done: ready || (!!service && !!fallback),
+                     verdict: !service ? Setup.text.notChosen : ready ? service.label
+                                          : fallback ? Setup.text.takesOver(fallback.label)
                                           : service.state !== "unknown" ? ModelText.status(service)
                                           : speech === "endpoint" ? ModelText.endpointCheck(Models.speechEndpoint).text
                                           : service.signInCheckFailure || ModelText.checking }
@@ -68,21 +85,11 @@ QtObject {
                      verdict: access.state !== "ok" ? Health.status(access) : present && !Audio.heard ? Schema.row("microphoneTest").notHeardText : device ? device.label : "" }
         }
         case "delivery": {
-            // Pressing the keys on Linux needs the virtual keyboard set up.
-            const keyboard = Health.find(System.checks, "virtualKeyboardHealth")
-            if (press && System.hasVirtualKeyboard && keyboard.state !== "ok")
-                return { done: Setup.settled(keyboard), verdict: Health.status(keyboard) }
-            return { done: true, verdict: ["insert", "press", "keep"].filter(step => choices[step])
-                                              .map(step => Setup.text.stepNames[step]).join(", ") }
-        }
-        case "accessibility": {
-            const check = Health.find(System.checks, "desktopAccessibility")
-            if (!accessibilityNeeded) return { done: true, verdict: Setup.text.notNeeded }
-            if (Qt.platform.os === "osx") {
-                const need = Schema.row("insertThroughAccessibility").need
-                return { done: true, verdict: check.state === "ok" ? need.ready : need.notReady }
-            }
-            return { done: Setup.settled(check), verdict: Health.status(check) }
+            const delivers = (insert && stepRuns("insert")) || (press && stepRuns("press"))
+            const done = delivers || (!insert && !press && keep && stepRuns("keep"))
+            return { done: done, verdict: done ? ["insert", "press", "keep"].filter(step => choices[step])
+                                                     .map(step => Setup.text.stepNames[step]).join(", ")
+                                               : Setup.text.nothingDelivers }
         }
         case "refinement": {
             // None is a valid answer; a provider counts once it works, so

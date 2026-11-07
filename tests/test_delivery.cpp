@@ -229,17 +229,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                 QVERIFY2(turns >= 5, qPrintable(QString::number(turns)));
             }
             QCOMPARE(provider.insertCalls, presses ? 0 : 1);
-            // A failed copy stops the keys, which would paste something else.
-            QCOMPARE(result.ok, scenario != "both fail" && scenario != "slow snapshot");
+            // A failed copy stops the keys, which would paste something else,
+            // and so does a clipboard Speecher could not save to put back.
+            QCOMPARE(result.ok, scenario != "both fail" && scenario != "slow snapshot" && scenario != "snapshot failure");
             if (scenario == "snapshot failure") {
-                QVERIFY(result.message.contains("Previous clipboard could not be saved"));
-                QVERIFY(!result.message.contains("could not be restored"));
+                QVERIFY2(result.message.startsWith("Not delivered: your clipboard could not be saved first"),
+                         qPrintable(result.message));
+                QVERIFY(attempts.isEmpty());
             }
         }
         QFile clipboard(dir.filePath("clipboard"));
         QVERIFY(clipboard.open(QIODevice::ReadOnly));
-        QCOMPARE(clipboard.readAll(), scenario == "new copy" ? QByteArray("someone else's copy")
-                 : scenario == "snapshot failure" ? QByteArray("dictation") : QByteArray("previous"));
+        QCOMPARE(clipboard.readAll(), scenario == "new copy" ? QByteArray("someone else's copy") : QByteArray("previous"));
     }
 #endif
 
@@ -1924,12 +1925,55 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
-        QVERIFY(result.ok);
-        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        // The keys failed before the backend asked to send them, so the
+        // borrowed clipboard goes back.
+        QVERIFY(!result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::None);
         QCOMPARE(targetProvider.insertCalls, 1);
         QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
-        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("previous clipboard"));
+    }
+
+    // With Keep off, a paste that fails gives the borrowed clipboard back
+    // when the backend never got as far as the keys; once they may have
+    // gone out, the words stay where the paste can find them.
+    void aFailedPasteGivesTheClipboardBackOnlyWhenNoKeysWentOut()
+    {
+        for (const bool keysCleared : {false, true}) {
+            QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+            struct FailingBackend final : DeliveryBackend {
+                explicit FailingBackend(bool askGate) : askGate(askGate) {}
+                void deliver(const DeliveryContent &, const PasteGate &clearToInject,
+                             std::function<void(const Outcome &)> done) override
+                {
+                    if (!askGate) {
+                        done({false, false, QStringLiteral("Release the held keys before pasting")});
+                        return;
+                    }
+                    clearToInject([done](bool) { done({false, false, QStringLiteral("SendInput failed")}); });
+                }
+                bool askGate;
+            };
+            FakeTargetProvider targetProvider;
+            TextDelivery delivery([keysCleared](const QString &, const OutputSettings &, PasteMethod) {
+                return std::make_unique<FailingBackend>(keysCleared);
+            }, &targetProvider);
+            OutputSettings settings;
+            settings.ydotoolEnabled = true;
+            settings.steps = {.insert = false, .press = true, .keep = false};
+            Target target;
+            target.applicationId = QStringLiteral("org.kde.kate");
+
+            const DeliveryResult result = deliverAndWait(
+                delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+            QCOMPARE(result.ok, keysCleared);
+            QCOMPARE(QApplication::clipboard()->text(),
+                     keysCleared ? QStringLiteral("hello") : QStringLiteral("previous clipboard"));
+            if (!keysCleared) {
+                QCOMPARE(result.message, QStringLiteral("Not delivered: release the held keys before pasting"));
+            }
+        }
     }
 
     void outputAutomaticAndExplicitAccessibilityUseDirectInsertion()
@@ -2147,6 +2191,75 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         stored.setValue(QStringLiteral("output/pressPasteKeys"), !steps.press);
         migrateDeliverySteps(stored);
         QCOMPARE(stored.value(QStringLiteral("output/pressPasteKeys")).toBool(), !steps.press);
+    }
+
+    // A file that stored only a global rule, with neither the old method nor
+    // the restore switch, still migrates it.
+    void deliveryStepsMigrateAGlobalRuleStoredAlone()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(QStringLiteral("output/pasteRules"),
+                        pasteRulesToJson({{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true}}));
+
+        migrateDeliverySteps(stored);
+
+        QVERIFY(!stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool());
+        QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
+        QVERIFY(stored.value(QStringLiteral("output/keepOnClipboard")).toBool());
+        QVERIFY(pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray()).isEmpty());
+    }
+
+    // A global Terminal paste rule becomes one for every app type that had
+    // none of its own, where terminals' keys differ; on macOS it is Standard
+    // paste, which is no rule.
+    void deliveryStepsMigrateAGlobalTerminalRule()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), false);
+        stored.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson({
+            {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
+            {PasteRuleScope::Category, QStringLiteral("email"), PasteMethod::DirectInsert, false},
+            {PasteRuleScope::Global, QString(), PasteMethod::TerminalPaste, true},
+        }));
+
+        migrateDeliverySteps(stored);
+
+        const DeliverySteps steps{stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool(),
+                                  stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
+                                  stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
+        QCOMPARE(steps, DeliverySteps{});
+        const QList<PasteRule> rules = pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kwrite");
+        for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
+                                           AppCategory::CodeEditor, AppCategory::AiCoding}) {
+            target.category = category;
+            QCOMPARE(resolvePasteRule(rules, target).method,
+                     terminalKeysDiffer ? PasteMethod::TerminalPaste : PasteMethod::StandardPaste);
+        }
+        // The browsers' own rule stays.
+        target.category = AppCategory::Browser;
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
+    }
+
+    // Without anything from an older Speecher there is nothing to migrate,
+    // and the steps a person sets afterwards stay.
+    void deliveryStepsMigrateOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        migrateDeliverySteps(stored);
+        QVERIFY(!stored.contains(QStringLiteral("output/pressPasteKeys")));
+
+        stored.setValue(QStringLiteral("output/pressPasteKeys"), false);
+        stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), false);
+        migrateDeliverySteps(stored);
+        QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
     }
 
     void outputVerifiedYdotoolReportsVirtualKeyboardOutcome_data()

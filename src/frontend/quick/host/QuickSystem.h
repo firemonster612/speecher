@@ -32,7 +32,7 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
     Q_PROPERTY(QVariantList deliverySteps READ deliverySteps NOTIFY changed)
-    Q_PROPERTY(bool wordsStayCopied READ wordsStayCopied NOTIFY changed)
+    Q_PROPERTY(QString pastingOutcome READ pastingOutcome NOTIFY changed)
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool hasGlobalShortcuts READ hasGlobalShortcuts NOTIFY changed)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
@@ -75,19 +75,25 @@ public:
     // The delivery steps that are on, in the order delivery tries them:
     // insert, press, keep (DeliveryPlan::route).
     QStringList pasteRoute() const;
-    // Every delivery step in that order, {id, on, ready}: ready says this
-    // computer can run it now. Insert needs accessibility (always there on
-    // Windows); Press the virtual keyboard on Linux, accessibility on macOS
-    // and nothing on Windows; Keep, in a Wayland session, the clipboard
-    // helper or wl-copy.
+    // Every delivery step in that order, {id, on, ready, needs, waiting}:
+    // needs are what the step relies on here, by need id, and waiting those
+    // of them this computer lacks now, so ready is waiting being empty.
+    // The need ids: accessibility (Insert, and Press on macOS; Windows needs
+    // none), virtualKeyboard (Press on Linux), clipboard (in a Wayland
+    // session Speecher's clipboard helper or wl-copy, for Press and for Keep
+    // on) and clipboardSave (wl-paste there, for Keep off and for Press
+    // while Keep is off, which saves the clipboard it borrows).
     QVariantList deliverySteps() const;
-    // Whether dictated words get no further than the clipboard: Insert or
-    // Press is on, but neither can run.
-    bool wordsStayCopied() const;
-    // The step a Paste Rule with this method (core's name, such as
-    // terminal_paste) needs that is off, by its id, or empty
-    // (stepRuleNeeds).
-    Q_INVOKABLE QString stepRuleNeeds(const QString &method) const;
+    // Where dictated words end up as the steps stand: delivers (a step
+    // that is on gets them into the app), clipboard (none can, and Keep
+    // leaves them there) or nothing.
+    QString pastingOutcome() const;
+    // What a Paste Rule with this method (core's name, such as
+    // terminal_paste; any other, such as inherit, is Standard paste) does
+    // with the steps: {route, needs}, route the steps it leaves on in order
+    // (DeliveryPlan::route) and needs the off step it relies on, by id, or
+    // empty (stepRuleNeeds).
+    Q_INVOKABLE QVariantMap rulePlan(const QString &method) const;
     // Whether this computer has the virtual keyboard: its check and its
     // setup, under Press (PasteKeys::hasVirtualKeyboard).
     bool hasVirtualKeyboard() const;

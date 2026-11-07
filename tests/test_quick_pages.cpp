@@ -941,11 +941,17 @@ private slots:
         QVERIFY2(profileEnd <= buttonsStart, qPrintable(QStringLiteral("%1 > %2").arg(profileEnd).arg(buttonsStart)));
     }
 
-    // At the window's narrowest, each app type's name and examples end
-    // before its paste choice instead of running under it.
-    void appTypeRulesKeepTheirWordsClearOfTheirChoices()
+    // At the window's narrowest, each exception's name and result end
+    // before its choice instead of running under it.
+    void exceptionsKeepTheirWordsClearOfTheirChoices()
     {
         ApplicationController controller(true);
+        QuickSettings(&controller)
+            .set(QStringLiteral("applicationPasteRules"),
+                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.example.AnApplicationWithAVeryLongDesktopId")},
+                                          {QStringLiteral("method"), QStringLiteral("direct_insert")},
+                                          {QStringLiteral("enabled"), true}}});
+        QuickSettings(&controller).set(QStringLiteral("categoryPasteRule_ai_coding"), QStringLiteral("clipboard_only"));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -956,7 +962,7 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         navigation->go(QStringLiteral("pasting"));
-        QTRY_VERIFY(schemaRow(main, QStringLiteral("categoryPasteRule_general")));
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("exception_type:ai_coding")));
         QTest::qWait(kSettleMs);
 
         int checked = 0;
@@ -964,10 +970,11 @@ private slots:
         while (!items.isEmpty()) {
             QQuickItem *row = items.takeLast();
             items += row->childItems();
-            if (!row->property("rowId").toString().startsWith(QLatin1String("categoryPasteRule_"))) {
+            if (!row->objectName().startsWith(QLatin1String("exception_"))) {
                 continue;
             }
-            // The row's words, and the left end of its choice, a Select.
+            // The row's words, and the left end of its choice, a Select. The
+            // switch and the delete button come after it.
             QList<QQuickItem *> words;
             qreal choiceStart = -1;
             QList<QQuickItem *> parts{row};
@@ -982,17 +989,19 @@ private slots:
                     words.append(part);
                 }
             }
-            QVERIFY2(choiceStart >= 0 && !words.isEmpty(), qPrintable(row->property("rowId").toString()));
+            QVERIFY2(choiceStart >= 0 && !words.isEmpty(), qPrintable(row->objectName()));
+            words.removeIf([choiceStart](QQuickItem *text) { return text->mapToScene(QPointF(0, 0)).x() >= choiceStart; });
+            QVERIFY2(!words.isEmpty(), qPrintable(row->objectName()));
             for (QQuickItem *text : words) {
-                const qreal end = text->mapToScene(QPointF(text->property("contentWidth").toReal(), 0)).x();
+                const qreal end = text->mapToScene(QPointF(std::min(text->property("contentWidth").toReal(), text->width()), 0)).x();
                 QVERIFY2(end <= choiceStart, qPrintable(QStringLiteral("%1: \"%2\" ends at %3, its choice starts at %4")
-                                                            .arg(row->property("rowId").toString(), text->property("text").toString())
+                                                            .arg(row->objectName(), text->property("text").toString())
                                                             .arg(end)
                                                             .arg(choiceStart)));
             }
             ++checked;
         }
-        QCOMPARE(checked, 7);
+        QCOMPARE(checked, terminalKeysDiffer ? 3 : 2);
     }
 
     // Undo after deleting an app's paste rule puts it back, even once the

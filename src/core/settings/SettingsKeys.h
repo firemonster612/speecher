@@ -145,6 +145,7 @@ inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pen
 inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/consentNoticeShown");
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
+inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");
