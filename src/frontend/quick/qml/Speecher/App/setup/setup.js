@@ -1,8 +1,7 @@
 .pragma library
 
 // The setup assistant's wording: its steps in order, and the words around
-// them. Pasting comes before Accessibility, so the assistant asks only for
-// what the chosen delivery steps need; Windows needs no Accessibility step.
+// them. The Pasting step asks for accessibility where its steps need it.
 
 var os = Qt.platform.os;
 
@@ -14,11 +13,7 @@ var steps = [
     { id: "microphone", title: "Microphone",
       description: "Choose the microphone Speecher should record, then speak to check that the level moves." },
     { id: "delivery", title: "Pasting",
-      description: "Choose how your words get into the app you're using. Speecher tries these in order, and asks only for what the ones you keep need." },
-    { id: "accessibility", title: "Accessibility",
-      description: os === "osx"
-          ? "Accessibility lets Speecher insert your words, press ⌘V for you, read the text around your cursor so cleanup understands it, and tell apps apart. Without it, your words wait on the clipboard for you to paste."
-          : "The desktop accessibility service lets Speecher insert your words, tell apps apart, read the text around your cursor so cleanup understands it, and learn your corrections." },
+      description: "Choose how your words get into the app you're using. Speecher tries these in order, and needs only what the ones you keep rely on." },
     { id: "refinement", title: "Refinement",
       description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Choose a service, or skip cleanup." },
     { id: "shortcut", title: "Shortcut",
@@ -30,6 +25,8 @@ var text = {
     title: "Set up Speecher",
     runAgain: "You can run setup again any time from Home or General.",
     skip: "Skip setup",
+    // Saves what was chosen and closes; setup opens again next time.
+    later: "Set up later",
     back: "Back",
     getStarted: "Get started",
     continue_: "Continue",
@@ -54,24 +51,26 @@ var text = {
     cleanupNotReady: "Cleanup isn't ready",
     cleanupNotReadyHelp: "Fix it above to continue, or skip cleanup and Speecher pastes your words as spoken.",
     skipCleanup: "Skip cleanup",
-    // The Pasting step's verdict, by the steps on, and the Accessibility
-    // step's where those steps don't need it.
+    // The Pasting step's verdict, by the steps on, or what is missing.
     stepNames: { insert: "Insert", press: "Paste keys", keep: "Clipboard" },
-    notNeeded: "Not needed for your steps",
-    commandOnly: "The speecher command"
+    nothingDelivers: "Nothing can deliver your words yet",
+    clipboardOnly: "Continue with clipboard only",
+    clipboardOnlyHelp: "Speecher turns off Insert and the paste keys and leaves your words on the clipboard for you to paste. You can turn them on later on the Pasting page.",
+    // Under the steps, on Linux and macOS: what accessibility does besides.
+    accessibilityAlso: os === "osx"
+        ? "Accessibility also lets Speecher tell apps apart and read the text around your cursor."
+        : "Desktop accessibility also lets Speecher tell apps apart and read the text around your cursor.",
+    commandOnly: "The speecher command",
+    takesOver: label => label + " takes over"
 };
 
-// The cases where a check that does not pass still lets its step go on,
-// since this computer gets no further: accessibility it can't have or has
-// only until sign-out, and a keyboard waiting for the next sign-in. The
-// check keeps saying so.
-var settles = {
-    desktopAccessibility: ["unsupported", "sessionOnly"],
-    virtualKeyboardHealth: ["needsSignOut"]
-};
-
-// Whether the check lets its setup step go on.
-function settled(check) { return check.state === "ok" || (settles[check.id] || []).includes(check.reason); }
+// The needs a step may wait for and still pass, since this computer gets no
+// further now: a virtual keyboard waiting for the next sign-in. Its status
+// keeps saying so.
+function settled(need, checks) {
+    return need === "virtualKeyboard"
+        && (checks.find(c => c.id === "virtualKeyboardHealth") || {}).reason === "needsSignOut";
+}
 
 // Ready's heading over the steps still open: "2 steps need attention".
 function stepsOpen(count) { return count === 1 ? "One step needs attention" : count + " steps need attention"; }

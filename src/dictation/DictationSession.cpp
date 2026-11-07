@@ -1212,7 +1212,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
     if (step != m_step) {
         return;
     }
-    m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, profile, profileName,
+    m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, m_target.applicationId.trimmed(), profile, profileName,
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;
     m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target);
@@ -1242,6 +1242,7 @@ void DictationSession::finishDelivery(const DeliveryResult &result)
                                    delivery.profile, delivery.profileName};
             record.speechProviders = m_providerHistory.speechRan;
             record.refinementProviders = m_providerHistory.refinementRan;
+            record.applicationId = delivery.applicationId;
             emit dictationRecorded(record);
         }
         // A role without fallbacks ends as it always has, its failures unnamed.

@@ -44,7 +44,7 @@ var rows = [
     { id: "microphoneAccess", page: "microphone", section: "Input", kind: "custom",
       label: "Microphone access", keywords: "permission privacy recording input" },
     { id: "desktopAccessibility", page: "pasting", section: "", kind: "custom",
-      label: "Desktop accessibility", opens: "insertThroughAccessibility",
+      label: Qt.platform.os === "osx" ? "Accessibility" : "Desktop accessibility", opens: "insertThroughAccessibility",
       keywords: "at-spi permission paste rules context learning target app chromium electron chrome" },
     { id: "globalShortcuts", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
       label: "Global shortcuts", keywords: "hotkey portal kde registered permission" },

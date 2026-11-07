@@ -311,10 +311,12 @@ QVariant QuickInsights::latest() const
     QVariantMap latest{{QStringLiteral("text"), text},
                        {QStringLiteral("words"), countWords(text)},
                        {QStringLiteral("app"), QString()},
+                       {QStringLiteral("appId"), QString()},
                        {QStringLiteral("profile"), QString()},
                        {QStringLiteral("date"), QVariant()}};
     if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         latest[QStringLiteral("app")] = record->appName;
+        latest[QStringLiteral("appId")] = record->applicationId;
         latest[QStringLiteral("profile")] = dictationProfileName(*record, m_controller->settings()->dictationSnapshot().refinement.writingProfiles);
         latest[QStringLiteral("date")] = jsDate(record->finishedAt.date());
     }

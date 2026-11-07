@@ -176,13 +176,24 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
-// Whether Keep can leave words on the clipboard: a Wayland session needs
-// Speecher's clipboard helper or wl-copy, everywhere else Qt's clipboard does.
-bool clipboardReady()
+// Whether the clipboard takes helpers: in a Wayland session, copying needs
+// Speecher's clipboard helper or wl-copy, and saving it wl-paste. Elsewhere
+// Qt's clipboard does both.
+bool waylandClipboard()
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    return !WlClipboardDelivery::isWaylandSession() || WlClipboardDelivery::isAvailable();
+    return WlClipboardDelivery::isWaylandSession();
 #else
+    return false;
+#endif
+}
+
+bool clipboardHelperThere(const QString &need)
+{
+#ifdef SPEECHER_WITH_WAYLAND
+    return need == u"clipboardSave" ? WlClipboardDelivery::canSnapshot() : WlClipboardDelivery::isAvailable();
+#else
+    Q_UNUSED(need)
     return true;
 #endif
 }
@@ -267,48 +278,81 @@ QStringList QuickSystem::pasteRoute() const
 QVariantList QuickSystem::deliverySteps() const
 {
     const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
-    // Accessibility on only for the session counts; on Windows it is always on.
-    const bool accessibility = this->accessibility();
+    const QString accessibility = QStringLiteral("accessibility");
+    const QString clipboard = QStringLiteral("clipboard");
+    const QString clipboardSave = QStringLiteral("clipboardSave");
+    QStringList insertNeeds{accessibility};
+    QStringList pressNeeds;
+    QStringList keepNeeds;
 #if defined(Q_OS_MACOS)
     // ⌘V reaches another app only through the Accessibility grant.
-    const bool pressReady = accessibility;
+    pressNeeds << accessibility;
 #elif defined(Q_OS_WIN)
-    const bool pressReady = true;
+    insertNeeds.clear();
 #else
-    // Ready as its health row says: set up, with no setup or typing test
-    // under way.
-    const bool pressReady =
-        virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
+    pressNeeds << QStringLiteral("virtualKeyboard");
 #endif
-    const auto entry = [&steps](DeliveryStep step, bool ready) {
+    if (waylandClipboard()) {
+        pressNeeds << clipboard;
+        if (!steps.keep) {
+            pressNeeds << clipboardSave;
+        }
+        keepNeeds << (steps.keep ? clipboard : clipboardSave);
+    }
+    const auto there = [this](const QString &need) {
+        if (need == u"accessibility") {
+            // On only for the session counts.
+            return this->accessibility();
+        }
+        if (need == u"virtualKeyboard") {
+            // Ready as its health row says: set up, with no setup or typing
+            // test under way.
+            return virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
+        }
+        return clipboardHelperThere(need);
+    };
+    const auto entry = [&steps, &there](DeliveryStep step, const QStringList &needs) {
+        QStringList waiting;
+        for (const QString &need : needs) {
+            if (!there(need)) {
+                waiting << need;
+            }
+        }
+        // Keep off runs nothing to wait for; what it needs then is Press's.
+        const bool ready = waiting.isEmpty() || (step == DeliveryStep::Keep && !steps.keep);
         return QVariantMap{{QStringLiteral("id"), deliveryStepName(step)},
                            {QStringLiteral("on"), steps.has(step)},
-                           {QStringLiteral("ready"), ready}};
+                           {QStringLiteral("ready"), ready},
+                           {QStringLiteral("needs"), needs},
+                           {QStringLiteral("waiting"), waiting}};
     };
-    return {entry(DeliveryStep::Insert, accessibility), entry(DeliveryStep::Press, pressReady),
-            entry(DeliveryStep::Keep, clipboardReady())};
+    return {entry(DeliveryStep::Insert, insertNeeds), entry(DeliveryStep::Press, pressNeeds),
+            entry(DeliveryStep::Keep, keepNeeds)};
 }
 
-bool QuickSystem::wordsStayCopied() const
+QString QuickSystem::pastingOutcome() const
 {
-    bool reachesApps = false;
-    bool getsPastClipboard = false;
+    bool keeps = false;
     for (const QVariant &entry : deliverySteps()) {
         const QVariantMap step = entry.toMap();
-        if (step.value(QStringLiteral("id")) == QLatin1String("keep") || !step.value(QStringLiteral("on")).toBool()) {
+        if (!step.value(QStringLiteral("on")).toBool() || !step.value(QStringLiteral("ready")).toBool()) {
             continue;
         }
-        reachesApps = true;
-        getsPastClipboard = getsPastClipboard || step.value(QStringLiteral("ready")).toBool();
+        if (step.value(QStringLiteral("id")) != QLatin1String("keep")) {
+            return QStringLiteral("delivers");
+        }
+        keeps = true;
     }
-    return reachesApps && !getsPastClipboard;
+    return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
 }
 
-QString QuickSystem::stepRuleNeeds(const QString &method) const
+QVariantMap QuickSystem::rulePlan(const QString &method) const
 {
-    const auto step = speecher::stepRuleNeeds(m_controller->settings()->dictationSnapshot().output.steps,
-                                              pasteMethodFromName(method));
-    return step ? deliveryStepName(*step) : QString();
+    const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
+    const PasteMethod paste = pasteMethodFromName(method);
+    const auto needs = speecher::stepRuleNeeds(steps, paste);
+    return {{QStringLiteral("route"), deliveryPlan(steps, paste).route()},
+            {QStringLiteral("needs"), needs ? deliveryStepName(*needs) : QString()}};
 }
 
 bool QuickSystem::hasVirtualKeyboard() const

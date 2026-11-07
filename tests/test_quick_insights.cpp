@@ -263,9 +263,12 @@ private slots:
         QVERIFY(latest.value(QStringLiteral("app")).toString().isEmpty());
         QVERIFY(latest.value(QStringLiteral("date")).isNull());
 
-        emit session->dictationRecorded(recordOn(kToday, 5, QStringLiteral("Slack"), WritingProfile::Work));
+        DictationRecord record = recordOn(kToday, 5, QStringLiteral("Slack"), WritingProfile::Work);
+        record.applicationId = QStringLiteral("com.slack.Slack");
+        emit session->dictationRecorded(record);
         latest = insights.latest().toMap();
         QCOMPARE(latest.value(QStringLiteral("app")).toString(), QStringLiteral("Slack"));
+        QCOMPARE(latest.value(QStringLiteral("appId")).toString(), QStringLiteral("com.slack.Slack"));
         QCOMPARE(latest.value(QStringLiteral("profile")).toString(), QStringLiteral("Work"));
         QCOMPARE(dateOf(latest.value(QStringLiteral("date"))), kToday);
         QVERIFY(latestChanged.count() >= 2);

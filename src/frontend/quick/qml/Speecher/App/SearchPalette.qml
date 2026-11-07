@@ -239,6 +239,17 @@ FocusScope {
                             keys: hit.spec && hit.spec.kind === "shortcut" ? (Settings.values[hit.modelData.id] || []) : []
                             size: "small"
                         }
+                        // A delivery step's state, read-only: On or Off, and
+                        // what it waits for while on.
+                        Txt {
+                            readonly property var step: hit.spec && hit.spec.step
+                                ? System.deliverySteps.find(s => s.id === hit.spec.step) || null : null
+                            visible: !!step
+                            text: !step ? "" : !step.on ? Schema.pasting.switchState.off
+                                : Schema.pasting.switchState.on + (step.waiting.length ? " · " + Schema.pasting.waitingFor(step.waiting[0]) : "")
+                            variant: "small"
+                            tone: "secondary"
+                        }
                         // The current value as plain text, as a row's trailing text.
                         Txt {
                             visible: !!hit.spec && (hit.spec.kind === "choice" || hit.spec.kind === "slider")
