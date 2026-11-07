@@ -9,7 +9,7 @@ import Speecher.App
 // accessibility and delivery settles (Setup.settled), and one rule gates
 // Continue, Finish, Skip and the rail: a step can be reached once every step
 // before it is done. A check only asks for what its step shows and lets you
-// fix there. Refinement has no check, since its default is a valid answer.
+// fix there. Refinement passes with None or a provider that works.
 // goTo asks the assistant to show another step, by id.
 //
 // The shortcut step has no draft: its rows write Settings as you record, as
@@ -65,8 +65,13 @@ QtObject {
             if (id === "delivery" && clipboardOnly) return { done: true, verdict: Setup.text.clipboardOnly }
             return { done: Setup.settled(check), verdict: Health.status(check) }
         }
-        case "refinement":
-            return { done: true, verdict: ModelText.provider(cleanup).label }
+        case "refinement": {
+            // None is a valid answer; a provider counts once it works, so
+            // one that can't yet is fixed or skipped, not passed.
+            const provider = ModelText.provider(cleanup)
+            const done = cleanup === "none" || provider.state === "ready"
+            return { done: done, verdict: done ? provider.label : ModelText.status(provider) }
+        }
         case "shortcut": {
             const keys = Settings.values.globalShortcut || []
             const check = Health.find(System.checks, "globalShortcuts")

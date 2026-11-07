@@ -20,7 +20,7 @@ Page {
     // them opens the list.
     readonly property var kinds: [
         { id: "terms", label: Library.termsCount,
-          caption: Schema.row("vocabularyEntries").help,
+          caption: Library.termsCaption,
           rowIds: ["vocabularyEntries", "vocabularyKeyTerm", "vocabularyContext", "vocabularyProfiles", "vocabularyLimit"] },
         { id: "corrections", label: Library.correctionsCount,
           caption: [Schema.row("learnedCorrections").help, Library.correctionsInUseText].filter(s => s).join(" "),

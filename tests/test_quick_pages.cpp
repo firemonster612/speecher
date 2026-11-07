@@ -1064,6 +1064,36 @@ private slots:
         runSteps(steps, setup);
     }
 
+    // Refinement passes with None or a service that works; one that can't
+    // clean up yet holds the step and says why, so setup can't call it done.
+    void setupRefinementPassesOnlyWhenCleanupWorks()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("endpoint"));
+        settings.set(QStringLiteral("refinementEndpointUrl"), QString());
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        const auto refinement = [setup] {
+            const QJSValue steps = setup->property("steps").value<QJSValue>();
+            for (int i = 0; i < steps.property(QStringLiteral("length")).toInt(); ++i) {
+                if (steps.property(i).property(QStringLiteral("id")).toString() == QLatin1String("refinement")) {
+                    return steps.property(i);
+                }
+            }
+            return QJSValue();
+        };
+        QVERIFY(!refinement().property(QStringLiteral("done")).toBool());
+        QVERIFY(refinement().property(QStringLiteral("verdict")).toString() != QLatin1String("Custom Endpoint"));
+
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("none"));
+        QTRY_VERIFY(refinement().property(QStringLiteral("done")).toBool());
+        QCOMPARE(refinement().property(QStringLiteral("verdict")).toString(), QStringLiteral("None"));
+    }
+
     // Finishing the assistant records setup as done, so it does not run again.
     void finishingSetupRecordsItDone()
     {

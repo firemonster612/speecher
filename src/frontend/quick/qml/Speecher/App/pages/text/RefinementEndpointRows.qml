@@ -12,7 +12,15 @@ import Speecher.App
 Column {
     width: parent ? parent.width : implicitWidth
 
-    SchemaRow { rowId: "refinementEndpointServer" }
+    SchemaRow { id: serverRow; rowId: "refinementEndpointServer" }
+    // The CLI Proxy API preset uses the server Accounts sets, so it shows
+    // which and opens it there.
+    SettingRow {
+        shown: Settings.values.refinementEndpointServer === "cliproxy"
+        title: serverRow.spec.cliproxyLabel
+        help: Settings.values.cliproxyBaseUrl || serverRow.spec.cliproxyUnset
+        Button { text: Words.openAccounts; size: "small"; onClicked: Navigation.goToRow("accounts", "cliproxyBaseUrl") }
+    }
     SchemaRow { rowId: "refinementEndpointFormat" }
     SchemaRow { rowId: "refinementEndpointUrl" }
     SchemaRow { rowId: "refinementEndpointApiKey" }

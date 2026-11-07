@@ -24,9 +24,10 @@ FocusScope {
     property var options: []
     property string currentId
     property string unratedText
-    // Lines of help each card keeps: two, or one where a step is short of
+    // Lines of help each card keeps: three, so four narrow cards in a row
+    // still say why to choose each, or fewer where a step is short of
     // height (assistive tech still hears all of it).
-    property int helpLines: 2
+    property int helpLines: 3
     signal activated(string id)
     signal helpLinkActivated(string id, Item at)
 

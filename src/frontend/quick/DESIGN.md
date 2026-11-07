@@ -293,8 +293,8 @@ follows the same setting.
   action. No tinted icon squares, no icon on every row.
 - No gradients, glows, coloured shadows or decorative washes.
   The popup's scatter ribbon is the one exception: its afterglow and soft
-  glow are part of the level animation. Boring mode (Popup & sounds) shows
-  plain level bars in its place.
+  glow are part of the level animation. Voice display: Level bars (Popup &
+  sounds) shows plain level bars in its place.
 
 ## Consistency rules
 

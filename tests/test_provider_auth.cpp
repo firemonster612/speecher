@@ -1557,6 +1557,36 @@ private slots:
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
     }
 
+    // Automatic says which sign-in it found, so Accounts can name it; a mode
+    // that names its own source says none.
+    void automaticSignInSaysWhereItFoundOne()
+    {
+        QTemporaryDir dir;
+        const QByteArray oldKey = qgetenv("OPENAI_API_KEY");
+        const bool hadKey = qEnvironmentVariableIsSet("OPENAI_API_KEY");
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(dir.filePath(QStringLiteral("missing.json"))));
+        qputenv("OPENAI_API_KEY", "sk-from-env");
+        const auto restore = qScopeGuard([hadKey, oldKey] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+            if (hadKey) {
+                qputenv("OPENAI_API_KEY", oldKey);
+            } else {
+                qunsetenv("OPENAI_API_KEY");
+            }
+        });
+
+        AppSettings settings;
+        settings.accounts.openAiAuthMode = OpenAiAuthMode::Auto;
+        SignInCheck check = checkSignIn(SignInService::OpenAi, settings, nullptr);
+        QCOMPARE(check.state, SignInState::SignedIn);
+        QCOMPARE(check.source, QStringLiteral("env"));
+
+        settings.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+        check = checkSignIn(SignInService::OpenAi, settings, nullptr);
+        QCOMPARE(check.state, SignInState::SignedIn);
+        QVERIFY(check.source.isEmpty());
+    }
+
     // "Sign in again" on CLI Proxy API renews the account OpenAI and
     // Anthropic each chose and no other, since each renewal rotates tokens.
     // An account with no refresh token stays expired and says why.

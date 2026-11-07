@@ -4,6 +4,7 @@ var rows = [
     { id: "openAiAuthMode", page: "accounts", section: "ChatGPT", kind: "choice", control: "select",
       label: "Sign-in",
       help: "API keys only cover cleanup; dictation needs a ChatGPT or CLI Proxy API sign-in.",
+      autoFound: "Automatic is using: %1.",
       keywords: "login chatgpt codex api key environment source",
       options: [
           { id: "auto", label: "Automatic", help: "The first one found: the Codex app, then an API key from the environment or Speecher." },
@@ -37,7 +38,7 @@ var rows = [
       placeholder: "Detected automatically",
       keywords: "oauth folder path files auth dir" },
     { id: "cliproxyBaseUrl", page: "accounts", section: "CLI Proxy API", kind: "text",
-      label: "Server URL", help: "Send text cleanup through this CLI Proxy API server.",
+      label: "Server URL", help: "Cleanup that signs in through CLI Proxy API goes through this server, and so does a Custom Endpoint set to it. Dictation still needs the account files on this computer.",
       placeholder: "Use the account files on this computer",
       keywords: "proxy endpoint host address base url" },
     { id: "cliproxyApiKey", page: "accounts", section: "CLI Proxy API", kind: "secret",

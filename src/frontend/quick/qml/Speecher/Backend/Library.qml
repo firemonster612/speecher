@@ -138,7 +138,9 @@ LibraryLists {
         noLevels: "No cleanup levels of your own",
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
-        languageHelp: "Translates what you say. Pick one or type any language, regional varieties too.",
+        languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
+        noRefiner: "Refinement's service is None, so this profile's cleanup and output language have no effect. Choose a service on Refinement, or one for this profile below.",
+        everyProfile: "As for every profile.",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",
@@ -151,6 +153,9 @@ LibraryLists {
         refinementModel: "Refinement model",
         defaultModel: "Default model"
     })
+    // Cleanup None with an output language still translates, which takes
+    // Light cleanup from the profile's provider.
+    function translatesAtLight(provider) { return "None still translates, at Light cleanup, with " + provider + "." }
     // "Default (Claude)": a profile's choice that follows the app's.
     function defaultChoice(label) { return "Default (" + label + ")" }
     // A profile's own refinement provider, whose settings live on Refinement.
@@ -167,6 +172,10 @@ LibraryLists {
                                                               : "Refinement uses all " + Words.count(terms.length, "term", "terms") + "."
         return speech + " " + refinement
     }
+    // Vocabulary's row on Speech to text, which the speech service reads too.
+    readonly property string speechVocabularyText: terms.length ? keyTermsText
+        : "Names and words you say often. Key terms go to the speech service as hints, so it hears them."
+    readonly property string openVocabulary: "Open Vocabulary"
     // "3 of 5 in use.", or nothing without corrections.
     readonly property string correctionsInUseText: corrections.length
         ? corrections.filter(c => c.enabled).length + " of " + corrections.length + " in use." : ""
@@ -211,12 +220,17 @@ LibraryLists {
         noReplacementsHelp: "Add a spoken phrase and the exact text to put in its place, or import snippets from JSON."
     })
     // The tabs: the list's name, then how many it holds once it holds any:
-    // "Terms (7)", "Learned corrections", "Replacements (4)".
+    // "Terms (7)", "Learned corrections", "Replacements & snippets (4)",
+    // each named as its schema row is.
     function _tab(name, n) { return n ? name + " (" + Words.num(n) + ")" : name }
-    readonly property string termsCount: _tab("Terms", terms.length)
-    readonly property string correctionsCount: _tab("Learned corrections", corrections.length)
-    readonly property string replacementsCount: _tab("Replacements", replacements.length)
-    readonly property string replacementsCaption: Schema.row("bindingRules").help + " Matching ignores case and treats punctuation as spaces."
+    readonly property string termsCount: _tab(Schema.row("vocabularyEntries").label, terms.length)
+    readonly property string correctionsCount: _tab(Schema.row("learnedCorrections").label, corrections.length)
+    readonly property string replacementsCount: _tab(Schema.row("bindingRules").label, replacements.length)
+    // Each list's caption says which stage of a dictation reads it.
+    readonly property string termsCaption: Schema.row("vocabularyEntries").help + " "
+        + (terms.length ? keyTermsText : "Key terms go to the speech service as hints, and refinement reads every term.")
+    readonly property string replacementsCaption: Schema.row("bindingRules").help
+        + " They apply to what the speech service heard, and refinement leaves them as they are. Matching ignores case and treats punctuation as spaces."
     // A term's context, then where it came from: "Our dashboards. Imported.",
     // with nothing said for one you added.
     function termDetail(term) {

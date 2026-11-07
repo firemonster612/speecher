@@ -37,7 +37,15 @@ Page {
             width: pair._cardWidth
             height: pair._cardHeight
             minimumHeadHeight: anthropic.naturalHeadHeight
-            SchemaRow { rowId: "openAiAuthMode"; stacked: true }
+            // Automatic names what it found, once it found something.
+            SchemaRow {
+                id: openAiMode
+                readonly property var found: spec.options.find(o => o.id === openAi.service.source)
+                rowId: "openAiAuthMode"
+                stacked: true
+                note: Settings.values.openAiAuthMode === Accounts.authModes.openAi.auto && found
+                      ? spec.autoFound.arg(found.label) + " " + spec.help : spec.help
+            }
             SchemaRow { objectName: "openAiApiKeyRow"; rowId: "openAiApiKey"; stacked: true; shown: Settings.values.openAiAuthMode === Accounts.authModes.openAi.settings }
             SchemaRow {
                 rowId: "openAiCliproxyAccount"
@@ -63,12 +71,16 @@ Page {
     }
 
     ServiceCard {
+        id: cliproxy
         serviceId: "cliproxy"
+        // Its account files matter once a sign-in reads them; until then
+        // the card offers only its server.
+        readonly property bool used: service.inUse || !!Settings.values.cliproxyOauthDir
 
         // The account files it found, each with its own state.
         RowList {
             id: accountFiles
-            values: Accounts.cliproxyAccounts
+            values: cliproxy.used ? Accounts.cliproxyAccounts : []
             delegate: ListRow {
                 id: accountRow
                 required property string key
@@ -84,7 +96,7 @@ Page {
                 }
             }
         }
-        SchemaRow { rowId: "cliproxyOauthDir" }
+        SchemaRow { rowId: "cliproxyOauthDir"; shown: cliproxy.used }
         SchemaRow { rowId: "cliproxyBaseUrl" }
         SchemaRow { rowId: "cliproxyApiKey" }
     }

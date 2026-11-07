@@ -21,7 +21,7 @@ var rows = [
       placeholder: "Keep it short and sign off with my first name.", keywords: "instructions rules custom prompt" },
     { id: "profileServices", page: "profiles", section: "Profiles", kind: "custom",
       label: "Services for this profile",
-      help: "Pick a speech service or refinement provider for this profile only. Each falls back to the ones set for every profile.",
+      help: "Pick a speech or refinement service for this profile only. Each falls back to the ones set for every profile.",
       keywords: "speech service refinement provider model override per profile" },
     { id: "profileApps", page: "profiles", section: "Profiles", kind: "custom",
       label: "Used in", help: "Apps are matched to profiles in Application recognition, under Pasting › App rules.",
