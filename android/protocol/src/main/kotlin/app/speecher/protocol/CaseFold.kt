@@ -15,7 +15,7 @@ fun foldCase(text: String): String = buildString {
                 in CHEROKEE,
                 in CHEROKEE_SMALL_LETTERS -> Character.toUpperCase(c)
                 else -> Character.toLowerCase(Character.toUpperCase(c))
-            }
+            },
         )
     }
 }

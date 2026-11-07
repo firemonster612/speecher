@@ -275,7 +275,7 @@ fun withEvidence(
                                 confidence = max(it.confidence, evidence.confidence),
                             )
                         }
-                }
+                },
         )
     val inScope = learned.indexOfFirst {
         sameTerm(it.original, original) &&

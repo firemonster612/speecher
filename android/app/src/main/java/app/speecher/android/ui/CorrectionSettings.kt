@@ -53,7 +53,7 @@ internal fun CorrectionSettings(
             Column {
                 Text(
                     "After inserting text, briefly watch for your edits to it and learn repeated " +
-                        "corrections."
+                        "corrections.",
                 )
                 if (!chipEnabled) {
                     Text(
@@ -85,7 +85,7 @@ internal fun CorrectionSettings(
             supportingContent = {
                 Text(
                     "When you fix a dictated word the same way more than once, the correction " +
-                        "appears here."
+                        "appears here.",
                 )
             },
             colors = colors,
@@ -107,7 +107,7 @@ internal fun CorrectionSettings(
                     Text("Heard “${correction.original}” · $app")
                     Text(
                         "Learned automatically · confidence " +
-                            "${(correction.confidence * 100).roundToInt()}%"
+                            "${(correction.confidence * 100).roundToInt()}%",
                     )
                 }
             },
@@ -123,9 +123,13 @@ internal fun CorrectionSettings(
                             }
                         },
                     )
-                    IconButton({
-                        store.editCorrections { stored -> stored.filter { it.id != correction.id } }
-                    }) {
+                    IconButton(
+                        {
+                            store.editCorrections { stored ->
+                                stored.filter { it.id != correction.id }
+                            }
+                        },
+                    ) {
                         Icon(
                             painterResource(R.drawable.ic_close),
                             contentDescription = "Remove ${correction.corrected}",

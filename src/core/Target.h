@@ -154,6 +154,10 @@ struct Target {
     int selectionEnd = -1;
     AppCategory category = AppCategory::Unknown;
     bool accessible = false;
+    // The control's text was read, so empty nearby text means the caret is at
+    // that end of the field rather than that nothing could be read.
+    // setNearbyText sets it.
+    bool nearbyTextRead = false;
     bool secure = false;
     // The control can be typed into. Selected text in a page or a terminal's
     // output is no selection to edit; a platform that cannot tell leaves it
@@ -172,7 +176,8 @@ struct Target {
     bool hasIdentity() const;
     bool hasSelection() const;
     // Sets the nearby text from the control's whole text, either side of the
-    // selection [start, end), which is the caret where the two meet.
+    // selection [start, end), which is the caret where the two meet, and
+    // records that the text was read. Call it only with text that was.
     void setNearbyText(const QString &text, int start, int end);
 };
 
@@ -190,6 +195,10 @@ AppCategory classifyTarget(const Target &target,
 // command line. Only the first two arguments count: the executable, or an
 // interpreter and the script it runs.
 bool isAiCodingProcess(const QString &processName, const QStringList &commandLine);
+// Whether a terminal's window title names an AI coding tool, such as "Claude
+// Code". Only for terminals: the AI coding rules otherwise ignore titles,
+// which a browser tab or a document can carry.
+bool terminalTitleNamesAiCodingTool(const Target &target);
 QString inferWritingProfile(const Target &target, const QString &fallback = WritingProfile::Other);
 QString resolveWritingProfile(const Target &target,
                               const QList<WritingProfileOverride> &overrides,
@@ -202,6 +211,9 @@ QString resolveWritingProfile(const Target &target,
 struct RefinementContext {
     Target target;
     QString writingProfile = WritingProfile::Other;
+    // What the prompt calls the profile: a built-in's label or a custom
+    // profile's name. Empty names it by its id.
+    QString writingProfileName;
     QString tone = QStringLiteral("none");
     // The spoken phrases of the replacements that apply, which refinement
     // must leave for the replacements to find.

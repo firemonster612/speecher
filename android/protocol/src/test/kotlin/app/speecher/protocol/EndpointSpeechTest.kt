@@ -109,9 +109,9 @@ class EndpointSpeechTest {
                     .body(
                         "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Hello\"}\n\n" +
                             "data: {\"type\":\"transcript.text.delta\",\"delta\":\" there\"}\n\n" +
-                            "data: {\"type\":\"transcript.text.done\",\"text\":\"Hello there.\"}\n\n"
+                            "data: {\"type\":\"transcript.text.done\",\"text\":\"Hello there.\"}\n\n",
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             assertEquals(
@@ -136,9 +136,9 @@ class EndpointSpeechTest {
                         "data: {\"text\":\" One.\"}\n\n" +
                             "data: {\"text\":\" Two.\"}\n\n" +
                             "data: {\"text\":\"日本語。\"}\n\n" +
-                            "data: {\"text\":\"Three\"}\n\n"
+                            "data: {\"text\":\"Three\"}\n\n",
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             assertEquals(
@@ -156,9 +156,9 @@ class EndpointSpeechTest {
                     .addHeader("Content-Type", "text/event-stream")
                     .body(
                         "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Hello \"}\n\n" +
-                            "event: error\ndata: {\"error\":{\"code\":\"rate_limit_exceeded\"}}\n\n"
+                            "event: error\ndata: {\"error\":{\"code\":\"rate_limit_exceeded\"}}\n\n",
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val events = transcribe(SpeechEndpoint(server.url("/").toString()))
@@ -243,9 +243,9 @@ class EndpointSpeechTest {
             server.enqueue(
                 MockResponse.Builder()
                     .body(
-                        "{\"data\":[{\"id\":\"whisper-1\"},{\"id\":\"\"}],\"models\":[{\"name\":\"base\"}]}"
+                        "{\"data\":[{\"id\":\"whisper-1\"},{\"id\":\"\"}],\"models\":[{\"name\":\"base\"}]}",
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val base = server.url("/").toString()

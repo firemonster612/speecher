@@ -198,7 +198,7 @@ class SpeecherImeService : InputMethodService() {
         startActivity(
             Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(RECOVERY, recovery)
+                .putExtra(RECOVERY, recovery),
         )
     }
 

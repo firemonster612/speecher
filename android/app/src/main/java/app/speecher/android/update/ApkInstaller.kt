@@ -154,7 +154,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     Intent(context, MainActivity::class.java)
                         .putExtra(INSTALL_STATUS, status)
                         .putExtra(INSTALL_VERSION, intent.getStringExtra(INSTALL_VERSION))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 )
             }
         }

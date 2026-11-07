@@ -39,7 +39,7 @@ class ComputerImportTest {
         val link =
             parseImportLink(
                 "speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=AAECAwQFBgcICQoLDA0ODw" +
-                    "&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&n=enzo%27s%20thinkpad"
+                    "&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&n=enzo%27s%20thinkpad",
             )
         assertEquals(listOf("192.168.1.20", "10.0.0.5"), link.addresses.map { it.hostAddress })
         assertEquals(53817, link.port)
@@ -78,7 +78,7 @@ class ComputerImportTest {
         assertEquals(
             listOf("172.16.0.1", "172.31.255.254", "10.0.0.3", "192.168.0.4"),
             parseImportLink(
-                    "speecher://import?v=1&a=172.16.0.1,172.31.255.254,10.0.0.3,192.168.0.4$rest"
+                    "speecher://import?v=1&a=172.16.0.1,172.31.255.254,10.0.0.3,192.168.0.4$rest",
                 )
                 .addresses
                 .map { it.hostAddress },
@@ -94,9 +94,9 @@ class ComputerImportTest {
                     key,
                     hex(
                         "a0a1a2a3a4a5a6a7a8a9aaab77891e303f8ba3d98235c238de999296ed2ba7da31485a81" +
-                            "c0bda8c5531f993f914144b39ebecba5459cac59a143"
+                            "c0bda8c5531f993f914144b39ebecba5459cac59a143",
                     ),
-                )
+                ),
             ),
         )
     }
@@ -106,7 +106,7 @@ class ComputerImportTest {
         val sealed =
             hex(
                 "a0a1a2a3a4a5a6a7a8a9aaab77891e303f8ba3d98235c238de999296ed2ba7da31485a81" +
-                    "c0bda8c5531f993f914144b39ebecba5459cac59a143"
+                    "c0bda8c5531f993f914144b39ebecba5459cac59a143",
             )
         sealed[20] = (sealed[20].toInt() xor 1).toByte()
         assertThrows(AEADBadTagException::class.java) { openSealed(key, sealed) }
@@ -139,7 +139,7 @@ class ComputerImportTest {
                         setOf(WritingProfile.Work),
                         frequency = 41,
                         lastUsedMs = 1790000000000,
-                    )
+                    ),
                 ),
                 listOf(Replacement("my address", "Flat 3, 14 Harcourt Street")),
                 mapOf(
@@ -150,7 +150,7 @@ class ComputerImportTest {
                             customCleanupLevel = "custom_terse",
                             name = "Standup",
                             outputLanguage = "de",
-                        )
+                        ),
                 ),
                 listOf(CustomTone("custom_dry", "Dry", "Understated.")),
                 listOf(
@@ -159,7 +159,7 @@ class ComputerImportTest {
                         "Terse",
                         CleanupStrength.StrongPolish,
                         "Cut filler.",
-                    )
+                    ),
                 ),
                 "Use British spelling.",
             ),
@@ -187,7 +187,7 @@ class ComputerImportTest {
                 customTones = listOf(CustomTone("custom_dry", "Dry", "Plain.")),
                 customCleanupLevels =
                     listOf(
-                        CustomCleanupLevel("custom_terse", "Short", CleanupStrength.Balanced, "")
+                        CustomCleanupLevel("custom_terse", "Short", CleanupStrength.Balanced, ""),
                     ),
                 additionalInstructions = "Old instructions.",
             )
@@ -304,7 +304,7 @@ class ComputerImportTest {
                     "c58a5c4edc1a241525ac07a299ef42f109ce784bc3d097b4d1ae40d4d45a9888cd7615454707" +
                     "7e168a2084b308eca64a65f2e85546fe21618c330693dc1a5fe1eb15f428634b7b74300f9e3f" +
                     "4c09c72fd234854ee010043b662a915c5cd2e7ecdeed7b07ea1e3761de8892e42ab6eff491d0" +
-                    "4bd2499e3187b30a045f74247f9d24b413672d2e75"
+                    "4bd2499e3187b30a045f74247f9d24b413672d2e75",
             )
         ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { server ->
             val desktop = thread {
@@ -319,7 +319,7 @@ class ComputerImportTest {
             }
             val settings = runBlocking {
                 fetchSettings(
-                    ImportLink(listOf(server.inetAddress), server.localPort, token, key, "pc")
+                    ImportLink(listOf(server.inetAddress), server.localPort, token, key, "pc"),
                 )
             }
             desktop.join()

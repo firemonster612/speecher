@@ -26,7 +26,7 @@ import app.speecher.android.dictation.Microphone
 /** A microphone test that stops when its screen goes away or the app leaves the foreground. */
 @Composable
 private fun rememberMicrophoneTest(
-    capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit
+    capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
 ): MicrophoneTest {
     val test = remember { MicrophoneTest(capture) }
     DisposableEffect(test) { onDispose(test::stop) }

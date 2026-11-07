@@ -633,7 +633,7 @@ private slots:
         QCOMPARE(messages.size(), 2);
         QCOMPARE(messages.at(0).toObject().value(QStringLiteral("role")).toString(), QStringLiteral("system"));
         QVERIFY(messages.at(0).toObject().value(QStringLiteral("content")).toString()
-                    .startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+                    .startsWith(QStringLiteral("You clean up dictation.")));
         QCOMPARE(messages.at(1).toObject().value(QStringLiteral("role")).toString(), QStringLiteral("user"));
         const QString user = messages.at(1).toObject().value(QStringLiteral("content")).toString();
         QVERIFY(user.contains(QStringLiteral("hello there")));
@@ -675,11 +675,19 @@ private slots:
         QVERIFY(!user.contains(QStringLiteral("\"term99\"")));
     }
 
+    void chatCompletionsRetriesOnceWithoutTheReasoningFields_data()
+    {
+        QTest::addColumn<QByteArray>("status");
+        QTest::newRow("400") << QByteArrayLiteral("400 Bad Request");
+        QTest::newRow("422") << QByteArrayLiteral("422 Unprocessable Entity");
+    }
+
     void chatCompletionsRetriesOnceWithoutTheReasoningFields()
     {
+        QFETCH(QByteArray, status);
         FakeServer server;
         server.route("POST /v1/chat/completions",
-                     httpResponse("400 Bad Request", "application/json",
+                     httpResponse(status, "application/json",
                                   "{\"error\":{\"message\":\"Unrecognized request argument supplied: reasoning_effort\"}}"));
         server.route("POST /v1/chat/completions",
                      sse({chatChunk(QStringLiteral("Fine."), QStringLiteral("stop")), "[DONE]"}));
@@ -802,7 +810,7 @@ private slots:
         const QJsonObject body = server.jsonBody(0);
         QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("qwen3.5:4b"));
         QVERIFY(body.value(QStringLiteral("system")).toString()
-                    .startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+                    .startsWith(QStringLiteral("You clean up dictation.")));
         QVERIFY(!body.contains(QStringLiteral("thinking")));
         QVERIFY(!body.contains(QStringLiteral("speed")));
 

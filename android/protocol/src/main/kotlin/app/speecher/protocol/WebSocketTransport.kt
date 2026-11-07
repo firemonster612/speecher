@@ -161,7 +161,7 @@ internal constructor(
             require(
                 name.matches(Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")) &&
                     '\r' !in value &&
-                    '\n' !in value
+                    '\n' !in value,
             ) {
                 "Invalid WebSocket header"
             }
@@ -179,7 +179,7 @@ internal constructor(
             ("GET $path HTTP/1.1\r\n" +
                     fields.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
                     "\r\n")
-                .toByteArray(Charsets.UTF_8)
+                .toByteArray(Charsets.UTF_8),
         )
         output!!.flush()
         val response = ByteArrayOutputStream()
@@ -212,9 +212,9 @@ internal constructor(
                     MessageDigest.getInstance("SHA-1")
                         .digest(
                             (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(
-                                Charsets.US_ASCII
-                            )
-                        )
+                                Charsets.US_ASCII,
+                            ),
+                        ),
                 )
         if (
             received["sec-websocket-accept"] != accept ||

@@ -276,7 +276,7 @@ fun SpeecherSettings.withImported(computer: ComputerSettings): SpeecherSettings 
                             frequency = maxOf(phone.frequency, incoming.frequency),
                             lastUsedMs = maxOf(phone.lastUsedMs, incoming.lastUsedMs),
                         )
-                    }
+                    },
                 ),
             replacements =
                 merged(replacements, computer.replacements, ::phraseKey) { phone, incoming ->

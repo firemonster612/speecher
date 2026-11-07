@@ -30,7 +30,7 @@ class ModelFieldTest {
             SpeecherSettings(
                 refinementProvider = CleanupProvider.Claude,
                 claudeRefinement = RefinementChoice("claude-haiku-5-5", "low"),
-            )
+            ),
         )
 
     private fun show() = compose.setContent {

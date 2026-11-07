@@ -108,7 +108,7 @@ class SpeechClientsTest {
         val client = CodexDictationClient(transport, "token", "en", events::add)
         transport.server.onText("""{"type":"session.started"}""")
         transport.server.onText(
-            """{"type":"session.error","fatal":true,"error":{"code":"insufficient_quota","message":"exceeded","retryable":false}}"""
+            """{"type":"session.error","fatal":true,"error":{"code":"insufficient_quota","message":"exceeded","retryable":false}}""",
         )
         assertEquals(
             SpeechEvent.Failed(ProviderFailureKind.RateLimited, "insufficient_quota exceeded"),
@@ -128,9 +128,9 @@ class SpeechClientsTest {
                                 webSocket.send("""{"type":"error","error":{"code":"401"}}""")
                                 webSocket.close(1000, null)
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
@@ -161,13 +161,13 @@ class SpeechClientsTest {
                         object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) {
                                 webSocket.send(
-                                    """{"type":"session.error","fatal":true,"error":{"code":"403","message":"forbidden"}}"""
+                                    """{"type":"session.error","fatal":true,"error":{"code":"403","message":"forbidden"}}""",
                                 )
                                 webSocket.close(1000, null)
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
@@ -203,14 +203,14 @@ class SpeechClientsTest {
                                 frames.add(text)
                                 if (text == "{\"type\":\"CloseStream\"}") {
                                     webSocket.send(
-                                        """{"type":"TranscriptEndpoint","data":"hello"}"""
+                                        """{"type":"TranscriptEndpoint","data":"hello"}""",
                                     )
                                     webSocket.close(1000, null)
                                 }
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val events = LinkedBlockingQueue<SpeechEvent>()
@@ -252,7 +252,7 @@ class SpeechClientsTest {
         }
         assertEquals(
             listOf(
-                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500}}}"
+                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500}}}",
             ),
             transport.sent,
         )
@@ -273,17 +273,17 @@ class SpeechClientsTest {
                                     webSocket.send("""{"type":"session.started"}""")
                                 if (text == "{\"type\":\"session.close\"}") {
                                     webSocket.send(
-                                        """{"type":"transcript.final","utterance_id":"1","text":"hello"}"""
+                                        """{"type":"transcript.final","utterance_id":"1","text":"hello"}""",
                                     )
                                     webSocket.send(
-                                        """{"type":"session.updated","session":{"status":"closed"}}"""
+                                        """{"type":"session.updated","session":{"status":"closed"}}""",
                                     )
                                     webSocket.close(1000, null)
                                 }
                             }
-                        }
+                        },
                     )
-                    .build()
+                    .build(),
             )
             server.start()
             val events = LinkedBlockingQueue<SpeechEvent>()

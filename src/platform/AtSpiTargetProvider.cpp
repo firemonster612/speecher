@@ -75,7 +75,8 @@ void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Targ
         }
         Target target;
         target.applicationId = window->resourceClass.toCaseFolded();
-        target.applicationName = window->caption;
+        target.applicationName = window->resourceClass;
+        target.windowTitle = window->caption;
         target.processName = !window->resourceName.isEmpty()
             ? window->resourceName
             : processNameForPid(window->processId);
@@ -83,6 +84,7 @@ void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Targ
         target.compositorWindowId = window->internalId;
         target.compositorActive = true;
         target.terminalHost = isTerminalTarget(target);
+        target.aiCodingToolActive = target.terminalHost && terminalTitleNamesAiCodingTool(target);
         done(target);
     });
 }
@@ -105,8 +107,7 @@ TargetProvider::FocusMatch AtSpiTargetProvider::compositorWindowMatch(const Targ
     if (a.applicationId != b.applicationId || a.processId != b.processId) {
         return FocusMatch::Different;
     }
-    // applicationName carries the caption for a compositor-fallback target.
-    return a.applicationName == b.applicationName ? FocusMatch::Same : FocusMatch::TitleChanged;
+    return a.windowTitle == b.windowTitle ? FocusMatch::Same : FocusMatch::TitleChanged;
 }
 
 void AtSpiTargetProvider::focusMatch(const Target &target, QObject *context, std::function<void(FocusMatch)> done)

@@ -102,7 +102,7 @@ fun Settings(
                             ended -> "Session ended"
                             isSignedIn -> "Signed in"
                             else -> "Signed out"
-                        }
+                        },
                     )
                 },
                 trailingContent = {
@@ -435,7 +435,7 @@ private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>)
 internal fun SettingsPreview() =
     SettingsPreview(
         SpeecherSettings(
-            vocabulary = listOf("Speecher", "Kirigami", "Priya Raman").map(::VocabularyWord)
+            vocabulary = listOf("Speecher", "Kirigami", "Priya Raman").map(::VocabularyWord),
         ),
         Provider.entries.toSet(),
     )
@@ -494,8 +494,8 @@ internal fun SettingsProfilesPreview() = SpeecherTheme {
                             WritingProfileSettings(
                                 CleanupStrength.None,
                                 outputLanguage = "Spanish",
-                            ))
-            )
+                            )),
+            ),
         )
     }
     SpeecherScreen(SettingsPage.Profiles.title, onBack = {}) {

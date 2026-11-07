@@ -24,7 +24,7 @@ class ReleaseCheckTest {
               {"tag_name":"android-nightly","prerelease":true,"body":"Version: 0.2.1-nightly.57+g1a2b3c4\nCommit: 1a2b3c4\n\nThis Nightly Build is untested.","html_url":"https://example.com/nightly","assets":[{"name":"Speecher-0.2.1-nightly.56_g0f0f0f0.apk","browser_download_url":"https://example.com/56.apk"},{"name":"Speecher-0.2.1-nightly.57_g1a2b3c4.apk","browser_download_url":"https://example.com/57.apk"}]},
               {"tag_name":"android-v0.1.18","prerelease":false,"body":"## Fixed\n\n- Old","html_url":"https://example.com/0.1.18","assets":[{"name":"Speecher-0.1.18.apk","browser_download_url":"https://example.com/0.1.18.apk"}]},
               {"tag_name":"android-v0.2.0","prerelease":false,"body":"## Added\n\n- Updates","html_url":"https://github.com/firemonster612/speecher/releases/tag/android-v0.2.0","assets":[{"name":"Speecher-0.2.0.apk","browser_download_url":"https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk"}]}
-            ]"""
+            ]""",
         )
 
     @Test

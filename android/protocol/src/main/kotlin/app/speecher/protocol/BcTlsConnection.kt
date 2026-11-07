@@ -102,7 +102,7 @@ internal fun connectTls(
             override fun getAuthentication(): TlsAuthentication =
                 object : TlsAuthentication {
                     override fun getClientCredentials(
-                        request: CertificateRequest
+                        request: CertificateRequest,
                     ): TlsCredentials? = null
 
                     override fun notifyServerCertificate(serverCertificate: TlsServerCertificate) {
@@ -131,7 +131,7 @@ internal fun connectTls(
                         verifyHostname(host, chain.first())
                     }
                 }
-        }
+        },
     )
     return protocol
 }

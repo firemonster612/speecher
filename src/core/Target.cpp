@@ -153,6 +153,7 @@ bool Target::hasSelection() const
 
 void Target::setNearbyText(const QString &text, int start, int end)
 {
+    nearbyTextRead = true;
     nearbyTextBefore = text.left(start).right(nearbyTextChars);
     nearbyTextAfter = text.mid(end, nearbyTextChars);
     // The cut counts UTF-16 units, so it can fall inside a character such as
@@ -393,6 +394,13 @@ bool isAiCodingProcess(const QString &processName, const QStringList &commandLin
     Target probe;
     probe.processName = executableParts.join(QLatin1Char(' '));
     return classifyTarget(probe) == AppCategory::AiCoding;
+}
+
+bool terminalTitleNamesAiCodingTool(const Target &target)
+{
+    Target titleProbe;
+    titleProbe.applicationName = target.windowTitle;
+    return classifyTarget(titleProbe) == AppCategory::AiCoding;
 }
 
 QString inferWritingProfile(const Target &target, const QString &fallback)

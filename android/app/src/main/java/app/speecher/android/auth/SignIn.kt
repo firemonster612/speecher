@@ -101,7 +101,7 @@ class SignIn(
                         while (System.currentTimeMillis() < deadline && socket.isOpen) {
                             val client =
                                 socket.accept(
-                                    (deadline - System.currentTimeMillis()).coerceAtLeast(1)
+                                    (deadline - System.currentTimeMillis()).coerceAtLeast(1),
                                 ) ?: continue
                             client.use {
                                 accepted()
@@ -220,7 +220,7 @@ class SignIn(
             .write(
                 ("HTTP/1.1 $status\r\nContent-Type: text/html; charset=utf-8\r\n" +
                         "Connection: close\r\n\r\n${signInPage(label, success)}")
-                    .toByteArray()
+                    .toByteArray(),
             )
     }
 

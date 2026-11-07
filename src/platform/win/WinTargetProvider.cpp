@@ -30,10 +30,12 @@ QString bstrString(BSTR value)
     return text;
 }
 
-QString currentText(IUIAutomationElement *element)
+// The control's whole text, or nothing when neither pattern reads it, which
+// is not the same as a control that holds no text.
+std::optional<QString> currentText(IUIAutomationElement *element)
 {
     if (!element) {
-        return {};
+        return std::nullopt;
     }
     ComPtr<IUIAutomationTextPattern> textPattern;
     if (SUCCEEDED(element->GetCurrentPatternAs(
@@ -53,7 +55,7 @@ QString currentText(IUIAutomationElement *element)
         && SUCCEEDED(valuePattern->get_CurrentValue(&value))) {
         return bstrString(value);
     }
-    return {};
+    return std::nullopt;
 }
 
 std::optional<int> rangeOffset(IUIAutomationTextRange *document,
@@ -188,14 +190,15 @@ QString windowTitle(HWND window)
 }
 
 // The control's text and the selection a write will replace, or nothing when
-// the control reports no selection inside its text.
+// the text can't be read or the control reports no selection inside it.
 std::optional<InsertionBaseline> baselineOf(IUIAutomationElement *element)
 {
     const auto selection = selectionOffsets(element);
-    if (!selection) {
+    const std::optional<QString> text = currentText(element);
+    if (!selection || !text) {
         return std::nullopt;
     }
-    return InsertionBaseline::forSelection(currentText(element), selection->first, selection->second);
+    return InsertionBaseline::forSelection(*text, selection->first, selection->second);
 }
 
 const QSet<QString> &terminalExecutables()

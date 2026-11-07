@@ -16,6 +16,11 @@
 namespace speecher {
 namespace {
 
+// Thinking and the reply share this budget, and a selection edit replies
+// with the whole revised document: 4096 left a long document no room to
+// finish, and a reply cut off at max_tokens is unusable.
+constexpr int kMaxOutputTokens = 16384;
+
 QString anthropicErrorMessage(const QByteArray &payload, const QString &fallback)
 {
     const QJsonObject object = QJsonDocument::fromJson(payload).object();
@@ -222,7 +227,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
 
         QJsonObject body;
         body.insert(QStringLiteral("model"), model);
-        body.insert(QStringLiteral("max_tokens"), 4096);
+        body.insert(QStringLiteral("max_tokens"), kMaxOutputTokens);
         body.insert(QStringLiteral("stream"), true);
         if (fast) {
             body.insert(QStringLiteral("speed"), QStringLiteral("fast"));
@@ -265,7 +270,7 @@ void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
         }
         const QJsonObject body{
             {QStringLiteral("model"), model},
-            {QStringLiteral("max_tokens"), 4096},
+            {QStringLiteral("max_tokens"), kMaxOutputTokens},
             {QStringLiteral("stream"), true},
             {QStringLiteral("system"), refinementSystemPrompt(refinementStyle, context)},
             {QStringLiteral("messages"), userMessages(rawTranscript, vocabulary, context)},

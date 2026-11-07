@@ -188,9 +188,11 @@ QString BindingProcessor::applyBindingsOutsidePlaceholders(const QString &text, 
     return BindingMatcher::applyOutsidePlaceholders(text, rules);
 }
 
-BindingRestoreResult BindingProcessor::restorePlaceholders(const QString &refinedText, const QList<BindingPlaceholder> &placeholders)
+BindingRestoreResult BindingProcessor::restorePlaceholders(const QString &refinedText,
+                                                           const QList<BindingPlaceholder> &placeholders,
+                                                           const QString &sourceText)
 {
-    return BindingMatcher::restorePlaceholders(refinedText, placeholders);
+    return BindingMatcher::restorePlaceholders(refinedText, placeholders, sourceText);
 }
 
 QHash<QString, QString> BindingProcessor::replacementsByPlaceholder(const QList<BindingPlaceholder> &placeholders)

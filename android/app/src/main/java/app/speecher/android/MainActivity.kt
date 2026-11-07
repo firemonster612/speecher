@@ -206,8 +206,8 @@ class MainActivity : ComponentActivity() {
                                 onUseServer = {
                                     changeSettings(
                                         settings.copy(
-                                            transcriptionProvider = SpeechProvider.Endpoint
-                                        )
+                                            transcriptionProvider = SpeechProvider.Endpoint,
+                                        ),
                                     )
                                     page = Page.Settings
                                     settingsPage = SettingsPage.Transcription
@@ -562,7 +562,7 @@ fun Context.openAppSettings() {
         Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.fromParts("package", packageName, null),
-        )
+        ),
     )
 }
 

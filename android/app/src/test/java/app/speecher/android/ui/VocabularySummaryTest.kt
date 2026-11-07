@@ -17,7 +17,7 @@ class VocabularySummaryTest {
         assertEquals(
             "3 terms. 2 are key terms, and all are used for refinement.",
             vocabularyLimit(
-                settings(SpeechProvider.Claude, words + VocabularyWord("Grafana", keyTerm = false))
+                settings(SpeechProvider.Claude, words + VocabularyWord("Grafana", keyTerm = false)),
             ),
         )
         assertEquals(
@@ -27,7 +27,7 @@ class VocabularySummaryTest {
         assertEquals(
             "1001 terms, the first 1000 are used for refinement",
             vocabularyLimit(
-                settings(SpeechProvider.ChatGpt, List(1001) { VocabularyWord("t$it") })
+                settings(SpeechProvider.ChatGpt, List(1001) { VocabularyWord("t$it") }),
             ),
         )
     }

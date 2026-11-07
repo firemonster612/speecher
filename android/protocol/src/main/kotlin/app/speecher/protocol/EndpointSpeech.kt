@@ -179,7 +179,7 @@ class EndpointSpeechClient(
                         .url(endpoint.transcriptionsUrl)
                         .headers(bearer(apiKey).toHeaders())
                         .post(form.build())
-                        .build()
+                        .build(),
                 )
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(deadlineMillis)
         return cancellation.request(call::cancel, deadline) {

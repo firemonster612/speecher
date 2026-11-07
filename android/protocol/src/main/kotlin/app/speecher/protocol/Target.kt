@@ -34,6 +34,16 @@ value class WritingProfile(val id: String) {
     }
 }
 
+/** The built-in profiles' labels, from the desktop's Target.cpp, in its order. */
+val builtInProfileLabels =
+    mapOf(
+        WritingProfile.Work to "Work",
+        WritingProfile.Email to "Email",
+        WritingProfile.Personal to "Personal",
+        WritingProfile.AiCoding to "AI coding",
+        WritingProfile.Other to "Other",
+    )
+
 enum class CleanupStrength(val id: String) {
     /** Skips refinement entirely, as the desktop does. */
     None("none"),
@@ -145,12 +155,15 @@ data class NearbyText(
 
 /**
  * The refinement configuration and target context sent to the refiner. [nearbyText] is null when
- * nearby text is excluded (context off or a secure field), which drops the caret keys.
+ * nearby text is excluded (context off or a secure field) or could not be read, which drops its
+ * keys, so an empty [NearbyText.before] means the caret is at the start of the field.
  */
 data class RefinementContext(
     val style: CleanupStrength = CleanupStrength.Balanced,
     val tone: Tone = Tone.None,
     val profile: WritingProfile = WritingProfile.Other,
+    /** What the prompt calls [profile]: a built-in's label or a custom profile's name. */
+    val profileName: String = "",
     val category: AppCategory = AppCategory.Unknown,
     val applicationId: String = "",
     val applicationName: String = "",
@@ -330,6 +343,7 @@ fun resolveRefinementContext(
             ?: if (translatesUnrefined) CleanupStrength.LightCleanup else settings.cleanupStrength,
         settings.tone,
         profile,
+        builtInProfileLabels[profile] ?: settings.name,
         category,
         applicationId,
         applicationName,

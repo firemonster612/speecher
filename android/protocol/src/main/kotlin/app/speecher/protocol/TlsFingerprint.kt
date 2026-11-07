@@ -54,7 +54,7 @@ data class TlsFingerprint(
                             (it shr 8).toShort(),
                             (it and 255).toShort(),
                         )
-                    }
+                    },
                 ),
             )
             TlsExtensionsUtils.addSupportedPointFormatsExtension(this, pointFormats.toShortArray())
@@ -212,6 +212,6 @@ object TlsFingerprints {
             named(
                 System.getProperty("speecher.tlsFingerprint")
                     ?: System.getenv("SPEECHER_TLS_FINGERPRINT")
-                    ?: "openssl"
+                    ?: "openssl",
             )
 }

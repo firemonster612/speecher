@@ -143,7 +143,8 @@ fun refinementContext(
             )
     if (!includeText || context.style == CleanupStrength.None) return context
     return context.copy(
-        nearbyText = surroundingText(CONTEXT_CHARACTERS) ?: NearbyText(),
+        // Null when the field's text can't be read, so the refiner is not told the field is empty.
+        nearbyText = surroundingText(CONTEXT_CHARACTERS),
         fieldHint = target.hint,
         // The desktop sends the window title regardless; here it comes from the screen text the
         // user opted into, so it stays behind the same switches.

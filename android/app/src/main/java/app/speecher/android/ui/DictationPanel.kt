@@ -203,7 +203,7 @@ fun DictationPanel(
                     ) {
                         Icon(
                             painterResource(
-                                if (state.paused) R.drawable.ic_play else R.drawable.ic_pause
+                                if (state.paused) R.drawable.ic_play else R.drawable.ic_pause,
                             ),
                             contentDescription = if (state.paused) "Resume" else "Pause",
                         )
@@ -562,12 +562,14 @@ internal fun CopyTranscriptButton(text: String) {
         delay(COPIED_FEEDBACK_MILLIS)
         copied = false
     }
-    IconButton({
-        scope.launch {
-            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Transcript", text)))
-        }
-        copied = true
-    }) {
+    IconButton(
+        {
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Transcript", text)))
+            }
+            copied = true
+        },
+    ) {
         Icon(
             painterResource(if (copied) R.drawable.ic_check else R.drawable.ic_copy),
             contentDescription = if (copied) "Copied" else "Copy transcript",
@@ -739,7 +741,10 @@ internal fun PanelRefiningEditPreview() =
 @Composable
 internal fun PanelRefiningStreamPreview() =
     PanelPreview(
-        DictationState.Refining(SAMPLE_TEXT, "Can we move the design review to Thursday afternoon?")
+        DictationState.Refining(
+            SAMPLE_TEXT,
+            "Can we move the design review to Thursday afternoon?",
+        ),
     )
 
 /**

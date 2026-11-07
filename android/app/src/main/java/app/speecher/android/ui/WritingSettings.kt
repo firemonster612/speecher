@@ -42,22 +42,13 @@ import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
+import app.speecher.protocol.builtInProfileLabels
 import app.speecher.protocol.builtInRules
 import app.speecher.protocol.cleanupLevelId
 import app.speecher.protocol.customChoiceId
 import app.speecher.protocol.toneId
 import app.speecher.protocol.withCleanupLevel
 import app.speecher.protocol.withTone
-
-// Labels from the desktop's Target.cpp, in its order.
-private val profileLabels =
-    mapOf(
-        WritingProfile.Work to "Work",
-        WritingProfile.Email to "Email",
-        WritingProfile.Personal to "Personal",
-        WritingProfile.AiCoding to "AI coding",
-        WritingProfile.Other to "Other",
-    )
 
 // The app types, in the order the desktop's rules offer them.
 private val appTypeLabels =
@@ -100,7 +91,7 @@ internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
 
 /** Every profile, by id: the built-ins, then the custom ones by name. */
 internal fun profileChoices(settings: SpeecherSettings): Map<WritingProfile, String> =
-    profileLabels +
+    builtInProfileLabels +
         settings.writingProfiles.filterKeys { !it.isBuiltIn }.mapValues { it.value.name }
 
 /** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
@@ -111,7 +102,7 @@ internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
 internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
     PageIntro(
         "Choose a cleanup level, a tone and optional instructions for each profile. An output " +
-            "language translates what you say, with at least Light cleanup."
+            "language translates what you say, with at least Light cleanup.",
     )
     val profiles = profileChoices(settings)
     profiles.forEach { (profile, label) ->
@@ -163,8 +154,8 @@ internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSett
                 writingProfiles =
                     settings.writingProfiles +
                         (WritingProfile(id) to
-                            WritingProfileSettings(instructions = instructions, name = name))
-            )
+                            WritingProfileSettings(instructions = instructions, name = name)),
+            ),
         )
     }
 }
@@ -173,7 +164,7 @@ internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSett
 internal fun AppRuleSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
     PageIntro(
         "Built-in rules are read-only. Your rules come first and can set the app type, the " +
-            "writing profile, or both."
+            "writing profile, or both.",
     )
     val profiles = profileChoices(settings)
     BuiltInRules(profiles)
@@ -188,15 +179,17 @@ internal fun AppRuleSettings(settings: SpeecherSettings, onChange: (SpeecherSett
                 onChange(
                     settings.copy(
                         appRules =
-                            settings.appRules.mapIndexed { at, it -> if (at == index) next else it }
-                    )
+                            settings.appRules.mapIndexed { at, it ->
+                                if (at == index) next else it
+                            },
+                    ),
                 )
             },
             onDelete = {
                 onChange(
                     settings.copy(
-                        appRules = settings.appRules.filterIndexed { at, _ -> at != index }
-                    )
+                        appRules = settings.appRules.filterIndexed { at, _ -> at != index },
+                    ),
                 )
             },
         )
@@ -219,8 +212,8 @@ internal fun ToneSettings(settings: SpeecherSettings, onChange: (SpeecherSetting
                             settings.customTones.map {
                                 if (it.id == tone.id) it.copy(name = name, instruction = text)
                                 else it
-                            }
-                    )
+                            },
+                    ),
                 )
             },
             onDelete = {
@@ -234,8 +227,8 @@ internal fun ToneSettings(settings: SpeecherSettings, onChange: (SpeecherSetting
         val id = customChoiceId(name, settings.customTones.map { it.id })
         onChange(
             settings.withCustomChoices(
-                tones = settings.customTones + CustomTone(id, name, instruction)
-            )
+                tones = settings.customTones + CustomTone(id, name, instruction),
+            ),
         )
     }
 }
@@ -251,8 +244,8 @@ internal fun CleanupLevelSettings(
             onChange(
                 settings.withCustomChoices(
                     levels =
-                        settings.customCleanupLevels.map { if (it.id == level.id) next else it }
-                )
+                        settings.customCleanupLevels.map { if (it.id == level.id) next else it },
+                ),
             )
         CustomChoice(
             level.name,
@@ -275,8 +268,8 @@ internal fun CleanupLevelSettings(
             settings.withCustomChoices(
                 levels =
                     settings.customCleanupLevels +
-                        CustomCleanupLevel(id, name, CleanupStrength.Balanced, instructions)
-            )
+                        CustomCleanupLevel(id, name, CleanupStrength.Balanced, instructions),
+            ),
         )
     }
 }

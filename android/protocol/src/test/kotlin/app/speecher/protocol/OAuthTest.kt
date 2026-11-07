@@ -84,12 +84,12 @@ class OAuthTest {
             server.enqueue(
                 MockResponse.Builder()
                     .body(
-                        """{"access_token":"a","refresh_token":"r","expires_in":60,"scope":"returned-scope"}"""
+                        """{"access_token":"a","refresh_token":"r","expires_in":60,"scope":"returned-scope"}""",
                     )
-                    .build()
+                    .build(),
             )
             server.enqueue(
-                MockResponse.Builder().body("""{"access_token":"b","expires_in":90}""").build()
+                MockResponse.Builder().body("""{"access_token":"b","expires_in":90}""").build(),
             )
             server.start()
 
@@ -139,10 +139,12 @@ class OAuthTest {
             server.enqueue(
                 MockResponse.Builder()
                     .body("""{"access_token":"a","refresh_token":"r","id_token":"id"}""")
-                    .build()
+                    .build(),
             )
             server.enqueue(
-                MockResponse.Builder().body("""{"access_token":"b","refresh_token":"r2"}""").build()
+                MockResponse.Builder()
+                    .body("""{"access_token":"b","refresh_token":"r2"}""")
+                    .build(),
             )
             server.start()
 

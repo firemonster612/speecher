@@ -55,6 +55,63 @@ class ReplacementsTest {
     }
 
     @Test
+    fun `a placeholder no phrase produced is refused`() {
+        val replaced = replaceSpoken("send it", listOf(email))
+        assertEquals("Send Alex.", replaced.restore("Send Alex."))
+        assertNull(replaced.restore("Send SPEECHER_BINDING_0."))
+    }
+
+    @Test
+    fun `a glued placeholder is refused`() {
+        val replaced = replaceSpoken("send my email", listOf(email))
+        assertNull(replaced.restore("Send speecherbinding0."))
+        assertNull(replaced.restore("Send Speecher Binding0."))
+    }
+
+    @Test
+    fun `a revised selection keeps its first line's indentation`() {
+        assertEquals(
+            "\t    return value;",
+            replaceSpoken("rename x to value", emptyList())
+                .restoreEdit("\n \n\t    return value;\n  \n", "return x;"),
+        )
+    }
+
+    @Test
+    fun `a selection edit keeps the document's placeholder text`() {
+        val replaced = replaceSpoken("make it constexpr", emptyList())
+        val document = "const auto token = \"SPEECHER_BINDING_0\";"
+        assertEquals(
+            "constexpr auto token = \"SPEECHER_BINDING_0\";",
+            replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_0\";", document),
+        )
+        assertNull(replaced.restoreEdit("constexpr auto token = \"SPEECHER_BINDING_1\";", document))
+        // A glued or cut-off copy of the document's placeholder is not it.
+        listOf("xSPEECHER_BINDING_0", "SPEECHER_BINDING_", "speecherbinding0y").forEach {
+            assertNull(replaced.restoreEdit("constexpr auto token = \"$it\";", document))
+        }
+        // A phrase's placeholder that is also the document's text could be restored over the
+        // document's literal, so the edit is refused.
+        assertNull(
+            replaceSpoken("add my email above it", listOf(email))
+                .restoreEdit(
+                    "SPEECHER_BINDING_0\n\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"",
+                    "\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"",
+                ),
+        )
+    }
+
+    @Test
+    fun `a dictation about placeholders keeps them`() {
+        val replaced = replaceSpoken("rename the speecher binding zero placeholder", emptyList())
+        assertEquals(
+            "Rename the speecher binding zero placeholder.",
+            replaced.restore("Rename the speecher binding zero placeholder."),
+        )
+        assertNull(replaced.restore("Rename the SPEECHER_BINDING_0 placeholder."))
+    }
+
+    @Test
     fun `the preview shows each placeholder's text and hides one still streaming in`() {
         val replaced = replaceSpoken("send my email", listOf(email))
         assertEquals("Send efox@example.com now", replaced.preview("Send SPEECHER_BINDING_0 now"))
@@ -108,7 +165,7 @@ class ReplacementsTest {
                     Replacement("MY email", "two"),
                     Replacement("++", "symbols only"),
                     Replacement("empty replacement", "   "),
-                )
+                ),
             ),
         )
     }
@@ -121,7 +178,7 @@ class ReplacementsTest {
                 listOf(
                     Replacement("my,email", "efox@example.com"),
                     Replacement("speecher repo", "/home/efox/projects/speecher3"),
-                )
+                ),
             ),
         )
     }

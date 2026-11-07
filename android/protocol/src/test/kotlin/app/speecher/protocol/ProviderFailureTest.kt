@@ -71,7 +71,7 @@ class ProviderFailureTest {
                 HandshakeCertificates.Builder()
                     .heldCertificate(selfSigned)
                     .build()
-                    .sslSocketFactory()
+                    .sslSocketFactory(),
             )
             server.start()
             val error =

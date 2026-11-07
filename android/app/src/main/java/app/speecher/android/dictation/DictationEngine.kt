@@ -481,7 +481,7 @@ class DictationEngine(
                     else if (text == null)
                         fail(current, FailureReason.SelectionNeedsCleanup, "No cleanup", raw)
                     else
-                        replaced.restoreEdit(text)?.let(::commitTranscript)
+                        replaced.restoreEdit(text, edited)?.let(::commitTranscript)
                             ?: fail(
                                 current,
                                 FailureReason.Cleanup(provider, ProviderFailureKind.InvalidResult),
@@ -730,7 +730,7 @@ class DictationEngine(
                     sourceProvider,
                     cleanupsCalled.toList(),
                     if (edited != null) prepared?.text ?: text else text,
-                )
+                ),
             )
         } else failCommit(FailureReason.Commit, "Could not insert text", text)
     }

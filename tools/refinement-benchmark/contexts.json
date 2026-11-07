@@ -1,0 +1,22 @@
+{
+ "vocabulary": {
+  "application_name": "Slack", "application_id": "com.tinyspeck.slackmacgap", "category": "general",
+  "vocabulary": ["Convex", "Clerk"]
+ },
+ "midsentence": {
+  "application_name": "Mail", "application_id": "com.apple.mail", "category": "email",
+  "before": "Hi Sam,\n\nI think we should ", "after": ""
+ },
+ "between": {
+  "application_name": "Notes", "application_id": "com.apple.notes", "category": "general",
+  "before": "The review is at ", "after": " in room 4."
+ },
+ "terminal": {
+  "application_name": "Terminal", "application_id": "com.apple.terminal", "category": "terminal",
+  "before": "", "after": ""
+ },
+ "fieldstart": {
+  "application_name": "Messages", "application_id": "com.apple.messages", "category": "general",
+  "before": "", "after": ""
+ }
+}

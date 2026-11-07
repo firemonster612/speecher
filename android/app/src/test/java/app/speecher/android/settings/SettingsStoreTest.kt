@@ -56,7 +56,7 @@ class SettingsStoreTest {
                             source = "csv",
                             frequency = 2,
                             lastUsedMs = 1_791_020_460_000,
-                        )
+                        ),
                     ),
                 replacements = listOf(Replacement("sign off", "Regards,\nEfox")),
                 chipDockOnMic = false,
@@ -100,7 +100,7 @@ class SettingsStoreTest {
                             "Notes",
                             CleanupStrength.CustomOnly,
                             "Bullets.",
-                        )
+                        ),
                     ),
                 buttonLayout = ButtonLayout.InsertOnly,
                 panelSize = PanelSize.Compact,

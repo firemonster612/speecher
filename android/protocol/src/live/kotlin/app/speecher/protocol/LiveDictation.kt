@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 fun main() {
     val auth =
         Json.parseToJsonElement(
-                Files.readString(Path.of(System.getProperty("user.home"), ".codex/auth.json"))
+                Files.readString(Path.of(System.getProperty("user.home"), ".codex/auth.json")),
             )
             .jsonObject
     val token = auth.getValue("tokens").jsonObject.getValue("access_token").jsonPrimitive.content
