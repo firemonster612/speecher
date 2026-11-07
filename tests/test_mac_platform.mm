@@ -320,7 +320,7 @@ private slots:
     void liveCaptureDuringVerificationEndsIt()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_MAC_RECAPTURE") != QStringLiteral("1")) {
-            QSKIP("Live macOS recapture check is opt-in; focus an editable control in another app");
+            QSKIP("Live macOS recapture check is opt-in; focus an editable control in another, non-Chromium app");
         }
         MacTargetProvider provider;
         provider.setCorrectionObservationEnabled(false);
