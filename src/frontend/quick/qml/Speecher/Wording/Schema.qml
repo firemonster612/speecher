@@ -27,10 +27,12 @@ import "schema/updates.js" as Updates
 // { id, equals } to grey a row out until another row has a value, and
 // hiddenWhen { id, equals } to fold it away while another row has a value.
 // needsBlur marks a row that is off and greyed, showing its disabledHelp,
-// where Appearance.canBlur is false; its saved value stays.
+// where Appearance.canBlur is false, and needsAccessibility one that is
+// where System.accessibility is false; its saved value stays.
 // needs names what a row or an option needs of the computer, a System
-// property such as hasVirtualKeyboard; without it, its page and search leave
-// it out, and a choice left with one option leaves its row out (available,
+// property such as hasVirtualKeyboard, or "!" and one for a row only a
+// computer without it has; without it, its page and search leave it out,
+// and a choice left with one option leaves its row out (available,
 // options).
 // Custom rows may also carry wording for their own controls: emptyText and
 // addLabel for lists, disabledHelp for help shown while the row is greyed
@@ -76,9 +78,10 @@ QtObject {
 
     // Whether this computer has the row; has(need) answers for a needs.
     function available(spec, has) {
-        if (spec.needs && !has(spec.needs)) return false
+        if (!_met(spec.needs, has)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
+    function _met(need, has) { return !need || (need[0] === "!" ? !has(need.slice(1)) : !!has(need)) }
     // Whether the row that turns this one on (enabledWhen) is on, by the
     // values Settings holds.
     function rowEnabled(spec, values) {
@@ -86,7 +89,7 @@ QtObject {
     }
     // The row's options this computer has.
     function options(spec, has) {
-        return (spec.options || []).filter(o => !o.needs || has(o.needs))
+        return (spec.options || []).filter(o => _met(o.needs, has))
     }
 
     // Ranks pages and the rows this computer has (available) against query.

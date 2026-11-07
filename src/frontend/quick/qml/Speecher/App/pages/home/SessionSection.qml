@@ -22,31 +22,55 @@ Section {
     readonly property bool hasShortcut: shortcutKeys.length > 0
     // The desktop gives Speecher no shortcut, so there is none to set.
     readonly property bool noShortcuts: Health.noShortcuts(System.checks)
-    // What Speecher knows stands in the way of dictating, each with the
-    // page that fixes it: microphone access, a microphone, the speech
-    // service. A service not checked yet stands in nobody's way. Without
-    // a microphone nothing can start (blocked); the chosen service only
-    // warns, since a fallback or a Writing Profile's own service may do.
-    readonly property var service: ModelText.service(Settings.values.speechProvider || "")
-    readonly property var access: Health.find(System.checks, "microphoneAccess")
-    // Where words can neither be inserted (no accessibility) nor pasted
-    // with keys (no virtual keyboard), they only reach the clipboard;
-    // unless that is what was chosen, Home says so without blocking.
-    readonly property bool clipboardOnly: System.wordsStayCopied
-    readonly property var blockers: [
-        access.state === "off" ? { id: "access", title: Schema.row("microphoneAccess").label, status: Health.status(access), page: "permissions" } : null,
-        Audio.hasMicrophones ? null : { id: "microphone", title: Schema.page("microphone").title, status: Schema.row("audioDevice").noneLabel, page: "microphone" },
-        service.state !== "ready" && service.state !== "unknown" ? { id: "speech", title: Schema.page("speech").title, status: ModelText.status(service), page: "speech" } : null,
-        clipboardOnly ? { id: "pasting", title: Schema.page("pasting").title, status: t.wordsOnClipboard, page: "pasting" } : null
-    ].filter(b => b)
-    readonly property bool blocked: blockers.some(b => b.id !== "speech" && b.id !== "pasting")
+    // Every check that applies here, by id, in two groups: what dictation
+    // can't start without (a check core marks needed, such as microphone
+    // access) and what it works without.
+    readonly property var checks: System.checks.filter(Health.applies)
+    readonly property var neededChecks: checks.filter(c => c.needed).map(c => c.id)
+    readonly property var optionalChecks: checks.filter(c => !c.needed).map(c => c.id)
+
+    // The speech chain, the service then its fallbacks: dictation works while
+    // any of them does. Checking while none works and one is being checked;
+    // a service nobody has checked yet stands in nobody's way.
+    readonly property var chain: [Settings.values.speechProvider || ""]
+        .concat(Settings.values.speechFallbackList || []).map(id => ModelText.service(id))
+    readonly property var working: chain.find(s => s.state === "ready")
+    readonly property string speechState: working ? "ok"
+        : chain.some(s => s.signInChecking) ? "checking"
+        : chain.some(s => s.state === "unknown") ? "notChecked" : "attention"
+    readonly property var speechItem: ({
+        id: "speech", title: Schema.page("speech").title, state: speechState, page: "speech", row: "",
+        status: working ? (working === chain[0] ? ModelText.status(working) : t.takesOver(working.label))
+              : speechState === "checking" ? ModelText.checking
+              : ModelText.status(chain.find(s => s.state === "unknown") || chain[0])
+    })
+    readonly property var microphoneItem: ({
+        id: "microphone", title: Schema.page("microphone").title, page: "microphone", row: "audioDevice",
+        state: !Audio.hasMicrophones || Microphones.deviceMissing ? "missing" : "ok",
+        status: !Audio.hasMicrophones ? Schema.row("audioDevice").noneLabel
+              : Microphones.deviceMissing ? Schema.row("audioDevice").missingLabel : Microphones.deviceName
+    })
+    // Where words can neither be inserted nor pasted with keys, they only
+    // reach the clipboard.
+    readonly property var optionalItems: System.wordsStayCopied
+        ? [{ id: "pasting", title: Schema.page("pasting").title, status: t.wordsOnClipboard, state: "attention", page: "pasting", row: "" }] : []
+
+    // What dictation needs and doesn't have, as the caption names it.
+    readonly property var missing: checks.filter(c => c.needed && !Health.passes(c)).map(c => Schema.row(c.id).label.toLowerCase())
+        .concat(Audio.hasMicrophones ? [] : [t.aMicrophone], speechState === "attention" ? [t.aSpeechService] : [])
+    // Without microphone access or a microphone nothing can start; with no
+    // working speech service it can, to try again, but isn't ready.
+    readonly property bool cantStart: checks.some(c => c.needed && !Health.passes(c)) || !Audio.hasMicrophones
+    readonly property bool blocked: missing.length > 0
+    readonly property bool allPass: !blocked && checks.every(Health.passes) && microphoneItem.state === "ok"
+                                    && speechState === "ok" && optionalItems.length === 0
     // What the dictation is doing, as the heading says it.
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
-    title: status[Dictation.state] || (blocked ? t.notReady : t.ready)
+    title: status[Dictation.state] || (blocked ? t.notReady : speechState === "checking" ? t.checking : t.ready)
     // What the listed things do to dictation, in words, else how to start.
-    caption: T.readiness(blockers.map(b => b.id))
+    caption: T.readiness(missing)
            || (hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere : t.noShortcut)
     actions: Switcher {
         id: controls
@@ -55,21 +79,21 @@ Section {
         currentIndex: session.live ? 1 : 0
 
         // Start dictation, which needs no shortcut, after Set shortcut while
-        // there is a shortcut to set. While something stands in the way,
-        // the card below lists it instead.
+        // there is a shortcut to set. While nothing can start, the card
+        // below says why instead.
         Row {
             spacing: Theme.space2
             KeyCombo { keys: session.shortcutKeys; anchors.verticalCenter: parent.verticalCenter }
             Item { width: Theme.space3; height: 1; visible: session.hasShortcut }
             Reveal {
                 sideways: true
-                open: !session.blocked && !session.hasShortcut && !session.noShortcuts
+                open: !session.cantStart && !session.hasShortcut && !session.noShortcuts
                 anchors.verticalCenter: parent.verticalCenter
-                Button { text: session.t.setShortcut; size: "small"; onClicked: Navigation.go("shortcuts") }
+                Button { text: session.t.setShortcut; size: "small"; onClicked: Navigation.goToRow("dictation", "globalShortcut") }
             }
             Reveal {
                 sideways: true
-                open: !session.blocked
+                open: !session.cantStart
                 anchors.verticalCenter: parent.verticalCenter
                 Button {
                     text: session.t.startDictation
@@ -99,37 +123,22 @@ Section {
         }
     }
 
-    // What stands in the way, each row opening the page that fixes it.
-    component BlockerRows: RowList {
-        id: blockerRows
-        keyOf: b => b.id
-        delegate: SettingRow {
-            id: blockerRow
-            objectName: "blocker_" + key
-            required property string key
-            required property int index
-            readonly property var blocker: blockerRows.entry(key)
-            first: index === 0
-            title: blockerRow.blocker.title
-            clickable: true
-            onClicked: Navigation.go(blockerRow.blocker.page)
-            StatusText { text: blockerRow.blocker.status; tone: "warning" }
-        }
-    }
-
     Switcher {
         travel: 0
-        currentIndex: session.live ? 1 : session.blocked ? 2 : 0
+        currentIndex: session.live ? 1 : 0
 
-        // What only limits dictation, if anything, over the latest dictation,
-        // where it went, and Copy.
+        // How ready Speecher is, over the latest dictation, where it went,
+        // and Copy.
         Column {
             width: parent.width
-            BlockerRows { values: session.blocked ? [] : session.blockers }
-            Reveal {
-                open: !session.blocked && session.blockers.length > 0
-                Rectangle { x: Theme.rowInset; width: parent.width - 2 * Theme.rowInset; height: 1; color: Theme.rule }
+            Readiness {
+                allPass: session.allPass
+                neededChecks: session.neededChecks
+                optionalChecks: session.optionalChecks
+                neededItems: [session.microphoneItem, session.speechItem]
+                optionalItems: session.optionalItems
             }
+            Rectangle { x: Theme.rowInset; width: parent.width - 2 * Theme.rowInset; height: 1; color: Theme.rule }
             Column {
                 width: parent.width
                 padding: Theme.space5
@@ -177,7 +186,5 @@ Section {
             variant: "lead"
             wrapMode: Text.WordWrap
         }
-        // Something stands in the way: only its rows.
-        BlockerRows { values: session.blockers }
     }
 }

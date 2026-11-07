@@ -41,8 +41,8 @@ QtObject {
     readonly property string resume: "Resume"
     // A shortcut field: unset, listening for keys, and its clear button.
     readonly property string notSet: "Not set"
-    // A shortcut row where the desktop gives Speecher no shortcut.
-    readonly property string noShortcutHere: "Your desktop gives Speecher no shortcut."
+    // Where the desktop gives Speecher no shortcut, and why.
+    readonly property string noShortcutHere: "Your desktop has no global shortcut service for apps, so start a dictation with the speecher command."
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
     // A secret field: what it shows once a key is saved, and why a save or

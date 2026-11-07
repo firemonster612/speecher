@@ -420,8 +420,9 @@ private slots:
         QVERIFY(findText(home, QStringLiteral("Ended Thursday")));
     }
 
-    // With no microphone Home is not ready: it lists the microphone, hides
-    // Start dictation, and the row opens the Microphone page.
+    // With no microphone Home is not ready: it lists the microphone among
+    // what dictation needs, hides Start dictation, and the row opens the
+    // Microphone page.
     void homeListsWhatStopsDictation()
     {
         failOnUnexpectedWarnings();
@@ -448,6 +449,10 @@ private slots:
         QVERIFY(session);
         QVERIFY(session->property("blocked").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
+        // Every check is listed, in its group: microphone access is what
+        // dictation needs, the shortcut what it works without.
+        QCOMPARE(session->property("neededChecks").value<QJSValue>().toVariant().toStringList(), QStringList{QStringLiteral("microphoneAccess")});
+        QVERIFY(session->property("optionalChecks").value<QJSValue>().toVariant().toStringList().contains(QStringLiteral("globalShortcuts")));
 
         // Delegates hang off the visual tree, not the object tree.
         QQuickItem *row = nullptr;
@@ -455,16 +460,16 @@ private slots:
         while (!items.isEmpty() && !row) {
             QQuickItem *item = items.takeLast();
             items += item->childItems();
-            if (item->objectName() == QLatin1String("blocker_microphone")) row = item;
+            if (item->objectName() == QLatin1String("readiness_microphone")) row = item;
         }
         QVERIFY(row);
         QVERIFY(QMetaObject::invokeMethod(row, "clicked"));
         QCOMPARE(navigation.current(), QStringLiteral("microphone"));
     }
 
-    // A speech service that isn't signed in is listed but doesn't stop
-    // dictation: a fallback or a Writing Profile's service may carry it.
-    void homeWarnsOfTheServiceWithoutBlocking()
+    // With no service in the speech chain working, Home is not ready and
+    // says it needs one, but still offers Start dictation, to try again.
+    void homeIsNotReadyWithoutAWorkingSpeechService()
     {
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
@@ -487,16 +492,11 @@ private slots:
         auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
         // Home asked for the sign-ins; the test's homes have none.
-        const auto listed = [session](const QString &id) {
-            const QJSValue blockers = session->property("blockers").value<QJSValue>();
-            for (int i = 0; i < blockers.property(QStringLiteral("length")).toInt(); ++i) {
-                if (blockers.property(i).property(QStringLiteral("id")).toString() == id) return true;
-            }
-            return false;
-        };
-        QTRY_VERIFY(listed(QStringLiteral("speech")));
-        QVERIFY(!session->property("blocked").toBool());
-        QCOMPARE(session->property("title").toString(), QStringLiteral("Ready to dictate"));
+        QTRY_COMPARE(session->property("speechState").toString(), QStringLiteral("attention"));
+        QVERIFY(session->property("blocked").toBool());
+        QVERIFY(!session->property("cantStart").toBool());
+        QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
+        QCOMPARE(session->property("caption").toString(), QStringLiteral("Dictation needs a working speech service."));
     }
 
     void learnedCorrectionsOpenTheirRows()

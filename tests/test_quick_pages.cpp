@@ -246,7 +246,7 @@ private slots:
         }
         // Rows moved to a subpage land there.
         for (const auto &[row, page] : {std::pair{QStringLiteral("themeControl"), QStringLiteral("appearance")},
-                                        std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("permissions")},
+                                        std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("microphone")},
                                         std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRules")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
@@ -271,10 +271,11 @@ private slots:
                           QVERIFY(std::any_of(child.cbegin(), child.cend(), [](const auto &result) {
                               return result.second == QStringLiteral("Refinement › Vocabulary, Terms");
                           }));
-                          QVERIFY(searchResults(search, QStringLiteral("shortcuts"))
-                                      .contains(std::pair{QStringLiteral("shortcuts"), QStringLiteral("Dictation › Shortcuts")}));
+                          QVERIFY(searchResults(search, QStringLiteral("keybinding"))
+                                      .contains(std::pair{QStringLiteral("startCommand"), QStringLiteral("Dictation, How shortcuts reach Speecher")}));
+                          // Accounts is a page of its own, with no path.
                           QVERIFY(searchResults(search, QStringLiteral("accounts"))
-                                      .contains(std::pair{QStringLiteral("accounts"), QStringLiteral("General › Accounts")}));
+                                      .contains(std::pair{QStringLiteral("accounts"), QString()}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
         // For review, App rules with what folds away open.
@@ -560,11 +561,11 @@ private slots:
         QQuickItem *general = sidebarEntry(main, QStringLiteral("general"));
         QQuickItem *dictation = sidebarEntry(main, QStringLiteral("dictation"));
         QVERIFY(general && dictation);
-        navigation->go(QStringLiteral("accounts"));
+        navigation->go(QStringLiteral("appearance"));
         QVERIFY(general->property("open").toBool());
         QVERIFY(!refinement->property("open").toBool());
         QTest::qWait(kSettleMs);
-        sidebarEntry(main, QStringLiteral("accounts"))->forceActiveFocus(Qt::TabFocusReason);
+        sidebarEntry(main, QStringLiteral("appearance"))->forceActiveFocus(Qt::TabFocusReason);
         QMetaObject::invokeMethod(dictation, "openRequested", Q_ARG(bool, true));
         QVERIFY(dictation->property("open").toBool());
         QVERIFY(!general->property("open").toBool());
@@ -692,7 +693,7 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(main));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->goToRow(QStringLiteral("shortcuts"), QStringLiteral("globalShortcut"));
+        navigation->goToRow(QStringLiteral("dictation"), QStringLiteral("globalShortcut"));
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = schemaRow(main, QStringLiteral("globalShortcut"))));
         QQuickItem *page = row;
@@ -707,6 +708,30 @@ private slots:
         QTRY_COMPARE(navigation->pendingRow(), QString());
         QTest::qWait(kSettleMs);
         QVERIFY(!row->isVisible());
+    }
+
+    // A search for a timing row opens the Microphone page's Advanced group,
+    // which is closed otherwise, and lands on the row.
+    void searchOpensTheMicrophonesAdvancedGroup()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("microphone"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("preRollMs"))));
+        QTest::qWait(kSettleMs);
+        QVERIFY(!row->isVisible());
+
+        navigation->goToRow(QStringLiteral("microphone"), QStringLiteral("preRollMs"));
+        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        QTRY_COMPARE(navigation->pendingRow(), QString());
     }
 
     // A service a Writing Profile chooses for itself shows its settings on
@@ -768,8 +793,7 @@ private slots:
 
     // Dictation's page says how each of its subpages is set now. The test
     // sets Popup & sounds' toggles, so that line is the same on every
-    // platform; macOS and Windows bind a default shortcut where Linux has
-    // none.
+    // platform.
     void dictationSaysHowItsSubpagesAreSet()
     {
         ApplicationController controller(true);

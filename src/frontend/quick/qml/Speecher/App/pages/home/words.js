@@ -24,7 +24,17 @@ var text = {
     noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind the speecher command to a key.",
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
+    checking: "Checking the speech service…",
     wordsOnClipboard: "Words stay on the clipboard",
+    // The readiness card: one line while everything passes, else its groups.
+    allWorking: "Everything Speecher checks works",
+    runSetupAgain: "Run setup again",
+    needsThese: "Dictation needs these",
+    worksWithout: "Works without these",
+    takesOver: label => label + " takes over",
+    // What dictation needs, as the caption names it.
+    aMicrophone: "a microphone",
+    aSpeechService: "a working speech service",
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
@@ -232,13 +242,10 @@ function milestones(s) {
 }
 function milestoneCaption(s) { return _count(s.allTimeWords, "word", "words") + " dictated in all." }
 
-// What dictation needs of the things Home lists, by their ids, in one
-// plain sentence; the rows name each problem and its fix.
-// Empty where only Pasting is listed: its row says it.
-function readiness(ids) {
-    const needs = [ids.includes("access") ? "microphone access" : "",
-                   ids.includes("microphone") ? "a microphone" : "",
-                   ids.includes("speech") ? "a working speech service" : ""].filter(s => s)
+// What dictation needs and doesn't have, ["microphone access", "a
+// microphone"], in one plain sentence; the rows name each problem and its
+// fix. Empty where it needs nothing.
+function readiness(needs) {
     if (!needs.length) return ""
     return "Dictation needs " + (needs.length > 1 ? needs.slice(0, -1).join(", ") + " and " + needs[needs.length - 1] : needs[0]) + "."
 }
@@ -301,7 +308,7 @@ var _tips = [
       text: "Writing profiles set the tone and cleanup for each app, so Slack stays casual and email stays formal." },
     { page: "vocabulary", action: "Vocabulary",
       text: "Names and terms in Vocabulary are spelled right the first time." },
-    { page: "shortcuts", action: "Shortcuts",
+    { page: "dictation", action: "Dictation shortcuts",
       text: "Pause a dictation while you think, then resume it. Nothing you said is lost." },
     { page: "transcribe", action: "Transcribe files",
       text: "Meetings, voice memos and podcasts can be transcribed with the same cleanup as dictation." }

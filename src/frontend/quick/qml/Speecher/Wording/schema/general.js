@@ -31,23 +31,29 @@ var rows = [
     { id: "launchAtLogin", page: "general", section: "Startup", kind: "toggle",
       label: "Start Speecher at login", help: "Dictation only works while Speecher is running.",
       keywords: "startup autostart boot launch", needs: "canLaunchAtLogin" },
+    // Where Speecher can't add itself to startup: how to do it by hand.
+    { id: "launchAtLoginGuide", page: "general", section: "Startup", kind: "custom",
+      label: "Start Speecher at login",
+      help: "Speecher can't add itself to startup on Linux yet. Add it in your desktop's autostart settings, such as System Settings › Autostart on Plasma or Startup Applications in GNOME Tweaks.",
+      keywords: "startup autostart boot launch", needs: "!canLaunchAtLogin" },
 
-    // Each health row's state, status and fix come from System.checks.
-    { id: "microphoneAccess", page: "permissions", section: "", kind: "custom",
-      label: "Microphone access", keywords: "permission privacy recording input",
-      noMicrophoneHelp: "Speecher can't see a microphone. Plug one in, or check Dictation › Microphone." },
-    { id: "desktopAccessibility", page: "permissions", section: "", kind: "custom",
+    // The checks: each row's state, status and fix come from System.checks,
+    // by the same id, and each sits on the page of what it gates. Home lists
+    // them all.
+    { id: "microphoneAccess", page: "microphone", section: "Input", kind: "custom",
+      label: "Microphone access", keywords: "permission privacy recording input" },
+    { id: "desktopAccessibility", page: "pasting", section: "", kind: "custom",
       label: "Desktop accessibility",
-      keywords: "at-spi permission paste rules context learning target app chromium electron chrome",
-      keptOnHelp: "Paste rules, context and learning can see the app you are in. Restart Chrome, VS Code and other Chromium apps from their launcher so Speecher can read them." },
-    { id: "globalShortcuts", page: "permissions", section: "", kind: "custom",
+      keywords: "at-spi permission paste rules context learning target app chromium electron chrome" },
+    { id: "globalShortcuts", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
       label: "Global shortcuts", keywords: "hotkey portal kde registered permission" },
-    { id: "virtualKeyboardHealth", page: "permissions", section: "", kind: "custom",
+    { id: "virtualKeyboardHealth", page: "pasting", section: "", kind: "custom",
       label: "Virtual keyboard", keywords: "typing uinput ydotool delivery paste password",
       needs: "hasVirtualKeyboard" },
-    { id: "runSetup", page: "permissions", section: "", kind: "action",
+
+    { id: "runSetup", page: "general", section: "Setup assistant", kind: "action",
       label: "Setup assistant", help: "Go through the first-run steps again.",
-      actionLabel: "Run setup", keywords: "wizard onboarding first run" },
+      actionLabel: "Run setup", keywords: "wizard onboarding first run permissions checks" },
 
     { id: "copyToPhone", page: "general", section: "Your phone", kind: "custom",
       label: "Copy settings to your phone",
@@ -66,5 +72,12 @@ var rows = [
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",
       help: "Removes the app menu entry, the speecher command, the icon and the global shortcut.",
-      keywords: "uninstall delete appimage", needs: "canRemove" }
+      keywords: "uninstall delete appimage", needs: "canRemove" },
+    // Where Speecher can't remove itself: how the system does it.
+    { id: "removeSpeecherGuide", page: "general", section: "Uninstall", kind: "custom",
+      label: "Remove Speecher",
+      help: Qt.platform.os === "osx" ? "Quit Speecher from its menu bar icon, then move Speecher from Applications to the Trash."
+          : Qt.platform.os === "windows" ? "Uninstall it in Windows Settings › Apps › Installed apps."
+          : "Remove it with the package manager you installed it with.",
+      keywords: "uninstall delete trash", needs: "!canRemove" }
 ];

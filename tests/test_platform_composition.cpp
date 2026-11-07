@@ -1294,6 +1294,8 @@ private slots:
         ApplicationController controller(true, platform);
         platform->binder->desktopChooser = true;
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -1319,6 +1321,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1367,6 +1371,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1402,6 +1408,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1453,6 +1461,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         const ShortcutBinding saved(QKeySequence(Qt::CTRL | Qt::Key_K));
         QVERIFY(controller.setGlobalShortcut(saved));
         QuickNavigation navigation(nullptr);

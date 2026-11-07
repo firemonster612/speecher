@@ -7,8 +7,9 @@ import Speecher.Controls
 // mark sits titleBarInset from both edges, so its top and side margins are
 // equal, and the words beside it are centred in the strip. On macOS it
 // starts after the traffic lights. Given a width, such as its column's, the
-// words end titleBarInset inside it, and a detail too long for that loses
-// its middle and shows in full under the pointer.
+// words end titleBarInset inside it; a detail too long for that gives way to
+// compactDetail, and one that still doesn't fit loses its middle, showing in
+// full under the pointer.
 Item {
     id: brand
 
@@ -17,8 +18,13 @@ Item {
     // it for its tooltip where the line is a short form.
     property string detail
     property string detailTip
+    // A shorter detail for when detail doesn't fit, such as the version
+    // number without "Version".
+    property string compactDetail
 
-    readonly property real _wordsWidth: Math.max(titleLine.implicitWidth, detailLine.implicitWidth)
+    readonly property real _wordsWidth: Math.max(titleLine.implicitWidth, fullDetail.advanceWidth)
+    readonly property bool _compact: compactDetail.length > 0
+                                     && fullDetail.advanceWidth > brand.width - words.x - Theme.titleBarInset
     implicitWidth: words.x + _wordsWidth + Theme.titleBarInset
     implicitHeight: Theme.titleBarHeight
 
@@ -35,15 +41,16 @@ Item {
         width: Math.min(brand._wordsWidth, brand.width - x - Theme.titleBarInset)
         anchors.verticalCenter: parent.verticalCenter
         Txt { id: titleLine; text: brand.title; variant: "heading"; width: parent.width; elide: Text.ElideRight }
+        TextMetrics { id: fullDetail; font: detailLine.font; text: brand.detail }
         Txt {
             id: detailLine
             visible: text.length > 0
-            text: brand.detail
+            text: brand._compact ? brand.compactDetail : brand.detail
             variant: "caption"
             tone: "tertiary"
             width: parent.width
             elide: Text.ElideMiddle
-            HoverHandler { id: detailHover; enabled: detailLine.truncated || brand.detailTip.length > 0 && brand.detailTip !== brand.detail }
+            HoverHandler { id: detailHover; enabled: detailLine.truncated || brand.detailTip.length > 0 && brand.detailTip !== detailLine.text }
             // Below, since the strip is at the window's top.
             Tip { text: brand.detailTip || brand.detail; shown: detailHover.hovered; y: detailLine.height + 6; transformOrigin: Item.Top }
         }

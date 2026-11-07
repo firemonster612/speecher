@@ -1,31 +1,128 @@
 import QtQuick
+import Speecher.Theme
 import Speecher.Controls
+import Speecher.Demo
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// A way into what starts a dictation, what it records from and what it shows
-// and plays, each row saying how that is set now.
+// What starts, pauses and cancels a dictation, and how shortcuts reach
+// Speecher, then a way into the microphone and the popup, each row saying
+// how that is set now.
 Page {
     id: page
+    // The desktop gives Speecher no shortcut: the command is the way in, so
+    // the page says so and leads with it.
+    readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     title: Schema.page("dictation").title
-    subtitle: Schema.page("dictation").subtitle
+    subtitle: noShortcuts ? Schema.page("dictation").subtitleNoShortcuts : Schema.page("dictation").subtitle
 
-    readonly property var keys: Settings.values.globalShortcut || []
     readonly property var t: ({
-        startsDictation: keys => keys.join("+") + " starts a dictation",
-        noShortcut: "No dictation shortcut yet",
-        commandOnly: "Starts with the speecher command",
         recordsFrom: name => "Records from " + name,
         liveText: on => on ? "Live text on" : "Live text off",
         sounds: on => on ? "sounds on" : "sounds off"
     })
 
+    // How shortcuts reach Speecher: first where the command is the way in,
+    // last where it is the extra.
+    component Reach: Section {
+        title: Schema.row("startCommand").section
+        // Home lists the same check, and opens it here.
+        HealthRow {
+            rowId: "globalShortcuts"
+            // Where Speecher knows the desktop's own shortcut settings.
+            Button {
+                visible: System.canOpenShortcutSettings
+                text: "System settings"
+                size: "small"
+                trailingIcon: "external-link"
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: System.openShortcutSettings()
+            }
+        }
+        StartCommandRow {}
+    }
+    Reveal { open: page.noShortcuts; Reach {} }
+
+    // The shortcut, big: the page's one picture. Holding the pointer on it
+    // presses the keys and listens, as holding the shortcut does. With no
+    // shortcut there is nothing to picture, and the line of what pressing
+    // it does is the chosen option's own help below, so it folds away.
+    Reveal {
+        open: hero.keys.length > 0
+        Plate {
+            id: hero
+            readonly property bool held: press.pressed
+            readonly property var keys: Settings.values.globalShortcut || []
+            height: 132
+            clip: true
+
+            KeyCombo {
+                id: caps
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 22
+                keys: hero.keys
+                size: "large"
+                pressed: hero.held
+                lit: hero.held
+            }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: caps.bottom
+                anchors.topMargin: 22
+                spacing: 10
+                Row {
+                    spacing: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    Rectangle {
+                        width: 8; height: 8; radius: 4
+                        color: hero.held ? Theme.negative : Theme.textTertiary
+                        anchors.verticalCenter: parent.verticalCenter
+                        Behavior on color { EaseColor {} }
+                    }
+                    Waveform { bars: 16; height: 16; barWidth: 2.5; gap: 2; level: voice.level; active: hero.held; anchors.verticalCenter: parent.verticalCenter }
+                }
+                // What pressing it does, as the chosen option says it.
+                MorphText {
+                    text: Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior)
+                    tone: "secondary"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            DemoVoice { id: voice; running: hero.held }
+            TapHandler { id: press; cursorShape: Qt.PointingHandCursor }
+        }
+    }
+
+    // The dictation shortcut and what pressing it does: with no shortcut to
+    // be had, the command above runs one dictation, so both fold away.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("globalShortcut").section
+            SchemaRow { rowId: "globalShortcut" }
+            SchemaRow { rowId: "shortcutBehavior" }
+        }
+    }
+
+    // Keys that act while dictating bind through the desktop too, so they
+    // fold away with the shortcut where it gives none.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("pauseShortcut").section
+            caption: "These only work while a dictation is in progress, so they can reuse keys other apps have."
+            SchemaRow { rowId: "pauseShortcut" }
+            SchemaRow { rowId: "cancelShortcut" }
+        }
+    }
+
+    Reveal { open: !page.noShortcuts; Reach {} }
+
     SubpageRows {
         pageId: "dictation"
         lines: ({
-            shortcuts: page.keys.length ? page.t.startsDictation(page.keys)
-                     : Health.noShortcuts(System.checks) ? page.t.commandOnly : page.t.noShortcut,
             microphone: Microphones.deviceName ? page.t.recordsFrom(Microphones.deviceName) : Schema.row("audioDevice").noneLabel,
             feedback: page.t.liveText(Settings.values.showLiveText) + ", " + page.t.sounds(Settings.values.playSounds)
         })

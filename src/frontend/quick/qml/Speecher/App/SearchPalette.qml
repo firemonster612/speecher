@@ -22,8 +22,9 @@ FocusScope {
     property bool shown: false
     property alias query: input.text
     readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need]) : _suggestions
+    // The suggested rows this computer has, as search offers only those.
     readonly property var _suggestions: Schema.suggestions
-        .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
+        .map(id => Schema.row(id)).filter(r => r.kind !== "missing" && Schema.available(r, need => System[need]))
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
                      trail: Schema.rowTrail(r) }))
 
@@ -222,13 +223,15 @@ FocusScope {
                         width: childrenRect.width
                         height: childrenRect.height
                         // Off and greyed where the row needs blur and nothing
-                        // blurs, as on its page, and greyed while the row
-                        // that turns it on is off.
+                        // blurs, or accessibility and it is off, as on its
+                        // page, and greyed while the row that turns it on is
+                        // off.
                         Switch {
-                            readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
+                            readonly property bool usable: (!hit.spec?.needsBlur || Appearance.canBlur)
+                                                           && (!hit.spec?.needsAccessibility || System.accessibility)
                             visible: !!hit.spec && hit.spec.kind === "toggle"
-                            checked: blurs && !!Settings.values[hit.modelData.id]
-                            enabled: blurs && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)
+                            checked: usable && !!Settings.values[hit.modelData.id]
+                            enabled: usable && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {

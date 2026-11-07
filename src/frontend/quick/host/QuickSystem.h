@@ -34,10 +34,12 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(QString pasteNeed READ pasteNeed NOTIFY changed)
     Q_PROPERTY(bool wordsStayCopied READ wordsStayCopied NOTIFY changed)
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
+    Q_PROPERTY(bool hasGlobalShortcuts READ hasGlobalShortcuts NOTIFY changed)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
     Q_PROPERTY(bool canRemove READ canRemove CONSTANT)
     Q_PROPERTY(bool canLaunchAtLogin READ canLaunchAtLogin CONSTANT)
     Q_PROPERTY(QString computerName READ computerName CONSTANT)
+    Q_PROPERTY(QString desktop READ desktop CONSTANT)
 
 public:
     // virtualKeyboard and removal must outlive this. No fix or keyboard
@@ -47,10 +49,14 @@ public:
 
     // Desktop accessibility is on, so Speecher can tell which app it pastes into.
     bool accessibility() const;
-    // One entry per health row, {id, state, reason, fix, failures}: id is the
-    // row's (microphoneAccess, desktopAccessibility, globalShortcuts,
-    // virtualKeyboardHealth); state is ok, attention, off or working; reason
-    // says which of the check's cases it is; fix is the action fix(id) runs,
+    // One entry per health row, {id, state, reason, fix, needed, failures}:
+    // id is the row's (microphoneAccess, desktopAccessibility,
+    // globalShortcuts, virtualKeyboardHealth); state is ok, attention, off or
+    // working; reason says which of the check's cases it is (keptOn for
+    // accessibility Speecher keeps on past sign-out), notNeeded for
+    // one this computer has nothing to ask for (accessibility on Windows);
+    // needed says dictation can't start while it fails, as microphone access
+    // can't; fix is the action fix(id) runs,
     // or empty where there is nothing to run; the microphone's, openSettings,
     // opens the system's privacy settings. failures are what went wrong in
     // the last thing tried on the check, [{step, error}]: step is enable or
@@ -79,6 +85,9 @@ public:
     // Whether this computer has the virtual keyboard: its check, its setup
     // and pasting with it alone (OutputMethod::hasVirtualKeyboard).
     bool hasVirtualKeyboard() const;
+    // Whether the desktop gives Speecher global shortcuts, or may: true until
+    // the shortcut service has answered.
+    bool hasGlobalShortcuts() const;
     // Whether openShortcutSettings knows this desktop's shortcut settings.
     bool canOpenShortcutSettings() const;
     // Whether Removal can remove Speecher from this computer.
@@ -87,6 +96,9 @@ public:
     // setting asks: macOS and Windows.
     bool canLaunchAtLogin() const;
     QString computerName() const;
+    // The desktop on Linux, lower case, as XDG_CURRENT_DESKTOP names it first
+    // (gnome, kde, sway, hyprland); empty elsewhere.
+    QString desktop() const;
 
     // Runs the fix the check offers. A fix that fails says why in the
     // check's failures.
