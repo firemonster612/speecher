@@ -629,3 +629,8 @@ With `SPEECHER_GRAB_MAIN_WINDOW=<file.png>` set, the daemon saves the real main
 window a moment after each time it shows it, since a headless compositor lets
 no other client take a screenshot. `packaging/verify-appimage.sh` uses it to
 check that the packaged UI opens.
+
+With `SPEECHER_UI_CAPTURE_DIR=<dir>` set, `everyPageAndSearchLoads` and
+`everySetupStepLoads` save a PNG of the window after each step, the window
+grown to show the whole page, for UX review. `.github/workflows/ui-capture.yml`
+does the same on macOS and Windows for a push to `ui-capture/<name>`.

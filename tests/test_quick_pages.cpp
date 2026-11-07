@@ -20,7 +20,10 @@
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QAccessible>
+#include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
@@ -57,18 +60,59 @@ bool themeIsDark(QQuickWindow *window)
     return theme && theme->property("dark").toBool();
 }
 
+// Where UX review screenshots go, or empty for none.
+QString captureDir()
+{
+    return qEnvironmentVariable("SPEECHER_UI_CAPTURE_DIR");
+}
+
+// Saves window as <theme>-NN-<step>.png in captureDir(), first making it
+// tall enough that its page shows whole.
+void capture(QQuickWindow *window, int index, const QString &step)
+{
+    QQuickItem *scroll = nullptr;
+    QList<QQuickItem *> items{window->contentItem()};
+    while (!items.isEmpty() && !scroll) {
+        QQuickItem *item = items.takeLast();
+        items += item->childItems();
+        if (item->objectName() == QLatin1String("pageScroll") && item->isVisible()) {
+            scroll = item;
+        }
+    }
+    QVERIFY(scroll);
+    const auto overflow = [scroll] { return scroll->property("contentHeight").toReal() - scroll->height(); };
+    // A page can grow a little as it lays out at the new height.
+    for (int fit = 0; fit < 3 && (fit == 0 || overflow() > 0); ++fit) {
+        window->resize(1100, std::max(820, int(std::ceil(window->height() + overflow()))));
+        QTest::qWait(kSettleMs);
+    }
+    QVERIFY2(overflow() <= 0, qPrintable(QStringLiteral("%1 is cut off by %2 px").arg(step).arg(overflow())));
+    const QString slug = step.toLower().replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
+    const QString file = QStringLiteral("%1-%2-%3.png").arg(QLatin1String(QTest::currentDataTag())).arg(index, 2, 10, QLatin1Char('0')).arg(slug);
+    QVERIFY(QDir().mkpath(captureDir()));
+    QVERIFY(window->grabWindow().save(QDir(captureDir()).filePath(file)));
+}
+
 // Runs each step and lets the window settle after it, so a warning a step
 // causes fails the test there; the log names the step. A step that fails
-// stops the rest, which may rely on what it found.
-void runSteps(const QList<std::pair<QString, std::function<void()>>> &steps)
+// stops the rest, which may rely on what it found. With captureDir() set,
+// saves window after each step.
+void runSteps(const QList<std::pair<QString, std::function<void()>>> &steps, QQuickWindow *window = nullptr)
 {
-    for (const auto &[name, step] : steps) {
+    for (int i = 0; i < steps.size(); ++i) {
+        const auto &[name, step] = steps.at(i);
         qInfo().noquote() << "step:" << name;
         step();
         if (QTest::currentTestFailed()) {
             return;
         }
         QTest::qWait(kSettleMs);
+        if (window && !captureDir().isEmpty()) {
+            capture(window, i, name);
+            if (QTest::currentTestFailed()) {
+                return;
+            }
+        }
     }
 }
 
@@ -150,6 +194,15 @@ private slots:
     {
         // Frames without a GPU, so a shown window really renders one.
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        // Screenshots draw with the UI's own fonts, which only the app
+        // carries.
+        if (!captureDir().isEmpty()) {
+            QDirIterator fonts(QStringLiteral(SPEECHER_SOURCE_DIR "/src/frontend/quick/assets"), {QStringLiteral("*.ttf")}, QDir::Files,
+                               QDirIterator::Subdirectories);
+            while (fonts.hasNext()) {
+                QVERIFY(QFontDatabase::addApplicationFont(fonts.next()) >= 0);
+            }
+        }
     }
 
     void init()
@@ -224,7 +277,16 @@ private slots:
                                       .contains(std::pair{QStringLiteral("accounts"), QStringLiteral("General › Accounts")}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
-        runSteps(steps);
+        // For review, App rules with what folds away open.
+        if (!captureDir().isEmpty()) {
+            steps.append({QStringLiteral("app rules with built-in matches open"), [navigation, main] {
+                              navigation->go(QStringLiteral("appRules"));
+                              QQuickItem *builtIns = nullptr;
+                              QTRY_VERIFY((builtIns = findItem(main->contentItem(), QStringLiteral("builtInMatches"))));
+                              builtIns->setProperty("open", true);
+                          }});
+        }
+        runSteps(steps, main);
     }
 
     // A fallback's picker offers "Same as main language" first and checks it
@@ -966,14 +1028,16 @@ private slots:
         QVERIFY(setup);
         QVERIFY(QTest::qWaitForWindowExposed(setup));
         QCOMPARE(themeIsDark(setup), theme == QLatin1String("dark"));
-        const int count = setup->property("steps").value<QJSValue>().property(QStringLiteral("length")).toInt();
+        const QJSValue info = setup->property("steps").value<QJSValue>();
+        const int count = info.property(QStringLiteral("length")).toInt();
         QVERIFY(count > 3);
 
         QList<std::pair<QString, std::function<void()>>> steps;
         for (int step = 0; step < count; ++step) {
-            steps.append({QStringLiteral("step %1").arg(step), [setup, step] { setup->setProperty("step", step); }});
+            const QString id = info.property(step).property(QStringLiteral("id")).toString();
+            steps.append({QStringLiteral("setup step %1 %2").arg(step).arg(id), [setup, step] { setup->setProperty("step", step); }});
         }
-        runSteps(steps);
+        runSteps(steps, setup);
     }
 
     // Finishing the assistant records setup as done, so it does not run again.

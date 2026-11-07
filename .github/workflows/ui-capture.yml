@@ -1,0 +1,178 @@
+name: UI capture
+
+# Screenshots of every settings page and setup step, in light and dark, on
+# macOS and Windows, for UX review: test_quick_pages saves them while
+# SPEECHER_UI_CAPTURE_DIR is set. Builds as release.yml's jobs do, without
+# signing or packaging. Push a commit to ui-capture/<name> to run it.
+
+on:
+  push:
+    branches:
+      - "ui-capture/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ui-capture-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-26
+    env:
+      MACOS_DEPLOYMENT_TARGET: "15.0"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJC_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJCXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: 6.11.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      # Reads release.yml's cache and leaves it as it was.
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          key: macos-26-release
+          save: false
+
+      - name: Remove obsolete AGL references
+        run: |
+          # As in release.yml: the macOS 26 SDK has no AGL.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Cache webrtc-audio-processing
+        id: webrtc-audio-processing
+        uses: actions/cache@v4
+        with:
+          path: ~/webrtc-audio-processing
+          key: macos-26-${{ runner.arch }}-macos${{ env.MACOS_DEPLOYMENT_TARGET }}-webrtc-audio-processing-${{ hashFiles('packaging/macos/build-webrtc-audio-processing.sh') }}
+
+      - name: Build webrtc-audio-processing
+        if: steps.webrtc-audio-processing.outputs.cache-hit != 'true'
+        run: |
+          brew install meson
+          bash packaging/macos/build-webrtc-audio-processing.sh "$HOME/webrtc-audio-processing" "$MACOS_DEPLOYMENT_TARGET"
+
+      - name: Configure
+        run: |
+          PKG_CONFIG_PATH="$HOME/webrtc-audio-processing/lib/pkgconfig" \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
+            -DSPEECHER_REQUIRE_WEBRTC_AEC=ON \
+            -DSPEECHER_WITH_LOCAL_SPEECH=ON
+
+      - name: Build
+        run: cmake --build build --parallel --target speecher_tests
+
+      - name: Capture
+        env:
+          QT_QPA_PLATFORM: offscreen
+          SPEECHER_UI_CAPTURE_DIR: ${{ github.workspace }}/ui-capture
+        run: build/speecher_tests --suite quick_pages everyPageAndSearchLoads everySetupStepLoads
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-capture-macos
+          path: ui-capture/*.png
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: 6.10.3
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      # Reads release.yml's cache and leaves it as it was.
+      - name: Cache Windows compiler outputs
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          variant: sccache
+          key: windows-2025-release
+          save: false
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: Install SPIRV-Headers
+        shell: pwsh
+        run: |
+          $version = 'vulkan-sdk-1.4.357.0'
+          $archive = "$env:RUNNER_TEMP/spirv-headers.tar.gz"
+          Invoke-WebRequest "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/$version.tar.gz" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4d703067a7e06331ccb37bdfed3f9b7879cc61969a2689ae95c95db34a47ff07') {
+            throw "SPIRV-Headers $version does not match its pinned hash"
+          }
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          $prefix = "$env:RUNNER_TEMP/spirv-headers" -replace '\\','/'
+          cmake -S "$env:RUNNER_TEMP/SPIRV-Headers-$version" -B "$env:RUNNER_TEMP/spirv-headers-build" -G Ninja -DSPIRV_HEADERS_ENABLE_TESTS=OFF "-DCMAKE_INSTALL_PREFIX=$prefix"
+          if ($LASTEXITCODE -ne 0) { throw "Configuring SPIRV-Headers failed" }
+          cmake --install "$env:RUNNER_TEMP/spirv-headers-build"
+          if ($LASTEXITCODE -ne 0) { throw "Installing SPIRV-Headers failed" }
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --parallel --target speecher_tests
+
+      - name: Capture
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          SPEECHER_UI_CAPTURE_DIR: ${{ github.workspace }}/ui-capture
+        run: |
+          build/speecher_tests.exe --suite quick_pages everyPageAndSearchLoads everySetupStepLoads
+          if ($LASTEXITCODE -ne 0) { throw "The capture failed" }
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-capture-windows
+          path: ui-capture/*.png
+          if-no-files-found: error
