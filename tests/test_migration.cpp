@@ -114,8 +114,11 @@ QVariant readField(ApplicationController &controller, const QString &name)
 {
     SettingsStore &store = *controller.settings();
     const AppSettings settings = store.snapshot();
+    // The steps a delivery to target takes, in order.
     const auto delivery = [&](const Target &target) {
-        return pasteMethodName(resolvePasteRule(settings.output.pasteRules, target).method);
+        return deliveryPlan(settings.output.steps, resolvePasteRule(settings.output.pasteRules, target).method)
+            .route()
+            .join(u' ');
     };
     Target terminal;
     terminal.category = AppCategory::Terminal;
@@ -132,7 +135,7 @@ QVariant readField(ApplicationController &controller, const QString &name)
         {QStringLiteral("savedRefinementProvider"), [&] { return store.raw().value(SettingsKeys::RefinementProvider); }},
         {QStringLiteral("refinementFallbacks"),
          [&] { return settings.refinement.fallbackProviderIds.join(QLatin1Char(',')); }},
-        {QStringLiteral("outputMethod"), [&] { return settings.output.method; }},
+        {QStringLiteral("deliverySteps"), [&] { return DeliveryPlan{settings.output.steps}.route().join(u' '); }},
         {QStringLiteral("terminalDelivery"), [&] { return delivery(terminal); }},
         {QStringLiteral("kateDelivery"), [&] { return delivery(kate); }},
         {QStringLiteral("unruledDelivery"), [&] { return delivery(unruled); }},
@@ -245,26 +248,31 @@ private slots:
                            {QStringLiteral("refinement/fallbackProviders"), QStringList{"endpoint", "local"}}}
             << QVariantMap{{QStringLiteral("speechFallbacks"), QStringLiteral("local,endpoint")},
                            {QStringLiteral("refinementFallbacks"), QStringLiteral("endpoint,local")}};
-        // Pasting rules insert or copy only, as they did under the old method.
+        // The steps the old method never used are off, and no rule turns them
+        // back on. The file restores the clipboard, so Keep is off where
+        // something else delivers.
         QTest::newRow("direct insertion")
             << method("direct_insert")
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("kateDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
-        // With no rules saved, the default ones, which paste, insert only.
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("insert")}};
         QTest::newRow("direct insertion with the default rules")
             << QVariantMap{{QStringLiteral("output/method"), QStringLiteral("direct_insert")},
                            {QStringLiteral("output/pasteRules"), QVariant()}}
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("direct_insert")}};
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("insert")}};
         QTest::newRow("Qt clipboard")
             << method("qt-clipboard")
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("clipboard_only")},
-                           {QStringLiteral("kateDelivery"), QStringLiteral("clipboard_only")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("keep")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("keep")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
+        QTest::newRow("automatic")
+            << method("automatic")
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert press")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("insert press")}};
         QTest::newRow("proxy URL ending in /v1/")
             << QVariantMap{{QStringLiteral("cliproxy/baseUrl"), QStringLiteral("http://127.0.0.1:8317/v1/")}}
             << QVariantMap{{QStringLiteral("cliproxyBaseUrl"), QStringLiteral("http://127.0.0.1:8317")}};
@@ -441,18 +449,19 @@ private:
         // A key moves out of the settings file only once the keyring holds it.
         QCOMPARE(store.raw().contains(SettingsKeys::CliproxyApiKey), !keyringExpected());
 
-        // Copying only becomes Automatic with every pasting rule copying only,
-        // and an app with no rule still gets the clipboard.
-        QCOMPARE(settings.output.method, QStringLiteral("automatic"));
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::ClipboardOnly, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::ClipboardOnly, true},
+        // Copying only leaves Keep alone on, which no rule can widen; restoring
+        // the clipboard meant nothing without a paste.
+        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
+        QList<PasteRule> rules{
+            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::StandardPaste, true},
             {PasteRuleScope::Application, QStringLiteral("firefox"), PasteMethod::ClipboardOnly, false},
         };
+        if constexpr (!terminalKeysDiffer) {
+            rules.removeFirst();
+        }
         QCOMPARE(settings.output.pasteRules, rules);
-        QCOMPARE(resolvePasteRule(settings.output.pasteRules, Target{}).method, PasteMethod::ClipboardOnly);
         QCOMPARE(settings.output.format, OutputFormat::Html);
-        QVERIFY(settings.output.restoreClipboardAfterTyping);
         QCOMPARE(settings.output.completionStatusDurationMs, 1500);
 
         QCOMPARE(settings.updates.channel, UpdateChannel::Stable);
@@ -518,8 +527,9 @@ private:
         QVERIFY(!settings.vocabulary[1].keyTerm);
 
         QVERIFY(settings.insightsEnabled);
-        QCOMPARE(settings.output.method, QStringLiteral("automatic"));
-        QCOMPARE(resolvePasteRule(settings.output.pasteRules, Target{}).method, PasteMethod::DirectInsert);
+        // A Direct insertion default turns Press off, and restoring the
+        // clipboard turns Keep off.
+        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = false}));
         // 45 days, which the interval now caps at 30.
         QCOMPARE(store.dictationSnapshot().updates.checkIntervalMinutes, 30 * 24 * 60);
     }

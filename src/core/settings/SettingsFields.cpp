@@ -204,11 +204,9 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         stored("refinement.localRunner", member(&A::refinement, &RefinementSettings::localRunner),
                &C::localRunnerSettings, &C::setLocalRunnerSettings),
 
-        stored("output.method", member(&A::output, &OutputSettings::method), &C::outputMethod, &C::setOutputMethod),
+        stored("output.steps", member(&A::output, &OutputSettings::steps), &C::deliverySteps, &C::setDeliverySteps),
         stored("output.format", member(&A::output, &OutputSettings::format), &C::outputFormat, &C::setOutputFormat),
         stored("output.pasteRules", member(&A::output, &OutputSettings::pasteRules), &C::pasteRules, &C::setPasteRules),
-        stored("output.restoreClipboardAfterTyping", member(&A::output, &OutputSettings::restoreClipboardAfterTyping),
-               &C::restoreClipboardAfterTyping, &C::setRestoreClipboardAfterTyping),
         stored("output.completionStatusDurationMs", member(&A::output, &OutputSettings::completionStatusDurationMs),
                &C::completionStatusDurationMs, &C::setCompletionStatusDurationMs),
         // VirtualKeyboardSetup sets it once ydotool is set up.

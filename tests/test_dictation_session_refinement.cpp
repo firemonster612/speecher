@@ -803,8 +803,7 @@ private slots:
         QCOMPARE(delivery.calls, 1);
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
-        QCOMPARE(delivery.lastSettings.pasteRules,
-                 (QList<PasteRule>{{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}}));
+        QCOMPARE(delivery.lastSettings.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app • Your selection changed"));
     }
 

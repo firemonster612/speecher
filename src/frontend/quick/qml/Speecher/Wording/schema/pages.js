@@ -47,11 +47,11 @@ var pages = [
       keywords: "words names spelling corrections replacements snippets terms" },
 
     { id: "pasting", title: "Pasting", icon: "clipboard-paste", file: "PastingPage.qml",
-      subtitle: "How your words get into the app you're using.",
-      keywords: "output delivery paste clipboard insertion virtual keyboard formatting" },
-    { id: "appRules", parent: "pasting", title: "App rules", icon: "app-window", file: "AppRulesPage.qml",
-      subtitle: "Apps that need their words pasted differently, and how Speecher tells which app you're in.",
-      keywords: "per-app rules app type terminal browser recognition match exceptions" },
+      subtitle: "How your words get into the app you're using, and the apps that get them differently.",
+      keywords: "output delivery paste clipboard insertion virtual keyboard formatting per-app rules app type terminal exceptions" },
+    { id: "appRecognition", parent: "pasting", title: "App recognition", icon: "scan-search", file: "AppRecognitionPage.qml",
+      subtitle: "How Speecher tells which app you're in. Paste rules and writing profiles both go by it.",
+      keywords: "recognize identify match app type category writing profile built-in" },
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, looks, signs in and updates, what it keeps, and moving it to your phone or off this computer.",

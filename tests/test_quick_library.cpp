@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
@@ -575,6 +576,8 @@ private slots:
         // always has Models.
         QuickModels models(&controller);
         QuickNavigation navigation(nullptr);
+        // Its accessibility notice reads System.
+        const test::SystemSingletons system(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
         const std::unique_ptr<QObject> section(component.create());

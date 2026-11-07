@@ -18,11 +18,15 @@ bool migrateSettingsIdentity(QSettings &newSettings,
 // Moves a saved refinement model that still names a replaced default to the
 // current default. Runs once, so choosing the old model again later sticks.
 void migrateRefinementModels(QSettings &settings);
-// Paste with once also offered inserting directly and copying only, which the
-// paste rules choose now. A stored method of either kind becomes Automatic,
-// and every rule that pasted becomes Direct insertion or Clipboard only, so
-// dictation delivers the way it did.
-void migrateOutputMethod(QSettings &settings);
+// Delivery was once a mode (output/method), a global paste rule and a
+// clipboard restore switch; the three delivery steps replace all of them.
+// Each stored choice turns off the steps it never used: Automatic keeps them
+// all, a keyboard-only method turns Insert off, Direct insertion turns Press
+// off, a clipboard method or a Clipboard only global rule turns both off,
+// and restoring the clipboard turns Keep off. Terminal paste rules become
+// Standard paste on macOS, where both press ⌘V. Runs while output/method or
+// the restore switch is still stored, and removes them.
+void migrateDeliverySteps(QSettings &settings);
 // Brings the settings an older Speecher saved up to date, before anything
 // reads them: the migrations above, in order, on the running instance's
 // store. Startup runs it once.

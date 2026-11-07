@@ -1,7 +1,7 @@
 #include "core/SettingsStore.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
-#include "core/OutputMethod.h"
+#include "core/DeliverySteps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
@@ -13,6 +13,7 @@
 #include <QFileInfo>
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace speecher {
@@ -133,30 +134,58 @@ void migrateRefinementModels(QSettings &settings)
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
 }
 
-void migrateOutputMethod(QSettings &settings)
+void migrateDeliverySteps(QSettings &settings)
 {
-    const QString method = OutputMethod::normalized(settings.value(SettingsKeys::OutputMethod).toString());
-    PasteMethod paste;
-    if (method == QString::fromLatin1(OutputMethod::DirectInsert)) {
-        paste = PasteMethod::DirectInsert;
-    } else if (method == QString::fromLatin1(OutputMethod::WlCopy)
-               || method == QString::fromLatin1(OutputMethod::QtClipboard)) {
-        paste = PasteMethod::ClipboardOnly;
-    } else {
+    if (!settings.contains(SettingsKeys::OutputMethod) && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
         return;
     }
-    // Under these methods TextDelivery never pasted: a rule that said to paste
-    // meant inserting only, or copying only. A Direct insertion or Clipboard
-    // only rule already behaved as it does under Automatic. Only methods
-    // change, so the rule that wins for a target is the same one as before.
+    // The stored names, older spellings included.
+    const QString method = settings.value(SettingsKeys::OutputMethod).toString();
+    const bool keyboardOnly = method == u"ydotool" || method == u"mac-paste" || method == u"win-paste";
+    const bool insertOnly = method == u"direct_insert";
+    const bool copyOnly = method == u"wl-copy" || method == u"clipboard" || method == u"qt-clipboard" || method == u"qt";
+
     QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
-    for (PasteRule &rule : rules) {
-        if (rule.method == PasteMethod::StandardPaste || rule.method == PasteMethod::TerminalPaste) {
-            rule.method = paste;
+    // The global rule as delivery read it: the first one turned on, and
+    // Clipboard only where none was.
+    std::optional<PasteMethod> globalMethod;
+    bool storedGlobal = false;
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == PasteRuleScope::Global) {
+            storedGlobal = true;
+            if (rule.enabled && !globalMethod) {
+                globalMethod = rule.method;
+            }
         }
     }
-    settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
-    settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));
+    const PasteMethod global = globalMethod.value_or(storedGlobal ? PasteMethod::ClipboardOnly : PasteMethod::StandardPaste);
+
+    DeliverySteps steps;
+    steps.insert = !keyboardOnly && !copyOnly && global != PasteMethod::ClipboardOnly;
+    steps.press = !insertOnly && !copyOnly && global != PasteMethod::DirectInsert && global != PasteMethod::ClipboardOnly;
+    // Restoring meant nothing where nothing was pasted, so the words stayed.
+    steps.keep = !settings.value(SettingsKeys::RestoreClipboardAfterTyping).toBool() || (!steps.insert && !steps.press);
+
+    rules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Global; });
+    if constexpr (!terminalKeysDiffer) {
+        // A category with Standard paste is no rule of its own.
+        rules.removeIf([](const PasteRule &rule) {
+            return rule.scope == PasteRuleScope::Category && rule.method == PasteMethod::TerminalPaste;
+        });
+        for (PasteRule &rule : rules) {
+            if (rule.method == PasteMethod::TerminalPaste) {
+                rule.method = PasteMethod::StandardPaste;
+            }
+        }
+    }
+    if (settings.contains(SettingsKeys::PasteRules)) {
+        settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
+    }
+    settings.setValue(SettingsKeys::InsertThroughAccessibility, steps.insert);
+    settings.setValue(SettingsKeys::PressPasteKeys, steps.press);
+    settings.setValue(SettingsKeys::KeepOnClipboard, steps.keep);
+    settings.remove(SettingsKeys::OutputMethod);
+    settings.remove(SettingsKeys::RestoreClipboardAfterTyping);
 }
 
 void migrateSavedSettings()
@@ -180,7 +209,7 @@ void migrateSavedSettings()
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
-    migrateOutputMethod(newSettings);
+    migrateDeliverySteps(newSettings);
 }
 
 SettingsStore::SettingsStore(QObject *parent)

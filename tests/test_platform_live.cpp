@@ -891,9 +891,8 @@ private slots:
         QVERIFY2(!target.secure, "Live delivery refuses secure targets");
 
         OutputSettings output = SettingsStore().snapshot().output;
-        output.method = QString::fromLatin1(OutputMethod::Automatic);
+        output.steps = {.insert = true, .press = true, .keep = false};
         output.ydotoolEnabled = true;
-        output.restoreClipboardAfterTyping = true;
         output.pasteRules = defaultPasteRules();
         const PasteRule rule = resolvePasteRule(output.pasteRules, target);
 
@@ -1098,9 +1097,8 @@ private slots:
         QVERIFY(target.secure);
 
         OutputSettings output;
-        output.method = QString::fromLatin1(OutputMethod::Automatic);
+        output.steps = {.insert = true, .press = true, .keep = false};
         output.ydotoolEnabled = true;
-        output.restoreClipboardAfterTyping = true;
         output.pasteRules = defaultPasteRules();
         QSignalSpy corrections(&provider, &TargetProvider::correctionObserved);
         TextDelivery delivery(&provider);

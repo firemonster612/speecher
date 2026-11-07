@@ -245,7 +245,7 @@ LibraryLists {
     readonly property var appCategories: Schema.appCategories
     function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
 
-    // Application recognition's wording, on the App rules page.
+    // Application recognition's wording, on the App recognition page.
     readonly property var pastingText: ({
         automatic: "Automatic",
         addMatch: "Add match",
@@ -262,14 +262,14 @@ LibraryLists {
         noMatches: "No matches of your own",
         noMatchesHelp: "The built-in matches below cover common apps. Add one for an app they miss.",
         builtInMatches: "Built-in matches",
-        builtInMatchesHelp: "Common apps Speecher already knows. Yours above win when both match.",
+        builtInMatchesHelp: "Names and IDs Speecher matches apps by, not a list of installed apps. Yours above win when both match.",
         searchBuiltIn: "Search built-in matches",
         builtInMatchTip: "Click to add your own match for it."
     })
 
     // "2 of yours, 14 built in"
     readonly property string recognitionRulesText: recognitionRules.length + " of yours, " + builtInRecognitionRules.length + " built in"
-    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "app", "apps")
+    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "match", "matches")
     // What a built-in match sets: "Chat, Work profile".
     function builtInMatchSummary(rule) {
         return [rule.category ? categoryLabel(rule.category) : "",

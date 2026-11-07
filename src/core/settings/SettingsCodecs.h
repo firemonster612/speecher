@@ -9,7 +9,8 @@
 
 namespace speecher {
 
-// How output/pasteRules is stored. Nothing stored reads as defaultPasteRules().
+// How output/pasteRules is stored. Nothing stored, or something that isn't
+// a list, reads as defaultPasteRules(); an empty list is no rules.
 QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded);
 QByteArray pasteRulesToJson(const QList<PasteRule> &rules);
 
@@ -85,10 +86,9 @@ public:
     QString cliproxyOauthDir() const;
     QString configuredCliproxyOauthDir() const; void setCliproxyOauthDir(const QString &value);
     QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);
-    QString outputMethod() const; void setOutputMethod(const QString &value);
+    DeliverySteps deliverySteps() const; void setDeliverySteps(const DeliverySteps &value);
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);
-    bool restoreClipboardAfterTyping() const; void setRestoreClipboardAfterTyping(bool value);
     int completionStatusDurationMs() const; void setCompletionStatusDurationMs(int value);
     QList<PasteRule> pasteRules() const; void setPasteRules(const QList<PasteRule> &rules);
     ShortcutActivationMode shortcutActivationMode() const; void setShortcutActivationMode(ShortcutActivationMode value);

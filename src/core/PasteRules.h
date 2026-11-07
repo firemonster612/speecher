@@ -8,6 +8,8 @@
 
 namespace speecher {
 
+// Global is no stored rule: it is what resolvePasteRule answers where no
+// narrower rule matches, the delivery steps as they are.
 enum class PasteRuleScope {
     Global,
     Category,
@@ -34,11 +36,19 @@ QString pasteRuleScopeName(PasteRuleScope scope);
 PasteRuleScope pasteRuleScopeFromName(const QString &name);
 QString pasteMethodName(PasteMethod method);
 PasteMethod pasteMethodFromName(const QString &name);
+// Whether a terminal's paste keys differ from everyone else's. macOS presses
+// ⌘V everywhere, so Terminal paste means nothing there.
+#ifdef Q_OS_MACOS
+inline constexpr bool terminalKeysDiffer = false;
+#else
+inline constexpr bool terminalKeysDiffer = true;
+#endif
+
+// Terminals paste with their own keys, where those differ.
 QList<PasteRule> defaultPasteRules();
+// The enabled rule for the Target's application, else for a terminal, else
+// for its app type, else the global Standard paste.
 PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target);
-// How Speecher pastes into an app no narrower rule names: the global rule's
-// method while it is on, otherwise clipboard only.
-PasteMethod globalPasteMethod(const QList<PasteRule> &rules);
 // The rule stored for a scope and match, such as the terminal category's, or
 // nullptr. Matches compare as resolvePasteRule compares them: application IDs
 // ignore case and surrounding spaces, app types ignore case, and the global

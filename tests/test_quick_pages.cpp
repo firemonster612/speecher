@@ -247,7 +247,8 @@ private slots:
         // Rows moved to a subpage land there.
         for (const auto &[row, page] : {std::pair{QStringLiteral("themeControl"), QStringLiteral("appearance")},
                                         std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("permissions")},
-                                        std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRules")}}) {
+                                        std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRecognition")},
+                                        std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
                               QCOMPARE(navigation->current(), page);
@@ -277,10 +278,10 @@ private slots:
                                       .contains(std::pair{QStringLiteral("accounts"), QStringLiteral("General › Accounts")}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
-        // For review, App rules with what folds away open.
+        // For review, App recognition with what folds away open.
         if (!captureDir().isEmpty()) {
-            steps.append({QStringLiteral("app rules with built-in matches open"), [navigation, main] {
-                              navigation->go(QStringLiteral("appRules"));
+            steps.append({QStringLiteral("app recognition with built-in matches open"), [navigation, main] {
+                              navigation->go(QStringLiteral("appRecognition"));
                               QQuickItem *builtIns = nullptr;
                               QTRY_VERIFY((builtIns = findItem(main->contentItem(), QStringLiteral("builtInMatches"))));
                               builtIns->setProperty("open", true);
@@ -891,7 +892,7 @@ private slots:
         main->resize(main->minimumWidth(), main->height());
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("appRules"));
+        navigation->go(QStringLiteral("appRecognition"));
 
         QQuickItem *profile = nullptr;
         QTRY_VERIFY((profile = findItem(main->contentItem(), QStringLiteral("matchProfile"))));
@@ -930,7 +931,7 @@ private slots:
         main->resize(main->minimumWidth(), main->height());
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("appRules"));
+        navigation->go(QStringLiteral("pasting"));
         QTRY_VERIFY(schemaRow(main, QStringLiteral("categoryPasteRule_general")));
         QTest::qWait(kSettleMs);
 
@@ -1000,7 +1001,7 @@ private slots:
         auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
         QVERIFY(navigation && toaster);
         QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
-        navigation->go(QStringLiteral("appRules"));
+        navigation->go(QStringLiteral("pasting"));
         QPointer<QQuickItem> section;
         QTRY_VERIFY((section = findItem(main->contentItem(), QStringLiteral("appPasteRules"))));
 

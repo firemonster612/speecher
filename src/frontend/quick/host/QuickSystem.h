@@ -16,7 +16,7 @@ class QuickRemoval;
 
 // The UI's System singleton: what Speecher knows and does about the computer
 // it runs on. The permission and health checks with their fixes, the virtual
-// keyboard's setup and typing test, the route a paste takes, the clipboard
+// keyboard's setup and typing test, the delivery steps and what each needs, the clipboard
 // and opening links, and what the computer can do, which the UI's needs read.
 // It carries states and step ids; the UI words them (health.js, the pages).
 // The virtual keyboard and removing Speecher are Linux's: elsewhere
@@ -31,7 +31,7 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
-    Q_PROPERTY(QString pasteNeed READ pasteNeed NOTIFY changed)
+    Q_PROPERTY(QVariantList deliverySteps READ deliverySteps NOTIFY changed)
     Q_PROPERTY(bool wordsStayCopied READ wordsStayCopied NOTIFY changed)
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
@@ -66,18 +66,24 @@ public:
     // The typing test that turns the keyboard on: off, ready (waiting for its
     // field), typing, or missed (the text never arrived).
     QString virtualKeyboardTest() const;
-    // The steps the default paste takes with Paste with, in the order core's
-    // delivery tries them: insert, press, copy (TextDelivery::pasteRoute).
+    // The delivery steps that are on, in the order delivery tries them:
+    // insert, press, keep (DeliveryPlan::route).
     QStringList pasteRoute() const;
-    // What that paste needs of the computer to get past the clipboard:
-    // accessibility, keyboard, either, or empty for nothing
-    // (TextDelivery::pasteNeed).
-    QString pasteNeed() const;
-    // Whether dictated words only reach the clipboard, since what the paste
-    // needs is missing. Accessibility on for the session counts.
+    // Every delivery step in that order, {id, on, ready}: ready says this
+    // computer can run it now. Insert needs accessibility (always there on
+    // Windows); Press the virtual keyboard on Linux, accessibility on macOS
+    // and nothing on Windows; Keep, in a Wayland session, the clipboard
+    // helper or wl-copy.
+    QVariantList deliverySteps() const;
+    // Whether dictated words get no further than the clipboard: Insert or
+    // Press is on, but neither can run.
     bool wordsStayCopied() const;
-    // Whether this computer has the virtual keyboard: its check, its setup
-    // and pasting with it alone (OutputMethod::hasVirtualKeyboard).
+    // The step a Paste Rule with this method (core's name, such as
+    // terminal_paste) needs that is off, by its id, or empty
+    // (stepRuleNeeds).
+    Q_INVOKABLE QString stepRuleNeeds(const QString &method) const;
+    // Whether this computer has the virtual keyboard: its check and its
+    // setup, under Press (PasteKeys::hasVirtualKeyboard).
     bool hasVirtualKeyboard() const;
     // Whether openShortcutSettings knows this desktop's shortcut settings.
     bool canOpenShortcutSettings() const;
@@ -91,8 +97,8 @@ public:
     // Runs the fix the check offers. A fix that fails says why in the
     // check's failures.
     Q_INVOKABLE void fix(const QString &id);
-    // fix, for the setup assistant: a virtual keyboard it sets up pastes
-    // Automatically.
+    // fix, for the setup assistant. The same as fix since setup chooses the
+    // delivery steps itself.
     Q_INVOKABLE void fixFromSetup(const QString &id);
     // Stops keeping accessibility on past sign-out, and Chromium and Electron
     // apps building their accessibility tree; it stays on for this session.
@@ -118,7 +124,6 @@ signals:
 private:
     // The check with this id, as in checks, or an empty map.
     QVariantMap check(const QString &id) const;
-    void runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp);
     // Forgets the check's failures as something new is tried on it.
     void clearFailures(const QString &id);
 

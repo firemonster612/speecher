@@ -60,23 +60,30 @@ QString checkIntervalUnit(const UpdateSettings &updates)
 // wider rule decides.
 const QString inheritPasteRule = QStringLiteral("inherit");
 
-// The method of the rule for scope and match, as the schema's option id. A
-// rule turned off counts as none.
-QVariant pasteRuleValue(const AppSettings &s, PasteRuleScope scope, const QString &match)
+// The method of the app type's rule, as the schema's option id. A rule
+// turned off counts as none, and so does Standard paste, which only follows
+// the delivery steps as no rule does.
+QVariant categoryPasteRuleValue(const AppSettings &s, const QString &category)
 {
-    const PasteRule *rule = findPasteRule(s.output.pasteRules, scope, match);
-    return rule && rule->enabled ? pasteMethodName(rule->method) : inheritPasteRule;
+    const PasteRule *rule = findPasteRule(s.output.pasteRules, PasteRuleScope::Category, category);
+    return rule && rule->enabled && rule->method != PasteMethod::StandardPaste ? pasteMethodName(rule->method)
+                                                                               : inheritPasteRule;
 }
 
-void setPasteRuleValue(AppSettings &s, PasteRuleScope scope, const QString &match, const QVariant &v)
+void setCategoryPasteRuleValue(AppSettings &s, const QString &category, const QVariant &v)
 {
     const QString method = v.toString();
     if (method == inheritPasteRule) {
-        removePasteRule(s.output.pasteRules, scope, match);
+        removePasteRule(s.output.pasteRules, PasteRuleScope::Category, category);
         return;
     }
-    setPasteRule(s.output.pasteRules, scope, match, pasteMethodFromName(method));
+    setPasteRule(s.output.pasteRules, PasteRuleScope::Category, category, pasteMethodFromName(method));
 }
+
+// A delivery step's row: its switch, which can't turn off the last step on.
+#define DELIVERY_STEP_ROW(rowId, step)                                                       \
+    {rowId, [](const AppSettings &s) { return QVariant(s.output.steps.has(step)); },        \
+     [](AppSettings &s, const QVariant &v) { s.output.steps = s.output.steps.withStep(step, v.toBool()); }}
 
 // The rules for single apps as the UI lists them, {app, method, enabled}; an
 // entry naming no app is dropped.
@@ -117,10 +124,8 @@ struct SettingRow {
 // The paste rule for one app type, by its stored category name.
 #define CATEGORY_PASTE_ROW(category)                                                                              \
     {"categoryPasteRule_" category,                                                                               \
-     [](const AppSettings &s) { return pasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category)); }, \
-     [](AppSettings &s, const QVariant &v) {                                                                      \
-         setPasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category), v);                             \
-     }}
+     [](const AppSettings &s) { return categoryPasteRuleValue(s, QStringLiteral(category)); },                    \
+     [](AppSettings &s, const QVariant &v) { setCategoryPasteRuleValue(s, QStringLiteral(category), v); }}
 
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
 // save.
@@ -239,17 +244,13 @@ const SettingRow settingRows[] = {
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
 
-    FIELD_ROW("outputMethod", output.method),
+    DELIVERY_STEP_ROW("insertThroughAccessibility", DeliveryStep::Insert),
+    DELIVERY_STEP_ROW("pressPasteKeys", DeliveryStep::Press),
+    DELIVERY_STEP_ROW("keepOnClipboard", DeliveryStep::Keep),
     {"outputFormat", [](const AppSettings &s) { return QVariant(outputFormatName(s.output.format)); },
      [](AppSettings &s, const QVariant &v) {
          s.output.format = outputFormatFromString(v.toString()).value_or(OutputFormat::PlainText);
      }},
-    FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
-    // The default paste never inherits: without a rule of its own, core only
-    // copies.
-    {"globalPasteRule",
-     [](const AppSettings &s) { return QVariant(pasteMethodName(globalPasteMethod(s.output.pasteRules))); },
-     [](AppSettings &s, const QVariant &v) { setPasteRuleValue(s, PasteRuleScope::Global, QString(), v); }},
     CATEGORY_PASTE_ROW("terminal"),
     CATEGORY_PASTE_ROW("browser"),
     CATEGORY_PASTE_ROW("email"),

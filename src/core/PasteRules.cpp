@@ -61,10 +61,10 @@ PasteMethod pasteMethodFromName(const QString &name)
 
 QList<PasteRule> defaultPasteRules()
 {
-    return {
-        {PasteRuleScope::Category, appCategoryName(AppCategory::Terminal), PasteMethod::TerminalPaste, true},
-        {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-    };
+    if (!terminalKeysDiffer) {
+        return {};
+    }
+    return {{PasteRuleScope::Category, appCategoryName(AppCategory::Terminal), PasteMethod::TerminalPaste, true}};
 }
 
 namespace {
@@ -114,17 +114,7 @@ PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
     if (const auto rule = enabledRule(PasteRuleScope::Category, appCategoryName(target.category))) {
         return *rule;
     }
-    return {PasteRuleScope::Global, QString(), globalPasteMethod(rules), true};
-}
-
-PasteMethod globalPasteMethod(const QList<PasteRule> &rules)
-{
-    for (const PasteRule &rule : rules) {
-        if (rule.enabled && rule.scope == PasteRuleScope::Global) {
-            return rule.method;
-        }
-    }
-    return PasteMethod::ClipboardOnly;
+    return {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true};
 }
 
 const PasteRule *findPasteRule(const QList<PasteRule> &rules, PasteRuleScope scope, const QString &match)
