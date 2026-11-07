@@ -30,6 +30,9 @@ struct SignInCheck {
     QString server;
     // The CLI Proxy API account directory it reads, when no server is set.
     QString directory;
+    // Where a signed-in OpenAI Automatic found its sign-in, as the auth
+    // mode's setting names it (codex_oauth); empty otherwise.
+    QString source;
 };
 
 // Reads the credentials the sign-in mode points at, the way dictation would,

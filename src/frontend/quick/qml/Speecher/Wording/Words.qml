@@ -62,7 +62,7 @@ QtObject {
     // a sign-in is missing or expired; else core's own words, else where
     // its last check found the sign-in (Accounts.services).
     function signInDetail(service, oauth) {
-        if (service.state === "unknown") return "Speecher couldn't read the system keychain. Check again in a moment."
+        if (service.state === "unknown") return keychainUnreadable(service)
         const fix = oauth && ({
             openai: { missing: "No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.",
                       expired: "Your ChatGPT sign-in has expired. Sign in again in the Codex app." },
@@ -79,10 +79,23 @@ QtObject {
                         missing: "No CLI Proxy API accounts found in %1" }[service.found]
         return found ? found.arg(service.directory) : ""
     }
+    // The keyring didn't answer for the key a sign-in needs: which key, the
+    // keyring's own reason (core's detail), and how to get it answering
+    // here. A locked keyring is the usual cause.
+    function keychainUnreadable(service) {
+        const key = service.id === "cliproxy" ? "the CLI Proxy API server key" : "the OpenAI API key"
+        const unlock = ({ osx: "Unlock your login keychain", windows: "Check Windows Credential Manager" })[Qt.platform.os]
+                       || "Unlock your keyring (GNOME Keyring or KWallet)"
+        const reason = service.detail ? " (" + service.detail.replace(/\.$/, "") + ")" : ""
+        return "Couldn't read " + key + " from the system keychain" + reason + ". "
+             + unlock + ", then check again or choose another sign-in."
+    }
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
     readonly property string openAccounts: "Open Accounts"
+    // A working sign-in's row, where it comes from in its help.
+    readonly property string signIn: "Sign-in"
     // A row that says how to sign in to a service: "Sign in to Claude".
     function signInTo(name) { return "Sign in to " + name }
     function signInUnknownFor(name) { return name + " sign-in unknown" }

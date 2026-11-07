@@ -131,6 +131,13 @@ Page {
             Notice { inset: Theme.rowInset; text: languageProblem.text }
         }
         SchemaRow { rowId: "codexFinalRetranscribe"; shown: page.uses("codex") }
+        // Vocabulary lives under Refinement, but its key terms help the
+        // service hear names, so it is a click away from here.
+        SettingRow {
+            title: Schema.page("vocabulary").title
+            help: Library.speechVocabularyText
+            Button { text: Library.openVocabulary; size: "small"; onClicked: Navigation.go("vocabulary") }
+        }
     }
 
     Reveal {

@@ -30,8 +30,20 @@ Page {
                       .sort((a, b) => rank(a) - rank(b) || catalog.indexOf(a) - catalog.indexOf(b))
     }
 
+    // Without the Local Model service, nothing here could run: say so
+    // instead of offering downloads.
+    Section {
+        visible: !ModelText.localSpeech
+        EmptyState {
+            iconName: "cpu"
+            title: page.library.notInBuild
+            text: page.library.notInBuildHelp
+        }
+    }
+
     Section {
         id: librarySection
+        visible: ModelText.localSpeech
         title: page.library.label
         // What the ratings, speeds and fits are measured against.
         caption: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
@@ -77,6 +89,7 @@ Page {
     }
 
     Section {
+        visible: ModelText.localSpeech
         title: Schema.row("localIdleUnload").section
         SchemaRow { rowId: "localIdleUnload" }
         SchemaRow {

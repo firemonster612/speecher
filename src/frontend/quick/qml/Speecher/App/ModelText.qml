@@ -20,7 +20,7 @@ QtObject {
         codex: { icon: "openai", help: "Very accurate, %1.",
                  signIn: "Sign in to ChatGPT in the Codex app, then check again.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
-                          { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
+                          { name: "GPT Transcribe", note: "Goes over the whole dictation when you stop, while Transcribe again for accuracy is on." }] },
         claude: { icon: "claude", help: "%1, automatic punctuation and numerals.",
                   signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI, then check again.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
@@ -46,8 +46,12 @@ QtObject {
     // How a service's text arrives; a Local Model's depends on its model.
     function textShows(id) {
         if (id !== "local") return _service(id).textShows
-        const m = catalogModel(Models.localModelChoice)
-        return m && m.streams ? "Words as you speak" : "Text after you stop"
+        return streams(id) ? "Words as you speak" : "Text after you stop"
+    }
+    // Whether a service sends text while you speak, so the popup can show it.
+    function streams(id) {
+        if (id === "local") return !!(catalogModel(Models.localModelChoice) || {}).streams
+        return id !== "endpoint"
     }
 
     // A provider's status beside it: its problem, as core says it, or Ready
@@ -76,6 +80,21 @@ QtObject {
     function checkUnknownSignIns(ids) {
         const unknown = s => s.signsIn && s.state === "unknown" && !s.signInChecking && (!ids || ids.includes(s.id))
         if (Models.speechServices.some(unknown)) Models.checkSignIns()
+    }
+    // Where a speech service's or refinement provider's sign-in comes from,
+    // as Accounts' Sign-in row names it: { rowId, label }, or null for one
+    // that signs in elsewhere or not at all. Codex dictation takes only a
+    // ChatGPT sign-in, the Codex app's unless CLI Proxy API's, whatever
+    // refinement uses; Automatic names what its last check found.
+    function signInSource(id) {
+        const openAi = id === "codex" || id === "openai"
+        if (!openAi && id !== "claude" && id !== "anthropic") return null
+        const rowId = openAi ? "openAiAuthMode" : "anthropicAuthMode"
+        let mode = Settings.values[rowId] || ""
+        if (id === "codex" && mode !== "cliproxy") mode = "codex_oauth"
+        if (mode === "auto") mode = (Accounts.services.find(s => s.id === "openai") || {}).source || mode
+        const option = Schema.row(rowId).options.find(o => o.id === mode)
+        return { rowId: rowId, label: option ? option.label : "" }
     }
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
@@ -141,6 +160,9 @@ QtObject {
 
     // Local Models ---------------------------------------------------------------
 
+    // Whether this build runs Local Models at all: the registry has the
+    // service only where transcribe.cpp was built in.
+    readonly property bool localSpeech: Models.speechServices.some(s => s.id === "local")
     function catalogModel(id) { return Models.catalog.find(m => m.id === id) || null }
     // Downloaded models as a choice, for a profile's own speech model.
     readonly property var downloadedModels: Models.downloaded.map(id => ({ id: id, label: catalogModel(id).name }))
@@ -282,7 +304,7 @@ QtObject {
         const s = Models.cleanupSuggestion
         const pull = Models.pull
         if (pull.running) return "Downloading " + (s.name || pull.tag) + " through Ollama: " + size(pull.completedBytes) + " of " + size(pull.totalBytes)
-        if (!s.name) return "Cleanup would be slow on this computer. A cloud provider or skipping cleanup will feel faster."
+        if (!s.name) return "Cleanup would be slow on this computer. A cloud service or skipping cleanup will feel faster."
         return "Suggested for this computer: " + s.name + ", " + size(s.sizeBytes) + "." + (pull.error ? " " + pull.error : "")
     }
     function fallbackOfferText(offer) { return "Add " + offer.name + " as a fallback, on this computer." }

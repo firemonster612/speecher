@@ -137,6 +137,7 @@ QVariantMap QuickAccounts::service(const QString &id) const
         {QStringLiteral("detail"), check.detail},
         {QStringLiteral("server"), check.server},
         {QStringLiteral("directory"), check.directory},
+        {QStringLiteral("source"), check.source},
         {QStringLiteral("inUse"), inUse},
     };
 }

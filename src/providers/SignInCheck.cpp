@@ -56,7 +56,8 @@ SignInCheck checkOpenAi(const AppSettings &settings, SecretStore *secrets)
     const OpenAiAuthProvider provider = OpenAiAuthProvider::forRefinement(secrets, settings.accounts, settings.refinement);
     const OpenAiAuthStatus status = provider.status();
     if (status.ready) {
-        return {SignInState::SignedIn, status.text};
+        const bool automatic = settings.accounts.openAiAuthMode == OpenAiAuthMode::Auto;
+        return {SignInState::SignedIn, status.text, {}, {}, automatic ? openAiAuthModeName(status.source) : QString()};
     }
     // The saved API key is read as the mode needs it, so only now is it known
     // whether the keyring answered.

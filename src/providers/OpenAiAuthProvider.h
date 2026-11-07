@@ -26,6 +26,9 @@ struct OpenAiAuth {
     // a refresh said otherwise.
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
+    // The sign-in Automatic settled on; Auto (the first value) for any
+    // other mode, and when nothing was found.
+    OpenAiAuthMode source{};
 
     std::optional<ProviderFailure> failure() const
     {
@@ -37,6 +40,8 @@ struct OpenAiAuth {
 struct OpenAiAuthStatus {
     QString text;
     bool ready = false;
+    // As OpenAiAuth's: the sign-in Automatic settled on.
+    OpenAiAuthMode source{};
 };
 
 class OpenAiAuthProvider {

@@ -25,8 +25,10 @@ Card {
     readonly property bool oauth: serviceId === "openai"
         ? [Accounts.authModes.openAi.auto, Accounts.authModes.openAi.codexOauth].includes(Settings.values.openAiAuthMode)
         : serviceId === "anthropic" && Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.oauth
-    // The line under the name: what Speecher found, or what to do.
-    readonly property string detail: Words.signInDetail(service, oauth)
+    // The line under the name: what Speecher found, or what to do. CLI
+    // Proxy API nothing signs in through has nothing to say: where it looked
+    // for account files is beside the point.
+    readonly property string detail: serviceId === "cliproxy" && !service.inUse ? "" : Words.signInDetail(service, oauth)
 
     Item {
         width: parent.width
@@ -64,7 +66,7 @@ Card {
                     }
                 }
             }
-            Txt { width: parent.width; text: root.detail; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            Txt { width: parent.width; text: root.detail; visible: text.length > 0; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"

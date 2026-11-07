@@ -41,7 +41,7 @@ Page {
 
     // The page's fixed wording.
     readonly property var t: ({
-        providerSettings: "Provider settings",
+        providerSettings: "Service settings",
         ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
         ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Standard.",
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
@@ -50,7 +50,7 @@ Page {
     // Under the sample, which is an example: who would clean it up, or that
     // nothing does.
     readonly property string sampleCaption: {
-        if (primary === "none") return "An example, pasted as spoken. Choose a provider below to clean it up."
+        if (primary === "none") return "An example, pasted as spoken. Choose a service below to clean it up."
         const model = ModelText.refinementModel(primary)
         return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
     }

@@ -28,6 +28,21 @@ Column {
     readonly property var tone: tones.find(t => t.id === profile.tone) || tones[0]
     // None with an output language still translates, at Light.
     readonly property bool skipsRefinement: profile.cleanup === "none" && !profile.language
+    readonly property bool translatesOnly: profile.cleanup === "none" && !!profile.language
+    // What the profile runs: its own choices, else every profile's.
+    readonly property var speech: ModelText.service(profile.speech || Settings.values.speechProvider || "")
+    readonly property var refiner: ModelText.provider(profile.refinement || Settings.values.refinementProvider || "none")
+    readonly property bool refinerOff: refiner.id === "none"
+    // "Heard by Claude, cleaned up by gpt-6-luna.", then what stands in the
+    // way of either, so a profile that seems to ignore a change says why.
+    readonly property string pipeline: {
+        const model = profile.refinementModel || ModelText.refinementModel(refiner.id)
+        const used = [speech].concat(skipsRefinement || refinerOff ? [] : [refiner])
+        const said = p => { const status = ModelText.status(p); return (status.includes(p.label) ? status : p.label + ": " + status) + "." }
+        const problems = used.filter(p => p.state !== "ready").map(said)
+        return [Library.pipelineCaption(speech.id, skipsRefinement ? "none" : refiner.id, model) + "."]
+            .concat(profile.speech || profile.refinement ? [] : [Library.profilesText.everyProfile]).concat(problems).join(" ")
+    }
     readonly property var refinementModels: profile.refinement === "openai" ? Models.openAiModels
                                           : profile.refinement === "anthropic" ? Models.anthropicModels : []
     property bool confirmingDelete: false
@@ -118,7 +133,8 @@ Column {
         id: cleanupField
         label: Schema.row("profileCleanup").label
         SearchLanding { rowIds: ["profileCleanup"]; target: cleanupField }
-        help: editor.level.help
+        help: editor.refinerOff && !editor.skipsRefinement ? Library.profilesText.noRefiner
+            : editor.translatesOnly ? Library.translatesAtLight(editor.refiner.label) : editor.level.help
         Column {
             width: parent.width
             spacing: Theme.space3
@@ -215,7 +231,7 @@ Column {
         width: parent.width + Theme.rowInset * 2
         readonly property bool custom: !!(editor.profile.speech || editor.profile.refinement)
         title: Schema.row("profileServices").label
-        help: Schema.row("profileServices").help
+        help: editor.pipeline
         trailingText: custom ? Library.profilesText.custom : Library.profilesText.default_
         open: custom
         SearchLanding {

@@ -7,7 +7,7 @@ var steps = [
     { id: "welcome", title: "Welcome",
       description: "Speecher records a short dictation, turns it into text and sends it to the app you were using. This assistant checks everything dictation needs." },
     { id: "transcription", title: "Speech to text",
-      description: "Choose the service that turns your speech into text." },
+      description: "Choose the service that turns your speech into text, and the language you speak." },
     { id: "microphone", title: "Microphone",
       description: "Choose the microphone Speecher should record, then speak to check that the level moves." },
     { id: "accessibility", title: "Accessibility",
@@ -15,7 +15,7 @@ var steps = [
     { id: "delivery", title: "Pasting",
       description: "To type for you, Speecher installs a small virtual keyboard. Speecher itself never runs privileged." },
     { id: "refinement", title: "Refinement",
-      description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Choose a provider, or skip cleanup." },
+      description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Choose a service, or skip cleanup." },
     { id: "shortcut", title: "Shortcut",
       description: "Choose what starts dictation: a key combination, or one key on its own, such as Right Alt. Then choose what pressing it does." },
     { id: "ready", title: "Ready to dictate", description: "" }
@@ -48,6 +48,9 @@ var text = {
     clipboardInstead: "Copy to the clipboard instead",
     clipboardInsteadHelp: "Skip the virtual keyboard. Speecher copies your words and you paste them yourself.",
     clipboardOnly: "Clipboard only",
+    cleanupNotReady: "Cleanup isn't ready",
+    cleanupNotReadyHelp: "Fix it above to continue, or skip cleanup and Speecher pastes your words as spoken.",
+    skipCleanup: "Skip cleanup",
     cancelShortcutHelp: "Optional. Throws away the dictation in progress.",
     commandOnly: "The speecher command"
 };

@@ -3,9 +3,12 @@
 var rows = [
     { id: "showLiveText", page: "feedback", section: "Popup", kind: "toggle",
       label: "Show live text while you speak", help: "The popup shows your latest words as they are heard.",
+      // Said when the speech service in use only sends text at the end.
+      afterStopHelp: "%1 sends its text after you stop, so the popup shows it then.",
       keywords: "preview transcript overlay" },
     { id: "showRefinementText", page: "feedback", section: "Popup", kind: "toggle",
       label: "Show live text during refinement", help: "Watch the cleaned-up text arrive before it is pasted.",
+      noRefinerHelp: "Refinement's service is None, so there is no cleaned-up text to show.",
       keywords: "streaming preview cleanup" },
     { id: "previewWords", page: "feedback", section: "Popup", kind: "slider",
       label: "Live text length", help: "Words the popup keeps in view: up to 8 fit on one line, up to 20 on two, more on three.",
@@ -18,9 +21,11 @@ var rows = [
     { id: "reviewSelectionEdits", page: "feedback", section: "Popup", kind: "toggle",
       label: "Review edits to selected text", help: "When you dictate over a selection, see what will change and press Replace to apply it.",
       keywords: "diff selection edit confirm" },
-    { id: "boringMode", page: "feedback", section: "Popup", kind: "toggle",
-      label: "Boring mode", help: "Show your voice in the dictation popup as simple level bars instead of the moving ribbon.",
-      keywords: "popup waveform level bars meter ribbon animation particles plain simple calm" },
+    // Core's boringMode: true shows the level bars.
+    { id: "boringMode", page: "feedback", section: "Popup", kind: "custom",
+      label: "Voice display", help: "How the popup shows your voice while you dictate.",
+      options: [ { id: "ribbon", label: "Ribbon" }, { id: "bars", label: "Level bars" } ],
+      keywords: "boring mode popup waveform level bars meter ribbon animation particles plain simple calm" },
     { id: "playSounds", page: "feedback", section: "Sound", kind: "toggle",
       label: "Play start and stop sounds", help: "A soft chime when dictation starts and stops.",
       keywords: "audio chime beep" },

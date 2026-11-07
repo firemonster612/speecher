@@ -1,10 +1,10 @@
 .pragma library
 
 var rows = [
-    { id: "refinementProvider", page: "refinement", section: "Provider", kind: "custom",
-      label: "Provider", help: "The service that cleans up your text.",
-      keywords: "service llm ai openai anthropic claude chatgpt local runner custom endpoint none off disable" },
-    { id: "refinementRating", page: "refinement", section: "Provider", kind: "custom",
+    { id: "refinementProvider", page: "refinement", section: "Service", kind: "custom",
+      label: "Service", help: "The service that cleans up your text.",
+      keywords: "provider service llm ai openai anthropic claude chatgpt local runner custom endpoint none off disable" },
+    { id: "refinementRating", page: "refinement", section: "Service", kind: "custom",
       label: "Rating", help: "Out of 10.", keywords: "quality speed score benchmark" },
     { id: "refinementFallbacks", page: "refinement", section: "Fallbacks", kind: "custom",
       label: "Fallbacks", help: "Speecher tries these top to bottom and tells you when it used one.",
@@ -57,7 +57,9 @@ var rows = [
       keywords: "look for detect scan find runners again" },
 
     { id: "refinementEndpointServer", page: "refinement", section: "Custom Endpoint", kind: "choice",
-      label: "Server", help: "Your own server, or the CLI Proxy API server set up under General › Accounts.",
+      label: "Server", help: "Your own server, or the CLI Proxy API server set up on Accounts.",
+      // The row that names the CLI Proxy API server, which Accounts owns.
+      cliproxyLabel: "CLI Proxy API server", cliproxyUnset: "No server URL is set on Accounts yet.",
       keywords: "endpoint cli proxy api self-hosted",
       options: [ { id: "custom", label: "Custom" }, { id: "cliproxy", label: "CLI Proxy API" } ] },
     { id: "refinementEndpointFormat", page: "refinement", section: "Custom Endpoint", kind: "choice", control: "select",

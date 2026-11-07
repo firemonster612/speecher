@@ -32,7 +32,8 @@ Item {
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
     // The voice shows while listening and paused: as the scatter ribbon, or
-    // in Boring mode as level bars beside the record dot.
+    // with Voice display set to Level bars (boringMode) as level bars beside
+    // the record dot.
     readonly property bool voiceShown: (phase === "listening" || phase === "paused") && !renewing
     readonly property bool boring: Settings.values.boringMode === true
     readonly property bool ribbonShown: !boring && voiceShown

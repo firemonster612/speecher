@@ -21,13 +21,15 @@ class QuickAccounts final : public QObject, public HostSingleton<QuickAccounts> 
     Q_OBJECT
     QML_NAMED_ELEMENT(Accounts)
     QML_SINGLETON
-    // [{ id, name, state, found, detail, server, directory, inUse }] for
+    // [{ id, name, state, found, detail, server, directory, source, inUse }] for
     // openai, anthropic and cliproxy. state is signedIn, expired, missing,
     // unknown (the keyring did not answer) or checking. found is the last
     // check's state, which the rest describe: detail is core's line, server
     // the CLI Proxy API server the sign-in goes through, directory the account
-    // directory it reads, each possibly empty; they stay until the next check
-    // answers. inUse says the settings sign in through it (signInInUse).
+    // directory it reads, and source where OpenAI's Automatic found its
+    // sign-in (an openAiAuthMode option id), each possibly empty; they stay
+    // until the next check answers. inUse says the settings sign in through
+    // it (signInInUse).
     // The speech providers' sign-ins (Codex, Claude Voice) are
     // ProviderAvailability's, which Models shows; renewing a service checks
     // those again.

@@ -6,10 +6,11 @@ import Speecher.Wording
 import Speecher.App
 import "../pages/speech"
 
-// The speech services and where each stands, and under them what the chosen
-// one still needs: the Local Model to run and its download, which keeps
-// going while setup carries on, the custom endpoint's server, or a sign-in
-// to check again. It checks the sign-ins when it opens.
+// The speech services and where each stands, the language you speak, and
+// under them what the chosen one still needs: the Local Model to run and
+// its download, which keeps going while setup carries on, the custom
+// endpoint's server, or a sign-in to check again. It checks the sign-ins
+// when it opens.
 StepPage {
     id: page
 
@@ -103,5 +104,20 @@ StepPage {
             }
         }
         SignInRow { serviceId: page.choices.speech }
+        // The language you'll dictate in, from those the chosen service
+        // hears; one it can't hear shows no choice until you pick another.
+        // Saved as you pick, like the rows above.
+        SettingRow {
+            readonly property var spec: Schema.row("spokenLanguage")
+            title: spec.label
+            help: spec.help
+            LanguageSelect {
+                objectName: "setupSpokenLanguage"
+                placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+                options: ModelText.spokenLanguageOptions(ModelText.service(page.choices.speech))
+                currentId: Settings.values.spokenLanguage || ""
+                onChosen: id => Settings.set("spokenLanguage", id)
+            }
+        }
     }
 }
