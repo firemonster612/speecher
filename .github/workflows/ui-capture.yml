@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   macos:
+    if: false
     runs-on: macos-26
     env:
       MACOS_DEPLOYMENT_TARGET: "15.0"
@@ -148,6 +149,42 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build build --parallel --target speecher_tests
+
+      - name: Diagnose
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = (Resolve-Path build/speecher_tests.exe).Path
+          New-Item -ItemType Directory diag | Out-Null
+          & $exe --suite history_store 2>&1 | Select-String 'FAIL|Totals|Loc'
+          $fns = & $exe --suite quick_pages -functions | ForEach-Object { $_ -replace '\(\)$','' } | Where-Object { $_ -notmatch '_data$|^init$|^initTestCase$|^cleanup' }
+          foreach ($f in $fns) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process $exe -ArgumentList '--suite','quick_pages',$f -NoNewWindow -PassThru -RedirectStandardOutput "diag/$f.txt" -RedirectStandardError "diag/$f.err"
+            if (-not $p.WaitForExit(150000)) { $p.Kill(); "HANG $f" } else { '{0,6:N1}s exit {1} {2}' -f $sw.Elapsed.TotalSeconds, $p.ExitCode, $f }
+          }
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process $exe -ArgumentList '--suite','quick_pages' -NoNewWindow -PassThru -RedirectStandardOutput "diag/_whole.txt" -RedirectStandardError "diag/_whole.err"
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); "HANG whole suite" } else { '{0,6:N1}s exit {1} whole suite' -f $sw.Elapsed.TotalSeconds, $p.ExitCode }
+
+      - name: Bundle the tests
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory bundle | Out-Null
+          Copy-Item build/speecher_tests.exe bundle/
+          Get-ChildItem build -Filter *.dll | Copy-Item -Destination bundle/
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir src/frontend/quick --dir bundle bundle/speecher_tests.exe
+
+      - name: Upload diagnosis
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-diag
+          path: |
+            diag
+            bundle
 
       - name: Capture
         shell: pwsh
