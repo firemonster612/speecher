@@ -21,6 +21,7 @@ const QString kWritingProfile = QStringLiteral("writingProfile");
 const QString kSteps = QStringLiteral("steps");
 const QString kPasteKeys = QStringLiteral("pasteKeys");
 const QString kHistory = QStringLiteral("history");
+const QString kCatalogPicksProfile = QStringLiteral("catalogPicksProfile");
 
 QString matchKindName(AppMatchKind kind)
 {
@@ -121,7 +122,8 @@ AppsSettings load(const QSettings &settings)
     for (const QJsonValue &value : arrayAt(settings, SettingsKeys::AppsEntries)) {
         const QJsonObject object = value.toObject();
         AppEntry entry{object.value(kId).toString(), object.value(kName).toString(), object.value(kIcon).toString(),
-                       {}, typeAt(object), profileAt(object), pastingAt(object), historyAt(object)};
+                       {}, typeAt(object), profileAt(object), pastingAt(object), historyAt(object),
+                       object.value(kCatalogPicksProfile).toBool()};
         for (const QJsonValue &match : object.value(kMatches).toArray()) {
             const std::optional<AppMatchKind> kind = matchKindFromName(match[kKind].toString());
             const QString text = match[kValue].toString().trimmed();
@@ -171,6 +173,9 @@ void store(QSettings &settings, const AppsSettings &apps)
             object.insert(kType, appCategoryName(*entry.type));
         }
         putSettings(object, entry.writingProfile, entry.pasting, entry.history);
+        if (entry.catalogPicksProfile) {
+            object.insert(kCatalogPicksProfile, true);
+        }
         entries.append(object);
     }
     QJsonArray types;

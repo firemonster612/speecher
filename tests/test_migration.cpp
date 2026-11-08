@@ -265,13 +265,14 @@ private slots:
                            {QStringLiteral("refinementFallbacks"), QStringLiteral("endpoint,local")}};
         // The steps the old method never used are off, and no rule turns them
         // back on. The file restores the clipboard, so Keep is off where
-        // something else delivers.
+        // something else delivers. Its rules have no global one, which
+        // copied only.
         QTest::newRow("direct insertion")
             << method("direct_insert")
-            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert")},
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
                            {QStringLiteral("terminalDelivery"), QStringLiteral("insert")},
                            {QStringLiteral("kateDelivery"), QStringLiteral("insert")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("insert")}};
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
         QTest::newRow("direct insertion with the default rules")
             << QVariantMap{{QStringLiteral("output/method"), QStringLiteral("direct_insert")},
                            {QStringLiteral("output/pasteRules"), QVariant()}}
@@ -286,8 +287,10 @@ private slots:
                            {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
         QTest::newRow("automatic")
             << method("automatic")
-            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert press")},
-                           {QStringLiteral("kateDelivery"), QStringLiteral("insert press")}};
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert press")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("insert press")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
         QTest::newRow("proxy URL ending in /v1/")
             << QVariantMap{{QStringLiteral("cliproxy/baseUrl"), QStringLiteral("http://127.0.0.1:8317/v1/")}}
             << QVariantMap{{QStringLiteral("cliproxyBaseUrl"), QStringLiteral("http://127.0.0.1:8317")}};
@@ -617,8 +620,9 @@ private:
         // Insights were on, and the upgrade keeps their promise: stats only.
         QCOMPARE(settings.history.keeps, HistoryKeep::Stats);
         // A Direct insertion default turns Press off, and restoring the
-        // clipboard turns Keep off.
+        // clipboard turns Keep off. Terminals' own rule still pastes.
         QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = false}));
+        QCOMPARE(readField(controller, QStringLiteral("terminalDelivery")).toString(), QStringLiteral("insert press"));
         // 45 days, which the interval now caps at 30.
         QCOMPARE(store.dictationSnapshot().updates.checkIntervalMinutes, 30 * 24 * 60);
     }

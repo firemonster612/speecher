@@ -329,7 +329,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     // catalog entry below, or the AI coding profile never reaches the Target
     // its detection exists for.
     const auto builtInProfile = [&]() -> std::optional<QString> {
-        if (typed) {
+        if (typed && !typed->catalogPicksProfile) {
             return std::nullopt;
         }
         const QStringList withTitle = identityParts(target) << target.windowTitle;

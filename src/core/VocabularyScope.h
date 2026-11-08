@@ -28,6 +28,9 @@ struct VocabularyScope {
 // limit matches as that App does (appMatches); an application id, a Learned
 // Correction's, matches the Target's application id ignoring case.
 bool vocabularyEntryApplies(const VocabularyEntry &entry, const VocabularyScope &scope);
+// Whether one of an entry's app limits matches the Target, as
+// vocabularyEntryApplies tests each.
+bool appLimitMatches(const QString &limit, const Target &target, const AppsSettings &apps);
 
 // The terms a speech request carries: `leadingTerms` in their order, then
 // the key spellings that apply, then what the Learned Corrections that apply

@@ -4,6 +4,7 @@
 #include "common/apps_fixtures.h"
 
 #include "core/AppEdits.h"
+#include "core/SettingsStore.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
@@ -136,8 +137,8 @@ const QHash<QString, QString> &oldAnswers()
 
 // The old settings the "custom" answers came from, stored as older releases
 // stored them: substring recognition rules (one by title only, one setting
-// both), overrides (one off), single-app and app type paste rules (one off),
-// and a default profile.
+// both), overrides (one off), single-app and app type paste rules (one off)
+// beside the global rule, and a default profile.
 void storeCustomSettings(QSettings &stored)
 {
     stored.setValue(SettingsKeys::AppRecognitionRules,
@@ -154,6 +155,7 @@ void storeCustomSettings(QSettings &stored)
         {LegacyPasteRule::Scope::Application, "org.mozilla.Thunderbird", PasteMethod::DirectInsert, true},
         {LegacyPasteRule::Scope::Application, "outlook", PasteMethod::ClipboardOnly, true},
         {LegacyPasteRule::Scope::Application, "msedge", PasteMethod::DirectInsert, false},
+        {LegacyPasteRule::Scope::Global, "", PasteMethod::StandardPaste, true},
     });
     stored.setValue(SettingsKeys::DefaultWritingProfile, QStringLiteral("personal"));
 }
@@ -478,15 +480,17 @@ private slots:
         QCOMPARE(resolveApp(agent, apps).keysFrom, AppLayer::App);
     }
 
-    // Each older Pasting choice delivers as it did, with the Pasting page's
-    // steps as they were stored: here Press and Keep, with Insert off.
+    // Each older Pasting choice delivers as it did under the older output
+    // method: here a keyboard-only one, which pressed the keys and kept the
+    // words, with Insert off.
     void pastingChoicesMigrateToTheSameDelivery()
     {
         QTemporaryDir dir;
         QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        stored.setValue(SettingsKeys::InsertThroughAccessibility, false);
+        stored.setValue(SettingsKeys::OutputMethod, QStringLiteral("ydotool"));
         using Scope = LegacyPasteRule::Scope;
         storeLegacyPasteRules(stored, {
+            {Scope::Global, "", PasteMethod::StandardPaste, true},
             {Scope::Category, "terminal", PasteMethod::TerminalPaste, true},
             {Scope::Category, "browser", PasteMethod::ClipboardOnly, true},
             {Scope::Application, "org.kde.kate", PasteMethod::DirectInsert, true},
@@ -568,9 +572,11 @@ private slots:
             app.name[0] = app.name[0].toUpper();
             return app;
         };
-        const auto rules = [](const QList<LegacyPasteRule> &rules) {
+        // Beside the global Standard paste rule older releases stored.
+        const auto rules = [](QList<LegacyPasteRule> rules) {
             QTemporaryDir dir;
             QSettings settings(dir.filePath(QStringLiteral("rules.ini")), QSettings::IniFormat);
+            rules.append({LegacyPasteRule::Scope::Global, QString(), PasteMethod::StandardPaste, true});
             storeLegacyPasteRules(settings, rules);
             return settings.value(SettingsKeys::PasteRules);
         };
@@ -596,6 +602,7 @@ private slots:
         AppEntry typeOnly = textApp(QStringLiteral("phin"), AppCategory::Office);
         typeOnly.id.clear();
         typeOnly.name = QStringLiteral("Phin");
+        typeOnly.catalogPicksProfile = true;
         QTest::newRow("recognition rules")
             << QVariantMap{{SettingsKeys::AppRecognitionRules,
                             QByteArray(R"([{"match":"notepad","category":"code_editor","writingProfile":"personal"},)"
@@ -644,14 +651,94 @@ private slots:
     }
 
     // A stored paste rule list says which app types had a rule; Terminals'
-    // keys were a rule like any other, and one removed stays removed.
+    // keys were a rule like any other, and one removed stays removed. A list
+    // without a global rule turned on copied only wherever no rule applied;
+    // an empty list read as the default rules.
     void storedPasteRulesReplaceTheDefaultTypes()
+    {
+        const auto migrated = [](const QList<LegacyPasteRule> &rules) {
+            QTemporaryDir dir;
+            QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+            storeLegacyPasteRules(settings, rules);
+            migrateApps(settings);
+            migrateDeliverySteps(settings);
+            const DeliverySteps steps{settings.value(SettingsKeys::InsertThroughAccessibility).toBool(),
+                                      settings.value(SettingsKeys::PressPasteKeys).toBool(),
+                                      settings.value(SettingsKeys::KeepOnClipboard).toBool()};
+            return std::pair{AppsSettingsCodec::load(settings), steps};
+        };
+        Target konsole = target("org.kde.konsole", "Konsole", "konsole");
+        konsole.terminalHost = true;
+        const Target firefox = target("firefox", "Firefox", "firefox");
+        const Target dolphin = target("org.kde.dolphin", "Dolphin", "dolphin");
+        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+
+        const auto [withoutGlobal, copying] = migrated(
+            {{LegacyPasteRule::Scope::Category, "browser", PasteMethod::StandardPaste, true},
+             {LegacyPasteRule::Scope::Global, "", PasteMethod::DirectInsert, false}});
+        QCOMPARE(copying, keepOnly);
+        QCOMPARE(appTypeSettings(withoutGlobal, AppCategory::Terminal).pasting, PastingChoice{});
+        QCOMPARE(delivery(konsole, withoutGlobal, copying), QStringLiteral("keep"));
+        QCOMPARE(delivery(dolphin, withoutGlobal, copying), QStringLiteral("keep"));
+        QCOMPARE(delivery(firefox, withoutGlobal, copying), QStringLiteral("insert press keep standard"));
+
+        const auto [empty, allSteps] = migrated({});
+        QCOMPARE(allSteps, DeliverySteps{});
+        QCOMPARE(delivery(konsole, empty, allSteps), u"insert press keep " + terminal);
+        QCOMPARE(delivery(dolphin, empty, allSteps), QStringLiteral("insert press keep standard"));
+    }
+
+    // An older recognition rule that set only a type left the profile to the
+    // catalog, as the App migrated from it still does: classifyTarget and
+    // resolveWritingProfile answered "general work" for Kate under it.
+    void typeOnlyRecognitionRulesLeaveTheProfileToTheCatalog()
+    {
+        QTemporaryDir dir;
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(SettingsKeys::AppRecognitionRules, QByteArray(R"([{"match":"kate","category":"general"}])"));
+        migrateApps(stored);
+        AppsSettings apps = AppsSettingsCodec::load(stored);
+        const Target kate = target("org.kde.kate", "Kate", "kate", "notes.md — Kate");
+        QCOMPARE(answer(resolveApp(kate, apps)), QStringLiteral("general work steps"));
+        // An App the person types picks its type's profile.
+        apps.apps[0].catalogPicksProfile = false;
+        QCOMPARE(resolveApp(kate, apps).writingProfile, WritingProfile::Other);
+    }
+
+    // A single app's or app type's rule delivered with the steps the older
+    // output method used, whatever the global rule narrowed them to.
+    void pasteRulesKeepTheStepsTheGlobalRuleNarrowed()
     {
         QTemporaryDir dir;
         QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        storeLegacyPasteRules(settings, {});
+        settings.setValue(SettingsKeys::OutputMethod, QStringLiteral("automatic"));
+        settings.setValue(SettingsKeys::RestoreClipboardAfterTyping, true);
+        using Scope = LegacyPasteRule::Scope;
+        storeLegacyPasteRules(settings, {
+            {Scope::Global, "", PasteMethod::ClipboardOnly, true},
+            {Scope::Application, "org.kde.kate", PasteMethod::StandardPaste, true},
+            {Scope::Category, "terminal", PasteMethod::TerminalPaste, true},
+            {Scope::Category, "browser", PasteMethod::DirectInsert, true},
+        });
         migrateApps(settings);
-        QCOMPARE(appTypeSettings(AppsSettingsCodec::load(settings), AppCategory::Terminal).pasting, PastingChoice{});
+        migrateDeliverySteps(settings);
+        const AppsSettings apps = AppsSettingsCodec::load(settings);
+        const DeliverySteps steps{settings.value(SettingsKeys::InsertThroughAccessibility).toBool(),
+                                  settings.value(SettingsKeys::PressPasteKeys).toBool(),
+                                  settings.value(SettingsKeys::KeepOnClipboard).toBool()};
+        Target konsole = target("org.kde.konsole", "Konsole", "konsole");
+        konsole.terminalHost = true;
+        Target agent = konsole;
+        agent.aiCodingToolActive = true;
+        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+        // What resolvePasteRule and TextDelivery did: Kate's Standard paste
+        // inserted and pasted, restoring the clipboard after.
+        QCOMPARE(steps, keepOnly);
+        QCOMPARE(delivery(target("org.kde.kate", "Kate", "kate"), apps, steps), QStringLiteral("insert press standard"));
+        QCOMPARE(delivery(konsole, apps, steps), u"insert press " + terminal);
+        QCOMPARE(delivery(agent, apps, steps), u"insert press " + terminal);
+        QCOMPARE(delivery(target("firefox", "Firefox", "firefox"), apps, steps), QStringLiteral("insert"));
+        QCOMPARE(delivery(target("org.kde.dolphin", "Dolphin", "dolphin"), apps, steps), QStringLiteral("keep"));
     }
 
     // A file with nothing to migrate gets no Apps keys, and the migration
