@@ -240,6 +240,33 @@ const SettingRow settingRows[] = {
      [](AppSettings &s, const QVariant &v) { s.history.textDays = qMax(0, v.toInt()); }},
     {"historyAudioDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.audioDays)); },
      [](AppSettings &s, const QVariant &v) { s.history.audioDays = qMax(-1, v.toInt()); }},
+    // The Recordings page's rows. The service is { service, model }, or
+    // empty for the Service Order's; minutes are option ids.
+    {"recordingSources", [](const AppSettings &s) { return QVariant(s.recording.systemAudio ? "both" : "mic"); },
+     [](AppSettings &s, const QVariant &v) { s.recording.systemAudio = v.toString() != QLatin1String("mic"); }},
+    {"recordingService",
+     [](const AppSettings &s) {
+         return s.recording.first ? QVariant(QVariantMap{{QStringLiteral("service"), s.recording.first->service},
+                                                         {QStringLiteral("model"), s.recording.first->model}})
+                                  : QVariant(QVariantMap());
+     },
+     [](AppSettings &s, const QVariant &v) {
+         const QVariantMap first = v.toMap();
+         const QString service = first.value(QStringLiteral("service")).toString();
+         s.recording.first = service.isEmpty()
+             ? std::nullopt
+             : std::optional(ServiceChoice{service, first.value(QStringLiteral("model")).toString()});
+     }},
+    FIELD_ROW("recordingFolder", recording.folder),
+    {"recordingFormat",
+     [](const AppSettings &s) { return QVariant(s.recording.format == RecordingFormat::PlainText ? "txt" : "md"); },
+     [](AppSettings &s, const QVariant &v) {
+         s.recording.format = v.toString() == QLatin1String("txt") ? RecordingFormat::PlainText : RecordingFormat::Markdown;
+     }},
+    FIELD_ROW("recordingKeepAudio", recording.keepAudio),
+    {"recordingAutoStop", [](const AppSettings &s) { return QVariant(QString::number(s.recording.autoStopMinutes)); },
+     [](AppSettings &s, const QVariant &v) { s.recording.autoStopMinutes = qMax(0, v.toInt()); }},
+    FIELD_ROW("recordingPill", recording.showPill),
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},
@@ -303,6 +330,7 @@ const struct ShortcutRow {
     {"cancelShortcut", GlobalShortcutRole::Cancel},
     {"pauseShortcut", GlobalShortcutRole::Pause},
     {"pasteAgainShortcut", GlobalShortcutRole::PasteAgain},
+    {"recordingShortcut", GlobalShortcutRole::Recording},
 };
 
 const QString runSetupAction = QStringLiteral("runSetup");

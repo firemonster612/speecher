@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/AppSettings.h"
 #include "recording/RecordingStatus.h"
 
 #include <QDateTime>
@@ -15,18 +16,34 @@
 
 namespace speecher {
 
-struct AppSettings;
 class AudioInput;
 class EchoCanceller;
 class ProviderRegistry;
+class RecordingAudio;
 class RecordingMicrophone;
 class RecordingStream;
 class RecordingSystemAudio;
 class SettingsStore;
 
-// Where a recording goes when the command names no file:
-// <dataFolder>/recordings/<yyyy-mm-dd-hhmm>.md.
-QString defaultRecordingPath(const QString &dataFolder, const QDateTime &startedAt);
+// Where transcripts go: the folder chosen, or Documents/Speecher.
+QString recordingFolder(const RecordingSettings &settings);
+// A recording's file in folder when the command names none: its name made
+// fit for a file name, then when it started ("weekly-sync-2026-11-08-1000.md"),
+// or the time alone for one without a name.
+QString recordingPath(const QString &folder, const QString &title, RecordingFormat format, const QDateTime &startedAt);
+
+// What one recording is started with; the rest comes from RecordingSettings.
+struct RecordingRequest {
+    // The file to write (record start --to), or empty for one in the
+    // recordings folder named by title and the time.
+    QString path;
+    // The name the person gave it, which also names its file; may be empty.
+    QString title;
+    // Terms for this recording alone, ahead of the saved ones (--vocab-file).
+    QStringList vocabulary;
+    // record start --mic-only, over RecordingSettings::systemAudio.
+    bool microphoneOnly = false;
+};
 
 // A recording's transcript on disk: one "[hh:mm:ss] speaker: text" line per
 // utterance, appended and flushed as it comes, so `tail -f` follows it.
@@ -56,11 +73,17 @@ private:
 // uploads each utterance on its own (the speech server) still writes lines
 // while it runs. It starts once the microphone's stream connects and system
 // audio's connects or fails; a stream that drops after that reconnects until
-// the recording stops, and one that stops leaves the other recording.
+// the recording stops, and one that stops leaves the other recording. Once
+// neither stream has heard speech for RecordingSettings::autoStopMinutes, it
+// stops itself.
 class RecordingSession : public QObject {
     Q_OBJECT
 
 public:
+    // Starting: from start() until both streams have settled. Stopping: from
+    // stop() until the last utterances are written.
+    enum class Phase { Off, Starting, Recording, Stopping };
+
     using InputFactory = std::function<AudioInput *(QObject *parent)>;
     // Takes why echo cancellation is off, when it is.
     using EchoCancellerFactory = std::function<std::unique_ptr<EchoCanceller>(QString *warning)>;
@@ -80,20 +103,15 @@ public:
 
     // From the start's done until stopped is emitted.
     bool isRecording() const;
+    Phase phase() const;
     RecordingStatus status() const;
-    // Starts recording into path, or the default file in dataFolder when path
-    // is empty, with vocabulary added to the custom vocabulary, from the
-    // microphone alone when microphoneOnly. Calls done once, perhaps before
+    // Starts recording as request asks. Calls done once, perhaps before
     // returning: when the recording runs, or with why it cannot (already
     // recording or starting, a speech provider that does not stream final
     // text, a file that cannot be created, a microphone that cannot start, no
     // provider that connects for the microphone), in which case no file is
     // left.
-    void start(const QString &path,
-               const QStringList &vocabulary,
-               const QString &dataFolder,
-               bool microphoneOnly,
-               StartDone done);
+    void start(const RecordingRequest &request, StartDone done);
     // Stops the inputs; the last utterances are still written before stopped
     // is emitted.
     void stop();
@@ -108,8 +126,19 @@ public:
     // saying so.
     void setDictationListening(bool listening);
 
+    // How long one minute of Stop after silence lasts, for tests.
+    static void setAutoStopMinuteMs(int ms);
+
 signals:
     void recordingChanged(bool recording);
+    void phaseChanged();
+    // The recording runs, writing to path; title is its name, or empty.
+    void started(const QString &path, const QString &title);
+    // A line the file took: when its text was finalised, from the start, who
+    // said it and what, on one line.
+    void lineWritten(qint64 atMs, const QString &speaker, const QString &text);
+    // A stream's input level, 0 to 1, at most 20 times a second each.
+    void levelChanged(const QString &speaker, float level);
     // While recording, a stream reconnects, connects again, stops on its
     // own, pauses for a dictation or resumes, misses an utterance or starts
     // losing audio, echo cancellation turns off as system audio stops, or the
@@ -120,8 +149,6 @@ signals:
     void stopped(const speecher::RecordingStatus &status);
 
 private:
-    enum class Phase { Off, Starting, Recording, Stopping };
-
     // One input, its speech stream and the utterances the recording cuts.
     struct Stream {
         RecordingStream *speech = nullptr;
@@ -133,6 +160,8 @@ private:
         QTimer pauseTimer;
         // Audio heard since the open utterance began.
         qsizetype utteranceBytes = 0;
+        // Since the level was last reported.
+        QElapsedTimer levelReported;
     };
 
     void connectStream(Stream &stream);
@@ -155,6 +184,7 @@ private:
     void releaseInputs();
     void abandon(const QString &error);
     void finish();
+    void setPhase(Phase phase);
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
@@ -177,6 +207,12 @@ private:
     bool m_dictationListening = false;
     bool m_dictationMarked = false;
     RecordingTranscript m_transcript;
+    QString m_title;
+    // Both sides' audio, while Keep the call's audio is on.
+    RecordingAudio *m_audio = nullptr;
+    // Runs from the last speech either stream heard until it stops the
+    // recording.
+    QTimer m_silence;
     QElapsedTimer m_clock;
     Phase m_phase = Phase::Off;
     // Ends a stop the provider never finishes.

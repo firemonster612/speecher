@@ -601,10 +601,12 @@ private slots:
         SingleInstanceIpc ipc(platform);
         QCOMPARE(ipc.listen(), IpcListenResult::Listening);
         QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
-        const RecordingStatus reconnecting{
+        RecordingStatus reconnecting{
             true, QStringLiteral("/tmp/call.md"), 3723000,
             {{QStringLiteral("me"), RecordingStreamStatus::State::Reconnecting, QStringLiteral("Connection reset"),
               2000}}};
+        reconnecting.title = QStringLiteral("Weekly sync");
+        reconnecting.historyId = 42;
         const RecordingStatus stoppedIncomplete{true,
                                                 QStringLiteral("/tmp/call.md"),
                                                 3723000,
@@ -632,7 +634,7 @@ private slots:
         IpcResponse response;
         QThread *client = QThread::create([platform, &response] {
             SingleInstanceIpc::sendRequest({IpcCommand::RecordStart, {}, {QStringLiteral("/tmp/call.md")},
-                                            {QStringLiteral("readSharedChoice")}, true},
+                                            {QStringLiteral("readSharedChoice")}, true, QStringLiteral("Weekly sync")},
                                            &response, 2000, platform);
         });
         client->start();
@@ -643,6 +645,7 @@ private slots:
         QCOMPARE(recordStart.files, QStringList{QStringLiteral("/tmp/call.md")});
         QCOMPARE(recordStart.terms, QStringList{QStringLiteral("readSharedChoice")});
         QVERIFY(recordStart.microphoneOnly);
+        QCOMPARE(recordStart.title, QStringLiteral("Weekly sync"));
         QVERIFY(response.recording && response.recording->recording);
 
         std::ostringstream out;
@@ -700,6 +703,8 @@ private slots:
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
                  QJsonObject({{QStringLiteral("recording"), true},
                               {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
+                              {QStringLiteral("title"), QStringLiteral("Weekly sync")},
+                              {QStringLiteral("historyId"), 42},
                               {QStringLiteral("durationMs"), 3723000},
                               {QStringLiteral("streams"),
                                QJsonArray{QJsonObject{{QStringLiteral("speaker"), QStringLiteral("me")},

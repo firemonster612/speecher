@@ -670,6 +670,7 @@ set(SPEECHER_APP_SOURCES
   src/app/SpeecherRemoval.cpp
   src/app/VirtualKeyboardSetup.cpp
   src/app/WhatsNewTracker.cpp
+  src/recording/RecordingAudio.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
   src/recording/RecordingStatus.cpp
@@ -711,6 +712,7 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
   src/app/VirtualKeyboardSetup.h
   src/app/WhatsNewTracker.h
+  src/recording/RecordingAudio.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
   src/recording/RecordingStatus.h

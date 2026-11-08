@@ -203,6 +203,7 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
         stored("correctionLearningEnabled", member(&A::correctionLearningEnabled), &C::correctionLearningEnabled,
                &C::setCorrectionLearningEnabled),
         stored("history", member(&A::history), &C::historySettings, &C::setHistorySettings),
+        stored("recording", member(&A::recording), &C::recordingSettings, &C::setRecordingSettings),
     };
     return table;
 }

@@ -22,8 +22,9 @@ enum class HistoryKeep { Nothing, Stats, Text, Audio };
 
 // What became of an entry's words. A dictation is Delivered, Copied (the
 // receipt said the words only reached the clipboard) or Undelivered; a file
-// transcription is Done.
-enum class HistoryOutcome { Delivered, Copied, Undelivered, Done };
+// transcription is Done; a Recording is Complete, or Missed when its file
+// lacks lines or a stream lost audio.
+enum class HistoryOutcome { Delivered, Copied, Undelivered, Done, Complete, Missed };
 
 struct HistoryEntry {
     qint64 id = 0;
@@ -33,7 +34,7 @@ struct HistoryEntry {
     DictationRecord stats;
     QDateTime startedAt;
     HistoryOutcome outcome = HistoryOutcome::Delivered;
-    // A file entry's file name.
+    // A file entry's file name; a Recording's name, empty when it has none.
     QString title;
     // The Refined and Raw Transcripts; nullopt when they weren't kept or
     // their retention ended.
@@ -43,7 +44,7 @@ struct HistoryEntry {
     QString audioPath;
     // A file entry's input.
     QString sourcePath;
-    // A file entry's saved transcript.
+    // A file entry's saved transcript; a Recording's file.
     QString transcriptPath;
     // What was allowed when it was written, lowered as retention removes parts.
     HistoryKeep kept = HistoryKeep::Stats;
@@ -67,6 +68,16 @@ struct HistoryQuery {
     int limit = 100;
     // The last entry of the previous page, for the next one; 0: the first page.
     qint64 beforeId = 0;
+};
+
+// One line of a Recording: when its text was finalised, from the start, who
+// said it (me, them) and what.
+struct HistoryLine {
+    qint64 atMs = 0;
+    QString speaker;
+    QString text;
+
+    bool operator==(const HistoryLine &other) const = default;
 };
 
 struct HistoryHit {

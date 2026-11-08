@@ -40,6 +40,12 @@ struct RecordingStatus {
     // to cancel echo in records without it. Empty when echo is cancelled or
     // nothing asked for it.
     QString echoCancellationWarning;
+    // The name it was started with, or empty.
+    QString title;
+    // Its History Entry, or 0 before History has it.
+    qint64 historyId = 0;
+    // The stopped recording's audio file, while Keep the call's audio was on.
+    QString audioPath;
 };
 
 // How status and its JSON name a stream's state.

@@ -457,6 +457,32 @@ struct UpdateSettings {
     bool operator==(const UpdateSettings &other) const = default;
 };
 
+// The file a Recording writes: its lines are the same in both,
+// "[00:01:23] me: …"; only the extension differs.
+enum class RecordingFormat { Markdown, PlainText };
+
+// How a Recording runs when nothing it is started with says otherwise: the
+// Recordings page's settings.
+struct RecordingSettings {
+    // System audio as "them" beside the microphone, where Speecher captures
+    // it; `record start --mic-only` wins over it.
+    bool systemAudio = true;
+    // The speech service a Recording tries first, ahead of the speech Service
+    // Order's that stream final text; unset, the Service Order's.
+    std::optional<ServiceChoice> first;
+    // Where transcripts go; empty: Documents/Speecher (recordingFolder()).
+    QString folder;
+    RecordingFormat format = RecordingFormat::Markdown;
+    // Both sides' audio in one stereo file beside the transcript.
+    bool keepAudio = false;
+    // Stop once neither side has spoken for this long; 0: never.
+    int autoStopMinutes = 30;
+    // The popup's recording pill while a recording runs.
+    bool showPill = true;
+
+    bool operator==(const RecordingSettings &other) const = default;
+};
+
 // SettingsCodecs::fields() says which of these are stored. SettingsStore::edit
 // refuses a change to any other: a snapshot derives or detects those, or
 // their owner writes them. What one run chooses for itself travels apart
@@ -482,6 +508,7 @@ struct AppSettings {
     QList<VocabularyEntry> vocabulary;
     bool correctionLearningEnabled = true;
     HistorySettings history;
+    RecordingSettings recording;
 };
 
 } // namespace speecher

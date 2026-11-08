@@ -60,6 +60,7 @@ struct CommandLineDecision {
     // RunCli's record start: the absolute path of --to, or empty for the
     // default file, and --mic-only.
     QString recordPath;
+    QString recordTitle;
     bool recordMicrophoneOnly = false;
     // RunCli's history: what to search for.
     HistorySearch historySearch;

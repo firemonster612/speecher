@@ -56,6 +56,8 @@ QMap<QString, std::optional<Values>> completedOptions(const CompletionChoices &c
         // Its seconds are optional, so nothing is offered for them.
         {QStringLiteral("--until-silence"), flag},
         {QStringLiteral("--to"), Values{{}, {}, Paths::Files}},
+        // A name of the person's own, so nothing is offered for it.
+        {QStringLiteral("--name"), Values{}},
         {QStringLiteral("--mic-only"), flag},
     };
 }
@@ -94,7 +96,7 @@ QList<CompletedCommand> documentedCommands()
         {QStringLiteral("listen"), sharedChoices + QStringList{QStringLiteral("--until-silence")}},
         {QStringLiteral("providers"), {QStringLiteral("--json")}},
         {QStringLiteral("record start"),
-         {QStringLiteral("--to"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
+         {QStringLiteral("--to"), QStringLiteral("--name"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
         {QStringLiteral("record status"), {QStringLiteral("--json")}},
         {QStringLiteral("record stop")},
     };

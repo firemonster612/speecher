@@ -83,6 +83,7 @@ inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation"
 inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation");
 inline const QString PauseShortcut = QStringLiteral("shortcuts/pauseDictation");
 inline const QString PasteAgainShortcut = QStringLiteral("shortcuts/pasteAgain");
+inline const QString RecordingShortcut = QStringLiteral("shortcuts/recording");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 // Retired, as VocabularyEntries.
@@ -177,6 +178,17 @@ inline const QString UpdatesLastRunVersion = QStringLiteral("updates/lastRunVers
 inline const QString UpdatesLastRunBuildNumber = QStringLiteral("updates/lastRunBuildNumber");
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
 inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/consentNoticeShown");
+// RecordingSettings: sources ("both" or "mic"), the first speech service as
+// JSON { service, model }, the folder (empty: the default), format ("md" or
+// "txt"), whether the audio is kept, minutes of silence before it stops (0:
+// never) and the popup's pill.
+inline const QString RecordingSources = QStringLiteral("recording/sources");
+inline const QString RecordingFirst = QStringLiteral("recording/first");
+inline const QString RecordingFolder = QStringLiteral("recording/folder");
+inline const QString RecordingFormat = QStringLiteral("recording/format");
+inline const QString RecordingKeepAudio = QStringLiteral("recording/keepAudio");
+inline const QString RecordingAutoStopMinutes = QStringLiteral("recording/autoStopMinutes");
+inline const QString RecordingShowPill = QStringLiteral("recording/showPill");
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
 inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
@@ -184,6 +196,7 @@ inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersio
 inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
 inline const QString VocabularyMigrationVersion = QStringLiteral("migration/vocabularyVersion");
 inline const QString HistoryMigrationVersion = QStringLiteral("migration/historyVersion");
+inline const QString RecordingMigrationVersion = QStringLiteral("migration/recordingVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

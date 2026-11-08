@@ -426,7 +426,10 @@ qint64 HistoryStore::add(const HistoryEntry &given)
     const DictationRecord &stats = entry.stats;
     for (const QVariant &value : QVariantList{
              historyKindName(entry.kind), msOf(entry.startedAt), msOf(stats.finishedAt),
-             stats.finishedAt.isValid() ? stats.finishedAt.offsetFromUtc() : 0, stats.audioMs, stats.words,
+             stats.finishedAt.isValid()   ? stats.finishedAt.offsetFromUtc()
+             : entry.startedAt.isValid() ? entry.startedAt.offsetFromUtc()
+                                         : 0,
+             stats.audioMs, stats.words,
              nonEmpty(stats.appName), nonEmpty(stats.applicationId), nonEmpty(stats.profile), nonEmpty(stats.profileName),
              listJson(stats.speechProviders), listJson(stats.refinementProviders), historyOutcomeName(entry.outcome),
              nonEmpty(entry.title), optionalText(entry.text), optionalText(entry.rawText), nonEmpty(entry.audioPath),
@@ -555,6 +558,114 @@ QStringList HistoryStore::profiles() const
         }
     }
     return ids;
+}
+
+bool HistoryStore::appendLine(qint64 entryId, const HistoryLine &line)
+{
+    QSqlQuery insert(QSqlDatabase::database(m_connection));
+    insert.prepare(QStringLiteral("INSERT INTO lines (entry_id, at_ms, speaker, text) VALUES (?, ?, ?, ?)"));
+    for (const QVariant &value : QVariantList{entryId, line.atMs, line.speaker, line.text}) {
+        insert.addBindValue(value);
+    }
+    if (!m_open || !insert.exec()) {
+        qWarning().noquote() << "history could not keep a recording's line:" << insert.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+QList<HistoryLine> HistoryStore::lines(qint64 entryId) const
+{
+    QList<HistoryLine> found;
+    QSqlQuery select(QSqlDatabase::database(m_connection));
+    select.prepare(QStringLiteral("SELECT at_ms, speaker, text FROM lines WHERE entry_id = ? ORDER BY id"));
+    select.addBindValue(entryId);
+    if (!m_open || !select.exec()) {
+        return found;
+    }
+    while (select.next()) {
+        found.append({select.value(0).toLongLong(), select.value(1).toString(), select.value(2).toString()});
+    }
+    return found;
+}
+
+// The text is the lines' words, a line each, without times or speakers, so a
+// search finds what was said.
+bool HistoryStore::finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, HistoryOutcome outcome,
+                                   const QString &audioPath)
+{
+    QStringList said;
+    qsizetype words = 0;
+    for (const HistoryLine &line : lines(id)) {
+        said.append(line.text);
+        words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+    }
+    QSqlQuery update(QSqlDatabase::database(m_connection));
+    update.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, words = ?, outcome = ?, text = ?,"
+                                  " audio_path = ?, kept = ? WHERE id = ? AND kind = 'recording'"));
+    for (const QVariant &value :
+         QVariantList{finishedAt.toMSecsSinceEpoch(), audioMs, words, historyOutcomeName(outcome),
+                      said.join(QLatin1Char('\n')), nonEmpty(audioPath),
+                      historyKeepName(audioPath.isEmpty() ? HistoryKeep::Text : HistoryKeep::Audio), id}) {
+        update.addBindValue(value);
+    }
+    if (!m_open || !update.exec() || update.numRowsAffected() == 0) {
+        qWarning().noquote() << "history could not finish a recording:" << update.lastError().text();
+        return false;
+    }
+    emit changed();
+    return true;
+}
+
+void HistoryStore::finishUnfinishedRecordings()
+{
+    QList<std::pair<qint64, QDateTime>> unfinished;
+    {
+        QSqlQuery select(QSqlDatabase::database(m_connection));
+        if (!m_open
+            || !select.exec(QStringLiteral("SELECT id, started_at, transcript_path FROM entries"
+                                           " WHERE kind = 'recording' AND finished_at IS NULL"))) {
+            return;
+        }
+        while (select.next()) {
+            const QFileInfo file(select.value(2).toString());
+            unfinished.append({select.value(0).toLongLong(),
+                               file.exists() ? file.lastModified()
+                                             : QDateTime::fromMSecsSinceEpoch(select.value(1).toLongLong())});
+        }
+    }
+    for (const auto &[id, finishedAt] : std::as_const(unfinished)) {
+        const std::optional<HistoryEntry> found = entry(id);
+        const qint64 audioMs = found && found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
+        finishRecording(id, finishedAt, qMax<qint64>(0, audioMs), HistoryOutcome::Complete, QString());
+    }
+}
+
+bool HistoryStore::setText(qint64 id, const QString &text)
+{
+    QSqlQuery update(QSqlDatabase::database(m_connection));
+    update.prepare(QStringLiteral("UPDATE entries SET text = ? WHERE id = ? AND text IS NOT NULL AND ")
+                   + clearedKinds);
+    update.addBindValue(text);
+    update.addBindValue(id);
+    if (!m_open || !update.exec() || update.numRowsAffected() == 0) {
+        return false;
+    }
+    emit changed();
+    return true;
+}
+
+bool HistoryStore::remove(qint64 id)
+{
+    QSqlQuery remove(QSqlDatabase::database(m_connection));
+    remove.prepare(QStringLiteral("DELETE FROM entries WHERE id = ?"));
+    remove.addBindValue(id);
+    if (!m_open || !remove.exec() || remove.numRowsAffected() == 0) {
+        return false;
+    }
+    forgetRecords();
+    emit changed();
+    return true;
 }
 
 bool HistoryStore::markDeleted(qint64 id)

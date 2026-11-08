@@ -78,6 +78,8 @@ struct IpcRequest {
     QStringList terms;
     // recordStart's --mic-only.
     bool microphoneOnly = false;
+    // recordStart's --name.
+    QString title;
     // history: the search.
     HistorySearch history;
 

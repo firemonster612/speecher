@@ -689,6 +689,45 @@ void SettingsCodecs::setHistorySettings(const HistorySettings &history)
     m_settings.setValue(SettingsKeys::HistoryAudioDays, history.audioDays);
 }
 
+RecordingSettings SettingsCodecs::recordingSettings() const
+{
+    const RecordingSettings defaults;
+    RecordingSettings recording;
+    recording.systemAudio = value(SettingsKeys::RecordingSources, QStringLiteral("both")).toString() != QStringLiteral("mic");
+    const QJsonObject first = QJsonDocument::fromJson(value(SettingsKeys::RecordingFirst, QByteArray()).toByteArray()).object();
+    const QString service = first.value(QStringLiteral("service")).toString();
+    if (isChainProviderId(ProviderRole::Speech, service)) {
+        recording.first = ServiceChoice{service, first.value(QStringLiteral("model")).toString()};
+    }
+    recording.folder = value(SettingsKeys::RecordingFolder, QString()).toString();
+    recording.format = value(SettingsKeys::RecordingFormat, QString()).toString() == QStringLiteral("txt")
+        ? RecordingFormat::PlainText
+        : RecordingFormat::Markdown;
+    recording.keepAudio = value(SettingsKeys::RecordingKeepAudio, defaults.keepAudio).toBool();
+    recording.autoStopMinutes = qMax(0, value(SettingsKeys::RecordingAutoStopMinutes, defaults.autoStopMinutes).toInt());
+    recording.showPill = value(SettingsKeys::RecordingShowPill, defaults.showPill).toBool();
+    return recording;
+}
+
+void SettingsCodecs::setRecordingSettings(const RecordingSettings &recording)
+{
+    m_settings.setValue(SettingsKeys::RecordingSources, recording.systemAudio ? QStringLiteral("both") : QStringLiteral("mic"));
+    if (recording.first) {
+        m_settings.setValue(SettingsKeys::RecordingFirst,
+                            QJsonDocument(QJsonObject{{QStringLiteral("service"), recording.first->service},
+                                                      {QStringLiteral("model"), recording.first->model}})
+                                .toJson(QJsonDocument::Compact));
+    } else {
+        m_settings.remove(SettingsKeys::RecordingFirst);
+    }
+    m_settings.setValue(SettingsKeys::RecordingFolder, recording.folder);
+    m_settings.setValue(SettingsKeys::RecordingFormat,
+                        recording.format == RecordingFormat::PlainText ? QStringLiteral("txt") : QStringLiteral("md"));
+    m_settings.setValue(SettingsKeys::RecordingKeepAudio, recording.keepAudio);
+    m_settings.setValue(SettingsKeys::RecordingAutoStopMinutes, recording.autoStopMinutes);
+    m_settings.setValue(SettingsKeys::RecordingShowPill, recording.showPill);
+}
+
 bool SettingsCodecs::refinementEnabled() const
 {
     return value(SettingsKeys::RefinementEnabled, true).toBool();
@@ -1122,6 +1161,8 @@ QString globalShortcutKey(GlobalShortcutRole role)
         return SettingsKeys::PauseShortcut;
     case GlobalShortcutRole::PasteAgain:
         return SettingsKeys::PasteAgainShortcut;
+    case GlobalShortcutRole::Recording:
+        return SettingsKeys::RecordingShortcut;
     case GlobalShortcutRole::Dictation:
         break;
     }

@@ -37,6 +37,8 @@ private:
     // status's answer and each line status --watch is written: the dictation
     // state and the recording.
     IpcResponse statusResponse() const;
+    // The recording's status with its History Entry.
+    RecordingStatus recordingStatus() const;
     void startRecording(const IpcRequest &request, QLocalSocket *socket);
 
     ApplicationController &m_controller;

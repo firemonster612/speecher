@@ -22,11 +22,13 @@ constexpr std::array<std::pair<HistoryKeep, const char *>, 4> keepNames{{
     {HistoryKeep::Text, "text"},
     {HistoryKeep::Audio, "audio"},
 }};
-constexpr std::array<std::pair<HistoryOutcome, const char *>, 4> outcomeNames{{
+constexpr std::array<std::pair<HistoryOutcome, const char *>, 6> outcomeNames{{
     {HistoryOutcome::Delivered, "delivered"},
     {HistoryOutcome::Copied, "copied"},
     {HistoryOutcome::Undelivered, "undelivered"},
     {HistoryOutcome::Done, "done"},
+    {HistoryOutcome::Complete, "complete"},
+    {HistoryOutcome::Missed, "missed"},
 }};
 
 template<typename Value, std::size_t size>

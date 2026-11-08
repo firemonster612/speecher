@@ -50,6 +50,7 @@ public:
     AppsSettings apps() const; void setApps(const AppsSettings &value);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     HistorySettings historySettings() const; void setHistorySettings(const HistorySettings &value);
+    RecordingSettings recordingSettings() const; void setRecordingSettings(const RecordingSettings &value);
     bool refinementEnabled() const; void setRefinementEnabled(bool value);
     // Until one is saved, the order starts with ChatGPT where the Codex app
     // is installed, else Claude where Claude Code is, else ChatGPT.
