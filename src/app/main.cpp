@@ -504,6 +504,7 @@ int main(int argc, char **argv)
         return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
+    QuickFrontEnd::configureQmlEngine();
     // Qt Widgets, for the tray icon's QSystemTrayIcon.
     QApplication app(argc, argv);
 #ifdef Q_OS_LINUX

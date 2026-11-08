@@ -44,6 +44,9 @@ class QuickFrontEnd final : public QObject, public AppFrontEnd {
 public:
     // tray must outlive the front end.
     QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent = nullptr);
+    // Sets up the QML engine's process-wide options. Call it before the
+    // first engine exists, as main and the tests do.
+    static void configureQmlEngine();
     ~QuickFrontEnd() override;
 
     void showMainWindow() override;

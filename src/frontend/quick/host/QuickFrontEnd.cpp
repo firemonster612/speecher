@@ -108,6 +108,18 @@ void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
 
 } // namespace
 
+void QuickFrontEnd::configureQmlEngine()
+{
+    // The engine's incremental garbage collector, with compiled QML, now and
+    // then wipes objects the window is still building: on Windows (Qt 6.10)
+    // and macOS (Qt 6.11) a page's controls lose their properties, and the
+    // process can crash. A time limit of 0 collects in one pass instead,
+    // which never did that in our tests. A setting already made wins.
+    if (!qEnvironmentVariableIsSet("QV4_GC_TIMELIMIT")) {
+        qputenv("QV4_GC_TIMELIMIT", "0");
+    }
+}
+
 QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent)
     : QObject(parent)
     , m_controller(controller)

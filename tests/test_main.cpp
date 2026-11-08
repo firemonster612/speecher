@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -104,6 +105,7 @@ int main(int argc, char **argv)
         return 1;
     }
 #endif
+    speecher::QuickFrontEnd::configureQmlEngine();
     QApplication app(argc, argv);
     QStandardPaths::setTestModeEnabled(true);
 #ifndef Q_OS_WIN
