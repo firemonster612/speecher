@@ -19,6 +19,8 @@
 #include <QSysInfo>
 #include <QUrl>
 
+#include <optional>
+
 namespace speecher {
 
 namespace {
@@ -28,6 +30,7 @@ const QString microphoneId = QStringLiteral("microphoneAccess");
 const QString accessibilityId = QStringLiteral("desktopAccessibility");
 const QString shortcutsId = QStringLiteral("globalShortcuts");
 const QString keyboardId = QStringLiteral("virtualKeyboardHealth");
+const QString screenRecordingId = QStringLiteral("screenRecording");
 
 QVariantMap checkEntry(const QString &id, const char *state, const char *reason, const char *fix = "")
 {
@@ -81,6 +84,18 @@ QVariantMap accessibilityCheck(const ApplicationController *controller)
     // Kept on by what Speecher set up, which Chromium apps join on restart.
     return checkEntry(accessibilityId, "ok", controller->platform()->canDisablePermanentAccessibility() ? "keptOn" : "on");
 #endif
+}
+
+// Screen capture, where the system asks for it (macOS), while screenshot
+// context is on: nothing else Speecher does captures the screen.
+std::optional<QVariantMap> screenRecordingCheck(const ApplicationController *controller)
+{
+    const std::optional<bool> allowed = controller->platform()->screenRecordingAllowed();
+    if (!allowed || !controller->settings()->dictationSnapshot().refinement.includeScreenshotContext) {
+        return std::nullopt;
+    }
+    return *allowed ? checkEntry(screenRecordingId, "ok", "allowed")
+                    : checkEntry(screenRecordingId, "off", "denied", "openSettings");
 }
 
 QVariantMap shortcutCheck(const ApplicationController *controller)
@@ -239,6 +254,9 @@ QVariantList QuickSystem::checks() const
                                shortcutCheck(m_controller)};
     if constexpr (PasteKeys::hasVirtualKeyboard) {
         entries.append(virtualKeyboardCheck(*m_virtualKeyboard));
+    }
+    if (const std::optional<QVariantMap> screenRecording = screenRecordingCheck(m_controller)) {
+        entries.append(*screenRecording);
     }
     QVariantList checks;
     for (QVariantMap check : entries) {
@@ -427,6 +445,11 @@ void QuickSystem::fix(const QString &id)
     clearFailures(id);
     if (id == microphoneId) {
         m_controller->platform()->openMicrophoneSettings();
+        return;
+    }
+    if (id == screenRecordingId) {
+        m_controller->platform()->requestScreenRecording();
+        emit changed();
         return;
     }
     if (id == accessibilityId) {

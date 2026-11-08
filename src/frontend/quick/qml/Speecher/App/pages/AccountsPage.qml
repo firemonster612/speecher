@@ -9,9 +9,13 @@ import "app"
 
 // The services side by side, each a card with its state on top so every
 // sign-in reads at a glance, and CLI Proxy API below with the account files
-// it found.
+// it found, its settings folded away until a sign-in uses it.
 Page {
     id: page
+    // A search for the API key while another sign-in is chosen, which hides
+    // the key's row: it lands on the sign-in it would be chosen in.
+    property bool keySearched: false
+    readonly property bool _keyHidden: Settings.values.openAiAuthMode !== Accounts.authModes.openAi.settings
     title: Schema.page("accounts").title
     subtitle: Schema.page("accounts").subtitle
     headerActions: [
@@ -43,8 +47,15 @@ Page {
                 readonly property var found: spec.options.find(o => o.id === openAi.service.source)
                 rowId: "openAiAuthMode"
                 stacked: true
-                note: Settings.values.openAiAuthMode === Accounts.authModes.openAi.auto && found
-                      ? spec.autoFound.arg(found.label) + " " + spec.help : spec.help
+                note: (page.keySearched && page._keyHidden ? spec.keyHint + " " : "")
+                      + (Settings.values.openAiAuthMode === Accounts.authModes.openAi.auto && found
+                         ? spec.autoFound.arg(found.label) + " " + spec.help : spec.help)
+                // Never switches the sign-in for the search.
+                SearchLanding {
+                    rowIds: page._keyHidden ? ["openAiApiKey"] : []
+                    target: openAiMode
+                    onLanded: { page.keySearched = true; openAiMode.highlight() }
+                }
             }
             SchemaRow { objectName: "openAiApiKeyRow"; rowId: "openAiApiKey"; stacked: true; shown: Settings.values.openAiAuthMode === Accounts.authModes.openAi.settings }
             SchemaRow {
@@ -74,7 +85,7 @@ Page {
         id: cliproxy
         serviceId: "cliproxy"
         // Its account files matter once a sign-in reads them; until then
-        // the card offers only its server.
+        // the card offers only its server, folded away.
         readonly property bool used: service.inUse || !!Settings.values.cliproxyOauthDir
 
         // The account files it found, each with its own state.
@@ -97,7 +108,21 @@ Page {
             }
         }
         SchemaRow { rowId: "cliproxyOauthDir"; shown: cliproxy.used }
-        SchemaRow { rowId: "cliproxyBaseUrl" }
-        SchemaRow { rowId: "cliproxyApiKey" }
+        // Open from the start once a sign-in uses it.
+        Disclosure {
+            id: server
+            objectName: "cliproxyServer"
+            title: Schema.row("cliproxyBaseUrl").foldedLabel
+            help: Schema.row("cliproxyBaseUrl").foldedHelp
+            trailingText: Settings.values.cliproxyBaseUrl || ""
+            open: cliproxy.used
+            SearchLanding {
+                rowIds: ["cliproxyBaseUrl", "cliproxyApiKey"]
+                target: server
+                onLanded: { server.open = true; server.highlight() }
+            }
+            SchemaRow { rowId: "cliproxyBaseUrl" }
+            SchemaRow { rowId: "cliproxyApiKey" }
+        }
     }
 }

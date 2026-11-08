@@ -15,6 +15,7 @@ import Speecher.Theme
 // takesAlone refuses records nothing, and the field keeps listening.
 // Where something else picks the keys (recordsKeys false), clicking it only
 // emits clicked. emptyText, listeningText and clearText are the words it shows.
+// size large shows big key caps, for a page's picture of its shortcut.
 T.AbstractButton {
     id: control
 
@@ -25,6 +26,7 @@ T.AbstractButton {
     property bool listening: false
     property bool escapeRecords: false
     property bool recordsKeys: true
+    property string size: "medium"
     // A function the caller gives that returns what recorded brings back for
     // the key just pressed or let go on its own, or [] when it can't stand
     // alone. Only the caller can tell Right Alt from Left; unset, such a key
@@ -134,11 +136,11 @@ T.AbstractButton {
             width: implicitWidth
             travel: 0
             currentIndex: control.listening || control.keys.length === 0 ? 1 : 0
-            KeyCombo { keys: control.keys }
+            KeyCombo { keys: control.keys; size: control.size }
             Txt {
                 text: control.listening ? control.listeningText : control.emptyText
                 tone: control.listening ? "accent" : "secondary"
-                variant: "label"
+                variant: control.size === "large" ? "title" : "label"
             }
         }
         Reveal {

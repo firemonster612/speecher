@@ -6,6 +6,9 @@ var rows = [
     { id: "writingProfileBehavior", page: "profiles", section: "Profiles", kind: "custom",
       label: "Profiles",
       help: "Each profile has a cleanup level, a tone and optional instructions. An output language translates what you say.",
+      // While Speecher can't tell apps apart: %1 is the profile it uses.
+      undetected: (Qt.platform.os === "osx" ? "Turn on Accessibility" : "Turn on desktop accessibility")
+                  + " so Speecher can tell which app you're in. Until then every dictation uses %1.",
       keywords: "profile app per-app cleanup level tone instructions translate language edit add" },
     { id: "profileCleanup", page: "profiles", section: "Profiles", kind: "custom",
       label: "Cleanup", help: "How much refinement changes your words.",

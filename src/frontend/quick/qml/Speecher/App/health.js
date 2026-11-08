@@ -29,6 +29,10 @@ var words = {
         notSet: { status: "Not set", detail: "Choose a dictation shortcut on the Dictation page." },
         registered: { status: "Registered", detail: "Your desktop delivers the shortcut in every app." }
     },
+    screenRecording: {
+        allowed: { status: "Allowed", detail: "Refinement gets a screenshot of the app you dictate into." },
+        denied: { status: "Not allowed", detail: "Allow Speecher under Privacy & Security › Screen Recording, then quit and reopen it. Until then refinement gets no screenshot.", fix: "Open settings" }
+    },
     virtualKeyboardHealth: {
         settingUp: { status: "Setting up…", detail: "Your computer asks for your password to finish." },
         starting: { status: "Starting…", detail: "" },

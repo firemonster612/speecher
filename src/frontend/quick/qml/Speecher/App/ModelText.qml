@@ -82,19 +82,24 @@ QtObject {
         if (Models.speechServices.some(unknown)) Models.checkSignIns()
     }
     // Where a speech service's or refinement provider's sign-in comes from,
-    // as Accounts' Sign-in row names it: { rowId, label }, or null for one
-    // that signs in elsewhere or not at all. Codex dictation takes only a
-    // ChatGPT sign-in, the Codex app's unless CLI Proxy API's, whatever
-    // refinement uses; Automatic names what its last check found.
+    // as Accounts' Sign-in row names it: { rowId, label, choice, options },
+    // or null for one that signs in elsewhere or not at all. choice is the
+    // option that row's select shows for this service, among options. Codex
+    // dictation takes only a ChatGPT sign-in, the Codex app's unless CLI
+    // Proxy API's, whatever refinement uses, so it offers those two;
+    // Automatic names what its last check found.
     function signInSource(id) {
         const openAi = id === "codex" || id === "openai"
         if (!openAi && id !== "claude" && id !== "anthropic") return null
         const rowId = openAi ? "openAiAuthMode" : "anthropicAuthMode"
+        const all = Schema.row(rowId).options
         let mode = Settings.values[rowId] || ""
         if (id === "codex" && mode !== "cliproxy") mode = "codex_oauth"
+        const choice = mode
         if (mode === "auto") mode = (Accounts.services.find(s => s.id === "openai") || {}).source || mode
-        const option = Schema.row(rowId).options.find(o => o.id === mode)
-        return { rowId: rowId, label: option ? option.label : "" }
+        const option = all.find(o => o.id === mode)
+        return { rowId: rowId, label: option ? option.label : "", choice: choice,
+                 options: id === "codex" ? all.filter(o => o.id === "codex_oauth" || o.id === "cliproxy") : all }
     }
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
@@ -268,6 +273,16 @@ QtObject {
         none: { icon: "circle-off", help: "Keeps your words as spoken." }
     })
     // A refinement provider with its wording, or None.
+    // Every refinement provider a dictation may use: the chain's, in the
+    // order it tries them, then those Writing Profiles pick for themselves,
+    // which run even while Refinement says None. Each once. A function, so
+    // ModelText reads Library only where something asks.
+    function refinersInUse() {
+        const primary = Settings.values.refinementProvider || "none"
+        const chain = primary === "none" ? [] : [primary].concat(Settings.values.refinementFallbacks || [])
+        return chain.concat(Library.profiles.map(p => p.refinement))
+                    .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
+    }
     function provider(id) {
         if (id === "none") return { id: "none", label: "None", icon: _refiners.none.icon, help: _refiners.none.help, state: "", problem: "", refines: true }
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }

@@ -23,6 +23,8 @@ public:
     void requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const override;
     MicrophoneAccess microphoneAccess() const override;
     void openMicrophoneSettings() const override;
+    std::optional<bool> screenRecordingAllowed() const override;
+    void requestScreenRecording() const override;
     MediaController *createMediaController(QObject *parent) const override;
     TargetProvider *createTargetProvider(QObject *parent) const override;
     ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override;

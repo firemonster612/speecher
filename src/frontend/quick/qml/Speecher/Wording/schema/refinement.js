@@ -85,12 +85,15 @@ var rows = [
 
     { id: "targetContextControl", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "Text around your cursor", help: "Lets cleanup fit what you are writing.",
-      disabledHelp: "Turn on desktop accessibility to send the app's text.", needsAccessibility: true,
+      disabledHelp: "Turn on desktop accessibility to send the app's text.", usableWhen: "accessibility",
       keywords: "context surrounding text accessibility" },
     { id: "includeScreenshotContext", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "A screenshot", help: "Kept only for the current dictation. Only ChatGPT and Claude can read it.",
-      disabledHelp: "Only ChatGPT and Claude refinement can use screenshots.",
-      keywords: "screen capture image context vision" },
+      disabledHelp: "Only ChatGPT and Claude refinement can use screenshots.", usableWhen: "screenshotReader",
+      keywords: "screen capture image context vision screen recording permission" },
+    // macOS's grant for screenshots, a System check while they are on.
+    { id: "screenRecording", page: "refinement", section: "What refinement can see", kind: "custom",
+      label: "Screen Recording", opens: "includeScreenshotContext" },
 
     { id: "customSystemPromptEnabled", page: "refinement", section: "System prompt", kind: "toggle",
       label: "Use a custom system prompt",

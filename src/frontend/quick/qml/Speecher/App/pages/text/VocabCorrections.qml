@@ -17,7 +17,7 @@ Card {
     SearchLanding { rowIds: ["learnedCorrections"]; target: view }
 
     AccessibilityNotice { text: Library.vocabularyText.correctionsNeedAccessibility }
-    SchemaRow { rowId: "correctionLearningControl"; enabled: System.accessibility }
+    SchemaRow { rowId: "correctionLearningControl" }
 
     // The correction being edited, by id.
     property string editing

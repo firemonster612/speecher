@@ -67,6 +67,8 @@ Card {
                 }
             }
             Txt { width: parent.width; text: root.detail; visible: text.length > 0; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
+            // The keyring's own reason it didn't answer.
+            ErrorDetails { text: root.service.state === "unknown" ? root.service.detail || "" : "" }
             Txt { width: parent.width; text: Words.serviceUses[root.service.id] || ""; variant: "small"; tone: "tertiary"; wrapMode: Text.WordWrap }
             Reveal {
                 open: root.service.state === "expired"

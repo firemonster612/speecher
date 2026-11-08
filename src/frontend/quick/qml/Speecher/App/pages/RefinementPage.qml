@@ -14,12 +14,8 @@ Page {
 
     readonly property string primary: Settings.values.refinementProvider || "none"
     readonly property var fallbacks: Settings.values.refinementFallbacks || []
-    // Every provider a dictation may use, in the order it tries them.
-    readonly property var chain: primary === "none" ? [] : [primary].concat(fallbacks)
-    // Profiles can pick their own provider, which runs even while this page
-    // says None. Each provider once, the chain's first.
-    readonly property var inUse: chain.concat(Library.profiles.map(p => p.refinement))
-                                      .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
+    // Every provider a dictation may use, profiles' own included.
+    readonly property var inUse: ModelText.refinersInUse()
     readonly property bool refines: inUse.length > 0
     // The providers that have settings on this page, in the Switcher's order.
     readonly property var configurable: ["openai", "anthropic", "local", "endpoint"]
@@ -212,16 +208,13 @@ Page {
             title: Schema.row("targetContextControl").section
             caption: page.t.contextCaption
             AccessibilityNotice { text: Schema.row("targetContextControl").disabledHelp }
-            // Off while accessibility is, since that is what it does then.
-            SchemaRow {
-                rowId: "targetContextControl"
-                enabled: System.accessibility
-                value: System.accessibility ? Settings.values.targetContextControl : false
-            }
-            SchemaRow {
-                rowId: "includeScreenshotContext"
-                enabled: page.inUse.some(id => !!ModelText.provider(id).readsScreenshots)
-                help: enabled ? spec.help : spec.disabledHelp
+            SchemaRow { rowId: "targetContextControl" }
+            SchemaRow { id: screenshotRow; rowId: "includeScreenshotContext" }
+            // macOS asks before Speecher captures the screen, a check only
+            // while screenshots are on there.
+            HealthRow {
+                rowId: "screenRecording"
+                shown: !!check.id && screenshotRow.enabled
             }
         }
     }

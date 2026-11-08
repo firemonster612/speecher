@@ -20,12 +20,12 @@ Column {
     // Where a service or provider these files can't use yet is set up, by
     // id. Sign-ins have their own rows.
     readonly property var serviceFixes: ({
-        local: () => Navigation.go("models"),
-        endpoint: () => Navigation.goToRow("speech", "speechEndpointUrl")
+        local: () => Navigation.follow("models"),
+        endpoint: () => Navigation.follow("speech", "speechEndpointUrl")
     })
     readonly property var refinerFixes: ({
-        local: () => Navigation.goToRow("refinement", "localRunner"),
-        endpoint: () => Navigation.goToRow("refinement", "refinementEndpointUrl")
+        local: () => Navigation.follow("refinement", "localRunner"),
+        endpoint: () => Navigation.follow("refinement", "refinementEndpointUrl")
     })
     // What the model fields suggest, as Speech to text and Refinement do:
     // each provider's known models, the Local Runner's and the endpoints'

@@ -136,7 +136,7 @@ Page {
         SettingRow {
             title: Schema.page("vocabulary").title
             help: Library.speechVocabularyText
-            Button { text: Library.openVocabulary; size: "small"; onClicked: Navigation.go("vocabulary") }
+            Button { text: Library.openVocabulary; size: "small"; onClicked: Navigation.follow("vocabulary") }
         }
     }
 
@@ -219,5 +219,9 @@ Page {
         }
     }
 
-    SubpageRows { pageId: "speech" }
+    // Local models says when this build can't run them.
+    SubpageRows {
+        pageId: "speech"
+        lines: ModelText.localSpeech ? ({}) : ({ models: Schema.row("localModelBrowser").notInBuild + "." })
+    }
 }

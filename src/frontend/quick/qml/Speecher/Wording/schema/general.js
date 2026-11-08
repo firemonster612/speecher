@@ -24,7 +24,7 @@ var rows = [
     { id: "translucency", page: "appearance", section: "", kind: "toggle",
       label: "Translucent sidebar", help: "Your desktop shows through the sidebar, blurred.",
       disabledHelp: "Your desktop can't blur behind windows, or has transparency turned down.",
-      needsBlur: true, keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
+      usableWhen: "blur", keywords: "transparency transparent blur glass vibrancy mica acrylic background" },
     { id: "roundedCorners", page: "appearance", section: "", kind: "toggle",
       label: "Rounded corners", help: "Round the window's corners, or keep them square.",
       keywords: "corner radius round square window frame border" },

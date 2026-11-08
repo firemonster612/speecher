@@ -46,7 +46,7 @@ Column {
             first: checkRow.index === 0
             rowId: checkRow.key
             clickable: true
-            onClicked: Navigation.goToRow(checkRow.spec.page, checkRow.spec.opens || checkRow.key)
+            onClicked: Navigation.follow(checkRow.spec.page, checkRow.spec.opens || checkRow.key)
             AccessibilityMenu { offered: checkRow.key === "desktopAccessibility" }
         }
     }
@@ -62,7 +62,7 @@ Column {
             title: itemRow.item.title
             help: itemRow.item.help || ""
             clickable: true
-            onClicked: itemRow.item.row ? Navigation.goToRow(itemRow.item.page, itemRow.item.row) : Navigation.go(itemRow.item.page)
+            onClicked: Navigation.follow(itemRow.item.page, itemRow.item.row || "")
             Row {
                 spacing: Theme.space3
                 StateText { text: itemRow.item.status; stateId: itemRow.item.state; anchors.verticalCenter: parent.verticalCenter }

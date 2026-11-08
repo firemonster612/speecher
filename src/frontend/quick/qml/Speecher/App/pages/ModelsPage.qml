@@ -31,13 +31,14 @@ Page {
     }
 
     // Without the Local Model service, nothing here could run: say so
-    // instead of offering downloads.
+    // instead of offering downloads, and where to get a build that has it.
     Section {
         visible: !ModelText.localSpeech
         EmptyState {
             iconName: "cpu"
             title: page.library.notInBuild
             text: page.library.notInBuildHelp
+            Button { text: page.library.getBuild; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() }
         }
     }
 

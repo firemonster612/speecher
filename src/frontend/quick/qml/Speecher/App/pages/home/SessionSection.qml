@@ -108,7 +108,7 @@ Section {
                 sideways: true
                 open: !session.cantStart && !session.hasShortcut && !session.noShortcuts
                 anchors.verticalCenter: parent.verticalCenter
-                Button { text: session.t.setShortcut; size: "small"; onClicked: Navigation.goToRow("dictation", "globalShortcut") }
+                Button { text: session.t.setShortcut; size: "small"; onClicked: Navigation.follow("dictation", "globalShortcut") }
             }
             Reveal {
                 sideways: true

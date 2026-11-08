@@ -90,6 +90,16 @@ ClientWindow {
                 Connections {
                     target: stack.currentItem as Page
                     function onPathPicked(pageId) { Navigation.go(pageId) }
+                    function onBackPicked() { Navigation.goBack() }
+                }
+                // The way back from a page a link opened, to the page or the
+                // setup assistant it came from.
+                Binding {
+                    target: stack.currentItem as Page
+                    property: "backText"
+                    value: Navigation.returnTo === "" ? ""
+                         : Navigation.returnTo === "setup" ? Words.shell.backToSetup
+                         : Words.shell.backTo(Schema.page(Navigation.returnTo).title)
                 }
             }
         }
