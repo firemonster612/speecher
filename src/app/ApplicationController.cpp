@@ -740,7 +740,7 @@ void ApplicationController::notifyModelReady(const QString &modelId)
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
-              : QStringLiteral("Choose it on the Local models page to dictate with it."),
+              : QStringLiteral("Choose it in Services › This computer to dictate with it."),
         QStringLiteral("models"));
 }
 

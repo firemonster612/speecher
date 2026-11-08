@@ -103,7 +103,7 @@ ListRow {
             sideways: true
             open: limits.text.length > 0
             anchors.verticalCenter: parent.verticalCenter
-            Txt { id: limits; text: Library.limitText(row.entry); variant: "small"; tone: "secondary" }
+            Txt { id: limits; objectName: "vocabularyLimits"; text: Library.limitText(row.entry); variant: "small"; tone: "secondary" }
         }
         Reveal {
             sideways: true

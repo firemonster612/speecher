@@ -97,9 +97,10 @@ public:
     // leaves them there) or nothing.
     QString pastingOutcome() const;
     // What delivering with these steps ({ insert, press, keep }, an App's
-    // own or the Pasting page's) does here: {route, usable}, route the steps
-    // that are on in order (DeliveryPlan::route), usable those of them this
-    // computer can run now.
+    // own or the Pasting page's) does here: {route, usable, steps}, route the
+    // steps that are on in order (DeliveryPlan::route), usable those of them
+    // this computer can run now, and steps each step as deliverySteps has
+    // it, for these switches.
     Q_INVOKABLE QVariantMap stepsPlan(const QVariantMap &steps) const;
     // Whether a paste can carry formatted text here: not in a Wayland
     // session without Speecher's clipboard helper, where wl-copy copies

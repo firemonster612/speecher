@@ -12,7 +12,9 @@ import "words.js" as T
 // check with its fix, in two groups, what dictation needs and what it works
 // without. A check's row is its HealthRow, the one its own page shows; the
 // microphone, the speech service and pasting, which are not System.checks,
-// come as items. Each row opens the setting it is about, and a speech
+// come as items. Each permission pasting relies on is a check row of its own
+// with what it turns on and its fix; pasting is a row only for what has no
+// check, or for words that stay on the clipboard by choice. Each row opens the setting it is about, and a speech
 // service that can't run has a Fix that opens its Services card. Everything
 // reads Settings, System and Models as they show the settings, so setup's
 // draft shows here too.
@@ -27,18 +29,27 @@ Column {
 
     readonly property var t: T.text
 
-    // Every check that applies here, by id, in two groups: what dictation
-    // can't start without (a check core marks needed) and what it works
-    // without. The virtual keyboard is Pasting's, and so is accessibility
-    // while a delivery step that is on relies on it; microphone access is
-    // the Microphone row's.
+    // The delivery steps, and the needs of those that are on which this
+    // computer lacks now.
     readonly property var steps: System.deliverySteps
-    readonly property bool pastingNeedsAccessibility: steps.some(s => s.on && s.needs.includes("accessibility"))
-    readonly property var checks: System.checks.filter(c => Health.applies(c) && c.id !== "virtualKeyboardHealth"
-                                                             && c.id !== "microphoneAccess"
-                                                             && (c.id !== "desktopAccessibility" || !pastingNeedsAccessibility))
-    readonly property var neededChecks: checks.filter(c => c.needed).map(c => c.id)
-    readonly property var optionalChecks: checks.filter(c => !c.needed).map(c => c.id)
+    readonly property var waiting: [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))]
+    // With nothing to deliver the words, dictation is for nothing.
+    readonly property bool pastingNeeded: System.pastingOutcome === "nothing"
+    // The check each missing need has, by check id: accessibility and the
+    // virtual keyboard. Each is a row of its own, with what it turns on and
+    // its fix.
+    readonly property var waitingChecks: waiting.map(n => Schema.pasting.needs[n].check).filter(c => c)
+    // Every check that applies here, by id, in two groups: what dictation
+    // can't start without (a check core marks needed, or a need of the steps
+    // while nothing else delivers) and what it works without. Microphone
+    // access is the Microphone row's, and the virtual keyboard shows while a
+    // step that is on relies on it.
+    readonly property bool pressRelies: steps.some(s => s.on && s.needs.includes("virtualKeyboard"))
+    readonly property var checks: System.checks.filter(c => Health.applies(c) && c.id !== "microphoneAccess"
+                                                             && (c.id !== "virtualKeyboardHealth" || pressRelies))
+    function isNeeded(c) { return c.needed || (pastingNeeded && waitingChecks.includes(c.id)) }
+    readonly property var neededChecks: checks.filter(c => isNeeded(c)).map(c => c.id)
+    readonly property var optionalChecks: checks.filter(c => !isNeeded(c)).map(c => c.id)
 
     // The speech services in order: dictation works while any of them does.
     // Checking while none works and one is being checked; a service nobody
@@ -53,13 +64,14 @@ Column {
     // isn't checked yet, else the first.
     readonly property var speechService: working || chain.find(s => s.state === "unknown") || chain[0] || null
     // While no service works and the first's problem is a sign-in, a model,
-    // a runner or a server, the row opens its card on Services and its Fix
+    // a runner or a server, the row opens its card (Services, or This
+    // computer for a model or a runner) and its Fix
     // opens that card over the page.
     readonly property bool speechFixable: !working && !!speechService && ModelText.fixable(speechService)
                                           && ModelText.cardOf(speechService.id) !== ""
     readonly property var speechItem: ({
         id: "speech", title: Schema.page("speech").title, state: speechState,
-        page: speechFixable ? "services" : "speech", row: speechFixable ? ModelText.servicesRow("speech", speechService.id) : "",
+        page: speechFixable ? ModelText.cardPage(speechService.id) : "speech", row: speechFixable ? ModelText.servicesRow("speech", speechService.id) : "",
         status: working ? (working === chain[0] ? ModelText.status(working) : t.takesOver(working.label))
               : speechState === "checking" ? ModelText.checking
               : ModelText.status(speechService),
@@ -79,23 +91,20 @@ Column {
         fixLabel: accessFails ? Health.fix(access) : "",
         fixCheck: "microphoneAccess"
     })
-    // Pasting, one row while a step that is on waits for something: where
-    // the words end up, what is missing by name, and the first fix.
-    readonly property var waiting: [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))]
-    readonly property var fixFor: waiting.map(n => Schema.pasting.needs[n])
-        .find(need => need.check && Health.fix(Health.find(System.checks, need.check))) || null
+    // Pasting, one row while a step that is on waits for a tool, which has
+    // no check of its own (Wayland's clipboard helpers), or while the words
+    // stay on the clipboard by choice: where they end up, and what is
+    // missing by name with how to get it.
+    readonly property var toolsWaiting: waiting.filter(n => !Schema.pasting.needs[n].check)
     readonly property var pastingItem: ({
         id: "pasting", title: Schema.page("pasting").title, page: "pasting", row: "",
-        state: System.pastingOutcome === "nothing" ? "off" : "attention",
+        state: pastingNeeded ? "off" : "attention",
         status: Schema.pasting.outcomes[System.pastingOutcome],
-        help: [t.needs(waiting.map(n => Schema.pasting.needs[n].label))]
-            .concat(waiting.map(n => Schema.pasting.needs[n].repair || "")).filter(s => s).join(" "),
-        fixLabel: fixFor ? fixFor.fix || Health.fix(Health.find(System.checks, fixFor.check)) : "",
-        fixCheck: fixFor ? fixFor.check : ""
+        help: [t.needs(toolsWaiting.map(n => Schema.pasting.needs[n].label))]
+            .concat(toolsWaiting.map(n => Schema.pasting.needs[n].repair || "")).filter(s => s).join(" ")
     })
-    readonly property bool pastingDegraded: waiting.length > 0 || System.pastingOutcome !== "delivers"
-    // With nothing to deliver the words, dictation is for nothing.
-    readonly property bool pastingNeeded: System.pastingOutcome === "nothing"
+    readonly property bool pastingDegraded: toolsWaiting.length > 0
+                                            || (System.pastingOutcome !== "delivers" && waitingChecks.length === 0)
     readonly property var neededItems: [microphoneItem, speechItem].concat(pastingDegraded && pastingNeeded ? [pastingItem] : [])
     readonly property var optionalItems: pastingDegraded && !pastingNeeded ? [pastingItem] : []
 
@@ -115,12 +124,6 @@ Column {
 
     width: parent ? parent.width : implicitWidth
 
-    // Accessibility listed here relies on no delivery step that is on, so
-    // what it does is tell apps apart; its row opens Apps.
-    function checkTarget(spec) {
-        return spec.id === "desktopAccessibility" ? ["apps", "apps"] : [spec.page, spec.opens || spec.id]
-    }
-
     component GroupLabel: Txt {
         x: Theme.rowInset
         width: root.width - 2 * Theme.rowInset
@@ -138,7 +141,13 @@ Column {
             rowId: checkRow.key
             fromSetup: root.inSetup
             clickable: true
-            onClicked: root.openRow(...root.checkTarget(checkRow.spec))
+            // Off, accessibility says everything it turns on, as the line
+            // other pages show links here.
+            help: Health.failure(checkRow.check)
+                  || (checkRow.key === "desktopAccessibility" && !Health.passes(checkRow.check)
+                      ? Schema.pasting.accessibilityNotice(System.identifiesAppsWithoutAccessibility)
+                      : Health.detail(checkRow.check))
+            onClicked: root.openRow(checkRow.spec.page, checkRow.spec.opens || checkRow.spec.id)
             AccessibilityMenu { offered: checkRow.key === "desktopAccessibility" }
         }
     }

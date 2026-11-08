@@ -6,7 +6,8 @@ import Speecher.App
 import "../pages/dictation"
 
 // Dictation's shortcut and what pressing it does. Where the desktop gives
-// no shortcut, the command that runs one dictation instead.
+// no shortcut, the command that runs one dictation instead, and those that
+// finish and cancel it.
 StepPage {
     id: page
     // The desktop gives Speecher no shortcut, so the command starts dictation.
@@ -26,6 +27,9 @@ StepPage {
     }
     Reveal {
         open: page.unsupported
-        Section { StartCommandRow {} }
+        Section {
+            StartCommandRow {}
+            CommandsRow { rowId: "controlCommands" }
+        }
     }
 }

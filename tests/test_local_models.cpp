@@ -835,7 +835,7 @@ private slots:
         QString error;
         QVERIFY(!engine.load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
         QCOMPARE(error, QStringLiteral("ROCm is not available on this computer. Choose where the model "
-                                       "runs on the Local models page."));
+                                       "runs in Services › This computer."));
         QVERIFY(engine.runsOnDescription().isEmpty());
     }
 
@@ -939,7 +939,7 @@ private slots:
         QVERIFY(failed.wait(2000));
         const SpeechFailure failure = failed.first().at(0).value<SpeechFailure>();
         QCOMPARE(failure.attemptId, quint64(7));
-        QVERIFY(failure.message.contains(QStringLiteral("Local models page")));
+        QVERIFY(failure.message.contains(QStringLiteral("Services › This computer")));
         QCOMPARE(failure.kind, ProviderFailureKind::Unavailable);
     }
 #endif

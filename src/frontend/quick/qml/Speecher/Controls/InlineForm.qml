@@ -7,7 +7,8 @@ import Speecher.Theme
 // rows around it. Fields go in the default slot, one per line, each a
 // FormField; put two in a Row with spacing Theme.space4 to set them side by
 // side. error says why the last save was refused, above the buttons; the
-// caller sets it and clears it.
+// caller sets it and clears it. note says when the form's changes save,
+// beside the buttons, as every record editor says it.
 Reveal {
     id: root
 
@@ -16,6 +17,7 @@ Reveal {
     property string cancelText
     property bool canSave: true
     property string error
+    property string note
     default property alias fields: fieldColumn.data
     signal saved()
     signal cancelled()
@@ -44,11 +46,28 @@ Reveal {
                 spacing: Theme.space4
             }
             Txt { visible: text.length > 0; text: root.error; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
-            Row {
-                anchors.right: parent.right
-                spacing: Theme.space2
-                Button { text: root.cancelText; variant: "ghost"; onClicked: root.cancelled() }
-                Button { text: root.saveText; variant: "primary"; enabled: root.canSave; onClicked: root.saved() }
+            // The note sits left of the buttons, wrapping in the room they
+            // leave.
+            Item {
+                width: parent.width
+                implicitHeight: Math.max(noteText.implicitHeight, buttons.implicitHeight)
+                Txt {
+                    id: noteText
+                    width: parent.width - buttons.width - Theme.space4
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.note
+                    variant: "small"
+                    tone: "tertiary"
+                    wrapMode: Text.WordWrap
+                }
+                Row {
+                    id: buttons
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space2
+                    Button { text: root.cancelText; variant: "ghost"; onClicked: root.cancelled() }
+                    Button { text: root.saveText; variant: "primary"; enabled: root.canSave; onClicked: root.saved() }
+                }
             }
         }
     }

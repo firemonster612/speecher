@@ -26,14 +26,17 @@ var types = [
     { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
 ];
 function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
+// The fallback profile's one name, wherever its place is named rather than
+// the profile it holds.
+var otherAppsProfile = "Other apps' profile";
 
 // The Pasting row's one choice besides "Same as …": steps of its own, the
 // Pasting page's three switches.
 var ownSteps = { id: "own", label: "Its own steps", icon: "list-checks" };
-// What an App's or App Type's own pasting adds to its row: "Own steps
-// (Insert, Keep)", and the keys where they're its own.
+// What an App's or App Type's own pasting adds to its row, in the editor's
+// words: "its own steps: Insert, Keep", and the keys where they're its own.
 function pastingSummary(settings) {
-    return [settings.steps ? "Own steps (" + Pasting.stepsText(settings.steps) + ")" : "",
+    return [settings.steps ? ownSteps.label.toLowerCase() + ": " + Pasting.stepsText(settings.steps) : "",
             settings.keys ? Pasting.keysLabel(settings.keys) : ""].filter(s => s)
 }
 
@@ -89,7 +92,6 @@ var t = {
     terminalsNote: "Anything running in a terminal pastes like Terminals unless its app has its own Pasting.",
     pasteKeys: "Paste keys",
     pasteKeysHelp: "What Press paste keys presses.",
-    lastStepOn: "The last step on stays on.",
     remove: "Remove app",
     removeHelp: "It goes back to Automatic everywhere. What Speecher learned in it stays, and so do the words limited to it.",
     automatic: label => "Automatic (" + label + ")",
@@ -146,14 +148,15 @@ function summary(entry, profileName) {
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
     parts.push(...pastingSummary(entry))
     if (entry.history) parts.push(t.inHistory(entry.history))
-    return parts.length ? parts.join(", ") : "Same as " + type(entry.effective.type).label
+    return parts.length ? capitalized(parts.join(", ")) : "Same as " + type(entry.effective.type).label
 }
+function capitalized(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
 // What an App Type's row says: its profile, Pasting and History choices.
 function typeSummary(settings, profileName) {
-    const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as Other apps"]
+    const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as " + otherAppsProfile]
     parts.push(...pastingSummary(settings))
     if (settings.history) parts.push(t.inHistory(settings.history))
-    return parts.join(", ")
+    return capitalized(parts.join(", "))
 }
 
 var rows = [

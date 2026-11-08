@@ -32,7 +32,10 @@ QtObject {
         return ({ codex: "chatgpt", openai: "chatgpt", claude: "claude", anthropic: "claude", local: "computer",
                   endpoint: "servers" })[id] || ""
     }
-    // The Services row a link to that card lands on, for a role's service.
+    // The page that card is on: This computer's on its own subpage, the
+    // rest on Services.
+    function cardPage(id) { return cardOf(id) === "computer" ? "models" : "services" }
+    // The row a link to that card lands on, for a role's service.
     function servicesRow(role, id) {
         return ({ chatgpt: "openAiAuthMode", claude: "anthropicAuthMode",
                   computer: role === "speech" ? "speechLocalModel" : "localRunner",
@@ -316,6 +319,22 @@ QtObject {
              : running.length ? "Speecher found " + Words.list(running.map(r => r.label)) + "."
              : Models.runnersChecked ? "None found. Install and start Ollama, LM Studio or llama-server."
              : "Not checked yet."
+    }
+    // How This computer stands, for its row on Services: the cleanup
+    // runner, then the speech models. "Ollama isn't running, no speech
+    // model downloaded."
+    readonly property string computerSummary: {
+        const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
+        const running = Models.runners.filter(r => r.running)
+        const cleanup = runner ? runner.label + (runner.running ? " runs cleanup" : " isn't running")
+                      : running.length ? Words.list(running.map(r => r.label)) + " found, not chosen for cleanup"
+                      : Models.runnersChecked ? "No cleanup runner found" : ""
+        const count = Models.downloaded.length
+        const speech = !localSpeech ? "this build can't run speech models"
+                     : count === 0 ? "no speech model downloaded"
+                     : count === 1 ? "1 speech model downloaded" : count + " speech models downloaded"
+        const line = [cleanup, speech].filter(s => s).join(", ")
+        return line.charAt(0).toUpperCase() + line.slice(1) + "."
     }
     // A chosen runner that has stopped, as the runner menu lists it.
     function stoppedRunner(label) { return label + " (not running)" }

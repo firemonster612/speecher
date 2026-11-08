@@ -250,8 +250,8 @@ Page {
                     Behavior on opacity { Ease {} }
                     onClicked: Navigation.goToRow(Schema.row(learned.action.row).page, learned.action.row)
                 }
-                // Learning needs accessibility; the notice turns it on.
-                AccessibilityNotice {}
+                // Learning needs accessibility.
+                AccessibilityNotice { what: Schema.pasting.accessibilityUses.learning; linkText: Schema.pasting.accessibilityLinkAbove }
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0

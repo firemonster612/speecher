@@ -10,7 +10,8 @@ import "pages/services"
 // The Services card that fixes one service, over the page that found it
 // can't run, so the person never leaves that page: ChatGPT's or Claude's
 // sign-in, This computer's part for the job, or the job's server. Open
-// Services leads to the whole page. openFor(role, serviceId) opens it.
+// Services (or Open This computer) leads to the whole page.
+// openFor(role, serviceId) opens it.
 T.Popup {
     id: sheet
 
@@ -80,11 +81,11 @@ T.Popup {
         // From setup it opens Main beside the assistant, leading back to it.
         TextLink {
             objectName: "openServices"
-            text: Words.openServices
+            text: sheet.card === "computer" ? Schema.row("speechLocalModel").actionLabel : Words.openServices
             onActivated: {
                 const fromSetup = Window.window?.objectName === "SetupAssistant"
                 sheet.close()
-                Navigation.follow("services", "", fromSetup ? "setup" : "")
+                Navigation.follow(ModelText.cardPage(sheet.serviceId), "", fromSetup ? "setup" : "")
             }
         }
     }

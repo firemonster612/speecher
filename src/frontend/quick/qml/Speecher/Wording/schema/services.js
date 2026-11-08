@@ -1,7 +1,7 @@
 .pragma library
 
-// Rows for the Services page: how Speecher signs in to ChatGPT and Claude,
-// what This computer runs, and Your servers. Speech to text and Refinement
+// Rows for the Services page and its This computer subpage: how Speecher
+// signs in to ChatGPT and Claude, what This computer runs, and Your servers. Speech to text and Refinement
 // put these services in order and choose each one's model; the sign-in, the
 // runner and the servers live here, once. CLI Proxy API is a way to sign in
 // to either service; its account is chosen in that service's card, and its
@@ -58,19 +58,21 @@ var rows = [
       placeholder: "A key the server accepts",
       keywords: "cli proxy api secret token password" },
 
-    // This computer: the Local Models speech can run, and the Local Runner
-    // cleanup runs on. Which model each job runs is its order's choice.
-    { id: "speechLocalModel", page: "services", section: "This computer", kind: "custom",
+    // This computer, the Services subpage: the Local Models speech can run,
+    // and the Local Runner cleanup runs on. Which model each job runs is its
+    // order's choice. speechLocalModel is the downloaded models in a Fix
+    // sheet.
+    { id: "speechLocalModel", page: "models", section: "Speech models", kind: "custom",
       label: "Speech to text",
       // %1 is the downloaded models' names.
       help: "Downloaded: %1. Speech to text's order picks the one to use.",
       emptyHelp: "No model is downloaded yet. Download one to dictate on this computer.",
-      actionLabel: "Open Local models", keywords: "local model whisper parakeet offline download this computer" },
-    { id: "localRunner", page: "services", section: "This computer", kind: "custom",
-      label: "Refinement", help: "The app on this computer that runs cleanup models. Refinement's order picks the model.",
+      actionLabel: "Open This computer", keywords: "local model whisper parakeet offline download this computer" },
+    { id: "localRunner", page: "models", section: "Cleanup on this computer", kind: "custom",
+      label: "Runner", help: "The app on this computer that runs cleanup models. Refinement's order picks the model.",
       placeholder: "Not selected",
       keywords: "runner ollama lm studio llama-server llama.cpp offline local cleanup this computer" },
-    { id: "localRunnerDetect", page: "services", section: "This computer", kind: "custom",
+    { id: "localRunnerDetect", page: "models", section: "Cleanup on this computer", kind: "custom",
       label: "Runners on this computer", help: "Checks which runners are running on this computer.",
       keywords: "look for detect scan find runners again" },
 

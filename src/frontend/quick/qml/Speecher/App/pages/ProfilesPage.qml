@@ -48,7 +48,7 @@ Page {
         }
         // Without app detection, every dictation takes the profile for apps
         // Speecher doesn't recognize.
-        AccessibilityNotice {}
+        AccessibilityNotice { shown: !System.identifiesAppsWithoutAccessibility; what: Schema.pasting.accessibilityUses.profiles }
         Item {
             width: parent.width
             height: Math.max(list.implicitHeight + Theme.space2, editorPane.implicitHeight + Theme.space5 * 2)
@@ -181,6 +181,7 @@ Page {
                     }
                     title: editing ? Library.profilesText.editTone : Library.profilesText.newTone
                     saveText: editing ? Words.save : Library.profilesText.addTone
+                    note: Words.savesOnPress(saveText)
                     canSave: toneName.text.trim().length > 0 && toneText.text.trim().length > 0
                     onCancelled: open = false
                     onSaved: {
@@ -243,6 +244,7 @@ Page {
                     }
                     title: editing ? Library.profilesText.editLevel : Library.profilesText.newLevel
                     saveText: editing ? Words.save : Library.profilesText.addLevel
+                    note: Words.savesOnPress(saveText)
                     canSave: levelName.text.trim().length > 0 && (base !== "custom_only" || levelText.text.trim().length > 0)
                     onCancelled: open = false
                     onSaved: {

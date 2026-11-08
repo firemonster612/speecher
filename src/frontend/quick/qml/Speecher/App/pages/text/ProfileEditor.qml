@@ -182,7 +182,7 @@ Column {
                     wrapMode: Text.WordWrap
                     onActivated: Navigation.follow("vocabulary", "vocabularyFor:" + limit)
                 }
-                Txt { text: Library.profilesText.savesAsYouGo; variant: "small"; tone: "tertiary" }
+                Txt { text: Words.savesAsYouGo; variant: "small"; tone: "tertiary" }
             }
             Button {
                 id: deleteButton

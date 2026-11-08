@@ -72,6 +72,8 @@ var t = {
     everyProfile: "Every profile",
     everyApp: "Every app",
     addApp: "Add app",
+    // Add app adds the App it picks to Apps at once, unlike the limit.
+    addAppSaves: "Add app adds a new app to Apps right away; the limit saves with the entry.",
     removeApp: name => "Remove " + name,
     use: "Use it",
     useHelp: "Off, Speecher keeps it here and doesn't use it.",

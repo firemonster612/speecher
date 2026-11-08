@@ -9,8 +9,9 @@ import "services"
 
 // The services Speecher can use, each connected once: ChatGPT and Claude
 // side by side with their sign-ins, CLI Proxy API's shared rows while either
-// signs in through it, This computer's Local Models and Local Runner, and
-// Your servers, one for speech and one for refinement. Speech to text and
+// signs in through it, and Your servers, one for speech and one for
+// refinement; This computer, its subpage, is a row at the end saying how it
+// stands. Speech to text and
 // Refinement put them in order and choose their models; each order row's
 // Fix opens the same card in a sheet.
 Page {
@@ -25,7 +26,10 @@ Page {
         }
     ]
 
-    Component.onCompleted: Models.checkComputer()
+    Component.onCompleted: {
+        Models.checkComputer()
+        Models.detectRunners()
+    }
 
     // The two cards end together, and their rows start together; rows that
     // come and go with the sign-in source ease both cards' height.
@@ -66,15 +70,13 @@ Page {
         CliproxySection { objectName: "cliproxySection" }
     }
 
-    ComputerSection { objectName: "thisComputer" }
-
     // Your servers: one for speech, one for refinement.
     ServerSection { role: "speech" }
     ServerSection { role: "refinement" }
 
-    // Local models says when this build can't run them.
     SubpageRows {
+        objectName: "thisComputer"
         pageId: "services"
-        lines: ModelText.localSpeech ? ({}) : ({ models: Schema.row("localModelBrowser").notInBuild + "." })
+        lines: ({ models: ModelText.computerSummary })
     }
 }

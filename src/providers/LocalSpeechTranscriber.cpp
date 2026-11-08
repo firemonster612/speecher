@@ -162,11 +162,11 @@ QString LocalSpeechTranscriber::downloadedModelPath(const QString &modelId, QStr
 {
     const LocalModel *model = findLocalModel(modelId);
     if (!model) {
-        *error = QStringLiteral("Choose a local model on the Local models page.");
+        *error = QStringLiteral("Choose a local model in Services › This computer.");
         return {};
     }
     if (!m_store.isDownloaded(*model)) {
-        *error = QStringLiteral("%1 is not downloaded yet. Download it on the Local models page.").arg(model->name);
+        *error = QStringLiteral("%1 is not downloaded yet. Download it in Services › This computer.").arg(model->name);
         return {};
     }
     return m_store.modelPath(*model);

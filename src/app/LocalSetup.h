@@ -115,7 +115,7 @@ public:
     void initializeRunner();
     RunnerChoice runnerChoice(const AppSettings &settings) const;
 
-    // What the Local models page reads about a model beyond the catalog.
+    // What the This computer page reads about a model beyond the catalog.
     struct ModelState {
         // Downloaded and the speech model dictation uses.
         bool inUse = false;
