@@ -32,23 +32,15 @@ constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
 constexpr int kLevelIntervalMs = 50;
 int s_autoStopMinuteMs = 60 * 1000;
 
-// The settings a recording's streams run with: its speech provider as a
-// Transcribe batch with the Other profile runs it, with that profile's model
-// and fallbacks where the profile keeps the provider, and the recording's
-// terms added to the vocabulary.
-AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistry &providers,
-                              const QStringList &vocabulary)
-{
-    RunOverrides run;
-    run.writingProfile = WritingProfile::Other;
-    run.speech = ServiceChoice{settings.speech.services.main()};
-    run.addedVocabulary = vocabulary;
-    AppSettings recording = settings;
-    recording.speech = planDictation(settings, Target{}, run, providers.offersSpeech()).settings.speech;
-    return recording;
-}
-
 } // namespace
+
+StreamsFinalText streamsFinalText(ProviderRegistry &providers)
+{
+    return [&providers](const QString &service, const SpeechSettings &speech) {
+        const SpeechTranscriber *provider = providers.speechProvider(service);
+        return provider && provider->streamsFinalText(speech);
+    };
+}
 
 QString recordingFolder(const RecordingSettings &settings)
 {
@@ -402,12 +394,9 @@ void RecordingSession::start(const RecordingRequest &request, StartDone done)
         return;
     }
     const AppSettings settings = m_settings->dictationSnapshot();
-    const SpeechSettings &speech = settings.speech;
-    const SpeechTranscriber *provider = m_providers->speechProvider(speech.services.main());
-    // Local Models finalize runs of words rather than utterances, and their
-    // tail only in a whole-attempt transcript, so they say no.
-    if (!provider || !provider->streamsFinalText(speech)) {
-        done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.services.main())));
+    const AppSettings streamSettings = planRecording(settings, request.vocabulary, streamsFinalText(*m_providers));
+    if (streamSettings.speech.services.order.isEmpty()) {
+        done(recordingNoServiceText());
         return;
     }
     QString error;
@@ -420,7 +409,6 @@ void RecordingSession::start(const RecordingRequest &request, StartDone done)
         return;
     }
     m_title = request.title;
-    const AppSettings streamSettings = recordingSettings(settings, *m_providers, request.vocabulary);
     m_me.status = {recordingMicrophoneSpeaker()};
     m_them.status = {recordingSystemAudioSpeaker()};
     m_unwrittenLines = 0;

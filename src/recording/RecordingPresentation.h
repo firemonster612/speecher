@@ -43,7 +43,9 @@ QString statusWatchText(const QString &dictationState, const RecordingStatus &re
 QString notRecordingText();
 QString alreadyRecordingText(const QString &path);
 QString recordingNeedsSetupText();
-QString recordingSpeechProviderRefusal(const QString &providerLabel);
+// Why nothing can record: no speech service in the Service Order sends text
+// as it hears.
+QString recordingNoServiceText();
 QString recordingStreamEndedText();
 // A stream's problem once an utterance was not transcribed, for reason.
 QString recordingUtteranceFailedText(const QString &reason);

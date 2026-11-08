@@ -56,4 +56,17 @@ DictationPlan planDictation(const AppSettings &settings,
                             const RunOverrides &overrides,
                             const OffersSpeech &offersSpeech = {});
 
+// Whether a speech service, with what an entry asks of it, sends final text
+// as it hears (SpeechTranscriber::streamsFinalText), as a Recording needs.
+using StreamsFinalText = std::function<bool(const QString &service, const SpeechSettings &speech)>;
+
+// What a Recording runs with: the saved settings, with the vocabulary that
+// applies to Other apps' profile and no app led by addedVocabulary, and as the
+// speech Service Order the services it can use, first to last: its own first
+// service (RecordingSettings::first) where that streams final text, then the
+// speech Service Order's that do, Local Models passed over, each with its own
+// model and Spoken Language. An empty order is a recording nothing can run.
+AppSettings planRecording(const AppSettings &settings, const QStringList &addedVocabulary,
+                          const StreamsFinalText &streamsFinalText);
+
 } // namespace speecher

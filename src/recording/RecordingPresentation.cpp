@@ -159,11 +159,10 @@ QString recordingNeedsSetupText()
     return QStringLiteral("Finish setting up Speecher, then start the recording.");
 }
 
-QString recordingSpeechProviderRefusal(const QString &providerLabel)
+QString recordingNoServiceText()
 {
-    return QStringLiteral("Recording needs Claude, ChatGPT or your speech server. %1 can't record "
-                          "yet.")
-        .arg(providerLabel);
+    return QStringLiteral("None of your speech services can record a call. Local models can't send text as you "
+                          "speak. Add ChatGPT or Claude to Speech to text.");
 }
 
 QString recordingStreamEndedText()

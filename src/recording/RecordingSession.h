@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "dictation/DictationPlan.h"
 #include "recording/RecordingStatus.h"
 
 #include <QDateTime>
@@ -24,6 +25,10 @@ class RecordingMicrophone;
 class RecordingStream;
 class RecordingSystemAudio;
 class SettingsStore;
+
+// Whether one of providers' speech services streams final text, for
+// planRecording.
+StreamsFinalText streamsFinalText(ProviderRegistry &providers);
 
 // Where transcripts go: the folder chosen, or Documents/Speecher.
 QString recordingFolder(const RecordingSettings &settings);

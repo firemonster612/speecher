@@ -385,6 +385,66 @@ private slots:
         plan = planDictation(settings, Target{}, run);
         QCOMPARE(plan.settings.speech.services.main(), QStringLiteral("local"));
     }
+
+    // A Recording walks the speech Service Order's services that stream final
+    // text, Local Models passed over, led by its own first service where that
+    // streams; each keeps its model and language. Nothing that streams is no
+    // order at all.
+    void planRecordingWalksWhatStreams_data()
+    {
+        QTest::addColumn<QStringList>("order");
+        QTest::addColumn<QString>("first");
+        QTest::addColumn<QStringList>("walked");
+        const QString claude = QStringLiteral("claude");
+        const QString codex = QStringLiteral("codex");
+        const QString local = QStringLiteral("local");
+        const QString endpoint = QStringLiteral("endpoint");
+        QTest::newRow("main streams") << QStringList{claude, local, codex} << QString() << QStringList{claude, codex};
+        QTest::newRow("main is local") << QStringList{local, codex} << QString() << QStringList{codex};
+        QTest::newRow("none can") << QStringList{local, endpoint} << QString() << QStringList{};
+        QTest::newRow("own first") << QStringList{claude, codex} << codex << QStringList{codex, claude};
+        QTest::newRow("own first outside the order") << QStringList{claude} << codex << QStringList{codex, claude};
+        QTest::newRow("own first can't stream") << QStringList{claude, codex} << endpoint << QStringList{claude, codex};
+        QTest::newRow("own first is local") << QStringList{local, claude} << local << QStringList{claude};
+    }
+
+    void planRecordingWalksWhatStreams()
+    {
+        QFETCH(QStringList, order);
+        QFETCH(QString, first);
+        QFETCH(QStringList, walked);
+        AppSettings settings = savedSettings();
+        settings.speech.services.order = order;
+        settings.speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("de");
+        if (!first.isEmpty()) {
+            settings.recording.first = ServiceChoice{first};
+        }
+        // The speech server here uploads each utterance whole.
+        const auto streams = [](const QString &service, const SpeechSettings &) {
+            return service != QStringLiteral("endpoint");
+        };
+        const AppSettings recording = planRecording(settings, {}, streams);
+        QCOMPARE(recording.speech.services.order, walked);
+        QCOMPARE(recording.speech.services.choice(QStringLiteral("codex")).language, QStringLiteral("de"));
+    }
+
+    // Its own first service's model runs; the words are those that apply to
+    // Other apps' profile and no app, led by the recording's own.
+    void planRecordingTakesItsFirstModelAndOtherAppsWords()
+    {
+        AppSettings settings = savedSettings();
+        settings.speech.services.order = {QStringLiteral("endpoint")};
+        settings.speech.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("whisper-1");
+        settings.recording.first = ServiceChoice{QStringLiteral("endpoint"), QStringLiteral("gpt-realtime")};
+        VocabularyEntry everywhere{QStringLiteral("Speecher")};
+        VocabularyEntry inEmail{QStringLiteral("Regards")};
+        inEmail.profiles = {WritingProfile::Email};
+        settings.vocabulary = {everywhere, inEmail};
+        const AppSettings recording =
+            planRecording(settings, {QStringLiteral("kwin")}, [](const QString &, const SpeechSettings &) { return true; });
+        QCOMPARE(recording.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("gpt-realtime"));
+        QCOMPARE(recording.speech.vocabulary, (QStringList{QStringLiteral("kwin"), QStringLiteral("Speecher")}));
+    }
 };
 
 int runDictationPlanTests(int argc, char **argv)

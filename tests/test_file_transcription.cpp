@@ -1692,9 +1692,9 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
-    // The Other profile's speech model applies where that profile keeps the
-    // recording's provider, as in a Transcribe batch.
-    void aRecordingUsesTheOtherProfilesModel()
+    // A recording passes over a Local Model, even one the Other profile
+    // puts first, for the next service in the order that streams.
+    void aRecordingPassesOverALocalModel()
     {
         QPointer<FakeSpeechTranscriber> local;
         m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
@@ -1704,9 +1704,10 @@ private slots:
                                                local->onStartAttempt = [&local] { local->emitConnected(); };
                                                return local.data();
                                            });
+        registerStreamingCodex();
         SettingsStore settings;
         AppSettings draft = settings.snapshot();
-        draft.speech.services.order = {QStringLiteral("local")};
+        draft.speech.services.order = {QStringLiteral("local"), QStringLiteral("codex")};
         for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
             if (profile.profile == WritingProfile::Other) {
                 profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
@@ -1718,8 +1719,8 @@ private slots:
         });
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        QCOMPARE(local->startCalls, 1);
-        QCOMPARE(local->lastLocalModel, QStringLiteral("moonshine-small"));
+        QCOMPARE(m_codex->startCalls, 1);
+        QVERIFY(!local || local->startCalls == 0);
     }
 
     // A provider that finalizes only when asked, as Codex does, still writes
@@ -2054,8 +2055,7 @@ private slots:
         QString error;
         const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
         QVERIFY(startRecording(recording, refused, &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs Claude, ChatGPT or your speech server. Scripted "
-                                       "can't record yet."));
+        QCOMPARE(error, recordingNoServiceText());
         QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();
