@@ -111,13 +111,12 @@ SessionKeys sessionKeysWanted(DictationState state,
     return {cancelShortcut != escape && (keepsReview || cancels), waiting};
 }
 
-QString trayToolTip(bool listening, bool recording)
+QString trayToolTip(bool listening, const QString &recordingFor)
 {
-    if (listening && recording) {
-        return QStringLiteral("Speecher is listening and recording");
-    }
-    if (recording) {
-        return QStringLiteral("Speecher is recording");
+    if (!recordingFor.isEmpty()) {
+        return (listening ? QStringLiteral("Speecher is listening, recording a call, ")
+                          : QStringLiteral("Speecher, recording a call, "))
+            + recordingFor;
     }
     return listening ? QStringLiteral("Speecher is listening") : QStringLiteral("Speecher");
 }

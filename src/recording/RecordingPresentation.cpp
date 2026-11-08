@@ -33,6 +33,21 @@ QString recordingDictatingText()
     return QStringLiteral("(dictating, not on the call)");
 }
 
+QString recordingElapsedText(qint64 elapsedMs)
+{
+    const qint64 seconds = elapsedMs / 1000;
+    const QString minutesAndSeconds =
+        QStringLiteral("%1:%2").arg(seconds / 60 % 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    return seconds < 3600 ? minutesAndSeconds
+                          : QStringLiteral("%1:%2").arg(seconds / 3600).arg(minutesAndSeconds.rightJustified(5, QLatin1Char('0')));
+}
+
+QString trayRecordingActionText(bool recording, qint64 elapsedMs)
+{
+    return recording ? QStringLiteral("Stop recording (%1)").arg(recordingElapsedText(elapsedMs))
+                     : QStringLiteral("Start recording");
+}
+
 QString recordingClock(qint64 elapsedMs)
 {
     const qint64 seconds = elapsedMs / 1000;

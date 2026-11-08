@@ -6,6 +6,7 @@
 #include "core/SettingsStore.h"
 #include "core/history/HistoryStore.h"
 #include "dictation/DictationSession.h"
+#include "recording/RecordingPresentation.h"
 
 #include <QAction>
 #include <QMenu>
@@ -65,16 +66,46 @@ private slots:
         QCOMPARE(actions.first()->objectName(), QStringLiteral("trayOpen"));
         QCOMPARE(actions.takeFirst()->text(), QStringLiteral("Open Speecher"));
 #endif
-        QCOMPARE(actions.size(), 5);
+        QCOMPARE(actions.size(), 6);
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
         QCOMPARE(actions.at(0)->text(), QStringLiteral("Start dictation"));
         QCOMPARE(actions.at(1)->objectName(), QStringLiteral("trayPasteAgain"));
         QCOMPARE(actions.at(1)->text(), QStringLiteral("Paste last dictation"));
-        QCOMPARE(actions.at(2)->objectName(), QStringLiteral("traySettings"));
-        QCOMPARE(actions.at(2)->text(), QStringLiteral("Settings"));
-        QVERIFY(actions.at(3)->isSeparator());
-        QCOMPARE(actions.at(4)->objectName(), QStringLiteral("trayQuit"));
-        QCOMPARE(actions.at(4)->text(), QStringLiteral("Quit Speecher"));
+        QCOMPARE(actions.at(2)->objectName(), QStringLiteral("trayToggleRecording"));
+        QCOMPARE(actions.at(2)->text(), QStringLiteral("Start recording"));
+        QCOMPARE(actions.at(3)->objectName(), QStringLiteral("traySettings"));
+        QCOMPARE(actions.at(3)->text(), QStringLiteral("Settings"));
+        QVERIFY(actions.at(4)->isSeparator());
+        QCOMPARE(actions.at(5)->objectName(), QStringLiteral("trayQuit"));
+        QCOMPARE(actions.at(5)->text(), QStringLiteral("Quit Speecher"));
+    }
+
+    // Start recording asks for the consent notice before the first recording
+    // ever, and starts one after; while one runs the item and the tooltip
+    // say for how long.
+    void recordingItemStartsAndStopsARecording()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QAction *item = tray.findChild<QSystemTrayIcon *>()->contextMenu()->findChild<QAction *>(
+            QStringLiteral("trayToggleRecording"));
+        QVERIFY(item);
+        QSignalSpy consent(&controller, &ApplicationController::recordingConsentNeeded);
+        QSignalSpy starts(&controller, &ApplicationController::recordingStartFinished);
+        item->trigger();
+        QCOMPARE(consent.count(), 1);
+        QCOMPARE(starts.count(), 0);
+        controller.settings()->setRecordingConsentNoticeShown(true);
+        item->trigger();
+        QTRY_COMPARE(starts.count(), 1);
+        QCOMPARE(consent.count(), 1);
+
+        QCOMPARE(trayRecordingActionText(true, 723000), QStringLiteral("Stop recording (12:03)"));
+        QCOMPARE(recordingElapsedText(3723000), QStringLiteral("1:02:03"));
+        QCOMPARE(trayToolTip(false, QStringLiteral("12:03")), QStringLiteral("Speecher, recording a call, 12:03"));
+        QCOMPARE(trayToolTip(true, QStringLiteral("12:03")),
+                 QStringLiteral("Speecher is listening, recording a call, 12:03"));
+        QCOMPARE(trayToolTip(true, QString()), QStringLiteral("Speecher is listening"));
     }
 
     // Paste last dictation is offered once a dictation finished, and never
