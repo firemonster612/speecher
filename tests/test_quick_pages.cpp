@@ -916,6 +916,31 @@ private slots:
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
     }
 
+    // Add service lists the services not in the order with their ratings,
+    // so they can be compared before one is added.
+    void addServiceShowsTheRatings()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("codex")}));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
+        QQuickItem *order = nullptr;
+        QTRY_VERIFY((order = findItem(main->contentItem(), QStringLiteral("speechServiceOrder"))));
+        const QVariantList available = order->property("available").value<QJSValue>().toVariant().toList();
+        const auto claude = std::find_if(available.cbegin(), available.cend(), [](const QVariant &option) {
+            return option.toMap().value(QStringLiteral("id")).toString() == QLatin1String("claude");
+        });
+        QVERIFY(claude != available.cend());
+        const QString help = claude->toMap().value(QStringLiteral("help")).toString();
+        QVERIFY2(help.startsWith(QLatin1String("Accuracy ")) && help.contains(QLatin1String("out of 10.")), qPrintable(help));
+    }
+
     // A search for a refinement service's thinking lands on Refinement's
     // order, where each service shows its own.
     void searchLandsOnTheServiceOrder()

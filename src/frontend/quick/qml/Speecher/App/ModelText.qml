@@ -129,6 +129,15 @@ QtObject {
     readonly property var _measures: ({ accuracy: "Accuracy", quality: "Quality", speed: "Speed" })
     // A rating's bars as RatingBars draws them, or null for none.
     function bars(rating) { return rating ? rating.bars.map(b => ({ label: _measures[b.measure], value: b.value })) : null }
+    // A service's ratings in a line, for the choices that add it to an
+    // order, so services can be compared there: "Accuracy 9, Speed 7 out of
+    // 10." with what it was rated as; empty for one without ratings.
+    function ratingLine(role, id) {
+        const rating = (role === "speech" ? Models.speechRatings : Models.refinementRatings)[id]
+        const known = rating ? rating.bars.filter(b => b.value !== null && b.value !== undefined) : []
+        if (!known.length) return ""
+        return known.map(b => _measures[b.measure] + " " + b.value).join(", ") + " out of 10." + ratedAsText(rating)
+    }
     // " Rated as Parakeet 0.6B on this computer.", after a role, or nothing.
     function ratedAsText(rating) { return rating && rating.ratedModel ? " Rated as " + rating.ratedModel + " on this computer." : "" }
     // Local Models ---------------------------------------------------------------
