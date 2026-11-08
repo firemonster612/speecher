@@ -78,6 +78,7 @@ Plate {
 
     // The steps, centred on the line between the start and the app.
     Row {
+        id: route
         x: root._startX + 20 + (root._endX - root._startX - 20 - width) / 2
         y: root._lineY - 15
         spacing: 18
@@ -132,7 +133,9 @@ Plate {
         id: appCard
         x: root.width - width - root._pad
         y: root._lineY - 46
-        width: Math.min(260, root.width * 0.34)
+        // Narrower where long step names need the room, so they never run
+        // under it.
+        width: Math.max(200, Math.min(260, root.width * 0.34, root.width - root._pad * 2 - 40 - route.width - 32))
         height: 96
         radius: Theme.radiusLarge
         color: Theme.raised
