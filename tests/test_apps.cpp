@@ -506,7 +506,7 @@ private slots:
         Target agent = target("org.kde.konsole", "Konsole", "konsole");
         agent.terminalHost = true;
         agent.aiCodingToolActive = true;
-        QCOMPARE(delivery(target("org.kde.kate", "Kate", "kate"), apps, steps), QStringLiteral("keep"));
+        QCOMPARE(delivery(target("org.kde.kate", "Kate", "kate"), apps, steps), QStringLiteral("insert keep"));
         QCOMPARE(delivery(target("outlook", "Outlook", "outlook"), apps, steps), QStringLiteral("keep"));
         QCOMPARE(delivery(target("chromium", "Chromium", "chromium"), apps, steps), QStringLiteral("keep"));
         // Its own Standard paste beat Browsers' Clipboard only.

@@ -9,6 +9,7 @@
 #include "core/history/HistoryStore.h"
 
 #include <QAudioDecoder>
+#include <QScopeGuard>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -18,6 +19,8 @@
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <memory>
 
 #include <algorithm>
 #include <cmath>
@@ -361,23 +364,39 @@ private slots:
 
     // Deleted for good, by purge, remove, clear or retention, an entry's words
     // are nowhere in the database's files: not in the search index's
-    // segments, not in the write-ahead log.
+    // segments, not in the write-ahead log. Also when the entries were
+    // indexed by trigram and are deleted by an open that can only scan.
+    void permanentDeletesLeaveNoTextBehind_data()
+    {
+        QTest::addColumn<bool>("scanAfterTrigram");
+        QTest::newRow("trigram") << false;
+        QTest::newRow("scan after trigram") << true;
+    }
     void permanentDeletesLeaveNoTextBehind()
     {
-        const QString path = databasePath(QStringLiteral("erased.sqlite3"));
-        HistoryStore store(path, QString());
-        QVERIFY(store.searchesByTrigram());
-        store.add(dictation(QStringLiteral("keepsake")));
-        const qint64 purged = store.add(dictation(QStringLiteral("zqx")));
-        const qint64 removed = store.add(dictation(QStringLiteral("jvq")));
-        store.add(dictation(QStringLiteral("kxw"), QStringLiteral("Slack"), 3 * 24 * 60));
-        store.add(dictation(QStringLiteral("wqj"), QStringLiteral("Slack"), 40 * 24 * 60));
+        QFETCH(bool, scanAfterTrigram);
+        const QString path = databasePath(scanAfterTrigram ? QStringLiteral("erased-scan.sqlite3")
+                                                           : QStringLiteral("erased.sqlite3"));
+        auto store = std::make_unique<HistoryStore>(path, QString());
+        QVERIFY(store->searchesByTrigram());
+        store->add(dictation(QStringLiteral("keepsake")));
+        const qint64 purged = store->add(dictation(QStringLiteral("zqx")));
+        const qint64 removed = store->add(dictation(QStringLiteral("jvq")));
+        store->add(dictation(QStringLiteral("kxw"), QStringLiteral("Slack"), 3 * 24 * 60));
+        store->add(dictation(QStringLiteral("wqj"), QStringLiteral("Slack"), 40 * 24 * 60));
+        const auto scanOnly = qScopeGuard([] { qunsetenv("SPEECHER_HISTORY_WITHOUT_TRIGRAM"); });
+        if (scanAfterTrigram) {
+            store.reset();
+            qputenv("SPEECHER_HISTORY_WITHOUT_TRIGRAM", "1");
+            store = std::make_unique<HistoryStore>(path, QString());
+            QVERIFY(!store->searchesByTrigram());
+        }
 
-        QVERIFY(store.markDeleted(purged));
-        store.purgeDeleted();
-        QVERIFY(store.remove(removed));
-        QVERIFY(store.clear(kNow.addDays(-4), kNow.addDays(-2), true));
-        store.prune(kNow, HistorySettings{HistoryKeep::Text, 30, -1});
+        QVERIFY(store->markDeleted(purged));
+        store->purgeDeleted();
+        QVERIFY(store->remove(removed));
+        QVERIFY(store->clear(kNow.addDays(-4), kNow.addDays(-2), true));
+        store->prune(kNow, HistorySettings{HistoryKeep::Text, 30, -1});
 
         QByteArray bytes;
         for (const QString &file : {path, path + QStringLiteral("-wal")}) {
@@ -536,6 +555,35 @@ private slots:
         QVERIFY(!store.entry(id));
         QVERIFY(store.lines(id).isEmpty());
         QVERIFY(QFile::exists(file.fileName()));
+    }
+
+    void recoveryReconcilesEveryTranscriptLine()
+    {
+        HistoryStore store(databasePath(QStringLiteral("reconcile.sqlite3")), QString());
+        const QString path = m_dir.filePath(QStringLiteral("reconcile.md"));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("[00:00:01] me: first\n[00:00:02] me: second\n[00:00:03] me: third\n");
+        file.close();
+
+        HistoryEntry recording;
+        recording.kind = HistoryKind::Recording;
+        recording.startedAt = kNow.addSecs(-60);
+        recording.transcriptPath = path;
+        recording.kept = HistoryKeep::Text;
+        const qint64 id = store.add(recording);
+        QVERIFY(id > 0);
+        QVERIFY(store.appendLine(id, {1000, QStringLiteral("me"), QStringLiteral("first")}));
+        QVERIFY(store.appendLine(id, {3000, QStringLiteral("me"), QStringLiteral("third")}));
+
+        store.finishUnfinishedRecordings();
+
+        QCOMPARE(store.lines(id), (QList<HistoryLine>{{1000, QStringLiteral("me"), QStringLiteral("first")},
+                                                       {2000, QStringLiteral("me"), QStringLiteral("second")},
+                                                       {3000, QStringLiteral("me"), QStringLiteral("third")}}));
+        const HistoryEntry recovered = *store.entry(id);
+        QCOMPARE(recovered.text, std::optional(QStringLiteral("first\nsecond\nthird")));
+        QCOMPARE(recovered.stats.finishedAt, QFileInfo(file).lastModified());
     }
 
     // An edit to a Recording's file, from Open file, comes back into its
