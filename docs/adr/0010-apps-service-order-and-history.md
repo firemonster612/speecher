@@ -56,7 +56,9 @@ for a release, for a downgrade; deleting those keys later touches that file
 alone.
 
 **History in SQLite.** History (`core/history/HistoryStore`) is one SQLite
-file, `history.sqlite3`, opened through Qt Sql's SQLite driver, with an FTS5
+file, `history.sqlite3`, written as Speecher runs by `app/HistoryKeeper`
+(dictations, files and Recordings, retention, Paste Again's text) and
+opened through Qt Sql's SQLite driver, with an FTS5
 trigram index for search and an `instr` scan where the SQLite lacks the
 trigram tokenizer (before 3.34). What Speecher Keeps (Nothing, Stats, Text,
 Text and audio) decides what each entry holds when it is written, lowered

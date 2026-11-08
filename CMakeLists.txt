@@ -653,6 +653,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
+  src/app/HistoryKeeper.cpp
   src/app/PasteAgain.cpp
   src/app/RefineAgain.cpp
   src/app/ProviderAvailability.cpp
@@ -694,6 +695,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/LocalSetup.h
   src/app/NetworkReachability.h
+  src/app/HistoryKeeper.h
   src/app/PasteAgain.h
   src/app/RefineAgain.h
   src/app/ProviderAvailability.h

@@ -10,7 +10,6 @@
 #include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/DictationRecord.h"
-#include "core/history/HistoryEntry.h"
 #include "core/ShortcutBinding.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/RunOverrides.h"
@@ -26,10 +25,10 @@ enum class DictationState;
 class FileTranscriptionSession;
 class Accounts;
 class TranscribeQueue;
-struct TranscribeFileResult;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
+class HistoryKeeper;
 class HistoryStore;
 class PasteAgain;
 class SeenApps;
@@ -261,13 +260,6 @@ signals:
 private:
     bool cancelRecordingStart();
     void forgetLastRecord();
-    void keepInHistory(const HistoryEntry &entry, bool intoPasswordField);
-    void keepFileInHistory(const TranscribeFileResult &result);
-    // A Recording is a History Entry while it runs: added as it starts, a
-    // line at a time, finished as it stops.
-    void keepRecordingInHistory();
-    // Retention, as of now.
-    void pruneHistory();
     void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
@@ -305,8 +297,7 @@ private:
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
     HistoryStore *m_history = nullptr;
-    // History runs on a seed, in memory, whose entries retention leaves be.
-    bool m_historySeeded = false;
+    HistoryKeeper *m_historyKeeper = nullptr;
     SeenApps *m_seenApps = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;
@@ -316,14 +307,7 @@ private:
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pasteAgainShortcutBinder = nullptr;
     GlobalShortcutBinder *m_recordingShortcutBinder = nullptr;
-    qint64 m_recordingEntry = 0;
-    // Lines written while the recording starts, before its History Entry
-    // exists; started replays them into it, and a start that fails drops them.
-    QList<HistoryLine> m_startingRecordingLines;
     PasteAgain *m_pasteAgain = nullptr;
-    // The last dictation this run, for Paste Again: nullopt before the
-    // first, empty for one into a password field.
-    std::optional<QString> m_pasteAgainText;
     SessionKeyGrab *m_sessionKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
     IpcCommandHandler *m_ipcCommands = nullptr;

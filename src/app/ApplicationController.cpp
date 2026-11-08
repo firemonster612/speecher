@@ -3,6 +3,7 @@
 #include "app/AccessibilityMonitor.h"
 #include "app/Accounts.h"
 #include "app/AppFrontEnd.h"
+#include "app/HistoryKeeper.h"
 #include "app/IpcCommandHandler.h"
 #include "app/LocalSetup.h"
 #include "app/NetworkReachability.h"
@@ -40,7 +41,6 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEventLoop>
-#include <QFileInfo>
 #include <QGuiApplication>
 #include <QStandardPaths>
 #include <QTimer>
@@ -49,7 +49,6 @@
 #endif
 
 #include <algorithm>
-#include <limits>
 #include <utility>
 
 namespace speecher {
@@ -282,7 +281,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     // screenshots repeatable.
     const QString insightsSeed = qEnvironmentVariable("SPEECHER_INSIGHTS_SEED");
     const QString historySeed = qEnvironmentVariable("SPEECHER_HISTORY_SEED");
-    const bool seeded = m_historySeeded = !insightsSeed.isEmpty() || !historySeed.isEmpty();
+    const bool seeded = !insightsSeed.isEmpty() || !historySeed.isEmpty();
     m_history = seeded ? new HistoryStore(QStringLiteral(":memory:"), QString(), this)
                        : new HistoryStore(dataFolder() + QStringLiteral("/history.sqlite3"),
                                           dataFolder() + QStringLiteral("/history/audio"), this);
@@ -299,23 +298,13 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_seenApps = new SeenApps(seeded ? QString() : dataFolder() + QStringLiteral("/seen-apps.json"), this);
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
-    connect(m_session, &DictationSession::dictationFinished, this, &ApplicationController::keepInHistory);
-    connect(m_fileTranscription, &FileTranscriptionSession::fileFinished, this,
-            [this](int, const TranscribeFileResult &result) { keepFileInHistory(result); });
-    keepRecordingInHistory();
-    // Retention runs at start, hourly, after each entry and as it changes;
-    // a seed's entries keep their words.
-    if (!seeded) {
-        pruneHistory();
-        auto *hourly = new QTimer(this);
-        hourly->start(60 * 60 * 1000);
-        connect(hourly, &QTimer::timeout, this, &ApplicationController::pruneHistory);
-        connect(m_settings, &SettingsStore::snapshotApplied, this, [this](const AppSettings &previous) {
-            if (m_settings->dictationSnapshot().history != previous.history) {
-                pruneHistory();
-            }
-        });
-    }
+    m_historyKeeper = new HistoryKeeper(*m_history, *m_seenApps, *m_settings, *m_session, *m_fileTranscription,
+                                        *m_recording, seeded, this);
+    connect(m_historyKeeper, &HistoryKeeper::dictationKept, this, [this](const DictationRecord &record) {
+        m_lastRecord = record;
+        emit lastRecordChanged();
+    });
+    connect(m_historyKeeper, &HistoryKeeper::everythingCleared, this, &ApplicationController::forgetLastRecord);
     // The record describes the transcript Home shows, so it goes whenever
     // that transcript does: a new session starting (which drops the last
     // transcript, delivered or not) and a delivery. The session reports a
@@ -405,6 +394,7 @@ TranscribeQueue *ApplicationController::transcribeQueue()
     if (!m_transcribeQueue) {
         m_transcribeQueue = new TranscribeQueue(m_settings, m_providers, m_fileTranscription,
                                                 [this] { return fileTranscriptionRefusal(); }, this);
+        m_historyKeeper->setTranscribeQueue(m_transcribeQueue);
         connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, m_updates,
                 &UpdateController::resumePendingRestart);
         connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, this,
@@ -516,44 +506,7 @@ void ApplicationController::toggleRecording()
 
 qint64 ApplicationController::recordingHistoryId() const
 {
-    return m_recordingEntry;
-}
-
-void ApplicationController::keepRecordingInHistory()
-{
-    if (!m_historySeeded) {
-        m_history->finishUnfinishedRecordings();
-    }
-    connect(m_recording, &RecordingSession::started, this, [this](const QString &path, const QString &title) {
-        HistoryEntry entry;
-        entry.kind = HistoryKind::Recording;
-        entry.startedAt = QDateTime::currentDateTime();
-        entry.outcome = HistoryOutcome::Complete;
-        entry.title = title;
-        entry.transcriptPath = path;
-        entry.kept = HistoryKeep::Text;
-        m_recordingEntry = m_history->add(entry);
-        for (const HistoryLine &line : std::exchange(m_startingRecordingLines, {})) {
-            m_history->appendLine(m_recordingEntry, line);
-        }
-    });
-    connect(m_recording, &RecordingSession::lineWritten, this,
-            [this](qint64 atMs, const QString &speaker, const QString &text) {
-                if (m_recording->phase() == RecordingSession::Phase::Starting) {
-                    m_startingRecordingLines.append({atMs, speaker, text});
-                    return;
-                }
-                m_history->appendLine(m_recordingEntry, {atMs, speaker, text});
-            });
-    connect(m_recording, &RecordingSession::phaseChanged, this, [this] {
-        if (m_recording->phase() == RecordingSession::Phase::Off) {
-            m_startingRecordingLines.clear();
-        }
-    });
-    connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
-        m_history->finishRecording(m_recordingEntry, QDateTime::currentDateTime(), status.durationMs,
-                                   recordingEnd(status), status.audioPath);
-    });
+    return m_historyKeeper->recordingHistoryId();
 }
 
 HistoryStore *ApplicationController::history() const
@@ -561,67 +514,9 @@ HistoryStore *ApplicationController::history() const
     return m_history;
 }
 
-void ApplicationController::keepInHistory(const HistoryEntry &entry, bool intoPasswordField)
-{
-    m_pasteAgainText = intoPasswordField ? QString() : m_session->lastTranscript();
-    if (entry.kept == HistoryKeep::Nothing) {
-        return;
-    }
-    m_history->add(entry);
-    if (!m_historySeeded) {
-        pruneHistory();
-    }
-    if (entry.outcome == HistoryOutcome::Undelivered) {
-        return;
-    }
-    m_seenApps->record(entry.stats);
-    m_lastRecord = entry.stats;
-    emit lastRecordChanged();
-}
-
-// A file the Transcribe page finished, as an entry of kind File: its text
-// while History keeps text, never its audio, which stays in the file.
-void ApplicationController::keepFileInHistory(const TranscribeFileResult &result)
-{
-    const HistoryKeep keeps = std::min(m_settings->dictationSnapshot().history.keeps, HistoryKeep::Text);
-    if (result.failed() || keeps == HistoryKeep::Nothing) {
-        return;
-    }
-    HistoryEntry entry;
-    entry.kind = HistoryKind::File;
-    entry.outcome = HistoryOutcome::Done;
-    entry.kept = keeps;
-    entry.title = QFileInfo(result.path).fileName();
-    entry.sourcePath = result.path;
-    entry.transcriptPath = result.savedPath;
-    entry.text = result.refined;
-    entry.rawText = result.raw;
-    entry.stats.finishedAt = QDateTime::currentDateTime();
-    entry.stats.words = countWords(result.refined);
-    entry.stats.profile = m_fileTranscription->plan().profile.profile;
-    if (m_transcribeQueue) {
-        const qint64 durationMs = m_transcribeQueue->listedFile(result.path).durationMs;
-        entry.stats.audioMs = int(std::clamp<qint64>(durationMs, 0, std::numeric_limits<int>::max()));
-    }
-    m_history->add(entry);
-    if (!m_historySeeded) {
-        pruneHistory();
-    }
-}
-
 QString ApplicationController::pasteAgainText() const
 {
-    if (m_pasteAgainText) {
-        return *m_pasteAgainText;
-    }
-    if (m_settings->dictationSnapshot().history.keeps < HistoryKeep::Text) {
-        return {};
-    }
-    HistoryQuery newest;
-    newest.kinds = {HistoryKind::Dictation, HistoryKind::Edit};
-    newest.limit = 1;
-    const QList<HistoryHit> hits = m_history->search(newest);
-    return hits.isEmpty() ? QString() : hits.first().entry.text.value_or(QString());
+    return m_historyKeeper->pasteAgainText();
 }
 
 void ApplicationController::pasteAgain(const QString &text)
@@ -635,11 +530,6 @@ void ApplicationController::pasteAgain(const QString &text)
         m_frontEnd->hideMainWindow();
     }
     m_pasteAgain->paste(words);
-}
-
-void ApplicationController::pruneHistory()
-{
-    m_history->prune(QDateTime::currentDateTime(), m_settings->dictationSnapshot().history);
 }
 
 SeenApps *ApplicationController::seenApps() const
@@ -664,16 +554,7 @@ const std::optional<DictationRecord> &ApplicationController::lastRecord() const
 
 bool ApplicationController::clearHistory(const QDateTime &from, const QDateTime &to, bool withStats)
 {
-    // The apps first: a file that won't go leaves History as it was.
-    const bool everything = withStats && !from.isValid() && !to.isValid();
-    if ((everything && !m_seenApps->clear()) || !m_history->clear(from, to, withStats)) {
-        return false;
-    }
-    if (everything) {
-        forgetLastRecord();
-        m_pasteAgainText.reset();
-    }
-    return true;
+    return m_historyKeeper->clear(from, to, withStats);
 }
 
 void ApplicationController::forgetLastRecord()
