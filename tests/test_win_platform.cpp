@@ -839,7 +839,6 @@ private slots:
         QVERIFY(target.role.contains(QStringLiteral("document"), Qt::CaseInsensitive));
 
         OutputSettings output;
-        output.pasteRules = {};
         const QString inserted = QStringLiteral("Speecher Windows delivery verified");
         TextDelivery delivery(&targetProvider);
         const DeliveryResult result = test::deliverAndWait(
