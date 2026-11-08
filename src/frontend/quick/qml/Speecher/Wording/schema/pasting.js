@@ -48,19 +48,15 @@ var switchState = { on: "On", off: "Off" };
 // and the Pasting page say it.
 var outcomes = { delivers: "Works", clipboard: "Your words stay on the clipboard", nothing: "Nothing can deliver your words" };
 
-// The line under each step's help about how it works here. Wayland's
-// clipboard tools come up only in a Wayland session.
-function details(step, wayland) {
+// The sentence after a step's help about how it works here, where its
+// needs' status lines don't already say it.
+function details(step) {
     switch (step) {
     case "insert":
         return mac ? "Needs Accessibility under Privacy & Security."
              : windows ? "Fields that don't accept it get the paste keys instead." : "";
     case "press":
-        return mac ? "Needs the same Accessibility permission as inserting."
-             : windows ? "Windows presses the keys for Speecher."
-             : "Speecher's virtual keyboard presses the keys." + (wayland ? " Copying needs Speecher's clipboard helper or wl-copy." : "");
-    case "keep":
-        return linux && wayland ? "This needs Speecher's clipboard helper or wl-copy, and with it off, wl-paste to save your clipboard first." : "";
+        return windows ? "Windows presses the keys for Speecher." : "";
     }
     return "";
 }
@@ -151,15 +147,12 @@ var rows = [
       keywords: "direct insertion type accessibility at-spi ui automation delivery output" },
     { id: "pressPasteKeys", page: "pasting", section: "Steps", kind: "custom", step: "press",
       label: stepLabels.press, icon: "keyboard",
-      help: "Puts your words on the clipboard and presses " + pasteKeys + " when insertion is off, unavailable or rejected. "
-          + "With Keep off, Speecher puts your clipboard back afterwards, so this step alone pastes and leaves your clipboard as it was.",
+      help: "Copies your words and presses " + pasteKeys + ". With Keep off, your clipboard goes back to what it was.",
       keywords: "paste keys ctrl+v cmd+v virtual keyboard ydotool shortcut delivery output" },
     { id: "keepOnClipboard", page: "pasting", section: "Steps", kind: "custom", step: "keep",
       label: stepLabels.keep, icon: "clipboard",
-      help: "Your words stay on the clipboard after delivery, which is how you get them when nothing else delivers.",
-      offHelp: "Speecher puts your previous clipboard back after a paste, or when the keys never went out. "
-          + "So with Insert off and Press on, it pastes and your clipboard ends up as it was. "
-          + "A paste it can't confirm gets a moment to land before your clipboard goes back.",
+      help: "Leaves your words on the clipboard, so they're there when nothing else delivers.",
+      offHelp: "After a paste, Speecher puts back what was on your clipboard.",
       keywords: "clipboard copy restore previous keep" },
     { id: "outputFormat", page: "pasting", section: "Options", kind: "choice",
       label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it. Inserting through accessibility always writes plain text.",

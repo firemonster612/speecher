@@ -7,11 +7,12 @@ import Speecher.Wording
 import Speecher.App
 
 // One delivery step: its switch, and before it each thing the step relies
-// on here, one status line apiece (NeedStatus). A need an earlier step
-// shows too keeps its fix there: here it shows its state while it is there,
-// and missing says it needs the same one. A step that is on and waits for needs
-// names them all first in its note, with how to get a missing tool. The
-// last step on can't be turned off, and says why. Items declared inside go
+// on here, one status line apiece (NeedStatus), lined up with their fixes
+// in a column of their own. A need an earlier step shows too keeps its fix
+// there: here it shows its state while it is there, and missing says it
+// needs the same one. The note is the step's short help, then how to get a
+// missing tool, which has no fix button. The last step on can't be turned
+// off, and says why. Items declared inside go
 // between the needs and the switch. An App's or App Type's own steps show
 // the same way through ownSteps.
 SchemaRow {
@@ -39,12 +40,21 @@ SchemaRow {
         .filter(c => c).map(c => Health.failure(Health.find(System.checks, c))).find(f => f) || ""
     default property alias extra: extras.data
 
-    note: [on && _waiting.length ? Schema.pasting.waitingFor(_waiting) + "." : "",
+    note: [_failure || (on ? spec.help : spec.offHelp || spec.help)
+               .replace(Schema.pasting.pasteKeys, Schema.pasting.keysLabel(keys)),
            on ? _waiting.map(n => Schema.pasting.needs[n].repair || "").filter(s => s).join(" ") : "",
-           _failure || (on ? spec.help : spec.offHelp || spec.help)
-               .replace(Schema.pasting.pasteKeys + " when", Schema.pasting.keysLabel(keys) + " when"),
-           Schema.pasting.details(spec.step, System.waylandSession),
+           Schema.pasting.details(spec.step),
            _last ? "It's the only step on, so it stays on." : ""].filter(s => s).join(" ")
+    // The widest need's status, which every status line takes so the fixes
+    // line up.
+    readonly property real _statusWidth: {
+        let widest = 0
+        for (let i = 0; i < needRows.count; ++i) {
+            const need = needRows.itemAt(i)
+            if (need) widest = Math.max(widest, need.naturalStatusWidth)
+        }
+        return widest
+    }
 
     Row {
         spacing: Theme.space3
@@ -53,10 +63,11 @@ SchemaRow {
             spacing: Theme.space1
             anchors.verticalCenter: parent.verticalCenter
             Repeater {
+                id: needRows
                 model: row._shown
                 NeedStatus {
                     required property string modelData
-                    anchors.right: parent ? parent.right : undefined
+                    statusWidth: row._statusWidth
                     needId: modelData
                     there: !row._waiting.includes(modelData)
                     shared: row._earlier.includes(modelData)

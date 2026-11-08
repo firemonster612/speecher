@@ -1769,7 +1769,7 @@ private slots:
         // Each of its own steps explains itself as Pasting's does.
         QQuickItem *press = schemaRow(row->parentItem(), QStringLiteral("pressPasteKeys"));
         QVERIFY(press);
-        QVERIFY(press->property("help").toString().contains(QStringLiteral("Puts your words on the clipboard")));
+        QVERIFY(press->property("help").toString().contains(QStringLiteral("Copies your words and presses")));
         QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QString()));
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting, PastingChoice{});
         // Name and recognition can change in place, keeping the App.
