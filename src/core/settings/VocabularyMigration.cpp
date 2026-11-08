@@ -2,6 +2,7 @@
 
 #include "core/BindingProcessor.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/StoredJson.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
 #include <QJsonArray>
@@ -13,11 +14,6 @@ namespace speecher {
 namespace {
 
 constexpr int vocabularyMigrationVersion = 1;
-
-QJsonArray storedArray(const QSettings &settings, const QString &key)
-{
-    return QJsonDocument::fromJson(settings.value(key).toByteArray()).array();
-}
 
 QList<VocabularyEntry> legacyTerms(const QSettings &settings)
 {

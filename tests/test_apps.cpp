@@ -2,6 +2,7 @@
 // replaced, how Apps are stored, and the edits the Apps page makes.
 #include "common/test_suites.h"
 #include "common/apps_fixtures.h"
+#include "common/legacy_settings.h"
 
 #include "core/AppEdits.h"
 #include "core/SettingsStore.h"

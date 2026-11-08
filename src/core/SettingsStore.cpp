@@ -137,25 +137,6 @@ void migrateRefinementModels(QSettings &settings)
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
 }
 
-void migrateDeliverySteps(QSettings &settings)
-{
-    constexpr int currentMigrationVersion = 1;
-    if (settings.value(SettingsKeys::DeliveryStepsMigrationVersion).toInt() >= currentMigrationVersion) {
-        return;
-    }
-    settings.setValue(SettingsKeys::DeliveryStepsMigrationVersion, currentMigrationVersion);
-    if (!settings.contains(SettingsKeys::PasteRules) && !settings.contains(SettingsKeys::OutputMethod)
-        && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
-        return;
-    }
-    const DeliverySteps steps = legacyDeliverySteps(settings);
-    settings.setValue(SettingsKeys::InsertThroughAccessibility, steps.insert);
-    settings.setValue(SettingsKeys::PressPasteKeys, steps.press);
-    settings.setValue(SettingsKeys::KeepOnClipboard, steps.keep);
-    settings.remove(SettingsKeys::OutputMethod);
-    settings.remove(SettingsKeys::RestoreClipboardAfterTyping);
-}
-
 // What Speecher Keeps replaces Keep insights, which promised "never text or
 // audio". So an existing install, whether or not it finished setup, keeps
 // stats (nothing where insights were off) until the person chooses text; a

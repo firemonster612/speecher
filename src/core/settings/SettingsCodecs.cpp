@@ -1094,10 +1094,11 @@ QString SettingsCodecs::legacyAnthropicEffort() const
 
 DeliverySteps SettingsCodecs::deliverySteps() const
 {
+    const DeliverySteps unset;
     const DeliverySteps steps{
-        .insert = value(SettingsKeys::InsertThroughAccessibility, true).toBool(),
-        .press = value(SettingsKeys::PressPasteKeys, true).toBool(),
-        .keep = value(SettingsKeys::KeepOnClipboard, true).toBool(),
+        .insert = value(SettingsKeys::InsertThroughAccessibility, unset.insert).toBool(),
+        .press = value(SettingsKeys::PressPasteKeys, unset.press).toBool(),
+        .keep = value(SettingsKeys::KeepOnClipboard, unset.keep).toBool(),
     };
     // A file edited by hand to turn every step off still delivers somehow.
     return steps.any() ? steps : DeliverySteps{.insert = false, .press = false, .keep = true};

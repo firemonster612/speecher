@@ -1,8 +1,10 @@
 #include "core/settings/AppsMigration.h"
 
 #include "core/Apps.h"
+#include "core/DeliverySteps.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/StoredJson.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,29 +22,43 @@ namespace {
 // choices into steps and keys.
 constexpr int appsMigrationVersion = 2;
 
-QString scopeName(LegacyPasteRule::Scope scope)
+// How older releases' paste rules, and the first Apps settings, narrowed the
+// Delivery Steps.
+enum class PasteMethod {
+    // The steps as they are.
+    StandardPaste,
+    // The steps, pressing a terminal's paste keys.
+    TerminalPaste,
+    // The steps without the paste keys.
+    DirectInsert,
+    ClipboardOnly,
+};
+
+// A stored method's name; anything else reads as Standard paste.
+PasteMethod pasteMethodFromName(const QString &name)
 {
-    switch (scope) {
-    case LegacyPasteRule::Scope::Application:
-        return QStringLiteral("application");
-    case LegacyPasteRule::Scope::Category:
-        return QStringLiteral("category");
-    case LegacyPasteRule::Scope::Global:
-        break;
-    }
-    return QStringLiteral("global");
+    if (name == u"terminal_paste") return PasteMethod::TerminalPaste;
+    if (name == u"direct_insert") return PasteMethod::DirectInsert;
+    if (name == u"clipboard_only") return PasteMethod::ClipboardOnly;
+    return PasteMethod::StandardPaste;
 }
+
+// A paste rule as output/pasteRules stored it.
+struct LegacyPasteRule {
+    enum class Scope { Global, Category, Application };
+
+    Scope scope = Scope::Global;
+    // An app type's name, or an application id.
+    QString match;
+    PasteMethod method = PasteMethod::StandardPaste;
+    bool enabled = true;
+};
 
 LegacyPasteRule::Scope scopeFromName(const QString &name)
 {
     if (name == u"application") return LegacyPasteRule::Scope::Application;
     if (name == u"category") return LegacyPasteRule::Scope::Category;
     return LegacyPasteRule::Scope::Global;
-}
-
-QJsonArray storedArray(const QSettings &settings, const QString &key)
-{
-    return QJsonDocument::fromJson(settings.value(key).toByteArray()).array();
 }
 
 // What an App migrated from a bare id or match text is called: the text, or
@@ -79,16 +95,17 @@ AppEntry &appForId(QList<AppEntry> &apps, const QString &id)
             }
         }
     }
-    apps.append({newAppId(idsOf(apps)), nameFrom(id), {}, {{AppMatchKind::Id, id.trimmed()}}, {}, {}, {}});
+    apps.append({.id = newAppId(idsOf(apps)), .name = nameFrom(id), .matches = {{AppMatchKind::Id, id.trimmed()}}});
     return apps.last();
 }
 
 // The Pasting page's steps as stored, after migrateDeliverySteps.
 DeliverySteps storedSteps(const QSettings &settings)
 {
-    return {settings.value(SettingsKeys::InsertThroughAccessibility, true).toBool(),
-            settings.value(SettingsKeys::PressPasteKeys, true).toBool(),
-            settings.value(SettingsKeys::KeepOnClipboard, true).toBool()};
+    const DeliverySteps unset;
+    return {settings.value(SettingsKeys::InsertThroughAccessibility, unset.insert).toBool(),
+            settings.value(SettingsKeys::PressPasteKeys, unset.press).toBool(),
+            settings.value(SettingsKeys::KeepOnClipboard, unset.keep).toBool()};
 }
 
 // The steps a delivery took under output/method and
@@ -242,8 +259,10 @@ void migratePastingChoices(QSettings &settings)
     AppsSettingsCodec::store(settings, apps);
 }
 
-} // namespace
-
+// output/pasteRules as stored. Nothing stored, no list or an empty one
+// reads as the rules that were the default, as older releases read them:
+// Terminals' Terminal paste and a global Standard paste. A list without a
+// global rule turned on copied only, everywhere no other rule applied.
 QList<LegacyPasteRule> legacyPasteRules(const QSettings &settings)
 {
     const QJsonDocument document = QJsonDocument::fromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
@@ -265,24 +284,15 @@ QList<LegacyPasteRule> legacyPasteRules(const QSettings &settings)
     return rules.isEmpty() ? defaults : rules;
 }
 
+// The steps a delivery took under the global paste rule, output/method and
+// output/restoreClipboardAfterTyping as older releases stored them: the
+// Pasting page's steps once migrated.
 DeliverySteps legacyDeliverySteps(const QSettings &settings)
 {
     return *narrowedBy(globalPasteMethod(legacyPasteRules(settings)), unnarrowedSteps(settings)).steps;
 }
 
-void storeLegacyPasteRules(QSettings &settings, const QList<LegacyPasteRule> &rules)
-{
-    QJsonArray array;
-    for (const LegacyPasteRule &rule : rules) {
-        array.append(QJsonObject{
-            {QStringLiteral("scope"), scopeName(rule.scope)},
-            {QStringLiteral("match"), rule.match.trimmed()},
-            {QStringLiteral("method"), pasteMethodName(rule.method)},
-            {QStringLiteral("enabled"), rule.enabled},
-        });
-    }
-    settings.setValue(SettingsKeys::PasteRules, QJsonDocument(array).toJson(QJsonDocument::Compact));
-}
+} // namespace
 
 void migrateApps(QSettings &settings)
 {
@@ -338,7 +348,7 @@ void migrateApps(QSettings &settings)
         if (match.isEmpty() || (category == AppCategory::Unknown && profile.isEmpty())) {
             continue;
         }
-        AppEntry entry{newAppId(idsOf(apps.apps)), nameFrom(match), {}, {{AppMatchKind::Name, match}}, {}, {}, {}};
+        AppEntry entry{.id = newAppId(idsOf(apps.apps)), .name = nameFrom(match), .matches = {{AppMatchKind::Name, match}}};
         if (category != AppCategory::Unknown) {
             entry.type = category;
         }
@@ -386,6 +396,25 @@ void migrateApps(QSettings &settings)
         }
     }
     AppsSettingsCodec::store(settings, apps);
+}
+
+void migrateDeliverySteps(QSettings &settings)
+{
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::DeliveryStepsMigrationVersion).toInt() >= currentMigrationVersion) {
+        return;
+    }
+    settings.setValue(SettingsKeys::DeliveryStepsMigrationVersion, currentMigrationVersion);
+    if (!settings.contains(SettingsKeys::PasteRules) && !settings.contains(SettingsKeys::OutputMethod)
+        && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
+        return;
+    }
+    const DeliverySteps steps = legacyDeliverySteps(settings);
+    settings.setValue(SettingsKeys::InsertThroughAccessibility, steps.insert);
+    settings.setValue(SettingsKeys::PressPasteKeys, steps.press);
+    settings.setValue(SettingsKeys::KeepOnClipboard, steps.keep);
+    settings.remove(SettingsKeys::OutputMethod);
+    settings.remove(SettingsKeys::RestoreClipboardAfterTyping);
 }
 
 } // namespace speecher

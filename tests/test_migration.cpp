@@ -20,7 +20,6 @@
 #include "core/ProviderChain.h"
 #include "core/history/HistoryStore.h"
 #include "core/LocalModelCatalog.h"
-#include "core/PasteMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"

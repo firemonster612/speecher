@@ -2,6 +2,7 @@
 #include "common/test_doubles.h"
 #include "common/delivery_waits.h"
 #include "common/apps_fixtures.h"
+#include "common/legacy_settings.h"
 #include "common/vocabulary_entries.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
@@ -25,7 +26,7 @@
 #endif
 
 using namespace speecher::test;
-using Scope = speecher::LegacyPasteRule::Scope;
+using Scope = speecher::test::LegacyPasteRule::Scope;
 
 namespace {
 
@@ -2048,11 +2049,11 @@ fi
             {Scope::Application, QStringLiteral("org.kde.kate"), PasteMethod::TerminalPaste, true},
         };
         if (!globalRule.isEmpty()) {
-            rules.append({Scope::Global, QString(),
-                          pasteMethodFromName(globalRule == u"off" ? QStringLiteral("standard_paste") : globalRule),
+            rules.append({Scope::Global, QString(), globalRule == u"off" ? PasteMethod::StandardPaste : globalRule,
                           globalRule != u"off"});
         }
         storeLegacyPasteRules(stored, rules);
+        const QVariant storedRules = stored.value(SettingsKeys::PasteRules);
 
         migrateDeliverySteps(stored);
 
@@ -2063,7 +2064,7 @@ fi
         QVERIFY(!stored.contains(QStringLiteral("output/method")));
         QVERIFY(!stored.contains(QStringLiteral("output/restoreClipboardAfterTyping")));
         // The rules stay as they were, for a downgrade.
-        QCOMPARE(legacyPasteRules(stored), rules);
+        QCOMPARE(stored.value(SettingsKeys::PasteRules), storedRules);
 
         // Once migrated, it leaves the steps alone.
         stored.setValue(QStringLiteral("output/pressPasteKeys"), !steps.press);

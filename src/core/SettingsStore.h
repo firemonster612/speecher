@@ -19,16 +19,6 @@ bool migrateSettingsIdentity(QSettings &newSettings,
 // Moves a saved refinement model that still names a replaced default to the
 // current default. Runs once, so choosing the old model again later sticks.
 void migrateRefinementModels(QSettings &settings);
-// Delivery was once a mode (output/method), a global paste rule and a
-// clipboard restore switch; the three delivery steps replace all of them.
-// Each stored choice turns off the steps it never used: Automatic keeps them
-// all, a keyboard-only method turns Insert off, Direct insertion turns Press
-// off, a clipboard method or a Clipboard only global rule turns both off,
-// and restoring the clipboard turns Keep off (legacyDeliverySteps). Runs
-// once, as its marker records, and only changes a file that stored one of
-// the three; it removes the method and the switch, and leaves the rules for
-// a downgrade. migrateApps (AppsMigration.h) runs before it.
-void migrateDeliverySteps(QSettings &settings);
 // Brings the settings an older Speecher saved up to date, before anything
 // reads them: the migrations above, in order, on the running instance's
 // store. Startup runs it once.

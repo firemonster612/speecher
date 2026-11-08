@@ -249,7 +249,6 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ServiceOrder.cpp
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
-  src/core/PasteMethod.cpp
   src/core/DeliverySteps.cpp
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
@@ -306,7 +305,6 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/PasteKeys.h
   src/core/DeliverySteps.h
   src/core/OutputFormat.h
-  src/core/PasteMethod.h
   src/core/ProviderAttemptIssue.h
   src/core/ProviderAttemptIssueText.h
   src/core/ProviderReadiness.h
@@ -318,6 +316,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
   src/core/settings/AppsMigration.h
+  src/core/settings/StoredJson.h
   src/core/settings/AppsSettingsCodec.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsFile.h
