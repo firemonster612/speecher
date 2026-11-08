@@ -8,8 +8,9 @@ import "HistoryWords.js" as W
 
 // A Recording's lines, a row each: when its text was finalised, who said it
 // and what, me in stronger ink than them. Used by History's reader and by
-// Recordings while a recording runs. Find highlights the lines that match and
-// steps through them with Return and Shift+Return. live follows new lines
+// Recordings while a recording runs. Find highlights the lines that hold any
+// part of it, parted as History's search parts it (quoted phrases whole),
+// and steps through them with Return and Shift+Return. live follows new lines
 // while the list is at its end and offers Jump to latest once scrolled up.
 // With audio, a line plays from just before its time, since a line's time is
 // when its text was finalised.
@@ -29,13 +30,16 @@ Column {
     readonly property bool _listModel: typeof model.get === "function"
     readonly property int count: _listModel ? model.count : model.length
     function lineAt(i) { return _listModel ? model.get(i) : model[i] }
-    // Indexes of the lines that hold what Find holds.
+    // What Find holds, as History's search parts it, each lower case.
+    readonly property var terms: History.searchTerms(find.text)
+    // Indexes of the lines that hold any of them, as History's results show
+    // a recording's lines.
     readonly property var matches: {
-        const query = find.text.trim().toLowerCase()
         const found = []
-        if (!query) return found
+        if (!terms.length) return found
         for (let i = 0; i < count; ++i) {
-            if (lineAt(i).text.toLowerCase().indexOf(query) >= 0) found.push(i)
+            const line = lineAt(i).text.toLowerCase()
+            if (terms.some(term => line.indexOf(term) >= 0)) found.push(i)
         }
         return found
     }
@@ -58,17 +62,23 @@ Column {
         following = true
         list.positionViewAtEnd()
     }
-    // Text with each part that Find holds in bold, every piece escaped.
+    // Text with each part that Find holds in bold, every piece escaped;
+    // parts that overlap are one.
     function marked(text) {
-        const query = find.text.trim().toLowerCase()
-        if (!query) return RichText.escape(text)
-        let out = ""
-        let rest = text
-        for (let at = rest.toLowerCase().indexOf(query); at >= 0; at = rest.toLowerCase().indexOf(query)) {
-            out += RichText.escape(rest.slice(0, at)) + "<b>" + RichText.escape(rest.slice(at, at + query.length)) + "</b>"
-            rest = rest.slice(at + query.length)
+        const lower = text.toLowerCase()
+        const bold = new Array(text.length).fill(false)
+        for (const term of terms) {
+            for (let at = lower.indexOf(term); at >= 0; at = lower.indexOf(term, at + 1)) bold.fill(true, at, at + term.length)
         }
-        return out + RichText.escape(rest)
+        let out = ""
+        for (let at = 0; at < text.length;) {
+            let end = at
+            while (end < text.length && bold[end] === bold[at]) ++end
+            const run = RichText.escape(text.slice(at, end))
+            out += bold[at] ? "<b>" + run + "</b>" : run
+            at = end
+        }
+        return out
     }
 
     spacing: Theme.space2

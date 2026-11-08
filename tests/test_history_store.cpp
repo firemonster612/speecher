@@ -496,6 +496,43 @@ private slots:
         QVERIFY(QFile::exists(file.fileName()));
     }
 
+    // An edit to a Recording's file, from Open file, comes back into its
+    // lines and search; a file that isn't lines any more leaves them be.
+    void anEditedRecordingFileIsTakenBackIn()
+    {
+        HistoryStore store(QStringLiteral(":memory:"), QString());
+        const QString path = m_dir.filePath(QStringLiteral("edited.md"));
+        const auto write = [&path](const QByteArray &text, int laterSecs) {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            file.write(text);
+            QVERIFY(file.flush());
+            QVERIFY(file.setFileTime(QDateTime::currentDateTime().addSecs(laterSecs), QFileDevice::FileModificationTime));
+        };
+        write("[00:00:04] me: The uploader retires after a 403\n", 0);
+        HistoryEntry recording;
+        recording.kind = HistoryKind::Recording;
+        recording.startedAt = kNow;
+        recording.transcriptPath = path;
+        recording.kept = HistoryKeep::Text;
+        const qint64 id = store.add(recording);
+        store.appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("The uploader retires after a 403")});
+        QVERIFY(store.finishRecording(id, kNow.addSecs(60), 60000, {}, {}));
+        QVERIFY(store.syncRecordingFile(id));
+
+        write("[00:00:04] me: The uploader retries after a 403\n\n[00:01:02] them: Since Tuesday: every time.\n", 60);
+        QVERIFY(store.syncRecordingFile(id));
+        QCOMPARE(store.lines(id), (QList<HistoryLine>{{4000, QStringLiteral("me"), QStringLiteral("The uploader retries after a 403")},
+                                                     {62000, QStringLiteral("them"), QStringLiteral("Since Tuesday: every time.")}}));
+        QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("retries")))),
+                 QStringList{QStringLiteral("The uploader retries after a 403\nSince Tuesday: every time.")});
+        QCOMPARE(store.entry(id)->stats.words, 10);
+
+        write("# Notes\nSee the board.\n", 120);
+        QVERIFY(!store.syncRecordingFile(id));
+        QCOMPARE(store.lines(id).size(), 2);
+    }
+
     // A second of tone goes in as it is heard and comes out a second long,
     // under its final name once the encoder is done.
     void audioRoundTrips()

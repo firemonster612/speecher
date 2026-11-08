@@ -9,9 +9,9 @@ var text = {
         { id: "hour", label: "Last hour" },
         { id: "today", label: "Today" },
         { id: "7d", label: "Last 7 days" },
-        { id: "all", label: "Everything" }
+        { id: "all", label: "All dictations and files" }
     ],
-    clearDetail: "Their text and audio are deleted from this computer. Home keeps counting them unless you check below.",
+    clearDetail: "Their text and audio are deleted from this computer. Audio files you transcribed and their saved transcripts stay where they are, and so do recordings. Home keeps counting them unless you check below.",
     alsoStats: "Also delete their stats",
     clearConfirm: "Delete",
     clearFailed: "Speecher couldn't clear History. Try again.",
@@ -38,18 +38,19 @@ var text = {
     clearFilters: "Clear filters",
 
     offTitle: "History is off",
-    offText: "Speecher keeps nothing about your dictations. Recordings you start still save their transcripts.",
+    offText: "Speecher keeps nothing about your dictations or files. Recordings you start still keep their transcripts here.",
     statsTitle: "Speecher keeps stats, not words",
     statsText: "Home counts your dictations. Keep their text to find and copy them here.",
     keepText: "Keep text",
     keepTextQuestion: "Keep what you dictate?",
     keepTextConfirm: "Keep text",
-    settings: "What Speecher keeps",
+    settings: "Privacy & data",
+    change: "Change in Privacy & data",
     emptyTitle: "Nothing here yet",
     emptyText: "What you dictate, transcribe or record shows here.",
 
     refined: "Refined",
-    spoken: "Spoken",
+    spoken: "As spoken",
     copy: "Copy",
     copied: "Copied",
     pasteAgain: "Paste again",
@@ -65,6 +66,13 @@ var text = {
     refining: "Refining…",
     keepThis: "Keep this",
     refineFailed: "Couldn't refine it again.",
+    removeFromHistory: "Remove from History",
+    removed: "Removed from History",
+    openTranscript: "Open transcript",
+    showAudio: "Show audio file",
+    transcribeAgain: "Transcribe again",
+    fileStays: "Removing it from History leaves the audio file and its saved transcript where they are.",
+    sourceMissing: "The audio file was moved or deleted, so it can't be transcribed again from here.",
     findInRecording: "Find in this recording…",
     previous: "Previous match",
     next: "Next match",
@@ -83,9 +91,38 @@ var text = {
     showInFolder: "Show in folder",
     back: "All of History",
     fileMissing: "The transcript file was moved or deleted. History still has its lines.",
+    fileDiverges: "The transcript file was changed into something other than its lines, so History shows them as they were recorded.",
     deleteRecording: "Delete this recording?",
     deleteRecordingDetail: "Its transcript file stays unless you check below.",
-    alsoDeleteFile: "Also delete the transcript file and its audio"
+    alsoDeleteFile: "Also delete the transcript file and its audio",
+    tryAgain: "Try again",
+    removeOnly: "Remove from History only"
+}
+
+// Why a Recording's files didn't go, and that it stays until they do.
+function filesStayed(files) {
+    const names = files.map(f => f.split(/[\\/]/).pop())
+    return "Speecher couldn't delete " + names.join(" and ") + ". The recording stays in History until "
+        + (files.length > 1 ? "they're" : "it's") + " gone, or you remove it from History only."
+}
+
+// What a finished Recording missed and how it ended, a sentence each, the
+// worst first: "Them stopped at 00:12:31: Connection reset.", "2 sentences
+// weren't transcribed.", "Stopped after 30 minutes of silence."
+function endingNotes(ending) {
+    if (!ending || !ending.reason) return []
+    const notes = []
+    const speaker = s => s === "me" ? "Your side" : s === "them" ? "The call audio" : s
+    for (const stop of ending.streamStops || [])
+        notes.push(speaker(stop.speaker) + " stopped at " + lineClock(stop.atMs) + (stop.problem ? ": " + stop.problem.replace(/\.$/, "") : "") + ".")
+    if (ending.lostAudioMs > 0) notes.push(duration(ending.lostAudioMs) + " of audio was lost while a side reconnected.")
+    if (ending.missedUtterances > 0)
+        notes.push(ending.missedUtterances === 1 ? "1 sentence wasn't transcribed." : ending.missedUtterances + " sentences weren't transcribed.")
+    if (ending.unwrittenLines > 0)
+        notes.push(ending.unwrittenLines === 1 ? "1 line couldn't be written to the file." : ending.unwrittenLines + " lines couldn't be written to the file.")
+    if (ending.audioError) notes.push("The transcript was saved, but its audio couldn't be: " + ending.audioError.replace(/\.$/, "") + ".")
+    if (ending.reason === "interrupted") notes.push("Speecher quit while it was recording, so it ends there.")
+    return notes
 }
 
 // A Recording's name: its own, or when it started, "Call at 10:00".
@@ -103,11 +140,13 @@ function lineClock(ms) {
     return two(Math.floor(s / 3600)) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60)
 }
 
-// The reader's line under its title: "Recording, Thursday 10:00 to 10:42".
+// The reader's line under its title: "Recording, Thursday 10:00 to 10:42",
+// and how it stopped where it wasn't by hand: ", stopped after silence".
 function readerDetail(r, today) {
     const day = dayHeading(r.day, today)
     const span = Qt.formatTime(r.startedAt, "HH:mm") + (r.live ? "" : " to " + Qt.formatTime(r.finishedAt, "HH:mm"))
-    return text.recording + ", " + day + " " + span
+    const silence = r.ending && r.ending.reason === "silence" ? ", stopped after silence" : ""
+    return text.recording + ", " + day + " " + span + silence
 }
 
 // "Speecher keeps it on this computer for 90 days, then deletes the words."
@@ -116,15 +155,30 @@ function keepTextDetail(textDays) {
                         : "Speecher keeps it on this computer until you delete it."
 }
 
-// The line under the page's title: what History keeps now.
+// The line under the page's title: what History keeps of dictations and
+// files now, then of recordings, which keep theirs until deleted.
+// "Dictations and files: text for 90 days, no audio. Recordings: until you
+// delete them."
 function keeping(keeps, textDays, audioDays) {
-    if (keeps === "nothing") return "Keeping nothing new."
-    if (keeps === "stats") return "Keeping stats only, not your words."
+    const recordings = " Recordings: until you delete them."
+    if (keeps === "nothing") return "Dictations and files: nothing new." + recordings
+    if (keeps === "stats") return "Dictations and files: stats only, not your words." + recordings
     const textFor = textDays > 0 ? "for " + textDays + " days" : "until you delete it"
-    if (keeps === "text") return "Keeping text " + textFor + ", no audio."
+    if (keeps === "text") return "Dictations and files: text " + textFor + ", no audio." + recordings
     const audio = audioDays < 0 || (textDays > 0 && audioDays >= textDays) ? "audio as long"
                 : "audio for " + (audioDays === 1 ? "a day" : audioDays + " days")
-    return "Keeping text " + textFor + ", " + audio + "."
+    return "Dictations and files: text " + textFor + ", " + audio + "." + recordings
+}
+
+// Setup's line on what History keeps, before the first dictation:
+// "Speecher keeps what you dictate on this computer for 90 days, so you can
+// find it in History."
+function firstRun(keeps, textDays) {
+    if (keeps === "nothing") return "Speecher keeps nothing about what you dictate."
+    if (keeps === "stats") return "Speecher counts your dictations for Home, and never keeps your words."
+    const days = textDays > 0 ? "for " + textDays + " days" : "until you delete it"
+    return "Speecher keeps what you dictate on this computer " + days + (keeps === "audio" ? ", with its audio" : "")
+        + ", so you can find it in History."
 }
 
 function matches(n) { return n === 1 ? "1 match" : _num(n) + " matches" }

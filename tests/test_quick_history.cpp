@@ -265,6 +265,48 @@ private slots:
         QCOMPARE(controller.history()->entry(id)->rawText, std::optional(QStringLiteral("um send the deck")));
     }
 
+    // Asked for, Refine again refines with Clean up my words off too; with a
+    // profile whose cleanup is None, it says why rather than handing the
+    // words back as if refined.
+    void refineAgainRunsWithCleanupOffAndSaysWhyItCant()
+    {
+        ApplicationController controller(true);
+        controller.providerRegistry()->registerRefinementProvider(
+            {QStringLiteral("openai"), QStringLiteral("ChatGPT")}, [](QObject *parent) {
+                auto *refiner = new test::FakeRefiner(parent);
+                refiner->autoComplete = true;
+                refiner->autoCompleteText = QStringLiteral("Could you send the deck?");
+                return refiner;
+            });
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.refinement.enabled = false;
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            return true;
+        });
+        HistoryEntry spoken = kept(QStringLiteral("um send the deck"));
+        spoken.rawText = QStringLiteral("um send the deck");
+        const qint64 id = controller.history()->add(spoken);
+        QuickHistory history(&controller);
+        QSignalSpy refined(&history, &QuickHistory::refined);
+        QSignalSpy failed(&history, &QuickHistory::refineFailed);
+        history.refineAgain(id, WritingProfile::Email);
+        QTRY_COMPARE(refined.count(), 1);
+        QCOMPARE(refined.first().last().toString(), QStringLiteral("Could you send the deck?"));
+
+        controller.settings()->edit([](AppSettings &draft) {
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == WritingProfile::Email) {
+                    profile.cleanupStrength = QStringLiteral("none");
+                }
+            }
+            return true;
+        });
+        history.refineAgain(id, WritingProfile::Email);
+        QTRY_COMPARE(failed.count(), 1);
+        QVERIFY(!failed.first().last().toString().isEmpty());
+        QCOMPARE(refined.count(), 1);
+    }
+
     void clearDeletesASpan()
     {
         ApplicationController controller(true);

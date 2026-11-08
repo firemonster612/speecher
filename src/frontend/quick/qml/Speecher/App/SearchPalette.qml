@@ -24,11 +24,13 @@ FocusScope {
     readonly property var results: query.trim().length
         ? Schema.search(query, 40, need => System[need], _apps.concat(_vocabulary)).concat(_historyResult)
         : _suggestions
-    // While History keeps text, the last result looks for the query in what
-    // was dictated, landing on History with it typed in its search
-    // ("historyFind:<query>").
-    readonly property bool _historyKeepsText: Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"
-    readonly property var _historyResult: _historyKeepsText && query.trim().length
+    // While History holds words or keeps text, the last result looks for the
+    // query in what was said, landing on History with it typed in its search
+    // ("historyFind:<query>"). Keeping no new text leaves what is kept,
+    // recordings among it, findable.
+    readonly property bool _historySearchable: History.kept > 0 || Settings.values.historyKeeps === "text"
+                                               || Settings.values.historyKeeps === "audio"
+    readonly property var _historyResult: _historySearchable && query.trim().length
         ? [{ type: "history", id: "historyFind:" + query.trim(), page: "history", label: Words.shell.searchHistory(query.trim()),
              icon: Schema.page("history").icon, trail: Schema.trail("history") }]
         : []

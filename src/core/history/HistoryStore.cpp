@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -114,6 +115,26 @@ QString except(const QList<qint64> &ids)
         listed.append(QString::number(id));
     }
     return ids.isEmpty() ? QString() : QStringLiteral(" AND entries.id NOT IN (%1)").arg(listed.join(QLatin1Char(',')));
+}
+
+// A Recording's text, its lines' words a line each without times or
+// speakers, so a search finds what was said, and how many words.
+std::pair<QString, qsizetype> textOf(const QList<HistoryLine> &lines)
+{
+    QStringList said;
+    qsizetype words = 0;
+    for (const HistoryLine &line : lines) {
+        said.append(line.text);
+        words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+    }
+    return {said.join(QLatin1Char('\n')), words};
+}
+
+// When a file last changed, as transcript_mtime keeps it; null without one.
+QVariant changedAt(const QString &path)
+{
+    const QFileInfo file(path);
+    return file.exists() ? QVariant(file.lastModified().toMSecsSinceEpoch()) : QVariant(QMetaType(QMetaType::LongLong));
 }
 
 QVariant msOf(const QDateTime &time)
@@ -615,30 +636,98 @@ QList<HistoryLine> HistoryStore::lines(qint64 entryId) const
     return found;
 }
 
-// The text is the lines' words, a line each, without times or speakers, so a
-// search finds what was said.
+// Its file's last change is kept too, so a later edit to it can be taken in
+// (syncRecordingFile).
 bool HistoryStore::finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, const RecordingEnd &end,
                                    const QString &audioPath)
 {
-    QStringList said;
-    qsizetype words = 0;
-    for (const HistoryLine &line : lines(id)) {
-        said.append(line.text);
-        words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
-    }
+    const auto [said, words] = textOf(lines(id));
+    const std::optional<HistoryEntry> found = entry(id);
     QSqlQuery update(QSqlDatabase::database(m_connection));
     update.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, words = ?, outcome = ?, text = ?,"
-                                  " audio_path = ?, kept = ?, ending = ? WHERE id = ? AND kind = 'recording'"));
+                                  " audio_path = ?, kept = ?, ending = ?, transcript_mtime = ?"
+                                  " WHERE id = ? AND kind = 'recording'"));
     const HistoryOutcome outcome = end.missedSpeech() ? HistoryOutcome::Missed : HistoryOutcome::Complete;
     for (const QVariant &value :
-         QVariantList{finishedAt.toMSecsSinceEpoch(), audioMs, words, historyOutcomeName(outcome),
-                      said.join(QLatin1Char('\n')), nonEmpty(audioPath),
-                      historyKeepName(audioPath.isEmpty() ? HistoryKeep::Text : HistoryKeep::Audio),
-                      QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(QJsonDocument::Compact)), id}) {
+         QVariantList{finishedAt.toMSecsSinceEpoch(), audioMs, words, historyOutcomeName(outcome), said,
+                      nonEmpty(audioPath), historyKeepName(audioPath.isEmpty() ? HistoryKeep::Text : HistoryKeep::Audio),
+                      QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(QJsonDocument::Compact)),
+                      changedAt(found ? found->transcriptPath : QString()), id}) {
         update.addBindValue(value);
     }
     if (!m_open || !update.exec() || update.numRowsAffected() == 0) {
         qWarning().noquote() << "history could not finish a recording:" << update.lastError().text();
+        return false;
+    }
+    emit changed();
+    return true;
+}
+
+bool HistoryStore::syncRecordingFile(qint64 id)
+{
+    QString path;
+    QVariant stored;
+    {
+        QSqlQuery select(QSqlDatabase::database(m_connection));
+        select.prepare(QStringLiteral("SELECT transcript_path, transcript_mtime FROM entries"
+                                      " WHERE id = ? AND kind = 'recording' AND finished_at IS NOT NULL"));
+        select.addBindValue(id);
+        if (!m_open || !select.exec() || !select.next()) {
+            return true;
+        }
+        path = select.value(0).toString();
+        stored = select.value(1);
+    }
+    const QVariant now = changedAt(path);
+    if (now.isNull() || stored == now) {
+        return true;
+    }
+    const auto keepChangedAt = [this, id, &now] {
+        QSqlQuery update(QSqlDatabase::database(m_connection));
+        update.prepare(QStringLiteral("UPDATE entries SET transcript_mtime = ? WHERE id = ?"));
+        update.addBindValue(now);
+        update.addBindValue(id);
+        return update.exec();
+    };
+    // Finished before the store kept it: in step as far as anyone knows.
+    if (stored.isNull()) {
+        return keepChangedAt();
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
+    QList<HistoryLine> read;
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        const QRegularExpressionMatch match = lineFormat.match(line);
+        if (!match.hasMatch()) {
+            return false;
+        }
+        const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
+            + match.captured(3).toLongLong();
+        read.append({seconds * 1000, match.captured(4), match.captured(5)});
+    }
+    const auto [said, words] = textOf(read);
+    QSqlDatabase db = QSqlDatabase::database(m_connection);
+    db.transaction();
+    QSqlQuery change(db);
+    change.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
+    change.addBindValue(id);
+    bool written = change.exec();
+    for (const HistoryLine &line : std::as_const(read)) {
+        written = written && appendLine(id, line);
+    }
+    change.prepare(QStringLiteral("UPDATE entries SET text = ?, words = ? WHERE id = ?"));
+    for (const QVariant &value : QVariantList{said, words, id}) {
+        change.addBindValue(value);
+    }
+    if (!written || !change.exec() || !keepChangedAt() || !db.commit()) {
+        db.rollback();
         return false;
     }
     emit changed();

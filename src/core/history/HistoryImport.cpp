@@ -3,10 +3,14 @@
 #include "core/history/HistoryStore.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+
+#include <algorithm>
 
 namespace speecher {
 namespace {
@@ -82,7 +86,7 @@ bool importInsightsLog(HistoryStore &store, const QString &path)
     return true;
 }
 
-std::optional<QList<HistoryEntry>> readHistorySeed(const QString &path)
+std::optional<QList<HistorySeedEntry>> readHistorySeed(const QString &path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -92,7 +96,8 @@ std::optional<QList<HistoryEntry>> readHistorySeed(const QString &path)
     if (!document.isArray()) {
         return std::nullopt;
     }
-    QList<HistoryEntry> entries;
+    const QDir folder = QFileInfo(path).absoluteDir();
+    QList<HistorySeedEntry> entries;
     for (const QJsonValue &value : document.array()) {
         const QJsonObject object = value.toObject();
         const std::optional<DictationRecord> record = recordFrom(object);
@@ -105,15 +110,50 @@ std::optional<QList<HistoryEntry>> readHistorySeed(const QString &path)
         entry.outcome = historyOutcomeFromName(object.value(QLatin1String("outcome")).toString())
                             .value_or(entry.kind == HistoryKind::File ? HistoryOutcome::Done : HistoryOutcome::Delivered);
         entry.title = object.value(QLatin1String("title")).toString();
-        entry.sourcePath = object.value(QLatin1String("sourcePath")).toString();
+        // A file's audio and saved transcript, and a Recording's file, beside
+        // the seed or where they say.
+        const auto file = [&object, &folder](const char *key) {
+            const QString path = object.value(QLatin1String(key)).toString();
+            return path.isEmpty() ? QString() : folder.absoluteFilePath(path);
+        };
+        entry.sourcePath = file("sourcePath");
+        entry.transcriptPath = file("transcriptPath");
         if (object.contains(QLatin1String("text"))) {
             entry.text = object.value(QLatin1String("text")).toString();
             entry.rawText = object.value(QLatin1String("rawText")).toString(*entry.text);
             entry.kept = HistoryKeep::Text;
         }
-        entries.append(entry);
+        QList<HistoryLine> lines;
+        if (entry.kind == HistoryKind::Recording) {
+            entry.kept = HistoryKeep::Text;
+            entry.startedAt = QDateTime::fromString(object.value(QLatin1String("startedAt")).toString(), Qt::ISODate);
+            entry.end = recordingEndFromJson(object.value(QLatin1String("ending")).toObject());
+            for (const QJsonValue &value : object.value(QLatin1String("lines")).toArray()) {
+                const QJsonObject line = value.toObject();
+                lines.append({line.value(QLatin1String("atMs")).toInteger(), line.value(QLatin1String("speaker")).toString(),
+                              line.value(QLatin1String("text")).toString()});
+            }
+        }
+        entries.append({entry, lines});
     }
     return entries;
+}
+
+void addHistorySeed(HistoryStore &store, QList<HistorySeedEntry> seed)
+{
+    std::stable_sort(seed.begin(), seed.end(), [](const HistorySeedEntry &a, const HistorySeedEntry &b) {
+        return a.entry.stats.finishedAt < b.entry.stats.finishedAt;
+    });
+    for (const auto &[entry, lines] : std::as_const(seed)) {
+        const qint64 id = store.add(entry);
+        if (entry.kind != HistoryKind::Recording || id == 0) {
+            continue;
+        }
+        for (const HistoryLine &line : lines) {
+            store.appendLine(id, line);
+        }
+        store.finishRecording(id, entry.stats.finishedAt, entry.stats.audioMs, entry.end, {});
+    }
 }
 
 } // namespace speecher

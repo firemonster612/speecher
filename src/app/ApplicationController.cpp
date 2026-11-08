@@ -290,12 +290,11 @@ ApplicationController::ApplicationController(bool popupOnly,
         importInsightsLog(*m_history, dataFolder() + QStringLiteral("/insights.jsonl"));
         m_session->setHistoryAudioFolder(dataFolder() + QStringLiteral("/history/audio"));
     }
-    for (const std::optional<QList<HistoryEntry>> &seed :
-         {insightsSeed.isEmpty() ? std::nullopt : readInsightsLog(insightsSeed),
-          historySeed.isEmpty() ? std::nullopt : readHistorySeed(historySeed)}) {
-        if (seed) {
-            m_history->addAll(*seed);
-        }
+    if (const std::optional<QList<HistoryEntry>> seed = insightsSeed.isEmpty() ? std::nullopt : readInsightsLog(insightsSeed)) {
+        m_history->addAll(*seed);
+    }
+    if (const std::optional<QList<HistorySeedEntry>> seed = historySeed.isEmpty() ? std::nullopt : readHistorySeed(historySeed)) {
+        addHistorySeed(*m_history, *seed);
     }
     m_seenApps = new SeenApps(seeded ? QString() : dataFolder() + QStringLiteral("/seen-apps.json"), this);
     m_insightsToday =

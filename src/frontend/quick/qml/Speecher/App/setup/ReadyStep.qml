@@ -6,10 +6,12 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 import "../pages/home"
+import "../pages/history/HistoryWords.js" as HistoryWords
 
 // The finish: a check that lands once, how to dictate with the chosen
 // shortcut or, where the desktop gives none, the command, and Home's
-// readiness card, the same checks over setup's draft. While a step still
+// readiness card, the same checks over setup's draft, then what History
+// keeps of each dictation and where that is changed. While a step still
 // needs attention there is no check and the title says setup is not done.
 // The rail already lists every step's outcome.
 StepPage {
@@ -72,6 +74,20 @@ StepPage {
                 if (step) page.choices.goTo(step)
                 else Navigation.follow(pageId, rowId, "setup")
             }
+        }
+    }
+
+    Flow {
+        objectName: "readyHistory"
+        width: parent.width
+        spacing: Theme.space2
+        Txt {
+            text: HistoryWords.firstRun(Settings.values.historyKeeps ?? "text", Number(Settings.values.historyTextDays))
+            tone: "secondary"
+        }
+        TextLink {
+            text: HistoryWords.text.change
+            onActivated: Navigation.follow(Schema.row("historyKeeps").page, "historyKeeps", "setup")
         }
     }
 }

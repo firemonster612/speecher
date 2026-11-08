@@ -302,6 +302,15 @@ private slots:
     void everyPageAndSearchLoads()
     {
         QFETCH(QString, theme);
+        // History, Recordings and Home show real entries: dictations, a
+        // file and a recording that missed some of the call, in a History
+        // in memory, on a pinned today.
+        qputenv("SPEECHER_HISTORY_SEED", QFINDTESTDATA("data/history/seed.json").toUtf8());
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-11-08");
+        const auto unseed = qScopeGuard([] {
+            qunsetenv("SPEECHER_HISTORY_SEED");
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+        });
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("themeControl"), theme);
@@ -422,6 +431,33 @@ private slots:
                                       .contains(std::pair{QStringLiteral("services"), QString()}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
+        // History with a dictation open, then a file's entry, then the
+        // recording's reader.
+        const auto openRow = [main](qint64 id) {
+            QQuickItem *row = nullptr;
+            QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("historyRow_%1").arg(id))));
+            QMetaObject::invokeMethod(row, "clicked");
+        };
+        const auto newest = [&controller](HistoryKind kind) {
+            HistoryQuery query;
+            query.kinds = {kind};
+            query.limit = 1;
+            return controller.history()->search(query).first().entry.id;
+        };
+        steps.append({QStringLiteral("history with an entry open"), [navigation, &openRow, &newest] {
+                          navigation->go(QStringLiteral("history"));
+                          openRow(newest(HistoryKind::Dictation));
+                      }});
+        steps.append({QStringLiteral("history with a file open"), [&openRow, &newest, main] {
+                          openRow(newest(HistoryKind::File));
+                          QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("transcribeAgain")));
+                      }});
+        steps.append({QStringLiteral("history with a recording open"), [navigation, main, &newest] {
+                          navigation->goToRow(QStringLiteral("history"), QStringLiteral("recording:%1").arg(newest(HistoryKind::Recording)));
+                          QQuickItem *ending = nullptr;
+                          QTRY_VERIFY((ending = findItem(main->contentItem(), QStringLiteral("recordingEnding"))));
+                          QTRY_VERIFY(ending->isVisible());
+                      }});
         // For review, a speech service's Fix sheet over Speech to text, then
         // Apps with an app's editor open, then with Add app's picker open.
         if (!captureDir().isEmpty()) {
@@ -1615,7 +1651,7 @@ private slots:
         runSteps({
             {QStringLiteral("history results"), [navigation, main, rows, &search] {
                  navigation->go(QStringLiteral("history"));
-                 QTRY_COMPARE(rows(main->contentItem()).size(), 7);
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 8);
                  QVERIFY((search = findItem(main->contentItem(), QStringLiteral("historySearch"))));
              }},
             {QStringLiteral("history search"), [main, rows, &search] {
@@ -1628,11 +1664,18 @@ private slots:
              }},
             {QStringLiteral("history open entry"), [main, rows, &search] {
                  search->setProperty("text", QString());
-                 QTRY_COMPARE(rows(main->contentItem()).size(), 7);
-                 QQuickItem *newest = findItem(main->contentItem(), QStringLiteral("historyRow_7"));
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 8);
+                 QQuickItem *newest = findItem(main->contentItem(), QStringLiteral("historyRow_8"));
                  QVERIFY(newest);
                  QMetaObject::invokeMethod(newest, "clicked");
                  QTRY_VERIFY(newest->property("selected").toBool());
+             }},
+            // Recordings' "All recordings in History" lands filtered to them.
+            {QStringLiteral("history of recordings"), [navigation, main, rows] {
+                 navigation->goToRow(QStringLiteral("history"), QStringLiteral("historyKind:recording"));
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 1);
+                 QCOMPARE(findItem(main->contentItem(), QStringLiteral("historyKind"))->property("currentId").toString(),
+                          QStringLiteral("recording"));
              }},
             {QStringLiteral("home with history"), [navigation] { navigation->go(QStringLiteral("home")); }},
         },

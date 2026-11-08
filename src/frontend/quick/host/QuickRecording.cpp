@@ -2,10 +2,13 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "core/Apps.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
+
+#include <QUrl>
 
 namespace speecher {
 
@@ -20,6 +23,9 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
         const QString now = state();
         if (now == u"starting") {
             m_lines.clear();
+            m_running = plan();
+        } else if (now == u"off") {
+            m_running.clear();
         }
         if (now == u"off") {
             m_levels.clear();
@@ -46,8 +52,9 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
         emit levelsChanged();
     });
     connect(controller, &ApplicationController::recordingStartFinished, this, [this](const QString &error) {
-        if (error != m_problem) {
-            m_problem = error;
+        const QString problem = error == recordingCancelledText() ? QString() : error;
+        if (problem != m_problem) {
+            m_problem = problem;
             emit problemChanged();
         }
     });
@@ -125,14 +132,20 @@ QVariantMap QuickRecording::plan() const
     const ServiceOrder services =
         planRecording(settings, {}, streamsFinalText(*m_controller->providerRegistry())).speech.services;
     const RecordingSettings &recording = settings.recording;
+    const QString folder = recordingFolder(recording);
     return {
         {QStringLiteral("service"), services.main()},
         {QStringLiteral("model"), services.choice(services.main()).model},
         {QStringLiteral("sources"),
          recording.systemAudio && canRecordCallAudio() ? QStringLiteral("both") : QStringLiteral("mic")},
-        {QStringLiteral("folder"), recordingFolder(recording)},
+        {QStringLiteral("profile"),
+         recording.writingProfile.isEmpty() ? fallbackWritingProfile(settings.apps) : recording.writingProfile},
+        {QStringLiteral("inheritedProfile"), fallbackWritingProfile(settings.apps)},
+        {QStringLiteral("folder"), folder},
+        {QStringLiteral("folderUrl"), QUrl::fromLocalFile(folder)},
         {QStringLiteral("format"),
          recording.format == RecordingFormat::PlainText ? QStringLiteral("txt") : QStringLiteral("md")},
+        {QStringLiteral("autoStopMinutes"), recording.autoStopMinutes},
     };
 }
 
@@ -159,6 +172,17 @@ void QuickRecording::start(const QString &title)
 void QuickRecording::stop()
 {
     m_controller->recording()->stop();
+}
+
+void QuickRecording::setFolder(const QUrl &folder)
+{
+    if (!folder.isLocalFile()) {
+        return;
+    }
+    m_controller->settings()->edit([&folder](AppSettings &draft) {
+        draft.recording.folder = folder.toLocalFile();
+        return true;
+    });
 }
 
 void QuickRecording::confirmConsent()

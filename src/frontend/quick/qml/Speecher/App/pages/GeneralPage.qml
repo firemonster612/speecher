@@ -60,7 +60,7 @@ Page {
     // Keeping less than text asks about the text already kept.
     function chooseKeeps(id) {
         const below = id === "nothing" || id === "stats"
-        if (below && History.kept > 0 && (Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"))
+        if (below && History.keptText > 0 && (Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"))
             _lowerTo = id
         else
             Settings.set("historyKeeps", id)
@@ -124,7 +124,7 @@ Page {
         InlineConfirm {
             open: page._lowerTo !== ""
             text: page.t.deleteKeptQuestion
-            detail: page.t.deleteKeptDetail(History.kept)
+            detail: page.t.deleteKeptDetail(History.keptText)
             confirmText: Words.delete_
             cancelText: page.t.keepKept
             onConfirmed: {
@@ -190,7 +190,7 @@ Page {
             rowId: "clearHistory"
             note: Insights.kept > 0
                   ? Words.count(Insights.kept, "dictation", "dictations") + " counted since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + ", "
-                    + Words.count(History.kept, "with its text", "with their text") + "."
+                    + Words.count(History.keptText, "with its text", "with their text") + "."
                   : spec.help
             MenuButton {
                 objectName: "clearHistory"

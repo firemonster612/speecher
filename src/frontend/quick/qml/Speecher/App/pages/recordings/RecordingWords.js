@@ -14,6 +14,11 @@ var text = {
     saved: "Saved",
     recording: "Recording",
     openSpeech: "Open Speech to text",
+    runSetup: "Run setup",
+    openMicrophone: "Open Microphone",
+    cancel: "Cancel",
+    changes: "Change for recordings",
+    changesHelp: "The speech service recordings try first. Dictation keeps its own.",
     consentQuestion: "Tell everyone on the call that you're recording.",
     consentDetail: "In many places it's the law.",
     transcript: "Transcript, as it's written",
@@ -24,6 +29,7 @@ var text = {
     noRecordings: "Recordings you make show here.",
     sameAsSpeech: "Speech to text",
     noneCanRecord: "none can record",
+    nextRecording: "For the next recording.",
     callAudioStopped: "Call audio stopped",
     homeRow: "Recording a call"
 }
@@ -65,6 +71,26 @@ function summary(plan, serviceLabel, home) {
     const sources = plan.sources === "both" ? "Microphone and call audio" : "Microphone only"
     const format = plan.format === "txt" ? "plain text" : "Markdown"
     return sources + ", with " + serviceLabel + ". Saved as " + format + " in " + shortPath(plan.folder, home) + "."
+}
+
+// Which services can record calls and which can't, from their labels:
+// "ChatGPT and Claude can record calls. Local models and Your server can't
+// yet, as they don't send each sentence's text as it ends."
+function serviceHelp(can, cannot) {
+    const list = names => names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]
+    const yes = can.length ? list(can) + " can record calls." : "No speech service you use can record calls."
+    return cannot.length ? yes + " " + list(cannot) + " can't yet, as " + (cannot.length > 1 ? "they don't" : "it doesn't")
+                           + " send each sentence's text as it ends." : yes
+}
+
+// The line under a running recording's status: what it started with, which
+// changes below leave alone. "Heard by ChatGPT. Stops after 30 minutes of
+// silence."
+function runningSummary(running, serviceLabel) {
+    const stop = running.autoStopMinutes > 0
+        ? " Stops after " + (running.autoStopMinutes === 60 ? "an hour" : running.autoStopMinutes + " minutes") + " of silence."
+        : ""
+    return "Heard by " + serviceLabel + "." + stop
 }
 
 // A folder with the home folder as ~.

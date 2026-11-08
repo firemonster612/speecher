@@ -8,10 +8,11 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 import "../text"
+import "../transcripts"
 
-// Step one: the files to transcribe with the drop zone under them, the
-// Writing Profile they are written with and what these files change of it,
-// then where the transcripts go.
+// Step one: the files to transcribe with the drop zone under them, what
+// they run with (the Writing Profile and what these files change of it) and
+// where the transcripts go, in the same shape as Recordings.
 Column {
     id: view
 
@@ -21,8 +22,8 @@ Column {
     readonly property var planned: Transcription.plan
     readonly property var inherited: Transcription.inherited
     readonly property string profileName: Library.profileName(planned.profile)
-    readonly property bool changed: ["service", "refiner", "cleanup", "tone", "language"].some(id => !!options[id])
-                                    || !options.vocabulary
+    readonly property int changes: ["service", "refiner", "cleanup", "tone", "language"].filter(id => !!options[id]).length
+                                   + (options.vocabulary ? 0 : 1)
     // Where a value the batch leaves alone comes from: the profile when it
     // sets it, otherwise the page that does.
     function place(source, pageId) { return (source || "").startsWith("profile:") ? profileName : Schema.page(pageId).title }
@@ -84,95 +85,74 @@ Column {
     // The Writing Profile, then what these files change of it: the profile
     // editor in run mode, each control starting "Same as …", and the
     // Spoken language and vocabulary, which only a run changes here.
-    Section {
-        title: TranscribeWords.profileAndChanges
+    RunWith {
+        profileId: view.options.profile
+        inheritedProfile: view.inherited.profile
+        profileHelp: TranscribeWords.profileHelp
+        changesTitle: TranscribeWords.changes
+        changesHelp: TranscribeWords.changesHelp(view.profileName)
+        changes: view.changes
+        // A downloaded Local Model is picked in the editor, so Local Model
+        // needs nothing more.
+        speechService: view.planned.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.planned.service
+        refinementService: view.planned.refiner === "none" ? "" : view.planned.refiner
+        onProfileChosen: id => Transcription.setOption("profile", id)
+
+        Item {
+            width: parent.width
+            height: runEditor.implicitHeight + Theme.space4 * 2
+            ProfileEditor {
+                id: runEditor
+                objectName: "runEditor"
+                x: Theme.rowInset
+                y: Theme.space4
+                width: parent.width - 2 * Theme.rowInset
+                runMode: true
+                servicesTitle: TranscribeWords.services
+                profile: ({ cleanup: view.options.cleanup, tone: view.options.tone,
+                            speech: view.options.service, speechModel: view.options.speechModel,
+                            refinement: view.options.refiner, refinementModel: view.options.refinerModel })
+                inherited: ({ profileName: view.profileName,
+                              cleanup: view.inherited.cleanup, tone: view.inherited.tone,
+                              outputLanguage: view.inherited.outputLanguage,
+                              speech: view.inherited.service, speechModel: view.inherited.speechModel,
+                              speechPlace: view.place(view.inherited.sources.speech, "speech"),
+                              refinement: view.inherited.refiner, refinementModel: view.inherited.refinerModel,
+                              refinementPlace: view.place(view.inherited.sources.refinement, "refinement") })
+                onEdited: patch => view.edit(patch)
+            }
+        }
         SettingRow {
-            title: TranscribeWords.profile
-            help: TranscribeWords.profileHelp
-            InheritSelect {
-                inheritedText: Words.sameAs(Schema.apps.type("general").label, Library.profileName(view.inherited.profile))
-                choices: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
-                currentId: view.options.profile
-                onChosen: id => Transcription.setOption("profile", id)
+            title: TranscribeWords.language
+            help: TranscribeWords.languageHelp
+            LanguageSelect {
+                placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+                options: [{ id: "", label: Words.sameAs(Schema.page("speech").title, view.languageName(view.inherited.language)), icon: "link" }]
+                         .concat(Schema.row("spokenLanguage").options)
+                currentId: view.options.language
+                shownId: view.inherited.language
+                onChosen: id => Transcription.setOption("language", id)
             }
         }
-        Disclosure {
-            title: TranscribeWords.changes
-            help: TranscribeWords.changesHelp(view.profileName)
-            trailingText: view.changed ? Library.profilesText.custom : Library.profilesText.default_
-            open: view.changed
-            Item {
-                width: parent.width
-                height: runEditor.implicitHeight + Theme.space4 * 2
-                ProfileEditor {
-                    id: runEditor
-                    objectName: "runEditor"
-                    x: Theme.rowInset
-                    y: Theme.space4
-                    width: parent.width - 2 * Theme.rowInset
-                    runMode: true
-                    servicesTitle: TranscribeWords.services
-                    profile: ({ cleanup: view.options.cleanup, tone: view.options.tone,
-                                speech: view.options.service, speechModel: view.options.speechModel,
-                                refinement: view.options.refiner, refinementModel: view.options.refinerModel })
-                    inherited: ({ profileName: view.profileName,
-                                  cleanup: view.inherited.cleanup, tone: view.inherited.tone,
-                                  outputLanguage: view.inherited.outputLanguage,
-                                  speech: view.inherited.service, speechModel: view.inherited.speechModel,
-                                  speechPlace: view.place(view.inherited.sources.speech, "speech"),
-                                  refinement: view.inherited.refiner, refinementModel: view.inherited.refinerModel,
-                                  refinementPlace: view.place(view.inherited.sources.refinement, "refinement") })
-                    onEdited: patch => view.edit(patch)
-                }
-            }
-            SettingRow {
-                title: TranscribeWords.language
-                help: TranscribeWords.languageHelp
-                LanguageSelect {
-                    placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                    options: [{ id: "", label: Words.sameAs(Schema.page("speech").title, view.languageName(view.inherited.language)), icon: "link" }]
-                             .concat(Schema.row("spokenLanguage").options)
-                    currentId: view.options.language
-                    shownId: view.inherited.language
-                    onChosen: id => Transcription.setOption("language", id)
-                }
-            }
-            SettingRow {
-                title: TranscribeWords.vocabulary
-                help: TranscribeWords.vocabularyHelp
-                Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
-            }
+        SettingRow {
+            title: TranscribeWords.vocabulary
+            help: TranscribeWords.vocabularyHelp
+            Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
         }
-        // What the batch's services still need, with their Fix; these files
-        // wait here meanwhile. A downloaded Local Model is picked above, so
-        // Local Model needs nothing more.
-        ServiceStatus {
-            role: "speech"
-            serviceId: view.planned.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.planned.service
-        }
-        ServiceStatus { role: "refinement"; serviceId: view.planned.refiner === "none" ? "" : view.planned.refiner }
     }
 
-    Section {
-        title: TranscribeWords.output
-        SettingRow {
-            title: TranscribeWords.saveTranscripts
-            help: TranscribeWords.destinationHint(view.options.destination)
-            Select {
-                options: TranscribeWords.destinations
-                currentId: view.options.destination
-                onChosen: id => {
-                    Transcription.setOption("destination", id)
-                    if (id === "folder" && !view.options.folder) folderChooser.open()
-                }
-            }
+    SaveTranscripts {
+        id: output
+        destinations: TranscribeWords.destinations
+        destination: view.options.destination
+        destinationHelp: TranscribeWords.destinationHint(view.options.destination)
+        folder: view.options.folder || ""
+        folderUrl: view.options.folderUrl || ""
+        onDestinationChosen: id => {
+            Transcription.setOption("destination", id)
+            if (id === "folder" && !view.options.folder) output.chooseFolder()
         }
-        SettingRow {
-            shown: view.options.destination === "folder"
-            title: TranscribeWords.folder
-            help: view.options.folder
-            Button { text: TranscribeWords.changeFolder; size: "small"; onClicked: folderChooser.open() }
-        }
+        onFolderChosen: folder => Transcription.setFolder(folder)
     }
 
     // The desktop's own choosers, attached to the window.
@@ -183,12 +163,5 @@ Column {
         currentFolder: StandardPaths.writableLocation(StandardPaths.HomeLocation)
         nameFilters: TranscribeWords.fileFilters(Transcription.extensions)
         onAccepted: Transcription.addUrls(fileChooser.selectedFiles)
-    }
-    FolderDialog {
-        id: folderChooser
-        title: TranscribeWords.folderDialog
-        currentFolder: view.options.folderUrl || StandardPaths.writableLocation(StandardPaths.HomeLocation)
-        onAccepted: Transcription.setFolder(folderChooser.selectedFolder)
-        onRejected: Transcription.setFolder("")
     }
 }

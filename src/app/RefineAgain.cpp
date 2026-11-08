@@ -35,11 +35,25 @@ void RefineAgain::refine(qint64 entryId, const QString &raw, const QString &writ
     m_lastFailure.clear();
     RunOverrides run;
     run.writingProfile = writingProfile;
-    m_plan = planDictation(m_settings.dictationSnapshot(), Target{}, run, m_providers.offersSpeech());
+    const AppSettings saved = m_settings.dictationSnapshot();
+    m_plan = planDictation(saved, Target{}, run, m_providers.offersSpeech());
+    // Asked for, it refines with Clean up my words off too, with what a
+    // dictation would refine with if it were on.
+    if (!m_plan.settings.refinement.enabled && !m_plan.settings.refinement.services.main().isEmpty()) {
+        run.refinement = ServiceChoice{m_plan.settings.refinement.services.main(), {}};
+        m_plan = planDictation(saved, Target{}, run, m_providers.offersSpeech());
+    }
     m_pipeline = TranscriptPipeline::prepare(raw, m_plan, Target{}, m_plan.settings.speech.language);
     const QStringList chain = serviceChain(m_plan.settings.refinement);
-    if (chain.isEmpty() || m_pipeline.refinementSettings.style == QStringLiteral("none")
-        || m_pipeline.bindingResult.canSkipRefinement) {
+    if (chain.isEmpty()) {
+        emit failed(entryId, QStringLiteral("No refinement service is set up. Add one on Refinement."));
+        return;
+    }
+    if (m_pipeline.refinementSettings.style == QStringLiteral("none")) {
+        emit failed(entryId, QStringLiteral("This profile's cleanup is None, so there's nothing to refine."));
+        return;
+    }
+    if (m_pipeline.bindingResult.canSkipRefinement) {
         emit refined(entryId, m_pipeline.deliveryFallback);
         return;
     }

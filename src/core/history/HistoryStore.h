@@ -69,6 +69,13 @@ public:
     // Finishes the Recordings a crash left running, Interrupted, at their
     // file's last change, or their start where the file is gone.
     void finishUnfinishedRecordings();
+    // Takes a finished Recording's lines, text and word count from its file
+    // again once the file changed since, as an edit in Open file changes it,
+    // so the reader, export and search say what the file says. False when
+    // the file changed into something other than lines ("[00:00:04] me:
+    // …"), which leaves History's lines as they were; true while they are
+    // in step, or there is no file to be in step with.
+    bool syncRecordingFile(qint64 id);
     // Sets a dictation's, edit's or file's Refined Transcript, keeping its raw
     // one, as Refine again's Keep this does. False for an entry without text.
     bool setText(qint64 id, const QString &text);

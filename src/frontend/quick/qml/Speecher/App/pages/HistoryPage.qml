@@ -11,10 +11,12 @@ import "history/HistoryWords.js" as T
 // Everything History kept, newest first, under Home: a search with filters,
 // then a card of entries a day, each opening in place. A Recording opens in
 // its reader instead, in the list's place ("recording:<id>" opens it from a
-// link); one still running opens Recordings. Clear… deletes a span of it, as
-// General's Clear history does. With nothing to list it says why: History
-// keeps nothing or only stats, nothing kept yet, or nothing matches.
-// Search's "Search History for …" opens it with those words searched.
+// link); one still running opens Recordings. "historyKind:<kind>" opens it
+// filtered to a kind. Clear… deletes a span of dictations and files, as
+// Privacy & data's Clear history does. With nothing to list it says why:
+// History keeps nothing or only stats, nothing kept yet, or nothing
+// matches. Search's "Search History for …" opens it with those words
+// searched.
 Page {
     id: page
     title: Schema.page("history").title
@@ -22,6 +24,8 @@ Page {
 
     readonly property var t: T.text
     readonly property string keeps: Settings.values.historyKeeps ?? "stats"
+    // Where What Speecher keeps is set, wherever its row lives.
+    function openPrivacy() { Navigation.follow(Schema.row("historyKeeps").page, "historyKeeps") }
     // Entries with words to list, whatever the query.
     readonly property bool listing: History.kept > 0
     readonly property bool narrowed: search.text.length > 0 || filters.active
@@ -68,7 +72,8 @@ Page {
         const token = History.remove(id)
         if (token < 0) return
         lastUndo = token
-        Toaster.show(Words.deleted(T.shortened(entry ? entry.text : "")),
+        // A file's audio and saved transcript stay where they are.
+        Toaster.show(entry && entry.kind === "file" ? page.t.removed : Words.deleted(T.shortened(entry ? entry.text : "")),
                      { icon: "trash-2", actionText: Words.undo, action: () => page.undo() })
     }
     function undo() {
@@ -87,11 +92,18 @@ Page {
     }
 
     // A link lands here as "recording:<id>", which opens that recording's
-    // reader, or as "historyFind:<words>" from the search palette, which
-    // types them into the search.
+    // reader, as "historyKind:<kind>", which shows that kind alone, or as
+    // "historyFind:<words>" from the search palette, which types them into
+    // the search.
     function _land(rowId) {
         if (rowId.startsWith("recording:")) {
             read(Number(rowId.slice("recording:".length)), -1)
+        } else if (rowId.startsWith("historyKind:")) {
+            readingId = 0
+            search.clear()
+            filters.reset()
+            filters.kind = rowId.slice("historyKind:".length)
+            Navigation.pendingRow = ""
         } else if (rowId.startsWith("historyFind:")) {
             search.text = rowId.slice("historyFind:".length)
             filters.reset()
@@ -139,7 +151,7 @@ Page {
                 width: parent.width
                 spacing: Theme.space2
                 Txt { text: T.keeping(page.keeps, Number(Settings.values.historyTextDays), Number(Settings.values.historyAudioDays)); tone: "secondary" }
-                TextLink { text: page.t.settings; onActivated: Navigation.follow("general", "historyKeeps") }
+                TextLink { text: page.t.settings; onActivated: page.openPrivacy() }
             }
 
             ClearConfirm { id: clearConfirm; ruled: false; inset: 0 }
@@ -191,7 +203,7 @@ Page {
                             first: index === 0
                             open: page.openId === entry.id
                             onToggled: page.openId = open ? 0 : entry.id
-                    onReadRequested: atMs => page.read(entry.id, atMs)
+                            onReadRequested: atMs => page.read(entry.id, atMs)
                             onDeleteRequested: page.remove(entry.id)
                             onStepFocus: step => page.stepFocus(place, step)
                             Component.onCompleted: page.rowItems[place] = historyRow
@@ -216,7 +228,7 @@ Page {
                             visible: page.keeps === "nothing"
                             text: page.t.settings
                             size: "small"
-                            onClicked: Navigation.follow("general", "historyKeeps")
+                            onClicked: page.openPrivacy()
                         }
                         Button {
                             visible: page.keeps === "stats"

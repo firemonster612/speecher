@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 
 #include <memory>
 #include <vector>
@@ -17,13 +18,15 @@ public:
         : m_folder(folder)
     {
         QFile probe(QDir(folder).filePath(QStringLiteral(".locked-probe")));
-        probe.open(QIODevice::WriteOnly);
-        probe.close();
+        if (probe.open(QIODevice::WriteOnly)) {
+            probe.close();
+        }
 #ifdef Q_OS_WIN
         for (const QFileInfo &file : QDir(folder).entryInfoList(QDir::Files | QDir::Hidden)) {
             auto held = std::make_unique<QFile>(file.filePath());
-            held->open(QIODevice::ReadOnly);
-            m_held.push_back(std::move(held));
+            if (held->open(QIODevice::ReadOnly)) {
+                m_held.push_back(std::move(held));
+            }
         }
 #else
         QFile::setPermissions(folder, QFile::ReadOwner | QFile::ExeOwner);
