@@ -121,8 +121,10 @@ jobs:
         with:
           arch: x64
 
-      # Reads release.yml's cache and leaves it as it was.
+      # Reads release.yml's cache and leaves it as it was. A cache that
+      # won't restore only makes the build slower, so it doesn't fail the job.
       - name: Cache Windows compiler outputs
+        continue-on-error: true
         uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
         with:
           variant: sccache
@@ -154,7 +156,12 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+        run: |
+          # Without sccache (the cache step failed), build without it.
+          if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+            Remove-Item Env:CMAKE_C_COMPILER_LAUNCHER, Env:CMAKE_CXX_COMPILER_LAUNCHER
+          }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh
