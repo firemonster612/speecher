@@ -152,14 +152,19 @@ DictationPlan planDictation(const AppSettings &saved,
     return plan;
 }
 
+QString recordingWritingProfile(const AppSettings &settings)
+{
+    return settings.recording.writingProfile.isEmpty() ? fallbackWritingProfile(settings.apps)
+                                                       : settings.recording.writingProfile;
+}
+
 // Local Models finalize runs of words rather than utterances, and their tail
 // only in a whole-attempt transcript, so a recording never asks them.
 AppSettings planRecording(const AppSettings &saved, const QStringList &addedVocabulary,
                           const StreamsFinalText &streamsFinalText)
 {
     RunOverrides run;
-    run.writingProfile = saved.recording.writingProfile.isEmpty() ? fallbackWritingProfile(saved.apps)
-                                                                 : saved.recording.writingProfile;
+    run.writingProfile = recordingWritingProfile(saved);
     run.addedVocabulary = addedVocabulary;
     AppSettings settings = planDictation(saved, Target{}, run).settings;
     ServiceOrder services = saved.speech.services;

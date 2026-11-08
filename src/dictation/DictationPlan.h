@@ -61,12 +61,17 @@ DictationPlan planDictation(const AppSettings &settings,
 // as it hears (SpeechTranscriber::streamsFinalText), as a Recording needs.
 using StreamsFinalText = std::function<bool(const QString &service, const SpeechSettings &speech)>;
 
+// The Writing Profile a Recording writes with: its own when it has one, else
+// Other apps'.
+QString recordingWritingProfile(const AppSettings &settings);
+
 // What a Recording runs with: the saved settings, with the vocabulary that
-// applies to Other apps' profile and no app led by addedVocabulary, and as the
-// speech Service Order the services it can use, first to last: its own first
-// service (RecordingSettings::first) where that streams final text, then the
-// speech Service Order's that do, Local Models passed over, each with its own
-// model and Spoken Language. An empty order is a recording nothing can run.
+// applies to its Writing Profile (recordingWritingProfile) and no app, led by
+// addedVocabulary, and as the speech Service Order the services it can use,
+// first to last: its own first service (RecordingSettings::first) where that
+// streams final text, then the speech Service Order's that do, Local Models
+// passed over, each with its own model and Spoken Language. An empty order is
+// a recording nothing can run.
 AppSettings planRecording(const AppSettings &settings, const QStringList &addedVocabulary,
                           const StreamsFinalText &streamsFinalText);
 

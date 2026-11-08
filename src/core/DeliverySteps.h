@@ -17,12 +17,13 @@ enum class DeliveryStep {
     Insert,
     // Puts the words on the clipboard and presses the paste keys, when
     // insertion is off, unavailable or rejected. With Keep off it borrows
-    // the clipboard and puts the previous one back after a confirmed paste,
-    // so Press alone pastes and leaves the clipboard as it was.
+    // the clipboard and puts the previous one back once the paste is
+    // confirmed or has had time to land, so Press alone pastes and leaves the
+    // clipboard as it was.
     Press,
     // Leaves the words on the clipboard after delivery. Off, Speecher puts
-    // the previous clipboard back after a confirmed paste and copies nothing
-    // on its own.
+    // the previous clipboard back once the paste is confirmed or has had time
+    // to land, and copies nothing on its own.
     Keep,
 };
 

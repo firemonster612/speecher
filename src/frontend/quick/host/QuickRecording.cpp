@@ -4,6 +4,7 @@
 #include "app/PlatformComposition.h"
 #include "core/Apps.h"
 #include "core/SettingsStore.h"
+#include "dictation/DictationPlan.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
@@ -159,8 +160,7 @@ QVariantMap QuickRecording::plan() const
         {QStringLiteral("model"), services.choice(services.main()).model},
         {QStringLiteral("sources"),
          recording.systemAudio && canRecordCallAudio() ? QStringLiteral("both") : QStringLiteral("mic")},
-        {QStringLiteral("profile"),
-         recording.writingProfile.isEmpty() ? fallbackWritingProfile(settings.apps) : recording.writingProfile},
+        {QStringLiteral("profile"), recordingWritingProfile(settings)},
         {QStringLiteral("inheritedProfile"), fallbackWritingProfile(settings.apps)},
         {QStringLiteral("folder"), folder},
         {QStringLiteral("folderUrl"), QUrl::fromLocalFile(folder)},
