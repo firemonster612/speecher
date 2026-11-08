@@ -369,6 +369,7 @@ public:
         (role == GlobalShortcutRole::Cancel       ? cancelBinder
          : role == GlobalShortcutRole::Pause      ? pauseBinder
          : role == GlobalShortcutRole::PasteAgain ? pasteAgainBinder
+         : role == GlobalShortcutRole::Recording  ? recordingBinder
                                                   : binder) = created;
         return created;
     }
@@ -429,6 +430,7 @@ public:
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pasteAgainBinder = nullptr;
+    mutable FakeGlobalShortcutBinder *recordingBinder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
     mutable std::function<void()> accessibilityRefresh;
 
@@ -1978,6 +1980,10 @@ private slots:
         QVERIFY(start.recordMicrophoneOnly);
         QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
         QVERIFY(!parse({QStringLiteral("start")}).recordMicrophoneOnly);
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--name"), QStringLiteral(" Weekly sync ")}).recordTitle,
+                 QStringLiteral("Weekly sync"));
+        QCOMPARE(parse({QStringLiteral("start")}).recordTitle, QString());
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--name")}).exitCode, 2);
         QTemporaryDir dir;
         const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
         QFile vocabularyFile(vocabulary);
@@ -2122,7 +2128,7 @@ private slots:
             {QStringLiteral("listen"), shared + QStringList{QStringLiteral("--until-silence")}},
             {QStringLiteral("providers"), {QStringLiteral("--json")}},
             {QStringLiteral("record start"),
-             {QStringLiteral("--to"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
+             {QStringLiteral("--to"), QStringLiteral("--name"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
             {QStringLiteral("record status"), {QStringLiteral("--json")}},
             {QStringLiteral("record stop"), {}},
             {QStringLiteral("completions bash"), {}},

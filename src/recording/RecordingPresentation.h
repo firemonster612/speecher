@@ -9,6 +9,12 @@ struct RecordingStreamStatus;
 
 // "hh:mm:ss" since the recording started, for its lines and its duration.
 QString recordingClock(qint64 elapsedMs);
+// "12:03", or "1:02:03" past an hour: how long a recording has run, as the
+// tray says it.
+QString recordingElapsedText(qint64 elapsedMs);
+// The tray's recording item: "Start recording", or while one runs "Stop
+// recording (12:03)".
+QString trayRecordingActionText(bool recording, qint64 elapsedMs);
 
 // Who a recording's lines name: the microphone's speaker, and system audio's,
 // everyone else on the call.
@@ -37,7 +43,9 @@ QString statusWatchText(const QString &dictationState, const RecordingStatus &re
 QString notRecordingText();
 QString alreadyRecordingText(const QString &path);
 QString recordingNeedsSetupText();
-QString recordingSpeechProviderRefusal(const QString &providerLabel);
+// Why nothing can record: no speech service in the Service Order sends text
+// as it hears.
+QString recordingNoServiceText();
 QString recordingStreamEndedText();
 // A stream's problem once an utterance was not transcribed, for reason.
 QString recordingUtteranceFailedText(const QString &reason);

@@ -10,7 +10,7 @@ import "words.js" as T
 // The dictation itself, at the top of Home: whether Speecher is ready and
 // its shortcut. While dictating, the level meter and the session's buttons
 // take the shortcut's place and the words heard so far take the readiness
-// card's.
+// card's. While a call records, a row says so first, with Stop and Open.
 Section {
     id: session
     objectName: "homeSession"
@@ -78,6 +78,27 @@ Section {
                 onClicked: Dictation.pauseRequested()
             }
             Button { text: Words.cancel; size: "small"; variant: "ghost"; onClicked: Dictation.cancelRequested() }
+        }
+    }
+
+    Reveal {
+        open: Recording.state !== "off"
+        ListRow {
+            objectName: "homeRecording"
+            iconName: "circle-dot"
+            title: T.recordingLine(Recording.elapsedMs)
+            detail: Recording.title
+            trailing: Row {
+                spacing: Theme.space2
+                Button {
+                    text: session.t.stopRecording
+                    iconName: "square"
+                    size: "small"
+                    enabled: Recording.state === "recording"
+                    onClicked: Recording.stop()
+                }
+                Button { text: session.t.openRecording; size: "small"; onClicked: Navigation.follow("recordings", "recordingControl") }
+            }
         }
     }
 

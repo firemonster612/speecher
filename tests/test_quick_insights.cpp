@@ -14,6 +14,7 @@
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickRecording.h"
 
 #include <QClipboard>
 #include <QDir>
@@ -400,6 +401,7 @@ private slots:
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello there."));
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
@@ -465,6 +467,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
@@ -517,6 +520,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
@@ -554,6 +558,7 @@ private slots:
         settings.set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("endpoint")}));
         settings.set(QStringLiteral("speechEndpointUrl"), QStringLiteral("http://127.0.0.1:9/v1"));
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
@@ -589,6 +594,7 @@ private slots:
                                                                QStringLiteral("org.kde.kate")));
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);

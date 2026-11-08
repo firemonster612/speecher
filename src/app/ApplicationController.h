@@ -40,6 +40,7 @@ class NetworkReachability;
 class ProviderAvailability;
 class ProviderRegistry;
 class RecordingSession;
+struct RecordingRequest;
 class SecretStore;
 class SettingsStore;
 class TargetProvider;
@@ -75,17 +76,22 @@ public:
     TranscribeQueue *transcribeQueue();
     // Why a batch cannot start now, or empty when it can.
     QString fileTranscriptionRefusal() const;
-    // A recording, which `speecher record` starts and stops, runs beside
-    // dictation and file transcription with a microphone input of its own.
+    // A recording, started from the Recordings page, the tray, the Recording
+    // Shortcut or `speecher record`, runs beside dictation and file
+    // transcription with a microphone input of its own.
     bool isRecording() const;
+    RecordingSession *recording() const;
     // Starts a recording once setup is complete and the microphone is allowed.
     // done gets why it did not start, or nothing once it records; macOS may
     // ask for the microphone first, and the provider's stream must connect, so
-    // it can come long after.
-    void startRecording(const QString &path,
-                        const QStringList &vocabulary,
-                        bool microphoneOnly,
-                        std::function<void(const QString &error)> done);
+    // it can come long after. recordingStartFinished says the same.
+    void startRecording(const RecordingRequest &request, std::function<void(const QString &error)> done);
+    // The tray's and the Recording Shortcut's: stops the recording running,
+    // or starts one with the saved settings and no name. The first recording
+    // ever asks for recordingConsentNeeded instead.
+    void toggleRecording();
+    // The running or last recording's History Entry, 0 for none.
+    qint64 recordingHistoryId() const;
     // Whether the setup assistant still has to run before dictation, recording
     // or a window opens. Onboarding happens in the front end, so with none
     // attached nothing waits for it; each start still checks its provider and
@@ -230,6 +236,11 @@ signals:
     void lastTranscriptChanged(const QString &text);
     void lastRecordChanged();
     void recordingChanged(bool recording);
+    // A start ended: empty once it records, else why it did not.
+    void recordingStartFinished(const QString &error);
+    // A start from the tray or the shortcut waits for the person to have
+    // seen the consent notice, which the Recordings page shows.
+    void recordingConsentNeeded();
     // The Transcribe queue's results that aren't saved, exported or dismissed
     // changed, so what an update restart waits for may have too.
     void unsavedTranscriptsChanged();
@@ -245,6 +256,9 @@ private:
     void forgetLastRecord();
     void keepInHistory(const HistoryEntry &entry, bool intoPasswordField);
     void keepFileInHistory(const TranscribeFileResult &result);
+    // A Recording is a History Entry while it runs: added as it starts, a
+    // line at a time, finished as it stops.
+    void keepRecordingInHistory();
     // Retention, as of now.
     void pruneHistory();
     void notifyModelReady(const QString &modelId);
@@ -294,6 +308,8 @@ private:
     GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pasteAgainShortcutBinder = nullptr;
+    GlobalShortcutBinder *m_recordingShortcutBinder = nullptr;
+    qint64 m_recordingEntry = 0;
     PasteAgain *m_pasteAgain = nullptr;
     // The last dictation this run, for Paste Again: nullopt before the
     // first, empty for one into a password field.

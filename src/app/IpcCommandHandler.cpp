@@ -67,6 +67,7 @@ IpcCommandHandler::IpcCommandHandler(ApplicationController &controller,
     connect(&m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();
         reply.recording = status;
+        reply.recording->historyId = m_controller.recordingHistoryId();
         for (const QPointer<QLocalSocket> &socket : std::exchange(m_recordStopReplies, {})) {
             SingleInstanceIpc::writeResponse(socket, reply);
         }
@@ -98,14 +99,23 @@ IpcResponse IpcCommandHandler::response(bool ok, const QString &message) const
 IpcResponse IpcCommandHandler::statusResponse() const
 {
     IpcResponse reply = response();
-    reply.recording = m_recording.status();
+    reply.recording = recordingStatus();
     return reply;
+}
+
+RecordingStatus IpcCommandHandler::recordingStatus() const
+{
+    RecordingStatus status = m_recording.status();
+    if (status.recording) {
+        status.historyId = m_controller.recordingHistoryId();
+    }
+    return status;
 }
 
 void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *socket)
 {
     m_controller.startRecording(
-        request.files.value(0), request.terms, request.microphoneOnly,
+        {request.files.value(0), request.title, request.terms, request.microphoneOnly},
         [this, socket = QPointer(socket)](const QString &error) {
             if (!error.isEmpty()) {
                 SingleInstanceIpc::writeResponse(socket, response(false, error));
@@ -119,7 +129,7 @@ void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *
                 return;
             }
             IpcResponse reply = response();
-            reply.recording = m_recording.status();
+            reply.recording = recordingStatus();
             SettingsStore *settings = m_controller.settings();
             if (!settings->recordingConsentNoticeShown()) {
                 settings->setRecordingConsentNoticeShown(true);

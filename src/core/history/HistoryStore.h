@@ -56,6 +56,25 @@ public:
     QStringList appNames() const;
     QStringList profiles() const;
 
+    // A Recording's lines, oldest first. appendLine adds one as its file gets
+    // it; finishRecording ends the entry once the recording stops: its end,
+    // length, outcome and audio file (empty for none), with its text and word
+    // count taken from its lines, which search then finds. Neither says
+    // changed for a line, which comes many times a minute.
+    bool appendLine(qint64 entryId, const HistoryLine &line);
+    QList<HistoryLine> lines(qint64 entryId) const;
+    bool finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, HistoryOutcome outcome,
+                         const QString &audioPath);
+    // Finishes the Recordings a crash left running, at their file's last
+    // change, or their start where the file is gone.
+    void finishUnfinishedRecordings();
+    // Sets a dictation's, edit's or file's Refined Transcript, keeping its raw
+    // one, as Refine again's Keep this does. False for an entry without text.
+    bool setText(qint64 id, const QString &text);
+
+    // Deletes an entry and its lines at once, leaving its files, for a
+    // Recording, whose transcript and audio the person chooses to keep or not.
+    bool remove(qint64 id);
     // Hides an entry from every question until restore or purgeDeleted.
     bool markDeleted(qint64 id);
     bool restore(qint64 id);

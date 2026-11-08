@@ -9,9 +9,11 @@ import "history"
 import "history/HistoryWords.js" as T
 
 // Everything History kept, newest first, under Home: a search with filters,
-// then a card of entries a day, each opening in place. Clear… deletes a span
-// of it, as General's Clear history does. With nothing to list it says why:
-// History keeps nothing or only stats, nothing kept yet, or nothing matches.
+// then a card of entries a day, each opening in place. A Recording opens in
+// its reader instead, in the list's place ("recording:<id>" opens it from a
+// link); one still running opens Recordings. Clear… deletes a span of it, as
+// General's Clear history does. With nothing to list it says why: History
+// keeps nothing or only stats, nothing kept yet, or nothing matches.
 // Search's "Search History for …" opens it with those words searched.
 Page {
     id: page
@@ -30,6 +32,9 @@ Page {
     property int lastUndo: -1
     // The row items by their place in History.results, for Up and Down.
     property var rowItems: ({})
+    // The Recording open in the reader, 0 for none, and the line it opened at.
+    property real readingId: 0
+    property real readAt: -1
 
     // The results a day at a time: [{ day, rows: [{ entry, index }] }],
     // index being the entry's place in History.results.
@@ -42,9 +47,24 @@ Page {
         return groups
     }
 
+    function read(id, atMs) {
+        const entry = History.results.find(r => r.id === id) || History.entry(id)
+        if (entry.live) {
+            Navigation.follow("recordings", "recordingControl")
+            return
+        }
+        readAt = atMs
+        readingId = id
+    }
     function remove(id) {
         if (openId === id) openId = 0
         const entry = History.results.find(r => r.id === id)
+        // A Recording asks first, in its reader, as it may take its files.
+        if (entry && entry.kind === "recording") {
+            read(id, -1)
+            reader.askDelete = true
+            return
+        }
         const token = History.remove(id)
         if (token < 0) return
         lastUndo = token
@@ -66,18 +86,22 @@ Page {
         filters.reset()
     }
 
-    // A search palette result lands here as "historyFind:<words>", which
+    // A link lands here as "recording:<id>", which opens that recording's
+    // reader, or as "historyFind:<words>" from the search palette, which
     // types them into the search.
     function _land(rowId) {
-        if (!rowId.startsWith("historyFind:")) return
-        search.text = rowId.slice("historyFind:".length)
-        filters.reset()
-        Navigation.pendingRow = ""
-        search.forceActiveFocus()
+        if (rowId.startsWith("recording:")) {
+            read(Number(rowId.slice("recording:".length)), -1)
+        } else if (rowId.startsWith("historyFind:")) {
+            search.text = rowId.slice("historyFind:".length)
+            filters.reset()
+            Navigation.pendingRow = ""
+            search.forceActiveFocus()
+        }
     }
     Component.onCompleted: {
-        if (listing) search.forceActiveFocus()
         _land(Navigation.pendingRow)
+        if (listing && !readingId && !search.activeFocus) search.forceActiveFocus()
     }
     Connections { target: Navigation; function onPendingRowChanged() { page._land(Navigation.pendingRow) } }
     // Fetches the next page as the end comes into view.
@@ -93,7 +117,7 @@ Page {
         property: "query"
         value: ({ text: search.text, kind: filters.kind, app: filters.app, profile: filters.profile, when: filters.when })
     }
-    Shortcut { sequences: [StandardKey.Find, "/"]; enabled: page.listing; onActivated: search.forceActiveFocus() }
+    Shortcut { sequences: [StandardKey.Find, "/"]; enabled: page.listing && !page.readingId; onActivated: search.forceActiveFocus() }
     Shortcut { sequences: [StandardKey.Undo]; enabled: page.lastUndo >= 0; onActivated: page.undo() }
 
     headerActions: MenuButton {
@@ -104,120 +128,137 @@ Page {
         onPicked: id => { if (!clearConfirm.ask(id)) confirm(page.t.nothingToClear) }
     }
 
-    // What History keeps, and where that is set.
-    Flow {
+    Switcher {
         width: parent.width
-        spacing: Theme.space2
-        Txt { text: T.keeping(page.keeps, Number(Settings.values.historyTextDays), Number(Settings.values.historyAudioDays)); tone: "secondary" }
-        TextLink { text: page.t.settings; onActivated: Navigation.follow("general", "historyKeeps") }
-    }
+        currentIndex: page.readingId > 0 ? 1 : 0
 
-    ClearConfirm { id: clearConfirm; ruled: false; inset: 0 }
-
-    Reveal {
-        open: page.listing
         Column {
-            id: finding
-            width: parent.width
-            spacing: Theme.space3
-            SearchLanding { rowIds: ["historyList"]; target: finding; onLanded: search.forceActiveFocus() }
-            SearchField {
-                id: search
-                objectName: "historySearch"
+            spacing: Theme.sectionGap
+            // What History keeps, and where that is set.
+            Flow {
                 width: parent.width
-                placeholderText: page.t.search
-                clearText: page.t.clearSearch
-                Keys.onEscapePressed: event => {
-                    if (search.text.length) search.clear()
-                    else if (filters.active) filters.reset()
-                    else page.forceActiveFocus()
-                }
-                Keys.onDownPressed: page.stepFocus(-1, 1)
+                spacing: Theme.space2
+                Txt { text: T.keeping(page.keeps, Number(Settings.values.historyTextDays), Number(Settings.values.historyAudioDays)); tone: "secondary" }
+                TextLink { text: page.t.settings; onActivated: Navigation.follow("general", "historyKeeps") }
             }
-            HistoryFilters { id: filters; width: parent.width }
-            Txt {
-                visible: page.narrowed
-                text: T.matches(History.matches)
-                variant: "small"
-                tone: "secondary"
-            }
-        }
-    }
 
-    Repeater {
-        model: page.days
-        Section {
-            id: day
-            required property var modelData
-            title: T.dayHeading(modelData.day, Insights.today)
+            ClearConfirm { id: clearConfirm; ruled: false; inset: 0 }
+
+            Reveal {
+                open: page.listing
+                Column {
+                    id: finding
+                    width: parent.width
+                    spacing: Theme.space3
+                    SearchLanding { rowIds: ["historyList"]; target: finding; onLanded: search.forceActiveFocus() }
+                    SearchField {
+                        id: search
+                        objectName: "historySearch"
+                        width: parent.width
+                        placeholderText: page.t.search
+                        clearText: page.t.clearSearch
+                        Keys.onEscapePressed: event => {
+                            if (search.text.length) search.clear()
+                            else if (filters.active) filters.reset()
+                            else page.forceActiveFocus()
+                        }
+                        Keys.onDownPressed: page.stepFocus(-1, 1)
+                    }
+                    HistoryFilters { id: filters; width: parent.width }
+                    Txt {
+                        visible: page.narrowed
+                        text: T.matches(History.matches)
+                        variant: "small"
+                        tone: "secondary"
+                    }
+                }
+            }
+
             Repeater {
-                model: day.modelData.rows
-                HistoryRow {
-                    id: historyRow
+                model: page.days
+                Section {
+                    id: day
                     required property var modelData
-                    required property int index
-                    readonly property int place: modelData.index
-                    entry: modelData.entry
-                    first: index === 0
-                    open: page.openId === entry.id
-                    onToggled: page.openId = open ? 0 : entry.id
-                    onDeleteRequested: page.remove(entry.id)
-                    onStepFocus: step => page.stepFocus(place, step)
-                    Component.onCompleted: page.rowItems[place] = historyRow
-                    Component.onDestruction: if (page.rowItems[place] === historyRow) delete page.rowItems[place]
+                    title: T.dayHeading(modelData.day, Insights.today)
+                    Repeater {
+                        model: day.modelData.rows
+                        HistoryRow {
+                            id: historyRow
+                            required property var modelData
+                            required property int index
+                            readonly property int place: modelData.index
+                            entry: modelData.entry
+                            first: index === 0
+                            open: page.openId === entry.id
+                            onToggled: page.openId = open ? 0 : entry.id
+                    onReadRequested: atMs => page.read(entry.id, atMs)
+                            onDeleteRequested: page.remove(entry.id)
+                            onStepFocus: step => page.stepFocus(place, step)
+                            Component.onCompleted: page.rowItems[place] = historyRow
+                            Component.onDestruction: if (page.rowItems[place] === historyRow) delete page.rowItems[place]
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    // Nothing to list, and why.
-    Reveal {
-        open: !page.listing
-        Column {
-            width: parent.width
-            spacing: Theme.space3
-            EmptyState {
-                width: parent.width
-                iconName: "history"
-                title: page.keeps === "nothing" ? page.t.offTitle : page.keeps === "stats" ? page.t.statsTitle : page.t.emptyTitle
-                text: page.keeps === "nothing" ? page.t.offText : page.keeps === "stats" ? page.t.statsText : page.t.emptyText
-                Button {
-                    visible: page.keeps === "nothing"
-                    text: page.t.settings
-                    size: "small"
-                    onClicked: Navigation.follow("general", "historyKeeps")
-                }
-                Button {
-                    visible: page.keeps === "stats"
-                    text: page.t.keepText
-                    size: "small"
-                    onClicked: page.askKeepText = true
+            // Nothing to list, and why.
+            Reveal {
+                open: !page.listing
+                Column {
+                    width: parent.width
+                    spacing: Theme.space3
+                    EmptyState {
+                        width: parent.width
+                        iconName: "history"
+                        title: page.keeps === "nothing" ? page.t.offTitle : page.keeps === "stats" ? page.t.statsTitle : page.t.emptyTitle
+                        text: page.keeps === "nothing" ? page.t.offText : page.keeps === "stats" ? page.t.statsText : page.t.emptyText
+                        Button {
+                            visible: page.keeps === "nothing"
+                            text: page.t.settings
+                            size: "small"
+                            onClicked: Navigation.follow("general", "historyKeeps")
+                        }
+                        Button {
+                            visible: page.keeps === "stats"
+                            text: page.t.keepText
+                            size: "small"
+                            onClicked: page.askKeepText = true
+                        }
+                    }
+                    InlineConfirm {
+                        open: page.askKeepText
+                        ruled: false
+                        text: page.t.keepTextQuestion
+                        detail: T.keepTextDetail(Number(Settings.values.historyTextDays))
+                        confirmText: page.t.keepTextConfirm
+                        confirmIcon: "check"
+                        variant: "primary"
+                        cancelText: Words.cancel
+                        onCancelled: page.askKeepText = false
+                        onConfirmed: {
+                            Settings.set("historyKeeps", "text")
+                            page.askKeepText = false
+                        }
+                    }
                 }
             }
-            InlineConfirm {
-                open: page.askKeepText
-                ruled: false
-                text: page.t.keepTextQuestion
-                detail: T.keepTextDetail(Number(Settings.values.historyTextDays))
-                confirmText: page.t.keepTextConfirm
-                confirmIcon: "check"
-                variant: "primary"
-                cancelText: Words.cancel
-                onCancelled: page.askKeepText = false
-                onConfirmed: {
-                    Settings.set("historyKeeps", "text")
-                    page.askKeepText = false
+            Reveal {
+                open: page.listing && History.results.length === 0 && !History.searching
+                EmptyState {
+                    width: parent.width
+                    iconName: "search"
+                    title: T.noMatch(search.text)
+                    Button { visible: page.narrowed; text: page.t.clearFilters; size: "small"; onClicked: page.clearSearch() }
                 }
             }
         }
-    }
-    Reveal {
-        open: page.listing && History.results.length === 0 && !History.searching
-        EmptyState {
-            width: parent.width
-            iconName: "search"
-            title: T.noMatch(search.text)
-            Button { visible: page.narrowed; text: page.t.clearFilters; size: "small"; onClicked: page.clearSearch() }
+
+        RecordingReader {
+            id: reader
+            entryId: page.readingId
+            startAt: page.readAt
+            find: search.text
+            onClosed: page.readingId = 0
         }
     }
 }

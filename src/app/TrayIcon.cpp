@@ -2,6 +2,8 @@
 
 #include "app/ApplicationController.h"
 #include "dictation/DictationTypes.h"
+#include "recording/RecordingPresentation.h"
+#include "recording/RecordingSession.h"
 
 #include <QAction>
 #include <QIcon>
@@ -92,6 +94,8 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
     QAction *pasteAgain = m_menu.addAction(QStringLiteral("Paste last dictation"), controller,
                                            [controller] { controller->pasteAgain(); });
     pasteAgain->setObjectName(QStringLiteral("trayPasteAgain"));
+    m_recordingAction = m_menu.addAction(QString(), controller, &ApplicationController::toggleRecording);
+    m_recordingAction->setObjectName(QStringLiteral("trayToggleRecording"));
     // Offered while there is something to paste again.
     connect(&m_menu, &QMenu::aboutToShow, pasteAgain,
             [pasteAgain, controller] { pasteAgain->setEnabled(!controller->pasteAgainText().isEmpty()); });
@@ -105,8 +109,11 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
 
     connect(controller, &ApplicationController::stateChanged,
             this, &TrayIcon::applyState);
-    connect(controller, &ApplicationController::recordingChanged, this,
-            [this, controller] { applyState(controller->dictationState()); });
+    m_recordingClock.setInterval(1000);
+    connect(&m_recordingClock, &QTimer::timeout, this, [this, controller] { applyState(controller->dictationState()); });
+    connect(controller->recording(), &RecordingSession::phaseChanged, this, [this, controller] {
+        applyState(controller->dictationState());
+    });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
                 // On macOS the click that opens the menu says Trigger too.
@@ -135,11 +142,19 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
 void TrayIcon::applyState(DictationState state)
 {
     const bool listening = dictationListeningPresentation(state);
-    const bool recording = m_controller->isRecording();
+    const RecordingSession::Phase phase = m_controller->recording()->phase();
+    const bool recording = phase == RecordingSession::Phase::Recording || phase == RecordingSession::Phase::Stopping;
+    const qint64 elapsedMs = m_controller->recording()->status().durationMs;
     const DictationToggleAction toggle = dictationToggleAction(state);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
-    m_tray->setToolTip(trayToolTip(listening, recording));
+    // Neither while it starts nor while it stops can it be asked to.
+    m_recordingAction->setText(trayRecordingActionText(recording, elapsedMs));
+    m_recordingAction->setEnabled(phase == RecordingSession::Phase::Off || phase == RecordingSession::Phase::Recording);
+    if (recording != m_recordingClock.isActive()) {
+        recording ? m_recordingClock.start() : m_recordingClock.stop();
+    }
+    m_tray->setToolTip(trayToolTip(listening, recording ? recordingElapsedText(elapsedMs) : QString()));
     m_tray->setIcon(trayIcon(listening, recording));
 }
 

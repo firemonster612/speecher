@@ -105,15 +105,16 @@ Check which speech and refinement services can work:
   --json                   print a JSON array of objects instead of a table
 
 Record a call into a file, in the running Speecher (started if needed):
-  speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
+  speecher record start [--to <file>] [--name <title>] [--mic-only] [--vocab-file <path>]
                            record the microphone as "me" and system audio
                            as "them", and print the file's path once the
                            speech provider is connected, or exit with
                            status 1 and no file;
                            each utterance is appended as one line,
                            "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
-                           (default file: recordings/<yyyy-mm-dd-hhmm>.md in
-                           Speecher's data folder)
+                           (default file: <name>-<yyyy-mm-dd-hhmm>.md, or
+                           .txt, in the folder Recordings saves to)
+  --name <title>           the recording's name in History and its file's
   --mic-only               record the microphone alone, without system audio
   --vocab-file <path>      add the file's terms to the custom vocabulary for
                            this recording, as transcribe does
@@ -703,6 +704,12 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
                 return QStringLiteral("--to needs a file, not a folder: %1").arg(*path);
             }
             decision->recordPath = QFileInfo(*path).absoluteFilePath();
+        } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--name")) {
+            const std::optional<QString> title = optionValue(arguments, index, &error);
+            if (!title) {
+                return error;
+            }
+            decision->recordTitle = title->trimmed();
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
             decision->recordMicrophoneOnly = true;
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {

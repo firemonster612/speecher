@@ -151,4 +151,33 @@ DictationPlan planDictation(const AppSettings &saved,
     return plan;
 }
 
+// Local Models finalize runs of words rather than utterances, and their tail
+// only in a whole-attempt transcript, so a recording never asks them.
+AppSettings planRecording(const AppSettings &saved, const QStringList &addedVocabulary,
+                          const StreamsFinalText &streamsFinalText)
+{
+    RunOverrides run;
+    run.writingProfile = WritingProfile::Other;
+    run.addedVocabulary = addedVocabulary;
+    AppSettings settings = planDictation(saved, Target{}, run).settings;
+    ServiceOrder services = saved.speech.services;
+    const std::optional<ServiceChoice> &first = saved.recording.first;
+    QStringList candidates = services.order;
+    if (first && isChainProviderId(ProviderRole::Speech, first->service)) {
+        services.choice(first->service) = mergedServiceChoice(services.choice(first->service), *first);
+        candidates.removeAll(first->service);
+        candidates.prepend(first->service);
+    }
+    settings.speech.services = services;
+    services.order.clear();
+    for (const QString &service : std::as_const(candidates)) {
+        if (service != providerKey(ProviderId::Local)
+            && streamsFinalText(service, chainSpeechSettings(settings.speech, service))) {
+            services.order.append(service);
+        }
+    }
+    settings.speech.services = services;
+    return settings;
+}
+
 } // namespace speecher

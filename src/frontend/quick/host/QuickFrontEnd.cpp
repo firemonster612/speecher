@@ -5,6 +5,7 @@
 #include "app/PlatformComposition.h"
 #include "app/TrayIcon.h"
 #include "app/UpdateController.h"
+#include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
 #include "platform/InstalledApps.h"
@@ -164,6 +165,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_models(controller, &m_settings)
     , m_insights(controller)
     , m_history(controller)
+    , m_recording(controller)
     , m_accounts(controller)
     , m_library(controller)
     , m_apps(controller)
@@ -189,6 +191,25 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     connect(session, &DictationSession::popupShowRequested, m_popup, &QuickPopupWindow::show);
     connect(m_popup, &QuickPopupWindow::presented, session, &DictationSession::popupPresented);
     connect(&m_dictation, &QuickDictation::pageRequested, this, &QuickFrontEnd::showPage);
+    // The popup's recording pill shows while a recording runs, when the
+    // setting has it; the window hides once the pill has faded out.
+    connect(&m_recording, &QuickRecording::stateChanged, this, [this, controller] {
+        if (m_recording.state() != u"off" && controller->settings()->dictationSnapshot().recording.showPill) {
+            m_popup->show(0);
+        }
+    });
+    connect(&m_recording, &QuickRecording::pageRequested, this, [this](const QString &pageId, const QString &rowId) {
+        if (rowId.isEmpty()) {
+            showPage(pageId);
+            return;
+        }
+        m_navigation.goToRow(pageId, rowId);
+        showPage({});
+    });
+    // The first recording ever, asked for from the tray or its shortcut,
+    // waits for the consent notice on Recordings.
+    connect(controller, &ApplicationController::recordingConsentNeeded, this,
+            [this] { showPage(QStringLiteral("recordings")); });
     // A link in the setup assistant opens its page in Main, and the way back
     // brings the assistant up again.
     connect(&m_navigation, &QuickNavigation::mainRequested, this, [this] { showPage({}); });

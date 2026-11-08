@@ -649,6 +649,7 @@ set(SPEECHER_APP_SOURCES
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
   src/app/PasteAgain.cpp
+  src/app/RefineAgain.cpp
   src/app/ProviderAvailability.cpp
   src/app/CliClient.cpp
   src/app/CommandLine.cpp
@@ -670,6 +671,7 @@ set(SPEECHER_APP_SOURCES
   src/app/SpeecherRemoval.cpp
   src/app/VirtualKeyboardSetup.cpp
   src/app/WhatsNewTracker.cpp
+  src/recording/RecordingAudio.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
   src/recording/RecordingStatus.cpp
@@ -688,6 +690,7 @@ set(SPEECHER_APP_HEADERS
   src/app/LocalSetup.h
   src/app/NetworkReachability.h
   src/app/PasteAgain.h
+  src/app/RefineAgain.h
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CliClient.h
@@ -711,6 +714,7 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
   src/app/VirtualKeyboardSetup.h
   src/app/WhatsNewTracker.h
+  src/recording/RecordingAudio.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
   src/recording/RecordingStatus.h

@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <memory>
@@ -235,6 +236,23 @@ void migrateHistory(QSettings &settings)
     }
 }
 
+// New installs save recordings in Documents/Speecher. An install that has
+// recorded already keeps them where they went, the data folder's recordings,
+// unless a folder was chosen.
+void migrateRecording(QSettings &settings)
+{
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::RecordingMigrationVersion).toInt() >= currentMigrationVersion) {
+        return;
+    }
+    settings.setValue(SettingsKeys::RecordingMigrationVersion, currentMigrationVersion);
+    const QString older =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath(QStringLiteral("recordings"));
+    if (settings.value(SettingsKeys::RecordingFolder).toString().isEmpty() && QFileInfo(older).isDir()) {
+        settings.setValue(SettingsKeys::RecordingFolder, older);
+    }
+}
+
 void migrateSavedSettings()
 {
     // The format SettingsFile opens, as olderSettings does.
@@ -260,6 +278,7 @@ void migrateSavedSettings()
     migrateApps(newSettings);
     migrateVocabulary(newSettings);
     migrateHistory(newSettings);
+    migrateRecording(newSettings);
     // After the model renames, which it carries into the orders.
     SettingsCodecs().migrateServiceOrder();
 }

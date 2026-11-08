@@ -40,6 +40,12 @@ QJsonObject recordingStatusJson(const RecordingStatus &status)
                        {QStringLiteral("path"), status.path},
                        {QStringLiteral("durationMs"), status.durationMs},
                        {QStringLiteral("streams"), streams}};
+    if (!status.title.isEmpty()) {
+        object.insert(QStringLiteral("title"), status.title);
+    }
+    if (status.historyId > 0) {
+        object.insert(QStringLiteral("historyId"), status.historyId);
+    }
     if (status.unwrittenLines > 0) {
         object.insert(QStringLiteral("unwrittenLines"), status.unwrittenLines);
         object.insert(QStringLiteral("writeError"), status.writeError);
@@ -56,6 +62,8 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
     status.recording = object.value(QStringLiteral("recording")).toBool();
     status.path = object.value(QStringLiteral("path")).toString();
     status.durationMs = object.value(QStringLiteral("durationMs")).toInteger();
+    status.title = object.value(QStringLiteral("title")).toString();
+    status.historyId = object.value(QStringLiteral("historyId")).toInteger();
     for (const QJsonValue &value : object.value(QStringLiteral("streams")).toArray()) {
         const QJsonObject stream = value.toObject();
         const QString state = stream.value(QStringLiteral("state")).toString();

@@ -82,9 +82,9 @@ SessionKeys sessionKeysWanted(DictationState state,
                               const ShortcutBinding &pauseShortcut,
                               bool suspended);
 
-// The tray icon's tooltip and Quit item. recording: a recording is running,
-// which `speecher record` starts.
-QString trayToolTip(bool listening, bool recording);
+// The tray icon's tooltip and Quit item. recordingFor: how long the
+// recording running has run ("12:03"), empty while none runs.
+QString trayToolTip(bool listening, const QString &recordingFor);
 QString trayQuitCaption();
 
 // Which providers a Dictation Session used and which let it down.

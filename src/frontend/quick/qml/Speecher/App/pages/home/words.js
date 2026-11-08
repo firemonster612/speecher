@@ -17,6 +17,9 @@ var text = {
     more: "More",
     copy: "Copy",
     startDictation: "Start dictation",
+    recordingCall: "Recording a call",
+    stopRecording: "Stop",
+    openRecording: "Open",
     stop: "Stop",
     pressShortcut: "Press the shortcut in any app to dictate into it.",
     noShortcut: "Set a dictation shortcut to dictate from any app.",
@@ -54,6 +57,13 @@ var text = {
 }
 
 // History's line on Home: "1,284 dictations, searchable".
+// "Recording a call, 12:03"
+function recordingLine(ms) {
+    const s = Math.floor(ms / 1000)
+    const mmss = Math.floor(s / 60) % 60 + ":" + String(s % 60).padStart(2, "0")
+    return text.recordingCall + ", " + (s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0"))
+}
+
 function historyLine(kept) { return _count(kept, "dictation", "dictations") + ", searchable" }
 // What History keeps while it holds no words to search.
 function historyKeeps(keeps) {

@@ -11,6 +11,7 @@
 #include "dictation/DictationSession.h"
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/SpeechChain.h"
+#include "recording/RecordingAudio.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "recording/SystemAudioPresentation.h"
@@ -19,6 +20,7 @@
 #include "transcribe/TranscribePresentation.h"
 #include "transcribe/TranscribeQueue.h"
 
+#include <QAudioBuffer>
 #include <QAudioDecoder>
 #include <QDir>
 #include <QDirIterator>
@@ -1456,8 +1458,14 @@ private slots:
     // that exists is never written to, the next free name is.
     void aRecordingTranscriptAppendsTimedLinesBesideExistingFiles()
     {
-        QCOMPARE(defaultRecordingPath(QStringLiteral("/data"), QDateTime(QDate(2026, 10, 7), QTime(9, 5))),
-                 QStringLiteral("/data/recordings/2026-10-07-0905.md"));
+        const QDateTime startedAt(QDate(2026, 10, 7), QTime(9, 5));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), {}, RecordingFormat::Markdown, startedAt),
+                 QStringLiteral("/calls/2026-10-07-0905.md"));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), QStringLiteral(" Weekly sync: Q3/Q4! "), RecordingFormat::PlainText,
+                               startedAt),
+                 QStringLiteral("/calls/weekly-sync-q3-q4-2026-10-07-0905.txt"));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), QStringLiteral("Café über"), RecordingFormat::Markdown, startedAt),
+                 QStringLiteral("/calls/café-über-2026-10-07-0905.md"));
         const QString path = m_dir.filePath(QStringLiteral("calls/call.md"));
         RecordingTranscript first;
         QString error;
@@ -1531,6 +1539,136 @@ private slots:
                                                    QStringLiteral("Bye.")}));
     }
 
+    // Without --to, a recording is named by its name and when it started, in
+    // the folder and format the settings choose, and says so as it starts and
+    // as each line goes in.
+    void aRecordingNamesItsFileAndReportsItsLines()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        const QString folder = m_dir.filePath(QStringLiteral("calls"));
+        settings.edit([&folder](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.recording.folder = folder;
+            draft.recording.format = RecordingFormat::PlainText;
+            return true;
+        });
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QSignalSpy started(&recording, &RecordingSession::started);
+        QSignalSpy lines(&recording, &RecordingSession::lineWritten);
+        std::optional<QString> outcome;
+        recording.start({{}, QStringLiteral("Weekly sync")}, [&outcome](const QString &error) { outcome = error; });
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.has_value(), 10000);
+        QCOMPARE(*outcome, QString());
+        const QString path = recording.status().path;
+        QVERIFY2(path.startsWith(folder + QStringLiteral("/weekly-sync-")) && path.endsWith(QStringLiteral(".txt")),
+                 qPrintable(path));
+        QCOMPARE(recording.status().title, QStringLiteral("Weekly sync"));
+        QCOMPARE(started.size(), 1);
+        QCOMPARE(started.first(), (QVariantList{path, QStringLiteral("Weekly sync")}));
+
+        m_codex->emitFinalText(QStringLiteral("  Can you\nhear me?  "));
+        QCOMPARE(lines.size(), 1);
+        QCOMPARE(lines.first().at(1).toString(), QStringLiteral("me"));
+        QCOMPARE(lines.first().at(2).toString(), QStringLiteral("Can you hear me?"));
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Can you hear me?")});
+    }
+
+    // Once neither side has spoken for Stop after silence, the recording
+    // stops itself; speech puts that off.
+    void aRecordingStopsAfterSilence()
+    {
+        RecordingSession::setAutoStopMinuteMs(400);
+        const auto restore = qScopeGuard([] { RecordingSession::setAutoStopMinuteMs(60000); });
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.recording.autoStopMinutes = 1;
+            return true;
+        });
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        for (int i = 0; i < 6; ++i) {
+            QTest::qWait(150);
+            microphone->pushAudio(microphoneChunk(8000));
+        }
+        QVERIFY(recording.isRecording());
+        QCOMPARE(stopped.count(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+    }
+
+    // Each side's chunks land where they ended on the recording's clock: a
+    // gap is silence, a chunk that arrives a little late closes up, and a
+    // side that falls far behind is filled with silence so the other's audio
+    // still goes out.
+    void aRecordingsAudioLaysBothSidesOnOneClock()
+    {
+        const auto samples = [](int count, qint16 value) {
+            QByteArray pcm(count * 2, Qt::Uninitialized);
+            for (int i = 0; i < count; ++i) {
+                qToLittleEndian(value, pcm.data() + 2 * i);
+            }
+            return pcm;
+        };
+        const auto frame = [](const QByteArray &stereo, qint64 ms) {
+            const char *at = stereo.constData() + ms * 16 * 4;
+            return std::pair{qFromLittleEndian<qint16>(at), qFromLittleEndian<qint16>(at + 2)};
+        };
+        StereoTimeline timeline;
+        timeline.place(0, 100, samples(1600, 1));
+        QVERIFY(timeline.take().isEmpty());
+        timeline.place(1, 400, samples(1600, 2));
+        timeline.place(0, 400, samples(4800, 3));
+        // 50 ms late: no gap.
+        timeline.place(0, 550, samples(1600, 4));
+        const QByteArray placed = timeline.take();
+        QCOMPARE(placed.size(), 400 * 16 * 4);
+        QCOMPARE(frame(placed, 50), std::pair(qint16(1), qint16(0)));
+        QCOMPARE(frame(placed, 200), std::pair(qint16(3), qint16(0)));
+        QCOMPARE(frame(placed, 350), std::pair(qint16(3), qint16(2)));
+
+        timeline.place(0, 3500, samples(16 * 3000, 5));
+        QCOMPARE(timeline.take().size(), (3500 - 2000 - 400) * 16 * 4);
+        const QByteArray rest = timeline.takeAll();
+        QCOMPARE(rest.size(), 2000 * 16 * 4);
+        QCOMPARE(frame(rest, 1999), std::pair(qint16(5), qint16(0)));
+
+        // The file holds both sides, as long as the longer.
+        RecordingAudio audio(m_dir.filePath(QStringLiteral("call.md")));
+        for (int chunk = 1; chunk <= 10; ++chunk) {
+            audio.hear(0, chunk * 100, samples(1600, 8000));
+        }
+        audio.hear(1, 1000, samples(1600, 8000));
+        const QString path = audio.finish();
+        QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("call."))));
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(path), 10000);
+        QAudioDecoder decoder;
+        decoder.setSource(QUrl::fromLocalFile(path));
+        qint64 decodedUs = 0;
+        int channels = 0;
+        connect(&decoder, &QAudioDecoder::bufferReady, &decoder, [&] {
+            const QAudioBuffer buffer = decoder.read();
+            decodedUs += buffer.duration();
+            channels = buffer.format().channelCount();
+        });
+        bool done = false;
+        connect(&decoder, &QAudioDecoder::finished, &decoder, [&done] { done = true; });
+        connect(&decoder, qOverload<QAudioDecoder::Error>(&QAudioDecoder::error), &decoder, [&done] { done = true; });
+        decoder.start();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+        QCOMPARE(channels, 2);
+        QVERIFY2(std::abs(decodedUs / 1000 - 1000) < 150, qPrintable(QStringLiteral("decoded %1 ms").arg(decodedUs / 1000)));
+    }
+
     // record start --vocab-file's terms reach the speech provider ahead of the
     // saved ones, for this recording only.
     void aRecordingAddsItsTermsToTheVocabulary()
@@ -1554,9 +1692,9 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
-    // The Other profile's speech model applies where that profile keeps the
-    // recording's provider, as in a Transcribe batch.
-    void aRecordingUsesTheOtherProfilesModel()
+    // A recording passes over a Local Model, even one the Other profile
+    // puts first, for the next service in the order that streams.
+    void aRecordingPassesOverALocalModel()
     {
         QPointer<FakeSpeechTranscriber> local;
         m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
@@ -1566,9 +1704,10 @@ private slots:
                                                local->onStartAttempt = [&local] { local->emitConnected(); };
                                                return local.data();
                                            });
+        registerStreamingCodex();
         SettingsStore settings;
         AppSettings draft = settings.snapshot();
-        draft.speech.services.order = {QStringLiteral("local")};
+        draft.speech.services.order = {QStringLiteral("local"), QStringLiteral("codex")};
         for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
             if (profile.profile == WritingProfile::Other) {
                 profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
@@ -1580,8 +1719,8 @@ private slots:
         });
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        QCOMPARE(local->startCalls, 1);
-        QCOMPARE(local->lastLocalModel, QStringLiteral("moonshine-small"));
+        QCOMPARE(m_codex->startCalls, 1);
+        QVERIFY(!local || local->startCalls == 0);
     }
 
     // A provider that finalizes only when asked, as Codex does, still writes
@@ -1916,8 +2055,7 @@ private slots:
         QString error;
         const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
         QVERIFY(startRecording(recording, refused, &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs Claude, ChatGPT or your speech server. Scripted "
-                                       "can't record yet."));
+        QCOMPARE(error, recordingNoServiceText());
         QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();
@@ -1964,7 +2102,7 @@ private slots:
         });
         const QString path = m_dir.filePath(QStringLiteral("never.md"));
         std::optional<QString> outcome;
-        recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({path}, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         QVERIFY(QFileInfo::exists(path));
         QVERIFY(!outcome);
@@ -2242,7 +2380,7 @@ private slots:
             return microphone.data();
         });
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Two utterances go to Codex while it connects, each ended by the
         // pause after it before the next starts.
@@ -2285,7 +2423,7 @@ private slots:
             microphone = new FakeAudioInput(parent);
             return microphone.data();
         });
-        recording.start(QString(), {}, m_dir.path(), false, [](const QString &) {});
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [](const QString &) {});
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // 2 seconds, then 10 minutes, before Codex connects.
         microphone->pushAudio(QByteArray(2 * 32000, '\1'));
@@ -2804,7 +2942,7 @@ private slots:
             [&](QString *) { return std::make_unique<FakeEchoCanceller>(&log); });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         streamingCodexes().at(0)->emitConnected();
         streamingCodexes().at(1)->emitFailure(QStringLiteral("Too many sessions"), false, SpeechPhase::Connect,
@@ -2838,7 +2976,7 @@ private slots:
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         streamingCodexes().at(0)->emitConnected();
         recording.setDictating(true);
@@ -2865,7 +3003,7 @@ private slots:
         const auto startAndConnect = [&](const QString &path) {
             const qsizetype streams = streamingCodexes().size();
             std::optional<QString> outcome;
-            recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+            recording.start({path}, [&outcome](const QString &error) { outcome = error; });
             QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), streams + 2, 10000);
             streamingCodexes().at(streams)->emitConnected();
             streamingCodexes().at(streams + 1)->emitConnected();
@@ -2965,7 +3103,7 @@ private slots:
             [](QObject *parent) { return new FakeAudioInput(parent); });
         const QString path = m_dir.filePath(QStringLiteral("never.md"));
         std::optional<QString> outcome;
-        recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({path}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         int themCancels = 0;
         streamingCodexes().at(1)->onCancelAttempt = [&themCancels](quint64) { ++themCancels; };
@@ -4285,8 +4423,10 @@ private:
                            bool microphoneOnly = false)
     {
         std::optional<QString> outcome;
-        recording.start(path, vocabulary, m_dir.path(), microphoneOnly,
-                        [&outcome](const QString &failure) { outcome = failure; });
+        const QString file = path.isEmpty() ? recordingPath(m_dir.filePath(QStringLiteral("recordings")), {},
+                                                            RecordingFormat::Markdown, QDateTime::currentDateTime())
+                                            : path;
+        recording.start({file, {}, vocabulary, microphoneOnly}, [&outcome](const QString &failure) { outcome = failure; });
         if (!QTest::qWaitFor([&outcome] { return outcome.has_value(); }, 10000)) {
             *error = QStringLiteral("the start never finished");
             return {};

@@ -30,6 +30,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QStandardPaths>
 
 #include <functional>
@@ -363,6 +364,32 @@ private slots:
         }
         migrateSavedSettings();
         QCOMPARE(SettingsStore().snapshot().history.keeps, keeps);
+    }
+
+    // A new install saves recordings in the default, Documents/Speecher; one
+    // that recorded already keeps the data folder's recordings, and a folder
+    // chosen stays chosen.
+    void recordingsStayWhereAnUpgradeKeptThem()
+    {
+        const QString older = dataFolder() + QStringLiteral("/recordings");
+        QDir(older).removeRecursively();
+        const auto migrated = [](const QString &chosen) {
+            {
+                SettingsStore store;
+                store.raw().clear();
+                if (!chosen.isEmpty()) {
+                    store.raw().setValue(QStringLiteral("recording/folder"), chosen);
+                }
+                store.raw().sync();
+            }
+            migrateSavedSettings();
+            return SettingsStore().snapshot().recording.folder;
+        };
+        QCOMPARE(migrated({}), QString());
+        QVERIFY(QDir().mkpath(older));
+        const auto cleanup = qScopeGuard([older] { QDir(older).removeRecursively(); });
+        QCOMPARE(migrated({}), older);
+        QCOMPARE(migrated(QStringLiteral("/calls")), QStringLiteral("/calls"));
     }
 
     void nativeSettingsHistoryAndModelsSurviveTheUpdate()

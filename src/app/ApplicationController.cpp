@@ -80,6 +80,8 @@ QString shortcutTakenText(GlobalShortcutRole takenBy)
         return QStringLiteral("That is already the Pause Shortcut.");
     case GlobalShortcutRole::PasteAgain:
         return QStringLiteral("That is already the Paste again shortcut.");
+    case GlobalShortcutRole::Recording:
+        return QStringLiteral("That is already the Recording Shortcut.");
     case GlobalShortcutRole::Dictation:
         break;
     }
@@ -110,6 +112,8 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, m_settings, this))
     , m_pasteAgainShortcutBinder(
           m_platform->createGlobalShortcutBinder(GlobalShortcutRole::PasteAgain, m_settings, this))
+    , m_recordingShortcutBinder(
+          m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Recording, m_settings, this))
     , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
     , m_shortcutGesture(new ShortcutGesture(*m_settings, [this] { return sessionActive(); }, this))
     , m_whatsNew(new WhatsNewTracker(*m_settings, this))
@@ -143,8 +147,9 @@ ApplicationController::ApplicationController(bool popupOnly,
     // nothing. Outside a Dictation Session both do nothing.
     connect(m_cancelShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::cancel);
     connect(m_pasteAgainShortcutBinder, &GlobalShortcutBinder::activated, this, [this] { pasteAgain(); });
-    for (const GlobalShortcutRole role :
-         {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause, GlobalShortcutRole::PasteAgain}) {
+    connect(m_recordingShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::toggleRecording);
+    for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause,
+                                          GlobalShortcutRole::PasteAgain, GlobalShortcutRole::Recording}) {
         GlobalShortcutBinder *binder = shortcutBinder(role);
         connect(binder, &GlobalShortcutBinder::bindingChanged, this, [this] {
             updateSessionShortcuts();
@@ -205,7 +210,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      new ShortcutSuspendingDelivery(
                                          m_platform->createTextDelivery(targetProvider, this),
                                          {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder,
-                                          m_pasteAgainShortcutBinder},
+                                          m_pasteAgainShortcutBinder, m_recordingShortcutBinder},
                                          this),
                                      m_providers,
                                      this);
@@ -298,6 +303,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_session, &DictationSession::dictationFinished, this, &ApplicationController::keepInHistory);
     connect(m_fileTranscription, &FileTranscriptionSession::fileFinished, this,
             [this](int, const TranscribeFileResult &result) { keepFileInHistory(result); });
+    keepRecordingInHistory();
     // Retention runs at start, hourly, after each entry and as it changes;
     // a seed's entries keep their words.
     if (!seeded) {
@@ -423,22 +429,84 @@ bool ApplicationController::isRecording() const
     return m_recording->isRecording();
 }
 
-void ApplicationController::startRecording(const QString &path,
-                                           const QStringList &vocabulary,
-                                           bool microphoneOnly,
+RecordingSession *ApplicationController::recording() const
+{
+    return m_recording;
+}
+
+void ApplicationController::startRecording(const RecordingRequest &request,
                                            std::function<void(const QString &error)> done)
 {
+    const auto finished = [this, done = std::move(done)](const QString &error) {
+        done(error);
+        emit recordingStartFinished(error);
+    };
     if (!ensureSetupCompleted()) {
-        done(recordingNeedsSetupText());
+        finished(recordingNeedsSetupText());
         return;
     }
-    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, microphoneOnly,
-                                               done = std::move(done)](bool granted) {
+    m_platform->requestMicrophoneAccess(this, [this, request, finished](bool granted) {
         if (!granted) {
-            done(microphoneAccessOffText());
+            finished(microphoneAccessOffText());
             return;
         }
-        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, done);
+        m_recording->start(request, finished);
+    });
+}
+
+void ApplicationController::toggleRecording()
+{
+    switch (m_recording->phase()) {
+    case RecordingSession::Phase::Recording:
+        m_recording->stop();
+        return;
+    case RecordingSession::Phase::Starting:
+    case RecordingSession::Phase::Stopping:
+        return;
+    case RecordingSession::Phase::Off:
+        break;
+    }
+    if (!m_settings->recordingConsentNoticeShown()) {
+        emit recordingConsentNeeded();
+        return;
+    }
+    startRecording({}, [this](const QString &error) {
+        if (!error.isEmpty() && m_frontEnd) {
+            m_frontEnd->showDictationError(error);
+        }
+    });
+}
+
+qint64 ApplicationController::recordingHistoryId() const
+{
+    return m_recordingEntry;
+}
+
+void ApplicationController::keepRecordingInHistory()
+{
+    if (!m_historySeeded) {
+        m_history->finishUnfinishedRecordings();
+    }
+    connect(m_recording, &RecordingSession::started, this, [this](const QString &path, const QString &title) {
+        HistoryEntry entry;
+        entry.kind = HistoryKind::Recording;
+        entry.startedAt = QDateTime::currentDateTime();
+        entry.outcome = HistoryOutcome::Complete;
+        entry.title = title;
+        entry.transcriptPath = path;
+        entry.kept = HistoryKeep::Text;
+        m_recordingEntry = m_history->add(entry);
+    });
+    connect(m_recording, &RecordingSession::lineWritten, this,
+            [this](qint64 atMs, const QString &speaker, const QString &text) {
+                m_history->appendLine(m_recordingEntry, {atMs, speaker, text});
+            });
+    connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
+        const bool missed = status.unwrittenLines > 0
+            || std::any_of(status.streams.cbegin(), status.streams.cend(),
+                           [](const RecordingStreamStatus &stream) { return stream.lostAudioMs > 0; });
+        m_history->finishRecording(m_recordingEntry, QDateTime::currentDateTime(), status.durationMs,
+                                   missed ? HistoryOutcome::Missed : HistoryOutcome::Complete, status.audioPath);
     });
 }
 
@@ -712,6 +780,8 @@ GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole r
         return m_pauseShortcutBinder;
     case GlobalShortcutRole::PasteAgain:
         return m_pasteAgainShortcutBinder;
+    case GlobalShortcutRole::Recording:
+        return m_recordingShortcutBinder;
     case GlobalShortcutRole::Dictation:
         break;
     }

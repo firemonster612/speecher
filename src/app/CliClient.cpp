@@ -330,6 +330,7 @@ int runRecordCommand(const CommandLineDecision &decision,
         }
         request.terms = decision.vocabularyTerms;
         request.microphoneOnly = decision.recordMicrophoneOnly;
+        request.title = decision.recordTitle;
     }
     IpcResponse response;
     QString ipcError;

@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -346,6 +347,61 @@ private slots:
         QVERIFY2(fastest(searchFor(QStringLiteral("uploader"))) < 16, "a word's page took a frame or longer");
         QVERIFY2(fastest(searchFor(QStringLiteral("retry loop 12"))) < 16, "several words' page took a frame or longer");
         QVERIFY2(fastest({}) < 16, "the first page took a frame or longer");
+    }
+
+    // A Recording is listed while it runs, its lines kept as they come; once
+    // finished, its words are its text, which search finds, and retention
+    // and clearing leave it. One a crash left running finishes at its
+    // file's last change. Removing it takes its lines and leaves its files.
+    void aRecordingKeepsItsLines()
+    {
+        HistoryStore store(databasePath(QStringLiteral("recording.sqlite3")), m_dir.filePath(QStringLiteral("audio")));
+        HistoryEntry running;
+        running.kind = HistoryKind::Recording;
+        running.startedAt = kNow.addDays(-400);
+        running.title = QStringLiteral("Weekly sync");
+        running.transcriptPath = m_dir.filePath(QStringLiteral("weekly-sync.md"));
+        running.outcome = HistoryOutcome::Complete;
+        running.kept = HistoryKeep::Text;
+        const qint64 id = store.add(running);
+        QVERIFY(id > 0);
+        QCOMPARE(store.search({}).size(), 1);
+        QVERIFY(!store.search({}).first().entry.stats.finishedAt.isValid());
+        QVERIFY(store.appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("Can you see my screen?")}));
+        QVERIFY(store.appendLine(id, {9000, QStringLiteral("them"), QStringLiteral("The uploader retries after a 403")}));
+        QCOMPARE(store.lines(id), (QList<HistoryLine>{{4000, QStringLiteral("me"), QStringLiteral("Can you see my screen?")},
+                                                     {9000, QStringLiteral("them"),
+                                                      QStringLiteral("The uploader retries after a 403")}}));
+
+        QVERIFY(store.finishRecording(id, kNow.addDays(-400).addSecs(42 * 60), 42 * 60 * 1000, HistoryOutcome::Missed, {}));
+        const HistoryEntry finished = *store.entry(id);
+        QCOMPARE(finished.outcome, HistoryOutcome::Missed);
+        QCOMPARE(finished.stats.words, 11);
+        QCOMPARE(finished.stats.audioMs, 42 * 60 * 1000);
+        QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("uploader")))),
+                 QStringList{QStringLiteral("Can you see my screen?\nThe uploader retries after a 403")});
+        store.prune(kNow, HistorySettings{HistoryKeep::Text, 7, 1});
+        QVERIFY(store.clear({}, {}, false));
+        QVERIFY(store.entry(id)->text.has_value());
+        QCOMPARE(store.countIn({}, {}), 0);
+
+        QFile file(m_dir.filePath(QStringLiteral("crashed.md")));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        HistoryEntry crashed = running;
+        crashed.startedAt = QDateTime::currentDateTime().addSecs(-60);
+        crashed.transcriptPath = file.fileName();
+        const qint64 crashedId = store.add(crashed);
+        QVERIFY(store.appendLine(crashedId, {1000, QStringLiteral("me"), QStringLiteral("Hello")}));
+        store.finishUnfinishedRecordings();
+        const HistoryEntry recovered = *store.entry(crashedId);
+        QCOMPARE(recovered.stats.finishedAt, QFileInfo(file).lastModified());
+        QCOMPARE(recovered.text, std::optional(QStringLiteral("Hello")));
+
+        QVERIFY(store.remove(id));
+        QVERIFY(!store.entry(id));
+        QVERIFY(store.lines(id).isEmpty());
+        QVERIFY(QFile::exists(file.fileName()));
     }
 
     // A second of tone goes in as it is heard and comes out a second long,

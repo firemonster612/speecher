@@ -31,8 +31,8 @@ bool encodesAac()
     return encodes;
 }
 
-// A canonical 44-byte header for dataBytes of 16 kHz mono 16-bit PCM.
-QByteArray wavHeader(quint32 dataBytes)
+// A canonical 44-byte header for dataBytes of 16 kHz 16-bit PCM.
+QByteArray wavHeader(quint32 dataBytes, quint16 channels)
 {
     QByteArray header(44, '\0');
     char *at = header.data();
@@ -43,47 +43,59 @@ QByteArray wavHeader(quint32 dataBytes)
     memcpy(at + 8, "WAVEfmt ", 8);
     put32(16, 16);
     put16(1, 20);
-    put16(1, 22);
+    put16(channels, 22);
     put32(sampleRate, 24);
-    put32(sampleRate * bytesPerSample, 28);
-    put16(bytesPerSample, 32);
+    put32(sampleRate * bytesPerSample * channels, 28);
+    put16(bytesPerSample * channels, 32);
     put16(16, 34);
     memcpy(at + 36, "data", 4);
     put32(dataBytes, 40);
     return header;
 }
 
+// A voice is as private as the words: the folder, made where it is
+// missing, is the owner's alone.
+QString ownersOnly(const QString &folder)
+{
+    QDir().mkpath(folder);
+    QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return folder;
+}
+
 } // namespace
 
-QAudioFormat HistoryAudioWriter::pcmFormat()
+QAudioFormat HistoryAudioWriter::pcmFormat(int channels)
 {
     QAudioFormat format;
     format.setSampleRate(sampleRate);
-    format.setChannelCount(1);
+    format.setChannelCount(channels);
     format.setSampleFormat(QAudioFormat::Int16);
     return format;
 }
 
 HistoryAudioWriter::HistoryAudioWriter(const QString &folder, QObject *parent)
+    : HistoryAudioWriter(ownersOnly(folder), QUuid::createUuid().toString(QUuid::WithoutBraces), 1, parent)
+{
+}
+
+HistoryAudioWriter::HistoryAudioWriter(const QString &folder, const QString &stem, int channels, QObject *parent)
     : QObject(parent)
     , m_folder(folder)
+    , m_channels(channels)
     , m_encoded(encodesAac())
 {
-    // A voice is as private as the words: the folder is the owner's alone.
     QDir().mkpath(folder);
-    QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
-    m_name = QUuid::createUuid().toString(QUuid::WithoutBraces) + (m_encoded ? QStringLiteral(".m4a")
-                                                                              : QStringLiteral(".wav"));
+    m_name = stem + (m_encoded ? QStringLiteral(".m4a") : QStringLiteral(".wav"));
     if (!m_encoded) {
         m_wav = new QFile(partPath(), this);
-        if (!m_wav->open(QIODevice::WriteOnly) || m_wav->write(wavHeader(0)) != 44) {
+        if (!m_wav->open(QIODevice::WriteOnly) || m_wav->write(wavHeader(0, quint16(m_channels))) != 44) {
             qWarning().noquote() << "history audio could not be written path=" + partPath() << m_wav->errorString();
         }
         m_wav->setPermissions(QFile::ReadOwner | QFile::WriteOwner);
         return;
     }
     m_session = new QMediaCaptureSession(this);
-    m_input = new QAudioBufferInput(pcmFormat(), this);
+    m_input = new QAudioBufferInput(pcmFormat(m_channels), this);
     m_recorder = new QMediaRecorder(this);
     m_session->setAudioBufferInput(m_input);
     m_session->setRecorder(m_recorder);
@@ -91,7 +103,7 @@ HistoryAudioWriter::HistoryAudioWriter(const QString &folder, QObject *parent)
     format.setAudioCodec(QMediaFormat::AudioCodec::AAC);
     m_recorder->setMediaFormat(format);
     m_recorder->setAudioBitRate(aacBitRate);
-    m_recorder->setAudioChannelCount(1);
+    m_recorder->setAudioChannelCount(m_channels);
     m_recorder->setAudioSampleRate(sampleRate);
     m_recorder->setOutputLocation(QUrl::fromLocalFile(partPath()));
     // The empty buffer finish() sends ends the recording.
@@ -128,7 +140,7 @@ void HistoryAudioWriter::write(const QByteArray &pcm)
     if (m_finishing || m_discarded || pcm.isEmpty()) {
         return;
     }
-    m_samples += pcm.size() / bytesPerSample;
+    m_samples += pcm.size() / (bytesPerSample * m_channels);
     if (m_wav) {
         m_wav->write(pcm);
         return;
@@ -141,11 +153,11 @@ void HistoryAudioWriter::write(const QByteArray &pcm)
 void HistoryAudioWriter::sendPending()
 {
     while (!m_pending.isEmpty()) {
-        const QAudioBuffer buffer(m_pending.first(), pcmFormat(), m_samplesSent * 1000000 / sampleRate);
+        const QAudioBuffer buffer(m_pending.first(), pcmFormat(m_channels), m_samplesSent * 1000000 / sampleRate);
         if (!m_input->sendAudioBuffer(buffer)) {
             return;
         }
-        m_samplesSent += m_pending.takeFirst().size() / bytesPerSample;
+        m_samplesSent += m_pending.takeFirst().size() / (bytesPerSample * m_channels);
     }
     if (m_finishing && !m_endSent) {
         m_endSent = m_input->sendAudioBuffer({});
@@ -167,7 +179,7 @@ QString HistoryAudioWriter::finish()
         return m_name;
     }
     const bool written = m_wav->error() == QFileDevice::NoError && m_wav->seek(0)
-        && m_wav->write(wavHeader(quint32(m_samples * bytesPerSample))) == 44;
+        && m_wav->write(wavHeader(quint32(m_samples * bytesPerSample * m_channels), quint16(m_channels))) == 44;
     m_wav->close();
     finishEncoding(written);
     return written ? m_name : QString();

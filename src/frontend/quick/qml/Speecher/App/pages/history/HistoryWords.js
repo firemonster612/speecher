@@ -22,7 +22,8 @@ var text = {
     kinds: [
         { id: "all", label: "All" },
         { id: "dictation", label: "Dictations" },
-        { id: "file", label: "Files" }
+        { id: "file", label: "Files" },
+        { id: "recording", label: "Recordings" }
     ],
     anyApp: "Any app",
     anyProfile: "Any profile",
@@ -37,7 +38,7 @@ var text = {
     clearFilters: "Clear filters",
 
     offTitle: "History is off",
-    offText: "Speecher keeps nothing about your dictations.",
+    offText: "Speecher keeps nothing about your dictations. Recordings you start still save their transcripts.",
     statsTitle: "Speecher keeps stats, not words",
     statsText: "Home counts your dictations. Keep their text to find and copy them here.",
     keepText: "Keep text",
@@ -45,7 +46,7 @@ var text = {
     keepTextConfirm: "Keep text",
     settings: "What Speecher keeps",
     emptyTitle: "Nothing here yet",
-    emptyText: "What you dictate or transcribe shows here.",
+    emptyText: "What you dictate, transcribe or record shows here.",
 
     refined: "Refined",
     spoken: "Spoken",
@@ -56,7 +57,57 @@ var text = {
     stop: "Stop",
     delete_: "Delete",
     more: "More",
-    file: "File"
+    file: "File",
+
+    recording: "Recording",
+    open: "Open",
+    refineAgain: "Refine again",
+    refining: "Refining…",
+    keepThis: "Keep this",
+    refineFailed: "Couldn't refine it again.",
+    findInRecording: "Find in this recording…",
+    previous: "Previous match",
+    next: "Next match",
+    playFromHere: "Play from here",
+    following: "Following",
+    jumpToLatest: "Jump to latest",
+    export_: "Export",
+    exportFormats: [
+        { id: "md", label: "Markdown" },
+        { id: "txt", label: "Plain text" },
+        { id: "json", label: "JSON" }
+    ],
+    exportDialog: "Export recording",
+    exported: "Exported",
+    openFile: "Open file",
+    showInFolder: "Show in folder",
+    back: "All of History",
+    fileMissing: "The transcript file was moved or deleted. History still has its lines.",
+    deleteRecording: "Delete this recording?",
+    deleteRecordingDetail: "Its transcript file stays unless you check below.",
+    alsoDeleteFile: "Also delete the transcript file and its audio"
+}
+
+// A Recording's name: its own, or when it started, "Call at 10:00".
+function recordingTitle(r) {
+    return r.title || "Call at " + Qt.formatTime(r.startedAt, "HH:mm")
+}
+
+// "3 of 7", where Find is in a recording's matches.
+function foundOf(at, count) { return count ? at + " of " + count : "No matches" }
+
+// A line's time from the recording's start, "00:12:31".
+function lineClock(ms) {
+    const s = Math.floor(ms / 1000)
+    const two = n => String(n).padStart(2, "0")
+    return two(Math.floor(s / 3600)) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60)
+}
+
+// The reader's line under its title: "Recording, Thursday 10:00 to 10:42".
+function readerDetail(r, today) {
+    const day = dayHeading(r.day, today)
+    const span = Qt.formatTime(r.startedAt, "HH:mm") + (r.live ? "" : " to " + Qt.formatTime(r.finishedAt, "HH:mm"))
+    return text.recording + ", " + day + " " + span
 }
 
 // "Speecher keeps it on this computer for 90 days, then deletes the words."
@@ -110,6 +161,10 @@ function duration(ms) {
 // A row's detail, its parts set apart by commas: the app or "File", the
 // time, how long, the words of a file, the profile.
 function detail(r) {
+    if (r.kind === "recording") {
+        const started = Qt.formatTime(r.startedAt, "HH:mm")
+        return r.live ? text.recording + ", " + started : [text.recording, started, duration(r.durationMs)].join(", ")
+    }
     const parts = [r.kind === "file" ? text.file : (r.app || "Unknown app")]
     parts.push(Qt.formatTime(r.finishedAt, "HH:mm"))
     if (r.durationMs > 0) parts.push(duration(r.durationMs))
@@ -122,6 +177,7 @@ function detail(r) {
 function outcome(r) {
     if (r.outcome === "undelivered") return "Not delivered"
     if (r.outcome === "copied") return "Not pasted, copied"
+    if (r.outcome === "missed") return "Missed some of the call"
     if (r.kind === "edit") return "Edit to a selection"
     return ""
 }

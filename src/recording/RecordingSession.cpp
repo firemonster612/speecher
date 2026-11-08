@@ -7,12 +7,14 @@
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/SpeechTranscriber.h"
+#include "recording/RecordingAudio.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingStream.h"
 
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <utility>
@@ -26,29 +28,45 @@ constexpr int kUtterancePauseMs = 800;
 // 30 s max_utterance_duration_ms. Counted in audio, as the service counts it:
 // 16 kHz mono s16.
 constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
-
-// The settings a recording's streams run with: its speech provider as a
-// Transcribe batch with the Other profile runs it, with that profile's model
-// and fallbacks where the profile keeps the provider, and the recording's
-// terms added to the vocabulary.
-AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistry &providers,
-                              const QStringList &vocabulary)
-{
-    RunOverrides run;
-    run.writingProfile = WritingProfile::Other;
-    run.speech = ServiceChoice{settings.speech.services.main()};
-    run.addedVocabulary = vocabulary;
-    AppSettings recording = settings;
-    recording.speech = planDictation(settings, Target{}, run, providers.offersSpeech()).settings.speech;
-    return recording;
-}
+// A stream's level is reported at most this often: 20 times a second.
+constexpr int kLevelIntervalMs = 50;
+int s_autoStopMinuteMs = 60 * 1000;
 
 } // namespace
 
-QString defaultRecordingPath(const QString &dataFolder, const QDateTime &startedAt)
+StreamsFinalText streamsFinalText(ProviderRegistry &providers)
 {
-    return QDir(dataFolder).filePath(
-        QStringLiteral("recordings/%1.md").arg(startedAt.toString(QStringLiteral("yyyy-MM-dd-HHmm"))));
+    return [&providers](const QString &service, const SpeechSettings &speech) {
+        const SpeechTranscriber *provider = providers.speechProvider(service);
+        return provider && provider->streamsFinalText(speech);
+    };
+}
+
+QString recordingFolder(const RecordingSettings &settings)
+{
+    return settings.folder.isEmpty()
+        ? QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("Speecher"))
+        : settings.folder;
+}
+
+// Letters and digits of any script stay, lowered; every run of anything else
+// is one dash.
+QString recordingPath(const QString &folder, const QString &title, RecordingFormat format, const QDateTime &startedAt)
+{
+    QString name;
+    for (const QChar c : title.toLower()) {
+        if (c.isLetterOrNumber()) {
+            name += c;
+        } else if (!name.isEmpty() && !name.endsWith(QLatin1Char('-'))) {
+            name += QLatin1Char('-');
+        }
+    }
+    if (!name.isEmpty() && !name.endsWith(QLatin1Char('-'))) {
+        name += QLatin1Char('-');
+    }
+    name += startedAt.toString(QStringLiteral("yyyy-MM-dd-HHmm"));
+    return QDir(folder).filePath(name + (format == RecordingFormat::PlainText ? QStringLiteral(".txt")
+                                                                               : QStringLiteral(".md")));
 }
 
 // Opened NewOnly, so an existing file is never written to, and a name taken
@@ -264,6 +282,11 @@ RecordingSession::RecordingSession(SettingsStore *settings,
     , m_createEchoCanceller(std::move(createEchoCanceller))
 {
     qRegisterMetaType<RecordingStatus>();
+    m_silence.setSingleShot(true);
+    connect(&m_silence, &QTimer::timeout, this, [this] {
+        qInfo().noquote() << "recording stops after silence path=" + m_transcript.path();
+        stop();
+    });
     m_stopDeadline.setSingleShot(true);
     connect(&m_stopDeadline, &QTimer::timeout, this, [this] {
         for (Stream *stream : {&m_me, &m_them}) {
@@ -287,6 +310,11 @@ RecordingSession::~RecordingSession()
     }
     delete m_microphone;
     delete m_systemAudio;
+}
+
+void RecordingSession::setAutoStopMinuteMs(int ms)
+{
+    s_autoStopMinuteMs = ms;
 }
 
 void RecordingSession::connectStream(Stream &stream)
@@ -328,6 +356,18 @@ bool RecordingSession::isRecording() const
     return m_phase == Phase::Recording || m_phase == Phase::Stopping;
 }
 
+RecordingSession::Phase RecordingSession::phase() const
+{
+    return m_phase;
+}
+
+void RecordingSession::setPhase(Phase phase)
+{
+    if (std::exchange(m_phase, phase) != phase) {
+        emit phaseChanged();
+    }
+}
+
 RecordingStatus RecordingSession::status() const
 {
     if (!isRecording()) {
@@ -341,41 +381,40 @@ RecordingStatus RecordingSession::status() const
     const QString echoCancellationWarning =
         m_echoCancellationWarning.isEmpty() && m_microphone ? m_microphone->echoCancellationWarning()
                                                             : m_echoCancellationWarning;
-    return {true, m_transcript.path(), m_clock.elapsed(), streams, m_unwrittenLines, m_writeError,
-            echoCancellationWarning};
+    RecordingStatus status{true, m_transcript.path(), m_clock.elapsed(), streams, m_unwrittenLines, m_writeError,
+                           echoCancellationWarning};
+    status.title = m_title;
+    return status;
 }
 
-void RecordingSession::start(const QString &path,
-                             const QStringList &vocabulary,
-                             const QString &dataFolder,
-                             bool microphoneOnly,
-                             StartDone done)
+void RecordingSession::start(const RecordingRequest &request, StartDone done)
 {
     if (m_phase != Phase::Off) {
         done(alreadyRecordingText(m_transcript.path()));
         return;
     }
     const AppSettings settings = m_settings->dictationSnapshot();
-    const SpeechSettings &speech = settings.speech;
-    const SpeechTranscriber *provider = m_providers->speechProvider(speech.services.main());
-    // Local Models finalize runs of words rather than utterances, and their
-    // tail only in a whole-attempt transcript, so they say no.
-    if (!provider || !provider->streamsFinalText(speech)) {
-        done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.services.main())));
+    const AppSettings streamSettings = planRecording(settings, request.vocabulary, streamsFinalText(*m_providers));
+    if (streamSettings.speech.services.order.isEmpty()) {
+        done(recordingNoServiceText());
         return;
     }
     QString error;
-    if (!m_transcript.create(path.isEmpty() ? defaultRecordingPath(dataFolder, QDateTime::currentDateTime()) : path,
-                             &error)) {
+    const QString path = request.path.isEmpty()
+        ? recordingPath(recordingFolder(settings.recording), request.title, settings.recording.format,
+                        QDateTime::currentDateTime())
+        : request.path;
+    if (!m_transcript.create(path, &error)) {
         done(error);
         return;
     }
-    const AppSettings streamSettings = recordingSettings(settings, *m_providers, vocabulary);
+    m_title = request.title;
     m_me.status = {recordingMicrophoneSpeaker()};
     m_them.status = {recordingSystemAudioSpeaker()};
     m_unwrittenLines = 0;
     m_writeError.clear();
     m_echoCancellationWarning.clear();
+    const bool microphoneOnly = request.microphoneOnly || !settings.recording.systemAudio;
     AudioInput *systemAudio = !microphoneOnly && m_createSystemAudio ? m_createSystemAudio(this) : nullptr;
     m_systemAudio = systemAudio ? new RecordingSystemAudio(systemAudio, this) : nullptr;
     if (m_systemAudio) {
@@ -391,7 +430,9 @@ void RecordingSession::start(const QString &path,
     m_me.connecting = true;
     m_them.connecting = m_systemAudio != nullptr;
     m_voiceThreshold = settings.audio.vadThresholdPercent;
-    m_phase = Phase::Starting;
+    m_silence.setInterval(settings.recording.autoStopMinutes * s_autoStopMinuteMs);
+    m_audio = settings.recording.keepAudio ? new RecordingAudio(m_transcript.path(), this) : nullptr;
+    setPhase(Phase::Starting);
     m_startDone = std::move(done);
     m_clock.start();
     startStream(m_me, m_microphone, streamSettings);
@@ -406,8 +447,19 @@ void RecordingSession::startStream(Stream &stream, AudioInput *input, const AppS
     stream.speech->start(input, settings);
     // After the stream's own connection, so the audio that ends an
     // utterance is already queued for the provider.
-    connect(input, &AudioInput::audioChunk, this,
-            [this, &stream](const QByteArray &pcm) { trackUtterance(stream, pcm); });
+    connect(input, &AudioInput::audioChunk, this, [this, &stream](const QByteArray &pcm) {
+        trackUtterance(stream, pcm);
+        if (m_audio) {
+            m_audio->hear(&stream == &m_me ? 0 : 1, m_clock.elapsed(), pcm);
+        }
+    });
+    stream.levelReported.invalidate();
+    connect(input, &AudioInput::levelChanged, this, [this, &stream](float level) {
+        if (!stream.levelReported.isValid() || stream.levelReported.elapsed() >= kLevelIntervalMs) {
+            stream.levelReported.start();
+            emit levelChanged(stream.status.speaker, level);
+        }
+    });
 }
 
 void RecordingSession::stop()
@@ -415,7 +467,8 @@ void RecordingSession::stop()
     if (m_phase != Phase::Recording) {
         return;
     }
-    m_phase = Phase::Stopping;
+    m_silence.stop();
+    setPhase(Phase::Stopping);
     QList<Stream *> running;
     for (Stream *stream : {&m_me, &m_them}) {
         if (stream->speech->isRunning()) {
@@ -472,7 +525,11 @@ void RecordingSession::discard()
         return;
     }
     const QString path = m_transcript.path();
-    m_phase = Phase::Stopping;
+    m_silence.stop();
+    if (m_audio) {
+        m_audio->discard();
+    }
+    setPhase(Phase::Stopping);
     m_me.pauseTimer.stop();
     m_them.pauseTimer.stop();
     // Cancelling finishes the streams, the last of which finishes the
@@ -542,8 +599,14 @@ void RecordingSession::finishStartOnceSettled()
     if (m_phase != Phase::Starting || m_me.connecting || m_them.connecting) {
         return;
     }
-    m_phase = Phase::Recording;
+    // Before the phase, so whoever follows the phase finds its History
+    // Entry there.
+    emit started(m_transcript.path(), m_title);
+    setPhase(Phase::Recording);
     qInfo().noquote() << "recording started path=" + m_transcript.path();
+    if (m_silence.interval() > 0) {
+        m_silence.start();
+    }
     markDictation();
     emit recordingChanged(true);
     std::exchange(m_startDone, {})({});
@@ -558,6 +621,9 @@ void RecordingSession::trackUtterance(Stream &stream, const QByteArray &pcm)
         return;
     }
     if (isVoiced(rmsForPcm16(pcm), m_voiceThreshold)) {
+        if (m_silence.isActive()) {
+            m_silence.start();
+        }
         if (!stream.pauseTimer.isActive()) {
             stream.speech->beginUtterance(pcm.size());
         }
@@ -599,13 +665,16 @@ void RecordingSession::writeLine(const QString &speaker, const QString &text)
         return;
     }
     QString error;
-    if (!m_transcript.append(m_clock.elapsed(), speaker, text, &error)) {
+    const qint64 atMs = m_clock.elapsed();
+    if (!m_transcript.append(atMs, speaker, text, &error)) {
         qWarning().noquote() << "recording could not write a line: " + error;
         if (m_unwrittenLines++ == 0) {
             m_writeError = error;
             emit problemChanged();
         }
+        return;
     }
+    emit lineWritten(atMs, speaker, text.simplified());
 }
 
 // Before a stop, the stream ended on its own: the provider failed in a way a
@@ -689,7 +758,8 @@ void RecordingSession::releaseInputs()
 // neither is the file.
 void RecordingSession::abandon(const QString &error)
 {
-    m_phase = Phase::Off;
+    setPhase(Phase::Off);
+    delete std::exchange(m_audio, nullptr);
     m_them.speech->cancel();
     m_transcript.close();
     QFile::remove(m_transcript.path());
@@ -701,10 +771,14 @@ void RecordingSession::abandon(const QString &error)
 void RecordingSession::finish()
 {
     m_stopDeadline.stop();
-    const RecordingStatus last = status();
+    RecordingStatus last = status();
+    if (m_audio) {
+        last.audioPath = m_audio->finish();
+        delete std::exchange(m_audio, nullptr);
+    }
     m_transcript.close();
     releaseInputs();
-    m_phase = Phase::Off;
+    setPhase(Phase::Off);
     qInfo().noquote() << "recording stopped path=" + last.path;
     emit recordingChanged(false);
     emit stopped(last);

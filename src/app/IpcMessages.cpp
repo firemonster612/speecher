@@ -126,6 +126,9 @@ QByteArray ipcRequestFrame(const IpcRequest &request)
     if (request.microphoneOnly) {
         object.insert(QStringLiteral("microphoneOnly"), true);
     }
+    if (!request.title.isEmpty()) {
+        object.insert(QStringLiteral("title"), request.title);
+    }
     if (request.command == IpcCommand::History) {
         const HistorySearch &search = request.history;
         object.insert(QStringLiteral("historyText"), search.text);
@@ -182,6 +185,7 @@ std::optional<IpcRequest> ipcRequestFromFrame(const QByteArray &frame, IpcRespon
     request.files = *files;
     request.terms = *terms;
     request.microphoneOnly = object->value(QStringLiteral("microphoneOnly")).toBool();
+    request.title = object->value(QStringLiteral("title")).toString();
     request.history = {object->value(QStringLiteral("historyText")).toString(),
                        object->value(QStringLiteral("historyKind")).toString(),
                        QDate::fromString(object->value(QStringLiteral("historySince")).toString(), Qt::ISODate),

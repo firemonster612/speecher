@@ -13,6 +13,7 @@
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickPhone.h"
+#include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickRemoval.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
@@ -90,6 +91,7 @@ private:
     QuickModels m_models;
     QuickInsights m_insights;
     QuickHistory m_history;
+    QuickRecording m_recording;
     QuickAccounts m_accounts;
     QuickLibrary::ControllerScope m_library;
     QuickApps m_apps;
