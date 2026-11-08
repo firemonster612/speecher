@@ -215,10 +215,11 @@ void migrateDeliverySteps(QSettings &settings)
     settings.remove(SettingsKeys::RestoreClipboardAfterTyping);
 }
 
-// What Speecher Keeps replaces Keep insights. An install that finished setup
-// promised "never text or audio", so it keeps stats (nothing where insights
-// were off) until the person chooses text; a new install keeps the default.
-void migrateHistory(QSettings &settings)
+// What Speecher Keeps replaces Keep insights, which promised "never text or
+// audio". So an existing install, whether or not it finished setup, keeps
+// stats (nothing where insights were off) until the person chooses text; a
+// new install, which had no settings at all, keeps the default.
+void migrateHistory(QSettings &settings, bool existingInstall)
 {
     constexpr int currentMigrationVersion = 1;
     if (settings.value(SettingsKeys::HistoryMigrationVersion).toInt() >= currentMigrationVersion) {
@@ -231,7 +232,7 @@ void migrateHistory(QSettings &settings)
     const QVariant insights = settings.value(SettingsKeys::InsightsEnabled);
     if (insights.isValid() && !insights.toBool()) {
         settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Nothing));
-    } else if (insights.isValid() || settings.value(SettingsKeys::SetupCompleted).toBool()) {
+    } else if (existingInstall) {
         settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Stats));
     }
 }
@@ -266,6 +267,9 @@ void migrateSavedSettings()
         return;
     }
     const std::unique_ptr<QSettings> older = olderSettings();
+    // Before any migration writes its marker: whether an earlier Speecher
+    // left settings at all.
+    const bool existingInstall = !newSettings.allKeys().isEmpty() || !older->allKeys().isEmpty();
     // An older Speecher left its file, keys and all, open to others.
     if (QFile::exists(older->fileName()) && !makeSettingsPrivate(*older, &error)) {
         qWarning().noquote() << "Settings: the older settings stay readable, since" << error;
@@ -277,7 +281,7 @@ void migrateSavedSettings()
     migrateDeliverySteps(newSettings);
     migrateApps(newSettings);
     migrateVocabulary(newSettings);
-    migrateHistory(newSettings);
+    migrateHistory(newSettings, existingInstall);
     migrateRecording(newSettings);
     // After the model renames, which it carries into the orders.
     SettingsCodecs().migrateServiceOrder();

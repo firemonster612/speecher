@@ -1,5 +1,6 @@
 #include "core/history/HistoryEntry.h"
 
+#include <QJsonArray>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -29,6 +30,11 @@ constexpr std::array<std::pair<HistoryOutcome, const char *>, 6> outcomeNames{{
     {HistoryOutcome::Done, "done"},
     {HistoryOutcome::Complete, "complete"},
     {HistoryOutcome::Missed, "missed"},
+}};
+constexpr std::array<std::pair<RecordingEnd::Reason, const char *>, 3> endReasonNames{{
+    {RecordingEnd::Reason::Stopped, "stopped"},
+    {RecordingEnd::Reason::Silence, "silence"},
+    {RecordingEnd::Reason::Interrupted, "interrupted"},
 }};
 
 template<typename Value, std::size_t size>
@@ -83,6 +89,50 @@ QString historyOutcomeName(HistoryOutcome outcome)
 std::optional<HistoryOutcome> historyOutcomeFromName(const QString &name)
 {
     return valueNamed(outcomeNames, name);
+}
+
+QJsonObject recordingEndJson(const RecordingEnd &end)
+{
+    QJsonObject object{{QStringLiteral("reason"), nameOf(endReasonNames, end.reason)}};
+    const auto count = [&object](const QString &key, qint64 value) {
+        if (value > 0) {
+            object.insert(key, value);
+        }
+    };
+    count(QStringLiteral("missedUtterances"), end.missedUtterances);
+    count(QStringLiteral("lostAudioMs"), end.lostAudioMs);
+    count(QStringLiteral("unwrittenLines"), end.unwrittenLines);
+    QJsonArray stops;
+    for (const RecordingEnd::StreamStop &stop : end.streamStops) {
+        stops.append(QJsonObject{{QStringLiteral("speaker"), stop.speaker},
+                                 {QStringLiteral("atMs"), stop.atMs},
+                                 {QStringLiteral("problem"), stop.problem}});
+    }
+    if (!stops.isEmpty()) {
+        object.insert(QStringLiteral("streamStops"), stops);
+    }
+    if (!end.audioError.isEmpty()) {
+        object.insert(QStringLiteral("audioError"), end.audioError);
+    }
+    return object;
+}
+
+RecordingEnd recordingEndFromJson(const QJsonObject &object)
+{
+    RecordingEnd end;
+    end.reason = valueNamed(endReasonNames, object.value(QStringLiteral("reason")).toString())
+                     .value_or(RecordingEnd::Reason::Stopped);
+    end.missedUtterances = object.value(QStringLiteral("missedUtterances")).toInt();
+    end.lostAudioMs = object.value(QStringLiteral("lostAudioMs")).toInteger();
+    end.unwrittenLines = object.value(QStringLiteral("unwrittenLines")).toInt();
+    for (const QJsonValue &value : object.value(QStringLiteral("streamStops")).toArray()) {
+        const QJsonObject stop = value.toObject();
+        end.streamStops.append({stop.value(QStringLiteral("speaker")).toString(),
+                                stop.value(QStringLiteral("atMs")).toInteger(),
+                                stop.value(QStringLiteral("problem")).toString()});
+    }
+    end.audioError = object.value(QStringLiteral("audioError")).toString();
+    return end;
 }
 
 QStringList historySearchTerms(const QString &text)

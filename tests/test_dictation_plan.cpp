@@ -440,10 +440,18 @@ private slots:
         VocabularyEntry inEmail{QStringLiteral("Regards")};
         inEmail.profiles = {WritingProfile::Email};
         settings.vocabulary = {everywhere, inEmail};
-        const AppSettings recording =
-            planRecording(settings, {QStringLiteral("kwin")}, [](const QString &, const SpeechSettings &) { return true; });
+        const StreamsFinalText streams = [](const QString &, const SpeechSettings &) { return true; };
+        const AppSettings recording = planRecording(settings, {QStringLiteral("kwin")}, streams);
         QCOMPARE(recording.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("gpt-realtime"));
         QCOMPARE(recording.speech.vocabulary, (QStringList{QStringLiteral("kwin"), QStringLiteral("Speecher")}));
+
+        // Other apps' chosen profile, not the built-in Other profile; and
+        // Recordings' own choice over both.
+        settings.apps.types.last().writingProfile = WritingProfile::Email;
+        QCOMPARE(planRecording(settings, {}, streams).speech.vocabulary,
+                 (QStringList{QStringLiteral("Regards"), QStringLiteral("Speecher")}));
+        settings.recording.writingProfile = WritingProfile::Work;
+        QCOMPARE(planRecording(settings, {}, streams).speech.vocabulary, QStringList{QStringLiteral("Speecher")});
     }
 };
 

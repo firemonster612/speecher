@@ -157,7 +157,8 @@ AppSettings planRecording(const AppSettings &saved, const QStringList &addedVoca
                           const StreamsFinalText &streamsFinalText)
 {
     RunOverrides run;
-    run.writingProfile = WritingProfile::Other;
+    run.writingProfile = saved.recording.writingProfile.isEmpty() ? fallbackWritingProfile(saved.apps)
+                                                                 : saved.recording.writingProfile;
     run.addedVocabulary = addedVocabulary;
     AppSettings settings = planDictation(saved, Target{}, run).settings;
     ServiceOrder services = saved.speech.services;

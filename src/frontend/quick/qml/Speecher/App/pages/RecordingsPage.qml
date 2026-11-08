@@ -1,7 +1,5 @@
 pragma ComponentBehavior: Bound
-import QtCore
 import QtQuick
-import QtQuick.Dialogs
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -9,23 +7,31 @@ import Speecher.Wording
 import Speecher.App
 import "recordings"
 import "history"
+import "transcripts"
 import "recordings/RecordingWords.js" as T
 
 // Recordings: the recorder, then while one runs its transcript as it is
-// written, then the settings a recording runs with, then the latest
-// recordings, which are History's entries in History's own rows.
+// written, then what a recording runs with and where it saves, in the same
+// shape as Transcribe files, then how it records, then the latest
+// recordings, which are History's entries in History's own rows. While one
+// runs, the settings are for the next.
 Page {
     id: page
     title: Schema.page("recordings").title
     subtitle: Schema.page("recordings").subtitle
 
     readonly property var t: T.text
-    readonly property bool running: Recording.state === "recording" || Recording.state === "stopping"
+    readonly property bool running: Recording.state !== "off"
     // The newest recordings, read again as History changes.
     readonly property var recent: { void History.kept; return History.recent("recording", 5) }
-    // The first speech service of the Service Order that can record, which
-    // the speech service row's "Same as" names.
+    // The speech services that can record, the first of the Service Order's
+    // of them, which the speech service row's "Same as" names, and those
+    // that can't.
+    readonly property var canRecord: Models.speechServices.filter(s => s.id !== "local" && ModelText.streams(s.id))
+    readonly property var cannotRecord: Models.speechServices.filter(s => !canRecord.includes(s))
     readonly property string pageService: ModelText.order("speech").find(id => id !== "local" && ModelText.streams(id)) || ""
+    readonly property var chosenService: Settings.values.recordingService || {}
+    readonly property string nextRecording: running ? T.text.nextRecording : ""
 
     Component.onCompleted: Recording.lines.forEach(line => lines.append(line))
     Connections {
@@ -39,7 +45,7 @@ Page {
 
     // The transcript as it is written, following the newest line.
     Reveal {
-        open: page.running
+        open: Recording.state === "recording" || Recording.state === "stopping"
         Section {
             width: parent.width
             title: page.t.transcript
@@ -54,8 +60,56 @@ Page {
         }
     }
 
+    RunWith {
+        id: runWith
+        caption: page.nextRecording
+        profileId: Settings.values.recordingProfile || ""
+        inheritedProfile: Recording.plan.inheritedProfile || ""
+        profileHelp: Schema.row("recordingProfile").help
+        changesTitle: page.t.changes
+        changesHelp: page.t.changesHelp
+        changes: page.chosenService.service ? 1 : 0
+        // Its status shows beside Record instead.
+        onProfileChosen: id => Settings.set("recordingProfile", id)
+
+        SettingRow {
+            id: serviceRow
+            title: Schema.row("recordingService").label
+            help: T.serviceHelp(page.canRecord.map(s => s.label), page.cannotRecord.map(s => s.label))
+            SearchLanding {
+                rowIds: ["recordingService"]
+                target: serviceRow
+                onLanded: { runWith.openChanges(); serviceRow.highlight() }
+            }
+            InheritSelect {
+                inheritedText: Words.sameAs(page.t.sameAsSpeech,
+                                            page.pageService ? Models.service(page.pageService).label : page.t.noneCanRecord)
+                choices: page.canRecord.map(s => ({ id: s.id, label: s.label }))
+                currentId: page.chosenService.service || ""
+                onChosen: id => Settings.set("recordingService", id ? { service: id, model: "" } : {})
+            }
+        }
+    }
+
+    SearchLanding { rowIds: ["recordingProfile"]; target: runWith }
+
+    SaveTranscripts {
+        caption: page.nextRecording
+        folder: Recording.plan.folder
+        folderUrl: Recording.plan.folderUrl
+        folderRowId: "recordingFolder"
+        formats: Schema.row("recordingFormat").options
+        format: Settings.values.recordingFormat
+        formatHelp: Schema.row("recordingFormat").help
+        formatRowId: "recordingFormat"
+        onFolderChosen: folder => Recording.setFolder(folder)
+        onFormatChosen: id => Settings.set("recordingFormat", id)
+        SchemaRow { rowId: "recordingKeepAudio" }
+    }
+
     Section {
         title: Schema.row("recordingSources").section
+        caption: page.nextRecording
         SchemaRow {
             rowId: "recordingSources"
             // Where this computer can't capture what it plays, the row
@@ -64,41 +118,6 @@ Page {
             value: Recording.canRecordCallAudio ? Settings.values.recordingSources : "mic"
             note: Recording.canRecordCallAudio ? spec.help : spec.fixedHelp
         }
-        SettingRow {
-            id: serviceRow
-            readonly property var spec: Schema.row("recordingService")
-            title: spec.label
-            help: spec.help
-            SearchLanding { rowIds: ["recordingService"]; target: serviceRow; onLanded: serviceRow.highlight() }
-            InheritSelect {
-                inheritedText: Words.sameAs(page.t.sameAsSpeech,
-                                            page.pageService ? Models.service(page.pageService).label : page.t.noneCanRecord)
-                choices: Models.speechServices.filter(s => s.id !== "local" && ModelText.streams(s.id))
-                                              .map(s => ({ id: s.id, label: s.label }))
-                currentId: (Settings.values.recordingService || {}).service || ""
-                onChosen: id => Settings.set("recordingService", id ? { service: id, model: "" } : {})
-            }
-        }
-        SettingRow {
-            id: folderRow
-            readonly property var spec: Schema.row("recordingFolder")
-            title: spec.label
-            help: T.shortPath(Recording.plan.folder, StandardPaths.writableLocation(StandardPaths.HomeLocation).toString().replace("file://", ""))
-            SearchLanding { rowIds: ["recordingFolder"]; target: folderRow; onLanded: folderRow.highlight() }
-            Row {
-                spacing: Theme.space2
-                Button { text: folderRow.spec.actionLabel; size: "small"; onClicked: folderDialog.open() }
-                Button { text: folderRow.spec.openLabel; size: "small"; trailingIcon: "external-link"; onClicked: Qt.openUrlExternally("file://" + Recording.plan.folder) }
-            }
-            FolderDialog {
-                id: folderDialog
-                title: folderRow.spec.dialogTitle
-                currentFolder: "file://" + Recording.plan.folder
-                onAccepted: Settings.set("recordingFolder", selectedFolder.toString().replace("file://", ""))
-            }
-        }
-        SchemaRow { rowId: "recordingFormat" }
-        SchemaRow { rowId: "recordingKeepAudio" }
         SchemaRow { rowId: "recordingAutoStop" }
         // The shortcut is set on Dictation with the others; this says
         // which it is.
@@ -123,7 +142,7 @@ Page {
         actions: Button {
             text: page.t.allInHistory
             size: "small"
-            onClicked: Navigation.follow("history", "")
+            onClicked: Navigation.follow("history", "historyKind:recording")
         }
         SearchLanding { rowIds: ["recentRecordings"]; target: recentSection }
         Repeater {

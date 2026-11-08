@@ -2,7 +2,8 @@
   {"finishedAt":"2026-11-02T11:05:00","audioMs":9000,"words":18,"app":"Thunderbird","profile":"email",
    "text":"Hi Sam, the contract is attached. Let me know if the dates work for you, and we can sign on Monday.",
    "rawText":"hi sam the contract is attached let me know if the dates work for you and we can sign on monday"},
-  {"kind":"file","finishedAt":"2026-11-06T17:20:00","audioMs":1680000,"words":4102,"profile":"other","title":"interview-03.m4a",
+  {"kind":"file","finishedAt":"2026-11-06T17:20:00","audioMs":1680000,"words":4102,"profile":"other","title":"interview-03.wav",
+   "sourcePath":"interview-03.wav","transcriptPath":"interview-03-transcribed.txt",
    "text":"We spoke about the budget for next year, and about hiring two more people for the support team before the spring launch."},
   {"finishedAt":"2026-11-07T09:12:00","audioMs":5000,"words":9,"app":"Slack","profile":"work","outcome":"copied",
    "text":"Standup moved to 9:30 tomorrow, same room as last week."},
@@ -14,5 +15,18 @@
    "text":"git commit -m \"fix the retry loop in the uploader\"","rawText":"make it a commit message"},
   {"finishedAt":"2026-11-08T14:02:00","audioMs":6000,"words":13,"app":"Slack","profile":"work",
    "text":"Can you send me the Q3 deck before the call tomorrow? Thanks.",
-   "rawText":"can you send me the q3 deck before the call tomorrow thanks"}
+   "rawText":"can you send me the q3 deck before the call tomorrow thanks"},
+  {"kind":"recording","startedAt":"2026-11-07T10:00:00","finishedAt":"2026-11-07T10:42:00","audioMs":2520000,
+   "title":"Weekly sync","transcriptPath":"weekly-sync.md",
+   "ending":{"reason":"silence","lostAudioMs":14000,"missedUtterances":1},
+   "lines":[
+     {"atMs": 4000, "speaker": "me", "text": "Can everyone see the board?"},
+     {"atMs": 9000, "speaker": "them", "text": "Yes, the release column is up."},
+     {"atMs": 90000, "speaker": "me", "text": "Let's start with the uploader. The retry loop still drops the last chunk."},
+     {"atMs": 125000, "speaker": "them", "text": "I can take that this week, the fix is small."},
+     {"atMs": 760000, "speaker": "them", "text": "Hiring next: two more people for support before the spring launch."},
+     {"atMs": 782000, "speaker": "me", "text": "The budget covers one now, and the second waits for January."},
+     {"atMs": 1880000, "speaker": "me", "text": "Sorry, I lost you for a moment there."},
+     {"atMs": 1888000, "speaker": "them", "text": "No problem. I was saying the docs need a pass before Friday."},
+     {"atMs": 2515000, "speaker": "me", "text": "Thanks, everyone. Same time next week."}]}
 ]

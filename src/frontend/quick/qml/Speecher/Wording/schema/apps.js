@@ -69,7 +69,9 @@ var t = {
     profile: "Writing profile",
     pasting: "Pasting",
     history: "History",
-    leftOut: "Left out of History",
+    // An app's own History choice, in its row's summary: "Stats only in
+    // History", "Nothing in History".
+    inHistory: " in History",
     recognizedAs: "Recognized as",
     byName: "Name contains",
     byTitle: "Window title contains",
@@ -116,14 +118,14 @@ function summary(entry, profileName) {
     if (entry.type) parts.push(type(entry.type).one)
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
     if (entry.pasting) parts.push(pastingLabel(entry.pasting))
-    if (entry.history) parts.push(t.leftOut)
+    if (entry.history) parts.push(historyLabel(entry.history) + t.inHistory)
     return parts.length ? parts.join(", ") : "Same as " + type(entry.effective.type).label
 }
 // What an App Type's row says: its profile, Pasting and History choices.
 function typeSummary(settings, profileName) {
     const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as Other apps"]
     if (settings.pasting) parts.push(pastingLabel(settings.pasting))
-    if (settings.history) parts.push(t.leftOut)
+    if (settings.history) parts.push(historyLabel(settings.history) + t.inHistory)
     return parts.join(", ")
 }
 

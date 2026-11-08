@@ -72,7 +72,7 @@ var rows = [
       help: "Stays on this computer. Password fields are never kept.",
       keywords: "history insights stats statistics privacy tracking text audio record save keep",
       options: [
-          { id: "nothing", label: "Nothing", help: "Home and History stay empty." },
+          { id: "nothing", label: "Nothing", help: "Home counts nothing, and History keeps no dictations or files. Recordings still keep their transcripts." },
           { id: "stats", label: "Stats", help: "Word counts, times and app names for Home, never your words." },
           { id: "text", label: "Text", help: "Also what you said, so you can find it in History." },
           { id: "audio", label: "Text and audio", help: "Also the sound of each dictation, to play it back." }
@@ -109,7 +109,7 @@ var rows = [
       keywords: "history exclude excluded private password manager incognito app per-app stats nothing privacy" },
     { id: "clearHistory", page: "privacy", section: "History", kind: "custom",
       label: "Clear history",
-      help: "Deletes text and audio from this computer. Check Also delete their stats to empty Home too.",
+      help: "Deletes the text and audio of dictations and files from this computer. Recordings stay until you delete them in History. Check Also delete their stats to empty Home too.",
       keywords: "delete clear erase privacy reset stats insights history" },
 
     { id: "privacyRefinementSees", page: "privacy", section: "Outside History", kind: "custom",

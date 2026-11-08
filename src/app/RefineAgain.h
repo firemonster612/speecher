@@ -26,9 +26,9 @@ class RefineAgain : public QObject {
 public:
     RefineAgain(SettingsStore &settings, ProviderRegistry &providers, QObject *parent = nullptr);
 
-    // Ends in refined or failed for entryId, at once or later. With nothing
-    // to refine with (Clean up my words off, a Cleanup Level of None), the
-    // text comes back with only the Vocabulary's replacements made.
+    // Ends in refined or failed for entryId, at once or later. Clean up my
+    // words off doesn't stop it, as the person asked; no refinement service,
+    // or a Cleanup Level of None, fails it with why.
     void refine(qint64 entryId, const QString &raw, const QString &writingProfile);
 
 signals:

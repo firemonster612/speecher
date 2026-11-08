@@ -34,6 +34,9 @@ QJsonObject recordingStatusJson(const RecordingStatus &status)
         if (stream.lostAudioMs > 0) {
             object.insert(QStringLiteral("lostAudioMs"), stream.lostAudioMs);
         }
+        if (stream.missedUtterances > 0) {
+            object.insert(QStringLiteral("missedUtterances"), stream.missedUtterances);
+        }
         streams.append(object);
     }
     QJsonObject object{{QStringLiteral("recording"), true},
@@ -78,12 +81,29 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
         }
         read.problem = stream.value(QStringLiteral("problem")).toString();
         read.lostAudioMs = stream.value(QStringLiteral("lostAudioMs")).toInteger();
+        read.missedUtterances = stream.value(QStringLiteral("missedUtterances")).toInt();
         status.streams.append(read);
     }
     status.unwrittenLines = object.value(QStringLiteral("unwrittenLines")).toInt();
     status.writeError = object.value(QStringLiteral("writeError")).toString();
     status.echoCancellationWarning = object.value(QStringLiteral("echoCancellationWarning")).toString();
     return status;
+}
+
+RecordingEnd recordingEnd(const RecordingStatus &status)
+{
+    RecordingEnd end;
+    end.reason = status.stoppedAfterSilence ? RecordingEnd::Reason::Silence : RecordingEnd::Reason::Stopped;
+    end.unwrittenLines = status.unwrittenLines;
+    end.audioError = status.audioError;
+    for (const RecordingStreamStatus &stream : status.streams) {
+        end.lostAudioMs += stream.lostAudioMs;
+        end.missedUtterances += stream.missedUtterances;
+        if (stream.endedAtMs >= 0) {
+            end.streamStops.append({stream.speaker, stream.endedAtMs, stream.problem});
+        }
+    }
+    return end;
 }
 
 } // namespace speecher

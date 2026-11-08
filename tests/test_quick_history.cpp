@@ -3,6 +3,7 @@
 // filters and pages.
 
 #include "common/test_suites.h"
+#include "common/locked_folder.h"
 #include "common/test_doubles.h"
 
 #include "app/ApplicationController.h"
@@ -183,7 +184,7 @@ private slots:
         const qint64 id = store->add(recording);
         store->appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("Can you see <my> screen?")});
         store->appendLine(id, {752000, QStringLiteral("them"), QStringLiteral("It retries after a 403")});
-        store->finishRecording(id, QDateTime::currentDateTime(), 760000, HistoryOutcome::Complete, {});
+        store->finishRecording(id, QDateTime::currentDateTime(), 760000, {}, {});
         QuickHistory history(&controller);
         history.setQuery({{QStringLiteral("text"), QStringLiteral("403")}, {QStringLiteral("kind"), QStringLiteral("recording")}});
         QTRY_VERIFY(!history.searching());
@@ -212,7 +213,15 @@ private slots:
                               {QStringLiteral("speaker"), QStringLiteral("them")},
                               {QStringLiteral("text"), QStringLiteral("It retries after a 403")}}));
 
-        QVERIFY(history.removeRecording(id, true));
+        // A file that won't go keeps the entry, and says which it is.
+        {
+            test::LockedFolder locked(dir.path());
+            if (locked.holds()) {
+                QCOMPARE(history.removeRecording(id, true), QStringList{transcript.fileName()});
+                QVERIFY(!history.entry(id).isEmpty());
+            }
+        }
+        QVERIFY(history.removeRecording(id, true).isEmpty());
         QVERIFY(!QFile::exists(transcript.fileName()));
         QVERIFY(history.entry(id).isEmpty());
     }
@@ -254,6 +263,48 @@ private slots:
         QVERIFY(history.keepRefined(id, QStringLiteral("Could you send the deck?")));
         QCOMPARE(controller.history()->entry(id)->text, std::optional(QStringLiteral("Could you send the deck?")));
         QCOMPARE(controller.history()->entry(id)->rawText, std::optional(QStringLiteral("um send the deck")));
+    }
+
+    // Asked for, Refine again refines with Clean up my words off too; with a
+    // profile whose cleanup is None, it says why rather than handing the
+    // words back as if refined.
+    void refineAgainRunsWithCleanupOffAndSaysWhyItCant()
+    {
+        ApplicationController controller(true);
+        controller.providerRegistry()->registerRefinementProvider(
+            {QStringLiteral("openai"), QStringLiteral("ChatGPT")}, [](QObject *parent) {
+                auto *refiner = new test::FakeRefiner(parent);
+                refiner->autoComplete = true;
+                refiner->autoCompleteText = QStringLiteral("Could you send the deck?");
+                return refiner;
+            });
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.refinement.enabled = false;
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            return true;
+        });
+        HistoryEntry spoken = kept(QStringLiteral("um send the deck"));
+        spoken.rawText = QStringLiteral("um send the deck");
+        const qint64 id = controller.history()->add(spoken);
+        QuickHistory history(&controller);
+        QSignalSpy refined(&history, &QuickHistory::refined);
+        QSignalSpy failed(&history, &QuickHistory::refineFailed);
+        history.refineAgain(id, WritingProfile::Email);
+        QTRY_COMPARE(refined.count(), 1);
+        QCOMPARE(refined.first().last().toString(), QStringLiteral("Could you send the deck?"));
+
+        controller.settings()->edit([](AppSettings &draft) {
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == WritingProfile::Email) {
+                    profile.cleanupStrength = QStringLiteral("none");
+                }
+            }
+            return true;
+        });
+        history.refineAgain(id, WritingProfile::Email);
+        QTRY_COMPARE(failed.count(), 1);
+        QVERIFY(!failed.first().last().toString().isEmpty());
+        QCOMPARE(refined.count(), 1);
     }
 
     void clearDeletesASpan()

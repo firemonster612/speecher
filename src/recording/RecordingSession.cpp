@@ -285,6 +285,7 @@ RecordingSession::RecordingSession(SettingsStore *settings,
     m_silence.setSingleShot(true);
     connect(&m_silence, &QTimer::timeout, this, [this] {
         qInfo().noquote() << "recording stops after silence path=" + m_transcript.path();
+        m_stoppedAfterSilence = true;
         stop();
     });
     m_stopDeadline.setSingleShot(true);
@@ -339,6 +340,7 @@ void RecordingSession::connectStream(Stream &stream)
         }
     });
     connect(stream.speech, &RecordingStream::utteranceFailed, this, [this, &stream](const QString &reason) {
+        ++stream.status.missedUtterances;
         stream.status.problem = recordingUtteranceFailedText(reason);
         emit problemChanged();
         extendStop();
@@ -384,6 +386,7 @@ RecordingStatus RecordingSession::status() const
     RecordingStatus status{true, m_transcript.path(), m_clock.elapsed(), streams, m_unwrittenLines, m_writeError,
                            echoCancellationWarning};
     status.title = m_title;
+    status.stoppedAfterSilence = m_stoppedAfterSilence;
     return status;
 }
 
@@ -414,6 +417,8 @@ void RecordingSession::start(const RecordingRequest &request, StartDone done)
     m_unwrittenLines = 0;
     m_writeError.clear();
     m_echoCancellationWarning.clear();
+    m_stoppedAfterSilence = false;
+    m_finishing = false;
     const bool microphoneOnly = request.microphoneOnly || !settings.recording.systemAudio;
     AudioInput *systemAudio = !microphoneOnly && m_createSystemAudio ? m_createSystemAudio(this) : nullptr;
     m_systemAudio = systemAudio ? new RecordingSystemAudio(systemAudio, this) : nullptr;
@@ -464,6 +469,10 @@ void RecordingSession::startStream(Stream &stream, AudioInput *input, const AppS
 
 void RecordingSession::stop()
 {
+    if (m_phase == Phase::Starting) {
+        abandon(recordingCancelledText());
+        return;
+    }
     if (m_phase != Phase::Recording) {
         return;
     }
@@ -692,6 +701,9 @@ void RecordingSession::handleStreamFinished(Stream &stream, const QString &error
         return;
     }
     stream.status.state = RecordingStreamStatus::State::Stopped;
+    if (m_phase != Phase::Stopping) {
+        stream.status.endedAtMs = m_clock.elapsed();
+    }
     if (m_phase == Phase::Stopping) {
         if (!error.isEmpty()) {
             stream.status.problem = error;
@@ -754,12 +766,13 @@ void RecordingSession::releaseInputs()
     }
 }
 
-// The microphone's stream never connected, so nothing was recorded and
-// neither is the file.
+// The microphone's stream never connected, or the start was cancelled, so
+// nothing was recorded and neither is the file.
 void RecordingSession::abandon(const QString &error)
 {
     setPhase(Phase::Off);
     delete std::exchange(m_audio, nullptr);
+    m_me.speech->cancel();
     m_them.speech->cancel();
     m_transcript.close();
     QFile::remove(m_transcript.path());
@@ -768,16 +781,33 @@ void RecordingSession::abandon(const QString &error)
     std::exchange(m_startDone, {})(error);
 }
 
+// The stop ends once the audio's file is written too, which an encoder may
+// take a moment over, so stopped says whether it was.
 void RecordingSession::finish()
 {
-    m_stopDeadline.stop();
-    RecordingStatus last = status();
-    if (m_audio) {
-        last.audioPath = m_audio->finish();
-        delete std::exchange(m_audio, nullptr);
+    if (std::exchange(m_finishing, true)) {
+        return;
     }
+    m_stopDeadline.stop();
+    const RecordingStatus last = status();
     m_transcript.close();
     releaseInputs();
+    if (!m_audio) {
+        settle(last);
+        return;
+    }
+    connect(m_audio, &RecordingAudio::finished, this, [this, last](const QString &path, const QString &error) {
+        RecordingStatus saved = last;
+        saved.audioPath = path;
+        saved.audioError = error;
+        std::exchange(m_audio, nullptr)->deleteLater();
+        settle(saved);
+    });
+    m_audio->finish();
+}
+
+void RecordingSession::settle(const RecordingStatus &last)
+{
     setPhase(Phase::Off);
     qInfo().noquote() << "recording stopped path=" + last.path;
     emit recordingChanged(false);

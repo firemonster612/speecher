@@ -28,11 +28,23 @@ std::optional<QList<HistoryEntry>> readInsightsLog(const QString &path);
 // added, when it couldn't be read or added.
 bool importInsightsLog(HistoryStore &store, const QString &path);
 
+// One entry of a history seed, with a Recording's lines.
+struct HistorySeedEntry {
+    HistoryEntry entry;
+    QList<HistoryLine> lines;
+};
+
 // The entries of a history seed: a JSON array of objects with kind,
 // finishedAt (local, as in the insights log), audioMs, words, app, appId,
-// profile, profileName, outcome, title, text and rawText, any of which may
-// be left out. An entry with text keeps Text. nullopt when the file can't be
-// read or isn't such an array.
-std::optional<QList<HistoryEntry>> readHistorySeed(const QString &path);
+// profile, profileName, outcome, title, text, rawText, sourcePath and
+// transcriptPath (each relative to the seed's folder, or absolute), any of
+// which may be left out; a Recording's also startedAt, lines ([{ atMs,
+// speaker, text }]) and ending (as recordingEndJson). An entry with text, and every Recording, keeps
+// Text. nullopt when the file can't be read or isn't such an array.
+std::optional<QList<HistorySeedEntry>> readHistorySeed(const QString &path);
+// Adds a seed's entries to store oldest first, so History lists them in
+// time; a Recording is finished as a stopped one is, its lines its text and
+// its ending its outcome.
+void addHistorySeed(HistoryStore &store, QList<HistorySeedEntry> seed);
 
 } // namespace speecher

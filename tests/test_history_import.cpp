@@ -137,7 +137,9 @@ private slots:
         QVERIFY(store.records().isEmpty());
     }
 
-    // A history seed's entries keep their text, kind and title.
+    // A history seed's entries keep their text, kind and title, and a
+    // Recording its lines and how it ended, its file beside the seed. They
+    // go in oldest first.
     void aHistorySeedKeepsItsWords()
     {
         QTemporaryDir dir;
@@ -147,19 +149,36 @@ private slots:
              "text":"Can you send me the Q3 deck?","rawText":"can you send me the q3 deck"},
             {"kind":"file","finishedAt":"2026-11-07T17:20:00","audioMs":1680000,"words":4102,"profile":"other",
              "title":"interview-03.m4a","text":"We spoke about the budget."},
-            {"finishedAt":"2026-11-06T09:00:00","words":3,"app":"Kate"}
+            {"finishedAt":"2026-11-06T09:00:00","words":3,"app":"Kate"},
+            {"kind":"recording","startedAt":"2026-11-07T10:00:00","finishedAt":"2026-11-07T10:42:00","audioMs":2520000,
+             "title":"Weekly sync","transcriptPath":"weekly-sync.md",
+             "lines":[{"atMs":4000,"speaker":"me","text":"Can everyone see the board?"}],
+             "ending":{"reason":"silence","missedUtterances":1}}
         ])");
-        const std::optional<QList<HistoryEntry>> entries = readHistorySeed(seed);
+        const std::optional<QList<HistorySeedEntry>> entries = readHistorySeed(seed);
         QVERIFY(entries);
-        QCOMPARE(entries->size(), 3);
-        QCOMPARE(entries->at(0).text, std::optional<QString>(QStringLiteral("Can you send me the Q3 deck?")));
-        QCOMPARE(entries->at(0).rawText, std::optional<QString>(QStringLiteral("can you send me the q3 deck")));
-        QCOMPARE(entries->at(0).kept, HistoryKeep::Text);
-        QCOMPARE(entries->at(1).kind, HistoryKind::File);
-        QCOMPARE(entries->at(1).outcome, HistoryOutcome::Done);
-        QCOMPARE(entries->at(1).title, QStringLiteral("interview-03.m4a"));
-        QCOMPARE(entries->at(2).kept, HistoryKeep::Stats);
+        QCOMPARE(entries->size(), 4);
+        QCOMPARE(entries->at(0).entry.text, std::optional<QString>(QStringLiteral("Can you send me the Q3 deck?")));
+        QCOMPARE(entries->at(0).entry.rawText, std::optional<QString>(QStringLiteral("can you send me the q3 deck")));
+        QCOMPARE(entries->at(0).entry.kept, HistoryKeep::Text);
+        QCOMPARE(entries->at(1).entry.kind, HistoryKind::File);
+        QCOMPARE(entries->at(1).entry.outcome, HistoryOutcome::Done);
+        QCOMPARE(entries->at(1).entry.title, QStringLiteral("interview-03.m4a"));
+        QCOMPARE(entries->at(2).entry.kept, HistoryKeep::Stats);
+        QCOMPARE(entries->at(3).entry.transcriptPath, dir.filePath(QStringLiteral("weekly-sync.md")));
         QVERIFY(!readHistorySeed(dir.filePath(QStringLiteral("missing.json"))));
+
+        HistoryStore store(QStringLiteral(":memory:"), QString());
+        addHistorySeed(store, *entries);
+        const QList<HistoryHit> hits = store.search({});
+        QCOMPARE(hits.size(), 3);
+        QCOMPARE(hits.at(1).entry.kind, HistoryKind::File);
+        const HistoryEntry &recording = hits.at(2).entry;
+        QCOMPARE(recording.kind, HistoryKind::Recording);
+        QCOMPARE(recording.outcome, HistoryOutcome::Missed);
+        QCOMPARE(recording.end.reason, RecordingEnd::Reason::Silence);
+        QCOMPARE(recording.text, std::optional<QString>(QStringLiteral("Can everyone see the board?")));
+        QCOMPARE(store.lines(recording.id).size(), 1);
     }
 };
 

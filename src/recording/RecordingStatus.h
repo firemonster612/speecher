@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/history/HistoryEntry.h"
+
 #include <QJsonObject>
 #include <QList>
 #include <QMetaType>
@@ -24,6 +26,12 @@ struct RecordingStreamStatus {
     // Audio dropped while the stream was down, oldest first, past what a
     // recording keeps for it.
     qint64 lostAudioMs = 0;
+    // Utterances its provider didn't transcribe. Like lostAudioMs, nothing
+    // lowers it, a reconnect included.
+    int missedUtterances = 0;
+    // When, from the start, it stopped for good on its own; -1 while it
+    // hasn't. problem says why.
+    qint64 endedAtMs = -1;
 };
 
 struct RecordingStatus {
@@ -44,9 +52,16 @@ struct RecordingStatus {
     QString title;
     // Its History Entry, or 0 before History has it.
     qint64 historyId = 0;
-    // The stopped recording's audio file, while Keep the call's audio was on.
+    // The stopped recording's audio file, while Keep the call's audio was on,
+    // or why it couldn't be saved.
     QString audioPath;
+    QString audioError;
+    // Stop after silence ended it.
+    bool stoppedAfterSilence = false;
 };
+
+// What a stopped recording's History Entry keeps of how it ended.
+RecordingEnd recordingEnd(const RecordingStatus &status);
 
 // How status and its JSON name a stream's state.
 QString recordingStreamStateName(RecordingStreamStatus::State state);

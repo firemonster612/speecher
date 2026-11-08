@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -18,7 +19,7 @@
 namespace speecher {
 namespace {
 
-constexpr int schemaVersion = 1;
+constexpr int schemaVersion = 2;
 // Search terms shorter than a trigram can't use the index; alone, they scan
 // only this many of the newest entries.
 constexpr int shortSearchWindow = 2000;
@@ -63,6 +64,11 @@ const char *const schemaStatements[] = {
          text TEXT NOT NULL))",
     "CREATE INDEX lines_entry ON lines(entry_id)",
 };
+// What takes version n to n + 1, from version 1.
+const char *const schemaUpgrades[] = {
+    // A Recording's RecordingEnd, as recordingEndJson.
+    "ALTER TABLE entries ADD COLUMN ending TEXT",
+};
 
 // Columns are named with their table, since a search joins the index, whose
 // columns share their names.
@@ -76,7 +82,7 @@ const QString columns = QStringLiteral(
     "entries.id, entries.kind, entries.started_at, entries.finished_at, entries.utc_offset_s, entries.audio_ms,"
     " entries.words, entries.app_name, entries.app_id, entries.profile, entries.profile_name, entries.speech,"
     " entries.refinement, entries.outcome, entries.title, entries.text, entries.raw_text, entries.audio_path,"
-    " entries.source_path, entries.transcript_path, entries.kept");
+    " entries.source_path, entries.transcript_path, entries.kept, entries.ending");
 
 QVariant optionalText(const std::optional<QString> &text)
 {
@@ -98,6 +104,37 @@ QVariant listJson(const QStringList &list)
 QStringList listFromJson(const QVariant &json)
 {
     return QJsonDocument::fromJson(json.toString().toUtf8()).toVariant().toStringList();
+}
+
+// " AND entries.id NOT IN (…)" for entries a change must leave alone; empty
+// for none.
+QString except(const QList<qint64> &ids)
+{
+    QStringList listed;
+    for (const qint64 id : ids) {
+        listed.append(QString::number(id));
+    }
+    return ids.isEmpty() ? QString() : QStringLiteral(" AND entries.id NOT IN (%1)").arg(listed.join(QLatin1Char(',')));
+}
+
+// A Recording's text, its lines' words a line each without times or
+// speakers, so a search finds what was said, and how many words.
+std::pair<QString, qsizetype> textOf(const QList<HistoryLine> &lines)
+{
+    QStringList said;
+    qsizetype words = 0;
+    for (const HistoryLine &line : lines) {
+        said.append(line.text);
+        words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+    }
+    return {said.join(QLatin1Char('\n')), words};
+}
+
+// When a file last changed, as transcript_mtime keeps it; null without one.
+QVariant changedAt(const QString &path)
+{
+    const QFileInfo file(path);
+    return file.exists() ? QVariant(file.lastModified().toMSecsSinceEpoch()) : QVariant(QMetaType(QMetaType::LongLong));
 }
 
 QVariant msOf(const QDateTime &time)
@@ -158,6 +195,7 @@ HistoryEntry entryFrom(const QSqlQuery &row)
     entry.sourcePath = row.value(18).toString();
     entry.transcriptPath = row.value(19).toString();
     entry.kept = historyKeepFromName(row.value(20).toString()).value_or(HistoryKeep::Stats);
+    entry.end = recordingEndFromJson(QJsonDocument::fromJson(row.value(21).toString().toUtf8()).object());
     return entry;
 }
 
@@ -341,10 +379,19 @@ void HistoryStore::createSchema()
         }
         return;
     }
+    QStringList statements;
+    if (stored == 0) {
+        for (const char *statement : schemaStatements) {
+            statements.append(QString::fromUtf8(statement));
+        }
+    }
+    for (int upgrade = std::max(stored, 1); upgrade < schemaVersion; ++upgrade) {
+        statements.append(QString::fromUtf8(schemaUpgrades[upgrade - 1]));
+    }
     QSqlDatabase db = QSqlDatabase::database(m_connection);
     db.transaction();
-    for (const char *statement : schemaStatements) {
-        if (!exec(QString::fromUtf8(statement))) {
+    for (const QString &statement : std::as_const(statements)) {
+        if (!exec(statement)) {
             db.rollback();
             m_open = false;
             return;
@@ -589,28 +636,98 @@ QList<HistoryLine> HistoryStore::lines(qint64 entryId) const
     return found;
 }
 
-// The text is the lines' words, a line each, without times or speakers, so a
-// search finds what was said.
-bool HistoryStore::finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, HistoryOutcome outcome,
+// Its file's last change is kept too, so a later edit to it can be taken in
+// (syncRecordingFile).
+bool HistoryStore::finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, const RecordingEnd &end,
                                    const QString &audioPath)
 {
-    QStringList said;
-    qsizetype words = 0;
-    for (const HistoryLine &line : lines(id)) {
-        said.append(line.text);
-        words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
-    }
+    const auto [said, words] = textOf(lines(id));
+    const std::optional<HistoryEntry> found = entry(id);
     QSqlQuery update(QSqlDatabase::database(m_connection));
     update.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, words = ?, outcome = ?, text = ?,"
-                                  " audio_path = ?, kept = ? WHERE id = ? AND kind = 'recording'"));
+                                  " audio_path = ?, kept = ?, ending = ?, transcript_mtime = ?"
+                                  " WHERE id = ? AND kind = 'recording'"));
+    const HistoryOutcome outcome = end.missedSpeech() ? HistoryOutcome::Missed : HistoryOutcome::Complete;
     for (const QVariant &value :
-         QVariantList{finishedAt.toMSecsSinceEpoch(), audioMs, words, historyOutcomeName(outcome),
-                      said.join(QLatin1Char('\n')), nonEmpty(audioPath),
-                      historyKeepName(audioPath.isEmpty() ? HistoryKeep::Text : HistoryKeep::Audio), id}) {
+         QVariantList{finishedAt.toMSecsSinceEpoch(), audioMs, words, historyOutcomeName(outcome), said,
+                      nonEmpty(audioPath), historyKeepName(audioPath.isEmpty() ? HistoryKeep::Text : HistoryKeep::Audio),
+                      QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(QJsonDocument::Compact)),
+                      changedAt(found ? found->transcriptPath : QString()), id}) {
         update.addBindValue(value);
     }
     if (!m_open || !update.exec() || update.numRowsAffected() == 0) {
         qWarning().noquote() << "history could not finish a recording:" << update.lastError().text();
+        return false;
+    }
+    emit changed();
+    return true;
+}
+
+bool HistoryStore::syncRecordingFile(qint64 id)
+{
+    QString path;
+    QVariant stored;
+    {
+        QSqlQuery select(QSqlDatabase::database(m_connection));
+        select.prepare(QStringLiteral("SELECT transcript_path, transcript_mtime FROM entries"
+                                      " WHERE id = ? AND kind = 'recording' AND finished_at IS NOT NULL"));
+        select.addBindValue(id);
+        if (!m_open || !select.exec() || !select.next()) {
+            return true;
+        }
+        path = select.value(0).toString();
+        stored = select.value(1);
+    }
+    const QVariant now = changedAt(path);
+    if (now.isNull() || stored == now) {
+        return true;
+    }
+    const auto keepChangedAt = [this, id, &now] {
+        QSqlQuery update(QSqlDatabase::database(m_connection));
+        update.prepare(QStringLiteral("UPDATE entries SET transcript_mtime = ? WHERE id = ?"));
+        update.addBindValue(now);
+        update.addBindValue(id);
+        return update.exec();
+    };
+    // Finished before the store kept it: in step as far as anyone knows.
+    if (stored.isNull()) {
+        return keepChangedAt();
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
+    QList<HistoryLine> read;
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        const QRegularExpressionMatch match = lineFormat.match(line);
+        if (!match.hasMatch()) {
+            return false;
+        }
+        const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
+            + match.captured(3).toLongLong();
+        read.append({seconds * 1000, match.captured(4), match.captured(5)});
+    }
+    const auto [said, words] = textOf(read);
+    QSqlDatabase db = QSqlDatabase::database(m_connection);
+    db.transaction();
+    QSqlQuery change(db);
+    change.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
+    change.addBindValue(id);
+    bool written = change.exec();
+    for (const HistoryLine &line : std::as_const(read)) {
+        written = written && appendLine(id, line);
+    }
+    change.prepare(QStringLiteral("UPDATE entries SET text = ?, words = ? WHERE id = ?"));
+    for (const QVariant &value : QVariantList{said, words, id}) {
+        change.addBindValue(value);
+    }
+    if (!written || !change.exec() || !keepChangedAt() || !db.commit()) {
+        db.rollback();
         return false;
     }
     emit changed();
@@ -637,7 +754,9 @@ void HistoryStore::finishUnfinishedRecordings()
     for (const auto &[id, finishedAt] : std::as_const(unfinished)) {
         const std::optional<HistoryEntry> found = entry(id);
         const qint64 audioMs = found && found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
-        finishRecording(id, finishedAt, qMax<qint64>(0, audioMs), HistoryOutcome::Complete, QString());
+        RecordingEnd end;
+        end.reason = RecordingEnd::Reason::Interrupted;
+        finishRecording(id, finishedAt, qMax<qint64>(0, audioMs), end, QString());
     }
 }
 
@@ -700,8 +819,9 @@ void HistoryStore::purgeDeleted()
     if (!m_open) {
         return;
     }
-    deleteAudioWhere(QStringLiteral("deleted_at IS NOT NULL"), {});
-    exec(QStringLiteral("DELETE FROM entries WHERE deleted_at IS NOT NULL"));
+    // An entry whose audio wouldn't go stays hidden, for the next purge.
+    const QList<qint64> stayed = deleteAudioWhere(QStringLiteral("deleted_at IS NOT NULL"), {});
+    exec(QStringLiteral("DELETE FROM entries WHERE deleted_at IS NOT NULL") + except(stayed));
 }
 
 int HistoryStore::countIn(const QDateTime &from, const QDateTime &to) const
@@ -726,12 +846,12 @@ bool HistoryStore::clear(const QDateTime &from, const QDateTime &to, bool withSt
     Where where;
     where.add(clearedKinds);
     addRange(where, from, to);
-    deleteAudioWhere(where.sql(), where.values);
+    const QList<qint64> stayed = deleteAudioWhere(where.sql(), where.values);
     QSqlQuery change(QSqlDatabase::database(m_connection));
-    change.prepare(withStats ? QStringLiteral("DELETE FROM entries WHERE %1").arg(where.sql())
+    change.prepare(withStats ? QStringLiteral("DELETE FROM entries WHERE %1%2").arg(where.sql(), except(stayed))
                              : QStringLiteral("UPDATE entries SET text = NULL, raw_text = NULL, app_id = NULL,"
-                                              " audio_path = NULL, kept = 'stats' WHERE %1")
-                                   .arg(where.sql()));
+                                              " audio_path = NULL, kept = 'stats' WHERE %1%2")
+                                   .arg(where.sql(), except(stayed)));
     for (const QVariant &value : std::as_const(where.values)) {
         change.addBindValue(value);
     }
@@ -749,7 +869,7 @@ bool HistoryStore::clear(const QDateTime &from, const QDateTime &to, bool withSt
     }
     forgetRecords();
     emit changed();
-    return true;
+    return stayed.isEmpty();
 }
 
 void HistoryStore::prune(const QDateTime &now, const HistorySettings &settings)
@@ -776,22 +896,22 @@ void HistoryStore::prune(const QDateTime &now, const HistorySettings &settings)
             + QStringLiteral(" AND finished_at < ? AND (text IS NOT NULL OR raw_text IS NOT NULL"
                              " OR app_id IS NOT NULL OR audio_path IS NOT NULL)");
         const QVariantList cutoff{nowMs - settings.textDays * msPerDay};
-        deleteAudioWhere(expired, cutoff);
+        const QList<qint64> stayed = deleteAudioWhere(expired, cutoff);
         run(QStringLiteral("UPDATE entries SET text = NULL, raw_text = NULL, app_id = NULL, audio_path = NULL,"
                            " kept = 'stats' WHERE ")
-                + expired,
+                + expired + except(stayed),
             cutoff);
     }
     const int audioDays = settings.audioDays < 0 ? settings.textDays
         : settings.textDays > 0                  ? qMin(settings.audioDays, settings.textDays)
                                                  : settings.audioDays;
     if (audioDays > 0) {
-        const QString expired = QStringLiteral("audio_path IS NOT NULL AND finished_at < ?");
+        const QString expired = clearedKinds + QStringLiteral(" AND audio_path IS NOT NULL AND finished_at < ?");
         const QVariantList cutoff{nowMs - audioDays * msPerDay};
-        deleteAudioWhere(expired, cutoff);
+        const QList<qint64> stayed = deleteAudioWhere(expired, cutoff);
         run(QStringLiteral("UPDATE entries SET audio_path = NULL,"
                            " kept = CASE kept WHEN 'audio' THEN 'text' ELSE kept END WHERE ")
-                + expired,
+                + expired + except(stayed),
             cutoff);
     }
     if (changedRows > 0) {
@@ -831,24 +951,45 @@ const QList<DictationRecord> &HistoryStore::records() const
     return *m_records;
 }
 
-void HistoryStore::deleteAudioWhere(const QString &condition, const QVariantList &values)
+QList<qint64> HistoryStore::deleteAudioWhere(const QString &condition, const QVariantList &values)
 {
+    QList<qint64> stayed;
     QSqlQuery select(QSqlDatabase::database(m_connection));
-    select.prepare(QStringLiteral("SELECT audio_path FROM entries WHERE audio_path IS NOT NULL AND ") + condition);
+    select.prepare(QStringLiteral("SELECT id, audio_path FROM entries WHERE audio_path IS NOT NULL AND ") + condition);
     for (const QVariant &value : values) {
         select.addBindValue(value);
     }
     if (!select.exec()) {
-        return;
+        return stayed;
     }
     while (select.next()) {
         HistoryEntry entry;
-        entry.audioPath = select.value(0).toString();
-        const QString file = audioFile(entry);
-        if (QFile::exists(file) && !QFile::remove(file)) {
-            qWarning().noquote() << "history could not delete audio file=" + file;
+        entry.audioPath = select.value(1).toString();
+        if (!deleteFile(audioFile(entry))) {
+            stayed.append(select.value(0).toLongLong());
         }
     }
+    return stayed;
+}
+
+QStringList HistoryStore::deleteRecordingFiles(const HistoryEntry &entry) const
+{
+    QStringList stayed;
+    for (const QString &file : {entry.transcriptPath, audioFile(entry)}) {
+        if (!deleteFile(file)) {
+            stayed.append(file);
+        }
+    }
+    return stayed;
+}
+
+bool HistoryStore::deleteFile(const QString &file)
+{
+    if (file.isEmpty() || !QFile::exists(file) || QFile::remove(file)) {
+        return true;
+    }
+    qWarning().noquote() << "history could not delete file=" + file;
+    return false;
 }
 
 void HistoryStore::forgetRecords()

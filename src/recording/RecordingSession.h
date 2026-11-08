@@ -117,8 +117,9 @@ public:
     // provider that connects for the microphone), in which case no file is
     // left.
     void start(const RecordingRequest &request, StartDone done);
-    // Stops the inputs; the last utterances are still written before stopped
-    // is emitted.
+    // Stops the inputs; the last utterances, and the audio's file, are still
+    // written before stopped is emitted. While starting, cancels the start:
+    // its done takes recordingCancelledText() and no file is left.
     void stop();
     // Ends the recording at once and removes its file, for a start whose
     // caller stopped waiting and so took it for a failure.
@@ -150,7 +151,7 @@ signals:
     // file first fails to take a line. Not for more audio lost or more lines
     // missed, which can come with every chunk or line.
     void problemChanged();
-    // The finished recording's last status.
+    // The finished recording's last status, its audio file's with it.
     void stopped(const speecher::RecordingStatus &status);
 
 private:
@@ -189,6 +190,7 @@ private:
     void releaseInputs();
     void abandon(const QString &error);
     void finish();
+    void settle(const RecordingStatus &last);
     void setPhase(Phase phase);
 
     SettingsStore *m_settings;
@@ -232,6 +234,9 @@ private:
     // Lines the file did not take, and why the first did not.
     int m_unwrittenLines = 0;
     QString m_writeError;
+    bool m_stoppedAfterSilence = false;
+    // From finish() until stopped.
+    bool m_finishing = false;
 };
 
 } // namespace speecher

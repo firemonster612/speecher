@@ -1,8 +1,8 @@
 .pragma library
 
-// The Recordings page's rows: the recorder, which search lands on, and the
-// settings a recording runs with. Its wording beyond them is
-// pages/recordings/RecordingWords.js's.
+// The Recordings page's rows: the recorder, which search lands on, what a
+// recording runs with, where it saves, and how it records. Its wording
+// beyond them is pages/recordings/RecordingWords.js's.
 var rows = [
     { id: "recordingControl", page: "recordings", section: "", kind: "custom",
       label: "Record a call",
@@ -17,16 +17,21 @@ var rows = [
           { id: "both", label: "Microphone and call audio" },
           { id: "mic", label: "Microphone only" }
       ] },
-    { id: "recordingService", page: "recordings", section: "Recording settings", kind: "custom",
+    { id: "recordingProfile", page: "recordings", section: "Run with", kind: "custom",
+      label: "Writing profile",
+      help: "Its vocabulary spells names and terms in calls. Calls are never cleaned up.",
+      keywords: "profile vocabulary words spelling terms names other apps" },
+    // Its help names the services that can record and those that can't
+    // (RecordingWords.js).
+    { id: "recordingService", page: "recordings", section: "Run with", kind: "custom",
       label: "Speech service",
-      help: "Calls need a service that sends text as you speak. Local models can't, so Speecher skips them.",
+      help: "Calls need a service that sends each sentence's text as it ends.",
       keywords: "provider transcription model realtime chatgpt claude service order" },
-    { id: "recordingFolder", page: "recordings", section: "Recording settings", kind: "custom",
-      label: "Save transcripts in",
+    { id: "recordingFolder", page: "recordings", section: "Save transcripts", kind: "custom",
+      label: "Folder",
       help: "Each recording gets its own file, named by its name and when it started.",
-      actionLabel: "Change", openLabel: "Open", dialogTitle: "Save recordings in",
-      keywords: "folder directory location documents path files" },
-    { id: "recordingFormat", page: "recordings", section: "Recording settings", kind: "choice", control: "segmented",
+      keywords: "folder directory location documents path files save transcripts in" },
+    { id: "recordingFormat", page: "recordings", section: "Save transcripts", kind: "choice", control: "segmented",
       label: "File format",
       help: "Markdown and plain text hold the same lines, [00:01:23] me: …. History exports JSON too.",
       keywords: "markdown md txt plain text extension",
@@ -34,13 +39,13 @@ var rows = [
           { id: "md", label: "Markdown" },
           { id: "txt", label: "Plain text" }
       ] },
-    { id: "recordingKeepAudio", page: "recordings", section: "Recording settings", kind: "toggle",
-      label: "Keep the call's audio",
-      help: "Saves both sides in one file beside the transcript, so you can play a line back. Ask the people on the call first. About 30 MB an hour.",
-      keywords: "audio sound save m4a play back" },
+    { id: "recordingKeepAudio", page: "recordings", section: "Save transcripts", kind: "toggle",
+      label: "Keep each call's audio",
+      help: "Saves both sides in one file beside the transcript, so you can play a line back. It stays until you delete the recording, whatever Privacy & data keeps for dictations. Ask the people on the call first. About 30 MB an hour.",
+      keywords: "audio sound save m4a play back retention days delete" },
     { id: "recordingAutoStop", page: "recordings", section: "Recording settings", kind: "choice", control: "select",
       label: "Stop after silence",
-      help: "Ends a recording you forgot, once neither side has spoken for this long.",
+      help: "Ends a recording you forgot, once neither side has spoken for this long. Sound louder than Quiet below, on Microphone, counts as speaking.",
       keywords: "auto stop silence quiet forgot timeout minutes",
       options: [
           { id: "5", label: "5 minutes" },

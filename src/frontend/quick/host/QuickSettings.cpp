@@ -245,6 +245,7 @@ const SettingRow settingRows[] = {
              ? std::nullopt
              : std::optional(ServiceChoice{service, first.value(QStringLiteral("model")).toString()});
      }},
+    FIELD_ROW("recordingProfile", recording.writingProfile),
     FIELD_ROW("recordingFolder", recording.folder),
     {"recordingFormat",
      [](const AppSettings &s) { return QVariant(s.recording.format == RecordingFormat::PlainText ? "txt" : "md"); },

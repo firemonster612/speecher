@@ -5,10 +5,13 @@ import Speecher.Controls
 import Speecher.Backend
 import "HistoryWords.js" as T
 
-// An opened History entry's actions, under its row: Refined or Spoken where
-// they differ, then Copy, Paste again, Play with where it is, Refine again
-// and Delete. Refine again offers the Writing Profiles, the entry's own
-// first, and the new text shows under the actions with Keep this and Copy.
+// An opened History entry's actions, under its row: Refined or As spoken
+// where they differ, then Copy, Paste again, Play with where it is, Refine
+// again and Delete. A file's add Open transcript, Show audio file and
+// Transcribe again, and its Delete is Remove from History, which leaves its
+// files. Refine again offers the Writing Profiles, the entry's own first,
+// and the new text shows under the actions with Keep this and Copy, or why
+// it couldn't.
 Item {
     id: root
     required property var entry
@@ -20,6 +23,8 @@ Item {
     property string refinedText
     property bool refining: false
     property bool refineFailed: false
+    property string refineProblem
+    readonly property bool file: entry.kind === "file"
     signal spokenPicked(bool spoken)
     signal copyRequested()
     signal pasteRequested()
@@ -40,6 +45,7 @@ Item {
             if (id !== root.entry.id) return
             root.refining = false
             root.refineFailed = true
+            root.refineProblem = message
         }
     }
 
@@ -79,11 +85,51 @@ Item {
                 onPicked: id => {
                     root.refinedText = ""
                     root.refineFailed = false
+                    root.refineProblem = ""
                     root.refining = true
                     History.refineAgain(root.entry.id, id)
                 }
             }
-            Button { text: T.text.delete_; iconName: "trash-2"; size: "small"; variant: "danger"; onClicked: root.deleteRequested() }
+            Button {
+                visible: root.file && !root.entry.fileMissing && !!root.entry.transcriptPath
+                text: T.text.openTranscript
+                iconName: "external-link"
+                size: "small"
+                onClicked: History.openFile(root.entry.id)
+            }
+            Button {
+                visible: root.file && !root.entry.sourceMissing
+                text: T.text.showAudio
+                iconName: "folder-open"
+                size: "small"
+                onClicked: History.showSource(root.entry.id)
+            }
+            Button {
+                objectName: "transcribeAgain"
+                visible: root.file && !root.entry.sourceMissing
+                text: T.text.transcribeAgain
+                iconName: "audio-lines"
+                size: "small"
+                onClicked: {
+                    Transcription.addUrls([History.entry(root.entry.id).sourceUrl])
+                    Navigation.follow("transcribe", "")
+                }
+            }
+            Button {
+                text: root.file ? T.text.removeFromHistory : T.text.delete_
+                iconName: "trash-2"
+                size: "small"
+                variant: "danger"
+                onClicked: root.deleteRequested()
+            }
+        }
+        Txt {
+            visible: root.file
+            width: parent.width
+            text: root.entry.sourceMissing ? T.text.sourceMissing : T.text.fileStays
+            variant: "small"
+            tone: "secondary"
+            wrapMode: Text.WordWrap
         }
         Reveal {
             open: root.refinedText.length > 0
@@ -106,7 +152,7 @@ Item {
         }
         Reveal {
             open: root.refineFailed
-            Notice { text: T.text.refineFailed; tone: "negative" }
+            Notice { text: root.refineProblem || T.text.refineFailed; tone: "negative" }
         }
     }
 }

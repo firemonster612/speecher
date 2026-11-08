@@ -179,11 +179,12 @@ inline const QString UpdatesLastRunBuildNumber = QStringLiteral("updates/lastRun
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
 inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/consentNoticeShown");
 // RecordingSettings: sources ("both" or "mic"), the first speech service as
-// JSON { service, model }, the folder (empty: the default), format ("md" or
-// "txt"), whether the audio is kept, minutes of silence before it stops (0:
-// never) and the popup's pill.
+// JSON { service, model }, the Writing Profile's id (empty: Other apps'), the
+// folder (empty: the default), format ("md" or "txt"), whether the audio is
+// kept, minutes of silence before it stops (0: never) and the popup's pill.
 inline const QString RecordingSources = QStringLiteral("recording/sources");
 inline const QString RecordingFirst = QStringLiteral("recording/first");
+inline const QString RecordingWritingProfile = QStringLiteral("recording/writingProfile");
 inline const QString RecordingFolder = QStringLiteral("recording/folder");
 inline const QString RecordingFormat = QStringLiteral("recording/format");
 inline const QString RecordingKeepAudio = QStringLiteral("recording/keepAudio");

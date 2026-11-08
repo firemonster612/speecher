@@ -160,7 +160,8 @@ Column {
                     width: 200
                     items: root.recording
                         ? [{ id: "open", label: T.text.open, icon: "file-text" }, { id: "delete", label: T.text.delete_, icon: "trash-2" }]
-                        : [{ id: "paste", label: T.text.pasteAgain, icon: "clipboard-paste" }, { id: "delete", label: T.text.delete_, icon: "trash-2" }]
+                        : [{ id: "paste", label: T.text.pasteAgain, icon: "clipboard-paste" },
+                           { id: "delete", label: root.entry.kind === "file" ? T.text.removeFromHistory : T.text.delete_, icon: "trash-2" }]
                     onPicked: id => id === "paste" ? root.pasteAgain() : id === "open" ? root.readRequested(-1) : root.deleteRequested()
                 }
             }

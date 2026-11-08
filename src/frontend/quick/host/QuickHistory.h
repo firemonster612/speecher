@@ -33,10 +33,12 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // ("yyyy-MM-dd", local), startedAt, finishedAt, text, html (the text,
     // HTML-escaped, each match in <b>), app, appId, profile, profileName,
     // durationMs, words, outcome (delivered, copied, undelivered, done,
-    // complete, missed), hasAudio, hasRaw, title, transcriptPath, fileMissing,
-    // live (a Recording still running, which has no finishedAt), lines (a
-    // Recording's lines that match the search, at most three: { atMs,
-    // speaker, text }) }].
+    // complete, missed), hasAudio, hasRaw, title, transcriptPath, fileMissing
+    // (a Recording's or a file's saved transcript is gone), sourceMissing (a
+    // file's audio is gone), live (a Recording still running, which has no
+    // finishedAt), ending (a finished Recording's, as recordingEndJson),
+    // lines (a Recording's lines that match the search, at most three: {
+    // atMs, speaker, text }) }].
     Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
     // How many the query finds on every page, and whether there are more to
     // fetch.
@@ -44,8 +46,10 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     Q_PROPERTY(bool hasMore READ hasMore NOTIFY resultsChanged)
     // A changed query waits to be searched.
     Q_PROPERTY(bool searching READ searching NOTIFY searchingChanged)
-    // How many entries hold text at all, whatever the query.
+    // How many entries hold text at all, whatever the query, and how many of
+    // them are dictations and files, which clearing and keeping less delete.
     Q_PROPERTY(int kept READ kept NOTIFY changed)
+    Q_PROPERTY(int keptText READ keptText NOTIFY changed)
     // The filters' choices among the entries that hold text, most used
     // first: app names, and [{ id, name }] profiles.
     Q_PROPERTY(QStringList apps READ apps NOTIFY changed)
@@ -69,6 +73,7 @@ public:
     bool hasMore() const { return m_results.size() < m_matches; }
     bool searching() const { return m_searchDelay.isActive(); }
     int kept() const;
+    int keptText() const;
     QStringList apps() const;
     QVariantList profiles() const;
     QVariantMap playing() const;
@@ -81,10 +86,15 @@ public:
     Q_INVOKABLE QVariantList recent(const QString &kind, int limit) const;
     // One entry in full: what a result holds, with raw (the Raw
     // Transcript), speech and refinement (the services that ran, by id),
-    // sourcePath, and a Recording's lines ([{ atMs, speaker, text }]) and
-    // inRecordingsFolder (its file is in the folder Recordings saves to).
-    // Empty for one that's gone.
+    // sourcePath and sourceUrl, and a Recording's lines ([{ atMs, speaker,
+    // text }]), inRecordingsFolder (its file is in the folder Recordings
+    // saves to) and fileDiverges (its file was changed into something
+    // History can't read as lines). A Recording's lines are first taken
+    // again from its file where that was edited. Empty for one that's gone.
     Q_INVOKABLE QVariantMap entry(qint64 id) const;
+    // The parts of a search as History matches them, quoted phrases whole,
+    // for a reader to find the same.
+    Q_INVOKABLE QStringList searchTerms(const QString &text) const;
     // The entry's Refined Transcript, or with raw its Raw Transcript, on the
     // clipboard, or pasted into the app in front.
     Q_INVOKABLE void copy(qint64 id, bool raw);
@@ -93,21 +103,24 @@ public:
     // passes. Returns the token, or -1 when nothing went.
     Q_INVOKABLE int remove(qint64 id);
     Q_INVOKABLE bool undo(int token);
-    // Deletes a Recording at once, and with withFiles its transcript and
-    // audio files too.
-    Q_INVOKABLE bool removeRecording(qint64 id, bool withFiles);
+    // Deletes a Recording at once, with withFiles its transcript and audio
+    // files first. Returns the files that wouldn't go, whose entry then
+    // stays, so trying again or deleting without them can follow.
+    Q_INVOKABLE QStringList removeRecording(qint64 id, bool withFiles);
     // Plays the entry's audio from atMs, stopping any other.
     Q_INVOKABLE void play(qint64 id, qint64 atMs = 0);
     Q_INVOKABLE void stopPlaying();
-    // A Recording's file in the desktop's editor, or its folder.
+    // A Recording's file, or a file entry's saved transcript, in the
+    // desktop's editor, or its folder; a file entry's audio's folder.
     Q_INVOKABLE void openFile(qint64 id) const;
     Q_INVOKABLE void showInFolder(qint64 id) const;
+    Q_INVOKABLE void showSource(qint64 id) const;
     // Where Export offers to save a Recording as md, txt or json: beside its
     // transcript, named after it.
     Q_INVOKABLE QUrl exportFile(qint64 id, const QString &format) const;
-    // Saves a Recording's lines to file: md and txt as its file has them,
-    // json as [{ atMs, speaker, text }]. False when the file can't be
-    // written.
+    // Saves a Recording's lines to file, taken again from its file where
+    // that was edited: md and txt as its file has them, json as [{ atMs,
+    // speaker, text }]. False when the file can't be written.
     Q_INVOKABLE bool exportEntry(qint64 id, const QString &format, const QUrl &file) const;
     // Refines the entry's Raw Transcript again with a Writing Profile, as a
     // dictation into no app would; refined(id, text) or refineFailed(id,

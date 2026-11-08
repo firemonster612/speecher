@@ -9,11 +9,13 @@ import Speecher.App
 import "RecordingWords.js" as T
 
 // The recorder at the top of Recordings. Idle: a name, Record and what it
-// will do, or why it can't; the first recording ever asks the consent
-// question first. Running: the status line with the time, a row per stream
-// with its level and state, the problems core reports, and Stop, which
-// reads Finishing… while the last lines are written. A start that failed
-// says why under it.
+// will do, or why it can't with what fixes it: setup, a speech service that
+// can record, the microphone, the service's sign-in. The first recording
+// ever asks the consent question first. Running: the status line with the
+// time and what it started with, a row per stream with its level and
+// state, the problems core reports, and Cancel while it connects, then
+// Stop, which reads Finishing… while the last lines are written. A start
+// that failed says why under it.
 Section {
     id: recorder
     objectName: "recorder"
@@ -22,6 +24,11 @@ Section {
     readonly property string phase: Recording.state
     readonly property bool idle: phase === "off"
     readonly property bool canRecord: Recording.refusal.length === 0
+    // The microphone's access, then whether there is one, as Home says it.
+    readonly property var access: Health.find(System.checks, "microphoneAccess")
+    readonly property string microphoneProblem: !Health.passes(access) ? Health.status(access)
+        : !Audio.hasMicrophones ? Schema.row("audioDevice").noneLabel
+        : Microphones.deviceMissing ? Schema.row("audioDevice").missingLabel : ""
     property bool askingConsent: false
     // A start the page asked for, so a failure is shown where it was asked.
     property bool starting: false
@@ -78,6 +85,17 @@ Section {
                 }
             }
             Reveal {
+                open: recorder.canRecord && recorder.microphoneProblem.length > 0
+                Notice {
+                    objectName: "recordingMicrophone"
+                    text: recorder.microphoneProblem
+                    inset: Theme.rowInset
+                    actionText: recorder.t.openMicrophone
+                    onAction: Navigation.follow("microphone", Health.passes(recorder.access) ? "audioDevice" : "microphoneAccess")
+                }
+            }
+            ServiceStatus { role: "speech"; serviceId: recorder.canRecord ? Recording.plan.service : "" }
+            Reveal {
                 open: recorder.canRecord
                 Txt {
                     x: Theme.rowInset
@@ -96,10 +114,10 @@ Section {
                     objectName: "recordingRefusal"
                     text: Recording.refusal
                     inset: Theme.rowInset
-                    // Nothing in the Service Order can record; a start that
-                    // waits for setup says so without one.
-                    actionText: Recording.plan.service ? "" : recorder.t.openSpeech
-                    onAction: Navigation.follow("speech", "speechServices")
+                    // Setup comes first; then a Service Order with nothing
+                    // that can record.
+                    actionText: Recording.plan.service ? recorder.t.runSetup : recorder.t.openSpeech
+                    onAction: Recording.plan.service ? Settings.act("runSetup") : Navigation.follow("speech", "speechServices")
                 }
             }
             InlineConfirm {
@@ -160,12 +178,24 @@ Section {
                     anchors.right: parent.right
                     anchors.rightMargin: Theme.rowInset
                     anchors.verticalCenter: parent.verticalCenter
-                    text: recorder.phase === "stopping" ? recorder.t.finishing : recorder.t.stop
-                    iconName: "square"
+                    // Cancel while it connects, which records nothing.
+                    text: recorder.phase === "stopping" ? recorder.t.finishing
+                        : recorder.phase === "starting" ? recorder.t.cancel : recorder.t.stop
+                    iconName: recorder.phase === "starting" ? "x" : "square"
                     busy: recorder.phase === "stopping"
-                    enabled: recorder.phase === "recording"
+                    enabled: recorder.phase !== "stopping"
                     onClicked: Recording.stop()
                 }
+            }
+            Txt {
+                x: Theme.rowInset
+                width: parent.width - Theme.rowInset * 2
+                bottomPadding: Theme.space3
+                visible: !!Recording.running.service
+                text: T.runningSummary(Recording.running, Models.service(Recording.running.service || "").label)
+                variant: "small"
+                tone: "secondary"
+                wrapMode: Text.WordWrap
             }
             StreamRows { width: parent.width }
             Reveal {

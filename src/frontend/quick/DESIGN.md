@@ -106,9 +106,11 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   lines a search matched, `entry(id)` all its lines, and it opens in
   `RecordingReader` in the list's place (`recording:<id>` lands there),
   whose `TranscriptReader` (Find, play from a line) Recordings' live view
-  shares; `exportEntry` writes it as md, txt or JSON and
-  `removeRecording(id, withFiles)` deletes it at once, after its own
-  question. `recent(kind, limit)` is the newest of a kind whatever the
+  shares, its `ending` worded as what it missed; `exportEntry` writes it
+  as md, txt or JSON and `removeRecording(id, withFiles)` deletes it at
+  once, after its own question, or returns the files that wouldn't go and
+  keeps it. A file's entry offers Open transcript, Show audio file and
+  Transcribe again, and `historyKind:<kind>` lands filtered to a kind. `recent(kind, limit)` is the newest of a kind whatever the
   query, which Recent recordings lists in History's rows.
   `refineAgain(id, profile)` refines an entry's Raw Transcript again, as a
   dictation into no app (core's `planDictation` with an empty Target),
@@ -122,7 +124,13 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `plan`, what Record would run with (core's `planRecording`: the first
   speech service that sends text as you speak, the sources, the folder
   and the format). `start(title)`, `stop()` and `confirmConsent()` act;
-  the first recording ever asks the consent question on Recordings,
+  `running` is the plan the recording running started with, which later
+  changes leave alone; `stop()` while starting cancels it.
+  Transcribe files and Recordings share `pages/transcripts/`: `RunWith`
+  (the Writing Profile, "Same as your settings (…)", then what the run
+  changes of it in a fold, then each service's status with its Fix) and
+  `SaveTranscripts` (where, the folder, the file format).
+  The first recording ever asks the consent question on Recordings,
   where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
   words it. The popup's pill and Home's row read it too.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows

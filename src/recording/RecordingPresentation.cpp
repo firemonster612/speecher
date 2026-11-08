@@ -42,9 +42,10 @@ QString recordingElapsedText(qint64 elapsedMs)
                           : QStringLiteral("%1:%2").arg(seconds / 3600).arg(minutesAndSeconds.rightJustified(5, QLatin1Char('0')));
 }
 
-QString trayRecordingActionText(bool recording, qint64 elapsedMs)
+QString trayRecordingActionText(bool starting, bool recording, qint64 elapsedMs)
 {
-    return recording ? QStringLiteral("Stop recording (%1)").arg(recordingElapsedText(elapsedMs))
+    return starting    ? QStringLiteral("Cancel recording")
+         : recording ? QStringLiteral("Stop recording (%1)").arg(recordingElapsedText(elapsedMs))
                      : QStringLiteral("Start recording");
 }
 
@@ -163,6 +164,11 @@ QString recordingNoServiceText()
 {
     return QStringLiteral("None of your speech services can record a call. Local models can't send text as you "
                           "speak. Add ChatGPT or Claude to Speech to text.");
+}
+
+QString recordingCancelledText()
+{
+    return QStringLiteral("The recording was cancelled before it started.");
 }
 
 QString recordingStreamEndedText()

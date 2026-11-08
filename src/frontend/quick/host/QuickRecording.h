@@ -41,14 +41,20 @@ class QuickRecording final : public QObject, public HostSingleton<QuickRecording
     Q_PROPERTY(QString echoWarning READ echoWarning NOTIFY problemsChanged)
     Q_PROPERTY(int unwrittenLines READ unwrittenLines NOTIFY problemsChanged)
     Q_PROPERTY(QString writeError READ writeError NOTIFY problemsChanged)
-    // Why the last start failed, in core's words, until the next start.
+    // Why the last start failed, in core's words, until the next start. A
+    // start cancelled while it connected leaves none.
     Q_PROPERTY(QString problem READ problem NOTIFY problemChanged)
     // Why Record can't start now, in core's words (setup, no service that
     // can record), or empty.
     Q_PROPERTY(QString refusal READ refusal NOTIFY planChanged)
     // What Record would run with: { service, model, sources (both, mic),
-    // folder, format (md, txt) }.
+    // profile (the Writing Profile whose vocabulary it takes),
+    // inheritedProfile (Other apps', which it takes unless one is chosen), folder,
+    // folderUrl, format (md, txt), autoStopMinutes }.
     Q_PROPERTY(QVariantMap plan READ plan NOTIFY planChanged)
+    // The plan the recording running started with, which later changes
+    // leave alone; empty while none runs.
+    Q_PROPERTY(QVariantMap running READ running NOTIFY stateChanged)
     // Whether this computer captures what it plays, as "them".
     Q_PROPERTY(bool canRecordCallAudio READ canRecordCallAudio CONSTANT)
     // The consent notice waits to be shown before the first recording ever.
@@ -72,6 +78,7 @@ public:
     QString problem() const { return m_problem; }
     QString refusal() const;
     QVariantMap plan() const;
+    QVariantMap running() const { return m_running; }
     bool canRecordCallAudio() const;
     bool consentNeeded() const;
     qint64 lastEntry() const;
@@ -79,7 +86,10 @@ public:
     // Starts a recording named title (trimmed; empty for none) with the saved
     // settings; problem says why one didn't start.
     Q_INVOKABLE void start(const QString &title);
+    // Stops the recording running, or cancels one still connecting.
     Q_INVOKABLE void stop();
+    // The folder transcripts go in, as the folder chooser gives it.
+    Q_INVOKABLE void setFolder(const QUrl &folder);
     // The consent notice was shown and accepted.
     Q_INVOKABLE void confirmConsent();
 
@@ -102,6 +112,7 @@ private:
     QVariantList m_lines;
     QVariantMap m_levels;
     QString m_problem;
+    QVariantMap m_running;
     QTimer m_clock;
 };
 

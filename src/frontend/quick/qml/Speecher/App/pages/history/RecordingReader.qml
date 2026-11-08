@@ -10,8 +10,10 @@ import "HistoryWords.js" as T
 
 // A Recording opened from History: its name and when it ran, what can be
 // done with it (Export, Open file, Show in folder, and Delete, which asks
-// first and can take its files too), then its lines. History's search
-// carries over into Find, and a matching line it was opened at shows first.
+// first and can take its files too), what it missed, then its lines.
+// History's search carries over into Find, and a matching line it was
+// opened at shows first. Files that won't go keep it, saying which, with
+// Try again and Remove from History only.
 Column {
     id: root
 
@@ -21,13 +23,22 @@ Column {
     property string find
     property bool askDelete: false
     property bool alsoDeleteFiles: false
+    // The files the last delete couldn't take.
+    property var filesStayed: []
+    readonly property var notes: T.endingNotes(entry.ending)
     // Read again as History changes, so a recording that finishes while
     // open shows all of it.
     readonly property var entry: { void History.kept; return entryId > 0 ? History.entry(entryId) : ({}) }
     signal closed()
 
+    function remove(withFiles) {
+        filesStayed = History.removeRecording(entryId, withFiles)
+        if (filesStayed.length === 0) closed()
+    }
+
     onEntryIdChanged: {
         askDelete = false
+        filesStayed = []
         alsoDeleteFiles = !!entry.inRecordingsFolder
         if (startAt >= 0) Qt.callLater(() => lines.showAt(startAt))
     }
@@ -58,6 +69,31 @@ Column {
             open: !!root.entry.fileMissing
             Notice { text: T.text.fileMissing; inset: Theme.rowInset }
         }
+        Reveal {
+            open: !!root.entry.fileDiverges
+            Notice { text: T.text.fileDiverges; inset: Theme.rowInset }
+        }
+        Reveal {
+            open: root.notes.length > 0
+            Notice {
+                objectName: "recordingEnding"
+                text: root.notes.join(" ")
+                tone: root.entry.outcome === "missed" ? "warning" : "info"
+                inset: Theme.rowInset
+            }
+        }
+        Reveal {
+            open: root.filesStayed.length > 0
+            Notice {
+                objectName: "recordingFilesStayed"
+                text: T.filesStayed(root.filesStayed)
+                tone: "negative"
+                inset: Theme.rowInset
+                actionText: T.text.tryAgain
+                onAction: root.remove(true)
+                Button { text: T.text.removeOnly; size: "small"; onClicked: root.remove(false) }
+            }
+        }
         InlineConfirm {
             open: root.askDelete
             text: T.text.deleteRecording
@@ -72,7 +108,7 @@ Column {
             onCancelled: root.askDelete = false
             onConfirmed: {
                 root.askDelete = false
-                if (History.removeRecording(root.entryId, root.alsoDeleteFiles)) root.closed()
+                root.remove(root.alsoDeleteFiles)
             }
         }
         TranscriptReader {
