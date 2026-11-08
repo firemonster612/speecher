@@ -4,17 +4,18 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// This computer's part for a job, in a Fix sheet: the Local Models
-// downloaded for speech to text, with the This computer page a click away,
-// or the Local Runner cleanup runs on. Which model each runs is its order's
-// choice.
+// This computer's part for a job, in a Fix sheet under the sheet's own
+// title: the Local Models downloaded for speech to text, with the This
+// computer page a click away (pageRequested), or the Local Runner cleanup
+// runs on. Which model each runs is its order's choice.
 Section {
     id: section
 
     // "speech" or "refinement".
     property string part: "speech"
-
-    title: Schema.page("models").title
+    // Whether its own button leads to the This computer page.
+    readonly property bool leadsToPage: localRow.shown
+    signal pageRequested()
 
     SchemaRow {
         id: localRow
@@ -29,7 +30,7 @@ Section {
             text: localRow.spec.actionLabel
             variant: localRow.none ? "primary" : "secondary"
             size: localRow.none ? "medium" : "small"
-            onClicked: Navigation.follow("models")
+            onClicked: section.pageRequested()
         }
     }
     Reveal {

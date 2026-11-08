@@ -24,6 +24,12 @@ T.Popup {
         sheet.serviceId = serviceId
         open()
     }
+    // From setup it opens Main beside the assistant, leading back to it.
+    function openPage() {
+        const fromSetup = sheet.contentItem.Window.window?.objectName === "SetupAssistant"
+        sheet.close()
+        Navigation.follow(ModelText.cardPage(sheet.serviceId), "", fromSetup ? "setup" : "")
+    }
 
     objectName: "fixSheet"
     parent: T.Overlay.overlay
@@ -73,20 +79,18 @@ T.Popup {
             }
         }
         Loader {
+            id: card
             width: parent.width
             active: sheet.opened || sheet.visible
             sourceComponent: sheet.card === "chatgpt" || sheet.card === "claude" ? signIn
                            : sheet.card === "computer" ? computer : sheet.card === "servers" ? server : null
         }
-        // From setup it opens Main beside the assistant, leading back to it.
+        // Unless the card has its own button there.
         TextLink {
             objectName: "openServices"
+            visible: !card.item?.leadsToPage
             text: sheet.card === "computer" ? Schema.row("speechLocalModel").actionLabel : Words.openServices
-            onActivated: {
-                const fromSetup = Window.window?.objectName === "SetupAssistant"
-                sheet.close()
-                Navigation.follow(ModelText.cardPage(sheet.serviceId), "", fromSetup ? "setup" : "")
-            }
+            onActivated: sheet.openPage()
         }
     }
 
@@ -104,7 +108,10 @@ T.Popup {
     }
     Component {
         id: computer
-        ComputerSection { part: sheet.role }
+        ComputerSection {
+            part: sheet.role
+            onPageRequested: sheet.openPage()
+        }
     }
     Component {
         id: server

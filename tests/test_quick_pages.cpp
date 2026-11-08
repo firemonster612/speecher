@@ -1004,12 +1004,28 @@ private slots:
         QTRY_VERIFY(!sheet->property("visible").toBool());
     }
 
-    // Open Services in setup opens Main on Services, whose way back is to
-    // setup; once setup closes there is nothing to go back to.
+    void setupsServicesLinkReturnsToSetup_data()
+    {
+        QTest::addColumn<QString>("service");
+        QTest::addColumn<QString>("link");
+        QTest::addColumn<QString>("page");
+        QTest::newRow("server") << QStringLiteral("endpoint") << QStringLiteral("openServices") << QStringLiteral("services");
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        // No model is downloaded, so the card's own button leads there.
+        QTest::newRow("this computer") << QStringLiteral("local") << QStringLiteral("openLocalModels") << QStringLiteral("models");
+#endif
+    }
+
+    // The Fix sheet's way to the whole page, in setup, opens Main on it,
+    // whose way back is to setup; once setup closes there is nothing to go
+    // back to.
     void setupsServicesLinkReturnsToSetup()
     {
+        QFETCH(QString, service);
+        QFETCH(QString, link);
+        QFETCH(QString, page);
         ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("endpoint")}));
+        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({service}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showSetupAssistant(SetupAssistantPage::All);
@@ -1023,23 +1039,23 @@ private slots:
                 setup->setProperty("step", i);
             }
         }
-        // The server's row in the step's Service Order, which has no URL yet.
+        // The service's row in the step's Service Order, which can't run yet.
         QQuickItem *fix = nullptr;
-        QTRY_VERIFY((fix = findItem(setup->contentItem(), QStringLiteral("fix_endpoint"))));
+        QTRY_VERIFY((fix = findItem(setup->contentItem(), QStringLiteral("fix_") + service)));
         QMetaObject::invokeMethod(fix, "clicked");
-        QQuickItem *openServices = nullptr;
-        QTRY_VERIFY((openServices = findItem(setup->contentItem(), QStringLiteral("openServices"))));
-        QMetaObject::invokeMethod(openServices, "activated");
+        QQuickItem *open = nullptr;
+        QTRY_VERIFY((open = findItem(setup->contentItem(), link)) && open->isVisible());
+        QMetaObject::invokeMethod(open, open->metaObject()->indexOfSignal("activated()") >= 0 ? "activated" : "clicked");
         QQuickWindow *main = nullptr;
         QTRY_VERIFY((main = openWindow("Main")));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        QCOMPARE(navigation->current(), QStringLiteral("services"));
+        QCOMPARE(navigation->current(), page);
         QCOMPARE(navigation->returnTo(), QStringLiteral("setup"));
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("backLink"))
                     && findItem(main->contentItem(), QStringLiteral("backLink"))->property("text") == QStringLiteral("Back to setup"));
         navigation->goBack();
-        QCOMPARE(navigation->current(), QStringLiteral("services"));
+        QCOMPARE(navigation->current(), page);
         QCOMPARE(navigation->returnTo(), QString());
         QVERIFY(setup->isVisible());
 
