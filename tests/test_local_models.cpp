@@ -18,6 +18,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QThread>
 #include <QFile>
 #include <QSignalSpy>
 #include <QScopeGuard>
@@ -78,7 +79,18 @@ LocalModel fakeModel(const QByteArray &content)
 struct FakeModelCounts {
     std::atomic<int> loads = 0;
     std::atomic<int> sessions = 0;
+    // Sessions not yet destroyed, and how often a model loaded or unloaded
+    // under one, which transcribe.cpp forbids.
+    std::atomic<int> liveSessions = 0;
+    std::atomic<int> modelSwapsUnderSessions = 0;
+    // Sessions held in a call by the word kHeldWord, until heldOpen or
+    // their own abort.
+    std::atomic<int> held = 0;
+    std::atomic_bool heldOpen = false;
 };
+
+// A word a fake session stops on mid-call, as a slow model would.
+constexpr qint16 kHeldWord = 99;
 
 // A 100 ms chunk the fake hears as the word "w<word>"; quiet() it hears as
 // nothing.
@@ -108,6 +120,14 @@ QString fakeWords(const QByteArray &pcm)
 // A streaming session commits each word as it is fed.
 class FakeSession final : public LocalSpeechEngine::Session {
 public:
+    FakeSession(FakeModelCounts &counts, std::function<bool()> shouldAbort)
+        : m_counts(counts)
+        , m_shouldAbort(std::move(shouldAbort))
+    {
+        ++m_counts.liveSessions;
+    }
+    ~FakeSession() override { --m_counts.liveSessions; }
+
     std::optional<QString> transcribe(const QByteArray &pcm16, const QString &, QString *) override
     {
         return fakeWords(pcm16);
@@ -124,6 +144,17 @@ public:
     }
     bool feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *) override
     {
+        if (fakeWords(pcm16).contains(QStringLiteral("w%1").arg(kHeldWord))) {
+            ++m_counts.held;
+            while (!m_counts.heldOpen && !(m_shouldAbort && m_shouldAbort())) {
+                QThread::msleep(1);
+            }
+            --m_counts.held;
+            if (!m_counts.heldOpen) {
+                // Aborted, which says no error.
+                return false;
+            }
+        }
         if (const QString words = fakeWords(pcm16); !words.isEmpty()) {
             m_committed += words + QLatin1Char(' ');
         }
@@ -133,6 +164,8 @@ public:
     std::optional<QString> finalize(QString *) override { return m_committed.trimmed(); }
 
 private:
+    FakeModelCounts &m_counts;
+    std::function<bool()> m_shouldAbort;
     QString m_committed;
 };
 
@@ -145,12 +178,21 @@ public:
     }
     bool load(const QString &modelPath, const LocalRunsOn &runsOn, QString *) override
     {
+        if (m_counts.liveSessions > 0) {
+            ++m_counts.modelSwapsUnderSessions;
+        }
         ++m_counts.loads;
         m_modelPath = modelPath;
         m_runsOn = runsOn;
         return true;
     }
-    void unload() override { m_modelPath.clear(); }
+    void unload() override
+    {
+        if (m_counts.liveSessions > 0) {
+            ++m_counts.modelSwapsUnderSessions;
+        }
+        m_modelPath.clear();
+    }
     bool isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const override
     {
         return !m_modelPath.isEmpty() && modelPath == m_modelPath && runsOn == m_runsOn;
@@ -160,10 +202,10 @@ public:
         return m_modelPath.isEmpty() ? QString() : QStringLiteral("Fake (CPU)");
     }
     bool streams() const override { return m_streams; }
-    std::unique_ptr<Session> openSession(std::function<bool()>, QString *) override
+    std::unique_ptr<Session> openSession(std::function<bool()> shouldAbort, QString *) override
     {
         ++m_counts.sessions;
-        return std::make_unique<FakeSession>();
+        return std::make_unique<FakeSession>(m_counts, std::move(shouldAbort));
     }
 
 private:
@@ -1190,6 +1232,69 @@ private slots:
         dictation.finishInput(2);
         QVERIFY(dictationDone.wait(2000));
         QCOMPARE(counts.loads.load(), 2);
+        // The sessions on the first model closed before the second loaded.
+        QCOMPARE(counts.modelSwapsUnderSessions.load(), 0);
+    }
+
+    // On the shared model, a dictation with the same model runs beside a
+    // recording; one side of the call going doesn't wait on another
+    // client's call in progress; and a dictation cancelled mid-call stops
+    // without stopping the call's other side.
+    void oneClientGoingLeavesTheOthers()
+    {
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        FakeModelCounts counts;
+        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, true));
+        auto me = std::make_unique<LocalSpeechTranscriber>(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        LocalSpeechTranscriber dictation(store, worker);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFailures(&them, &SpeechTranscriber::failed);
+        QSignalSpy dictationDone(&dictation, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy dictationFailed(&dictation, &SpeechTranscriber::failed);
+        QSignalSpy dictationFinals(&dictation, &SpeechTranscriber::finalTranscript);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        me->startAttempt(1, settings, {.cutIntoUtterances = true});
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        dictation.startAttempt(1, settings, {});
+        dictation.sendAudio(1, spoken(5));
+        dictation.finishInput(1);
+        QVERIFY(dictationDone.wait(2000));
+        QVERIFY(dictationFailed.isEmpty());
+        QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.sessions.load(), 3);
+
+        // A dictation held mid-call by a slow model.
+        dictation.startAttempt(2, settings, {});
+        dictation.sendAudio(2, spoken(kHeldWord));
+        QTRY_COMPARE(counts.held.load(), 1);
+        // My side of the call goes meanwhile, without waiting for it.
+        QElapsedTimer going;
+        going.start();
+        me.reset();
+        QVERIFY2(going.elapsed() < 500, qPrintable(QString::number(going.elapsed())));
+        // Their side carries on behind the held call.
+        them.beginUtterance(1);
+        them.sendAudio(1, spoken(2));
+        them.endUtterance(1);
+        // Cancelling the dictation stops its call, and only its call.
+        dictation.cancelAttempt(2);
+        QTRY_COMPARE(counts.held.load(), 0);
+        QTRY_COMPARE(texts(theirFinals), QStringList{QStringLiteral("w2")});
+        QVERIFY(theirFailures.isEmpty());
+        QVERIFY(dictationFailed.isEmpty());
+        QVERIFY(!texts(dictationFinals).join(QLatin1Char(' ')).contains(QStringLiteral("w%1").arg(kHeldWord)));
+        // My side's session closed with it; theirs and dictation's remain.
+        QTRY_COMPARE(counts.liveSessions.load(), 2);
+
+        them.finishInput(1);
+        QTRY_VERIFY(!worker->attemptRunning());
+        QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.modelSwapsUnderSessions.load(), 0);
     }
 
     // transcribe.cpp runs two streams on one loaded model, interleaved, each
