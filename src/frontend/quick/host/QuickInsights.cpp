@@ -172,15 +172,12 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     connect(controller->history(), &HistoryStore::changed, this, &QuickInsights::latestChanged);
     // Summarizing every record is too much for every save: only What
     // Speecher Keeps, and the profile names the apps and profiles go by,
-    // change what shows. The latest dictation's profile goes by its current
-    // name.
+    // change what shows, the latest dictation's text and profile name too.
     connect(settings, &SettingsStore::snapshotApplied, this, [this, settings](const AppSettings &previous) {
         const AppSettings current = settings->dictationSnapshot();
-        const bool profilesChanged = current.refinement.writingProfiles != previous.refinement.writingProfiles;
-        if (profilesChanged || current.history.keeps != previous.history.keeps) {
+        if (current.refinement.writingProfiles != previous.refinement.writingProfiles
+            || current.history.keeps != previous.history.keeps) {
             refresh();
-        }
-        if (profilesChanged) {
             emit latestChanged();
         }
     });

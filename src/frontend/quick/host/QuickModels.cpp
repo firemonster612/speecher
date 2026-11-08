@@ -207,7 +207,7 @@ QVariantList namedModels(const QString &providerId)
 
 } // namespace
 
-QuickModels::QuickModels(ApplicationController *controller, const QuickSettings *settings, QObject *parent)
+QuickModels::QuickModels(ApplicationController *controller, QuickSettings *settings, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_settings(settings)
@@ -440,7 +440,14 @@ void QuickModels::use(const QString &id)
         qWarning().noquote() << "Models.use:" << id << "is not a Local Model";
         return;
     }
-    m_controller->localSetup()->useSpeechModel(id);
+    // The model first, so no save has Local Model first with the model it
+    // had before.
+    m_settings->set(QStringLiteral("speechLocalModel"), id);
+    QVariantList order;
+    for (const QString &service : m_settings->shown().speech.services.withMain(providerKey(ProviderId::Local)).order) {
+        order.append(QVariantMap{{QStringLiteral("service"), service}});
+    }
+    m_settings->set(QStringLiteral("speechServices"), order);
 }
 
 void QuickModels::testSpeed(const QString &id)

@@ -18,7 +18,16 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
 {
     RecordingSession *recording = controller->recording();
     m_clock.setInterval(1000);
-    connect(&m_clock, &QTimer::timeout, this, &QuickRecording::elapsedChanged);
+    connect(&m_clock, &QTimer::timeout, this, [this] {
+        emit elapsedChanged();
+        // The session signals only a stream's first lost audio and the first
+        // unwritten line; the counts after that grow quietly.
+        const auto counts = problemCounts();
+        if (counts != m_problemCounts) {
+            m_problemCounts = counts;
+            emit problemsChanged();
+        }
+    });
     connect(recording, &RecordingSession::phaseChanged, this, [this] {
         const QString now = state();
         if (now == u"starting") {
@@ -106,6 +115,16 @@ QVariantList QuickRecording::streams() const
 QString QuickRecording::echoWarning() const
 {
     return m_controller->recording()->status().echoCancellationWarning;
+}
+
+std::pair<QList<qint64>, int> QuickRecording::problemCounts() const
+{
+    const RecordingStatus status = m_controller->recording()->status();
+    QList<qint64> lostAudio;
+    for (const RecordingStreamStatus &stream : status.streams) {
+        lostAudio.append(stream.lostAudioMs);
+    }
+    return {lostAudio, status.unwrittenLines};
 }
 
 int QuickRecording::unwrittenLines() const

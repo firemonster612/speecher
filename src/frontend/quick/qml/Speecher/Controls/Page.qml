@@ -18,6 +18,9 @@ Item {
     signal pathPicked(string pageId)
     property string backText
     signal backPicked()
+    // The page's own search field while it shows one, or null: Ctrl+F puts
+    // the cursor there, and opens the search palette without one.
+    property Item findField: null
     // Kept while the link folds away, so its words don't vanish first.
     property string _shownBack
     onBackTextChanged: if (backText.length) _shownBack = backText

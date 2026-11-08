@@ -43,8 +43,9 @@ Item {
     property string _last: phase
     onPhaseChanged: {
         if (_last === "stopping" && phase === "off") {
-            saved = true
-            savedTime.restart()
+            // A result time of 0 shows no result.
+            saved = savedTime.interval > 0
+            if (saved) savedTime.restart()
         } else if (phase !== "off") {
             saved = false
         }
@@ -53,7 +54,7 @@ Item {
     Timer {
         id: savedTime
         // The setting's real time, so not a Theme duration.
-        interval: Settings.values.resultDuration || 2500
+        interval: Settings.values.resultDuration ?? 2500
         onTriggered: pill.saved = false
     }
 

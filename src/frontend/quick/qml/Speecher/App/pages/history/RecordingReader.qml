@@ -21,6 +21,8 @@ Column {
     // The line to show first, by its time; -1 for the start.
     property real startAt: -1
     property string find
+    // Find in its lines.
+    readonly property alias findField: lines.findField
     property bool askDelete: false
     property bool alsoDeleteFiles: false
     // The files the last delete couldn't take.

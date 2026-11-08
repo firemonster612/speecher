@@ -320,7 +320,7 @@ void QuickApps::refresh()
         return;
     }
     m_scanning = true;
-    emit installedChanged();
+    emit scanningChanged();
     scanPool().start([this] {
         QList<InstalledApp> apps = installedApps();
         QMetaObject::invokeMethod(this, [this, apps = std::move(apps)] {
@@ -328,6 +328,7 @@ void QuickApps::refresh()
             m_scanning = false;
             m_scanned = true;
             rebuild();
+            emit scanningChanged();
         }, Qt::QueuedConnection);
     });
 }

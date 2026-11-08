@@ -47,7 +47,7 @@ class QuickApps final : public QObject, public HostSingleton<QuickApps> {
     // it, or empty), type, profile }], type and profile as core resolves
     // them.
     Q_PROPERTY(QVariantList installed READ installed NOTIFY installedChanged)
-    Q_PROPERTY(bool scanning READ scanning NOTIFY installedChanged)
+    Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     // The apps dictated into lately, most recent first, while History keeps
     // stats: [{ name, appId, icon, lastSeenMs, dictations, entry, type,
     // profile }].
@@ -109,6 +109,7 @@ public:
 signals:
     void changed();
     void installedChanged();
+    void scanningChanged();
     void captureChanged();
     void testedChanged();
     // The App Switch to it found or added.

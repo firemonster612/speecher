@@ -253,18 +253,25 @@ private slots:
         QVERIFY(!models.spokenLanguageProblem().contains(QLatin1String("Welsh")));
     }
 
-    // Use makes Local Model the service with that model chosen, in one save,
-    // as the Settings singleton then reads it; a name that is no model
-    // changes nothing.
+    // Use makes Local Model the service with that model chosen, the model
+    // saved first so no save has Local Model first with another, as the
+    // Settings singleton then reads it; a name that is no model changes
+    // nothing.
     void useChoosesTheModelAndTheService()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickModels models(&controller, &settings);
 
-        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+        QStringList savedModels;
+        connect(controller.settings(), &SettingsStore::snapshotApplied, this, [&] {
+            const AppSettings saved = controller.settings()->dictationSnapshot();
+            if (saved.speech.services.main() == QLatin1String("local")) {
+                savedModels.append(localModelId(saved.speech));
+            }
+        });
         models.use(QStringLiteral("whisper-turbo"));
-        QCOMPARE(saved.count(), 1);
+        QCOMPARE(savedModels, QStringList{QStringLiteral("whisper-turbo")});
         const AppSettings stored = SettingsStore().dictationSnapshot();
         QCOMPARE(stored.speech.services.main(), QStringLiteral("local"));
         QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
@@ -277,6 +284,37 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, "Models.use: made-up is not a Local Model");
         models.use(QStringLiteral("made-up"));
         QCOMPARE(localModelId(SettingsStore().dictationSnapshot().speech), QStringLiteral("whisper-turbo"));
+    }
+
+    // In setup, Use makes Local Model first in the draft, not the saved
+    // order, and the model it chose outlasts the draft's reorder: Finish
+    // saves both.
+    void useInSetupWaitsInTheDraft()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
+        const QString claude = QStringLiteral("claude");
+        const QString codex = QStringLiteral("codex");
+        const QString local = QStringLiteral("local");
+        settings.set(QStringLiteral("speechServices"), test::serviceOrder({claude, codex, local}));
+        settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
+        settings.startDraft({QStringLiteral("speechServices")});
+        // A reorder hands back every entry as it was read, Parakeet too.
+        QVariantList reordered = settings.values().value(QStringLiteral("speechServices")).toList();
+        reordered.swapItemsAt(0, 1);
+        settings.set(QStringLiteral("speechServices"), reordered);
+
+        models.use(QStringLiteral("whisper-turbo"));
+        QCOMPARE(controller.settings()->dictationSnapshot().speech.services.order, (QStringList{claude, codex, local}));
+        QCOMPARE(settings.shown().speech.services.order, (QStringList{local, codex, claude}));
+        QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
+        QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
+
+        settings.saveDraft();
+        const AppSettings stored = SettingsStore().dictationSnapshot();
+        QCOMPARE(stored.speech.services.order, (QStringList{local, codex, claude}));
+        QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
     }
 
     // A failed download is the model's problem until the next try, and a

@@ -23,6 +23,7 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
+#include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/ScatterRibbon.h"
@@ -189,6 +190,21 @@ QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
     return schemaRow(window->contentItem(), rowId);
 }
 
+// The help of the first row under root whose help holds part, or empty.
+QString rowHelp(QQuickItem *root, const QString &part)
+{
+    QList<QQuickItem *> items{root};
+    while (!items.isEmpty()) {
+        QQuickItem *item = items.takeLast();
+        items += item->childItems();
+        const QString help = item->property("help").toString();
+        if (help.contains(part)) {
+            return help;
+        }
+    }
+    return {};
+}
+
 // The caption of the Section item sits in.
 QString sectionCaption(QQuickItem *item)
 {
@@ -265,6 +281,28 @@ public:
 private:
     std::shared_ptr<const PlatformComposition> m_platform = platformComposition();
 };
+
+// A dictation History keeps the text of, finished now.
+HistoryEntry keptDictation(const QString &text)
+{
+    HistoryEntry entry;
+    entry.stats = {QDateTime::currentDateTime(), 6000, int(text.split(u' ').size()), QStringLiteral("Kate"), WritingProfile::Other};
+    entry.kept = HistoryKeep::Text;
+    entry.text = text;
+    return entry;
+}
+
+// Deletes every Recording in History, which clearing leaves and whose file
+// outlives the test.
+void forgetRecordings(ApplicationController &controller)
+{
+    HistoryQuery recordings;
+    recordings.kinds = {HistoryKind::Recording};
+    recordings.limit = 1000;
+    for (const HistoryHit &hit : controller.history()->search(recordings)) {
+        controller.history()->remove(hit.entry.id);
+    }
+}
 
 } // namespace
 
@@ -1664,6 +1702,199 @@ private slots:
         QCOMPARE(navigation->returnTo(), QStringLiteral("privacy"));
     }
 
+    // Scanning for installed apps says when it ends, even when it finds
+    // nothing more to list.
+    void anAppScanSaysWhenItEnds()
+    {
+        ApplicationController controller(true);
+        QuickApps apps(&controller);
+        QSignalSpy scanning(&apps, &QuickApps::scanningChanged);
+        apps.refresh();
+        QVERIFY(apps.scanning());
+        QTRY_VERIFY_WITH_TIMEOUT(!apps.scanning(), 10000);
+        QCOMPARE(scanning.count(), 2);
+    }
+
+    // Typing in an App's match field keeps every character, the cursor
+    // staying in the field.
+    void typingAnAppsMatchKeepsEveryCharacter()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.Vault"))};
+            return true;
+        });
+        const QString id = QStringLiteral("app:org.example.Vault");
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        main->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:") + id);
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QVERIFY(QMetaObject::invokeMethod(findItem(row->parentItem(), QStringLiteral("appEditMatching")), "clicked"));
+        QPointer<QQuickItem> field;
+        QTRY_VERIFY((field = findItem(row->parentItem(), QStringLiteral("appMatchValue_0"))));
+        field->forceActiveFocus();
+        QTRY_VERIFY(field->hasActiveFocus());
+        QTest::keyClick(main, Qt::Key_End);
+        for (const char key : QByteArrayLiteral(".Beta")) {
+            QTest::keyClick(main, key);
+        }
+        QTest::qWait(50);
+        QVERIFY(field);
+        QCOMPARE(field->property("text").toString(), QStringLiteral("org.example.Vault.Beta"));
+        // Removing the row takes it without a stale read of the list.
+        QQuickItem *editor = field;
+        while (!editor->property("draftMatches").isValid()) {
+            editor = editor->parentItem();
+        }
+        editor->setProperty("draftMatches", QVariantList{});
+        QTRY_VERIFY(!findItem(row->parentItem(), QStringLiteral("appMatchValue_0")));
+    }
+
+    // Choosing to keep less asks about the text kept; choosing something
+    // else before answering drops the question, so its answer can't save
+    // the first choice.
+    void aNewKeepChoiceDropsTheQuestion()
+    {
+        ApplicationController controller(true);
+        controller.history()->clear({}, {}, true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.history.keeps = HistoryKeep::Text;
+            return true;
+        });
+        controller.history()->add(keptDictation(QStringLiteral("Kept words.")));
+        const auto forget = qScopeGuard([&controller] { controller.history()->clear({}, {}, true); });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"))
+            ->go(QStringLiteral("privacy"));
+        QQuickItem *page = nullptr;
+        QQuickItem *keeps = nullptr;
+        QTRY_VERIFY((page = findItem(main->contentItem(), QStringLiteral("privacyPage"))));
+        QTRY_VERIFY((keeps = findItem(page, QStringLiteral("historyKeeps"))));
+
+        QVERIFY(QMetaObject::invokeMethod(keeps, "activated", Q_ARG(QString, QStringLiteral("stats"))));
+        QCOMPARE(page->property("_lowerTo").toString(), QStringLiteral("stats"));
+        QVERIFY(QMetaObject::invokeMethod(keeps, "activated", Q_ARG(QString, QStringLiteral("audio"))));
+        QCOMPARE(page->property("_lowerTo").toString(), QString());
+        QCOMPARE(controller.settings()->snapshot().history.keeps, HistoryKeep::Audio);
+    }
+
+    // A batch's own Spoken Language shows as chosen, not the one it would
+    // inherit.
+    void aBatchShowsItsOwnLanguage()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"))
+            ->go(QStringLiteral("transcribe"));
+        QQuickItem *language = nullptr;
+        QTRY_VERIFY((language = findItem(main->contentItem(), QStringLiteral("batchLanguage"))));
+        QCOMPARE(language->property("shownId").toString(), QStringLiteral("en"));
+        QObject *transcription = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Transcription"));
+        QVERIFY(QMetaObject::invokeMethod(transcription, "setOption", Q_ARG(QString, QStringLiteral("language")),
+                                          Q_ARG(QVariant, QStringLiteral("fr"))));
+        QCOMPARE(language->property("shownId").toString(), QStringLiteral("fr"));
+    }
+
+    // Recordings' help names each speech service once: as able to record
+    // calls, or not.
+    void recordingsNamesEachServiceOnce()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"))
+            ->go(QStringLiteral("recordings"));
+        QString help;
+        QTRY_VERIFY(!(help = rowHelp(main->contentItem(), QStringLiteral(" can record calls."))).isEmpty());
+        const QString cannot = help.section(QStringLiteral(" can record calls. "), 1);
+        QVERIFY2(!cannot.isEmpty(), qPrintable(help));
+        QVERIFY2(!cannot.contains(QLatin1String("ChatGPT")), qPrintable(help));
+    }
+
+    // Ctrl+F has one owner: it goes to History's search, or its reader's
+    // Find while a recording is open there, and opens the search palette on
+    // a page without one. Search History for … closes the reader.
+    void findGoesToThePagesSearchOrThePalette()
+    {
+        ApplicationController controller(true);
+        controller.history()->clear({}, {}, true);
+        forgetRecordings(controller);
+        const auto forget = qScopeGuard([&controller] {
+            controller.history()->clear({}, {}, true);
+            forgetRecordings(controller);
+        });
+        controller.history()->add(keptDictation(QStringLiteral("Book the board room.")));
+        HistoryEntry meeting;
+        meeting.kind = HistoryKind::Recording;
+        meeting.startedAt = QDateTime::currentDateTime().addDays(-1);
+        meeting.kept = HistoryKeep::Text;
+        meeting.outcome = HistoryOutcome::Complete;
+        const qint64 meetingId = controller.history()->add(meeting);
+        controller.history()->appendLine(meetingId, {4000, QStringLiteral("me"), QStringLiteral("Can everyone see the board?")});
+        controller.history()->finishRecording(meetingId, meeting.startedAt.addSecs(60), 60 * 1000, {}, {});
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        main->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        auto *palette = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(palette);
+        const auto find = [main] {
+            main->contentItem()->forceActiveFocus();
+            QTest::keyClick(main, Qt::Key_F, Qt::ControlModifier);
+        };
+
+        navigation->go(QStringLiteral("history"));
+        QQuickItem *search = nullptr;
+        QTRY_VERIFY((search = findItem(main->contentItem(), QStringLiteral("historySearch"))));
+        find();
+        QTRY_VERIFY(search->hasActiveFocus());
+
+        navigation->goToRow(QStringLiteral("history"), QStringLiteral("recording:") + QString::number(meetingId));
+        QQuickItem *reader = nullptr;
+        QTRY_VERIFY((reader = findItem(main->contentItem(), QStringLiteral("transcriptFind"))) && reader->isVisible());
+        find();
+        QTRY_VERIFY(reader->hasActiveFocus());
+
+        navigation->goToRow(QStringLiteral("history"), QStringLiteral("historyFind:board"));
+        QQuickItem *page = search;
+        while (!page->property("readingId").isValid()) {
+            page = page->parentItem();
+        }
+        QCOMPARE(page->property("readingId").toInt(), 0);
+        QCOMPARE(search->property("text").toString(), QStringLiteral("board"));
+
+        navigation->go(QStringLiteral("general"));
+        QVERIFY(!palette->property("shown").toBool());
+        find();
+        QTRY_VERIFY(palette->property("shown").toBool());
+    }
+
     // While History keeps text, search ends with Search History for the
     // words, which opens History with them searched; keeping only stats, it
     // doesn't offer it.
@@ -1810,17 +2041,8 @@ private slots:
         const auto platform = std::make_shared<RecordingPlatform>();
         ApplicationController controller(true, platform);
         controller.history()->clear({}, {}, true);
-        // Clearing leaves recordings, and History's file outlives the test.
-        const auto forgetRecordings = [&controller] {
-            HistoryQuery recordings;
-            recordings.kinds = {HistoryKind::Recording};
-            recordings.limit = 1000;
-            for (const HistoryHit &hit : controller.history()->search(recordings)) {
-                controller.history()->remove(hit.entry.id);
-            }
-        };
-        forgetRecordings();
-        const auto forget = qScopeGuard(forgetRecordings);
+        forgetRecordings(controller);
+        const auto forget = qScopeGuard([&controller] { forgetRecordings(controller); });
         QList<QPointer<test::FakeSpeechTranscriber>> streams;
         bool connects = false;
         controller.providerRegistry()->registerSpeechProvider(
@@ -1984,6 +2206,69 @@ private slots:
              }},
         },
                  main);
+    }
+
+    // The session signals only a stream's first lost audio, so Recording
+    // reads the count again on its clock. With a result time of 0, the pill
+    // goes when the recording stops, with no Saved.
+    void aRecordingsLostAudioCountsOnAndAZeroResultTimeSkipsSaved()
+    {
+        const auto platform = std::make_shared<RecordingPlatform>();
+        ApplicationController controller(true, platform);
+        forgetRecordings(controller);
+        const auto forget = qScopeGuard([&controller] { forgetRecordings(controller); });
+        QPointer<test::FakeSpeechTranscriber> stream;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT")}, [&stream](QObject *parent) {
+                stream = new test::FakeSpeechTranscriber(parent);
+                stream->providerId = QStringLiteral("codex");
+                stream->streamsFinals = true;
+                // Stopping waits this long for the stream that is down.
+                stream->utteranceAnswerTimeout = 100;
+                return stream.data();
+            });
+        QTemporaryDir folder;
+        controller.settings()->edit([&folder](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.recording.folder = folder.path();
+            draft.recording.systemAudio = false;
+            draft.output.completionStatusDurationMs = 0;
+            return true;
+        });
+        controller.settings()->setRecordingConsentNoticeShown(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        RecordingSession *recording = controller.recording();
+        QuickRecording quick(&controller);
+        quick.start(QString());
+        QTRY_VERIFY(stream && stream->startCalls > 0);
+        stream->emitConnected();
+        QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Recording);
+        QQuickWindow *popup = nullptr;
+        QTRY_VERIFY((popup = openWindow("PopupWindow")));
+        QQuickItem *pill = findItem(popup->contentItem(), QStringLiteral("recordingPill"));
+        QVERIFY(pill);
+
+        // Down, with ten minutes waiting and two seconds past them lost.
+        stream->emitFailure(QStringLiteral("Connection reset"), true);
+        QTRY_COMPARE(recording->status().streams.first().state, RecordingStreamStatus::State::Reconnecting);
+        const QByteArray second(32000, '\0');
+        for (int i = 0; i < 10 * 60 + 2; ++i) {
+            platform->microphone->pushAudio(second);
+        }
+        const auto lostAudioMs = [&quick] { return quick.streams().first().toMap().value(QStringLiteral("lostAudioMs")).toLongLong(); };
+        QTRY_COMPARE(lostAudioMs(), 2000);
+        QSignalSpy problems(&quick, &QuickRecording::problemsChanged);
+        platform->microphone->pushAudio(second);
+        QCOMPARE(recording->status().streams.first().lostAudioMs, 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(!problems.isEmpty(), 2000);
+        QCOMPARE(lostAudioMs(), 3000);
+
+        recording->stop();
+        QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Off);
+        QVERIFY(!pill->property("saved").toBool());
+        QTRY_VERIFY(!pill->property("shown").toBool());
     }
 
     void everySetupStepLoads_data() { themes(); }

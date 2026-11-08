@@ -126,11 +126,12 @@ Column {
             title: TranscribeWords.language
             help: TranscribeWords.languageHelp
             LanguageSelect {
+                objectName: "batchLanguage"
                 placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
                 options: [{ id: "", label: Words.sameAs(Schema.page("speech").title, view.languageName(view.inherited.language)), icon: "link" }]
                          .concat(Schema.row("spokenLanguage").options)
                 currentId: view.options.language
-                shownId: view.inherited.language
+                shownId: view.options.language || view.inherited.language
                 onChosen: id => Transcription.setOption("language", id)
             }
         }

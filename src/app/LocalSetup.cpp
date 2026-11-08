@@ -465,18 +465,6 @@ void LocalSetup::chooseSpeechModel(const QString &id)
     emit changed();
 }
 
-void LocalSetup::useSpeechModel(const QString &id)
-{
-    if (!findLocalModel(id)) return;
-    m_settings.edit([&id](AppSettings &settings) {
-        settings.speech.services = settings.speech.services.withMain(providerKey(ProviderId::Local));
-        localModelId(settings.speech) = id;
-        settings.speech.local.modelChosen = true;
-        return true;
-    });
-    emit changed();
-}
-
 RunnerChoice LocalSetup::runnerChoice(const AppSettings &settings) const
 {
     return resolveRunnerChoice({settings.refinement.localRunner.runner,

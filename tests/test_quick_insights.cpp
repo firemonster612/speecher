@@ -330,6 +330,24 @@ private slots:
         QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Journal"));
     }
 
+    // Home's latest card follows What Speecher Keeps: it shows History's
+    // newest text only while History keeps text.
+    void latestFollowsWhatHistoryKeeps()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.history.keeps = HistoryKeep::Text;
+            return true;
+        });
+        QuickInsights insights(&controller);
+        QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.history.keeps = HistoryKeep::Stats;
+            return true;
+        });
+        QCOMPARE(latestChanged.count(), 1);
+    }
+
     // A save that changes nothing Insights shows leaves it as it was.
     void anUnrelatedSaveChangesNothing()
     {

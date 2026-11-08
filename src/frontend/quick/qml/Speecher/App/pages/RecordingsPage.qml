@@ -28,10 +28,11 @@ Page {
     // of them, which the speech service row's "Same as" names, and those
     // that can't.
     readonly property var canRecord: Models.speechServices.filter(s => s.id !== "local" && ModelText.streams(s.id))
-    readonly property var cannotRecord: Models.speechServices.filter(s => !canRecord.includes(s))
+    readonly property var cannotRecord: Models.speechServices.filter(s => !canRecord.some(c => c.id === s.id))
     readonly property string pageService: ModelText.order("speech").find(id => id !== "local" && ModelText.streams(id)) || ""
     readonly property var chosenService: Settings.values.recordingService || {}
     readonly property string nextRecording: running ? T.text.nextRecording : ""
+    findField: transcript.open ? liveLines.findField : null
 
     Component.onCompleted: Recording.lines.forEach(line => lines.append(line))
     Connections {
@@ -45,12 +46,14 @@ Page {
 
     // The transcript as it is written, following the newest line.
     Reveal {
+        id: transcript
         open: Recording.state === "recording" || Recording.state === "stopping"
         Section {
             width: parent.width
             title: page.t.transcript
             actions: Button { text: page.t.openFile; iconName: "external-link"; size: "small"; onClicked: Qt.openUrlExternally("file://" + Recording.path) }
             TranscriptReader {
+                id: liveLines
                 topPadding: Theme.space3
                 bottomPadding: Theme.space3
                 model: lines

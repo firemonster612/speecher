@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QVariant>
 
+#include <utility>
+
 namespace speecher {
 
 class ApplicationController;
@@ -108,12 +110,16 @@ signals:
     void pageRequested(const QString &pageId, const QString &rowId);
 
 private:
+    // Each stream's lostAudioMs and unwrittenLines, which the clock watches.
+    std::pair<QList<qint64>, int> problemCounts() const;
+
     ApplicationController *m_controller;
     QVariantList m_lines;
     QVariantMap m_levels;
     QString m_problem;
     QVariantMap m_running;
     QTimer m_clock;
+    std::pair<QList<qint64>, int> m_problemCounts;
 };
 
 } // namespace speecher

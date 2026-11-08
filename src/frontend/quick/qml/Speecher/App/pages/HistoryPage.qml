@@ -105,6 +105,7 @@ Page {
             filters.kind = rowId.slice("historyKind:".length)
             Navigation.pendingRow = ""
         } else if (rowId.startsWith("historyFind:")) {
+            readingId = 0
             search.text = rowId.slice("historyFind:".length)
             filters.reset()
             Navigation.pendingRow = ""
@@ -129,7 +130,8 @@ Page {
         property: "query"
         value: ({ text: search.text, kind: filters.kind, app: filters.app, profile: filters.profile, when: filters.when })
     }
-    Shortcut { sequences: [StandardKey.Find, "/"]; enabled: page.listing && !page.readingId; onActivated: search.forceActiveFocus() }
+    findField: readingId ? reader.findField : listing ? search : null
+    Shortcut { sequences: ["/"]; enabled: page.listing && !page.readingId; onActivated: search.forceActiveFocus() }
     Shortcut { sequences: [StandardKey.Undo]; enabled: page.lastUndo >= 0; onActivated: page.undo() }
 
     headerActions: MenuButton {
