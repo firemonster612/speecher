@@ -699,7 +699,8 @@ private slots:
         auto *discarded = new HistoryAudioWriter(folder.path());
         discarded->write(QByteArray(3200, '\0'));
         discarded->discard();
-        QTRY_VERIFY(QDir(folder.path()).entryList(QDir::Files).isEmpty());
+        QTRY_VERIFY2(QDir(folder.path()).entryList(QDir::Files).isEmpty(),
+                     qPrintable(QDir(folder.path()).entryList(QDir::Files).join(u", ")));
     }
 
     void historyKeepTakesTheLeast_data()

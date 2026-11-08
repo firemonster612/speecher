@@ -125,10 +125,15 @@ HistoryAudioWriter::HistoryAudioWriter(const QString &folder, const QString &ste
 HistoryAudioWriter::~HistoryAudioWriter()
 {
     if (m_recorder) {
+        // Nothing it says now reaches a writer that is going.
+        m_recorder->disconnect(this);
         m_recorder->stop();
     }
-    // Closed first: Windows won't delete a file still open. Whatever didn't
-    // get its name was never finished.
+    // The encoder and the file let go of it first: Windows won't delete a
+    // file still open. Whatever didn't get its name was never finished.
+    delete m_session;
+    delete m_recorder;
+    delete m_input;
     if (m_wav) {
         m_wav->close();
     }
