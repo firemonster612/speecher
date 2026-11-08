@@ -159,7 +159,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_transcription(controller)
     , m_virtualKeyboard(controller->settings())
     , m_removal(&m_virtualKeyboard, SpeecherRemoval::onThisComputer(controller))
-    , m_system(controller, &m_virtualKeyboard, &m_removal)
+    , m_system(controller, &m_settings, &m_virtualKeyboard, &m_removal)
     , m_phone(controller)
     , m_models(controller)
     , m_insights(controller)
@@ -343,6 +343,9 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 
 void QuickFrontEnd::setupClosed()
 {
+    // Finish and Set up later saved what setup chose; closing it any other
+    // way leaves it unsaved.
+    m_settings.dropDraft();
     releaseTestIn(m_audio, m_setup);
     m_navigation.forgetReturnTo(QuickNavigation::setupOrigin);
     std::exchange(m_setup, nullptr)->deleteLater();

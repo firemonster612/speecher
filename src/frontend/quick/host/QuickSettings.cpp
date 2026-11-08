@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 
 namespace speecher {
 
@@ -377,14 +378,68 @@ void QuickSettings::set(const QString &id, const QVariant &value)
             return;
         }
     }
-    m_controller->settings()->edit([&](AppSettings &draft) {
+    const SettingsEdit write = [this, row, value](AppSettings &settings) {
         if (row->writeHere) {
-            row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
+            row->writeHere(settings, value, m_controller->localSetup()->liveFacts(settings));
         } else {
-            row->write(draft, value);
+            row->write(settings, value);
         }
+    };
+    if (m_draftRows.contains(id)) {
+        m_draft = [before = m_draft, write](AppSettings &settings) {
+            if (before) {
+                before(settings);
+            }
+            write(settings);
+        };
+        refresh();
+        return;
+    }
+    m_controller->settings()->edit([&](AppSettings &draft) {
+        write(draft);
         return true;
     });
+}
+
+void QuickSettings::startDraft(const QStringList &ids)
+{
+    for (const QString &id : ids) {
+        if (!findRow(settingRows, id)) {
+            qWarning().noquote() << "Settings.startDraft:" << id << "is not a row the UI saves";
+        }
+    }
+    m_draftRows = ids;
+    m_draft = {};
+    refresh();
+}
+
+void QuickSettings::saveDraft()
+{
+    const SettingsEdit draft = std::exchange(m_draft, {});
+    m_draftRows.clear();
+    if (draft) {
+        m_controller->settings()->edit([&draft](AppSettings &settings) {
+            draft(settings);
+            return true;
+        });
+    }
+    refresh();
+}
+
+void QuickSettings::dropDraft()
+{
+    m_draftRows.clear();
+    m_draft = {};
+    refresh();
+}
+
+AppSettings QuickSettings::shown() const
+{
+    AppSettings settings = m_controller->settings()->dictationSnapshot();
+    if (m_draft) {
+        m_draft(settings);
+    }
+    return settings;
 }
 
 void QuickSettings::act(const QString &id)
@@ -500,7 +555,7 @@ void QuickSettings::setError(const QString &id, const QString &error)
 
 void QuickSettings::refresh()
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppSettings settings = shown();
     QVariantMap values;
     for (const SettingRow &row : settingRows) {
         values.insert(QLatin1String(row.id), row.read(settings));

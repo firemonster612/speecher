@@ -1,123 +1,17 @@
 import QtQuick
-import Speecher.Theme
-import Speecher.Controls
 import Speecher.Backend
-import Speecher.Wording
 import Speecher.App
-import "../pages/services"
+import "../pages/speech"
 
-// The speech services and where each stands, the language you speak, and
-// under them what the chosen one still needs: the Local Model to run and
-// its download, which keeps going while setup carries on, the speech
-// server, or a sign-in to fix. It checks the sign-ins
-// when it opens.
+// Speech to text's own sections: the language you speak, then the speech
+// services in order, each with its status and a Fix while it can't run.
+// It checks the sign-ins when it opens.
 StepPage {
-    id: page
-
     Component.onCompleted: {
         Models.checkComputer()
         Models.checkSignIns()
     }
 
-    Card {
-        ServiceCards {
-            // As Transcribe's cards: what each is good at and its rating; the
-            // row under them says how to sign in.
-            options: States.withTones(ModelText.fileSpeechChoices(Models.speechServices))
-            currentId: page.choices.speech
-            unratedText: ModelText.unrated
-            onActivated: id => page.choices.speech = id
-            onHelpLinkActivated: (id, at) => setupLanguages.show(at, ModelText.service(id).languages)
-        }
-        LanguageList { id: setupLanguages }
-        // The model Local Model runs, any in the catalog, and its download
-        // until it is on this computer.
-        Reveal {
-            id: localModel
-            readonly property var model: ModelText.catalogModel(Models.localModelChoice)
-            readonly property bool downloading: !!model && Models.downloads[model.id] !== undefined
-            open: page.choices.speech === "local" && !!model
-            SettingRow {
-                title: Schema.row("speechLocalModel").label
-                help: localModel.model ? ModelText.metaLine(localModel.model) : ""
-                helpLink: localModel.model ? ModelText.languageLink(localModel.model.languages) : ""
-                onHelpLinkActivated: at => modelLanguages.show(at, localModel.model.languages)
-                Select {
-                    placeholder: Words.choose
-                    options: Models.catalog.map(m => ({ id: m.id, label: m.name,
-                                                        help: m.id === Models.suggestedModel ? ModelText.suggested : m.bestFor }))
-                    currentId: Models.localModelChoice
-                    onChosen: id => Settings.set("speechLocalModel", id)
-                }
-            }
-            LanguageList { id: modelLanguages }
-            SettingRow {
-                objectName: "localModelDownload"
-                shown: !!localModel.model && Models.downloaded.indexOf(localModel.model.id) < 0
-                title: Setup.text.downloadModel
-                help: localModel.model && localModel.model.fit === "tooLarge" ? ModelText.tooLarge + "." : Setup.text.downloadModelHelp
-                Switcher {
-                    width: implicitWidth
-                    currentIndex: localModel.downloading ? 1 : 0
-                    Button {
-                        text: localModel.model ? ModelText.download(localModel.model.sizeBytes) : ""
-                        variant: "primary"
-                        size: "small"
-                        enabled: !!localModel.model && localModel.model.fit !== "tooLarge"
-                        onClicked: Models.download(localModel.model.id)
-                    }
-                    Row {
-                        spacing: Theme.space2
-                        ProgressBar {
-                            width: 120
-                            value: localModel.downloading ? Models.downloads[localModel.model.id] : 0
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        IconButton {
-                            size: 22
-                            iconName: "x"
-                            tooltip: Words.cancel
-                            onClicked: Models.cancel(localModel.model.id)
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-                }
-            }
-        }
-        Reveal {
-            id: endpoint
-            open: page.choices.speech === "endpoint"
-            SpeechServerRows {}
-        }
-        // The Local Model this computer can run, offered as a fallback.
-        Reveal {
-            id: offer
-            readonly property var local: Models.fallbackOffers.speech
-            open: (local.joins || []).indexOf(page.choices.speech) >= 0
-            SettingRow {
-                title: ModelText.fallbackOfferText(offer.local)
-                Button {
-                    text: ModelText.addFallback
-                    size: "small"
-                    onClicked: Models.acceptFallbackOffer("speech", page.choices.speech)
-                }
-            }
-        }
-        ServiceStatus { role: "speech"; serviceId: page.choices.speech }
-        // The language you'll dictate in, from those the chosen service
-        // hears; one it can't hear shows no choice until you pick another.
-        // Saved as you pick, like the rows above.
-        SettingRow {
-            readonly property var spec: Schema.row("spokenLanguage")
-            title: spec.label
-            help: spec.help
-            LanguageSelect {
-                objectName: "setupSpokenLanguage"
-                placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                options: ModelText.spokenLanguageOptions(ModelText.service(page.choices.speech))
-                currentId: Settings.values.spokenLanguage || ""
-                onChosen: id => Settings.set("spokenLanguage", id)
-            }
-        }
-    }
+    SpokenLanguageSection {}
+    ServiceOrderSection { role: "speech" }
 }

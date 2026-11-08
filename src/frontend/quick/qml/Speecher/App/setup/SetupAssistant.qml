@@ -34,8 +34,8 @@ ClientWindow {
         shortcut: "ShortcutStep.qml", ready: "ReadyStep.qml"
     })
 
-    // What the steps choose and where each stands. Finishing setup writes
-    // the choices to Settings.
+    // The draft of what the steps choose, and where each stands. Finishing
+    // setup saves the draft.
     SetupChoices {
         id: choices
         objectName: "setupChoices"
@@ -43,10 +43,10 @@ ClientWindow {
     }
 
     function go(index) { step = Math.max(0, Math.min(steps.length - 1, index)) }
-    // Finish writes the choices and closes, and says setup is done once
-    // every needed step passes; until then it is later, which leaves setup
-    // to run again, as closing any other way does.
-    function finish() { choices.finish(); if (choices.complete) Settings.completeSetup(); close() }
+    // Finish saves the draft and closes, and says setup is done once every
+    // needed step passes; until then it is later, which leaves setup to run
+    // again. Closing any other way drops the draft.
+    function finish() { choices.save(); if (choices.complete) Settings.completeSetup(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------
@@ -132,7 +132,7 @@ ClientWindow {
             // In line with the step's content above.
             Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
-            // Set up later saves what was chosen and closes, leaving setup to
+            // Set up later saves the draft and closes, leaving setup to
             // open again; once every needed step passes it becomes Skip,
             // which finishes. On the last step, what still keeps setup from
             // being done. Back fades where it stands rather than reflowing

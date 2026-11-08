@@ -813,8 +813,9 @@ private slots:
                 setup->setProperty("step", i);
             }
         }
+        // The server's row in the step's Service Order, which has no URL yet.
         QQuickItem *fix = nullptr;
-        QTRY_VERIFY((fix = findItem(setup->contentItem(), QStringLiteral("fixService"))));
+        QTRY_VERIFY((fix = findItem(setup->contentItem(), QStringLiteral("fix_endpoint"))));
         QMetaObject::invokeMethod(fix, "clicked");
         QQuickItem *openServices = nullptr;
         QTRY_VERIFY((openServices = findItem(setup->contentItem(), QStringLiteral("openServices"))));
@@ -1465,10 +1466,67 @@ private slots:
             return false;
         };
         QTRY_VERIFY(shows(QStringLiteral("Finish for now")));
-        choices->setProperty("keep", false);
+        auto *settings = qmlEngine(setup)->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        QVERIFY(settings);
+        settings->set(QStringLiteral("keepOnClipboard"), false);
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
         QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
         QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
         QVERIFY(!controller.settings()->dictationSnapshot().output.steps.keep);
+    }
+
+    // Setup's Speech to text step is the page's own Service Order, and what
+    // it changes waits in setup's draft, which Settings shows to every page:
+    // closing setup drops it, and Set up later saves it.
+    void setupDraftsWhatItsStepsChange()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechServices"),
+                                       test::serviceOrder({QStringLiteral("codex"), QStringLiteral("claude")}));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        const QStringList saved{QStringLiteral("codex"), QStringLiteral("claude")};
+        const QStringList reordered{QStringLiteral("claude"), QStringLiteral("codex")};
+        const auto savedOrder = [&controller] { return controller.settings()->dictationSnapshot().speech.services.order; };
+        // Opens setup on its Speech to text step and moves Claude first
+        // there, as dragging it does.
+        const auto reorderInSetup = [&]() -> QQuickWindow * {
+            ui.showSetupAssistant(SetupAssistantPage::All);
+            QQuickWindow *setup = nullptr;
+            [&] { QTRY_VERIFY((setup = openWindow("SetupAssistant"))); }();
+            if (!setup) {
+                return nullptr;
+            }
+            const QJSValue steps = setup->property("steps").value<QJSValue>();
+            for (int i = 0; i < steps.property(QStringLiteral("length")).toInt(); ++i) {
+                if (steps.property(i).property(QStringLiteral("id")).toString() == QLatin1String("transcription")) {
+                    setup->setProperty("step", i);
+                }
+            }
+            QQuickItem *order = nullptr;
+            [&] { QTRY_VERIFY((order = findItem(setup->contentItem(), QStringLiteral("speechServiceOrder")))); }();
+            if (!order || !QMetaObject::invokeMethod(order, "edited", Q_ARG(QVariant, QVariant(reordered)))) {
+                return nullptr;
+            }
+            return setup;
+        };
+
+        QQuickWindow *setup = reorderInSetup();
+        QVERIFY(setup);
+        auto *settings = qmlEngine(setup)->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        QVERIFY(settings);
+        QCOMPARE(test::servicesOf(settings->values().value(QStringLiteral("speechServices"))), reordered);
+        QCOMPARE(savedOrder(), saved);
+        setup->close();
+        QTRY_VERIFY(!openWindow("SetupAssistant"));
+        QCOMPARE(test::servicesOf(settings->values().value(QStringLiteral("speechServices"))), saved);
+        QCOMPARE(savedOrder(), saved);
+
+        setup = reorderInSetup();
+        QVERIFY(setup);
+        QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
+        QCOMPARE(savedOrder(), reordered);
+        QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
     }
 
     void everyPopupStateLoads_data() { themes(); }
