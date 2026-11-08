@@ -3,12 +3,21 @@
 // filters and pages.
 
 #include "common/test_suites.h"
+#include "common/test_doubles.h"
 
 #include "app/ApplicationController.h"
+#include "core/SettingsStore.h"
 #include "core/history/HistoryStore.h"
 #include "frontend/quick/host/QuickHistory.h"
+#include "providers/ProviderRegistry.h"
 
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QPointer>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace speecher;
@@ -153,6 +162,100 @@ private slots:
 
     // Clear asks how many first, and deletes the words; with the stats, the
     // entries too.
+    // A Recording lists its lines that match the search, bold and escaped;
+    // in full it has all of them. Export writes them as its file has them or
+    // as JSON, and a delete can take its files with it.
+    void aRecordingShowsItsLinesExportsAndGoes()
+    {
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        QFile transcript(dir.filePath(QStringLiteral("weekly-sync.md")));
+        QVERIFY(transcript.open(QIODevice::WriteOnly));
+        transcript.close();
+        HistoryEntry recording;
+        recording.kind = HistoryKind::Recording;
+        recording.startedAt = QDateTime::currentDateTime();
+        recording.title = QStringLiteral("Weekly sync");
+        recording.transcriptPath = transcript.fileName();
+        recording.kept = HistoryKeep::Text;
+        recording.outcome = HistoryOutcome::Complete;
+        HistoryStore *store = controller.history();
+        const qint64 id = store->add(recording);
+        store->appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("Can you see <my> screen?")});
+        store->appendLine(id, {752000, QStringLiteral("them"), QStringLiteral("It retries after a 403")});
+        store->finishRecording(id, QDateTime::currentDateTime(), 760000, HistoryOutcome::Complete, {});
+        QuickHistory history(&controller);
+        history.setQuery({{QStringLiteral("text"), QStringLiteral("403")}, {QStringLiteral("kind"), QStringLiteral("recording")}});
+        QTRY_VERIFY(!history.searching());
+        QCOMPARE(history.results().size(), 1);
+        const QVariantMap found = history.results().first().toMap();
+        QCOMPARE(found.value(QStringLiteral("kind")).toString(), QStringLiteral("recording"));
+        QVERIFY(!found.value(QStringLiteral("live")).toBool());
+        const QVariantList lines = found.value(QStringLiteral("lines")).toList();
+        QCOMPARE(lines.size(), 1);
+        QCOMPARE(lines.first().toMap().value(QStringLiteral("html")).toString(), QStringLiteral("It retries after a <b>403</b>"));
+        QCOMPARE(history.entry(id).value(QStringLiteral("lines")).toList().size(), 2);
+
+        const QUrl markdown = history.exportFile(id, QStringLiteral("txt"));
+        QCOMPARE(markdown.toLocalFile(), dir.filePath(QStringLiteral("weekly-sync.txt")));
+        QVERIFY(history.exportEntry(id, QStringLiteral("txt"), markdown));
+        QFile exported(markdown.toLocalFile());
+        QVERIFY(exported.open(QIODevice::ReadOnly));
+        QCOMPARE(exported.readAll(), QByteArray("[00:00:04] me: Can you see <my> screen?\n"
+                                                "[00:12:32] them: It retries after a 403\n"));
+        const QUrl json = history.exportFile(id, QStringLiteral("json"));
+        QVERIFY(history.exportEntry(id, QStringLiteral("json"), json));
+        QFile jsonFile(json.toLocalFile());
+        QVERIFY(jsonFile.open(QIODevice::ReadOnly));
+        QCOMPARE(QJsonDocument::fromJson(jsonFile.readAll()).array().at(1).toObject(),
+                 (QJsonObject{{QStringLiteral("atMs"), 752000},
+                              {QStringLiteral("speaker"), QStringLiteral("them")},
+                              {QStringLiteral("text"), QStringLiteral("It retries after a 403")}}));
+
+        QVERIFY(history.removeRecording(id, true));
+        QVERIFY(!QFile::exists(transcript.fileName()));
+        QVERIFY(history.entry(id).isEmpty());
+    }
+
+    // Refine again refines the Raw Transcript with the profile chosen, and
+    // with no app's context: no nearby text, no screenshot. Keep this keeps
+    // the new text and the raw one.
+    void refineAgainUsesTheChosenProfileAndNoAppsContext()
+    {
+        ApplicationController controller(true);
+        QPointer<test::FakeRefiner> refiner;
+        controller.providerRegistry()->registerRefinementProvider(
+            {QStringLiteral("openai"), QStringLiteral("ChatGPT")}, [&refiner](QObject *parent) {
+                refiner = new test::FakeRefiner(parent);
+                refiner->autoComplete = true;
+                refiner->autoCompleteText = QStringLiteral("Could you send the deck?");
+                return refiner.data();
+            });
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.refinement.enabled = true;
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            return true;
+        });
+        HistoryEntry spoken = kept(QStringLiteral("Send the deck."));
+        spoken.rawText = QStringLiteral("um send the deck");
+        spoken.stats.profile = WritingProfile::Work;
+        const qint64 id = controller.history()->add(spoken);
+        QuickHistory history(&controller);
+        QSignalSpy refined(&history, &QuickHistory::refined);
+        history.refineAgain(id, WritingProfile::Email);
+        QTRY_COMPARE(refined.count(), 1);
+        QCOMPARE(refined.first(), (QVariantList{id, QStringLiteral("Could you send the deck?")}));
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("um send the deck"));
+        QCOMPARE(refiner->lastContext.writingProfile, WritingProfile::Email);
+        QVERIFY(refiner->lastContext.target.applicationId.isEmpty());
+        QVERIFY(refiner->lastContext.target.nearbyTextBefore.isEmpty());
+        QVERIFY(refiner->lastContext.screenshotData.isEmpty());
+
+        QVERIFY(history.keepRefined(id, QStringLiteral("Could you send the deck?")));
+        QCOMPARE(controller.history()->entry(id)->text, std::optional(QStringLiteral("Could you send the deck?")));
+        QCOMPARE(controller.history()->entry(id)->rawText, std::optional(QStringLiteral("um send the deck")));
+    }
+
     void clearDeletesASpan()
     {
         ApplicationController controller(true);

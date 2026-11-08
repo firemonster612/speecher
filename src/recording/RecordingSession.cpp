@@ -599,12 +599,14 @@ void RecordingSession::finishStartOnceSettled()
     if (m_phase != Phase::Starting || m_me.connecting || m_them.connecting) {
         return;
     }
+    // Before the phase, so whoever follows the phase finds its History
+    // Entry there.
+    emit started(m_transcript.path(), m_title);
     setPhase(Phase::Recording);
     qInfo().noquote() << "recording started path=" + m_transcript.path();
     if (m_silence.interval() > 0) {
         m_silence.start();
     }
-    emit started(m_transcript.path(), m_title);
     markDictation();
     emit recordingChanged(true);
     std::exchange(m_startDone, {})({});

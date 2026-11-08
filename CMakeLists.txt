@@ -649,6 +649,7 @@ set(SPEECHER_APP_SOURCES
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
   src/app/PasteAgain.cpp
+  src/app/RefineAgain.cpp
   src/app/ProviderAvailability.cpp
   src/app/CliClient.cpp
   src/app/CommandLine.cpp
@@ -689,6 +690,7 @@ set(SPEECHER_APP_HEADERS
   src/app/LocalSetup.h
   src/app/NetworkReachability.h
   src/app/PasteAgain.h
+  src/app/RefineAgain.h
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CliClient.h

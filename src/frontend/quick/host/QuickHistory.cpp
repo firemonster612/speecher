@@ -4,12 +4,21 @@
 #include "core/InsightsSummary.h"
 #include "core/SettingsStore.h"
 #include "core/history/HistoryStore.h"
+#include "recording/RecordingPresentation.h"
+#include "recording/RecordingSession.h"
 
 #include <QAudioOutput>
 #include <QClipboard>
+#include <QDesktopServices>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMediaPlayer>
+#include <QSaveFile>
 #include <QUrl>
 
 namespace speecher {
@@ -67,7 +76,10 @@ std::pair<QDateTime, QDateTime> rangeOf(const QString &name, const QDate &today)
 QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_refineAgain(*controller->settings(), *controller->providerRegistry())
 {
+    connect(&m_refineAgain, &RefineAgain::refined, this, &QuickHistory::refined);
+    connect(&m_refineAgain, &RefineAgain::failed, this, &QuickHistory::refineFailed);
     m_searchDelay.setSingleShot(true);
     m_searchDelay.setInterval(searchDelayMs);
     connect(&m_searchDelay, &QTimer::timeout, this, [this] {
@@ -129,8 +141,9 @@ void QuickHistory::search(int limit)
     query.limit = limit;
     const HistoryStore *history = m_controller->history();
     m_results.clear();
+    const QStringList terms = historySearchTerms(query.text);
     for (const HistoryHit &hit : history->search(query)) {
-        m_results.append(resultOf(hit));
+        m_results.append(resultOf(hit, terms));
     }
     m_matches = history->count(query);
     emit resultsChanged();
@@ -144,22 +157,37 @@ void QuickHistory::fetchMore()
     HistoryQuery query = currentQuery();
     query.limit = pageSize;
     query.beforeId = m_results.last().toMap().value(QStringLiteral("id")).toLongLong();
+    const QStringList terms = historySearchTerms(query.text);
     for (const HistoryHit &hit : m_controller->history()->search(query)) {
-        m_results.append(resultOf(hit));
+        m_results.append(resultOf(hit, terms));
     }
     emit resultsChanged();
 }
 
-QVariantMap QuickHistory::resultOf(const HistoryHit &hit) const
+QVariantMap QuickHistory::resultOf(const HistoryHit &hit, const QStringList &terms) const
 {
     const HistoryEntry &entry = hit.entry;
+    const bool recording = entry.kind == HistoryKind::Recording;
+    QVariantList lines;
+    if (recording && !terms.isEmpty()) {
+        for (const HistoryLine &line : m_controller->history()->lines(entry.id)) {
+            const QString highlighted = highlightHistoryMatches(line.text, terms);
+            if (lines.size() < 3 && highlighted != line.text) {
+                lines.append(QVariantMap{{QStringLiteral("atMs"), line.atMs},
+                                         {QStringLiteral("speaker"), line.speaker},
+                                         {QStringLiteral("html"), matchesHtml(highlighted)}});
+            }
+        }
+    }
+    const QDateTime when = entry.stats.finishedAt.isValid() ? entry.stats.finishedAt : entry.startedAt;
     const QList<WritingProfileSettings> profiles = m_controller->settings()->dictationSnapshot().refinement.writingProfiles;
     // A file's audio is the file itself, while it is still there.
     const QString audio = entry.kind == HistoryKind::File ? entry.sourcePath : m_controller->history()->audioFile(entry);
     return {
         {QStringLiteral("id"), entry.id},
         {QStringLiteral("kind"), historyKindName(entry.kind)},
-        {QStringLiteral("day"), entry.stats.finishedAt.date().toString(Qt::ISODate)},
+        {QStringLiteral("day"), when.date().toString(Qt::ISODate)},
+        {QStringLiteral("startedAt"), entry.startedAt},
         {QStringLiteral("finishedAt"), entry.stats.finishedAt},
         {QStringLiteral("text"), entry.text.value_or(QString())},
         {QStringLiteral("html"), matchesHtml(hit.highlighted)},
@@ -174,6 +202,10 @@ QVariantMap QuickHistory::resultOf(const HistoryHit &hit) const
         {QStringLiteral("hasAudio"), !audio.isEmpty() && QFile::exists(audio)},
         {QStringLiteral("hasRaw"), entry.rawText && !entry.rawText->isEmpty() && entry.rawText != entry.text},
         {QStringLiteral("title"), entry.title},
+        {QStringLiteral("transcriptPath"), entry.transcriptPath},
+        {QStringLiteral("fileMissing"), recording && !QFile::exists(entry.transcriptPath)},
+        {QStringLiteral("live"), recording && !entry.stats.finishedAt.isValid()},
+        {QStringLiteral("lines"), lines},
     };
 }
 
@@ -221,6 +253,18 @@ QVariantMap QuickHistory::entry(qint64 id) const
     map.insert(QStringLiteral("speech"), entry->stats.speechProviders);
     map.insert(QStringLiteral("refinement"), entry->stats.refinementProviders);
     map.insert(QStringLiteral("sourcePath"), entry->sourcePath);
+    if (entry->kind == HistoryKind::Recording) {
+        QVariantList lines;
+        for (const HistoryLine &line : m_controller->history()->lines(id)) {
+            lines.append(QVariantMap{{QStringLiteral("atMs"), line.atMs},
+                                     {QStringLiteral("speaker"), line.speaker},
+                                     {QStringLiteral("text"), line.text}});
+        }
+        map.insert(QStringLiteral("lines"), lines);
+        const QString folder = QDir(recordingFolder(m_controller->settings()->dictationSnapshot().recording)).absolutePath();
+        map.insert(QStringLiteral("inRecordingsFolder"),
+                   QFileInfo(entry->transcriptPath).absolutePath() == folder);
+    }
     return map;
 }
 
@@ -252,7 +296,86 @@ bool QuickHistory::undo(int token)
     return token > 0 && m_controller->history()->restore(token);
 }
 
-void QuickHistory::play(qint64 id)
+bool QuickHistory::removeRecording(qint64 id, bool withFiles)
+{
+    const std::optional<HistoryEntry> found = m_controller->history()->entry(id);
+    if (!found || found->kind != HistoryKind::Recording) {
+        return false;
+    }
+    if (id == m_playingId) {
+        stopPlaying();
+    }
+    if (withFiles) {
+        for (const QString &file : {found->transcriptPath, m_controller->history()->audioFile(*found)}) {
+            if (!file.isEmpty() && QFile::exists(file) && !QFile::remove(file)) {
+                qWarning().noquote() << "history could not delete a recording's file=" + file;
+            }
+        }
+    }
+    return m_controller->history()->remove(id);
+}
+
+void QuickHistory::openFile(qint64 id) const
+{
+    if (const std::optional<HistoryEntry> found = m_controller->history()->entry(id)) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(found->transcriptPath));
+    }
+}
+
+void QuickHistory::showInFolder(qint64 id) const
+{
+    if (const std::optional<HistoryEntry> found = m_controller->history()->entry(id)) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(found->transcriptPath).absolutePath()));
+    }
+}
+
+QUrl QuickHistory::exportFile(qint64 id, const QString &format) const
+{
+    const std::optional<HistoryEntry> found = m_controller->history()->entry(id);
+    if (!found) {
+        return {};
+    }
+    const QFileInfo transcript(found->transcriptPath);
+    return QUrl::fromLocalFile(transcript.dir().filePath(transcript.completeBaseName() + QLatin1Char('.') + format));
+}
+
+bool QuickHistory::exportEntry(qint64 id, const QString &format, const QUrl &file) const
+{
+    QByteArray written;
+    const QList<HistoryLine> lines = m_controller->history()->lines(id);
+    if (format == u"json") {
+        QJsonArray array;
+        for (const HistoryLine &line : lines) {
+            array.append(QJsonObject{{QStringLiteral("atMs"), line.atMs},
+                                     {QStringLiteral("speaker"), line.speaker},
+                                     {QStringLiteral("text"), line.text}});
+        }
+        written = QJsonDocument(array).toJson();
+    } else {
+        for (const HistoryLine &line : lines) {
+            written += QStringLiteral("[%1] %2: %3\n").arg(recordingClock(line.atMs), line.speaker, line.text).toUtf8();
+        }
+    }
+    QSaveFile out(file.toLocalFile());
+    return out.open(QIODevice::WriteOnly) && out.write(written) == written.size() && out.commit();
+}
+
+void QuickHistory::refineAgain(qint64 id, const QString &profile)
+{
+    const std::optional<HistoryEntry> found = m_controller->history()->entry(id);
+    if (!found || !found->rawText) {
+        emit refineFailed(id, {});
+        return;
+    }
+    m_refineAgain.refine(id, *found->rawText, profile);
+}
+
+bool QuickHistory::keepRefined(qint64 id, const QString &text)
+{
+    return m_controller->history()->setText(id, text);
+}
+
+void QuickHistory::play(qint64 id, qint64 atMs)
 {
     const QVariantMap found = entry(id);
     if (!found.value(QStringLiteral("hasAudio")).toBool()) {
@@ -277,6 +400,7 @@ void QuickHistory::play(qint64 id)
     m_player->stop();
     m_playingId = id;
     m_player->setSource(QUrl::fromLocalFile(file));
+    m_player->setPosition(atMs);
     m_player->play();
     emit playingChanged();
 }
