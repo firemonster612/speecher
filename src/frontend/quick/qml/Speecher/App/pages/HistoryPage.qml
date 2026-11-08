@@ -12,6 +12,7 @@ import "history/HistoryWords.js" as T
 // then a card of entries a day, each opening in place. Clear… deletes a span
 // of it, as General's Clear history does. With nothing to list it says why:
 // History keeps nothing or only stats, nothing kept yet, or nothing matches.
+// Search's "Search History for …" opens it with those words searched.
 Page {
     id: page
     title: Schema.page("history").title
@@ -65,7 +66,20 @@ Page {
         filters.reset()
     }
 
-    Component.onCompleted: if (listing) search.forceActiveFocus()
+    // A search palette result lands here as "historyFind:<words>", which
+    // types them into the search.
+    function _land(rowId) {
+        if (!rowId.startsWith("historyFind:")) return
+        search.text = rowId.slice("historyFind:".length)
+        filters.reset()
+        Navigation.pendingRow = ""
+        search.forceActiveFocus()
+    }
+    Component.onCompleted: {
+        if (listing) search.forceActiveFocus()
+        _land(Navigation.pendingRow)
+    }
+    Connections { target: Navigation; function onPendingRowChanged() { page._land(Navigation.pendingRow) } }
     // Fetches the next page as the end comes into view.
     Connections {
         target: page.flickable

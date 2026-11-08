@@ -115,6 +115,8 @@ QtObject {
         showSubpages: "Show subpages",
         hideSubpages: "Hide subpages",
         searchTip: "Try a setting's name, a service such as Claude, or a word like hotkey.",
+        // The search result that looks for the words in History.
+        searchHistory: query => "Search History for “" + query + "”",
         moveHint: "Move",
         openHint: "Open",
         closeHint: "Close",

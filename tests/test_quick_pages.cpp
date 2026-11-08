@@ -327,7 +327,7 @@ private slots:
                           }});
         }
         for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"), QStringLiteral("refinement"),
-                                    QStringLiteral("app type"), QStringLiteral("zzz no match")}) {
+                                    QStringLiteral("app type"), QStringLiteral("quarterly deck"), QStringLiteral("zzz no match")}) {
             steps.append({QStringLiteral("search ") + query, [search, query] {
                               QMetaObject::invokeMethod(search, "open");
                               search->setProperty("query", query);
@@ -1338,6 +1338,42 @@ private slots:
         QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
         QTRY_VERIFY(row->parentItem()->property("open").toBool());
         QCOMPARE(navigation->returnTo(), QStringLiteral("general"));
+    }
+
+    // While History keeps text, search ends with Search History for the
+    // words, which opens History with them searched; keeping only stats, it
+    // doesn't offer it.
+    void searchOffersHistoryWhileItKeepsText()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *settings = engine->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && settings && search);
+        const auto offered = [search] {
+            const auto results = searchResults(search, QStringLiteral("quarterly deck"));
+            return !results.isEmpty() && results.last() == std::pair{QStringLiteral("historyFind:quarterly deck"), QStringLiteral("Home › History")};
+        };
+        settings->set(QStringLiteral("historyKeeps"), QStringLiteral("stats"));
+        QMetaObject::invokeMethod(search, "open");
+        QVERIFY(!offered());
+        settings->set(QStringLiteral("historyKeeps"), QStringLiteral("text"));
+        QVERIFY(offered());
+
+        const int last = int(search->property("results").value<QJSValue>().property(QStringLiteral("length")).toInt()) - 1;
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, last));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("history"));
+        QQuickItem *field = nullptr;
+        QTRY_VERIFY((field = findItem(main->contentItem(), QStringLiteral("historySearch"))));
+        QTRY_COMPARE(field->property("text").toString(), QStringLiteral("quarterly deck"));
+        QCOMPARE(navigation->pendingRow(), QString());
     }
 
     // History in each of its states: off, keeping stats, nothing kept yet,
