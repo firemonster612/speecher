@@ -118,24 +118,6 @@ jobs:
         with:
           arch: x64
 
-      # Reads release.yml's cache and leaves it as it was. A cache that
-      # won't restore only makes the build slower, so it doesn't fail the job.
-      - name: Cache Windows compiler outputs
-        continue-on-error: true
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
-        with:
-          variant: sccache
-          key: windows-2025-release
-          save: false
-
-      - name: Use sccache where it installed
-        shell: pwsh
-        run: |
-          if (Get-Command sccache -ErrorAction SilentlyContinue) {
-            Add-Content $env:GITHUB_ENV "CMAKE_C_COMPILER_LAUNCHER=sccache"
-            Add-Content $env:GITHUB_ENV "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          }
-
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
         with:
