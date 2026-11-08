@@ -32,7 +32,7 @@ void WinPasteDelivery::waitForReleasedKeys()
     }
 }
 
-bool WinPasteDelivery::paste(PasteMethod method,
+bool WinPasteDelivery::paste(PasteKeyCombo keys,
                              const std::function<bool()> &clearToInject,
                              QString *error,
                              bool *inputSent)
@@ -59,12 +59,12 @@ bool WinPasteDelivery::paste(PasteMethod method,
         ++count;
     };
     append(VK_CONTROL, 0);
-    if (method == PasteMethod::TerminalPaste) {
+    if (keys == PasteKeyCombo::Terminal) {
         append(VK_SHIFT, 0);
     }
     append('V', 0);
     append('V', KEYEVENTF_KEYUP);
-    if (method == PasteMethod::TerminalPaste) {
+    if (keys == PasteKeyCombo::Terminal) {
         append(VK_SHIFT, KEYEVENTF_KEYUP);
     }
     append(VK_CONTROL, KEYEVENTF_KEYUP);

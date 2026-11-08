@@ -562,6 +562,52 @@ private slots:
         QVERIFY(removeApp(settings, QStringLiteral("app:gmail")));
         QCOMPARE(settings.vocabulary.first().apps, QStringList{QStringLiteral("com.slack.Slack")});
     }
+
+    // An App matched only by window title has no id to keep the limit by:
+    // its words must not start applying everywhere, and Undo brings back
+    // both the App and the limits removing it rewrote.
+    void removingAnAppNeverWidensALimitAndUndoRestoresIt()
+    {
+        AppSettings settings;
+        settings.apps.apps = {
+            {QStringLiteral("app:slack"), QStringLiteral("Slack"), {}, {{AppMatchKind::Id, QStringLiteral("com.slack.Slack")}}},
+            {QStringLiteral("app:bank"), QStringLiteral("Bank"), {}, {{AppMatchKind::WindowTitle, QStringLiteral("My Bank")}}},
+        };
+        QCOMPARE(addVocabularyEntry(settings, test::replacementEntry(QStringLiteral("acct"), QStringLiteral("12345"))),
+                 EditRefusal::None);
+        QCOMPARE(addVocabularyEntry(settings, test::replacementEntry(QStringLiteral("sig"), QStringLiteral("cheers"))),
+                 EditRefusal::None);
+        settings.vocabulary[0].apps = {QStringLiteral("app:bank")};
+        settings.vocabulary[1].apps = {QStringLiteral("app:slack")};
+        const QList<VocabularyEntry> before = settings.vocabulary;
+
+        Target elsewhere;
+        elsewhere.applicationId = QStringLiteral("org.kde.kate");
+        elsewhere.windowTitle = QStringLiteral("notes.txt");
+        const auto appliesElsewhere = [&settings, &elsewhere](int index) {
+            return vocabularyEntryApplies(settings.vocabulary.at(index),
+                                          {WritingProfile::Other, elsewhere, settings.apps});
+        };
+
+        const SettingsEdit undoBank = removeApp(settings, QStringLiteral("app:bank"));
+        QVERIFY(undoBank);
+        QVERIFY(!settings.vocabulary.at(0).apps.isEmpty());
+        QVERIFY(!appliesElsewhere(0));
+        // Still editable with the limit it kept.
+        QCOMPARE(editVocabularyEntry(settings, settings.vocabulary.at(0).id,
+                                     [](VocabularyEntry &entry) { entry.replacement = QStringLiteral("54321"); }),
+                 EditRefusal::None);
+        QCOMPARE(editVocabularyEntry(settings, settings.vocabulary.at(0).id,
+                                     [](VocabularyEntry &entry) { entry.replacement = QStringLiteral("12345"); }),
+                 EditRefusal::None);
+
+        const SettingsEdit undoSlack = removeApp(settings, QStringLiteral("app:slack"));
+        QCOMPARE(settings.vocabulary.at(1).apps, QStringList{QStringLiteral("com.slack.Slack")});
+        undoSlack(settings);
+        undoBank(settings);
+        QCOMPARE(settings.apps.apps.size(), 2);
+        QCOMPARE(settings.vocabulary, before);
+    }
 };
 
 int runVocabularyTests(int argc, char **argv)

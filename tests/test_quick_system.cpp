@@ -358,33 +358,25 @@ private slots:
         QCOMPARE(with.system.pastingOutcome(), QStringLiteral("delivers"));
     }
 
-    // What a rule leaves of the steps, and the off step it relies on.
-    void rulePlanNarrowsTheSteps()
+    // What some steps do here: their route, and those of them this
+    // computer can run now.
+    void stepsPlanSaysWhatCanRun()
     {
         ApplicationController controller(true);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        const auto plan = [&standIn](const char *method) { return standIn.system.rulePlan(QString::fromLatin1(method)); };
-        QCOMPARE(plan("inherit").value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "press", "keep"}));
-        QCOMPARE(plan("direct_insert").value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "keep"}));
-        QCOMPARE(plan("clipboard_only").value(QStringLiteral("route")).toStringList(), QStringList{"keep"});
-        QVERIFY(plan("terminal_paste").value(QStringLiteral("needs")).toString().isEmpty());
+        const auto plan = [&standIn](bool insert, bool press, bool keep) {
+            return standIn.system.stepsPlan({{QStringLiteral("insert"), insert}, {QStringLiteral("press"), press},
+                                             {QStringLiteral("keep"), keep}});
+        };
+        QCOMPARE(plan(true, true, true).value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "press", "keep"}));
+        QCOMPARE(plan(true, false, true).value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "keep"}));
+        QCOMPARE(plan(false, false, true).value(QStringLiteral("route")).toStringList(), QStringList{"keep"});
 #ifdef Q_OS_LINUX
-        // Usable is what of the route this computer can run: here, without
-        // accessibility or a virtual keyboard, only Keep.
-        QCOMPARE(plan("inherit").value(QStringLiteral("usable")).toStringList(), QStringList{"keep"});
+        // Without accessibility or a virtual keyboard, only Keep can run.
+        QCOMPARE(plan(true, true, true).value(QStringLiteral("usable")).toStringList(), QStringList{"keep"});
+        QVERIFY(plan(false, true, false).value(QStringLiteral("usable")).toStringList().isEmpty());
 #endif
-
-        controller.settings()->edit([](AppSettings &draft) {
-            draft.output.steps = {.insert = false, .press = true, .keep = false};
-            return true;
-        });
-        // Skip paste keys with Insert off leaves no step at all, which it
-        // doesn't rely on: it only takes Press away.
-        QVERIFY(plan("direct_insert").value(QStringLiteral("route")).toStringList().isEmpty());
-        QVERIFY(plan("direct_insert").value(QStringLiteral("needs")).toString().isEmpty());
-        QCOMPARE(plan("clipboard_only").value(QStringLiteral("needs")).toString(), QStringLiteral("keep"));
-        QVERIFY(plan("terminal_paste").value(QStringLiteral("needs")).toString().isEmpty());
     }
 
     // Removal goes on past a failed step and reports each one.
@@ -642,6 +634,8 @@ private slots:
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
         QuickPhone &phone = standIn.phone;
+        // General's rows read Library, which reads the services' models.
+        QuickModels models(&controller, &standIn.settings);
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
@@ -1006,9 +1000,9 @@ private slots:
         QCOMPARE(stepIds, (QStringList{"welcome", "transcription", "microphone", "delivery", "refinement", "shortcut", "ready"}));
     }
 
-    // Pasting lists only the Apps and App Types whose Pasting choice
-    // narrows the steps: on a fresh install the terminals' keys, where they
-    // differ, then what Apps sets, each with what it leaves of the steps.
+    // Pasting lists only the Apps and App Types with steps or keys of their
+    // own: on a fresh install the terminals' keys, where they differ, then
+    // what Apps sets, each with what it does here.
     void pastingListsOnlyTheChoicesThatDiffer()
     {
         ApplicationController controller(true);
@@ -1037,11 +1031,16 @@ private slots:
         };
         QCOMPARE(listed(), terminalKeysDiffer ? QStringList{QStringLiteral("apptype:terminal")} : QStringList());
 
-        QCOMPARE(apps.updateType(QStringLiteral("browser"), {{QStringLiteral("pasting"), QStringLiteral("direct_insert")}}), QString());
+        const QVariantMap insertAndKeep{{QStringLiteral("insert"), true}, {QStringLiteral("press"), false},
+                                        {QStringLiteral("keep"), true}};
+        QCOMPARE(apps.updateType(QStringLiteral("browser"), {{QStringLiteral("steps"), insertAndKeep}}), QString());
         const QString kate = apps.add({{QStringLiteral("name"), QStringLiteral("Kate")},
                                        {QStringLiteral("ids"), QStringList{QStringLiteral("org.kde.kate")}}})
                                  .value(QStringLiteral("id")).toString();
-        QCOMPARE(apps.update(kate, {{QStringLiteral("pasting"), QStringLiteral("clipboard_only")}}), QString());
+        QCOMPARE(apps.update(kate, {{QStringLiteral("keys"), QStringLiteral("terminal")}}), QString());
+        // Steps of its own keep one on.
+        QCOMPARE(apps.update(kate, {{QStringLiteral("steps"), QVariantMap{{QStringLiteral("insert"), false}}}}),
+                 QStringLiteral("incomplete"));
         QStringList expected{QStringLiteral("apptype:browser"), QStringLiteral("appentry:") + kate};
         if (terminalKeysDiffer) {
             expected.prepend(QStringLiteral("apptype:terminal"));
@@ -1051,24 +1050,23 @@ private slots:
         // What a choice does here, as Apps' editor and this list say it.
         QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
         QVERIFY(schema);
-        const auto result = [&](const char *method, bool terminalWins = false) {
+        const auto result = [&](bool insert, bool press, bool keep, const char *keys = "standard", bool terminalWins = false) {
             QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
-            const QVariant plan = standIn.system.rulePlan(QString::fromLatin1(method));
-            return pasting.property(QStringLiteral("ruleResult"))
-                .call({engine.toScriptValue(plan), QString::fromLatin1(method), terminalWins})
+            const QVariant plan = standIn.system.stepsPlan({{QStringLiteral("insert"), insert},
+                                                            {QStringLiteral("press"), press},
+                                                            {QStringLiteral("keep"), keep}});
+            return pasting.property(QStringLiteral("pastingResult"))
+                .call({engine.toScriptValue(plan), QString::fromLatin1(keys), terminalWins})
                 .toString();
         };
-        QCOMPARE(result("clipboard_only"), QStringLiteral("Clipboard only"));
+        QCOMPARE(result(false, false, true), QStringLiteral("Clipboard only"));
 #ifdef Q_OS_LINUX
         // Without accessibility only the copy it keeps can run here.
-        QCOMPARE(result("direct_insert"), QStringLiteral("Clipboard only. Insert can't run here yet"));
+        QCOMPARE(result(true, false, true), QStringLiteral("Clipboard only. Insert can't run here yet"));
+        QCOMPARE(result(false, true, false), QStringLiteral("No delivery here yet: Press can't run"));
 #endif
-        QCOMPARE(result("clipboard_only", true), QStringLiteral("Clipboard only. Apps in a terminal paste like Terminals"));
-
-        // A choice that relies on an off step, and leaves none, says so.
-        settings.set(QStringLiteral("keepOnClipboard"), false);
-        settings.set(QStringLiteral("insertThroughAccessibility"), false);
-        QCOMPARE(result("clipboard_only"), QStringLiteral("No delivery: Keep is off"));
+        QCOMPARE(result(false, false, true, "standard", true),
+                 QStringLiteral("Clipboard only. Apps in a terminal paste like Terminals"));
     }
 
 #ifdef Q_OS_LINUX
@@ -1099,14 +1097,20 @@ private slots:
         // What a Pasting choice does here, as Apps and Pasting say it.
         QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
         QVERIFY(schema);
-        const auto result = [&](const QString &method) {
+        const auto result = [&](bool insert, bool press, bool keep, const QString &keys) {
             const QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
-            return pasting.property(QStringLiteral("ruleResult"))
-                .call({engine.toScriptValue(standIn.system.rulePlan(method)), method, false})
+            const QVariantMap steps{{QStringLiteral("insert"), insert}, {QStringLiteral("press"), press},
+                                    {QStringLiteral("keep"), keep}};
+            return pasting.property(QStringLiteral("pastingResult"))
+                .call({engine.toScriptValue(standIn.system.stepsPlan(steps)), keys, false})
                 .toString();
         };
-        QCOMPARE(result(QStringLiteral("direct_insert")), QStringLiteral("No delivery: nothing it allows can run here"));
-        QCOMPARE(result(QStringLiteral("terminal_paste")), QStringLiteral("Press Ctrl+Shift+V. Insert can't run here yet"));
+        QCOMPARE(result(true, false, false, QStringLiteral("standard")), QStringLiteral("No delivery here yet: Insert can't run"));
+        // The owner's "only press the keys": the clipboard goes back after.
+        QCOMPARE(result(false, true, false, QStringLiteral("standard")),
+                 QStringLiteral("Press Ctrl+V, then put your clipboard back"));
+        QCOMPARE(result(true, true, false, QStringLiteral("terminal")),
+                 QStringLiteral("Press Ctrl+Shift+V, then put your clipboard back. Insert can't run here yet"));
         QCOMPARE(page->property("_selectionLimit").toString(),
                  QStringLiteral("Reading the selection needs Desktop accessibility, which Insert above turns on."));
     }

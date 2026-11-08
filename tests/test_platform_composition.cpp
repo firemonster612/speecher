@@ -3256,7 +3256,7 @@ private slots:
             FakeGlobalShortcutBinder *cancel = nullptr;
             int dictationSuspensions = -1;
             int cancelSuspensions = -1;
-            void deliver(const OutputSettings &, const DeliveryContent &, const Target &, std::optional<PasteMethod>) override
+            void deliver(const OutputSettings &, const DeliveryContent &, const Target &, const PastingChoice &) override
             {
                 dictationSuspensions = dictation->suspendCount - dictation->resumeCount;
                 cancelSuspensions = cancel->suspendCount - cancel->resumeCount;

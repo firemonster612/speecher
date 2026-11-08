@@ -7,12 +7,18 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QHash>
+#include <QMap>
+
+#include <algorithm>
 
 namespace speecher {
 
 namespace {
 
-constexpr int appsMigrationVersion = 1;
+// 1 moved older releases' per-app settings into Apps; 2 turned Pasting
+// choices into steps and keys.
+constexpr int appsMigrationVersion = 2;
 
 QString scopeName(LegacyPasteRule::Scope scope)
 {
@@ -77,6 +83,107 @@ AppEntry &appForId(QList<AppEntry> &apps, const QString &id)
     return apps.last();
 }
 
+// The Pasting page's steps as stored, after migrateDeliverySteps.
+DeliverySteps storedSteps(const QSettings &settings)
+{
+    return {settings.value(SettingsKeys::InsertThroughAccessibility, true).toBool(),
+            settings.value(SettingsKeys::PressPasteKeys, true).toBool(),
+            settings.value(SettingsKeys::KeepOnClipboard, true).toBool()};
+}
+
+// What an older Pasting choice becomes, so a delivery takes the steps and
+// keys it took. One that followed the steps as they are leaves them unset
+// where unset still reaches the Pasting page's (stepsFollow), and takes a
+// copy of them otherwise. A narrowing that left no step on, which delivered
+// nothing, keeps the words on the clipboard.
+PastingChoice pastingFrom(PasteMethod method, const DeliverySteps &steps, bool stepsFollow)
+{
+    const std::optional<DeliverySteps> asTheyAre = stepsFollow ? std::nullopt : std::optional(steps);
+    DeliverySteps narrowed = steps;
+    switch (method) {
+    case PasteMethod::StandardPaste:
+        return {asTheyAre, PasteKeyCombo::Standard};
+    case PasteMethod::TerminalPaste:
+        return {asTheyAre, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard};
+    case PasteMethod::ClipboardOnly:
+        narrowed.insert = false;
+        [[fallthrough]];
+    case PasteMethod::DirectInsert:
+        narrowed.press = false;
+        break;
+    }
+    if (!narrowed.any()) {
+        narrowed.keep = true;
+    }
+    return {narrowed, std::nullopt};
+}
+
+// Gives the Apps and App Types the older Pasting choices, by App id and by
+// App Type. Steps and keys now settle each on their own, so a choice that
+// followed the steps copies them wherever a later layer, Terminals' or a
+// type's, has steps of its own its old choice used to hide.
+void applyPastingChoices(AppsSettings &apps, const QHash<QString, PasteMethod> &forApps,
+                         const QMap<AppCategory, PasteMethod> &forTypes, const DeliverySteps &steps)
+{
+    const auto typeHasSteps = [&apps](AppCategory except) {
+        return std::any_of(apps.types.cbegin(), apps.types.cend(), [except](const AppTypeSettings &type) {
+            return type.type != except && type.pasting.steps;
+        });
+    };
+    // Terminals come before the type of anything running in a terminal, so
+    // they go last among the types.
+    for (const bool terminals : {false, true}) {
+        for (AppTypeSettings &type : apps.types) {
+            if ((type.type == AppCategory::Terminal) == terminals && forTypes.contains(type.type)) {
+                type.pasting = pastingFrom(forTypes.value(type.type), steps,
+                                           !terminals || !typeHasSteps(AppCategory::Terminal));
+            }
+        }
+    }
+    const bool stepsFollow = !typeHasSteps(AppCategory::Unknown);
+    for (AppEntry &entry : apps.apps) {
+        if (forApps.contains(entry.id)) {
+            entry.pasting = pastingFrom(forApps.value(entry.id), steps, stepsFollow);
+        }
+    }
+}
+
+// Version 2 over settings version 1 wrote: each App's and App Type's
+// "pasting" becomes steps and keys.
+void migratePastingChoices(QSettings &settings)
+{
+    if (!settings.contains(SettingsKeys::AppsEntries) && !settings.contains(SettingsKeys::AppsTypes)) {
+        return;
+    }
+    const QString pasting = QStringLiteral("pasting");
+    QHash<QString, PasteMethod> forApps;
+    for (const QJsonValue &value : storedArray(settings, SettingsKeys::AppsEntries)) {
+        const QString method = value[pasting].toString();
+        if (!method.isEmpty()) {
+            forApps.insert(value[QStringLiteral("id")].toString(), pasteMethodFromName(method));
+        }
+    }
+    QMap<AppCategory, PasteMethod> forTypes;
+    if (settings.contains(SettingsKeys::AppsTypes)) {
+        for (const QJsonValue &value : storedArray(settings, SettingsKeys::AppsTypes)) {
+            const QString method = value[pasting].toString();
+            // "The steps" was no choice of its own for an App Type.
+            if (!method.isEmpty() && pasteMethodFromName(method) != PasteMethod::StandardPaste) {
+                forTypes.insert(appCategoryFromName(value[QStringLiteral("type")].toString()), pasteMethodFromName(method));
+            }
+        }
+    } else if (terminalKeysDiffer) {
+        // Unstored types were the defaults, Terminals' keys among them.
+        forTypes.insert(AppCategory::Terminal, PasteMethod::TerminalPaste);
+    }
+    AppsSettings apps = AppsSettingsCodec::load(settings);
+    for (AppTypeSettings &type : apps.types) {
+        type.pasting = {};
+    }
+    applyPastingChoices(apps, forApps, forTypes, storedSteps(settings));
+    AppsSettingsCodec::store(settings, apps);
+}
+
 } // namespace
 
 QList<LegacyPasteRule> legacyPasteRules(const QSettings &settings)
@@ -116,10 +223,15 @@ void storeLegacyPasteRules(QSettings &settings, const QList<LegacyPasteRule> &ru
 
 void migrateApps(QSettings &settings)
 {
-    if (settings.value(SettingsKeys::AppsMigrationVersion).toInt() >= appsMigrationVersion) {
+    const int version = settings.value(SettingsKeys::AppsMigrationVersion).toInt();
+    if (version >= appsMigrationVersion) {
         return;
     }
     settings.setValue(SettingsKeys::AppsMigrationVersion, appsMigrationVersion);
+    if (version == 1) {
+        migratePastingChoices(settings);
+        return;
+    }
     const bool storedPasteRules = settings.contains(SettingsKeys::PasteRules);
     if (!storedPasteRules && !settings.contains(SettingsKeys::WritingProfileOverrides)
         && !settings.contains(SettingsKeys::AppRecognitionRules)
@@ -128,6 +240,8 @@ void migrateApps(QSettings &settings)
     }
 
     AppsSettings apps;
+    QHash<QString, PasteMethod> appPasting;
+    QMap<AppCategory, PasteMethod> typePasting;
     // An earlier override or rule for the same app won, so a later one sets
     // only what is still unset.
     for (const QJsonValue &value : storedArray(settings, SettingsKeys::WritingProfileOverrides)) {
@@ -147,9 +261,9 @@ void migrateApps(QSettings &settings)
         if (rule.scope != LegacyPasteRule::Scope::Application || !rule.enabled || rule.match.isEmpty()) {
             continue;
         }
-        AppEntry &entry = appForId(apps.apps, rule.match);
-        if (!entry.pasting) {
-            entry.pasting = rule.method;
+        const QString id = appForId(apps.apps, rule.match).id;
+        if (!appPasting.contains(id)) {
+            appPasting.insert(id, rule.method);
         }
     }
 
@@ -172,21 +286,21 @@ void migrateApps(QSettings &settings)
         apps.apps.append(entry);
     }
 
-    if (storedPasteRules) {
-        for (AppTypeSettings &type : apps.types) {
-            type.pasting.reset();
-            for (const LegacyPasteRule &rule : pasteRules) {
-                if (rule.scope == LegacyPasteRule::Scope::Category && rule.enabled
-                    && appCategoryFromName(rule.match) == type.type) {
-                    // Standard paste was the same as no rule.
-                    if (rule.method != PasteMethod::StandardPaste) {
-                        type.pasting = rule.method;
-                    }
-                    break;
+    // Unstored rules were the default, Terminals' keys (legacyPasteRules).
+    for (AppTypeSettings &type : apps.types) {
+        type.pasting = {};
+        for (const LegacyPasteRule &rule : pasteRules) {
+            if (rule.scope == LegacyPasteRule::Scope::Category && rule.enabled
+                && appCategoryFromName(rule.match) == type.type) {
+                // Standard paste was the same as no rule.
+                if (rule.method != PasteMethod::StandardPaste) {
+                    typePasting.insert(type.type, rule.method);
                 }
+                break;
             }
         }
     }
+    applyPastingChoices(apps, appPasting, typePasting, storedSteps(settings));
 
     if (settings.contains(SettingsKeys::DefaultWritingProfile)) {
         for (AppTypeSettings &type : apps.types) {

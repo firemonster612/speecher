@@ -96,13 +96,11 @@ public:
     // that is on gets them into the app), clipboard (none can, and Keep
     // leaves them there) or nothing.
     QString pastingOutcome() const;
-    // What a Paste Rule with this method (core's name, such as
-    // terminal_paste; any other, such as inherit, is Standard paste) does
-    // with the steps: {route, usable, needs}, route the steps it leaves on
-    // in order (DeliveryPlan::route), usable those of them this computer
-    // can run now, and needs the off step it relies on, by id, or empty
-    // (stepRuleNeeds).
-    Q_INVOKABLE QVariantMap rulePlan(const QString &method) const;
+    // What delivering with these steps ({ insert, press, keep }, an App's
+    // own or the Pasting page's) does here: {route, usable}, route the steps
+    // that are on in order (DeliveryPlan::route), usable those of them this
+    // computer can run now.
+    Q_INVOKABLE QVariantMap stepsPlan(const QVariantMap &steps) const;
     // Whether a paste can carry formatted text here: not in a Wayland
     // session without Speecher's clipboard helper, where wl-copy copies
     // plain text only.

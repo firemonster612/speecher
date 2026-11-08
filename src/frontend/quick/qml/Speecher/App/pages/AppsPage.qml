@@ -9,7 +9,8 @@ import "apps"
 
 // How Speecher writes and pastes in each app: the person's Apps, then the
 // App Types every other app follows, each opening in place to the same
-// editor. Add app opens the picker; an app picked there opens its editor.
+// editor. Add app opens the picker, closing any editor; an app picked there
+// opens its editor. Test shows what Speecher makes of the app you switch to.
 Page {
     id: page
     title: Schema.page("apps").title
@@ -19,21 +20,41 @@ Page {
     // The App or App Type whose editor is open, by its landing id
     // ("appentry:<id>" or "apptype:<id>"); one at a time.
     property string openId: ""
-    function toggle(id) { openId = openId === id ? "" : id }
+    // Opening an editor closes the picker and Test, and opening either of
+    // them closes the editor: one thing open at a time.
+    function toggle(id) {
+        openId = openId === id ? "" : id
+        if (openId) { picker.close(); tester.close() }
+    }
 
     Section {
         id: yours
         title: page.t.yourApps
         caption: page.t.yourAppsHelp
-        actions: [ Button { text: page.t.addApp; iconName: "plus"; size: "small"; onClicked: picker.start() } ]
+        actions: [
+            Button {
+                objectName: "testApp"
+                text: page.t.test
+                iconName: "scan-search"
+                size: "small"
+                variant: "ghost"
+                onClicked: tester.start()
+            },
+            Button { text: page.t.addApp; iconName: "plus"; size: "small"; onClicked: picker.start() }
+        ]
         // The History row is in each App's editor; a search for it lands on
         // the list.
         SearchLanding { rowIds: ["apps", "appHistory"]; target: yours }
         SearchLanding { rowIds: ["addApp"]; target: yours; onLanded: picker.start() }
-        AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can tell which app you're in. Your apps apply once it can." }
+        AccessibilityNotice {}
 
+        AppTest {
+            id: tester
+            onOpenChanged: if (open) { page.openId = ""; picker.close() }
+        }
         AppPicker {
             id: picker
+            onOpenChanged: if (open) { page.openId = ""; tester.close() }
             // Lands on the App as a search does, which opens it in view.
             onPicked: id => Navigation.goToRow("apps", "appentry:" + id)
         }
@@ -45,13 +66,13 @@ Page {
                 required property int index
                 width: ListView.view.width
                 entry: apps.entry(key)
-                first: index === 0 && apps.first && !picker.open
+                first: index === 0 && apps.first && !picker.open && !tester.open
                 open: page.openId === landingId
                 onToggled: page.toggle(landingId)
             }
         }
         Reveal {
-            open: Apps.entries.length === 0 && !picker.open
+            open: Apps.entries.length === 0 && !picker.open && !tester.open
             EmptyState { compact: true; title: page.t.noApps; text: page.t.noAppsHelp }
         }
     }

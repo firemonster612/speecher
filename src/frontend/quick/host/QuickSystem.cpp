@@ -378,23 +378,20 @@ QString QuickSystem::pastingOutcome() const
     return outcomeOf(deliverySteps());
 }
 
-QVariantMap QuickSystem::rulePlan(const QString &method) const
+QVariantMap QuickSystem::stepsPlan(const QVariantMap &steps) const
 {
-    const DeliverySteps steps = m_settings->shown().output.steps;
-    const PasteMethod paste = pasteMethodFromName(method);
-    const auto needs = speecher::stepRuleNeeds(steps, paste);
-    const QStringList route = deliveryPlan(steps, paste).route();
+    const DeliverySteps plan{steps.value(QStringLiteral("insert")).toBool(), steps.value(QStringLiteral("press")).toBool(),
+                             steps.value(QStringLiteral("keep")).toBool()};
+    const QStringList route = DeliveryPlan{plan}.route();
     QStringList usable;
-    for (const QVariant &entry : stepEntries(steps)) {
+    for (const QVariant &entry : stepEntries(plan)) {
         const QVariantMap step = entry.toMap();
         const QString id = step.value(QStringLiteral("id")).toString();
         if (route.contains(id) && step.value(QStringLiteral("ready")).toBool()) {
             usable << id;
         }
     }
-    return {{QStringLiteral("route"), route},
-            {QStringLiteral("usable"), usable},
-            {QStringLiteral("needs"), needs ? deliveryStepName(*needs) : QString()}};
+    return {{QStringLiteral("route"), route}, {QStringLiteral("usable"), usable}};
 }
 
 bool QuickSystem::copiesFormatted() const

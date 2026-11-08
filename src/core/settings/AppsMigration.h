@@ -41,7 +41,10 @@ void storeLegacyPasteRules(QSettings &settings, const QList<LegacyPasteRule> &ru
 //     and type rules didn't;
 //  4. app types' paste rules become the App Types' Pasting choices;
 //  5. the default Writing Profile becomes Other apps' profile.
-// A file that stored none of these keeps reading the defaults.
+// A file that stored none of these keeps reading the defaults. Each Pasting
+// choice becomes steps and paste keys that deliver as it did with the
+// Pasting page's steps as stored; a file the first version of this
+// migration wrote has its choices turned into steps and keys the same way.
 void migrateApps(QSettings &settings);
 
 } // namespace speecher

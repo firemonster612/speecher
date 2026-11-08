@@ -17,7 +17,8 @@ namespace speecher {
 // only the ones the settings hold; an App it is limited to must be one of
 // the settings' Apps (Missing).
 EditRefusal addVocabularyEntry(AppSettings &settings, VocabularyEntry entry);
-// Changes the entry `id` as change says, with the same rules, and a Learned
+// Changes the entry `id` as change says, with the same rules, though a limit
+// to a removed App it has already may stay, and a Learned
 // Correction must keep text to write (Incomplete). What change leaves alone,
 // such as its uses or what it was learned from, stays.
 EditRefusal editVocabularyEntry(AppSettings &settings, const QString &id,
@@ -32,9 +33,12 @@ SettingsEdit removeVocabularyEntry(AppSettings &settings, const QString &id);
 // addVocabularyEntry would take is added, the rest skipped. Returns how many
 // entries are new.
 int importVocabularyEntries(AppSettings &settings, const QList<VocabularyEntry> &incoming);
-// Keeps the entries limited to App `removed`, which is going, limited to the
-// app ids it matched, so a snippet for one app does not start writing
-// everywhere. A limit to an App matched only by name or window title goes.
-void keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed);
+// Keeps the entries limited to App `removed`, which is going, limited where
+// they were, so removing an App never makes its words apply everywhere: to
+// the app ids it matched, or, where those leave nothing (an App matched only
+// by name or window title), to the App itself, which matches nothing until
+// it is back. Returns
+// the edit that puts back the limits it rewrote, unless they changed since.
+SettingsEdit keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed);
 
 } // namespace speecher

@@ -1,9 +1,12 @@
 #pragma once
 
+#include "core/DeliverySteps.h"
+
 #include <QString>
 
-// How an App or App Type narrows the Delivery Steps (its Pasting choice), and
-// the names it is stored by.
+// How older releases' paste rules, and the first Apps settings, narrowed the
+// Delivery Steps, and the names they stored it by. Read only to migrate it
+// into a PastingChoice (migrateApps).
 
 namespace speecher {
 
@@ -19,12 +22,5 @@ enum class PasteMethod {
 
 QString pasteMethodName(PasteMethod method);
 PasteMethod pasteMethodFromName(const QString &name);
-// Whether a terminal's paste keys differ from everyone else's. macOS presses
-// ⌘V everywhere, so Terminal paste means nothing there.
-#ifdef Q_OS_MACOS
-inline constexpr bool terminalKeysDiffer = false;
-#else
-inline constexpr bool terminalKeysDiffer = true;
-#endif
 
 } // namespace speecher

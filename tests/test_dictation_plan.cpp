@@ -61,7 +61,10 @@ WritingProfileSettings &profile(AppSettings &settings, const QString &id)
     return settings.refinement.writingProfiles.last();
 }
 
-void setTypePasting(AppSettings &settings, AppCategory type, PasteMethod pasting)
+const DeliverySteps kKeepOnly{.insert = false, .press = false, .keep = true};
+const DeliverySteps kInsertAndKeep{.insert = true, .press = false, .keep = true};
+
+void setTypePasting(AppSettings &settings, AppCategory type, const PastingChoice &pasting)
 {
     for (AppTypeSettings &each : settings.apps.types) {
         if (each.type == type) {
@@ -88,7 +91,7 @@ using Read = std::function<QString(const DictationPlan &, const Target &)>;
 
 const Read writingProfile = [](const DictationPlan &plan, const Target &) { return plan.profile.profile; };
 const Read pasting = [](const DictationPlan &plan, const Target &) {
-    return plan.app.pasting ? pasteMethodName(*plan.app.pasting) : QStringLiteral("steps");
+    return plan.app.pasting.steps ? DeliveryPlan{*plan.app.pasting.steps}.route().join(u'+') : QStringLiteral("steps");
 };
 const Read outputFormat = [](const DictationPlan &plan, const Target &) {
     return outputFormatName(plan.settings.output.format);
@@ -171,23 +174,23 @@ QList<Cell> layerTable()
         {"pasting: defaults (the steps)", nothing, QStringLiteral("pasting"), pasting, QStringLiteral("steps"), byDefault},
         {"pasting: app type",
          [](AppSettings &settings, Target &target, RunOverrides &) {
-             setTypePasting(settings, AppCategory::Email, PasteMethod::ClipboardOnly);
+             setTypePasting(settings, AppCategory::Email, {kKeepOnly, std::nullopt});
              target = thunderbird();
          },
-         QStringLiteral("pasting"), pasting, pasteMethodName(PasteMethod::ClipboardOnly), QStringLiteral("type:email")},
+         QStringLiteral("pasting"), pasting, QStringLiteral("keep"), QStringLiteral("type:email")},
         {"pasting: terminals' for a terminal",
          [](AppSettings &settings, Target &target, RunOverrides &) {
-             setTypePasting(settings, AppCategory::Terminal, PasteMethod::DirectInsert);
+             setTypePasting(settings, AppCategory::Terminal, {kInsertAndKeep, std::nullopt});
              target = konsole();
          },
-         QStringLiteral("pasting"), pasting, pasteMethodName(PasteMethod::DirectInsert), QStringLiteral("type:terminal")},
+         QStringLiteral("pasting"), pasting, QStringLiteral("insert+keep"), QStringLiteral("type:terminal")},
         {"pasting: app",
          [](AppSettings &settings, Target &target, RunOverrides &) {
-             setTypePasting(settings, AppCategory::Email, PasteMethod::ClipboardOnly);
-             settings.apps.apps = {idApp(kThunderbirdId, std::nullopt, PasteMethod::DirectInsert)};
+             setTypePasting(settings, AppCategory::Email, {kKeepOnly, std::nullopt});
+             settings.apps.apps = {idApp(kThunderbirdId, std::nullopt, {kInsertAndKeep, std::nullopt})};
              target = thunderbird();
          },
-         QStringLiteral("pasting"), pasting, pasteMethodName(PasteMethod::DirectInsert), QStringLiteral("app:") + kThunderbirdId},
+         QStringLiteral("pasting"), pasting, QStringLiteral("insert+keep"), QStringLiteral("app:") + kThunderbirdId},
         {"output format: defaults", nothing, QStringLiteral("outputFormat"), outputFormat,
          outputFormatName(AppSettings().output.format), byDefault},
         {"output format: run (--format)",

@@ -426,8 +426,8 @@ private slots:
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
-        // Kate is a code editor, which narrows the steps in no way.
-        QCOMPARE(delivery.lastPasting, std::nullopt);
+        // Kate is a code editor, which sets no steps or keys of its own.
+        QCOMPARE(delivery.lastPasting, PastingChoice{});
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 

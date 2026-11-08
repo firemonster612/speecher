@@ -5,9 +5,16 @@ var mac = os === "osx";
 var windows = os === "windows";
 var linux = !mac && !windows;
 
-// The paste keys, as each platform presses them, and a terminal's.
+// The paste keys, as each platform presses them, and a terminal's. An App
+// or App Type picks between them by id (core's PasteKeyCombo names); macOS
+// presses ⌘V everywhere, so it has no choice.
 var pasteKeys = mac ? "⌘V" : "Ctrl+V";
 var terminalKeys = "Ctrl+Shift+V";
+var keyChoices = mac ? [] : [
+    { id: "standard", label: pasteKeys, icon: "keyboard" },
+    { id: "terminal", label: terminalKeys, icon: "square-terminal" }
+];
+function keysLabel(id) { return id === "terminal" && !mac ? terminalKeys : pasteKeys }
 
 // What the delivery steps rely on here, by the need ids System.deliverySteps
 // names: label names it in every status ("Virtual keyboard: Not set up"),
@@ -29,7 +36,11 @@ var needs = {
 var noNeeds = windows ? "Windows does all three itself, with no permission to grant." : "";
 // A step whose need an earlier step shows already, fix and all.
 function sameNeed(need) { return "Needs the same " + needs[need].label + (needs[need].grant ? " permission" : ""); }
-function waitingFor(need) { return "Waiting for " + needs[need].label; }
+// The needs a step waits for, by id, as one sentence without its stop.
+function waitingFor(ids) {
+    const labels = [].concat(ids).map(id => needs[id].label);
+    return "Waiting for " + (labels.length > 1 ? labels.slice(0, -1).join(", ") + " and " + labels[labels.length - 1] : labels[0]);
+}
 // A step's switch, as search shows it read-only.
 var switchState = { on: "On", off: "Off" };
 
@@ -54,43 +65,50 @@ function details(step, wayland) {
     return "";
 }
 
-// The row for each step, by step id.
+// The row for each step, by step id, and the one short name each step has
+// everywhere: the Pasting page, its picture, Apps and search.
 var rowOf = { insert: "insertThroughAccessibility", press: "pressPasteKeys", keep: "keepOnClipboard" };
-var stepLabels = { insert: "Insert through accessibility", press: "Press the paste keys", keep: "Keep the words on the clipboard" };
+var stepIds = ["insert", "press", "keep"];
+var stepLabels = { insert: "Insert", press: "Press paste keys", keep: "Keep on clipboard" };
 var stepShort = { insert: "Insert", press: "Press", keep: "Keep" };
 
-// What a Pasting choice does with the steps here, from
-// System.rulePlan(method), as Apps' editor and Pasting's summary say it: the
-// steps it leaves that can run on this computer, in order ("Insert, else
-// press Ctrl+V, keep a copy"), then those that can't yet and an off step it
-// relies on; "No delivery: …" where nothing it allows can run.
-// terminalWins marks an App Type whose apps in a terminal paste like
-// Terminals instead.
-function ruleResult(plan, method, terminalWins) {
+// Steps ({ insert, press, keep }) as a short list: "Insert, Press, Keep".
+function stepsText(steps) {
+    return stepIds.filter(id => steps && steps[id]).map(id => stepShort[id]).join(", ");
+}
+
+// What delivering with some steps does here, from System.stepsPlan(steps),
+// as Apps' editor and Pasting's list say it: the steps that can run on this
+// computer, in order ("Insert, else press Ctrl+V, keep a copy"), then those
+// that can't yet; "No delivery here yet" where none can. keys is the paste
+// keys' id. terminalWins marks an App Type whose apps in a terminal take
+// Terminals' Pasting instead.
+function pastingResult(plan, keys, terminalWins) {
     const route = plan.route || [];
     const usable = plan.usable || [];
-    const offStep = plan.needs ? stepShort[plan.needs] + " is off" : "";
-    if (!route.length) return "No delivery: " + (offStep || "it leaves no step on");
-    if (!usable.length) return "No delivery: nothing it allows can run here";
-    const keys = method === "terminal_paste" ? terminalKeys : pasteKeys;
     const parts = [];
     if (usable.includes("insert")) parts.push("Insert");
-    if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keys);
+    if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keysLabel(keys));
     if (usable.includes("keep")) parts.push(parts.length ? "keep a copy" : "Clipboard only");
+    else if (usable.includes("press")) parts.push("then put your clipboard back");
     const waiting = route.filter(id => !usable.includes(id)).map(id => stepShort[id]);
+    if (!usable.length)
+        return ["No delivery here yet: " + waiting.join(" and ") + " can't run",
+                terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
     return [parts.join(", "),
             waiting.length ? waiting.join(" and ") + " can't run here yet" : "",
-            offStep,
             terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
 }
 
-// Over the apps that paste differently while accessibility is off, by
-// whether Speecher has another way to tell apps apart; Insert's row carries
-// the fix.
-function appsNotice(identifiesApps) {
-    const access = mac ? "Accessibility" : "desktop accessibility";
-    return identifiesApps ? "Without " + access + ", app detection may be limited, so some of these may not apply (see Insert above)."
-                          : "These need " + access + " to tell apps apart (see Insert above).";
+// The one sentence every page says while accessibility is off, with what it
+// would turn on. identifiesApps: Speecher can tell apps apart without it
+// (System.identifiesAppsWithoutAccessibility).
+function accessibilityNotice(identifiesApps) {
+    const lost = (mac ? ["press the paste keys"] : ["insert your words"])
+        .concat(identifiesApps ? [] : ["tell which app you're in"])
+        .concat(["read the text around the cursor", "learn your corrections"]);
+    return (mac ? "Accessibility isn't granted" : "Desktop accessibility is off") + ", so Speecher can't "
+        + lost.slice(0, -1).join(", ") + " or " + lost[lost.length - 1] + ".";
 }
 
 // The step rows are custom: the Pasting page draws each one's switch with
@@ -98,16 +116,19 @@ function appsNotice(identifiesApps) {
 var rows = [
     { id: "insertThroughAccessibility", page: "pasting", section: "Steps", kind: "custom", step: "insert",
       label: stepLabels.insert, icon: "text-cursor-input",
-      help: "Writes your words straight into the field you're in.",
+      help: "Writes your words straight into the field you're in, through accessibility.",
       keywords: "direct insertion type accessibility at-spi ui automation delivery output" },
     { id: "pressPasteKeys", page: "pasting", section: "Steps", kind: "custom", step: "press",
       label: stepLabels.press, icon: "keyboard",
-      help: "Copies your words and presses " + pasteKeys + " when insertion is off, unavailable or rejected.",
+      help: "Puts your words on the clipboard and presses " + pasteKeys + " when insertion is off, unavailable or rejected. "
+          + "With Keep off, Speecher puts your clipboard back afterwards, so this step alone pastes and leaves your clipboard as it was.",
       keywords: "paste keys ctrl+v cmd+v virtual keyboard ydotool shortcut delivery output" },
     { id: "keepOnClipboard", page: "pasting", section: "Steps", kind: "custom", step: "keep",
       label: stepLabels.keep, icon: "clipboard",
-      help: "They stay there after delivery, and that's how you get them when nothing else delivers.",
-      offHelp: "After a paste Speecher puts your previous clipboard back, and also when the keys never went out. A paste it can't confirm leaves your words on the clipboard.",
+      help: "Your words stay on the clipboard after delivery, which is how you get them when nothing else delivers.",
+      offHelp: "Speecher puts your previous clipboard back after a paste, or when the keys never went out. "
+          + "So with Insert off and Press on, it pastes and your clipboard ends up as it was. "
+          + "A paste it can't confirm leaves your words on the clipboard.",
       keywords: "clipboard copy restore previous keep" },
     { id: "outputFormat", page: "pasting", section: "Options", kind: "choice",
       label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it. Inserting through accessibility always writes plain text.",
@@ -119,6 +140,6 @@ var rows = [
 
     { id: "appsPasteDifferently", page: "pasting", section: "Apps that paste differently", kind: "custom",
       label: "Apps that paste differently",
-      help: "Apps and app types whose way of pasting differs from the steps above. Change them in Apps.",
-      keywords: "exception paste rule app type category per-app application override terminal keys skip paste keys clipboard only" }
+      help: "Apps and app types with steps or paste keys of their own. Change them in Apps.",
+      keywords: "exception paste rule app type category per-app application override terminal keys ctrl+shift+v own steps clipboard only" }
 ];

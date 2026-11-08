@@ -44,7 +44,7 @@ public:
     using BackendFactory = std::function<std::unique_ptr<DeliveryBackend>(
         const QString &method,
         const OutputSettings &settings,
-        PasteMethod pasteMethod)>;
+        PasteKeyCombo keys)>;
 
     explicit TextDelivery(QObject *parent = nullptr);
     explicit TextDelivery(TargetProvider *targetProvider, QObject *parent = nullptr);
@@ -54,7 +54,7 @@ public:
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
                  const Target &target,
-                 std::optional<PasteMethod> pasting) override;
+                 const PastingChoice &pasting) override;
     // The paste keys backend the Press step uses here, as the backend
     // factory is asked for it, or empty where none can press them yet (Linux
     // before the virtual keyboard is set up).
@@ -75,11 +75,11 @@ private:
     class Run;
 
     void useDefaultBackendFactory();
-    // The steps narrowed by the Pasting choice when the Target can be told
+    // The Pasting choice's steps, or else the settings', when the Target can be told
     // apart from whatever else is in front, or when the steps alone press
     // the keys blindly into the current focus; only Keep otherwise, and
     // always for a secure field.
-    static PlanChoice choosePlan(const OutputSettings &settings, std::optional<PasteMethod> pasting,
+    static PlanChoice choosePlan(const OutputSettings &settings, const PastingChoice &pasting,
                                  const Target &target);
     // Runs the first request, unless a run is still there, answered or not.
     void startNext();
@@ -90,7 +90,7 @@ private:
         OutputSettings settings;
         DeliveryContent content;
         Target target;
-        std::optional<PasteMethod> pasting;
+        PastingChoice pasting;
     };
     // The delivery under way first, then those asked for meanwhile.
     QList<Request> m_requests;

@@ -45,7 +45,7 @@ The user's own text added to the refinement prompt: once for every refinement, t
 _Avoid_: Custom prompt, system prompt
 
 **Delivery Step**:
-One way Speecher gets words out, which the person turns on or off: Insert through accessibility, Press the paste keys (copies the words and presses Ctrl+V, or ⌘V), and Keep the words on the clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. At least one is on.
+One way Speecher gets words out, which the person turns on or off, named the same everywhere: Insert (through accessibility), Press paste keys (copies the words and presses the paste keys, Ctrl+V or ⌘V unless an App or App Type picks a terminal's Ctrl+Shift+V), and Keep on clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. So Insert off, Press on and Keep off pastes and leaves the clipboard as it was. At least one is on.
 _Avoid_: Output method, paste mode
 
 **App**:
@@ -57,7 +57,7 @@ The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI c
 _Avoid_: Category, app category
 
 **Pasting choice**:
-How an App or App Type narrows the Delivery Steps: the steps as they are, Terminal keys, Skip paste keys, or Clipboard only. It never turns on a step that is off. An app's own choice wins, then Terminals' for anything running in a terminal, then its App Type's. The Pasting page lists those that differ from the steps, read-only, and Apps changes them.
+How an App or App Type gets its words out: "Same as" what it follows, or Delivery Steps of its own, the same three switches as the Pasting page's; and, apart from them, the paste keys Press presses. Steps of its own are its steps, one on at least, even one the Pasting page has off. Its steps and its keys each come from the app's own, then Terminals' for anything running in a terminal, then its App Type's, then the Pasting page and the usual keys. Terminals press Ctrl+Shift+V on Linux and Windows. The Pasting page lists those with steps or keys of their own, read-only, and Apps changes them.
 _Avoid_: Paste Rule, exception, output route
 
 **History choice**:

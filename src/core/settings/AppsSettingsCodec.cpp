@@ -18,7 +18,8 @@ const QString kKind = QStringLiteral("kind");
 const QString kValue = QStringLiteral("value");
 const QString kType = QStringLiteral("type");
 const QString kWritingProfile = QStringLiteral("writingProfile");
-const QString kPasting = QStringLiteral("pasting");
+const QString kSteps = QStringLiteral("steps");
+const QString kPasteKeys = QStringLiteral("pasteKeys");
 const QString kHistory = QStringLiteral("history");
 
 QString matchKindName(AppMatchKind kind)
@@ -63,10 +64,24 @@ std::optional<QString> profileAt(const QJsonObject &object)
     return profile.isEmpty() ? std::nullopt : std::optional(writingProfileFromName(profile));
 }
 
-std::optional<PasteMethod> pastingAt(const QJsonObject &object)
+// Steps with none on were never written by Speecher, and read as none.
+PastingChoice pastingAt(const QJsonObject &object)
 {
-    const QString pasting = object.value(kPasting).toString();
-    return pasting.isEmpty() ? std::nullopt : std::optional(pasteMethodFromName(pasting));
+    PastingChoice pasting;
+    const QJsonValue steps = object.value(kSteps);
+    if (steps.isObject()) {
+        const DeliverySteps stored{steps[deliveryStepName(DeliveryStep::Insert)].toBool(),
+                                   steps[deliveryStepName(DeliveryStep::Press)].toBool(),
+                                   steps[deliveryStepName(DeliveryStep::Keep)].toBool()};
+        if (stored.any()) {
+            pasting.steps = stored;
+        }
+    }
+    const QString keys = object.value(kPasteKeys).toString();
+    if (!keys.isEmpty()) {
+        pasting.keys = pasteKeyComboFromName(keys);
+    }
+    return pasting;
 }
 
 // Only Stats and Nothing: an App can lower What Speecher Keeps, never raise it.
@@ -76,7 +91,7 @@ std::optional<HistoryKeep> historyAt(const QJsonObject &object)
     return keep && *keep <= HistoryKeep::Stats ? keep : std::nullopt;
 }
 
-void putSettings(QJsonObject &object, const std::optional<QString> &profile, const std::optional<PasteMethod> &pasting,
+void putSettings(QJsonObject &object, const std::optional<QString> &profile, const PastingChoice &pasting,
                  const std::optional<HistoryKeep> &history)
 {
     if (history) {
@@ -85,8 +100,15 @@ void putSettings(QJsonObject &object, const std::optional<QString> &profile, con
     if (profile) {
         object.insert(kWritingProfile, *profile);
     }
-    if (pasting) {
-        object.insert(kPasting, pasteMethodName(*pasting));
+    if (pasting.steps) {
+        QJsonObject steps;
+        for (const DeliveryStep step : {DeliveryStep::Insert, DeliveryStep::Press, DeliveryStep::Keep}) {
+            steps.insert(deliveryStepName(step), pasting.steps->has(step));
+        }
+        object.insert(kSteps, steps);
+    }
+    if (pasting.keys) {
+        object.insert(kPasteKeys, pasteKeyComboName(*pasting.keys));
     }
 }
 
@@ -124,9 +146,7 @@ AppsSettings load(const QSettings &settings)
             const QJsonObject object = value.toObject();
             if (typeAt(object) == type.type) {
                 type.writingProfile = profileAt(object);
-                // "The steps" is no choice of its own for an App Type.
-                const std::optional<PasteMethod> pasting = pastingAt(object);
-                type.pasting = pasting == PasteMethod::StandardPaste ? std::nullopt : pasting;
+                type.pasting = pastingAt(object);
                 type.history = historyAt(object);
                 break;
             }

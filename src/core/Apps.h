@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteMethod.h"
+#include "core/DeliverySteps.h"
 #include "core/Target.h"
 #include "core/history/HistoryEntry.h"
 
@@ -53,9 +53,9 @@ struct AppEntry {
     // decide (Automatic).
     std::optional<AppCategory> type;
     std::optional<QString> writingProfile;
-    // StandardPaste is an explicit "use the steps", which wins over the App
-    // Type's choice; unset follows it.
-    std::optional<PasteMethod> pasting;
+    // Its own steps and paste keys; each part unset follows Terminals' for
+    // anything running in a terminal, then its App Type's.
+    PastingChoice pasting;
     // What History keeps of its dictations: Stats or Nothing, which can only
     // lower What Speecher Keeps. Unset follows its App Type.
     std::optional<HistoryKeep> history;
@@ -69,8 +69,8 @@ struct AppTypeSettings {
     AppCategory type = AppCategory::General;
     // Unset: Other apps' profile (for Other apps itself, the Other profile).
     std::optional<QString> writingProfile;
-    // Unset: the steps as they are. Never StandardPaste.
-    std::optional<PasteMethod> pasting;
+    // Each part unset: the Pasting page's steps, and the usual paste keys.
+    PastingChoice pasting;
     // As AppEntry::history. Unset: Other apps' (for Other apps itself, What
     // Speecher Keeps).
     std::optional<HistoryKeep> history;
@@ -116,9 +116,11 @@ struct AppResolution {
     AppCategory type = AppCategory::Unknown;
     QString writingProfile = WritingProfile::Other;
     AppLayer writingProfileFrom = AppLayer::Fallback;
-    // Unset: the steps as they are, which nothing narrowed.
-    std::optional<PasteMethod> pasting;
-    AppLayer pastingFrom = AppLayer::Fallback;
+    // Each part unset: nothing set it, so the Pasting page's steps and the
+    // usual paste keys hold (deliveryPlan).
+    PastingChoice pasting;
+    AppLayer stepsFrom = AppLayer::Fallback;
+    AppLayer keysFrom = AppLayer::Fallback;
     // Unset: nothing lowers What Speecher Keeps for this app.
     std::optional<HistoryKeep> history;
     AppLayer historyFrom = AppLayer::Fallback;
@@ -135,11 +137,14 @@ struct AppResolution {
 //   Profile: an entry's, then AI coding apps' for an AI coding Target, then
 //   the catalog's when no entry set the type, then the type's, then Other
 //   apps'.
-//   Pasting: an entry's, then Terminals' for anything running in a terminal,
-//   then the type's.
+//   Pasting, its steps and its keys each on their own: an entry's, then
+//   Terminals' for anything running in a terminal, then the type's.
 //   History: an entry's, then the type's, then Other apps'.
 // The Target's own category is ignored; this decides it.
 AppResolution resolveApp(const Target &target, const AppsSettings &apps);
+// The ids of the person's entries the Target matches, in the order
+// resolveApp consults them: those matching by id, then by name or title.
+QStringList matchingAppIds(const Target &target, const AppsSettings &apps);
 bool appMatches(const AppMatch &match, const Target &target);
 // The settings of App Type `type`; an Unknown type has none of its own.
 AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type);
@@ -148,6 +153,10 @@ QString fallbackWritingProfile(const AppsSettings &apps);
 // An app id as Id matches compare it: trimmed, case-folded, without a
 // ".desktop" or ".exe" ending.
 QString comparableAppId(const QString &id);
+// The lists of ids, by index, grouped where they share an id as Id matches
+// compare them, directly or through others: launchers of one program, which
+// one App matches together. Groups and their members keep the lists' order.
+QList<QList<int>> sharedIdGroups(const QList<QStringList> &ids);
 // A fresh AppEntry id, never one of `taken`.
 QString newAppId(const QStringList &taken = {});
 

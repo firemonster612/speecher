@@ -18,7 +18,7 @@ inline DeliveryResult deliverAndWait(TextDeliveryAdapter &delivery,
                                      const OutputSettings &settings,
                                      const DeliveryContent &content,
                                      const Target &target,
-                                     std::optional<PasteMethod> pasting = std::nullopt,
+                                     const PastingChoice &pasting = {},
                                      int timeoutMs = 10000)
 {
     std::optional<DeliveryResult> answer;

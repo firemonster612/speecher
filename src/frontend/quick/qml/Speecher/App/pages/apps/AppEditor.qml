@@ -7,11 +7,12 @@ import Speecher.Wording
 import Speecher.App
 
 // One App's or one App Type's settings, as rows on a wash under its row:
-// for an App what it is recognized by, its type, writing profile, Pasting
-// and History, each starting "Same as …" until changed, the vocabulary
-// limited to it, and Remove app; for an App Type its writing profile,
-// Pasting and History. Every change saves at once
-// through Apps; a refusal shows under the rows.
+// for an App what it is recognized by (with Edit), its type, writing
+// profile, Pasting, paste keys and History, each starting "Same as …" until
+// changed, the vocabulary limited to it, and Remove app; for an App Type its
+// writing profile, Pasting, paste keys and History. Pasting is "Same as …"
+// or steps of its own, the Pasting page's three switches. Every change saves
+// at once through Apps; a refusal shows under the rows.
 Item {
     id: editor
 
@@ -26,7 +27,19 @@ Item {
     readonly property string otherProfile: (Apps.types.find(o => o.id === "general") || { profile: "" }).profile
     // The type that decides what an App follows.
     readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type)
+    // The Pasting page's steps, as { insert, press, keep }.
+    readonly property var pageSteps: System.deliverySteps.reduce((steps, s) => Object.assign(steps, { [s.id]: s.on }), {})
+    // What delivering here does: the steps and keys this App or App Type
+    // ends up with.
+    readonly property var effective: entry.effective || { steps: pageSteps, keys: "standard" }
+    readonly property bool terminalWins: isType && entry.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && (o.steps || o.keys))
 
+    // Where an App's value would come from without its own, by layer:
+    // Terminals, its type, or (fallback) its type following the widest
+    // place, which is Other apps for a profile and Pasting for the rest.
+    function placeOf(from) {
+        return from === "terminal" ? Schema.apps.type("terminal").label : appType.label
+    }
     // "Same as …" for each of an App's own values, by where the value would
     // come from without it; an App Type's profile is Other apps'.
     function inheritedProfile() {
@@ -37,11 +50,19 @@ Item {
              : inherited.profileFrom === "fallback" ? Words.sameAs(Schema.apps.type("general").label, name)
              : t.automatic(name)
     }
-    function inheritedPasting() {
+    function inheritedSteps() {
+        if (isType) return Words.sameAs(t.pastingPage, Schema.pasting.stepsText(pageSteps))
         const inherited = entry.inherited || {}
-        return inherited.pastingFrom === "terminal" ? Words.sameAs(Schema.apps.type("terminal").label, Schema.apps.pastingLabel(inherited.pasting))
-             : inherited.pastingFrom === "type" ? Words.sameAs(appType.label, Schema.apps.pastingLabel(inherited.pasting))
-             : Words.sameAs(appType.label, t.theSteps)
+        return Words.sameAs(placeOf(inherited.stepsFrom), Schema.pasting.stepsText(inherited.steps || pageSteps))
+    }
+    function inheritedKeys() {
+        if (isType) return Words.sameAs(t.pastingPage, Schema.pasting.keysLabel("standard"))
+        const inherited = entry.inherited || {}
+        return Words.sameAs(placeOf(inherited.keysFrom), Schema.pasting.keysLabel(inherited.keys))
+    }
+    // Turns one of its own steps on or off, keeping one on.
+    function setStep(id, on) {
+        save({ steps: Object.assign({}, entry.steps, { [id]: on }) })
     }
     // History: what Privacy & data keeps, which an App or App Type can only
     // lower, and the choice this one follows without its own.
@@ -64,6 +85,7 @@ Item {
     readonly property int vocabularyCount: isType ? 0 : Library.vocabulary.filter(e => Library.limitedToApp(e, entry)).length
     function save(patch) {
         refusal = Schema.apps.refusals[isType ? Apps.updateType(entry.id, patch) : Apps.update(entry.id, patch)] || ""
+        return !refusal
     }
     // The match an App goes by, worded: an id as it is, text with what it
     // is looked for in.
@@ -71,11 +93,19 @@ Item {
         return match.kind === "id" ? match.value
              : (match.kind === "name" ? t.byName : t.byTitle) + " “" + match.value + "”"
     }
-    // What the Pasting choice does here, for the line under it.
-    readonly property string result: {
-        const method = (isType ? entry.pasting : (entry.effective || {}).pasting) || "standard_paste"
-        const terminalWins = isType && entry.id === "ai_coding" && !!(Apps.types.find(o => o.id === "terminal") || {}).pasting
-        return Schema.pasting.ruleResult(System.rulePlan(method), method, terminalWins)
+
+    // Editing what the App is recognized by, and its name: a copy of its
+    // matches, saved together.
+    property bool editing: false
+    property var draftMatches: []
+    function startEditing() {
+        nameField.text = entry.name || ""
+        draftMatches = (entry.matches || []).map(m => ({ kind: m.kind, value: m.value }))
+        matchForm.error = ""
+        editing = true
+    }
+    function setDraft(index, change) {
+        draftMatches = draftMatches.map((m, i) => i === index ? Object.assign({}, m, change) : m)
     }
 
     width: parent ? parent.width : implicitWidth
@@ -94,9 +124,81 @@ Item {
         width: parent.width
 
         SettingRow {
-            shown: !editor.isType
+            shown: !editor.isType && !editor.editing
             title: editor.t.recognizedAs
-            help: (editor.entry.matches || []).map(m => editor.matchText(m)).join(", ")
+            help: [(editor.entry.matches || []).map(m => editor.matchText(m)).join(", "),
+                   editor.entry.titleOnly ? editor.t.titleOnlyFollows : "",
+                   editor.entry.byText ? editor.t.precedence : ""].filter(s => s).join(" ")
+            Button {
+                objectName: "appEditMatching"
+                text: Words.edit
+                size: "small"
+                onClicked: editor.startEditing()
+            }
+        }
+        InlineForm {
+            id: matchForm
+            objectName: "appMatchingForm"
+            open: editor.editing
+            width: parent.width
+            title: editor.t.editMatching
+            saveText: Words.save
+            cancelText: Words.cancel
+            canSave: editor.draftMatches.some(m => m.value.trim().length > 0)
+            onCancelled: editor.editing = false
+            onSaved: {
+                const refused = Apps.update(editor.entry.id, { name: nameField.text, matches: editor.draftMatches })
+                error = Schema.apps.refusals[refused] || ""
+                if (!refused) editor.editing = false
+            }
+            FormField {
+                label: editor.t.appName
+                TextField { id: nameField; width: parent.width }
+            }
+            FormField {
+                label: editor.t.recognizedAs
+                help: editor.t.matchKindsHelp
+                Column {
+                    width: parent.width
+                    spacing: Theme.space2
+                    Repeater {
+                        model: editor.draftMatches
+                        Row {
+                            id: matchRow
+                            required property var modelData
+                            required property int index
+                            width: parent.width
+                            spacing: Theme.space2
+                            Select {
+                                id: kindSelect
+                                width: 190
+                                options: editor.t.matchKinds
+                                currentId: matchRow.modelData.kind
+                                onChosen: id => editor.setDraft(matchRow.index, { kind: id })
+                            }
+                            TextField {
+                                width: parent.width - kindSelect.width - removeMatch.width - parent.spacing * 2
+                                text: matchRow.modelData.value
+                                onTextEdited: editor.setDraft(matchRow.index, { value: text })
+                            }
+                            IconButton {
+                                id: removeMatch
+                                iconName: "x"
+                                tooltip: Words.remove
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: editor.draftMatches = editor.draftMatches.filter((m, i) => i !== matchRow.index)
+                            }
+                        }
+                    }
+                    Button {
+                        text: editor.t.addMatch
+                        iconName: "plus"
+                        size: "small"
+                        variant: "ghost"
+                        onClicked: editor.draftMatches = editor.draftMatches.concat([{ kind: "title", value: "" }])
+                    }
+                }
+            }
         }
         SettingRow {
             shown: !editor.isType
@@ -123,17 +225,52 @@ Item {
         }
         SettingRow {
             title: editor.t.pasting
-            help: editor.result + (editor.isType && editor.entry.id === "terminal" ? ". " + editor.t.terminalsNote : "")
-            // An App Type's widest choice is the steps themselves, stored
-            // as no choice at all.
+            help: Schema.pasting.pastingResult(System.stepsPlan(editor.effective.steps), editor.effective.keys, editor.terminalWins)
+                + (editor.isType && editor.entry.id === "terminal" ? ". " + editor.t.terminalsNote : "")
+            // Choosing its own steps starts from the ones it follows.
             InheritSelect {
                 objectName: "appPasting"
-                inheritedText: editor.isType ? "" : editor.inheritedPasting()
-                choices: (editor.isType ? [Object.assign({}, Schema.apps.pastingChoices[0], { id: "" })]
-                                        : [Schema.apps.pastingChoices[0]])
-                    .concat(Schema.apps.pastingChoices.slice(1))
-                currentId: editor.entry.pasting || ""
-                onChosen: id => editor.save({ pasting: id })
+                inheritedText: editor.inheritedSteps()
+                choices: [Schema.apps.ownSteps]
+                currentId: editor.entry.steps ? Schema.apps.ownSteps.id : ""
+                onChosen: id => editor.save({ steps: id ? editor.effective.steps : null })
+            }
+        }
+        Reveal {
+            open: !!editor.entry.steps
+            width: parent.width
+            Column {
+                width: parent.width
+                Repeater {
+                    model: Schema.pasting.stepIds
+                    SettingRow {
+                        id: stepRow
+                        required property string modelData
+                        readonly property bool on: !!(editor.entry.steps || {})[modelData]
+                        readonly property bool last: on && Schema.pasting.stepIds.filter(id => (editor.entry.steps || {})[id]).length === 1
+                        title: Schema.pasting.stepLabels[modelData]
+                        help: last ? editor.t.lastStepOn : ""
+                        iconName: Schema.row(Schema.pasting.rowOf[modelData]).icon
+                        Switch {
+                            objectName: "appStep_" + stepRow.modelData
+                            checked: stepRow.on
+                            enabled: !stepRow.last
+                            onToggled: editor.setStep(stepRow.modelData, checked)
+                        }
+                    }
+                }
+            }
+        }
+        SettingRow {
+            shown: Schema.pasting.keyChoices.length > 0 && !!editor.effective.steps.press
+            title: editor.t.pasteKeys
+            help: editor.t.pasteKeysHelp
+            InheritSelect {
+                objectName: "appPasteKeys"
+                inheritedText: editor.inheritedKeys()
+                choices: Schema.pasting.keyChoices
+                currentId: editor.entry.keys || ""
+                onChosen: id => editor.save({ keys: id })
             }
         }
         SettingRow {

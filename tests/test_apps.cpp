@@ -72,7 +72,9 @@ QList<std::pair<QString, Target>> realTargets()
 // What classifyTarget, resolveWritingProfile and resolvePasteRule answered
 // for realTargets() before Apps replaced them, captured from that code on
 // Linux: "type profile pasting", where pasting "steps" is no rule. The
-// "custom" settings are the ones customSettings() stores.
+// "custom" settings are the ones customSettings() stores. Safari, Xcode,
+// Outlook, Edge and Word answered General then; the catalog now knows them
+// by the types the Apps page names them under.
 const QHash<QString, QString> &oldAnswers()
 {
     static const QHash<QString, QString> answers{
@@ -91,14 +93,14 @@ const QHash<QString, QString> &oldAnswers()
         {"defaults linux-kwin-fallback", "terminal work terminal_paste"},
         {"defaults mac-terminal", "terminal work terminal_paste"},
         {"defaults mac-mail", "email email steps"},
-        {"defaults mac-safari", "general other steps"},
-        {"defaults mac-xcode", "general other steps"},
+        {"defaults mac-safari", "browser other steps"},
+        {"defaults mac-xcode", "code_editor work steps"},
         {"defaults mac-cursor", "ai_coding ai_coding steps"},
         {"defaults mac-notes", "general other steps"},
         {"defaults win-terminal", "terminal work terminal_paste"},
-        {"defaults win-outlook", "general other steps"},
-        {"defaults win-edge", "general other steps"},
-        {"defaults win-word", "general other steps"},
+        {"defaults win-outlook", "email email steps"},
+        {"defaults win-edge", "browser other steps"},
+        {"defaults win-word", "office work steps"},
         {"defaults win-notepad", "general other steps"},
         {"defaults win-calculator", "general other steps"},
         {"defaults no-identity", "unknown other steps"},
@@ -117,14 +119,14 @@ const QHash<QString, QString> &oldAnswers()
         {"custom linux-kwin-fallback", "terminal work terminal_paste"},
         {"custom mac-terminal", "terminal work terminal_paste"},
         {"custom mac-mail", "email email steps"},
-        {"custom mac-safari", "general personal steps"},
-        {"custom mac-xcode", "general personal steps"},
+        {"custom mac-safari", "browser personal clipboard_only"},
+        {"custom mac-xcode", "code_editor work steps"},
         {"custom mac-cursor", "ai_coding ai_coding steps"},
         {"custom mac-notes", "general personal steps"},
         {"custom win-terminal", "terminal work terminal_paste"},
-        {"custom win-outlook", "general personal clipboard_only"},
-        {"custom win-edge", "general personal steps"},
-        {"custom win-word", "general personal steps"},
+        {"custom win-outlook", "email email clipboard_only"},
+        {"custom win-edge", "browser personal clipboard_only"},
+        {"custom win-word", "office work steps"},
         {"custom win-notepad", "code_editor personal steps"},
         {"custom win-calculator", "general personal steps"},
         {"custom no-identity", "unknown personal steps"},
@@ -156,11 +158,36 @@ void storeCustomSettings(QSettings &stored)
     stored.setValue(SettingsKeys::DefaultWritingProfile, QStringLiteral("personal"));
 }
 
+const DeliverySteps keepOnly{.insert = false, .press = false, .keep = true};
+const DeliverySteps insertAndKeep{.insert = true, .press = false, .keep = true};
+
+// A Pasting choice's pasting as the old answers name it, by what a delivery
+// does with every step on the Pasting page: "steps" or "terminal_paste"
+// where it takes them all, "direct_insert" or "clipboard_only" where it
+// takes Insert and Keep, or Keep alone.
+QString pastingAnswer(const PastingChoice &pasting)
+{
+    const DeliveryPlan plan = deliveryPlan(DeliverySteps{}, pasting);
+    if (plan.steps == DeliverySteps{}) {
+        return plan.keys == PasteKeyCombo::Terminal ? QStringLiteral("terminal_paste") : QStringLiteral("steps");
+    }
+    return plan.steps == insertAndKeep ? QStringLiteral("direct_insert")
+         : plan.steps == keepOnly      ? QStringLiteral("clipboard_only")
+                                       : plan.route().join(u'+');
+}
+
 QString answer(const AppResolution &resolution)
 {
-    return QStringList{appCategoryName(resolution.type), resolution.writingProfile,
-                       resolution.pasting ? pasteMethodName(*resolution.pasting) : QStringLiteral("steps")}
+    return QStringList{appCategoryName(resolution.type), resolution.writingProfile, pastingAnswer(resolution.pasting)}
         .join(u' ');
+}
+
+// What a delivery to target does with these steps on the Pasting page:
+// its route, and the keys where it presses them.
+QString delivery(const Target &target, const AppsSettings &apps, const DeliverySteps &steps)
+{
+    const DeliveryPlan plan = deliveryPlan(steps, resolveApp(target, apps).pasting);
+    return plan.route().join(u' ') + (plan.steps.press ? u' ' + pasteKeyComboName(plan.keys) : QString());
 }
 
 // An App as migration made it, without the random part of its id.
@@ -220,7 +247,8 @@ private slots:
         const AppResolution kate = resolveApp(target("org.kde.kate", "Kate", "kate"), apps);
         QCOMPARE(kate.appId, QStringLiteral("app:org.kde.kate"));
         QCOMPARE(kate.writingProfileFrom, AppLayer::App);
-        QCOMPARE(kate.pastingFrom, AppLayer::Fallback);
+        QCOMPARE(kate.stepsFrom, AppLayer::Fallback);
+        QCOMPARE(kate.keysFrom, AppLayer::Fallback);
 
         const AppResolution slack = resolveApp(target("slack", "Slack", "slack"), apps);
         QVERIFY(slack.appId.isEmpty());
@@ -232,8 +260,8 @@ private slots:
 
         Target inTerminal = target("org.kde.dolphin", "Dolphin", "dolphin");
         inTerminal.terminalHost = true;
-        QCOMPARE(resolveApp(inTerminal, apps).pastingFrom,
-                 terminalKeysDiffer ? AppLayer::Terminal : AppLayer::Fallback);
+        QCOMPARE(resolveApp(inTerminal, apps).keysFrom, terminalKeysDiffer ? AppLayer::Terminal : AppLayer::Fallback);
+        QCOMPARE(resolveApp(inTerminal, apps).stepsFrom, AppLayer::Fallback);
         QCOMPARE(resolveApp(target("org.kde.dolphin", "Dolphin", "dolphin"), apps).writingProfileFrom,
                  AppLayer::Type);
         QCOMPARE(resolveApp(target("", "", ""), apps).writingProfileFrom, AppLayer::Fallback);
@@ -258,6 +286,22 @@ private slots:
                            target("microsoft.windowscalculator_8wekyb3d8bbwe!app", "", "")));
     }
 
+    // Launchers that share a program, directly or through another, are one
+    // group, in the order they came.
+    void launchersSharingAnIdGroupTogether()
+    {
+        const QList<QStringList> ids{
+            {QStringLiteral("firefox")},
+            {QStringLiteral("idle")},
+            {QStringLiteral("Firefox.exe"), QStringLiteral("private")},
+            {QStringLiteral("notepad")},
+            {QStringLiteral("PRIVATE")},
+            {QStringLiteral("idle"), QStringLiteral("pythonw")},
+        };
+        QCOMPARE(sharedIdGroups(ids), (QList<QList<int>>{{0, 2, 4}, {1, 5}, {3}}));
+        QVERIFY(sharedIdGroups({}).isEmpty());
+    }
+
 #ifdef Q_OS_LINUX
     // The fixture's .desktop files as a KDE session lists them: an earlier
     // directory's file hides the same id later, hidden or not; entries that
@@ -280,11 +324,13 @@ private slots:
                              QStringLiteral("Firefox: firefox firefox-bin"),
                              QStringLiteral("Firefox (Snap): firefox_firefox firefox"),
                              QStringLiteral("GNU Image Manipulation Program: org.gimp.GIMP gimp gimp-2.10"),
+                             // An interpreter runs other apps too: not an id of this one.
+                             QStringLiteral("IDLE: idle"),
                              QStringLiteral("My Konsole: org.kde.konsole konsole"),
                              QStringLiteral("System Settings: kde-only systemsettings"),
                          }));
         QCOMPARE(apps.at(1).icon, QStringLiteral("/usr/share/pixmaps/firefox.png"));
-        QCOMPARE(apps.at(4).location, data + QStringLiteral("home/applications/org.kde.konsole.desktop"));
+        QCOMPARE(apps.at(5).location, data + QStringLiteral("home/applications/org.kde.konsole.desktop"));
 
         const QLocale before;
         QLocale::setDefault(QLocale(QStringLiteral("de_DE")));
@@ -334,7 +380,7 @@ private slots:
         QCOMPARE(resolveApp(target("org.example.barcode", "", ""), {}).type, AppCategory::General);
         QCOMPARE(resolveApp(target("code", "", ""), {}).type, AppCategory::CodeEditor);
         QCOMPARE(resolveApp(target("", "", "qwen-code"), {}).type, AppCategory::AiCoding);
-        QCOMPARE(builtInApps().size(), 66);
+        QCOMPARE(builtInApps().size(), 82);
         QVERIFY(isAiCodingProcess(QStringLiteral("claude"), {}));
         QVERIFY(isAiCodingProcess(QStringLiteral("node"), {QStringLiteral("node"),
                                                            QStringLiteral("/usr/lib/node_modules/@openai/codex/bin/codex.js")}));
@@ -348,12 +394,12 @@ private slots:
         AppsSettings apps;
         AppEntry gmail = textApp(QStringLiteral("Gmail"), AppCategory::Email, WritingProfile::Personal);
         gmail.matches = {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}};
-        gmail.pasting = PasteMethod::ClipboardOnly;
+        gmail.pasting.steps = keepOnly;
         apps.apps = {gmail};
         const AppResolution firefox = resolveApp(target("firefox", "Firefox", "firefox", "Inbox - Gmail"), apps);
         QCOMPARE(firefox.type, AppCategory::Browser);
         QCOMPARE(firefox.writingProfile, WritingProfile::Personal);
-        QCOMPARE(firefox.pasting, PasteMethod::ClipboardOnly);
+        QCOMPARE(firefox.pasting.steps, keepOnly);
     }
 
     // Entries matching by id come first, wherever they are in the list.
@@ -375,12 +421,12 @@ private slots:
         for (AppTypeSettings &type : apps.types) {
             if (type.type == AppCategory::Email) {
                 type.writingProfile = WritingProfile::Personal;
-                type.pasting = PasteMethod::DirectInsert;
+                type.pasting.steps = insertAndKeep;
             }
         }
         const Target thunderbird = target("org.mozilla.Thunderbird", "Thunderbird", "thunderbird");
         QCOMPARE(resolveApp(thunderbird, apps).writingProfile, WritingProfile::Personal);
-        QCOMPARE(resolveApp(thunderbird, apps).pasting, PasteMethod::DirectInsert);
+        QCOMPARE(resolveApp(thunderbird, apps).pasting.steps, insertAndKeep);
 
         apps.apps = {textApp(QStringLiteral("slack"), AppCategory::Email)};
         QCOMPARE(resolveApp(target("slack", "Slack", "slack"), apps).type, AppCategory::Email);
@@ -395,37 +441,117 @@ private slots:
         setOtherAppsProfile(apps, WritingProfile::Personal);
         for (AppTypeSettings &type : apps.types) {
             if (type.type == AppCategory::General || type.type == AppCategory::Browser) {
-                type.pasting = PasteMethod::ClipboardOnly;
+                type.pasting.steps = keepOnly;
             }
         }
         QCOMPARE(fallbackWritingProfile(apps), WritingProfile::Personal);
-        QCOMPARE(resolveApp(target("org.kde.dolphin", "Dolphin", "dolphin"), apps).pasting, PasteMethod::ClipboardOnly);
+        QCOMPARE(resolveApp(target("org.kde.dolphin", "Dolphin", "dolphin"), apps).pasting.steps, keepOnly);
         const AppResolution unknown = resolveApp(target("", "", ""), apps);
         QCOMPARE(unknown.type, AppCategory::Unknown);
         QCOMPARE(unknown.writingProfile, WritingProfile::Personal);
-        QCOMPARE(unknown.pasting, std::nullopt);
+        QCOMPARE(unknown.pasting.steps, std::nullopt);
         // Browsers follow Other apps' profile until they have their own.
         QCOMPARE(resolveApp(target("firefox", "Firefox", "firefox"), apps).writingProfile, WritingProfile::Personal);
     }
 
-    // An app's own Pasting choice wins over Terminals' rule for anything in
-    // a terminal, which wins over the app's type.
+    // An app's own steps and keys win over Terminals' for anything in a
+    // terminal, which win over the app's type; each part settles on its
+    // own, so Terminals' keys don't hide the type's steps.
     void pastingPrefersTheAppThenTerminalsThenTheType()
     {
         AppsSettings apps;
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::Terminal) type.pasting = PasteMethod::TerminalPaste;
-            if (type.type == AppCategory::AiCoding) type.pasting = PasteMethod::ClipboardOnly;
+            if (type.type == AppCategory::Terminal) type.pasting = {std::nullopt, PasteKeyCombo::Terminal};
+            if (type.type == AppCategory::AiCoding) type.pasting = {keepOnly, PasteKeyCombo::Standard};
         }
         Target agent = target("org.kde.konsole", "Konsole", "konsole");
         agent.terminalHost = true;
         agent.aiCodingToolActive = true;
         QCOMPARE(resolveApp(agent, apps).type, AppCategory::AiCoding);
-        QCOMPARE(resolveApp(agent, apps).pasting, PasteMethod::TerminalPaste);
-        QCOMPARE(resolveApp(target("", "Cursor", "cursor"), apps).pasting, PasteMethod::ClipboardOnly);
-        apps.apps = {idApp(QStringLiteral("org.kde.konsole"), std::nullopt, PasteMethod::StandardPaste)};
-        QCOMPARE(resolveApp(agent, apps).pasting, PasteMethod::StandardPaste);
-        QCOMPARE(resolveApp(agent, apps).pastingFrom, AppLayer::App);
+        QCOMPARE(resolveApp(agent, apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::Terminal}));
+        QCOMPARE(resolveApp(agent, apps).stepsFrom, AppLayer::Type);
+        QCOMPARE(resolveApp(agent, apps).keysFrom, AppLayer::Terminal);
+        QCOMPARE(resolveApp(target("", "Cursor", "cursor"), apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::Standard}));
+        apps.apps = {idApp(QStringLiteral("org.kde.konsole"), std::nullopt, {DeliverySteps{}, PasteKeyCombo::Standard})};
+        QCOMPARE(resolveApp(agent, apps).pasting, (PastingChoice{DeliverySteps{}, PasteKeyCombo::Standard}));
+        QCOMPARE(resolveApp(agent, apps).stepsFrom, AppLayer::App);
+        QCOMPARE(resolveApp(agent, apps).keysFrom, AppLayer::App);
+    }
+
+    // Each older Pasting choice delivers as it did, with the Pasting page's
+    // steps as they were stored: here Press and Keep, with Insert off.
+    void pastingChoicesMigrateToTheSameDelivery()
+    {
+        QTemporaryDir dir;
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(SettingsKeys::InsertThroughAccessibility, false);
+        using Scope = LegacyPasteRule::Scope;
+        storeLegacyPasteRules(stored, {
+            {Scope::Category, "terminal", PasteMethod::TerminalPaste, true},
+            {Scope::Category, "browser", PasteMethod::ClipboardOnly, true},
+            {Scope::Application, "org.kde.kate", PasteMethod::DirectInsert, true},
+            {Scope::Application, "outlook", PasteMethod::ClipboardOnly, true},
+            {Scope::Application, "firefox", PasteMethod::StandardPaste, true},
+            {Scope::Application, "org.kde.dolphin", PasteMethod::TerminalPaste, true},
+        });
+        migrateApps(stored);
+        QCOMPARE(stored.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
+        const AppsSettings apps = AppsSettingsCodec::load(stored);
+        const DeliverySteps steps{.insert = false, .press = true, .keep = true};
+        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+        Target agent = target("org.kde.konsole", "Konsole", "konsole");
+        agent.terminalHost = true;
+        agent.aiCodingToolActive = true;
+        QCOMPARE(delivery(target("org.kde.kate", "Kate", "kate"), apps, steps), QStringLiteral("keep"));
+        QCOMPARE(delivery(target("outlook", "Outlook", "outlook"), apps, steps), QStringLiteral("keep"));
+        QCOMPARE(delivery(target("chromium", "Chromium", "chromium"), apps, steps), QStringLiteral("keep"));
+        // Its own Standard paste beat Browsers' Clipboard only.
+        QCOMPARE(delivery(target("firefox", "Firefox", "firefox"), apps, steps), QStringLiteral("press keep standard"));
+        QCOMPARE(delivery(target("org.kde.dolphin", "Dolphin", "dolphin"), apps, steps), u"press keep " + terminal);
+        QCOMPARE(delivery(target("org.kde.konsole", "Konsole", "konsole"), apps, steps), u"press keep " + terminal);
+        QCOMPARE(delivery(agent, apps, steps), u"press keep " + terminal);
+        QCOMPARE(delivery(target("org.gnome.Nautilus", "Files", "nautilus"), apps, steps), QStringLiteral("press keep standard"));
+        // Firefox's own choice followed the steps as they are, which only a
+        // copy of them keeps, since Browsers now have steps of their own.
+        QCOMPARE(delivery(target("firefox", "Firefox", "firefox"), apps, DeliverySteps{}),
+                 QStringLiteral("press keep standard"));
+        // Terminals' keys alone leave other apps the page's steps as they
+        // come to be.
+        QCOMPARE(delivery(target("org.gnome.Nautilus", "Files", "nautilus"), apps, DeliverySteps{}),
+                 QStringLiteral("insert press keep standard"));
+    }
+
+    // A file the first Apps migration wrote has each "pasting" turned into
+    // steps and keys, once.
+    void storedPastingChoicesBecomeStepsAndKeys()
+    {
+        QTemporaryDir dir;
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(SettingsKeys::AppsMigrationVersion, 1);
+        stored.setValue(SettingsKeys::KeepOnClipboard, false);
+        stored.setValue(SettingsKeys::AppsEntries,
+                        QByteArray(R"([{"id":"app:kate","name":"Kate","matches":[{"kind":"id","value":"org.kde.kate"}],)"
+                                   R"("pasting":"direct_insert"},)"
+                                   R"({"id":"app:term","name":"Term","matches":[{"kind":"id","value":"term"}],)"
+                                   R"("pasting":"standard_paste"}])"));
+        stored.setValue(SettingsKeys::AppsTypes,
+                        QByteArray(R"([{"type":"terminal","pasting":"terminal_paste","writingProfile":"work"},)"
+                                   R"({"type":"general","pasting":"clipboard_only","writingProfile":"other"}])"));
+        migrateApps(stored);
+        const AppsSettings apps = AppsSettingsCodec::load(stored);
+        QCOMPARE(apps.apps.at(0).pasting, (PastingChoice{insertAndKeep.withStep(DeliveryStep::Keep, false), std::nullopt}));
+        // Other apps have steps of their own, which its Standard paste hid.
+        QCOMPARE(apps.apps.at(1).pasting,
+                 (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::Standard}));
+        QCOMPARE(appTypeSettings(apps, AppCategory::General).pasting, (PastingChoice{keepOnly, std::nullopt}));
+        QCOMPARE(appTypeSettings(apps, AppCategory::Terminal).pasting.keys,
+                 terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
+        QVERIFY(!stored.value(SettingsKeys::AppsEntries).toByteArray().contains("\"pasting\""));
+        QCOMPARE(stored.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
+        // Once.
+        stored.setValue(SettingsKeys::AppsTypes, QByteArray(R"([{"type":"general","pasting":"clipboard_only"}])"));
+        migrateApps(stored);
+        QCOMPARE(appTypeSettings(AppsSettingsCodec::load(stored), AppCategory::General).pasting, PastingChoice{});
     }
 
     void migrationShapes_data()
@@ -435,7 +561,7 @@ private slots:
         QTest::addColumn<QString>("otherAppsProfile");
         QTest::addColumn<QString>("browserPasting");
 
-        const auto id = [](const char *id, std::optional<QString> profile, std::optional<PasteMethod> pasting) {
+        const auto id = [](const char *id, std::optional<QString> profile, const PastingChoice &pasting) {
             AppEntry app = idApp(QString::fromUtf8(id), profile, pasting);
             app.id.clear();
             app.name = QString::fromUtf8(id).section(u'.', -1);
@@ -452,18 +578,18 @@ private slots:
         QTest::newRow("override only")
             << QVariantMap{{SettingsKeys::WritingProfileOverrides,
                             QByteArray(R"([{"applicationId":"org.kde.kate","profile":"email","enabled":true}])")}}
-            << QList<AppEntry>{id("org.kde.kate", WritingProfile::Email, std::nullopt)} << "other" << "";
+            << QList<AppEntry>{id("org.kde.kate", WritingProfile::Email, {})} << "other" << "";
         QTest::newRow("paste rule only")
             << QVariantMap{{SettingsKeys::PasteRules,
                             rules({{Scope::Application, "org.kde.kate", PasteMethod::DirectInsert, true},
                                    {Scope::Application, "firefox", PasteMethod::ClipboardOnly, false}})}}
-            << QList<AppEntry>{id("org.kde.kate", std::nullopt, PasteMethod::DirectInsert)} << "other" << "";
+            << QList<AppEntry>{id("org.kde.kate", std::nullopt, {insertAndKeep, std::nullopt})} << "other" << "";
         QTest::newRow("override and paste rule for one id")
             << QVariantMap{{SettingsKeys::WritingProfileOverrides,
                             QByteArray(R"([{"applicationId":"org.kde.kate","profile":"email","enabled":true}])")},
                            {SettingsKeys::PasteRules,
                             rules({{Scope::Application, "ORG.KDE.KATE", PasteMethod::ClipboardOnly, true}})}}
-            << QList<AppEntry>{id("org.kde.kate", WritingProfile::Email, PasteMethod::ClipboardOnly)} << "other" << "";
+            << QList<AppEntry>{id("org.kde.kate", WritingProfile::Email, {keepOnly, std::nullopt})} << "other" << "";
         AppEntry both = textApp(QStringLiteral("notepad"), AppCategory::CodeEditor, WritingProfile::Personal);
         both.id.clear();
         both.name = QStringLiteral("Notepad");
@@ -479,7 +605,7 @@ private slots:
             << QVariantMap{{SettingsKeys::PasteRules,
                             rules({{Scope::Category, "browser", PasteMethod::ClipboardOnly, true},
                                    {Scope::Category, "email", PasteMethod::StandardPaste, true}})}}
-            << QList<AppEntry>{} << "other" << "clipboard_only";
+            << QList<AppEntry>{} << "other" << "keep";
         QTest::newRow("default profile")
             << QVariantMap{{SettingsKeys::DefaultWritingProfile, QStringLiteral("personal")}}
             << QList<AppEntry>{} << "personal" << "";
@@ -507,10 +633,10 @@ private slots:
         }
         QCOMPARE(withoutIds, apps);
         QCOMPARE(fallbackWritingProfile(migrated), otherAppsProfile);
-        const std::optional<PasteMethod> browser = appTypeSettings(migrated, AppCategory::Browser).pasting;
-        QCOMPARE(browser ? pasteMethodName(*browser) : QString(), browserPasting);
+        const std::optional<DeliverySteps> browser = appTypeSettings(migrated, AppCategory::Browser).pasting.steps;
+        QCOMPARE(browser ? DeliveryPlan{*browser}.route().join(u' ') : QString(), browserPasting);
         // Email's Standard paste rule was no rule.
-        QCOMPARE(appTypeSettings(migrated, AppCategory::Email).pasting, std::nullopt);
+        QCOMPARE(appTypeSettings(migrated, AppCategory::Email).pasting, PastingChoice{});
         // The old keys stay for a downgrade.
         for (auto it = stored.cbegin(); it != stored.cend(); ++it) {
             QVERIFY(settings.contains(it.key()));
@@ -525,7 +651,7 @@ private slots:
         QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         storeLegacyPasteRules(settings, {});
         migrateApps(settings);
-        QCOMPARE(appTypeSettings(AppsSettingsCodec::load(settings), AppCategory::Terminal).pasting, std::nullopt);
+        QCOMPARE(appTypeSettings(AppsSettingsCodec::load(settings), AppCategory::Terminal).pasting, PastingChoice{});
     }
 
     // A file with nothing to migrate gets no Apps keys, and the migration
@@ -536,7 +662,7 @@ private slots:
         QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         migrateApps(settings);
         QVERIFY(!settings.contains(SettingsKeys::AppsEntries));
-        QCOMPARE(settings.value(SettingsKeys::AppsMigrationVersion).toInt(), 1);
+        QCOMPARE(settings.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
 
         settings.setValue(SettingsKeys::DefaultWritingProfile, QStringLiteral("personal"));
         migrateApps(settings);
@@ -550,9 +676,11 @@ private slots:
         QTemporaryDir dir;
         QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         AppsSettings apps;
-        apps.apps = {idApp(QStringLiteral("org.kde.kate"), WritingProfile::Email, PasteMethod::StandardPaste),
+        apps.apps = {idApp(QStringLiteral("org.kde.kate"), WritingProfile::Email,
+                           {DeliverySteps{.insert = false, .press = true, .keep = false}, PasteKeyCombo::Terminal}),
                      textApp(QStringLiteral("gmail"), AppCategory::Email, WritingProfile::Personal)};
-        apps.types[0].pasting.reset();
+        apps.types[0].pasting = {};
+        apps.types[1].pasting.steps = keepOnly;
         AppsSettingsCodec::store(settings, apps);
         QCOMPARE(AppsSettingsCodec::load(settings), apps);
 
@@ -560,11 +688,12 @@ private slots:
                           QByteArray(R"([{"name":"no id","matches":[{"kind":"id","value":"x"}]},)"
                                      R"({"id":"app:1","name":"no matches","matches":[{"kind":"guess","value":"x"}]}])"));
         settings.setValue(SettingsKeys::AppsTypes,
-                          QByteArray(R"([{"type":"browser","pasting":"standard_paste","writingProfile":"work"}])"));
+                          QByteArray(R"([{"type":"browser","steps":{"insert":false,"press":false,"keep":false},)"
+                                     R"("writingProfile":"work"}])"));
         const AppsSettings read = AppsSettingsCodec::load(settings);
         QVERIFY(read.apps.isEmpty());
-        QCOMPARE(appTypeSettings(read, AppCategory::Browser),
-                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, std::nullopt}));
+        // Steps with none on read as none.
+        QCOMPARE(appTypeSettings(read, AppCategory::Browser), (AppTypeSettings{AppCategory::Browser, WritingProfile::Work}));
         QCOMPARE(appTypeSettings(read, AppCategory::Email), appTypeSettings({}, AppCategory::Email));
     }
 
@@ -589,9 +718,12 @@ private slots:
                  EditRefusal::None);
         QVERIFY(settings.apps.apps.last().id != kate.id);
 
-        QCOMPARE(editApp(settings, kate.id, [](AppEntry &app) { app.pasting = PasteMethod::ClipboardOnly; }),
-                 EditRefusal::None);
-        QCOMPARE(settings.apps.apps.first().pasting, PasteMethod::ClipboardOnly);
+        QCOMPARE(editApp(settings, kate.id, [](AppEntry &app) { app.pasting.steps = keepOnly; }), EditRefusal::None);
+        QCOMPARE(settings.apps.apps.first().pasting.steps, keepOnly);
+        // Steps of its own keep one on.
+        QCOMPARE(editApp(settings, kate.id, [](AppEntry &app) { app.pasting.steps = DeliverySteps{false, false, false}; }),
+                 EditRefusal::Incomplete);
+        QCOMPARE(settings.apps.apps.first().pasting.steps, keepOnly);
         QCOMPARE(editApp(settings, QStringLiteral("app:gone"), [](AppEntry &) {}), EditRefusal::Missing);
 
         const SettingsEdit undo = removeApp(settings, kate.id);
@@ -603,12 +735,15 @@ private slots:
         QVERIFY(!removeApp(settings, QStringLiteral("app:gone")));
 
         QCOMPARE(editAppType(settings, AppCategory::Browser, [](AppTypeSettings &type) {
-                     type.pasting = PasteMethod::StandardPaste;
+                     type.pasting.keys = PasteKeyCombo::Terminal;
                      type.writingProfile = WritingProfile::Work;
                  }),
                  EditRefusal::None);
         QCOMPARE(appTypeSettings(settings.apps, AppCategory::Browser),
-                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, std::nullopt}));
+                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, {std::nullopt, PasteKeyCombo::Terminal}}));
+        QCOMPARE(editAppType(settings, AppCategory::Browser,
+                             [](AppTypeSettings &type) { type.pasting.steps = DeliverySteps{false, false, false}; }),
+                 EditRefusal::Incomplete);
         QCOMPARE(editAppType(settings, AppCategory::Unknown, [](AppTypeSettings &) {}), EditRefusal::Missing);
     }
 };

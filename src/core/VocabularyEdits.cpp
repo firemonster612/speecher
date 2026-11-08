@@ -3,6 +3,7 @@
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
 
+#include <QHash>
 #include <QSet>
 
 #include <algorithm>
@@ -76,8 +77,11 @@ EditRefusal check(VocabularyEntry &entry, qsizetype self, const AppSettings &set
     if (entry.isReplacement() && !BindingProcessor::validateRules({{entry.term, entry.replacement}}).ok()) {
         return EditRefusal::Blank;
     }
-    if (!std::all_of(entry.apps.cbegin(), entry.apps.cend(),
-                     [&settings](const QString &limit) { return knownApp(settings, limit); })) {
+    // A limit to a removed App the entry has already stays (keepVocabularyLimitsOf).
+    const QStringList kept = self >= 0 ? settings.vocabulary.at(self).apps : QStringList();
+    if (!std::all_of(entry.apps.cbegin(), entry.apps.cend(), [&](const QString &limit) {
+            return knownApp(settings, limit) || kept.contains(limit);
+        })) {
         return EditRefusal::Missing;
     }
     for (qsizetype i = 0; i < settings.vocabulary.size(); ++i) {
@@ -134,7 +138,7 @@ int importVocabularyEntries(AppSettings &settings, const QList<VocabularyEntry> 
     return added + int(settings.vocabulary.size() - before);
 }
 
-void keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed)
+SettingsEdit keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed)
 {
     QStringList ids;
     for (const AppMatch &match : removed.matches) {
@@ -142,12 +146,32 @@ void keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed)
             ids.append(match.value);
         }
     }
+    // Each rewritten entry's limits before and after, by its id.
+    QHash<QString, std::pair<QStringList, QStringList>> rewritten;
     for (VocabularyEntry &entry : settings.vocabulary) {
-        if (entry.apps.removeAll(removed.id) > 0) {
-            entry.apps += ids;
-            entry.apps.removeDuplicates();
+        const QStringList before = entry.apps;
+        if (entry.apps.removeAll(removed.id) == 0) {
+            continue;
+        }
+        entry.apps += ids;
+        entry.apps.removeDuplicates();
+        // With nothing else to limit it, the limit stays on the App, which
+        // matches nothing while it is gone: an empty list applies everywhere.
+        if (entry.apps.isEmpty()) {
+            entry.apps = before;
+        } else {
+            rewritten.insert(entry.id, {before, entry.apps});
         }
     }
+    return [rewritten](AppSettings &draft) {
+        for (VocabularyEntry &entry : draft.vocabulary) {
+            const auto limits = rewritten.constFind(entry.id);
+            // Limits changed since are the person's, and stay.
+            if (limits != rewritten.cend() && entry.apps == limits->second) {
+                entry.apps = limits->first;
+            }
+        }
+    };
 }
 
 } // namespace speecher

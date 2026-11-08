@@ -22,7 +22,7 @@ bool appLimitMatches(const QString &limit, const VocabularyScope &scope)
         return !scope.target.applicationId.isEmpty() && sameText(limit, scope.target.applicationId);
     }
     // An App removed meanwhile matches nothing (removeApp rewrites the limits
-    // it can).
+    // it can, and leaves the rest on it).
     const auto app = std::find_if(scope.apps.apps.cbegin(), scope.apps.apps.cend(),
                                   [&limit](const AppEntry &entry) { return entry.id == limit; });
     return app != scope.apps.apps.cend()

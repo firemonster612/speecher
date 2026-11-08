@@ -129,10 +129,7 @@ QVariant readField(ApplicationController &controller, const QString &name)
     const AppSettings settings = store.snapshot();
     // The steps a delivery to target takes, in order.
     const auto delivery = [&](const Target &target) {
-        return deliveryPlan(settings.output.steps,
-                            resolveApp(target, settings.apps).pasting.value_or(PasteMethod::StandardPaste))
-            .route()
-            .join(u' ');
+        return deliveryPlan(settings.output.steps, resolveApp(target, settings.apps).pasting).route().join(u' ');
     };
     Target terminal;
     terminal.terminalHost = true;
@@ -490,17 +487,17 @@ private:
         QCOMPARE(settings.apps.apps.size(), 3);
         QCOMPARE(withoutId(settings.apps.apps[0]),
                  (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
-                           std::nullopt, QStringLiteral("personal"), PasteMethod::StandardPaste}));
+                           std::nullopt, QStringLiteral("personal"), {std::nullopt, PasteKeyCombo::Standard}}));
         QCOMPARE(withoutId(settings.apps.apps[1]),
                  (AppEntry{{}, QStringLiteral("Konsole"), {},
                            {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},
                             {AppMatchKind::WindowTitle, QStringLiteral("org.kde.konsole")}},
-                           AppCategory::Terminal, QStringLiteral("ai_coding"), std::nullopt}));
+                           AppCategory::Terminal, QStringLiteral("ai_coding"), {}}));
         QCOMPARE(withoutId(settings.apps.apps[2]),
                  (AppEntry{{}, QStringLiteral("Thunderbird"), {},
                            {{AppMatchKind::Name, QStringLiteral("thunderbird")},
                             {AppMatchKind::WindowTitle, QStringLiteral("thunderbird")}},
-                           std::nullopt, QStringLiteral("email"), std::nullopt}));
+                           std::nullopt, QStringLiteral("email"), {}}));
         // The default profile is Other apps'.
         QCOMPARE(fallbackWritingProfile(settings.apps), QStringLiteral("work"));
         const QList<VocabularyEntry> replacements = test::replacementEntries(settings.vocabulary);
@@ -548,7 +545,7 @@ private:
         QCOMPARE(settings.output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
         // Terminals' rule is their Pasting choice; macOS has none.
         QCOMPARE(appTypeSettings(settings.apps, AppCategory::Terminal).pasting,
-                 terminalKeysDiffer ? std::optional(PasteMethod::TerminalPaste) : std::nullopt);
+                 (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
         QCOMPARE(settings.output.format, OutputFormat::Html);
         QCOMPARE(settings.output.completionStatusDurationMs, 1500);
 

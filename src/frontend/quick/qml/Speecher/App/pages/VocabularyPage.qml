@@ -165,7 +165,7 @@ Page {
                 }
             }
         ]
-        AccessibilityNotice { text: page.t.correctionsNeedAccessibility }
+        AccessibilityNotice {}
         SchemaRow { rowId: "correctionLearningControl" }
     }
 }

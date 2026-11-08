@@ -39,7 +39,7 @@ public:
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
                  const Target &target,
-                 std::optional<PasteMethod> pasting) override
+                 const PastingChoice &pasting) override
     {
         if (m_unanswered++ == 0) {
             for (GlobalShortcutBinder *binder : m_binders) {

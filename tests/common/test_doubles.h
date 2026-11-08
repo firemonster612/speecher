@@ -613,7 +613,7 @@ public:
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
                  const Target &target,
-                 std::optional<PasteMethod> pasting) override
+                 const PastingChoice &pasting) override
     {
         ++calls;
         lastPasting = pasting;
@@ -642,7 +642,7 @@ public:
     OutputSettings lastSettings;
     DeliveryContent lastContent;
     Target lastTarget;
-    std::optional<PasteMethod> lastPasting;
+    PastingChoice lastPasting;
     QString lastText;
 };
 

@@ -100,6 +100,16 @@ float loudestRms(const QByteArray &pcm)
     return loudest;
 }
 
+// An App's Pasting choice in a log line: its route and keys, or "steps".
+QString pastingText(const PastingChoice &pasting)
+{
+    if (!pasting.isSet()) {
+        return QStringLiteral("steps");
+    }
+    return (pasting.steps ? DeliveryPlan{*pasting.steps}.route().join(u'+') : QStringLiteral("steps")) + u'/'
+         + pasteKeyComboName(pasting.keys.value_or(PasteKeyCombo::Standard));
+}
+
 } // namespace
 
 #ifdef Q_OS_WIN
@@ -333,7 +343,7 @@ private slots:
                         QString::number(target.selectedText.size()),
                         QString::number(target.nearbyTextBefore.size()),
                         QString::number(target.nearbyTextAfter.size()),
-                        app.pasting ? pasteMethodName(*app.pasting) : QStringLiteral("steps"),
+                        pastingText(app.pasting),
                         target.accessible && !target.secure && directInsert && target.caretOffset >= 0
                             ? QStringLiteral("yes")
                             : QStringLiteral("no"));
@@ -934,7 +944,7 @@ private slots:
             << QStringLiteral("delivery appId=%1 category=%2 pasting=%3 receipt=%4 downgraded=%5 clipboardRestored=%6 clipboardPlain=%7 clipboardHtml=%8")
                    .arg(target.applicationId,
                         appCategoryName(target.category),
-                        app.pasting ? pasteMethodName(*app.pasting) : QStringLiteral("steps"),
+                        pastingText(app.pasting),
                         result.message,
                         result.formatDowngraded ? QStringLiteral("yes") : QStringLiteral("no"),
                         restored ? QStringLiteral("yes") : QStringLiteral("no"),

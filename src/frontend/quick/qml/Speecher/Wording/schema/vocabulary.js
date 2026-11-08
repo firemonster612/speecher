@@ -86,7 +86,6 @@ var t = {
     undoCorrection: "Undo last correction",
     learning: "Learning from your edits",
     learningHelp: "Learned corrections appear in the list, limited to the app you fixed them in.",
-    correctionsNeedAccessibility: "Turn on desktop accessibility to learn corrections after pasting.",
     aRemovedApp: "a removed app"
 };
 

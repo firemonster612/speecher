@@ -6,11 +6,13 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// One delivery step: its switch, and before it what the step relies on
-// here with its fix (NeedStatus), the first missing need or else its main
-// one. A step that is on and waits for a need says so first in its note,
-// with how to get a missing tool. The last step on can't be turned off, and
-// says why. Items declared inside go between the fix and the switch.
+// One delivery step: its switch, and before it each thing the step relies
+// on here, one status line apiece with its fix (NeedStatus). A need an
+// earlier step shows already is left to that step while it is there, and
+// missing says it needs the same one. A step that is on and waits for needs
+// names them all first in its note, with how to get a missing tool. The
+// last step on can't be turned off, and says why. Items declared inside go
+// between the needs and the switch.
 SchemaRow {
     id: row
 
@@ -19,29 +21,38 @@ SchemaRow {
     readonly property bool on: !!step.on
     readonly property bool _last: on && steps.filter(s => s.on).length === 1
     readonly property var _waiting: step.waiting || []
-    readonly property string _needId: _waiting[0] || (step.needs || [])[0] || ""
-    readonly property var _need: Schema.pasting.needs[_needId] || {}
-    // A need a step before this one shows already, with its fix.
-    readonly property bool _shared: _needId !== "" && steps
-        .slice(0, ["insert", "press", "keep"].indexOf(spec.step)).some(s => (s.needs || []).includes(_needId))
+    // The needs a step before this one has too, which it shows with the fix.
+    readonly property var _earlier: [].concat(...steps.slice(0, Schema.pasting.stepIds.indexOf(spec.step)).map(s => s.needs || []))
+    readonly property var _shown: (step.needs || []).filter(n => !_earlier.includes(n) || _waiting.includes(n))
+    // Why one of the needs' last fix failed, or "".
+    readonly property string _failure: _shown.map(n => Schema.pasting.needs[n].check)
+        .filter(c => c).map(c => Health.failure(Health.find(System.checks, c))).find(f => f) || ""
     default property alias extra: extras.data
 
-    note: [on && _waiting.length ? Schema.pasting.waitingFor(_needId) + "." : "",
-           on && _waiting.length ? _need.repair || "" : "",
-           status.failure || (on ? spec.help : spec.offHelp || spec.help),
+    note: [on && _waiting.length ? Schema.pasting.waitingFor(_waiting) + "." : "",
+           on ? _waiting.map(n => Schema.pasting.needs[n].repair || "").filter(s => s).join(" ") : "",
+           _failure || (on ? spec.help : spec.offHelp || spec.help),
            Schema.pasting.details(spec.step, System.waylandSession),
            _last ? "It's the only step on, so it stays on." : ""].filter(s => s).join(" ")
 
     Row {
         spacing: Theme.space3
-        NeedStatus {
-            id: status
-            needId: row._needId
-            there: !row._waiting.includes(row._needId)
-            shared: row._shared
-            // Keep off still needs saving the clipboard for Press.
-            quiet: !row.on && row.spec.step !== "keep"
+        Column {
+            id: needs
+            spacing: Theme.space1
             anchors.verticalCenter: parent.verticalCenter
+            Repeater {
+                model: row._shown
+                NeedStatus {
+                    required property string modelData
+                    anchors.right: parent ? parent.right : undefined
+                    needId: modelData
+                    there: !row._waiting.includes(modelData)
+                    shared: row._earlier.includes(modelData)
+                    // Keep off still needs saving the clipboard for Press.
+                    quiet: !row.on && row.spec.step !== "keep"
+                }
+            }
         }
         Row {
             id: extras
