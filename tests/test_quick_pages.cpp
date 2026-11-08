@@ -23,6 +23,7 @@
 #include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QAccessible>
@@ -1699,6 +1700,37 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
         QCOMPARE(savedOrder(), reordered);
         QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
+    }
+
+    // Ready shows Home's readiness card over setup's draft: a delivery step
+    // turned off in setup changes what it says of Pasting at once, as
+    // System's outcome does, while the saved step stays on.
+    void setupReadyShowsHomesReadinessOverTheDraft()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        QVERIFY(QTest::qWaitForWindowExposed(setup));
+        setup->setProperty("step", setup->property("steps").value<QJSValue>().property(QStringLiteral("length")).toInt() - 1);
+        QQmlEngine *engine = qmlEngine(setup);
+        auto *settings = engine->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        auto *system = engine->singletonInstance<QuickSystem *>(QStringLiteral("Speecher.Backend"), QStringLiteral("System"));
+        QVERIFY(settings && system);
+        QObject *readiness = nullptr;
+        QTRY_VERIFY((readiness = findItem(setup->contentItem(), QStringLiteral("readiness"))));
+        QVERIFY(readiness->property("inSetup").toBool());
+        const auto pastingNeeded = [readiness] { return readiness->property("pastingNeeded").toBool(); };
+
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
+        settings->set(QStringLiteral("keepOnClipboard"), false);
+        QCOMPARE(pastingNeeded(), system->pastingOutcome() == QLatin1String("nothing"));
+        settings->set(QStringLiteral("insertThroughAccessibility"), false);
+        settings->set(QStringLiteral("pressPasteKeys"), false);
+        QCOMPARE(pastingNeeded(), system->pastingOutcome() == QLatin1String("nothing"));
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
     }
 
     void everyPopupStateLoads_data() { themes(); }

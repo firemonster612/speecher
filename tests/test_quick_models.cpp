@@ -127,7 +127,8 @@ private slots:
     void providersCarryTheirStateAndCoresProblem()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         QSignalSpy changed(&models, &QuickModels::changed);
 
         QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
@@ -163,7 +164,8 @@ private slots:
     void speechServicesCarryTheirLanguages()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         const auto languages = [&models](const QString &id) {
             return entry(models.speechServices(), id).value(QStringLiteral("languages")).toStringList();
         };
@@ -191,7 +193,8 @@ private slots:
     void theHardwareProbeBringsFitsSuggestionsAndRatings()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         const QString parakeet = QStringLiteral("parakeet");
 
         QVERIFY(!models.hardwareKnown());
@@ -231,6 +234,25 @@ private slots:
         QCOMPARE(changed.count(), 1);
     }
 
+    // Models reads the settings as Settings shows them, so a Spoken
+    // Language drafted in setup that the drafted first service can't hear
+    // is a problem at once, and stops being one when the draft goes; the
+    // saved settings never change.
+    void theServicesFollowSetupsDraft()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
+        const AppSettings before = controller.settings()->dictationSnapshot();
+        settings.startDraft({QStringLiteral("speechServices"), QStringLiteral("spokenLanguage")});
+        settings.set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("claude")}));
+        settings.set(QStringLiteral("spokenLanguage"), QStringLiteral("cy"));
+        QCOMPARE(models.spokenLanguageProblem(), QStringLiteral("Claude can't listen for Welsh. Choose another Spoken Language."));
+        QCOMPARE(controller.settings()->dictationSnapshot().speech, before.speech);
+        settings.dropDraft();
+        QVERIFY(!models.spokenLanguageProblem().contains(QLatin1String("Welsh")));
+    }
+
     // Use makes Local Model the service with that model chosen, in one save,
     // as the Settings singleton then reads it; a name that is no model
     // changes nothing.
@@ -238,7 +260,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
 
         QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
         models.use(QStringLiteral("whisper-turbo"));
@@ -262,7 +284,8 @@ private slots:
     void downloadsReportProgressAndFailure()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         LocalModelStore *store = controller.localModelStore();
         const QString moonshine = QStringLiteral("moonshine-small");
 
@@ -278,7 +301,8 @@ private slots:
     void endpointChecksReportTheVerdict()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         AppSettings draft = controller.settings()->dictationSnapshot();
@@ -326,7 +350,7 @@ private slots:
                 return codex;
             });
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);
@@ -391,7 +415,7 @@ private slots:
                 return codex;
             });
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);
@@ -424,7 +448,8 @@ private slots:
     void runnersAndTheCleanupPull()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         LocalSetup &local = *controller.localSetup();
         LocalSetupTestAccess::setHardware(local, laptop());
         LocalSetupTestAccess::setRunners(local, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
@@ -483,7 +508,7 @@ private slots:
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);

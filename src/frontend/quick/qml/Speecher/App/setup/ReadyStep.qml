@@ -5,19 +5,22 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "../pages/home"
 
 // The finish: a check that lands once, how to dictate with the chosen
-// shortcut or, where the desktop gives none, the command, and a way back to
-// any step that still needs attention. While a step does, there is no check
-// and the title says setup is not done. The rail already lists every step's
-// outcome. The groups and the title follow the same results as Home: a
-// working speech service, the microphone and somewhere for the words to go
-// are needed, the rest makes dictation better.
+// shortcut or, where the desktop gives none, the command, and Home's
+// readiness card, the same checks over setup's draft. While a step still
+// needs attention there is no check and the title says setup is not done.
+// The rail already lists every step's outcome.
 StepPage {
     id: page
     title: ""
 
     readonly property var _open: page.choices.steps.filter(s => !s.done && s.id !== "ready")
+    readonly property var _needed: _open.filter(s => s.needed)
+    // The step that sets what a readiness row opens, by page.
+    readonly property var _stepOf: ({ speech: "transcription", services: "transcription", microphone: "microphone",
+                                      pasting: "delivery", refinement: "refinement", dictation: "shortcut" })
     readonly property var _keys: Settings.values.globalShortcut || []
     readonly property bool _command: Health.noShortcuts(System.checks)
 
@@ -58,59 +61,17 @@ StepPage {
         }
     }
 
-    Txt {
-        text: page._open.length === 0 ? Setup.text.allPassed : Setup.stepsOpen(page._open.length)
-        variant: page._open.length ? "heading" : "body"
-        tone: page._open.length ? "primary" : "secondary"
-    }
-    // The steps still open, each a way back to it: first what dictation
-    // needs, then what it works without.
-    component StepCard: Card {
-        id: stepCard
-        property var steps: []
-        RowList {
-            id: openSteps
-            values: stepCard.steps
-            delegate: SettingRow {
-                id: stepRow
-                required property string key
-                required property int index
-                readonly property var step: openSteps.entry(key)
-                first: index === 0 && openSteps.first
-                title: step.title
-                clickable: true
-                onClicked: page.choices.goTo(key)
-                StatusText { text: stepRow.step.verdict; tone: "warning" }
+    // Home's readiness card, over the draft: a row with a step of its own
+    // goes back to that step, any other opens its page beside setup.
+    Card {
+        width: parent.width
+        Readiness {
+            inSetup: true
+            openRow: (pageId, rowId) => {
+                const step = page._stepOf[pageId]
+                if (step) page.choices.goTo(step)
+                else Navigation.follow(pageId, rowId, "setup")
             }
-        }
-    }
-    readonly property var _needed: _open.filter(s => s.needed)
-    readonly property var _helpful: _open.filter(s => !s.needed)
-    Reveal {
-        open: page._needed.length > 0
-        Column {
-            width: parent.width
-            spacing: Theme.space2
-            Txt { width: parent.width; text: Setup.text.needs; variant: "small"; tone: "secondary"; wrapMode: Text.WordWrap }
-            StepCard { steps: page._needed }
-        }
-    }
-    Reveal {
-        open: page._helpful.length > 0
-        Column {
-            width: parent.width
-            spacing: Theme.space2
-            Reveal {
-                open: page._needed.length > 0
-                Txt {
-                    width: parent.width
-                    text: Setup.text.worksWithout
-                    variant: "small"
-                    tone: "secondary"
-                    wrapMode: Text.WordWrap
-                }
-            }
-            StepCard { steps: page._helpful }
         }
     }
 }

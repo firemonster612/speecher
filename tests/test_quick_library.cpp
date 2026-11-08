@@ -561,7 +561,7 @@ private slots:
         const QuickLibrary::ControllerScope scope(&controller);
         // Library's key-term line names Models' speech service, and the host
         // always has Models.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QQmlEngine engine;
         QQmlComponent component(&engine);
         component.setData("import QtQuick\nimport Speecher.Backend\nQtObject {\n"

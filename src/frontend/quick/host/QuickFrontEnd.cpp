@@ -161,7 +161,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_removal(&m_virtualKeyboard, SpeecherRemoval::onThisComputer(controller))
     , m_system(controller, &m_settings, &m_virtualKeyboard, &m_removal)
     , m_phone(controller)
-    , m_models(controller)
+    , m_models(controller, &m_settings)
     , m_insights(controller)
     , m_history(controller)
     , m_accounts(controller)

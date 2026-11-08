@@ -912,7 +912,7 @@ private slots:
         QuickApps apps(&controller);
         const QuickLibrary::ControllerScope library(&controller);
         // Library words its key terms by Models' speech service.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Search asks System what the computer has, as the host always can.
         test::SystemSingletons system(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and

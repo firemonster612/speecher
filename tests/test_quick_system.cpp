@@ -573,7 +573,7 @@ private slots:
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
         QuickUpdates updates(&controller, controller.updates());
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
         QuickApps apps(&controller);
@@ -729,7 +729,7 @@ private slots:
         keyboard.managed = true;
         StandInSystem standIn(&controller, keyboard);
         // Setup's choices read Models and Audio, as the host always has them.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
@@ -830,7 +830,7 @@ private slots:
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
         QuickApps apps(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -841,17 +841,19 @@ private slots:
         QVERIFY(window);
         auto *session = window->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
-        const auto pasting = [session] { return plain(session->property("pastingItem")).toMap(); };
+        auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
+        QVERIFY(readiness);
+        const auto pasting = [readiness] { return plain(readiness->property("pastingItem")).toMap(); };
 
         QCOMPARE(pasting().value(QStringLiteral("status")).toString(), QStringLiteral("Your words stay on the clipboard"));
         QCOMPARE(pasting().value(QStringLiteral("help")).toString(),
                  QStringLiteral("Needs Desktop accessibility and Virtual keyboard."));
-        QVERIFY(!session->property("pastingNeeded").toBool());
+        QVERIFY(!readiness->property("pastingNeeded").toBool());
 
         settings.set(QStringLiteral("keepOnClipboard"), false);
         QCOMPARE(pasting().value(QStringLiteral("status")).toString(), QStringLiteral("Nothing can deliver your words"));
-        QVERIFY(session->property("pastingNeeded").toBool());
-        QVERIFY(session->property("blocked").toBool());
+        QVERIFY(readiness->property("pastingNeeded").toBool());
+        QVERIFY(readiness->property("blocked").toBool());
         QVERIFY(session->property("caption").toString().contains(QStringLiteral("a way to deliver your words")));
     }
 
@@ -933,7 +935,7 @@ private slots:
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
         QuickApps apps(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -1015,7 +1017,7 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
         QuickApps apps(&controller);
@@ -1084,7 +1086,7 @@ private slots:
         keyboard.managed = true;
         controller.settings()->setYdotoolEnabled(true);
         StandInSystem standIn(&controller, keyboard);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickInsights insights(&controller);
         QuickHistory history(&controller);
         QuickApps apps(&controller);

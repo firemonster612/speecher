@@ -278,7 +278,7 @@ private slots:
         QuickSettings settings(&controller);
         // The card asks Library which services the profiles use.
         const QuickLibrary::ControllerScope library(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
@@ -300,7 +300,7 @@ private slots:
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
         // The card asks Library which services the profiles use.
         const QuickLibrary::ControllerScope library(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
@@ -330,7 +330,7 @@ private slots:
         settings.set(QStringLiteral("speechServices"), QVariantList{QVariantMap{{QStringLiteral("service"), QStringLiteral("local")}}});
         settings.set(QStringLiteral("refinementEnabled"), false);
         const QuickLibrary::ControllerScope library(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
@@ -359,7 +359,7 @@ private slots:
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
         const QuickLibrary::ControllerScope library(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/ServiceStatus.qml")));
@@ -380,7 +380,7 @@ private slots:
         QVERIFY(!useExpiredCodexAccount(*controller.settings(), dir.path()).isEmpty());
         QuickSettings settings(&controller);
         const QuickLibrary::ControllerScope library(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/ServiceStatus.qml")));

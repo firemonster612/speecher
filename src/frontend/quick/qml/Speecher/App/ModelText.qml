@@ -32,6 +32,12 @@ QtObject {
         return ({ codex: "chatgpt", openai: "chatgpt", claude: "claude", anthropic: "claude", local: "computer",
                   endpoint: "servers" })[id] || ""
     }
+    // The Services row a link to that card lands on, for a role's service.
+    function servicesRow(role, id) {
+        return ({ chatgpt: "openAiAuthMode", claude: "anthropicAuthMode",
+                  computer: role === "speech" ? "speechLocalModel" : "localRunner",
+                  servers: role === "speech" ? "speechEndpointUrl" : "refinementEndpointUrl" })[cardOf(id)] || ""
+    }
 
     // Speech services ----------------------------------------------------------
 
