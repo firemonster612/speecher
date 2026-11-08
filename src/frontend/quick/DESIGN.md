@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -35,7 +35,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Phone` (`host/QuickPhone`), `Removal`
   (`host/QuickRemoval`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Audio`
+  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Apps`
+  (`host/QuickApps`), `Audio`
   (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
   (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
 - `Appearance` is what the desktop offers the look: `systemColors`, the
@@ -66,11 +67,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   outcome, and `RemovalReport` words it: under General's row, and alone in
   Main once the settings are deleted. The delivery steps are Settings rows
   (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
-  core keeps one on. The paste rules narrow them, and Pasting lists only
-  those that do as Exceptions: `categoryPasteRule_<type>` (`inherit` is no
-  rule of its own) and `applicationPasteRules`, a list of `{app, method,
-  enabled}`. `Insights.latest.appId` is the app last dictated into, for an
-  exception.
+  core keeps one on. Apps' and App Types' Pasting choices narrow them;
+  Pasting lists those that do, read-only, each opening in Apps.
 - `Models` is what core knows about the providers and running models here,
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
@@ -89,6 +87,18 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   sign-ins.
 - `Insights` carries core's summary for Home's period and the history
   General clears; `pages/home/words.js` words it.
+- `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
+  them: each App with what it sets, what core makes of it (`effective`) and
+  what each value would be without its own (`inherited`, with where from),
+  so the editor's "Same as …" options agree with dictation; the App Types,
+  Other apps' profile always set; the installed apps the platform's
+  `InstalledApps` lists, scanned off the UI thread once a session
+  (`refresh()`); and the apps dictated into lately (core's `SeenApps`,
+  kept only while insights are). `add`, `update`, `updateType` and
+  `remove`/`undo` save through core's `AppEdits`; `captureNext(seconds)` is
+  Switch to it, which captures the app in front as dictation does. Icons
+  come from the host's `image://appicon` provider. `schema/apps.js` words
+  all of it and holds the App Types' list.
 - `Accounts` shows the daemon's `Accounts` (`app/Accounts`), which runs
   each service's sign-in check on a worker and queues secret writes; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
@@ -121,8 +131,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
   Writing Profiles, custom tones
-  and cleanup levels, vocabulary terms, Learned Corrections, replacements and
-  app matches, read from and saved through the daemon's `SettingsStore`.
+  and cleanup levels, vocabulary terms, Learned Corrections and
+  replacements, read from and saved through the daemon's `SettingsStore`.
   `add(list, item)` and `update(list, key, patch)` (a key is the entry's id,
   term, phrase or app) return why core refused the entry (`blank`, `taken`,
   `incomplete`, `missing`, `builtIn`), empty when saved, and
@@ -133,7 +143,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `Settings.completeSetup()` records that the setup assistant finished.
 - `Navigation` is which page Main shows (`current`) and the row a page
   lands on (`pendingRow`); `go(pageId)` and `goToRow(pageId, rowId)` ask for
-  them. A link from one page to another (Open Accounts, App matches, a fix)
+  them. A link from one page to another (Open Accounts, Change in Apps, a fix)
   calls `follow(pageId, rowId)` instead, which remembers where it came from
   in `returnTo` until the person goes anywhere else, so the page it opens
   offers the way back (`goBack()`). A link in the setup assistant follows
@@ -189,8 +199,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   and state pages show. Keep their properties plain (strings, numbers, arrays
   of objects).
   Each list has one owner (speech services and refinement providers in `Models`, profiles, tones and
-  levels in `Library`, microphones in `Audio`, app types in the pasting
-  schema); every other place derives from it with the same ids.
+  levels in `Library`, microphones in `Audio`, Apps and App Types in
+  `Apps`, the App Types' names in the apps schema); every other place
+  derives from it with the same ids.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
@@ -413,14 +424,13 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- The sidebar is one list with no headings: eight top-level pages (Home,
-  Transcribe files, Dictation, Speech to text, Refinement, Pasting,
+- The sidebar is one list with no headings: nine top-level pages (Home,
+  Transcribe files, Dictation, Speech to text, Refinement, Apps, Pasting,
   Accounts, General), in the order a dictation goes, and their subpages. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: Microphone and Popup & sounds
   under Dictation, Local models under Speech to text, Writing profiles and
-  Vocabulary under Refinement, App recognition under Pasting, and Appearance
-  and Updates under General. Every page has settings of its own; none only lists its
+  Vocabulary under Refinement, and Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
@@ -592,7 +602,7 @@ Pictures of speech:
 - `RatingBars { bars; appearance: compact|wide }`: ratings out of ten.
 - `StepNode { number; title; detail; stage }`: one stop in a run of steps; wrappers lay them out and draw the lines.
 - `DiffText { segments; mode: marked|spoken|result }`: an edit marked like a proof; also `html(segments, mode)` for the same marks elsewhere.
-- `AppIcon { name; iconName }`, `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark), `Flag { code; size }` (a language's round flag, one per code, from the bundled circle-flags SVGs, the same on every platform).
+- `AppIcon { name; iconName; source }` (an installed app's icon from `image://appicon`, the initial until it loads or where there is none), `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark), `Flag { code; size }` (a language's round flag, one per code, from the bundled circle-flags SVGs, the same on every platform).
 
 Helpers:
 
