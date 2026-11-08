@@ -367,14 +367,20 @@ private slots:
         QCOMPARE(plan("direct_insert").value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "keep"}));
         QCOMPARE(plan("clipboard_only").value(QStringLiteral("route")).toStringList(), QStringList{"keep"});
         QVERIFY(plan("terminal_paste").value(QStringLiteral("needs")).toString().isEmpty());
+#ifdef Q_OS_LINUX
+        // Usable is what of the route this computer can run: here, without
+        // accessibility or a virtual keyboard, only Keep.
+        QCOMPARE(plan("inherit").value(QStringLiteral("usable")).toStringList(), QStringList{"keep"});
+#endif
 
         controller.settings()->edit([](AppSettings &draft) {
             draft.output.steps = {.insert = false, .press = true, .keep = false};
             return true;
         });
-        // Skip paste keys with Insert off leaves no step at all.
+        // Skip paste keys with Insert off leaves no step at all, which it
+        // doesn't rely on: it only takes Press away.
         QVERIFY(plan("direct_insert").value(QStringLiteral("route")).toStringList().isEmpty());
-        QCOMPARE(plan("direct_insert").value(QStringLiteral("needs")).toString(), QStringLiteral("insert"));
+        QVERIFY(plan("direct_insert").value(QStringLiteral("needs")).toString().isEmpty());
         QCOMPARE(plan("clipboard_only").value(QStringLiteral("needs")).toString(), QStringLiteral("keep"));
         QVERIFY(plan("terminal_paste").value(QStringLiteral("needs")).toString().isEmpty());
     }
@@ -699,11 +705,13 @@ private slots:
         QTRY_COMPARE(reason(), QStringLiteral("testing"));
     }
 
-    // Setup's Pasting step passes once a step that is on can get the words
-    // into the app, or waits only for the next sign-in; with nothing that
-    // can, only an explicit clipboard-only choice passes it, and only while
-    // the clipboard can hold the words.
-    void setupPastingPassesOnlyWhatCanDeliver()
+    // Setup words where the words end up as Home does, from its drafts
+    // rather than the saved switches: the Pasting step passes once a step
+    // that is on gets them into the app, and is needed only while they get
+    // nowhere at all. Words left on the clipboard leave it open but not
+    // needed. Setup counts as complete only once no needed step is open,
+    // and no step's check holds back another.
+    void setupPastingFollowsTheSharedOutcomeOfItsDrafts()
     {
         ApplicationController controller(true);
         QVERIFY(!controller.accessibility()->enabled());
@@ -721,33 +729,70 @@ private slots:
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
         QVERIFY2(choices, qPrintable(component.errorString()));
-        const auto delivery = [&choices] {
+        const auto step = [&choices](const char *id) {
             for (const QVariant &step : plain(choices->property("steps")).toList()) {
-                if (step.toMap().value(QStringLiteral("id")) == QLatin1String("delivery")) {
+                if (step.toMap().value(QStringLiteral("id")) == QLatin1String(id)) {
                     return step.toMap();
                 }
             }
             return QVariantMap();
         };
-        // A keyboard that waits for the next sign-in is as far as this
-        // computer gets now.
-        QVERIFY(delivery().value(QStringLiteral("done")).toBool());
+        const auto delivery = [&step] { return step("delivery"); };
 
-        keyboard.installed = YdotoolSetupState::NotInstalled;
-        keyboard.managed = false;
-        standIn.virtualKeyboard.refresh();
-        QTRY_VERIFY(!delivery().value(QStringLiteral("done")).toBool());
-        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Nothing can deliver your words yet"));
-        // Keep off doesn't pass either.
-        choices->setProperty("keep", false);
+        // A keyboard waiting for the next sign-in can't press the keys yet,
+        // so the words stay on the clipboard, as Home says.
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
         QVERIFY(!delivery().value(QStringLiteral("done")).toBool());
+        QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Your words stay on the clipboard"));
 
-        QVERIFY(QMetaObject::invokeMethod(choices.get(), "continueWithClipboardOnly"));
-        QVERIFY(!choices->property("insert").toBool());
-        QVERIFY(!choices->property("press").toBool());
-        QVERIFY(choices->property("keep").toBool());
-        QVERIFY(delivery().value(QStringLiteral("done")).toBool());
-        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Clipboard"));
+        // Keep off in the drafts leaves nothing, though the saved switches
+        // still keep the words.
+        choices->setProperty("keep", false);
+        QVERIFY(delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Nothing can deliver your words"));
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+        QCOMPARE(plain(choices->property("delivery")).toMap().value(QStringLiteral("outcome")).toString(),
+                 standIn.system.deliveryWith(true, true, false).value(QStringLiteral("outcome")).toString());
+
+        // A keyboard that is ready gets them in with Press alone, Keep off.
+        keyboard.installed = YdotoolSetupState::Ready;
+        controller.settings()->setYdotoolEnabled(true);
+        standIn.virtualKeyboard.refresh();
+        choices->setProperty("insert", false);
+        QTRY_VERIFY(delivery().value(QStringLiteral("done")).toBool());
+        QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Paste keys"));
+
+        // Refinement and the shortcut are never needed. Speech and the
+        // microphone are, until they pass, and keep setup from being
+        // complete; nothing else stops it.
+        QVERIFY(!step("refinement").value(QStringLiteral("needed")).toBool());
+        QVERIFY(!step("shortcut").value(QStringLiteral("needed")).toBool());
+        QVERIFY(step("microphone").value(QStringLiteral("needed")).toBool());
+        QVERIFY(!choices->property("complete").toBool());
+    }
+
+    // The outcome for given switches is the one for the saved switches
+    // once they are saved.
+    void deliveryWithAnswersForTheSwitchesItIsGiven()
+    {
+        ApplicationController controller(true);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        const auto outcome = [&standIn](bool insert, bool press, bool keep) {
+            return standIn.system.deliveryWith(insert, press, keep).value(QStringLiteral("outcome")).toString();
+        };
+        QCOMPARE(outcome(true, true, true), QStringLiteral("clipboard"));
+        QCOMPARE(outcome(true, true, false), QStringLiteral("nothing"));
+        QCOMPARE(outcome(false, false, true), QStringLiteral("clipboard"));
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.output.steps = {.insert = true, .press = true, .keep = false};
+            return true;
+        });
+        QCOMPARE(standIn.system.pastingOutcome(), outcome(true, true, false));
+        QCOMPARE(standIn.system.deliverySteps(),
+                 standIn.system.deliveryWith(true, true, false).value(QStringLiteral("steps")).toList());
     }
 
     // Home shows pasting as one row, with what is missing by name: the
@@ -895,7 +940,8 @@ private slots:
         // does here, but the virtual keyboard only as part of Pasting.
         const QHash<QString, bool> home = rowsShown("HomePage");
         QVERIFY(!home.value(QStringLiteral("virtualKeyboardHealth")));
-        QVERIFY(home.value(QStringLiteral("microphoneAccess")));
+        // Microphone access is part of the Microphone row.
+        QVERIFY(!home.value(QStringLiteral("microphoneAccess")));
         const QHash<QString, bool> general = rowsShown("GeneralPage");
         QCOMPARE(general.value(QStringLiteral("removeSpeecher")), onLinux);
         QCOMPARE(general.value(QStringLiteral("removeSpeecherGuide")), !onLinux);
@@ -976,20 +1022,70 @@ private slots:
             expected.prepend(QStringLiteral("type:terminal"));
         }
         QCOMPARE(exceptions(), expected);
-        const auto result = [section](const char *method) {
+        // What an exception does here, as its row and the add form say it.
+        const auto result = [section](const char *method, const char *type = "", bool off = false) {
             QVariant text;
             QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text),
-                                      Q_ARG(QVariant, QString::fromLatin1(method)));
+                                      Q_ARG(QVariant, QString::fromLatin1(method)), Q_ARG(QVariant, QString::fromLatin1(type)),
+                                      Q_ARG(QVariant, off));
             return text.toString();
         };
-        QCOMPARE(result("direct_insert"), QStringLiteral("Insert, keep a copy"));
         QCOMPARE(result("clipboard_only"), QStringLiteral("Clipboard only"));
+        QCOMPARE(result("clipboard_only", "", true), QStringLiteral("Off, so the app follows the other rules"));
+#ifdef Q_OS_LINUX
+        // Without accessibility only the copy it keeps can run here.
+        QCOMPARE(result("direct_insert"), QStringLiteral("Clipboard only. Insert can't run here yet"));
+#endif
+        // AI coding apps in a terminal follow a Terminals exception.
+        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
+        QVERIFY(!result("clipboard_only", "ai_coding").contains(QStringLiteral("Terminals")));
+        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("clipboard_only"));
+        QCOMPARE(result("clipboard_only", "ai_coding"),
+                 QStringLiteral("Clipboard only. A Terminals exception wins for apps in a terminal"));
+        QVERIFY(!result("clipboard_only", "browser").contains(QStringLiteral("Terminals")));
 
         // An exception that relies on an off step, and leaves none, says so.
         settings.set(QStringLiteral("keepOnClipboard"), false);
         settings.set(QStringLiteral("insertThroughAccessibility"), false);
         QCOMPARE(result("clipboard_only"), QStringLiteral("No delivery: Keep is off"));
     }
+
+#ifdef Q_OS_LINUX
+    // With Press the only step that runs, skipping the paste keys leaves
+    // nothing that can run here, whatever Insert's switch says; and a ready
+    // Press doesn't hide that selection edits can't read the selection.
+    void withOnlyPressRunningPastingSaysWhatIsMissing()
+    {
+        ApplicationController controller(true);
+        QVERIFY(!controller.accessibility()->enabled());
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        keyboard.installed = YdotoolSetupState::Ready;
+        keyboard.managed = true;
+        controller.settings()->setYdotoolEnabled(true);
+        StandInSystem standIn(&controller, keyboard);
+        QuickModels models(&controller);
+        QuickInsights insights(&controller);
+        QuickNavigation navigation(nullptr);
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
+        const std::unique_ptr<QObject> page(component.create());
+        QVERIFY2(page, qPrintable(component.errorString()));
+        QObject *section = page->findChild<QObject *>(QStringLiteral("appPasteRules"));
+        QVERIFY(section);
+        QVariant text;
+        QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, QStringLiteral("direct_insert")),
+                                  Q_ARG(QVariant, QString()), Q_ARG(QVariant, false));
+        QCOMPARE(text.toString(), QStringLiteral("No delivery: nothing it allows can run here"));
+        QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, QStringLiteral("terminal_paste")),
+                                  Q_ARG(QVariant, QString()), Q_ARG(QVariant, false));
+        QCOMPARE(text.toString(), QStringLiteral("Press Ctrl+Shift+V. Insert can't run here yet"));
+        QCOMPARE(page->property("_selectionLimit").toString(),
+                 QStringLiteral("Reading the selection needs Desktop accessibility, which Insert above turns on."));
+    }
+#endif
 };
 
 int runQuickSystemTests(int argc, char **argv)

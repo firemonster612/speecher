@@ -30,9 +30,13 @@ var text = {
     back: "Back",
     getStarted: "Get started",
     continue_: "Continue",
-    waits: "Continue opens once this step passes its check.",
-    // The last step's button closes setup; it starts nothing.
+    // The last step's button closes setup; it starts nothing. While a step
+    // dictation needs is open it saves what was chosen, and setup opens
+    // again next time, which the line beside it says.
     finish: "Finish setup",
+    finishForNow: "Finish for now",
+    stillMissing: titles => (titles.length > 1 ? titles.slice(0, -1).join(", ") + " and " + titles[titles.length - 1] + " still need"
+                                               : titles[0] + " still needs") + " attention, so setup opens again next time.",
     needs: "Dictation needs these:",
     allPassed: "Every step passed its check.",
     almostReady: "Almost ready",
@@ -49,28 +53,19 @@ var text = {
     downloadModelHelp: "The download keeps going while you finish setup.",
     optional: "Optional.",
     cleanupNotReady: "Cleanup isn't ready",
-    cleanupNotReadyHelp: "Fix it above to continue, or skip cleanup and Speecher pastes your words as spoken.",
-    skipCleanup: "Skip cleanup",
-    // The Pasting step's verdict, by the steps on, or what is missing.
+    cleanupNotReadyHelp: "Until it works, Speecher pastes your words as spoken. Fix it above, or later on the Refinement page.",
+    // The Pasting step's verdict once the words get into the app, by the
+    // steps on; otherwise Schema.pasting.outcomes says where they end up.
     stepNames: { insert: "Insert", press: "Paste keys", keep: "Clipboard" },
-    nothingDelivers: "Nothing can deliver your words yet",
-    clipboardOnly: "Continue with clipboard only",
-    clipboardOnlyHelp: "Speecher turns off Insert and the paste keys and leaves your words on the clipboard for you to paste. You can turn them on later on the Pasting page.",
     // Under the steps, on Linux and macOS: what accessibility does besides.
     accessibilityAlso: os === "osx"
         ? "Accessibility also lets Speecher tell apps apart and read the text around your cursor."
         : "Desktop accessibility also lets Speecher tell apps apart and read the text around your cursor.",
     commandOnly: "The speecher command",
+    // Ready, where the desktop gives no shortcut.
+    startWithCommand: "Run this from a terminal or your own keybinding to dictate.",
     takesOver: label => label + " takes over"
 };
-
-// The needs a step may wait for and still pass, since this computer gets no
-// further now: a virtual keyboard waiting for the next sign-in. Its status
-// keeps saying so.
-function settled(need, checks) {
-    return need === "virtualKeyboard"
-        && (checks.find(c => c.id === "virtualKeyboardHealth") || {}).reason === "needsSignOut";
-}
 
 // Ready's heading over the steps still open: "2 steps need attention".
 function stepsOpen(count) { return count === 1 ? "One step needs attention" : count + " steps need attention"; }

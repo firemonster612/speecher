@@ -179,16 +179,16 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
 void YdotoolDelivery::pasteFromClipboard(const QString &text,
                                          PasteMethod method,
                                          const std::function<void(std::function<void(bool)>)> &clearToInject,
-                                         std::function<void(bool, const QString &)> done)
+                                         PasteDone done)
 {
     if (text.isEmpty()) {
-        done(true, {});
+        done(true, false, {});
         return;
     }
 
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
     if (executable.isEmpty()) {
-        done(false, QStringLiteral("ydotool is not installed"));
+        done(false, true, QStringLiteral("ydotool is not installed"));
         return;
     }
 
@@ -214,7 +214,7 @@ void YdotoolDelivery::pasteFromClipboard(const QString &text,
                 return;
             }
             if (!clear) {
-                done(false, QStringLiteral("The active window changed or could not be verified"));
+                done(false, true, QStringLiteral("The active window changed or could not be verified"));
                 return;
             }
             self->pressPasteKeys(paste, release, done);
@@ -230,9 +230,7 @@ void YdotoolDelivery::pasteFromClipboard(const QString &text,
     });
 }
 
-void YdotoolDelivery::pressPasteKeys(const ProcessCommand &paste,
-                                     const ProcessCommand &release,
-                                     std::function<void(bool, const QString &)> done)
+void YdotoolDelivery::pressPasteKeys(const ProcessCommand &paste, const ProcessCommand &release, PasteDone done)
 {
     m_pasteUnderWay = PasteUnderWay{{}, release};
     // The paste's own answer, once the modifiers are released after it.
@@ -242,7 +240,9 @@ void YdotoolDelivery::pressPasteKeys(const ProcessCommand &paste,
             return;
         }
         m_pasteUnderWay.reset();
-        runProcess(release, this, [pasted, done](const ProcessResult &) { done(pasted.ok, pasted.error); });
+        runProcess(release, this, [pasted, done](const ProcessResult &) {
+            done(pasted.ok, pasted.failedToStart, pasted.error);
+        });
     });
     // A command that failed to start has answered already.
     if (m_pasteUnderWay) {

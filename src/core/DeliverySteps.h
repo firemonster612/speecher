@@ -64,9 +64,9 @@ QString deliveryStepName(DeliveryStep step);
 DeliveryPlan deliveryPlan(const DeliverySteps &steps, PasteMethod method);
 
 // The step a rule with this method relies on that steps leave off, so the
-// rule can't do what it says: Terminal paste needs Press, Direct insertion
-// needs Insert, Clipboard only needs Keep. Nothing for Standard paste, which
-// only follows the steps.
+// rule can't do what it says: Terminal paste needs Press, Clipboard only
+// needs Keep. Nothing for Standard paste, which only follows the steps, nor
+// for Direct insertion, which only takes Press away.
 std::optional<DeliveryStep> stepRuleNeeds(const DeliverySteps &steps, PasteMethod method);
 
 } // namespace speecher

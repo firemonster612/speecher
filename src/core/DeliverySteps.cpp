@@ -76,11 +76,10 @@ std::optional<DeliveryStep> stepRuleNeeds(const DeliverySteps &steps, PasteMetho
     switch (method) {
     case PasteMethod::TerminalPaste:
         return needs(DeliveryStep::Press);
-    case PasteMethod::DirectInsert:
-        return needs(DeliveryStep::Insert);
     case PasteMethod::ClipboardOnly:
         return needs(DeliveryStep::Keep);
     case PasteMethod::StandardPaste:
+    case PasteMethod::DirectInsert:
         break;
     }
     return std::nullopt;

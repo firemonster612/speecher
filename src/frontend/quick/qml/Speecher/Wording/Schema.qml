@@ -101,7 +101,9 @@ QtObject {
     // then keywords, section and help. A subpage also matches its parent's
     // title, so searching for a page finds the pages under it; a subpage
     // and its rows carry the path to it as their trail.
-    function search(query, limit, has) {
+    // extra are rows that aren't in the schema, such as saved exceptions,
+    // searched the same way; each carries its own type.
+    function search(query, limit, has, extra) {
         const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0)
         if (!words.length) return []
         const score = (fields) => {
@@ -133,10 +135,10 @@ QtObject {
             if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon,
                                       trail: p.parent ? trail(p.id) : "", score: s + 4 })
         }
-        for (const r of rows) {
+        for (const r of rows.concat(extra || [])) {
             const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
-            if (s > 0 && !r.opens && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
+            if (s > 0 && !r.opens && available(r, has)) results.push({ type: r.type || "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
                                       trail: rowTrail(r), score: s })
         }
         results.forEach((r, i) => r.order = i)

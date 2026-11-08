@@ -30,7 +30,8 @@ Plate {
     property real _travel: 1       // 0 to 1 along the route
     property int _typed: sample.length
 
-    height: 156
+    // Taller by each line the caption wraps onto.
+    height: 156 + routeCaption.height * (routeCaption.lineCount - 1) / Math.max(1, routeCaption.lineCount)
     clip: true
 
     readonly property int _pad: Theme.space6
@@ -174,8 +175,10 @@ Plate {
         }
     }
 
-    // Centred under the route it describes, from the first node to the app.
+    // Centred under the route it describes, from the first node to the app,
+    // wrapping where it is longer.
     Txt {
+        id: routeCaption
         width: Math.min(implicitWidth, root._endX - root._startX)
         x: (root._startX + root._endX - width) / 2
         anchors.bottom: parent.bottom
@@ -183,6 +186,8 @@ Plate {
         text: root.caption
         variant: "small"
         tone: "secondary"
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
     }
 
     property bool _ready: false

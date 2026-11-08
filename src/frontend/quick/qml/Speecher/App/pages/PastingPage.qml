@@ -17,7 +17,6 @@ Page {
 
     readonly property var _steps: System.deliverySteps
     function _runs(id) { return _steps.some(s => s.id === id && s.on && s.ready) }
-    readonly property bool _keeps: _steps.some(s => s.id === "keep" && s.on)
     // The steps that are on, in words, each marked where this computer
     // can't run it yet: [{ icon, label, ready }].
     readonly property var _route: _steps.filter(s => s.on).map(s => Object.assign({ id: s.id, ready: s.ready }, ({
@@ -25,28 +24,42 @@ Page {
         press: { icon: "keyboard", label: "Copy, press " + Schema.pasting.pasteKeys },
         keep: { icon: "clipboard", label: "Keep on clipboard" }
     })[s.id]))
-    // Whether the words can get past the clipboard into the app.
-    readonly property bool _reachesApp: _runs("insert") || _runs("press")
+    // Where the words end up (System.pastingOutcome): the words reach the
+    // app, or stay on a clipboard Keep can use.
+    readonly property bool _reachesApp: System.pastingOutcome === "delivers"
+    readonly property bool _keeps: _runs("keep")
     readonly property string _routeCaption: {
         // What the steps that are on but can't run yet wait for, by name.
-        const waiting = [...new Set([].concat(..._steps.filter(s => s.on && s.id !== "keep").map(s => s.waiting))
+        const waiting = [...new Set([].concat(..._steps.filter(s => s.on).map(s => s.waiting))
                                       .map(n => Schema.pasting.needs[n].label))].join(" or ")
         if (!_reachesApp && _keeps)
             return waiting ? "Your words stay on the clipboard until " + waiting + " is ready."
                            : "Your words stay on the clipboard for you to paste."
         if (!_reachesApp)
             return "Nothing delivers your words until " + waiting + " is ready."
-        // Insertion writes plain text whatever the format.
+        // Insertion writes plain text whatever the format, and so does a
+        // paste through wl-copy, without Speecher's clipboard helper.
         const formatted = Settings.values.outputFormat === "html"
         const delivers = !formatted || !_runs("press") ? "Delivers plain text"
+                       : !System.copiesFormatted ? "Delivers plain text until Speecher's clipboard helper is available"
                        : _runs("insert") ? "Plain text when inserted, formatted when pasted" : "Delivers formatted text"
         if (_keeps) return delivers + ", and leaves a copy on your clipboard."
         if (!_runs("press")) return delivers + ", and leaves your clipboard alone."
         return delivers + ". After a paste your clipboard goes back, unless Speecher can't confirm the paste, which leaves your words there."
     }
-    // Whether the steps can replace selected text: Linux inserts without
-    // replacing a selection, so there only the paste keys can.
-    readonly property bool _editsSelections: Qt.platform.os === "linux" ? _runs("press") : _reachesApp
+    // Why a selection edit can't be reviewed now, or "": reading the
+    // selection needs accessibility (Windows' needs no permission), then
+    // applying an edit needs a step that can replace it, which on Linux,
+    // where insertion can't, is Press.
+    readonly property string _selectionLimit: {
+        const reads = Qt.platform.os === "windows" || System.accessibility
+        const applies = Qt.platform.os === "linux" ? _runs("press") : _reachesApp
+        return [reads ? "" : "Reading the selection needs " + Schema.pasting.needs.accessibility.label
+                             + (Qt.platform.os === "linux" ? ", which Insert above turns on." : "."),
+                applies ? "" : Qt.platform.os === "linux" ? "Applying an edit needs Press the paste keys, on and ready."
+                                                          : "Applying an edit needs Insert or Press to run."]
+            .filter(s => s).join(" ")
+    }
 
     Section {
         plain: true
@@ -67,7 +80,8 @@ Page {
 
     Section {
         title: Schema.row("insertThroughAccessibility").section
-        caption: "Speecher tries these in order. Turn off any you don't want; one always stays on."
+        caption: ["Speecher tries these in order. Turn off any you don't want; one always stays on.", Schema.pasting.noNeeds]
+            .filter(s => s).join(" ")
         DeliveryStepRow {
             rowId: "insertThroughAccessibility"
             AccessibilityMenu {}
@@ -105,12 +119,8 @@ Page {
         SchemaRow { rowId: "outputFormat" }
         SchemaRow {
             rowId: "reviewSelectionEdits"
-            // A saved preference the steps can't act on says so.
-            note: spec.help + (!page._editsSelections && Settings.values.reviewSelectionEdits
-                ? " " + (Qt.platform.os === "linux"
-                         ? "Your steps can't replace selected text now: on Linux that needs Press the paste keys, ready and on."
-                         : "Your steps can't replace selected text now: neither Insert nor Press can run.")
-                : "")
+            // A saved preference this computer can't act on says why.
+            note: spec.help + (Settings.values.reviewSelectionEdits && page._selectionLimit ? " " + page._selectionLimit : "")
         }
     }
 

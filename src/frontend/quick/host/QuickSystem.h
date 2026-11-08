@@ -13,6 +13,7 @@ namespace speecher {
 
 class ApplicationController;
 class QuickRemoval;
+struct DeliverySteps;
 
 // The UI's System singleton: what Speecher knows and does about the computer
 // it runs on. The permission and health checks with their fixes, the virtual
@@ -33,6 +34,9 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
     Q_PROPERTY(QVariantList deliverySteps READ deliverySteps NOTIFY changed)
     Q_PROPERTY(QString pastingOutcome READ pastingOutcome NOTIFY changed)
+    Q_PROPERTY(bool copiesFormatted READ copiesFormatted CONSTANT)
+    Q_PROPERTY(bool waylandSession READ waylandSession CONSTANT)
+    Q_PROPERTY(bool identifiesAppsWithoutAccessibility READ identifiesAppsWithoutAccessibility CONSTANT)
     Q_PROPERTY(bool hasVirtualKeyboard READ hasVirtualKeyboard CONSTANT)
     Q_PROPERTY(bool hasGlobalShortcuts READ hasGlobalShortcuts NOTIFY changed)
     Q_PROPERTY(bool canOpenShortcutSettings READ canOpenShortcutSettings CONSTANT)
@@ -89,12 +93,26 @@ public:
     // that is on gets them into the app), clipboard (none can, and Keep
     // leaves them there) or nothing.
     QString pastingOutcome() const;
+    // deliverySteps and pastingOutcome for these switches rather than the
+    // saved ones, as {steps, outcome}: the setup assistant's drafts.
+    Q_INVOKABLE QVariantMap deliveryWith(bool insert, bool press, bool keep) const;
     // What a Paste Rule with this method (core's name, such as
     // terminal_paste; any other, such as inherit, is Standard paste) does
-    // with the steps: {route, needs}, route the steps it leaves on in order
-    // (DeliveryPlan::route) and needs the off step it relies on, by id, or
-    // empty (stepRuleNeeds).
+    // with the steps: {route, usable, needs}, route the steps it leaves on
+    // in order (DeliveryPlan::route), usable those of them this computer
+    // can run now, and needs the off step it relies on, by id, or empty
+    // (stepRuleNeeds).
     Q_INVOKABLE QVariantMap rulePlan(const QString &method) const;
+    // Whether a paste can carry formatted text here: not in a Wayland
+    // session without Speecher's clipboard helper, where wl-copy copies
+    // plain text only.
+    bool copiesFormatted() const;
+    // Whether this is a Wayland session, whose clipboard takes helpers.
+    bool waylandSession() const;
+    // Whether Speecher can tell which app is in front without accessibility,
+    // if not always how to treat it: from the system on macOS and Windows,
+    // from KWin on Plasma. Elsewhere on Linux it has no way to.
+    bool identifiesAppsWithoutAccessibility() const;
     // Whether this computer has the virtual keyboard: its check and its
     // setup, under Press (PasteKeys::hasVirtualKeyboard).
     bool hasVirtualKeyboard() const;
@@ -143,6 +161,8 @@ signals:
 private:
     // The check with this id, as in checks, or an empty map.
     QVariantMap check(const QString &id) const;
+    // deliverySteps for these switches.
+    QVariantList stepEntries(const DeliverySteps &steps) const;
     // Forgets the check's failures as something new is tried on it.
     void clearFailures(const QString &id);
 

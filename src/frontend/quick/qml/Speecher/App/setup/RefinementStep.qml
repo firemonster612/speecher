@@ -35,14 +35,13 @@ StepPage {
         }
         // How to sign in to the chosen provider, as on Refinement.
         RefinerSignInRow { providerId: page.choices.cleanup }
-        // A provider that can't clean up yet holds the step until it can,
-        // or until you skip cleanup and keep your words as spoken.
+        // A provider that can't clean up yet says what that means; setup
+        // goes on with it chosen.
         SettingRow {
             readonly property var provider: ModelText.provider(page.choices.cleanup)
             shown: page.choices.cleanup !== "none" && provider.state !== "ready"
             title: Setup.text.cleanupNotReady
             help: Setup.text.cleanupNotReadyHelp
-            Button { text: Setup.text.skipCleanup; size: "small"; onClicked: page.choices.cleanup = "none" }
         }
         Reveal {
             id: runner

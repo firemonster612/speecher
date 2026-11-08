@@ -26,6 +26,9 @@ public:
     static bool isAvailable();
     static bool isWaylandSession();
     static bool canSnapshot();
+    // Whether restore can put every format of snapshot back: wl-copy offers
+    // one, so a snapshot of several needs Speecher's clipboard helper.
+    static bool canRestore(const ClipboardSnapshot &snapshot);
     static void capture(QObject *context, std::function<void(const ClipboardCaptured &)> done);
     // Restores the snapshot unless something copied over our dictation in the
     // meantime; says keptNewerCopy when it deliberately leaves that copy alone.

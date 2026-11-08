@@ -173,6 +173,11 @@ bool WlClipboardDelivery::canSnapshot()
     return !WaylandClipboardProcess::wlPasteExecutable().isEmpty();
 }
 
+bool WlClipboardDelivery::canRestore(const ClipboardSnapshot &snapshot)
+{
+    return snapshot.parts.size() <= 1 || !WaylandClipboardProcess::helperExecutable().isEmpty();
+}
+
 void WlClipboardDelivery::copy(const DeliveryContent &content,
                                QObject *context,
                                std::function<void(const ClipboardCopied &)> done)
@@ -349,11 +354,11 @@ void WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot,
         WaylandClipboardOwner::start(helper, parts, context, answer);
         return;
     }
-    if (parts.size() == 1) {
-        copyBytes(parts.first().data, parts.first().mimeType, context, answer);
+    if (!canRestore(snapshot)) {
+        answer(false, QStringLiteral("Multi-format clipboard restoration needs Speecher's Wayland clipboard helper"));
         return;
     }
-    answer(false, QStringLiteral("Multi-format clipboard restoration needs Speecher's Wayland clipboard helper"));
+    copyBytes(parts.first().data, parts.first().mimeType, context, answer);
 }
 
 } // namespace speecher

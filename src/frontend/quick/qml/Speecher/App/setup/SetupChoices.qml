@@ -6,14 +6,14 @@ import Speecher.App
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()
 // writes them back. A step is done when its check passes: speech once the
-// chosen service or one of its fallbacks works, Pasting once a step that is
-// on can get words into the app, or waits only for what this computer can't
-// do before the next sign-in (Setup.settled), or once only Keep is on and
-// can run, which continueWithClipboardOnly chooses. One rule gates
-// Continue, Finish, Skip and the rail: a step can be reached once every step
-// before it is done. A check only asks for what its step shows and lets you
-// fix there. Refinement passes with None or a provider that works.
-// goTo asks the assistant to show another step, by id.
+// chosen service or one of its fallbacks works, the microphone once it
+// hears you, Pasting once a step that is on gets words into the app (the
+// outcome Home and the Pasting page show, from the drafts), Refinement with
+// None or a provider that works. Speech, the microphone and Pasting with
+// nothing to deliver the words are needed: setup is complete without the
+// others but not without these. No step holds back another. A check only
+// asks for what its step shows and lets you fix there. goTo asks the
+// assistant to show another step, by id.
 //
 // The shortcut step has no draft: its rows write Settings as you record, as
 // the existing assistant binds shortcuts live, so the shortcut can be tried
@@ -33,26 +33,15 @@ QtObject {
 
     signal goTo(string stepId)
 
-    // Setup.steps, each with done and verdict: what was chosen once it
-    // passes, or what is missing.
-    readonly property var steps: Setup.steps.map(s => Object.assign({}, s, _status(s.id)))
-
-    // Whether a delivery step can run as the drafts choose it: nothing it
-    // waits for but what settles. Saving the clipboard is Keep off's need,
-    // and Keep only needs the clipboard to take the words, as Press does.
-    function stepRuns(id) {
-        if (id === "keep") return !System.deliverySteps.some(s => (s.waiting || []).includes("clipboard"))
-        const step = System.deliverySteps.find(s => s.id === id) || {}
-        return (step.waiting || []).every(n => (n === "clipboardSave" && keep) || Setup.settled(n, System.checks))
-    }
-    // Words left on the clipboard is all that can run: Keep can, and
-    // Insert and Press are off.
-    function continueWithClipboardOnly() {
-        insert = false
-        press = false
-        keep = true
-        goTo(steps[steps.findIndex(s => s.id === "delivery") + 1].id)
-    }
+    // The delivery steps as the drafts set them, and where the words end
+    // up: System.deliveryWith.
+    readonly property var delivery: System.deliveryWith(insert, press, keep)
+    // Setup.steps, each with done, needed (not done, and dictation can't
+    // work without it) and verdict: what was chosen once it passes, or
+    // what is missing.
+    readonly property var steps: Setup.steps.map(s => Object.assign({ needed: false }, s, _status(s.id)))
+    // Whether every needed step passes, so finishing records setup as done.
+    readonly property bool complete: steps.every(s => !s.needed)
 
     function _status(id) {
         switch (id) {
@@ -68,7 +57,8 @@ QtObject {
             const fallback = (Settings.values.speechFallbackList || []).filter(id => id !== speech)
                 .map(id => ModelText.service(id)).find(s => s.state === "ready")
             const ready = !!service && (service.state === "ready" || downloading)
-            return { done: ready || (!!service && !!fallback),
+            const done = ready || (!!service && !!fallback)
+            return { done: done, needed: !done,
                      verdict: !service ? Setup.text.notChosen : ready ? service.label
                                           : fallback ? Setup.text.takesOver(fallback.label)
                                           : service.state !== "unknown" ? ModelText.status(service)
@@ -81,15 +71,18 @@ QtObject {
             const microphone = Settings.values.audioDevice || ""
             const device = Microphones.deviceOptions.find(o => o.id === microphone)
             const present = microphone === "" ? Audio.hasMicrophones : Audio.devices.some(d => d.id === microphone)
-            return { done: access.state === "ok" && present && Audio.heard,
+            const done = access.state === "ok" && present && Audio.heard
+            return { done: done, needed: !done,
                      verdict: access.state !== "ok" ? Health.status(access) : present && !Audio.heard ? Schema.row("microphoneTest").notHeardText : device ? device.label : "" }
         }
         case "delivery": {
-            const delivers = (insert && stepRuns("insert")) || (press && stepRuns("press"))
-            const done = delivers || (!insert && !press && keep && stepRuns("keep"))
-            return { done: done, verdict: done ? ["insert", "press", "keep"].filter(step => choices[step])
-                                                     .map(step => Setup.text.stepNames[step]).join(", ")
-                                               : Setup.text.nothingDelivers }
+            // Words that stay on the clipboard still get somewhere, so only
+            // nothing at all is needed.
+            const outcome = delivery.outcome
+            return { done: outcome === "delivers", needed: outcome === "nothing",
+                     verdict: outcome === "delivers" ? ["insert", "press", "keep"].filter(step => choices[step])
+                                                           .map(step => Setup.text.stepNames[step]).join(", ")
+                                                     : Schema.pasting.outcomes[outcome] }
         }
         case "refinement": {
             // None is a valid answer; a provider counts once it works, so
@@ -109,9 +102,6 @@ QtObject {
             return { done: true, verdict: "" }
         }
     }
-
-    // Whether the step at index can be shown: every step before it is done.
-    function reachable(index) { return steps.slice(0, index).every(s => s.done) }
 
     function finish() {
         Settings.set("speechProvider", speech)

@@ -452,10 +452,13 @@ private slots:
         QVERIFY(session);
         QVERIFY(session->property("blocked").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
-        // Every check is listed, in its group: microphone access is what
-        // dictation needs, the shortcut what it works without.
-        QCOMPARE(session->property("neededChecks").value<QJSValue>().toVariant().toStringList(), QStringList{QStringLiteral("microphoneAccess")});
+        // Every check is listed, in its group: the shortcut is what
+        // dictation works without. Microphone access isn't a row of its own
+        // but the Microphone row's, which says what is missing.
+        QVERIFY(session->property("neededChecks").value<QJSValue>().toVariant().toStringList().isEmpty());
         QVERIFY(session->property("optionalChecks").value<QJSValue>().toVariant().toStringList().contains(QStringLiteral("globalShortcuts")));
+        const QVariantMap microphone = session->property("microphoneItem").value<QJSValue>().toVariant().toMap();
+        QCOMPARE(microphone.value(QStringLiteral("state")).toString(), QStringLiteral("missing"));
 
         // Delegates hang off the visual tree, not the object tree.
         QQuickItem *row = nullptr;
@@ -500,6 +503,39 @@ private slots:
         QVERIFY(!session->property("cantStart").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
         QCOMPARE(session->property("caption").toString(), QStringLiteral("Dictation needs a working speech service."));
+    }
+
+    // A speech service nobody has checked yet isn't ready: Home says so in
+    // its title and lists it, while Start dictation stays, to try it.
+    void homeCountsAnUncheckedSpeechServiceAsOutstanding()
+    {
+        failOnUnexpectedWarnings();
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("endpoint"));
+        settings.set(QStringLiteral("speechEndpointUrl"), QStringLiteral("http://127.0.0.1:9/v1"));
+        QuickDictation dictation(&controller);
+        QuickNavigation navigation(nullptr);
+        QuickInsights insights(&controller);
+        test::SystemSingletons system(&controller);
+        QuickAudio audio(&controller, nullptr, oneMicrophone);
+        QuickModels models(&controller);
+
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nimport Speecher.App\n"
+                          "Window { width: 1100; height: 900; property alias home: page\n"
+                          "    HomePage { id: page; anchors.fill: parent } }",
+                          QUrl());
+        std::unique_ptr<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
+        QVERIFY(session);
+        QCOMPARE(session->property("speechState").toString(), QStringLiteral("notChecked"));
+        QVERIFY(!session->property("allPass").toBool());
+        QVERIFY(!session->property("cantStart").toBool());
+        QCOMPARE(session->property("title").toString(), QStringLiteral("Speech to text isn't checked yet"));
+        QCOMPARE(session->property("caption").toString(), QStringLiteral("Start a dictation to try it."));
     }
 
     void learnedCorrectionsOpenTheirRows()

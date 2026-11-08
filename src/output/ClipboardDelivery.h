@@ -34,6 +34,8 @@ public:
     // backend can read: every offered format through wl-clipboard, plain text
     // and HTML through QClipboard.
     bool canSnapshot() const;
+    // Whether restore can put all of snapshot back on this clipboard.
+    bool canRestore(const ClipboardSnapshot &snapshot) const;
     void capture(QObject *context, std::function<void(const ClipboardCaptured &)> done);
     // With preserveNewCopy, a clipboard that someone else has since claimed is
     // left alone and keptNewerCopy is set; that still counts as restored.

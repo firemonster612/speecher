@@ -38,7 +38,9 @@ public:
                  std::function<void(const Outcome &)> done) override
     {
         m_ydotool.pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject,
-                                     [done](bool pasted, const QString &error) { done({pasted, false, error}); });
+                                     [done](bool pasted, bool noInputSent, const QString &error) {
+                                         done({pasted, noInputSent, error});
+                                     });
     }
 
 private:
@@ -75,6 +77,8 @@ public:
     {
         Outcome outcome;
         outcome.ok = MacPasteDelivery().paste(askedNow(clearToInject), &outcome.error);
+        // paste posts both key events or neither, so a failure sent nothing.
+        outcome.noInputSent = !outcome.ok;
         done(outcome);
     }
 };
@@ -93,7 +97,9 @@ public:
                  std::function<void(const Outcome &)> done) override
     {
         Outcome outcome;
-        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, askedNow(clearToInject), &outcome.error);
+        bool inputSent = false;
+        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, askedNow(clearToInject), &outcome.error, &inputSent);
+        outcome.noInputSent = !outcome.ok && !inputSent;
         done(outcome);
     }
 
@@ -169,8 +175,9 @@ public:
     {
     }
 
-    // Saves the clipboard. next hears why it could not, as a reason to put
-    // after "Not delivered: ", or nothing once it is saved.
+    // Saves the clipboard, and only one it can put back whole. next hears
+    // why it could not, as a reason to put after "Not delivered: ", or
+    // nothing once it is saved.
     void save(QObject *context, std::function<void(const QString &failure)> next)
     {
         if (!m_clipboard.canSnapshot()) {
@@ -184,11 +191,21 @@ public:
             return;
         }
         m_clipboard.capture(context, [this, next](const ClipboardCaptured &captured) {
-            m_saved = captured.ok;
+            if (!captured.ok) {
+                next(captured.error.isEmpty()
+                         ? QStringLiteral("your clipboard could not be saved first")
+                         : QStringLiteral("your clipboard could not be saved first: %1").arg(captured.error));
+                return;
+            }
+            // Found before the copy: once the words are on the clipboard,
+            // what was there is gone if it can't go back.
+            if (!m_clipboard.canRestore(captured.snapshot)) {
+                next(QStringLiteral("your clipboard holds several formats, and putting them back needs Speecher's clipboard helper"));
+                return;
+            }
+            m_saved = true;
             m_snapshot = captured.snapshot;
-            next(m_saved ? QString()
-                 : captured.error.isEmpty() ? QStringLiteral("your clipboard could not be saved first")
-                                            : QStringLiteral("your clipboard could not be saved first: %1").arg(captured.error));
+            next({});
         });
     }
 
@@ -499,7 +516,7 @@ private:
                                if (outcome.ok) {
                                    pasted();
                                } else {
-                                   finishPressFailed(outcome.error);
+                                   finishPressFailed(outcome.error, outcome.noInputSent);
                                }
                            }));
     }
@@ -591,11 +608,12 @@ private:
 
     // The keys did not go out, or failed; the words are on the clipboard
     // from the copy made for them. One that borrowed the clipboard gives it
-    // back where no key can have gone out: a backend asks the gate before it
-    // presses any.
-    void finishPressFailed(const QString &error)
+    // back where no key can have gone out: before the gate let them, since a
+    // backend asks it before it presses any, or where the backend knows it
+    // sent none.
+    void finishPressFailed(const QString &error, bool noInputSent = false)
     {
-        if (!steps().keep && !m_keysCleared) {
+        if (!steps().keep && (!m_keysCleared || noInputSent)) {
             m_previousClipboard.restore(this, whileRunning([this, error](bool restored) {
                 if (!restored) {
                     finishCopiedAfterPress(error);

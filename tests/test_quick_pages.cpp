@@ -1125,6 +1125,53 @@ private slots:
             ++checked;
         }
         QCOMPARE(checked, terminalKeysDiffer ? 3 : 2);
+        // What the long ID's exception does has a line of its own, whole.
+        QQuickItem *app = findItem(main->contentItem(), QStringLiteral("exception_app:org.example.AnApplicationWithAVeryLongDesktopId"));
+        QVERIFY(app);
+        QQuickItem *result = findItem(app, QStringLiteral("exceptionResult"));
+        QVERIFY(result);
+        QVERIFY(!result->property("text").toString().isEmpty());
+        QVERIFY(!result->property("truncated").toBool());
+    }
+
+    // A saved exception for one app is found by its ID or its rule, and the
+    // result lands on its row.
+    void searchFindsASavedExceptionAndLandsOnIt()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller)
+            .set(QStringLiteral("applicationPasteRules"),
+                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.example.FooEditor")},
+                                          {QStringLiteral("method"), QStringLiteral("clipboard_only")},
+                                          {QStringLiteral("enabled"), true}}});
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && search);
+        const QString rowId = QStringLiteral("exception_app:org.example.FooEditor");
+        const auto finds = [&search, &rowId](const QString &query) {
+            const auto results = searchResults(search, query);
+            return std::any_of(results.cbegin(), results.cend(), [&rowId](const auto &result) { return result.first == rowId; });
+        };
+        QMetaObject::invokeMethod(search, "open");
+        QVERIFY(finds(QStringLiteral("fooeditor")));
+        QVERIFY(finds(QStringLiteral("clipboard only exception")));
+        QVERIFY(!finds(QStringLiteral("terminal keys")));
+
+        const auto results = searchResults(search, QStringLiteral("org.example.fooeditor"));
+        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Pasting, Exceptions")));
+        QTest::keyClick(main, Qt::Key_Return);
+        QTRY_COMPARE(navigation->current(), QStringLiteral("pasting"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), rowId)));
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+        QVERIFY(row->property("selected").toBool());
+        QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
     }
 
     // Undo after deleting an app's paste rule puts it back, even once the
@@ -1227,8 +1274,10 @@ private slots:
         QCOMPARE(refinement().property(QStringLiteral("verdict")).toString(), QStringLiteral("None"));
     }
 
-    // Finishing the assistant records setup as done, so it does not run again.
-    void finishingSetupRecordsItDone()
+    // Finish is there on every step's way; while a step dictation needs is
+    // open, finishing saves the choices but leaves setup to run again, and
+    // the footer says what is missing. No step's check holds back the next.
+    void finishingSetupRecordsItDoneOnlyOnceNothingNeededIsOpen()
     {
         ApplicationController controller(true);
         TrayIcon tray(&controller);
@@ -1236,9 +1285,31 @@ private slots:
         ui.showSetupAssistant(SetupAssistantPage::All);
         QQuickWindow *setup = openWindow("SetupAssistant");
         QVERIFY(setup);
-        QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
+        auto *choices = setup->findChild<QObject *>(QStringLiteral("setupChoices"));
+        QVERIFY(choices);
+        // Here no microphone has heard anything.
+        QVERIFY(!choices->property("complete").toBool());
+        const int last = setup->property("steps").value<QJSValue>().property(QStringLiteral("length")).toInt() - 1;
+        for (int step = 1; step <= last; ++step) {
+            QVERIFY(QMetaObject::invokeMethod(setup, "go", Q_ARG(QVariant, step)));
+            QCOMPARE(setup->property("step").toInt(), step);
+        }
+        const auto shows = [setup](const QString &text) {
+            QList<QQuickItem *> items{setup->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->property("text").toString() == text) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QTRY_VERIFY(shows(QStringLiteral("Finish for now")));
+        choices->setProperty("keep", false);
         QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
-        QVERIFY(controller.settings()->dictationSnapshot().setupCompleted);
+        QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
+        QVERIFY(!controller.settings()->dictationSnapshot().output.steps.keep);
     }
 
     void everyPopupStateLoads_data() { themes(); }
