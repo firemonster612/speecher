@@ -72,6 +72,38 @@ Page {
             onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
         }
         SignInRow { serviceId: page.primary }
+        // The models behind the chosen service, folded away.
+        Reveal {
+            open: page.serviceModels.length > 0
+            Disclosure {
+                id: models
+                title: page.modelsSpec.label
+                help: page.primary === "local" ? page.modelsSpec.localHelp : page.modelsSpec.help.arg(page.primaryLabel)
+                trailingText: Words.count(page.serviceModels.length, "model", "models")
+                SearchLanding {
+                    rowIds: ["speechModels"]
+                    target: models
+                    onLanded: { models.open = true; models.highlight() }
+                }
+                RowList {
+                    id: modelRows
+                    values: page.serviceModels
+                    keyOf: m => m.name
+                    delegate: ListRow {
+                        id: modelRow
+                        required property string key
+                        required property int index
+                        readonly property var entry: modelRows.entry(key)
+                        first: index === 0 && modelRows.first
+                        title: entry.name
+                        detail: entry.note || ""
+                        detailLines: 3
+                        trailing: RatingBars { bars: modelRow.entry.bars || [] }
+                    }
+                }
+                Item { width: 1; height: Theme.space2 }
+            }
+        }
         LanguageList { id: serviceLanguages; objectName: "serviceLanguages" }
     }
 
@@ -181,41 +213,6 @@ Page {
             title: Schema.row("speechEndpointUrl").section
             caption: page.role("endpoint")
             SpeechEndpointRows {}
-        }
-    }
-
-    Reveal {
-        open: page.serviceModels.length > 0
-        Section {
-            title: page.modelsSpec.section
-            Disclosure {
-                id: models
-                title: page.modelsSpec.label
-                help: page.primary === "local" ? page.modelsSpec.localHelp : page.modelsSpec.help.arg(page.primaryLabel)
-                trailingText: Words.count(page.serviceModels.length, "model", "models")
-                SearchLanding {
-                    rowIds: ["speechModels"]
-                    target: models
-                    onLanded: { models.open = true; models.highlight() }
-                }
-                RowList {
-                    id: modelRows
-                    values: page.serviceModels
-                    keyOf: m => m.name
-                    delegate: ListRow {
-                        id: modelRow
-                        required property string key
-                        required property int index
-                        readonly property var entry: modelRows.entry(key)
-                        first: index === 0 && modelRows.first
-                        title: entry.name
-                        detail: entry.note || ""
-                        detailLines: 3
-                        trailing: RatingBars { bars: modelRow.entry.bars || [] }
-                    }
-                }
-                Item { width: 1; height: Theme.space2 }
-            }
         }
     }
 

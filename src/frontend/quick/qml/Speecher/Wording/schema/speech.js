@@ -145,7 +145,7 @@ var rows = [
       label: "Path", help: "whisper.cpp uses /inference.",
       keywords: "custom endpoint path route inference" },
     { id: "speechEndpointApiKey", page: "speech", section: "Custom Endpoint", kind: "secret",
-      label: "API key", help: "Optional. Stored in the system keychain when there is one.",
+      label: "Custom Endpoint API key", help: "Optional. Stored in the system keychain when there is one.",
       placeholder: "Optional", keywords: "custom endpoint token secret key bearer" },
     { id: "speechEndpointModel", page: "speech", section: "Custom Endpoint", kind: "custom",
       label: "Model", help: "Test the connection to list the server's models, or type one.",
@@ -154,7 +154,7 @@ var rows = [
       label: "Connection", help: "Not tested yet.", actionLabel: "Test connection", actionIcon: "plug-zap",
       keywords: "custom endpoint test connection check reachable" },
 
-    { id: "speechModels", page: "speech", section: "Advanced", kind: "custom",
+    { id: "speechModels", page: "speech", section: "Service", kind: "custom",
       label: "Models", help: "The models %1 uses",
       localHelp: "The models you can run on this computer",
       keywords: "advanced models deepgram nova gpt transcribe whisper parakeet rating" }

@@ -167,10 +167,8 @@ Page {
         }
     }
 
-    Section {
-        title: Schema.row("runSetup").section
-        SchemaRow { rowId: "runSetup" }
-    }
+    // One row, which needs no heading over it.
+    Section { SchemaRow { rowId: "runSetup" } }
 
     // Removing Speecher where it can remove itself, else how the system does.
     Section {
