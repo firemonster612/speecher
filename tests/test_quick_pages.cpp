@@ -1590,8 +1590,12 @@ private slots:
                               qPrintable(item->property("text").toString() + QStringLiteral(" is cut short")));
                  }
              }},
-            {QStringLiteral("This computer's model picker with nothing downloaded"), [&] {
+            {QStringLiteral("an App's own steps"), [&] {
                  QVERIFY(QMetaObject::invokeMethod(popupOf(pasting), "close"));
+                 QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QStringLiteral("own")));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("stepSwitch_press")));
+             }},
+            {QStringLiteral("This computer's model picker with nothing downloaded"), [&] {
                  navigation->go(QStringLiteral("speech"));
                  QTRY_VERIFY((model = [&]() -> QQuickItem * {
                      QList<QQuickItem *> items{main->contentItem()};
