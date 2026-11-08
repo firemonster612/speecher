@@ -122,6 +122,14 @@ struct HistoryHit {
     QString highlighted;
 };
 
+// "hh:mm:ss" since a recording started, for its lines and its duration.
+QString recordingClock(qint64 elapsedMs);
+// line as a Recording's plain text file has it, without the line break:
+// "[00:00:04] me: Can you see my screen?". parseTranscriptLine reads one back,
+// trimmed; none where it is anything else.
+QString transcriptLineText(const HistoryLine &line);
+std::optional<HistoryLine> parseTranscriptLine(const QString &line);
+
 QString historyKindName(HistoryKind kind);
 std::optional<HistoryKind> historyKindFromName(const QString &name);
 QString historyKeepName(HistoryKeep keep);

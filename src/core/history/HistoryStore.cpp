@@ -6,7 +6,6 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -140,20 +139,17 @@ std::optional<QList<HistoryLine>> transcriptLines(const QString &path)
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return std::nullopt;
     }
-    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
     QList<HistoryLine> read;
     while (!file.atEnd()) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.isEmpty()) {
+        const QString text = QString::fromUtf8(file.readLine()).trimmed();
+        if (text.isEmpty()) {
             continue;
         }
-        const QRegularExpressionMatch match = lineFormat.match(line);
-        if (!match.hasMatch()) {
+        const std::optional<HistoryLine> line = parseTranscriptLine(text);
+        if (!line) {
             return std::nullopt;
         }
-        const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
-            + match.captured(3).toLongLong();
-        read.append({seconds * 1000, match.captured(4), match.captured(5)});
+        read.append(*line);
     }
     return read;
 }

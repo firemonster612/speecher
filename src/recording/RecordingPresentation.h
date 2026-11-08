@@ -7,8 +7,6 @@ namespace speecher {
 struct RecordingStatus;
 struct RecordingStreamStatus;
 
-// "hh:mm:ss" since the recording started, for its lines and its duration.
-QString recordingClock(qint64 elapsedMs);
 // "12:03", or "1:02:03" past an hour: how long a recording has run, as the
 // tray says it.
 QString recordingElapsedText(qint64 elapsedMs);

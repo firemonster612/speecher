@@ -4,7 +4,6 @@
 #include "core/InsightsSummary.h"
 #include "core/SettingsStore.h"
 #include "core/history/HistoryStore.h"
-#include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 
 #include <QAudioOutput>
@@ -77,7 +76,7 @@ QByteArray linesText(const QList<HistoryLine> &lines)
 {
     QByteArray text;
     for (const HistoryLine &line : lines) {
-        text += QStringLiteral("[%1] %2: %3\n").arg(recordingClock(line.atMs), line.speaker, line.text).toUtf8();
+        text += (transcriptLineText(line) + QLatin1Char('\n')).toUtf8();
     }
     return text;
 }

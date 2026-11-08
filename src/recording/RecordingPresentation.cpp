@@ -1,5 +1,6 @@
 #include "recording/RecordingPresentation.h"
 
+#include "core/history/HistoryEntry.h"
 #include "dictation/DictationTypes.h"
 #include "recording/RecordingStatus.h"
 #include "recording/SystemAudioPresentation.h"
@@ -47,15 +48,6 @@ QString trayRecordingActionText(bool starting, bool recording, qint64 elapsedMs)
     return starting    ? QStringLiteral("Cancel recording")
          : recording ? QStringLiteral("Stop recording (%1)").arg(recordingElapsedText(elapsedMs))
                      : QStringLiteral("Start recording");
-}
-
-QString recordingClock(qint64 elapsedMs)
-{
-    const qint64 seconds = elapsedMs / 1000;
-    return QStringLiteral("%1:%2:%3")
-        .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
-        .arg(seconds / 60 % 60, 2, 10, QLatin1Char('0'))
-        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
 }
 
 QString recordingConsentNotice()

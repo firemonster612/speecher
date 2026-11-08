@@ -2,6 +2,7 @@
 
 #include "core/EchoCanceller.h"
 #include "core/SettingsStore.h"
+#include "core/history/HistoryEntry.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationPlan.h"
 #include "platform/audio/AudioPcmConverter.h"
@@ -105,8 +106,7 @@ bool RecordingTranscript::append(qint64 elapsedMs, const QString &speaker, const
         *error = recordingFileError(m_file.fileName(), QStringLiteral("part of an earlier line could not be removed"));
         return false;
     }
-    const QByteArray line =
-        QStringLiteral("[%1] %2: %3\n").arg(recordingClock(elapsedMs), speaker, text.simplified()).toUtf8();
+    const QByteArray line = (transcriptLineText({elapsedMs, speaker, text.simplified()}) + QLatin1Char('\n')).toUtf8();
     const qint64 end = m_file.pos();
     if (m_file.write(line) != line.size() || !m_file.flush()) {
         *error = recordingFileError(m_file.fileName(), m_file.errorString());

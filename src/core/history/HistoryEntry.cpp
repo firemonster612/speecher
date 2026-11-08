@@ -149,6 +149,32 @@ QStringList historySearchTerms(const QString &text)
     return terms;
 }
 
+QString recordingClock(qint64 elapsedMs)
+{
+    const qint64 seconds = elapsedMs / 1000;
+    return QStringLiteral("%1:%2:%3")
+        .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
+        .arg(seconds / 60 % 60, 2, 10, QLatin1Char('0'))
+        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+}
+
+QString transcriptLineText(const HistoryLine &line)
+{
+    return QStringLiteral("[%1] %2: %3").arg(recordingClock(line.atMs), line.speaker, line.text);
+}
+
+std::optional<HistoryLine> parseTranscriptLine(const QString &line)
+{
+    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
+    const QRegularExpressionMatch match = lineFormat.match(line);
+    if (!match.hasMatch()) {
+        return std::nullopt;
+    }
+    const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
+        + match.captured(3).toLongLong();
+    return HistoryLine{seconds * 1000, match.captured(4), match.captured(5)};
+}
+
 QString highlightHistoryMatches(const QString &text, const QStringList &terms)
 {
     // Marked characters, so overlapping and adjacent matches become one mark.
