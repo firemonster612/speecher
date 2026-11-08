@@ -89,7 +89,8 @@ HistoryAudioWriter::HistoryAudioWriter(const QString &folder, const QString &ste
     if (!m_encoded) {
         m_wav = new QFile(partPath(), this);
         if (!m_wav->open(QIODevice::WriteOnly) || m_wav->write(wavHeader(0, quint16(m_channels))) != 44) {
-            qWarning().noquote() << "history audio could not be written path=" + partPath() << m_wav->errorString();
+            m_error = m_wav->errorString();
+            qWarning().noquote() << "history audio could not be written path=" + partPath() << m_error;
         }
         m_wav->setPermissions(QFile::ReadOwner | QFile::WriteOwner);
         return;
@@ -111,12 +112,12 @@ HistoryAudioWriter::HistoryAudioWriter(const QString &folder, const QString &ste
     connect(m_input, &QAudioBufferInput::readyToSendAudioBuffer, this, &HistoryAudioWriter::sendPending);
     connect(m_recorder, &QMediaRecorder::recorderStateChanged, this, [this](QMediaRecorder::RecorderState state) {
         if (state == QMediaRecorder::StoppedState && m_finishing) {
-            finishEncoding(true);
+            finishEncoding({});
         }
     });
     connect(m_recorder, &QMediaRecorder::errorOccurred, this, [this](QMediaRecorder::Error, const QString &message) {
         qWarning().noquote() << "history audio could not be encoded:" << message;
-        finishEncoding(false);
+        finishEncoding(message.isEmpty() ? QStringLiteral("the encoder failed") : message);
     });
     m_recorder->record();
 }
@@ -142,7 +143,9 @@ void HistoryAudioWriter::write(const QByteArray &pcm)
     }
     m_samples += pcm.size() / (bytesPerSample * m_channels);
     if (m_wav) {
-        m_wav->write(pcm);
+        if (m_wav->write(pcm) != pcm.size() && m_error.isEmpty()) {
+            m_error = m_wav->errorString();
+        }
         return;
     }
     m_pending.append(pcm);
@@ -169,32 +172,42 @@ QString HistoryAudioWriter::finish()
     if (m_finishing || m_discarded) {
         return {};
     }
+    m_finishing = true;
     if (m_samples == 0) {
-        discard();
+        finishEncoding({});
         return {};
     }
-    m_finishing = true;
     if (!m_wav) {
         sendPending();
         return m_name;
     }
-    const bool written = m_wav->error() == QFileDevice::NoError && m_wav->seek(0)
-        && m_wav->write(wavHeader(quint32(m_samples * bytesPerSample * m_channels), quint16(m_channels))) == 44;
+    if (m_error.isEmpty()
+        && (!m_wav->seek(0)
+            || m_wav->write(wavHeader(quint32(m_samples * bytesPerSample * m_channels), quint16(m_channels))) != 44)) {
+        m_error = m_wav->errorString();
+    }
     m_wav->close();
-    finishEncoding(written);
-    return written ? m_name : QString();
+    finishEncoding(m_error);
+    return m_error.isEmpty() ? m_name : QString();
 }
 
-void HistoryAudioWriter::finishEncoding(bool ok)
+// Names the file, unless error says why it can't be, then says so once and
+// goes. Nothing heard is no file and no error.
+void HistoryAudioWriter::finishEncoding(const QString &error)
 {
     if (m_discarded) {
         return;
     }
     m_discarded = true;
+    QString name = m_samples > 0 && error.isEmpty() ? m_name : QString();
+    QString failure = m_samples > 0 ? error : QString();
     const QString path = QDir(m_folder).filePath(m_name);
-    if (ok && !QFile::rename(partPath(), path)) {
+    if (!name.isEmpty() && !QFile::rename(partPath(), path)) {
+        failure = QStringLiteral("it couldn't be saved as ") + path;
         qWarning().noquote() << "history audio could not be named path=" + path;
+        name.clear();
     }
+    emit finished(name, failure);
     deleteLater();
 }
 

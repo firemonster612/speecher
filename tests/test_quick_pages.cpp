@@ -1696,8 +1696,7 @@ private slots:
         past.outcome = HistoryOutcome::Complete;
         const qint64 pastId = controller.history()->add(past);
         controller.history()->appendLine(pastId, {4000, QStringLiteral("me"), QStringLiteral("Can everyone see the board?")});
-        controller.history()->finishRecording(pastId, past.startedAt.addSecs(18 * 60), 18 * 60 * 1000,
-                                              HistoryOutcome::Complete, {});
+        controller.history()->finishRecording(pastId, past.startedAt.addSecs(18 * 60), 18 * 60 * 1000, {}, {});
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("themeControl"), theme);
         TrayIcon tray(&controller);

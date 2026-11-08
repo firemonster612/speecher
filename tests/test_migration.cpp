@@ -337,29 +337,32 @@ private slots:
 
     void whatSpeecherKeepsFollowsKeepInsights_data()
     {
-        QTest::addColumn<QVariant>("insights");
-        QTest::addColumn<bool>("setupCompleted");
+        QTest::addColumn<QVariantMap>("saved");
         QTest::addColumn<HistoryKeep>("keeps");
-        QTest::newRow("insights on") << QVariant(true) << true << HistoryKeep::Stats;
-        QTest::newRow("insights off") << QVariant(false) << true << HistoryKeep::Nothing;
-        QTest::newRow("never set, after setup") << QVariant() << true << HistoryKeep::Stats;
-        QTest::newRow("new install") << QVariant() << false << HistorySettings().keeps;
+        QTest::newRow("insights on") << QVariantMap{{QStringLiteral("insights/enabled"), true}} << HistoryKeep::Stats;
+        QTest::newRow("insights off") << QVariantMap{{QStringLiteral("insights/enabled"), false}} << HistoryKeep::Nothing;
+        QTest::newRow("never set, after setup") << QVariantMap{{QStringLiteral("app/setupCompleted"), true}}
+                                                << HistoryKeep::Stats;
+        // Chose a service and quit before finishing setup.
+        QTest::newRow("never set, setup unfinished")
+            << QVariantMap{{QStringLiteral("app/setupCompleted"), false}, {QStringLiteral("stt/provider"), QStringLiteral("codex")}}
+            << HistoryKeep::Stats;
+        QTest::newRow("new install") << QVariantMap() << HistorySettings().keeps;
     }
 
     // An upgrade never starts keeping text behind Keep insights' promise of
-    // "never text or audio"; a new install keeps the default.
+    // "never text or audio", finished setup or not; a new install, with no
+    // settings at all, keeps the default.
     void whatSpeecherKeepsFollowsKeepInsights()
     {
-        QFETCH(QVariant, insights);
-        QFETCH(bool, setupCompleted);
+        QFETCH(QVariantMap, saved);
         QFETCH(HistoryKeep, keeps);
         {
             SettingsStore store;
             store.raw().clear();
-            if (insights.isValid()) {
-                store.raw().setValue(QStringLiteral("insights/enabled"), insights);
+            for (auto it = saved.cbegin(); it != saved.cend(); ++it) {
+                store.raw().setValue(it.key(), it.value());
             }
-            store.raw().setValue(QStringLiteral("app/setupCompleted"), setupCompleted);
             store.raw().sync();
         }
         migrateSavedSettings();

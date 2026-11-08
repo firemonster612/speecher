@@ -33,24 +33,31 @@ public:
     // 16 kHz 16-bit PCM, its channels interleaved; mono as the microphone
     // delivers it.
     void write(const QByteArray &pcm);
-    // Ends the file and returns its name, relative to the folder; empty when
-    // nothing was heard or it couldn't be written. An encoder may still be
-    // writing: the file takes the name once it has, and the writer deletes
-    // itself then.
+    // Ends the file and returns the name it takes, relative to the folder;
+    // empty when nothing was heard or it couldn't be written. An encoder may
+    // still be writing: finished says how that went.
     QString finish();
-    // Throws the audio away, and the writer with it.
+    // Throws the audio away, and the writer with it, with no finished.
     void discard();
 
     // The format write() takes.
     static QAudioFormat pcmFormat(int channels = 1);
 
+signals:
+    // Once, after finish() or a failure on the way: the file's name once it
+    // has it, or empty with why it couldn't be written (empty too when
+    // nothing was heard). The writer deletes itself after.
+    void finished(const QString &name, const QString &error);
+
 private:
     QString partPath() const;
     void sendPending();
-    void finishEncoding(bool ok);
+    void finishEncoding(const QString &error);
 
     QString m_folder;
     QString m_name;
+    // The first write that failed, or the encoder's error.
+    QString m_error;
     int m_channels = 1;
     bool m_encoded = false;
     bool m_finishing = false;

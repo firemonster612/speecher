@@ -309,23 +309,21 @@ bool QuickHistory::undo(int token)
     return token > 0 && m_controller->history()->restore(token);
 }
 
-bool QuickHistory::removeRecording(qint64 id, bool withFiles)
+QStringList QuickHistory::removeRecording(qint64 id, bool withFiles)
 {
-    const std::optional<HistoryEntry> found = m_controller->history()->entry(id);
+    HistoryStore *store = m_controller->history();
+    const std::optional<HistoryEntry> found = store->entry(id);
     if (!found || found->kind != HistoryKind::Recording) {
-        return false;
+        return {};
     }
     if (id == m_playingId) {
         stopPlaying();
     }
-    if (withFiles) {
-        for (const QString &file : {found->transcriptPath, m_controller->history()->audioFile(*found)}) {
-            if (!file.isEmpty() && QFile::exists(file) && !QFile::remove(file)) {
-                qWarning().noquote() << "history could not delete a recording's file=" + file;
-            }
-        }
+    const QStringList stayed = withFiles ? store->deleteRecordingFiles(*found) : QStringList();
+    if (stayed.isEmpty()) {
+        store->remove(id);
     }
-    return m_controller->history()->remove(id);
+    return stayed;
 }
 
 void QuickHistory::openFile(qint64 id) const

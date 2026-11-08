@@ -148,9 +148,9 @@ void TrayIcon::applyState(DictationState state)
     const DictationToggleAction toggle = dictationToggleAction(state);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
-    // Neither while it starts nor while it stops can it be asked to.
-    m_recordingAction->setText(trayRecordingActionText(recording, elapsedMs));
-    m_recordingAction->setEnabled(phase == RecordingSession::Phase::Off || phase == RecordingSession::Phase::Recording);
+    // A start can be cancelled; a stop can't be hurried.
+    m_recordingAction->setText(trayRecordingActionText(phase == RecordingSession::Phase::Starting, recording, elapsedMs));
+    m_recordingAction->setEnabled(phase != RecordingSession::Phase::Stopping);
     if (recording != m_recordingClock.isActive()) {
         recording ? m_recordingClock.start() : m_recordingClock.stop();
     }

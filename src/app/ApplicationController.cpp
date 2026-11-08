@@ -457,10 +457,10 @@ void ApplicationController::startRecording(const RecordingRequest &request,
 void ApplicationController::toggleRecording()
 {
     switch (m_recording->phase()) {
+    case RecordingSession::Phase::Starting:
     case RecordingSession::Phase::Recording:
         m_recording->stop();
         return;
-    case RecordingSession::Phase::Starting:
     case RecordingSession::Phase::Stopping:
         return;
     case RecordingSession::Phase::Off:
@@ -502,11 +502,8 @@ void ApplicationController::keepRecordingInHistory()
                 m_history->appendLine(m_recordingEntry, {atMs, speaker, text});
             });
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
-        const bool missed = status.unwrittenLines > 0
-            || std::any_of(status.streams.cbegin(), status.streams.cend(),
-                           [](const RecordingStreamStatus &stream) { return stream.lostAudioMs > 0; });
         m_history->finishRecording(m_recordingEntry, QDateTime::currentDateTime(), status.durationMs,
-                                   missed ? HistoryOutcome::Missed : HistoryOutcome::Complete, status.audioPath);
+                                   recordingEnd(status), status.audioPath);
     });
 }
 

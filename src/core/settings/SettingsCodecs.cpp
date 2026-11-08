@@ -699,6 +699,7 @@ RecordingSettings SettingsCodecs::recordingSettings() const
     if (isChainProviderId(ProviderRole::Speech, service)) {
         recording.first = ServiceChoice{service, first.value(QStringLiteral("model")).toString()};
     }
+    recording.writingProfile = value(SettingsKeys::RecordingWritingProfile, QString()).toString();
     recording.folder = value(SettingsKeys::RecordingFolder, QString()).toString();
     recording.format = value(SettingsKeys::RecordingFormat, QString()).toString() == QStringLiteral("txt")
         ? RecordingFormat::PlainText
@@ -720,6 +721,7 @@ void SettingsCodecs::setRecordingSettings(const RecordingSettings &recording)
     } else {
         m_settings.remove(SettingsKeys::RecordingFirst);
     }
+    m_settings.setValue(SettingsKeys::RecordingWritingProfile, recording.writingProfile);
     m_settings.setValue(SettingsKeys::RecordingFolder, recording.folder);
     m_settings.setValue(SettingsKeys::RecordingFormat,
                         recording.format == RecordingFormat::PlainText ? QStringLiteral("txt") : QStringLiteral("md"));

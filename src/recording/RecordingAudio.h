@@ -6,6 +6,7 @@
 
 #include <QByteArray>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
 namespace speecher {
@@ -48,21 +49,32 @@ class RecordingAudio : public QObject {
 
 public:
     explicit RecordingAudio(const QString &transcriptPath, QObject *parent = nullptr);
-    // Discards what was not finished.
+    // Discards what was not finished; one finishing finishes on its own.
     ~RecordingAudio() override;
 
     // Channel 0 is the microphone, 1 system audio; see StereoTimeline::place.
     void hear(int channel, qint64 endMs, const QByteArray &pcm);
-    // Ends the file and returns its path; empty when nothing was heard or it
-    // couldn't be written. The encoder may finish it a moment later.
-    QString finish();
+    // Ends the file; finished follows, perhaps before this returns.
+    void finish();
     // Throws the audio away.
     void discard();
+
+signals:
+    // Once, after finish(): the file's path once it is written, or empty
+    // with why it couldn't be (empty too when nothing was heard). A writer
+    // that failed while the recording ran says so here.
+    void finished(const QString &path, const QString &error);
 
 private:
     QString m_folder;
     StereoTimeline m_timeline;
-    HistoryAudioWriter *m_writer;
+    // Gone once it has finished, or failed on the way.
+    QPointer<HistoryAudioWriter> m_writer;
+    bool m_finishing = false;
+    // What the writer said when it finished.
+    bool m_written = false;
+    QString m_path;
+    QString m_error;
 };
 
 } // namespace speecher

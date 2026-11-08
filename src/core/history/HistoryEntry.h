@@ -6,6 +6,7 @@
 #include "core/DictationRecord.h"
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QList>
 #include <QMetaType>
 #include <QString>
@@ -22,9 +23,42 @@ enum class HistoryKeep { Nothing, Stats, Text, Audio };
 
 // What became of an entry's words. A dictation is Delivered, Copied (the
 // receipt said the words only reached the clipboard) or Undelivered; a file
-// transcription is Done; a Recording is Complete, or Missed when its file
-// lacks lines or a stream lost audio.
+// transcription is Done; a Recording is Complete, or Missed when its
+// RecordingEnd says it missed speech.
 enum class HistoryOutcome { Delivered, Copied, Undelivered, Done, Complete, Missed };
+
+// How a Recording ended and what it missed on the way, kept with its entry so
+// a warning outlives the recording.
+struct RecordingEnd {
+    // Stopped by the person, after Stop after silence, or by Speecher
+    // quitting while it ran.
+    enum class Reason { Stopped, Silence, Interrupted };
+    // A side that stopped for good before the end: who, when from the start,
+    // and why.
+    struct StreamStop {
+        QString speaker;
+        qint64 atMs = 0;
+        QString problem;
+
+        bool operator==(const StreamStop &other) const = default;
+    };
+
+    Reason reason = Reason::Stopped;
+    // Utterances the speech service didn't transcribe, audio dropped while a
+    // stream was down, and lines the file didn't take.
+    int missedUtterances = 0;
+    qint64 lostAudioMs = 0;
+    int unwrittenLines = 0;
+    QList<StreamStop> streamStops;
+    // Why its audio, asked for, wasn't saved; empty when it was.
+    QString audioError;
+
+    bool missedSpeech() const
+    {
+        return missedUtterances > 0 || lostAudioMs > 0 || unwrittenLines > 0 || !streamStops.isEmpty();
+    }
+    bool operator==(const RecordingEnd &other) const = default;
+};
 
 struct HistoryEntry {
     qint64 id = 0;
@@ -48,6 +82,8 @@ struct HistoryEntry {
     QString transcriptPath;
     // What was allowed when it was written, lowered as retention removes parts.
     HistoryKeep kept = HistoryKeep::Stats;
+    // A finished Recording's end.
+    RecordingEnd end;
 };
 
 // One page of History, newest first. Every field narrows; together they AND.
@@ -92,6 +128,11 @@ QString historyKeepName(HistoryKeep keep);
 std::optional<HistoryKeep> historyKeepFromName(const QString &name);
 QString historyOutcomeName(HistoryOutcome outcome);
 std::optional<HistoryOutcome> historyOutcomeFromName(const QString &name);
+// How the store and the UI carry a RecordingEnd: { reason (stopped, silence,
+// interrupted), missedUtterances, lostAudioMs, unwrittenLines, streamStops:
+// [{ speaker, atMs, problem }], audioError }, a count left out at 0.
+QJsonObject recordingEndJson(const RecordingEnd &end);
+RecordingEnd recordingEndFromJson(const QJsonObject &object);
 
 // The parts of a search a match needs, each folded to lower case: the quoted
 // phrases as written, then the other words.

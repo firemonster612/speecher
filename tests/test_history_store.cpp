@@ -1,6 +1,7 @@
 // History's store and what a dictation keeps: search, deletes, retention and
 // clearing through HistoryStore's interface, and historyKeep's table.
 
+#include "common/locked_folder.h"
 #include "common/test_suites.h"
 #include "core/OwnerOnly.h"
 #include "core/history/HistoryAudioWriter.h"
@@ -13,6 +14,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -103,6 +106,37 @@ private slots:
         QCOMPARE(entry.stats.applicationId, QStringLiteral("slack"));
         QCOMPARE(entry.stats.profile, WritingProfile::Work);
         QCOMPARE(entry.kept, HistoryKeep::Text);
+    }
+
+    // A file from before Recordings kept how they ended opens, and keeps it
+    // from then on.
+    void aVersionOneFileUpgrades()
+    {
+        const QString path = databasePath(QStringLiteral("version-1.sqlite3"));
+        HistoryEntry call;
+        call.kind = HistoryKind::Recording;
+        call.startedAt = kNow;
+        call.kept = HistoryKeep::Text;
+        qint64 id = 0;
+        {
+            HistoryStore store(path, QString());
+            id = store.add(call);
+        }
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("version-1"));
+            db.setDatabaseName(path);
+            QVERIFY(db.open());
+            QSqlQuery downgrade(db);
+            QVERIFY(downgrade.exec(QStringLiteral("ALTER TABLE entries DROP COLUMN ending")));
+            QVERIFY(downgrade.exec(QStringLiteral("PRAGMA user_version = 1")));
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("version-1"));
+        HistoryStore store(path, QString());
+        RecordingEnd end;
+        end.reason = RecordingEnd::Reason::Silence;
+        QVERIFY(store.finishRecording(id, kNow.addSecs(60), 60000, end, {}));
+        QCOMPARE(store.entry(id)->end, end);
     }
 
     // An entry never holds more than it was allowed to keep.
@@ -247,7 +281,9 @@ private slots:
             return entry;
         };
         const int day = 24 * 60;
-        HistoryEntry call = dictation(QStringLiteral("[00:00:04] me: hello"), QString(), 200 * day);
+        // A recording keeps its text and audio until it is deleted.
+        HistoryEntry call = withAudio(dictation(QStringLiteral("[00:00:04] me: hello"), QString(), 200 * day),
+                                      QStringLiteral("call.m4a"));
         call.kind = HistoryKind::Recording;
         store.add(call);
         store.add(withAudio(dictation(QStringLiteral("last week"), QStringLiteral("Slack"), 10 * day), QStringLiteral("week.m4a")));
@@ -268,7 +304,55 @@ private slots:
         QCOMPARE(textsOf(store.search({})), QStringList{call.text.value()});
         QVERIFY(!QFile::exists(audio.filePath(QStringLiteral("old.m4a"))));
         QVERIFY(!QFile::exists(audio.filePath(QStringLiteral("today.m4a"))));
+        QVERIFY(QFile::exists(audio.filePath(QStringLiteral("call.m4a"))));
+        QCOMPARE(store.search({}).first().entry.audioPath, QStringLiteral("call.m4a"));
         QCOMPARE(store.records().size(), 3);
+    }
+
+    // An audio or transcript file that won't go keeps its entry, so nothing
+    // claims it was deleted and a later try can take it: retention, a clear,
+    // a delete's purge and a Recording's own delete alike.
+    void filesThatWontGoKeepTheirEntries()
+    {
+        QTemporaryDir audio;
+        HistoryStore store(QStringLiteral(":memory:"), audio.path());
+        const auto withAudio = [&audio](HistoryEntry entry, const QString &name) {
+            entry.kept = HistoryKeep::Audio;
+            entry.audioPath = name;
+            QFile file(audio.filePath(name));
+            [[maybe_unused]] const bool made = file.open(QIODevice::WriteOnly);
+            return entry;
+        };
+        const qint64 old = store.add(withAudio(dictation(QStringLiteral("old"), QStringLiteral("Slack"), 10 * 24 * 60),
+                                               QStringLiteral("old.m4a")));
+        const qint64 newer = store.add(withAudio(dictation(QStringLiteral("newer")), QStringLiteral("newer.m4a")));
+        HistoryEntry call;
+        call.kind = HistoryKind::Recording;
+        call.transcriptPath = audio.filePath(QStringLiteral("call.md"));
+        QFile transcript(call.transcriptPath);
+        QVERIFY(transcript.open(QIODevice::WriteOnly));
+        transcript.close();
+        {
+            test::LockedFolder locked(audio.path());
+            if (!locked.holds()) {
+                QSKIP("files here can be deleted anyway");
+            }
+            store.prune(kNow, HistorySettings{HistoryKeep::Audio, 90, 7});
+            QCOMPARE(store.entry(old)->audioPath, QStringLiteral("old.m4a"));
+            QVERIFY(!store.clear({}, {}, true));
+            QCOMPARE(textsOf(store.search({})), (QStringList{QStringLiteral("newer"), QStringLiteral("old")}));
+            QVERIFY(store.markDeleted(newer));
+            store.purgeDeleted();
+            QVERIFY(store.restore(newer));
+            QCOMPARE(store.deleteRecordingFiles(call), QStringList{call.transcriptPath});
+        }
+        store.prune(kNow, HistorySettings{HistoryKeep::Audio, 90, 7});
+        QVERIFY(store.entry(old)->audioPath.isEmpty());
+        QVERIFY(!QFile::exists(audio.filePath(QStringLiteral("old.m4a"))));
+        QVERIFY(store.clear({}, {}, true));
+        QVERIFY(store.search({}).isEmpty());
+        QVERIFY(store.deleteRecordingFiles(call).isEmpty());
+        QVERIFY(!QFile::exists(call.transcriptPath));
     }
 
     // Clearing deletes the words of a range; with the stats, the entries too.
@@ -373,9 +457,15 @@ private slots:
                                                      {9000, QStringLiteral("them"),
                                                       QStringLiteral("The uploader retries after a 403")}}));
 
-        QVERIFY(store.finishRecording(id, kNow.addDays(-400).addSecs(42 * 60), 42 * 60 * 1000, HistoryOutcome::Missed, {}));
+        // It keeps how it ended: one side stopped and an utterance missed.
+        RecordingEnd end;
+        end.reason = RecordingEnd::Reason::Silence;
+        end.missedUtterances = 1;
+        end.streamStops = {{QStringLiteral("them"), 1200000, QStringLiteral("Connection reset")}};
+        QVERIFY(store.finishRecording(id, kNow.addDays(-400).addSecs(42 * 60), 42 * 60 * 1000, end, {}));
         const HistoryEntry finished = *store.entry(id);
         QCOMPARE(finished.outcome, HistoryOutcome::Missed);
+        QCOMPARE(finished.end, end);
         QCOMPARE(finished.stats.words, 11);
         QCOMPARE(finished.stats.audioMs, 42 * 60 * 1000);
         QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("uploader")))),
@@ -397,6 +487,8 @@ private slots:
         const HistoryEntry recovered = *store.entry(crashedId);
         QCOMPARE(recovered.stats.finishedAt, QFileInfo(file).lastModified());
         QCOMPARE(recovered.text, std::optional(QStringLiteral("Hello")));
+        QCOMPARE(recovered.outcome, HistoryOutcome::Complete);
+        QCOMPARE(recovered.end.reason, RecordingEnd::Reason::Interrupted);
 
         QVERIFY(store.remove(id));
         QVERIFY(!store.entry(id));

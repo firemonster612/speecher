@@ -6,7 +6,6 @@
 #include <QFileInfo>
 
 #include <algorithm>
-#include <utility>
 
 namespace speecher {
 namespace {
@@ -70,22 +69,33 @@ QByteArray StereoTimeline::interleave(qint64 frames)
 }
 
 // The writer finishes on its own once asked to and deletes itself, so it has
-// no parent that could cut its encoding short.
+// no parent that could cut its encoding short. It can also fail and go while
+// the recording runs, which m_writer, a QPointer, sees.
 RecordingAudio::RecordingAudio(const QString &transcriptPath, QObject *parent)
     : QObject(parent)
     , m_folder(QFileInfo(transcriptPath).absolutePath())
     , m_writer(new HistoryAudioWriter(m_folder, QFileInfo(transcriptPath).completeBaseName(), 2))
 {
+    connect(m_writer, &HistoryAudioWriter::finished, this, [this](const QString &name, const QString &error) {
+        m_written = true;
+        m_path = name.isEmpty() ? QString() : QDir(m_folder).filePath(name);
+        m_error = error;
+        if (m_finishing) {
+            emit finished(m_path, m_error);
+        }
+    });
 }
 
 RecordingAudio::~RecordingAudio()
 {
-    discard();
+    if (!m_finishing) {
+        discard();
+    }
 }
 
 void RecordingAudio::hear(int channel, qint64 endMs, const QByteArray &pcm)
 {
-    if (!m_writer) {
+    if (!m_writer || m_written) {
         return;
     }
     m_timeline.place(channel, endMs, pcm);
@@ -95,21 +105,26 @@ void RecordingAudio::hear(int channel, qint64 endMs, const QByteArray &pcm)
     }
 }
 
-QString RecordingAudio::finish()
+void RecordingAudio::finish()
 {
-    if (!m_writer) {
-        return {};
+    if (m_finishing) {
+        return;
+    }
+    m_finishing = true;
+    if (m_written || !m_writer) {
+        emit finished(m_path, m_error);
+        return;
     }
     m_writer->write(m_timeline.takeAll());
-    const QString name = std::exchange(m_writer, nullptr)->finish();
-    return name.isEmpty() ? QString() : QDir(m_folder).filePath(name);
+    m_writer->finish();
 }
 
 void RecordingAudio::discard()
 {
-    if (m_writer) {
-        std::exchange(m_writer, nullptr)->discard();
+    if (m_writer && !m_written) {
+        m_writer->discard();
     }
+    m_writer = nullptr;
 }
 
 } // namespace speecher

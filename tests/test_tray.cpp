@@ -107,7 +107,8 @@ private slots:
         QCOMPARE(starts.first().first().toString(), recordingNeedsSetupText());
         QCOMPARE(consent.count(), 1);
 
-        QCOMPARE(trayRecordingActionText(true, 723000), QStringLiteral("Stop recording (12:03)"));
+        QCOMPARE(trayRecordingActionText(false, true, 723000), QStringLiteral("Stop recording (12:03)"));
+        QCOMPARE(trayRecordingActionText(true, false, 0), QStringLiteral("Cancel recording"));
         QCOMPARE(recordingElapsedText(3723000), QStringLiteral("1:02:03"));
         QCOMPARE(trayToolTip(false, QStringLiteral("12:03")), QStringLiteral("Speecher, recording a call, 12:03"));
         QCOMPARE(trayToolTip(true, QStringLiteral("12:03")),

@@ -3,6 +3,7 @@
 // filters and pages.
 
 #include "common/test_suites.h"
+#include "common/locked_folder.h"
 #include "common/test_doubles.h"
 
 #include "app/ApplicationController.h"
@@ -183,7 +184,7 @@ private slots:
         const qint64 id = store->add(recording);
         store->appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("Can you see <my> screen?")});
         store->appendLine(id, {752000, QStringLiteral("them"), QStringLiteral("It retries after a 403")});
-        store->finishRecording(id, QDateTime::currentDateTime(), 760000, HistoryOutcome::Complete, {});
+        store->finishRecording(id, QDateTime::currentDateTime(), 760000, {}, {});
         QuickHistory history(&controller);
         history.setQuery({{QStringLiteral("text"), QStringLiteral("403")}, {QStringLiteral("kind"), QStringLiteral("recording")}});
         QTRY_VERIFY(!history.searching());
@@ -212,7 +213,15 @@ private slots:
                               {QStringLiteral("speaker"), QStringLiteral("them")},
                               {QStringLiteral("text"), QStringLiteral("It retries after a 403")}}));
 
-        QVERIFY(history.removeRecording(id, true));
+        // A file that won't go keeps the entry, and says which it is.
+        {
+            test::LockedFolder locked(dir.path());
+            if (locked.holds()) {
+                QCOMPARE(history.removeRecording(id, true), QStringList{transcript.fileName()});
+                QVERIFY(!history.entry(id).isEmpty());
+            }
+        }
+        QVERIFY(history.removeRecording(id, true).isEmpty());
         QVERIFY(!QFile::exists(transcript.fileName()));
         QVERIFY(history.entry(id).isEmpty());
     }

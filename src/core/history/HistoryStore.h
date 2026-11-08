@@ -57,16 +57,17 @@ public:
     QStringList profiles() const;
 
     // A Recording's lines, oldest first. appendLine adds one as its file gets
-    // it; finishRecording ends the entry once the recording stops: its end,
-    // length, outcome and audio file (empty for none), with its text and word
+    // it; finishRecording ends the entry once the recording stops: when,
+    // its length, how it ended (Missed where that missed speech, else
+    // Complete) and its audio file (empty for none), with its text and word
     // count taken from its lines, which search then finds. Neither says
     // changed for a line, which comes many times a minute.
     bool appendLine(qint64 entryId, const HistoryLine &line);
     QList<HistoryLine> lines(qint64 entryId) const;
-    bool finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, HistoryOutcome outcome,
+    bool finishRecording(qint64 id, const QDateTime &finishedAt, qint64 audioMs, const RecordingEnd &end,
                          const QString &audioPath);
-    // Finishes the Recordings a crash left running, at their file's last
-    // change, or their start where the file is gone.
+    // Finishes the Recordings a crash left running, Interrupted, at their
+    // file's last change, or their start where the file is gone.
     void finishUnfinishedRecordings();
     // Sets a dictation's, edit's or file's Refined Transcript, keeping its raw
     // one, as Refine again's Keep this does. False for an entry without text.
@@ -75,22 +76,29 @@ public:
     // Deletes an entry and its lines at once, leaving its files, for a
     // Recording, whose transcript and audio the person chooses to keep or not.
     bool remove(qint64 id);
+    // Deletes a Recording's transcript and audio files, returning those that
+    // wouldn't go, so its entry can stay until they do.
+    QStringList deleteRecordingFiles(const HistoryEntry &entry) const;
     // Hides an entry from every question until restore or purgeDeleted.
     bool markDeleted(qint64 id);
     bool restore(qint64 id);
-    // Deletes hidden entries and their audio for good.
+    // Deletes hidden entries and their audio for good. One whose audio file
+    // wouldn't go stays hidden, for the next purge to try again.
     void purgeDeleted();
 
     // How many dictations, edits and files finished in [from, to); an invalid
     // bound is open. Recordings never count.
     int countIn(const QDateTime &from, const QDateTime &to) const;
     // Deletes their text, raw text, app ids and audio, and with withStats the
-    // entries themselves, overwriting what was deleted. False when the file
-    // refused it.
+    // entries themselves, overwriting what was deleted. An entry whose audio
+    // file wouldn't go stays as it was. False when the file refused it or
+    // such an entry stayed.
     bool clear(const QDateTime &from, const QDateTime &to, bool withStats);
     // Applies retention as of now: dictations and files older than textDays
-    // keep only their stats, and audio older than audioDays (never longer
-    // than text) goes. Recordings' text never expires.
+    // keep only their stats, and their audio older than audioDays (never
+    // longer than text) goes, except audio whose file wouldn't go, which the
+    // next prune tries again. Recordings keep their text and audio until
+    // deleted.
     void prune(const QDateTime &now, const HistorySettings &settings);
 
     // Home's stats: every delivered dictation and edit, oldest first.
@@ -104,7 +112,11 @@ private:
     bool exec(const QString &sql) const;
     void createSchema();
     void prepareSearchIndex();
-    void deleteAudioWhere(const QString &condition, const QVariantList &values);
+    // Deletes the audio files of the entries condition finds, returning the
+    // ids of those whose file wouldn't go.
+    QList<qint64> deleteAudioWhere(const QString &condition, const QVariantList &values);
+    // True once file is gone, or never was.
+    static bool deleteFile(const QString &file);
     void forgetRecords();
 
     QString m_connection;

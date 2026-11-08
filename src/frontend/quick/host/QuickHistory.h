@@ -93,9 +93,10 @@ public:
     // passes. Returns the token, or -1 when nothing went.
     Q_INVOKABLE int remove(qint64 id);
     Q_INVOKABLE bool undo(int token);
-    // Deletes a Recording at once, and with withFiles its transcript and
-    // audio files too.
-    Q_INVOKABLE bool removeRecording(qint64 id, bool withFiles);
+    // Deletes a Recording at once, with withFiles its transcript and audio
+    // files first. Returns the files that wouldn't go, whose entry then
+    // stays, so trying again or deleting without them can follow.
+    Q_INVOKABLE QStringList removeRecording(qint64 id, bool withFiles);
     // Plays the entry's audio from atMs, stopping any other.
     Q_INVOKABLE void play(qint64 id, qint64 atMs = 0);
     Q_INVOKABLE void stopPlaying();

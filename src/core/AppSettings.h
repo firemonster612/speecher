@@ -470,6 +470,9 @@ struct RecordingSettings {
     // The speech service a Recording tries first, ahead of the speech Service
     // Order's that stream final text; unset, the Service Order's.
     std::optional<ServiceChoice> first;
+    // The Writing Profile whose vocabulary a Recording takes; empty: Other
+    // apps' profile.
+    QString writingProfile;
     // Where transcripts go; empty: Documents/Speecher (recordingFolder()).
     QString folder;
     RecordingFormat format = RecordingFormat::Markdown;

@@ -1604,6 +1604,7 @@ private slots:
         QVERIFY(recording.isRecording());
         QCOMPARE(stopped.count(), 0);
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+        QCOMPARE(recordingEnd(stopped.first().first().value<RecordingStatus>()).reason, RecordingEnd::Reason::Silence);
     }
 
     // Each side's chunks land where they ended on the recording's clock: a
@@ -1648,9 +1649,13 @@ private slots:
             audio.hear(0, chunk * 100, samples(1600, 8000));
         }
         audio.hear(1, 1000, samples(1600, 8000));
-        const QString path = audio.finish();
+        QSignalSpy finished(&audio, &RecordingAudio::finished);
+        audio.finish();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        const QString path = finished.first().first().toString();
+        QCOMPARE(finished.first().last().toString(), QString());
         QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("call."))));
-        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(path), 10000);
+        QVERIFY(QFile::exists(path));
         QAudioDecoder decoder;
         decoder.setSource(QUrl::fromLocalFile(path));
         qint64 decodedUs = 0;
@@ -1667,6 +1672,23 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
         QCOMPARE(channels, 2);
         QVERIFY2(std::abs(decodedUs / 1000 - 1000) < 150, qPrintable(QStringLiteral("decoded %1 ms").arg(decodedUs / 1000)));
+    }
+
+    // Audio that can't take its name says so, rather than a path with no
+    // file there.
+    void aRecordingsAudioSaysWhyItWasntSaved()
+    {
+        for (const QString &taken : {QStringLiteral("taken.m4a"), QStringLiteral("taken.wav")}) {
+            QFile file(m_dir.filePath(taken));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        RecordingAudio audio(m_dir.filePath(QStringLiteral("taken.md")));
+        audio.hear(0, 1000, QByteArray(32000, '\1'));
+        QSignalSpy finished(&audio, &RecordingAudio::finished);
+        audio.finish();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(finished.first().first().toString(), QString());
+        QVERIFY(!finished.first().last().toString().isEmpty());
     }
 
     // record start --vocab-file's terms reach the speech provider ahead of the
@@ -1863,6 +1885,10 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
         QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Can you look at the retry logic?"),
                                                    QStringLiteral("It drops the last chunk.")}));
+        // The stream recovered, but what it missed stays missed.
+        const RecordingEnd end = recordingEnd(stopped.first().first().value<RecordingStatus>());
+        QCOMPARE(end.missedUtterances, 1);
+        QVERIFY(end.missedSpeech());
         QCOMPARE(server.requests.size(), 3);
         QVERIFY(server.requests.at(2).contains("Can you look at the retry logic?\r\n"));
     }
@@ -2086,6 +2112,10 @@ private slots:
         QCOMPARE(stopped.count(), 1);
         QVERIFY(!recording.isRecording());
         QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Unsupported audio"));
+        const QList<RecordingEnd::StreamStop> stops = recordingEnd(stopped.first().first().value<RecordingStatus>()).streamStops;
+        QCOMPARE(stops.size(), 1);
+        QCOMPARE(stops.first().speaker, QStringLiteral("me"));
+        QCOMPARE(stops.first().problem, QStringLiteral("Unsupported audio"));
         QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Said before."), QStringLiteral("And then")}));
     }
 
@@ -2113,6 +2143,38 @@ private slots:
         QCOMPARE(outcome, std::optional<QString>(QStringLiteral("Too many sessions")));
         QVERIFY(!QFileInfo::exists(path));
         QVERIFY(!recording.isRecording());
+    }
+
+    // Stop while it connects cancels the start: its done hears so once, the
+    // provider is let go and no file is left.
+    void aRecordingCanBeCancelledWhileItConnects()
+    {
+        registerStreamingCodex(false);
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&microphone](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        const QString path = m_dir.filePath(QStringLiteral("cancelled.md"));
+        QStringList outcomes;
+        recording.start({path}, [&outcomes](const QString &error) { outcomes << error; });
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        int cancels = 0;
+        m_codex->onCancelAttempt = [&cancels](quint64) { ++cancels; };
+        QCOMPARE(recording.phase(), RecordingSession::Phase::Starting);
+
+        recording.stop();
+        QCOMPARE(outcomes, QStringList{recordingCancelledText()});
+        QCOMPARE(recording.phase(), RecordingSession::Phase::Off);
+        QCOMPARE(cancels, 1);
+        QVERIFY(!microphone || !microphone->active);
+        QVERIFY(!QFileInfo::exists(path));
+        if (m_codex) {
+            m_codex->emitConnected();
+        }
+        QCOMPARE(outcomes.size(), 1);
     }
 
     // A stream that drops keeps reconnecting, after growing pauses, for as
