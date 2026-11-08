@@ -35,6 +35,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
+#include <QSet>
 #include <QPainter>
 #include <QPointer>
 #include <QQmlComponent>
@@ -879,6 +880,88 @@ private slots:
         // A source chosen by hand needs no line.
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
         QTRY_VERIFY(!mode->property("note").toString().startsWith(QStringLiteral("Using")));
+    }
+
+    // Every id a link, a search landing or the schema names is a page or a
+    // schema row that exists, so nothing lands nowhere after a row or page
+    // moves or goes. Ids a page makes up for its own entries (appentry:,
+    // vocab:, historyFind: and the like) are the pages' own business.
+    void everyIdALinkNamesExists()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *schema = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        QSet<QString> pages;
+        for (const QVariant &page : schema->property("pages").value<QJSValue>().toVariant().toList()) {
+            pages.insert(page.toMap().value(QStringLiteral("id")).toString());
+        }
+        QSet<QString> rows;
+        const QVariantList rowList = schema->property("rows").value<QJSValue>().toVariant().toList();
+        for (const QVariant &row : rowList) {
+            rows.insert(row.toMap().value(QStringLiteral("id")).toString());
+        }
+        QStringList stale;
+        const auto check = [&](const QString &where, const QString &id, const QSet<QString> &known) {
+            if (!id.isEmpty() && !id.contains(u':') && !known.contains(id)) {
+                stale.append(where + QStringLiteral(": ") + id);
+            }
+        };
+        for (const QVariant &value : rowList) {
+            const QVariantMap row = value.toMap();
+            const QString id = row.value(QStringLiteral("id")).toString();
+            check(id + QStringLiteral(" page"), row.value(QStringLiteral("page")).toString(), pages);
+            check(id + QStringLiteral(" opens"), row.value(QStringLiteral("opens")).toString(), rows);
+            for (const char *when : {"hiddenWhen", "enabledWhen"}) {
+                check(id + QLatin1Char(' ') + QLatin1String(when),
+                      row.value(QLatin1String(when)).toMap().value(QStringLiteral("id")).toString(), rows);
+            }
+        }
+        for (const QString &id : schema->property("suggestions").value<QJSValue>().toVariant().toStringList()) {
+            check(QStringLiteral("suggestions"), id, rows);
+        }
+        for (const QString &id : schema->property("since").value<QJSValue>().toVariant().toMap().keys()) {
+            check(QStringLiteral("since"), id, rows);
+        }
+        // Links and landings written into the QML: Navigation.go("page"),
+        // goToRow and follow("page", "row"), rowId: "row" and rowIds: [...].
+        static const QRegularExpression link(QStringLiteral("Navigation\\.(?:go|goToRow|follow)\\(\\s*\"([^\"]+)\"(?:\\s*,\\s*\"([^\"]*)\")?"));
+        static const QRegularExpression rowId(QStringLiteral("\\browId:\\s*\"([^\"]+)\""));
+        static const QRegularExpression rowIds(QStringLiteral("\\browIds:\\s*\\[([^\\]]*)\\]"));
+        static const QRegularExpression quoted(QStringLiteral("\"([^\"]+)\""));
+        QDirIterator files(QStringLiteral(SPEECHER_SOURCE_DIR "/src/frontend/quick/qml"), {QStringLiteral("*.qml"), QStringLiteral("*.js")},
+                           QDir::Files, QDirIterator::Subdirectories);
+        int scanned = 0;
+        while (files.hasNext()) {
+            QFile file(files.next());
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            // Comments' examples are not links.
+            QStringList lines = QString::fromUtf8(file.readAll()).split(u'\n');
+            lines.removeIf([](const QString &line) { return line.trimmed().startsWith(QLatin1String("//")); });
+            const QString text = lines.join(u'\n');
+            const QString where = files.fileName();
+            ++scanned;
+            for (auto it = link.globalMatch(text); it.hasNext();) {
+                const QRegularExpressionMatch match = it.next();
+                check(where, match.captured(1), pages);
+                check(where, match.captured(2), rows);
+            }
+            for (auto it = rowId.globalMatch(text); it.hasNext();) {
+                check(where, it.next().captured(1), rows);
+            }
+            for (auto it = rowIds.globalMatch(text); it.hasNext();) {
+                const QString list = it.next().captured(1);
+                for (auto ids = quoted.globalMatch(list); ids.hasNext();) {
+                    check(where, ids.next().captured(1), rows);
+                }
+            }
+        }
+        QVERIFY(scanned > 50);
+        QVERIFY2(stale.isEmpty(), qPrintable(stale.join(QStringLiteral("\n"))));
     }
 
     // A search result for a row on another page, such as the speech
