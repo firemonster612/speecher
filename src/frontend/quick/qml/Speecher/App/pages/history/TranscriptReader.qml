@@ -24,6 +24,7 @@ Column {
     property real audioEntry: 0
     property int maxHeight: 420
     property alias findText: find.text
+    readonly property alias findField: find
 
     // A list from C++ is a sequence, not a JS array, so a ListModel is
     // told apart by its get().
@@ -83,8 +84,6 @@ Column {
 
     spacing: Theme.space2
     width: parent ? parent.width : implicitWidth
-
-    Shortcut { sequences: [StandardKey.Find]; enabled: reader.visible; onActivated: find.forceActiveFocus() }
 
     Row {
         x: Theme.rowInset

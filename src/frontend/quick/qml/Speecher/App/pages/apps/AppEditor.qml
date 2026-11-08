@@ -161,24 +161,28 @@ Item {
                 Column {
                     width: parent.width
                     spacing: Theme.space2
+                    // By count, so an edit that keeps the count keeps the
+                    // rows: rebuilt, a row's field would lose its focus
+                    // after each character typed.
                     Repeater {
-                        model: editor.draftMatches
+                        model: editor.draftMatches.length
                         Row {
                             id: matchRow
-                            required property var modelData
                             required property int index
+                            readonly property var match: editor.draftMatches[index]
                             width: parent.width
                             spacing: Theme.space2
                             Select {
                                 id: kindSelect
                                 width: 190
                                 options: editor.t.matchKinds
-                                currentId: matchRow.modelData.kind
+                                currentId: matchRow.match.kind
                                 onChosen: id => editor.setDraft(matchRow.index, { kind: id })
                             }
                             TextField {
+                                objectName: "appMatchValue_" + matchRow.index
                                 width: parent.width - kindSelect.width - removeMatch.width - parent.spacing * 2
-                                text: matchRow.modelData.value
+                                text: matchRow.match.value
                                 onTextEdited: editor.setDraft(matchRow.index, { value: text })
                             }
                             IconButton {

@@ -132,9 +132,18 @@ const SettingRow settingRows[] = {
     FIELD_ROW("vadEnabled", audio.vadEnabled),
     FIELD_ROW("vadThresholdPercent", audio.vadThresholdPercent),
 
-    // [{service, model, language}], the first service first.
+    // [{service, model, language}], the first service first. The "local"
+    // entry's model is speechLocalModel's: an order hands back the one it
+    // was read with, which setup's draft would replay over a model chosen
+    // since.
     {"speechServices", [](const AppSettings &s) { return serviceOrderValue(s.speech.services); },
-     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.speech.services, v); }},
+     [](AppSettings &s, const QVariant &v) {
+         const QString localModel = localModelId(std::as_const(s.speech));
+         setServiceOrder(s.speech.services, v);
+         if (localModelId(std::as_const(s.speech)) != localModel) {
+             localModelId(s.speech) = localModel;
+         }
+     }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
     // The "local" entry's model, in the order or out of it. Choosing one

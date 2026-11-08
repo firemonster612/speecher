@@ -138,6 +138,34 @@ private slots:
         QCOMPARE(textsOf(history.results()), QStringList{QStringLiteral("today's note")});
     }
 
+    // Renaming a profile renames it in the filter's choices and the rows.
+    void aRenamedProfileShowsItsNewName()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.refinement.writingProfiles.append({QStringLiteral("custom_notes"), QStringLiteral("balanced"),
+                                                     QStringLiteral("none"), QString(), QStringLiteral("Notes")});
+            return true;
+        });
+        HistoryEntry note = kept(QStringLiteral("buy milk"));
+        note.stats.profile = QStringLiteral("custom_notes");
+        controller.history()->add(note);
+        QuickHistory history(&controller);
+        const auto names = [&history] {
+            return std::pair{history.profiles().first().toMap().value(QStringLiteral("name")).toString(),
+                             history.results().first().toMap().value(QStringLiteral("profileName")).toString()};
+        };
+        QCOMPARE(names(), std::pair(QStringLiteral("Notes"), QStringLiteral("Notes")));
+        QSignalSpy changed(&history, &QuickHistory::changed);
+
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.refinement.writingProfiles.last().name = QStringLiteral("Journal");
+            return true;
+        });
+        QCOMPARE(names(), std::pair(QStringLiteral("Journal"), QStringLiteral("Journal")));
+        QCOMPARE(changed.count(), 1);
+    }
+
     // A page at a time, and a new entry comes in at the top of what shows.
     void resultsComeAPageAtATime()
     {

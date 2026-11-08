@@ -89,11 +89,17 @@ QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     m_purge.setSingleShot(true);
     m_purge.setInterval(undoMs);
     connect(&m_purge, &QTimer::timeout, this, [this] { m_controller->history()->purgeDeleted(); });
-    // A new entry, a delete or a clear: the same query, as many entries as
-    // were showing.
-    connect(controller->history(), &HistoryStore::changed, this, [this] {
+    // A new entry, a delete or a clear, or a renamed profile the filter and
+    // the rows name: the same query, as many entries as were showing.
+    const auto refresh = [this] {
         search(std::max<int>(pageSize, int(m_results.size())));
         emit changed();
+    };
+    connect(controller->history(), &HistoryStore::changed, this, refresh);
+    connect(controller->settings(), &SettingsStore::snapshotApplied, this, [this, refresh](const AppSettings &previous) {
+        if (m_controller->settings()->dictationSnapshot().refinement.writingProfiles != previous.refinement.writingProfiles) {
+            refresh();
+        }
     });
     search(pageSize);
 }

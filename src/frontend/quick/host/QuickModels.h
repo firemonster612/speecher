@@ -121,8 +121,9 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
 
 public:
     // Reads the settings as settings shows them (QuickSettings::shown), so
-    // setup's draft shows in the services' states, as in System's.
-    QuickModels(ApplicationController *controller, const QuickSettings *settings, QObject *parent = nullptr);
+    // setup's draft shows in the services' states, as in System's, and
+    // chooses through it, so use waits in that draft too.
+    QuickModels(ApplicationController *controller, QuickSettings *settings, QObject *parent = nullptr);
 
     QVariantList speechServices() const { return m_speechServices; }
     QVariantList refinementProviders() const { return m_refinementProviders; }
@@ -173,7 +174,8 @@ public:
     // The Local Model catalog's operations, by model id. A download keeps
     // going with the window closed and resumes at the next start; deleting
     // the model dictation uses moves it to another downloaded one. use
-    // chooses the model and makes Local Model the speech service.
+    // chooses the model and makes Local Model the speech service, through
+    // Settings as its rows do.
     Q_INVOKABLE void download(const QString &id);
     Q_INVOKABLE void cancel(const QString &id);
     Q_INVOKABLE void remove(const QString &id);
@@ -200,7 +202,7 @@ private:
     void refreshDownloads();
 
     ApplicationController *m_controller;
-    const QuickSettings *m_settings;
+    QuickSettings *m_settings;
     QVariantList m_speechServices;
     QVariantList m_refinementProviders;
     QVariantMap m_speechRatings;

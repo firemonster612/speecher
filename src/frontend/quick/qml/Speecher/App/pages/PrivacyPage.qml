@@ -49,13 +49,13 @@ Page {
         const sends = id => !!Settings.values[id] && Usable.usable(Schema.row(id))
         return t.sees(sends("targetContextControl"), sends("includeScreenshotContext"))
     }
-    // Keeping less than text asks about the text already kept.
+    // Keeping less than text asks about the text already kept. Any other
+    // choice drops a question still open, so its answer can't save it.
     function chooseKeeps(id) {
         const below = id === "nothing" || id === "stats"
-        if (below && History.keptText > 0 && (Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"))
-            _lowerTo = id
-        else
-            Settings.set("historyKeeps", id)
+        const keepsText = Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"
+        _lowerTo = below && History.keptText > 0 && keepsText ? id : ""
+        if (_lowerTo === "") Settings.set("historyKeeps", id)
     }
 
     // What Speecher keeps of each dictation, for how long, the apps that

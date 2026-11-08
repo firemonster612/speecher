@@ -124,5 +124,14 @@ ClientWindow {
     Toast {}
 
     Shortcut { sequence: "Ctrl+K"; enabled: !window.settingsDeleted; onActivated: searchPalette.shown ? searchPalette.close() : searchPalette.open() }
-    Shortcut { sequence: "Ctrl+F"; enabled: !window.settingsDeleted; onActivated: searchPalette.open() }
+    // Find's one owner, so no page's own shortcut makes it ambiguous.
+    Shortcut {
+        sequence: "Ctrl+F"
+        enabled: !window.settingsDeleted
+        onActivated: {
+            const field = (stack.currentItem as Page)?.findField
+            if (field && !searchPalette.shown) field.forceActiveFocus()
+            else searchPalette.open()
+        }
+    }
 }
