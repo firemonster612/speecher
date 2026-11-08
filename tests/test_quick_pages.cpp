@@ -2400,7 +2400,8 @@ private slots:
         QMetaObject::invokeMethod(show, "clicked");
         QTRY_COMPARE(navigation->current(), QStringLiteral("vocabulary"));
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));
-        QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:for-work")));
+        // The page filtered to Work slides out after this one comes in.
+        QTRY_VERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:for-work")));
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:anywhere")));
         QCOMPARE(findItem(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")), QStringLiteral("vocabularyLimits"))
                      ->property("text").toString(),

@@ -127,7 +127,11 @@ HistoryAudioWriter::~HistoryAudioWriter()
     if (m_recorder) {
         m_recorder->stop();
     }
-    // Whatever didn't get its name was never finished.
+    // Closed first: Windows won't delete a file still open. Whatever didn't
+    // get its name was never finished.
+    if (m_wav) {
+        m_wav->close();
+    }
     QFile::remove(partPath());
 }
 
@@ -214,6 +218,18 @@ void HistoryAudioWriter::finishEncoding(const QString &error)
 void HistoryAudioWriter::discard()
 {
     m_discarded = true;
+    // The encoder lets go of its file only once it has stopped, and Windows
+    // won't delete a file still open, so the writer goes after that.
+    if (m_recorder && m_recorder->recorderState() != QMediaRecorder::StoppedState) {
+        connect(m_recorder, &QMediaRecorder::recorderStateChanged, this, [this](QMediaRecorder::RecorderState state) {
+            if (state == QMediaRecorder::StoppedState) {
+                deleteLater();
+            }
+        });
+        connect(m_recorder, &QMediaRecorder::errorOccurred, this, &QObject::deleteLater);
+        m_recorder->stop();
+        return;
+    }
     deleteLater();
 }
 

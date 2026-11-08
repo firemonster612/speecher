@@ -104,15 +104,19 @@ EditRefusal addVocabularyEntry(AppSettings &settings, VocabularyEntry entry)
 
 EditRefusal editVocabularyEntry(AppSettings &settings, const QString &id, const EntryChange<VocabularyEntry> &change)
 {
+    // Copied first: listed() rebuilds the list an id may have come from.
+    const QString wanted = id;
     QList<VocabularyEntry> &entries = listed(settings);
-    return changeEntry(entries, indexOfId(entries, id), change,
+    return changeEntry(entries, indexOfId(entries, wanted), change,
                        [&settings](VocabularyEntry &entry, qsizetype self) { return check(entry, self, settings); });
 }
 
 SettingsEdit removeVocabularyEntry(AppSettings &settings, const QString &id)
 {
+    // Copied first: listed() rebuilds the list an id may have come from.
+    const QString wanted = id;
     QList<VocabularyEntry> &entries = listed(settings);
-    const qsizetype index = indexOfId(entries, id);
+    const qsizetype index = indexOfId(entries, wanted);
     if (index < 0) {
         return {};
     }

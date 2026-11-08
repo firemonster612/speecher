@@ -489,7 +489,8 @@ private:
         QCOMPARE(settings.apps.apps.size(), 3);
         QCOMPARE(withoutId(settings.apps.apps[0]),
                  (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
-                           std::nullopt, QStringLiteral("personal"), {std::nullopt, PasteKeyCombo::Standard}}));
+                           std::nullopt, QStringLiteral("personal"),
+                           {std::nullopt, terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}}));
         QCOMPARE(withoutId(settings.apps.apps[1]),
                  (AppEntry{{}, QStringLiteral("Konsole"), {},
                            {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},

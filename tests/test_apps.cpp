@@ -217,8 +217,9 @@ private slots:
             for (const auto &[name, target] : realTargets()) {
                 QString expected = oldAnswers().value(scenario + u' ' + name);
                 // The answers were captured where terminals' keys differ; on
-                // macOS no default App Type presses them.
-                if (!terminalKeysDiffer && scenario == u"defaults") {
+                // macOS terminals press Cmd+V like the rest, so neither the
+                // default Terminals nor a migrated Terminal paste presses them.
+                if (!terminalKeysDiffer) {
                     expected.replace(QStringLiteral("terminal_paste"), QStringLiteral("steps"));
                 }
                 QTest::addRow("%s %s", qPrintable(scenario), qPrintable(name)) << scenario << target << expected;
@@ -606,8 +607,10 @@ private slots:
         // Direct insertion copied first, so a failed insertion kept the words.
         QCOMPARE(apps.apps.at(0).pasting, (PastingChoice{insertAndKeep, std::nullopt}));
         // Other apps have steps of their own, which its Standard paste hid.
+        // Its Standard keys are kept only where Terminals' would differ.
         QCOMPARE(apps.apps.at(1).pasting,
-                 (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::Standard}));
+                 (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false},
+                                terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}));
         QCOMPARE(appTypeSettings(apps, AppCategory::General).pasting, (PastingChoice{keepOnly, std::nullopt}));
         QCOMPARE(appTypeSettings(apps, AppCategory::Terminal).pasting.keys,
                  terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
