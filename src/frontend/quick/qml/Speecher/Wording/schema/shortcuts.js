@@ -29,6 +29,14 @@ var rows = [
     { id: "pasteAgainShortcut", page: "dictation", section: "After dictating", kind: "shortcut",
       label: "Paste again", help: "Pastes your last dictation again into the app you're in.",
       keywords: "repeat last dictation transcript history paste", needs: "hasGlobalShortcuts" },
+    // Set here with the other shortcuts, so their keys are checked in one
+    // list; Recordings shows it read-only (setOn, change).
+    { id: "recordingShortcut", page: "dictation", section: "Recording a call", kind: "shortcut",
+      label: "Record a call",
+      help: "Starts a recording with your saved choices, or stops the one running, from any app.",
+      setOn: "Set on Dictation, with your other shortcuts.", notSet: "No shortcut yet. Set one on Dictation.",
+      change: "Change on Dictation",
+      keywords: "recording shortcut hotkey keybinding start stop record call meeting", needs: "hasGlobalShortcuts" },
     // bindHelp says where a desktop that gives no shortcut binds a command
     // to a key, by System.desktop; other is for a desktop Speecher doesn't know.
     { id: "startCommand", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
@@ -41,5 +49,12 @@ var rows = [
           niri: "To give it a key, add Mod+D { spawn \"speecher\" \"--start-listening\"; } to the binds in your niri config.",
           other: "To give it a key, bind this command in your desktop's keyboard shortcut settings."
       },
-      command: "speecher --start-listening", keywords: "command line cli terminal script keybinding start listening" }
+      command: "speecher --start-listening", keywords: "command line cli terminal script keybinding start listening" },
+    // Where the desktop gives no shortcut: the commands that do the rest of
+    // what the shortcuts would, to bind beside the start command.
+    { id: "controlCommands", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
+      label: "Finish, cancel or paste again",
+      help: "Bind these too: speecher stop finishes the dictation and pastes it, speecher cancel throws it away, and speecher toggle starts or finishes it with one key. The popup's buttons pause and cancel. To paste a dictation again, open it in History.",
+      commands: ["speecher toggle", "speecher stop", "speecher cancel"], historyLabel: "Open History",
+      keywords: "command line cli stop cancel toggle finish paste again keybinding" }
 ];

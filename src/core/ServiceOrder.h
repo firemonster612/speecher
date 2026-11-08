@@ -11,9 +11,6 @@
 
 namespace speecher {
 
-// A Service Order holds at most this many services.
-inline constexpr int kMaxServices = 3;
-
 // What one service runs with in an order, or what a Writing Profile or a run
 // asks of the service it puts first. An empty field leaves it to the
 // service, or, in a profile's or a run's choice, to the order's entry for
@@ -39,8 +36,8 @@ struct ServiceChoice {
 };
 
 struct ServiceOrder {
-    // Provider keys, the main service first. Never more than kMaxServices
-    // once stored.
+    // Provider keys, the main service first. Every service of the job may
+    // be in it.
     QStringList order;
     // By provider key. A service keeps its choice while it is out of the
     // order, for when it comes back.

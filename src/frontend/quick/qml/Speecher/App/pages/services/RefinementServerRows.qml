@@ -6,8 +6,8 @@ import Speecher.Wording
 import Speecher.App
 
 // The refinement server's rows, among Your servers on Services, in its Fix
-// sheet and on setup's Refinement step: its URL, format, key and model, and
-// the connection check, whose models the Model row suggests. The CLI Proxy
+// sheet and on setup's Refinement step: its URL, format and key, and the
+// connection check, whose models Refinement's order suggests. The CLI Proxy
 // API server a sign-in names is offered as the URL. Each row saves as it
 // changes.
 Column {
@@ -29,17 +29,6 @@ Column {
     }
     SchemaRow { rowId: "refinementEndpointFormat" }
     SchemaRow { rowId: "refinementEndpointApiKey" }
-    SchemaRow {
-        id: endpointModelRow
-        rowId: "refinementEndpointModel"
-        SuggestField {
-            suggestionsText: Words.suggestions
-            text: Settings.values.refinementEndpointModel || ""
-            suggestions: Models.refinementEndpoint.models.map(m => ({ id: m, label: m }))
-            placeholderText: endpointModelRow.spec.placeholder
-            onCommitted: v => Settings.set("refinementEndpointModel", v)
-        }
-    }
     SchemaRow {
         id: endpointTestRow
         readonly property var check: ModelText.endpointCheck(Models.refinementEndpoint)

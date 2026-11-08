@@ -63,8 +63,11 @@ var pages = [
       keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
-      subtitle: "How Speecher starts, what it keeps, moving it to your phone or off this computer, and the setup assistant.",
-      keywords: "login startup phone insights history privacy data setup assistant uninstall remove" },
+      subtitle: "How Speecher starts, moving it to your phone or off this computer, and the setup assistant.",
+      keywords: "login startup phone setup assistant uninstall remove" },
+    { id: "privacy", parent: "general", title: "Privacy & data", icon: "shield", file: "PrivacyPage.qml",
+      subtitle: "What Speecher keeps of your dictations and for how long, and what else it sends or holds.",
+      keywords: "privacy data history insights stats keep retention delete clear share send" },
     { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
       subtitle: "How Speecher's windows look.",
       keywords: "theme dark light colors color scheme layout split framed translucent blur" },

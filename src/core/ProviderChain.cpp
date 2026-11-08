@@ -20,7 +20,7 @@ bool isChainProviderId(ProviderRole role, const QString &id)
 
 ServiceOrder normalizedServiceOrder(ProviderRole role, ServiceOrder services)
 {
-    services.order = serviceChain(role, services.order).mid(0, kMaxServices);
+    services.order = serviceChain(role, services.order);
     for (auto it = services.choices.begin(); it != services.choices.end();) {
         if (!isChainProviderId(role, it.key())) {
             it = services.choices.erase(it);

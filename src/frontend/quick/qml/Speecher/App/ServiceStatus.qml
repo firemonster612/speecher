@@ -19,7 +19,6 @@ Reveal {
     // ChatGPT's or Claude's refinement sign-in as Accounts last found it,
     // which knows an expired one core still calls unknown.
     readonly property var account: role === "refinement" ? Accounts.services.find(s => s.id === serviceId) || {} : {}
-    readonly property bool checking: role === "speech" ? !!service.signInChecking : account.state === "checking"
 
     objectName: "serviceStatus"
     // Not before the first check answers: a sign-in nobody has seen is
@@ -36,8 +35,8 @@ Reveal {
                 visible: !!status.service.signsIn || !!status.service.signIn
                 text: Words.checkAgain
                 size: "small"
-                busy: status.checking
-                onClicked: status.role === "speech" ? Models.checkSignIns() : Accounts.recheck(status.serviceId)
+                busy: ModelText.checkingSignIn(status.role, status.service)
+                onClicked: ModelText.checkSignIn(status.role, status.serviceId)
             }
             Button {
                 objectName: "fixService"

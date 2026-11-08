@@ -282,8 +282,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   after the first frame of that dictation (a later show or a hide drops the
   answer), and hides itself once `PopupWindow.empty`, faded out, so the
   popup works whether or not Main was ever opened. While a recording runs
-  and Show in the popup is on, it shows too, for the recording pill
-  (`RecordingPill`), which stands in the capsule's place while no
+  and Show a pill while recording a call (Popup & sounds) is on, it shows
+  too, for the recording pill (`RecordingPill`), which stands in the
+  capsule's place while no
   dictation is up: Connecting…, the time with Stop, a stream that needs
   attention, Finishing…, then Saved with Open for the result's time.
   During a dictation `OfferChips` carries a chip with the time and Stop
@@ -444,7 +445,7 @@ Choosing:
   `vocabularyFor:app/<id>`), and a search for one entry opens it
   (`vocab:<id>`).
 - Every choice about what Speecher keeps or shares has one home, and
-  General's Privacy & data gathers them: it edits What Speecher Keeps, its
+  Privacy & data, General's subpage, gathers them: it edits What Speecher Keeps, its
   days and Clear history itself, lists the Apps and App Types whose
   History choice keeps less (read-only, each opening in Apps, where the
   editor's History row changes it, as Pasting lists the apps that paste
@@ -453,7 +454,10 @@ Choosing:
   link row never copies the control it leads to.
 - Search (`SearchPalette`) finds pages, schema rows (by label, keywords,
   section, options and help, `Schema.search`), the person's Apps
-  (`appentry:<id>`) and Vocabulary entries (`vocab:<id>`). While History
+  (`appentry:<id>`), Writing Profiles, tones and cleanup levels
+  (`profile:<id>`, `tone:<id>`, `level:<id>`, which select the profile or
+  open the tone or level to edit) and Vocabulary entries (`vocab:<id>`). A
+  `SearchLanding`'s `landed` names the row it landed for. While History
   keeps text, its last result is Search History for the words, which
   opens History with them in its search (`historyFind:<words>`). A result
   lands through `Navigation.goToRow`, so every id it offers is a schema
@@ -541,8 +545,8 @@ Layout:
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: History under Home,
   Microphone and Popup & sounds under Dictation, Local models under
-  Services, Writing profiles under Refinement, and Appearance and Updates
-  under General. Every page has settings of its own; none only lists its
+  Services, Writing profiles under Refinement, and Privacy & data,
+  Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
@@ -559,7 +563,8 @@ Layout:
 - A subpage's title leads with the path to it ("Dictation › Microphone"),
   each step a quiet link to that page, and search gives a subpage and its
   rows the same path. A parent lists its subpages in a `SubpageRows` card
-  at its end. Dictation's rows say how each is set now (the microphone,
+  at its end, except Home, whose Your dictation card ends with History, so
+  one card stands for what Speecher kept. Dictation's rows say how each is set now (the microphone,
   live text and sounds) in place of the subtitle. A subpage keeps its id,
   so links to it still land.
 - A check (`System.checks`) shows on the page of what it gates, as a
@@ -703,7 +708,7 @@ Choosing:
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help. `ChoiceCard` is its card.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
-- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay. An option's `help` shows under it in the add choices.
+- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; addLabel; allAddedText; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay. An option's `help` shows under it in the add choices; once every option is listed, the add row says `allAddedText` instead.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:

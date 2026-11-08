@@ -36,7 +36,7 @@ Page {
         Disclosure {
             id: advanced
             title: "Audio timing and silence"
-            help: "Keeping the microphone open, how long to wait for it, and how much audio each dictation keeps."
+            help: "Keeping the microphone open, how long to wait for it, and the audio taken around your words."
             Component.onCompleted: open = page.advancedRows.includes(Navigation.pendingRow)
 
             SchemaRow { rowId: "captureMode" }

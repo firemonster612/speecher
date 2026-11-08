@@ -99,7 +99,7 @@ LibraryLists {
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
     function profileDeleteDetail(users) {
-        return users.length ? users.map(u => u.name).join(", ") + " will follow their type, or use Other."
+        return users.length ? users.map(u => u.name).join(", ") + " will follow their type's profile, or Other apps'."
                             : "No app or app type uses it."
     }
 
@@ -133,6 +133,15 @@ LibraryLists {
         languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
         noRefiner: "Clean up my words is off on Refinement, so this profile's cleanup and output language have no effect.",
         everyProfile: "As for every profile.",
+        savesAsYouGo: "Changes save as you make them.",
+        // The services disclosure's trailing text: what it changes, or what
+        // it is the same as.
+        change: "change",
+        changes: "changes",
+        sameAsOrders: "Same as every profile",
+        sameAs: place => "Same as " + place,
+        // A model nobody chose: the one the service picks.
+        serviceDefault: "its default",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",
@@ -147,6 +156,12 @@ LibraryLists {
     // Cleanup None with an output language still translates, which takes
     // Light cleanup from the profile's provider.
     function translatesAtLight(provider) { return "None still translates, at Light cleanup, with " + provider + "." }
+    // Why a dictation with the profile skips its own speech service, by
+    // Library.profiles' speechSkipped.
+    function skippedSpeechHelp(reason, service, language) {
+        return (reason === "unavailable" ? service + " isn't in this build of Speecher" : service + " can't listen for " + language)
+             + ", so this profile uses the services under Speech to text."
+    }
     // A profile's own refinement service, whose thinking and speed are its
     // entry's in Refinement's order.
     function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s, as Refinement's order sets them." }

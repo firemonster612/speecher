@@ -323,6 +323,14 @@ private slots:
             // Privacy & data lists an app kept out of History.
             draft.apps.apps.first().history = HistoryKeep::Stats;
             draft.apps.types[1].writingProfile = WritingProfile::Work;
+            // Writing profiles shows Work with services of its own, a
+            // refinement server's model typed.
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == WritingProfile::Work) {
+                    profile.speechFirst = ServiceChoice{QStringLiteral("codex")};
+                    profile.refinementFirst = ServiceChoice{QStringLiteral("endpoint"), QStringLiteral("qwen3:8b")};
+                }
+            }
             // Vocabulary shows each kind: a key term with a context, one
             // limited to a profile, a snippet over several lines, one
             // limited to an App, and a Learned Correction with its evidence.
@@ -378,7 +386,8 @@ private slots:
                                         std::pair{QStringLiteral("speechEndpointUrl"), QStringLiteral("services")},
                                         std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")},
                                         std::pair{QStringLiteral("recordingFolder"), QStringLiteral("recordings")},
-                                        std::pair{QStringLiteral("recordingAutoStop"), QStringLiteral("recordings")}}) {
+                                        std::pair{QStringLiteral("recordingAutoStop"), QStringLiteral("recordings")},
+                                        std::pair{QStringLiteral("historyKeeps"), QStringLiteral("privacy")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
                               QCOMPARE(navigation->current(), page);
@@ -417,6 +426,13 @@ private slots:
                           QVERIFY(searchResults(search, QStringLiteral("silence"))
                                       .contains(std::pair{QStringLiteral("recordingAutoStop"),
                                                           QStringLiteral("Recordings, Recording settings")}));
+                          // Privacy & data is General's subpage, and holds
+                          // what Speecher keeps.
+                          QVERIFY(searchResults(search, QStringLiteral("privacy"))
+                                      .contains(std::pair{QStringLiteral("privacy"), QStringLiteral("General › Privacy & data")}));
+                          QVERIFY(searchResults(search, QStringLiteral("what speecher keeps"))
+                                      .contains(std::pair{QStringLiteral("historyKeeps"),
+                                                          QStringLiteral("General › Privacy & data, History")}));
                           // Services is a page of its own, with no path.
                           QVERIFY(searchResults(search, QStringLiteral("services"))
                                       .contains(std::pair{QStringLiteral("services"), QString()}));
@@ -761,9 +777,10 @@ private slots:
         QTRY_VERIFY(!row->property("shown").toBool());
     }
 
-    // CLI Proxy API is a way to sign in to ChatGPT or Claude: its account,
-    // directory and server show in the card that signs in through it.
-    void cliProxyRowsShowInTheCardThatSignsInThroughIt()
+    // CLI Proxy API is a way to sign in to ChatGPT or Claude: the card that
+    // signs in through it chooses its account, and the directory and server
+    // both share show once, in a section of their own.
+    void cliProxyRowsShowOnceForBothServices()
     {
         ApplicationController controller(true);
         TrayIcon tray(&controller);
@@ -776,16 +793,25 @@ private slots:
         navigation->go(QStringLiteral("services"));
         QQuickItem *card = nullptr;
         QTRY_VERIFY((card = findItem(main->contentItem(), QStringLiteral("chatgptCard"))));
-        QQuickItem *directory = schemaRow(card, QStringLiteral("cliproxyOauthDir"));
-        QVERIFY(directory);
-        QVERIFY(!directory->property("shown").toBool());
+        QQuickItem *shared = findItem(main->contentItem(), QStringLiteral("cliproxySection"));
+        QVERIFY(shared);
+        QQuickItem *account = schemaRow(card, QStringLiteral("openAiCliproxyAccount"));
+        QVERIFY(account);
+        QVERIFY(!account->property("shown").toBool());
+        QVERIFY(!shared->parentItem()->parentItem()->property("open").toBool());
 
         QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("cliproxy"));
-        QTRY_VERIFY(directory->property("shown").toBool());
-        QVERIFY(schemaRow(card, QStringLiteral("cliproxyBaseUrl"))->property("shown").toBool());
+        QTRY_VERIFY(account->property("shown").toBool());
+        QVERIFY(shared->parentItem()->parentItem()->property("open").toBool());
+        QVERIFY(schemaRow(shared, QStringLiteral("cliproxyOauthDir")));
+        QVERIFY(schemaRow(shared, QStringLiteral("cliproxyBaseUrl")));
+        // Neither card has a copy of them.
         QQuickItem *claude = findItem(main->contentItem(), QStringLiteral("claudeCard"));
         QVERIFY(claude);
-        QVERIFY(!schemaRow(claude, QStringLiteral("cliproxyOauthDir"))->property("shown").toBool());
+        for (QQuickItem *signIn : {card, claude}) {
+            QVERIFY(!schemaRow(signIn, QStringLiteral("cliproxyOauthDir")));
+            QVERIFY(!schemaRow(signIn, QStringLiteral("cliproxyBaseUrl")));
+        }
     }
 
     // A link to another page, such as Open Local models under This
@@ -1385,6 +1411,73 @@ private slots:
 
     // A saved App is found by its name or what it is recognized by, and the
     // result opens it on Apps.
+    // Your own writing profiles, tones and cleanup levels are found by name:
+    // a profile opens in the editor, a tone or level in its edit form.
+    void searchFindsYourProfilesTonesAndLevels()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            WritingProfileSettings lab;
+            lab.profile = QStringLiteral("custom_profile_lab");
+            lab.name = QStringLiteral("Lab notebook");
+            draft.refinement.writingProfiles.append(lab);
+            draft.refinement.customTones = {{QStringLiteral("custom_tone_dry"), QStringLiteral("Deadpan"), QStringLiteral("Short and dry.")}};
+            draft.refinement.customCleanupLevels = {
+                {QStringLiteral("custom_level_minutes"), QStringLiteral("Minutes"), QStringLiteral("balanced"), QStringLiteral("Bullets.")}};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && search);
+        QMetaObject::invokeMethod(search, "open");
+        QCOMPARE(searchResults(search, QStringLiteral("lab notebook")).first(),
+                 std::make_pair(QStringLiteral("profile:custom_profile_lab"), QStringLiteral("Refinement › Writing profiles, Profiles")));
+        QCOMPARE(searchResults(search, QStringLiteral("deadpan")).first().first, QStringLiteral("tone:custom_tone_dry"));
+        QCOMPARE(searchResults(search, QStringLiteral("minutes")).first().first, QStringLiteral("level:custom_level_minutes"));
+
+        searchResults(search, QStringLiteral("lab notebook"));
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, 0));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("profiles"));
+        QQuickItem *page = nullptr;
+        QTRY_VERIFY((page = findItem(main->contentItem(), QStringLiteral("profilesPage"))));
+        QTRY_COMPARE(page->property("selectedId").toString(), QStringLiteral("custom_profile_lab"));
+
+        QMetaObject::invokeMethod(search, "open");
+        searchResults(search, QStringLiteral("deadpan"));
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, 0));
+        QQuickItem *form = nullptr;
+        QTRY_VERIFY((form = findItem(page, QStringLiteral("toneForm"))));
+        QTRY_VERIFY(form->property("open").toBool());
+        QCOMPARE(form->property("editing").toString(), QStringLiteral("custom_tone_dry"));
+    }
+
+    // Search History is an offer, not a match: words no setting has say so,
+    // and the count leaves it out.
+    void searchSaysWhenNoSettingMatches()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *settings = qmlEngine(main)->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(settings && search);
+        settings->set(QStringLiteral("historyKeeps"), QStringLiteral("text"));
+        QMetaObject::invokeMethod(search, "open");
+        QCOMPARE(searchResults(search, QStringLiteral("zzz no match")).size(), 1);
+        QCOMPARE(search->property("_matches").toInt(), 0);
+        searchResults(search, QStringLiteral("theme"));
+        QVERIFY(search->property("_matches").toInt() > 0);
+    }
+
     void searchFindsASavedAppAndOpensIt()
     {
         ApplicationController controller(true);
@@ -1502,14 +1595,14 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(history, "chosen", Q_ARG(QString, QStringLiteral("nothing"))));
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().history, HistoryKeep::Nothing);
 
-        navigation->go(QStringLiteral("general"));
+        navigation->go(QStringLiteral("privacy"));
         QQuickItem *listed = nullptr;
         QTRY_VERIFY((listed = findItem(main->contentItem(), QStringLiteral("leftOut_appentry:") + id)));
         QVERIFY(QMetaObject::invokeMethod(listed, "clicked"));
         QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
         QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
         QTRY_VERIFY(row->parentItem()->property("open").toBool());
-        QCOMPARE(navigation->returnTo(), QStringLiteral("general"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("privacy"));
     }
 
     // While History keeps text, search ends with Search History for the
@@ -1939,6 +2032,32 @@ private slots:
 
     // Refinement passes with None or a service that works; one that can't
     // clean up yet holds the step and says why, so setup can't call it done.
+    // A first run's Refinement step shows the services in order, with each
+    // one's model, thinking and speed folded away until asked for.
+    void setupRefinementFoldsEachServicesChoices()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        QVERIFY(QTest::qWaitForWindowExposed(setup));
+        const QJSValue steps = setup->property("steps").value<QJSValue>();
+        for (int i = 0; i < steps.property(QStringLiteral("length")).toInt(); ++i) {
+            if (steps.property(i).property(QStringLiteral("id")).toString() == QLatin1String("refinement")) {
+                setup->setProperty("step", i);
+            }
+        }
+        QQuickItem *show = nullptr;
+        QTRY_VERIFY((show = findItem(setup->contentItem(), QStringLiteral("showServiceChoices"))));
+        QQuickItem *model = nullptr;
+        QTRY_VERIFY((model = findItem(setup->contentItem(), QStringLiteral("serviceModel"))));
+        QTRY_VERIFY(!model->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(show, "clicked"));
+        QTRY_VERIFY(model->isVisible());
+    }
+
     void setupRefinementPassesOnlyWhenCleanupWorks()
     {
         ApplicationController controller(true);

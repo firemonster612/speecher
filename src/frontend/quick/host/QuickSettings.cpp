@@ -144,14 +144,10 @@ const SettingRow settingRows[] = {
          localModelId(s.speech) = v.toString();
          s.speech.local.modelChosen = true;
      }},
-    // The speech server among Your servers; its model is the "endpoint" entry's.
+    // The speech server among Your servers; its model is the "endpoint"
+    // entry's in the order.
     FIELD_ROW("speechEndpointUrl", speech.server.baseUrl),
     FIELD_ROW("speechEndpointPath", speech.server.path),
-    {"speechEndpointModel",
-     [](const AppSettings &s) { return QVariant(s.speech.services.choice(providerKey(ProviderId::Endpoint)).model); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.services.choice(providerKey(ProviderId::Endpoint)).model = v.toString().trimmed();
-     }},
 
     FIELD_ROW("showLiveText", ui.transcriptionPreviewEnabled),
     FIELD_ROW("showRefinementText", ui.refinementPreviewEnabled),
@@ -166,23 +162,15 @@ const SettingRow settingRows[] = {
     // [{service, model, effort, speed}], the first service first.
     {"refinementServices", [](const AppSettings &s) { return serviceOrderValue(s.refinement.services); },
      [](AppSettings &s, const QVariant &v) { setServiceOrder(s.refinement.services, v); }},
+    // This computer's Local Runner; its cleanup model is the "local" entry's
+    // in the order.
     FIELD_ROW("localRunner", refinement.localRunner.runner),
-    // The "local" entry's cleanup model, in the order or out of it.
-    {"localRunnerModel",
-     [](const AppSettings &s) { return QVariant(s.refinement.services.choice(providerKey(ProviderId::Local)).model); },
-     [](AppSettings &s, const QVariant &v) {
-         s.refinement.services.choice(providerKey(ProviderId::Local)).model = v.toString().trimmed();
-     }},
-    // The refinement server among Your servers.
+    // The refinement server among Your servers; its model is the "endpoint"
+    // entry's in the order.
     {"refinementEndpointFormat", [](const AppSettings &s) { return QVariant(s.refinement.server.format); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.format = v.toString()}); }},
     {"refinementEndpointUrl", [](const AppSettings &s) { return QVariant(s.refinement.server.baseUrl); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.baseUrl = v.toString()}); }},
-    {"refinementEndpointModel",
-     [](const AppSettings &s) {
-         return QVariant(s.refinement.services.choice(providerKey(ProviderId::Endpoint)).model);
-     },
-     [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.model = v.toString()}); }},
     FIELD_ROW("targetContextControl", refinement.useTargetContext),
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),

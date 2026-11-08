@@ -6,10 +6,11 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// The Local Runner's rows, under This computer on Services, in its Fix
-// sheet and on setup's Refinement step: the runners running here, the one chosen and its cleanup model, and
-// the cleanup model Ollama can download, with its download while it runs.
-// They look for runners when they load, and each row saves as it changes.
+// The Local Runner's rows, under This computer on Services and in its Fix
+// sheet: the runners running here, the one chosen, and the cleanup model
+// Ollama can download, with its download while it runs. Refinement's order
+// picks the model the runner runs. They look for runners when they load,
+// and each row saves as it changes.
 Column {
     id: local
     width: parent ? parent.width : implicitWidth
@@ -73,17 +74,6 @@ Column {
             currentId: Settings.values.localRunner || ""
             placeholder: runnerRow.spec.placeholder
             onChosen: id => Settings.set("localRunner", id)
-        }
-    }
-    SchemaRow {
-        id: runnerModelRow
-        rowId: "localRunnerModel"
-        SuggestField {
-            suggestionsText: Words.suggestions
-            text: Settings.values.localRunnerModel || ""
-            suggestions: (local.chosen ? local.chosen.models : []).map(m => ({ id: m, label: m }))
-            placeholderText: runnerModelRow.spec.placeholder
-            onCommitted: v => Settings.set("localRunnerModel", v)
         }
     }
     // The cleanup model suggested here, which Ollama can download, and its

@@ -10,9 +10,13 @@ var rows = [
       keywords: "refinement cleanup enable disable off none raw as spoken" },
     { id: "refinementServices", page: "refinement", section: "Services, in order", kind: "custom",
       label: "Services, in order",
-      help: "Speecher uses the first one that works. If none does, your words are pasted as spoken.",
+      help: "Speecher uses the first one that works. If none does, your words are pasted as spoken. Each service's model is chosen here; a writing profile can pick its own.",
       addLabel: "Add a service", addHelp: "Used when the ones above are unavailable.",
-      maxCount: 3,
+      // Setup's first run, which folds each service's own choices away.
+      briefHelp: "Speecher uses the first one that works. If none does, your words are pasted as spoken.",
+      showChoices: "Each service's model, thinking and speed",
+      // Every service of the job is in the order: none left to add.
+      allAddedText: "Every service is in the list. Removing one keeps its sign-in and its choices here.",
       // Each entry's own controls: its model, and ChatGPT's and Claude's
       // thinking and speed.
       modelLabel: "Model", effortLabel: "Thinking", speedLabel: "Speed",
@@ -28,7 +32,7 @@ var rows = [
       },
       ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
       ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Fast.",
-      keywords: "provider service llm ai openai anthropic claude chatgpt local runner server model thinking effort reasoning speed fast ultrafast fallback backup order" },
+      keywords: "provider service llm ai openai anthropic claude chatgpt local runner server model thinking effort reasoning speed fast ultrafast fallback backup order cleanup model server model runner model ollama qwen" },
 
     { id: "targetContextControl", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "Text around your cursor", help: "Lets cleanup fit what you are writing.",

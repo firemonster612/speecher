@@ -45,7 +45,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
         });
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     registry.registerSpeechProvider(
-        {providerKey(ProviderId::Local), QStringLiteral("Local Model")},
+        {providerKey(ProviderId::Local), QStringLiteral("This computer")},
         [localModels](QObject *parent) {
             return new LocalSpeechTranscriber(*localModels, parent);
         });
@@ -65,7 +65,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerRefinementProvider(endpointRefiner, [label = endpointRefiner.label](QObject *parent) {
         return new EndpointTranscriptRefiner(label, parent);
     });
-    const ProviderDescriptor localRunner{providerKey(ProviderId::Local), QStringLiteral("Local Runner")};
+    const ProviderDescriptor localRunner{providerKey(ProviderId::Local), QStringLiteral("This computer")};
     registry.registerRefinementProvider(localRunner, [label = localRunner.label](QObject *parent) {
         return new LocalRunnerRefiner(label, parent);
     });

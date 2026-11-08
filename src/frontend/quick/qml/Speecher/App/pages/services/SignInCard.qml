@@ -1,16 +1,13 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Speecher.Theme
-import Speecher.Controls
 import Speecher.Backend
-import Speecher.Wording
 import Speecher.App
 
 // ChatGPT or Claude on Services, and in a Fix sheet: its sign-in state, and
 // Sign in with, the one choice of where the sign-in comes from for both its
 // speech and its refinement. CLI Proxy API is one of those choices; picked,
-// the card shows its account, the directory the account files are in and
-// the optional server cleanup goes through, with that server's key.
+// the card shows which of its accounts to use. The directory and server
+// both services share are CliproxySection's.
 ServiceCard {
     id: card
 
@@ -54,7 +51,4 @@ ServiceCard {
         shown: card.cliproxy
         AccountSelect { rowId: account.rowId; type: card.openAi ? "codex" : "claude"; width: parent.width }
     }
-    SchemaRow { rowId: "cliproxyOauthDir"; stacked: true; shown: card.cliproxy }
-    SchemaRow { rowId: "cliproxyBaseUrl"; stacked: true; shown: card.cliproxy }
-    SchemaRow { rowId: "cliproxyApiKey"; stacked: true; shown: card.cliproxy && !!Settings.values.cliproxyBaseUrl }
 }

@@ -6,11 +6,10 @@ import Speecher.Backend
 import Speecher.Wording
 
 // What one service in an order runs with, under its name: its model, chosen
-// where the service lets you (a Local Model, a server's or runner's model,
-// ChatGPT's and Claude's), else named; a later speech service's Spoken
-// Language; ChatGPT's and Claude's thinking and speed. edited asks for one
-// field of the entry to change; a Local Model is chosen through its own row,
-// which marks it chosen.
+// where the service lets you (ServiceModelField), else named; a later
+// speech service's Spoken Language; ChatGPT's and Claude's thinking and
+// speed. edited asks for one field of the entry to change; a Local Model is
+// chosen through its own row, which marks it chosen.
 Flow {
     id: choice
 
@@ -30,17 +29,8 @@ Flow {
     readonly property var refineSpec: Schema.row("refinementServices")
     // ChatGPT and Claude refinement, which think and run at a speed.
     readonly property bool tuned: !speech && (modelData === "openai" || modelData === "anthropic")
-    // The models a typed model is picked from: the server's, the runner's,
-    // or ChatGPT's and Claude's suggestions.
-    readonly property var suggestions: {
-        if (modelData === "endpoint")
-            return (speech ? Models.speechEndpoint : Models.refinementEndpoint).models.map(m => ({ id: m, label: m }))
-        if (modelData === "local") {
-            const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
-            return (runner ? runner.models : []).map(m => ({ id: m, label: m }))
-        }
-        return ModelText.suggestedModels(modelData)
-    }
+    // The Local Model speech runs, which choosing marks chosen.
+    readonly property bool localSpeech: speech && modelData === "local"
 
     width: parent ? parent.width : implicitWidth
     spacing: Theme.space3
@@ -79,27 +69,17 @@ Flow {
         tone: "tertiary"
     }
     Labelled {
-        visible: choice.speech && choice.modelData === "local"
+        visible: ModelText.choosesModel(choice.role, choice.modelData)
         label: choice.refineSpec.modelLabel
-        Select {
-            objectName: "localModel"
-            width: Theme.selectWidth
-            placeholder: Words.choose
-            options: Models.downloaded.map(id => ModelText.catalogModel(id)).map(m => ({ id: m.id, label: m.name, help: m.bestFor }))
-            currentId: Models.localModelChoice
-            onChosen: id => Settings.set("speechLocalModel", id)
-        }
-    }
-    Labelled {
-        visible: (choice.speech && choice.modelData === "endpoint") || !choice.speech
-        label: choice.refineSpec.modelLabel
-        SuggestField {
+        ServiceModelField {
             objectName: "serviceModel"
-            width: Theme.selectWidth
-            suggestionsText: Words.suggestions
-            text: choice.entry.model || ""
-            suggestions: choice.suggestions
-            onCommitted: v => { if (v !== (choice.entry.model || "")) choice.edited("model", v) }
+            role: choice.role
+            service: choice.modelData
+            value: choice.localSpeech ? Models.localModelChoice : choice.entry.model || ""
+            onChosen: model => {
+                if (choice.localSpeech) Settings.set("speechLocalModel", model)
+                else choice.edited("model", model)
+            }
         }
     }
     Labelled {

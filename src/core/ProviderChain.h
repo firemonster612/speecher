@@ -23,14 +23,12 @@ using ProviderLabels = std::function<QString(ProviderRole role, const QString &p
 bool isChainProviderId(ProviderRole role, const QString &id);
 
 // The order as stored: services of this role in order, without blanks,
-// unknown ids or repeats, and at most kMaxServices. Each entry's choice names
+// unknown ids or repeats. Each entry's choice names
 // its service; choices of services out of the order stay.
 ServiceOrder normalizedServiceOrder(ProviderRole role, ServiceOrder services);
 
 // The services a Dictation Session tries, in order, without blanks, unknown
-// ids or repeats. A stored order holds at most kMaxServices; a Writing
-// Profile's service leads the page's whole order, so a session's may hold one
-// more.
+// ids or repeats. A Writing Profile's service leads the page's whole order.
 QStringList serviceChain(ProviderRole role, const QStringList &order);
 QStringList serviceChain(const SpeechSettings &speech);
 // Empty while refinement is off (Clean up my words).

@@ -21,9 +21,13 @@ class QuickLibrary : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(LibraryLists)
     // { id, name, builtIn, cleanup, tone, language, instructions, speech,
-    // speechModel, refinement, refinementModel }: the built-ins, then the
-    // user's in the order added. An empty service or model is the one the
-    // Speech to text or Refinement page chose.
+    // speechModel, speechSkipped, refinement, refinementModel }: the
+    // built-ins, then the user's in the order added. An empty service or
+    // model is the one the Speech to text or Refinement page chose.
+    // speechSkipped says why core's planDictation passes over the profile's
+    // own speech service for Speech to text's order: "language" where it
+    // can't listen for the Spoken Language, "unavailable" where this build
+    // lacks it; empty while the profile's service leads.
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY listsChanged)
     // { id, name, instruction }
     Q_PROPERTY(QVariantList customTones READ customTones NOTIFY listsChanged)

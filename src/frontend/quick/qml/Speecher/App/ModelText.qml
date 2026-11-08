@@ -113,16 +113,33 @@ QtObject {
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
     readonly property string signInUnknown: "Sign-in unknown"
-    // What an order says under each service: { text, state }, its problem,
-    // or where it stands once nothing stands in its way.
+    // What an order says under each service: { text, state }. Whether it
+    // can run and its place are two facts: a later service says it stands
+    // in only once it is ready, and keeps its own state until then.
     function orderStatus(provider, index) {
-        if (provider.state !== "ready" && provider.state !== "unknown") return { text: status(provider), state: provider.state }
-        if (index === 0) return { text: status(provider), state: provider.state }
-        return { text: "Used when the ones above are unavailable.", state: "ready" }
+        if (index > 0 && provider.state === "ready") return { text: "Ready, used when the ones above are unavailable", state: "ready" }
+        return { text: status(provider), state: provider.state }
     }
-    // Whether a service's problem is fixed on Services: a sign-in, a model, a
-    // runner or a server, rather than the Spoken Language above the list.
-    function fixable(provider) { return !["ready", "unknown", "language", "offline", ""].includes(provider.state) }
+    // Whether a service's problem is fixed on Services: a sign-in, a runner
+    // or a server, rather than the Spoken Language above the list or a
+    // Local Runner's model, which its order row chooses.
+    function fixable(provider) {
+        return !["ready", "unknown", "language", "offline", ""].includes(provider.state)
+            && !(provider.refines && provider.id === "local" && provider.state === "noModel")
+    }
+    // A sign-in no check has vouched for: Check again asks, and Fix opens
+    // the sign-in in case it is the problem.
+    function unchecked(provider) { return provider.state === "unknown" && !!provider.signsIn }
+    // Checks a service's sign-in again: speech's through Models, a
+    // refinement service's through its Accounts card.
+    function checkSignIn(role, id) {
+        if (role === "speech") Models.checkSignIns()
+        else Accounts.recheck(id)
+    }
+    function checkingSignIn(role, provider) {
+        if (role === "speech") return !!provider.signInChecking
+        return (Accounts.services.find(s => s.id === provider.id) || {}).state === "checking"
+    }
 
     // Ratings --------------------------------------------------------------------
 
@@ -146,8 +163,9 @@ QtObject {
     // service only where transcribe.cpp was built in.
     readonly property bool localSpeech: Models.speechServices.some(s => s.id === "local")
     function catalogModel(id) { return Models.catalog.find(m => m.id === id) || null }
-    // Downloaded models as a choice, for a profile's own speech model.
-    readonly property var downloadedModels: Models.downloaded.map(id => ({ id: id, label: catalogModel(id).name }))
+    // Downloaded models as a choice, with what each is best for.
+    readonly property var downloadedModels: Models.downloaded.map(id => catalogModel(id) || { id: id, name: id, bestFor: "" })
+                                                             .map(m => ({ id: m.id, label: m.name, help: m.bestFor }))
 
     readonly property var _ratings: ({ recommended: "Recommended", good: "Good", situational: "Situational",
                                        notRecommended: "Not recommended" })
@@ -267,6 +285,23 @@ QtObject {
     // The models ChatGPT and Claude suggest, [{ id, label }]; none for
     // another service, whose model is typed or the runner's or server's.
     function suggestedModels(id) { return id === "openai" ? Models.openAiModels : id === "anthropic" ? Models.anthropicModels : [] }
+    // Whether a job's service runs a model one can choose: every refinement
+    // service, and speech's Local Model and server. Claude Voice and
+    // ChatGPT dictation name theirs.
+    function choosesModel(role, id) { return role === "refinement" || id === "local" || id === "endpoint" }
+    // The models a service offers to choose, [{ id, label }]: the Local
+    // Models downloaded, a server's or the runner's once checked, ChatGPT's
+    // and Claude's. ServiceModelField shows them.
+    function modelChoices(role, id) {
+        const named = models => models.map(m => ({ id: m, label: m }))
+        if (id === "endpoint") return named((role === "speech" ? Models.speechEndpoint : Models.refinementEndpoint).models || [])
+        if (id === "local" && role === "speech") return downloadedModels
+        if (id === "local") {
+            const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
+            return named(runner ? runner.models : [])
+        }
+        return role === "refinement" ? suggestedModels(id) : []
+    }
     // The model a refinement service refines with, by its name in the
     // suggestions where it has one.
     function refinementModel(id) {

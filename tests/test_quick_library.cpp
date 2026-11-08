@@ -109,6 +109,41 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
     }
 
+    // A profile's own speech service shows as skipped while a dictation with
+    // the profile passes it over, as core's resolver does: here Claude
+    // Voice, which can't listen for Afrikaans, while ChatGPT can.
+    void aProfileSaysWhenADictationSkipsItsSpeechService()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.speech.language = QStringLiteral("af");
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == WritingProfile::Work) {
+                    profile.speechFirst = ServiceChoice{QStringLiteral("claude")};
+                }
+            }
+            return true;
+        });
+        QuickLibrary library(&controller);
+        const auto skipped = [&library](const QString &id) {
+            for (const QVariant &profile : library.profiles()) {
+                if (profile.toMap().value(QStringLiteral("id")).toString() == id) {
+                    return profile.toMap().value(QStringLiteral("speechSkipped")).toString();
+                }
+            }
+            return QStringLiteral("(no profile)");
+        };
+        QCOMPARE(skipped(WritingProfile::Work), QStringLiteral("language"));
+        QCOMPARE(skipped(WritingProfile::Email), QString());
+
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.speech.language = QStringLiteral("en");
+            return true;
+        });
+        QTRY_COMPARE(skipped(WritingProfile::Work), QString());
+    }
+
     // A form's save is refused with the reason it shows.
     void eachRefusalSaysWhy()
     {
