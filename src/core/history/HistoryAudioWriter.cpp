@@ -217,25 +217,30 @@ void HistoryAudioWriter::finishEncoding(const QString &error)
         name.clear();
     }
     emit finished(name, failure);
-    deleteLater();
+    goWhenStopped();
 }
 
 void HistoryAudioWriter::discard()
 {
     m_discarded = true;
-    // The encoder lets go of its file only once it has stopped, and Windows
-    // won't delete a file still open, so the writer goes after that.
-    if (m_recorder && m_recorder->recorderState() != QMediaRecorder::StoppedState) {
-        connect(m_recorder, &QMediaRecorder::recorderStateChanged, this, [this](QMediaRecorder::RecorderState state) {
-            if (state == QMediaRecorder::StoppedState) {
-                deleteLater();
-            }
-        });
-        connect(m_recorder, &QMediaRecorder::errorOccurred, this, &QObject::deleteLater);
-        m_recorder->stop();
+    goWhenStopped();
+}
+
+// The encoder lets go of its file only once it has stopped, and Windows
+// won't delete a file still open, so the writer goes after that.
+void HistoryAudioWriter::goWhenStopped()
+{
+    if (!m_recorder || m_recorder->recorderState() == QMediaRecorder::StoppedState) {
+        deleteLater();
         return;
     }
-    deleteLater();
+    connect(m_recorder, &QMediaRecorder::recorderStateChanged, this, [this](QMediaRecorder::RecorderState state) {
+        if (state == QMediaRecorder::StoppedState) {
+            deleteLater();
+        }
+    });
+    connect(m_recorder, &QMediaRecorder::errorOccurred, this, &QObject::deleteLater);
+    m_recorder->stop();
 }
 
 } // namespace speecher

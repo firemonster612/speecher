@@ -53,6 +53,7 @@ private:
     QString partPath() const;
     void sendPending();
     void finishEncoding(const QString &error);
+    void goWhenStopped();
 
     QString m_folder;
     QString m_name;
