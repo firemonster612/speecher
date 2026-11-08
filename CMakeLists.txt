@@ -1587,6 +1587,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_quick_updates.cpp
     tests/test_quick_transcription.cpp
     tests/test_quick_system.cpp
+    tests/test_quick_apps.cpp
     tests/test_quick_models.cpp
     tests/test_quick_insights.cpp
     tests/test_quick_history.cpp
@@ -1637,6 +1638,7 @@ if(SPEECHER_BUILD_TESTS)
     quick_updates
     quick_transcription
     quick_system
+    quick_apps
     quick_models
     quick_insights
     quick_history

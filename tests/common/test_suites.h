@@ -75,6 +75,7 @@ int runQuickDictationTests(int argc, char **argv);
 int runQuickUpdatesTests(int argc, char **argv);
 int runQuickTranscriptionTests(int argc, char **argv);
 int runQuickSystemTests(int argc, char **argv);
+int runQuickAppsTests(int argc, char **argv);
 int runQuickModelsTests(int argc, char **argv);
 int runQuickInsightsTests(int argc, char **argv);
 int runQuickHistoryTests(int argc, char **argv);

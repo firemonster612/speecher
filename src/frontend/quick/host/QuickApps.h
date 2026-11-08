@@ -1,12 +1,12 @@
 #pragma once
 
+#include "frontend/quick/host/AppCapture.h"
 #include "frontend/quick/host/HostSingleton.h"
 #include "frontend/quick/host/QmlValues.h"
 #include "platform/InstalledApps.h"
 
 #include <QObject>
 #include <QQmlEngine>
-#include <QTimer>
 #include <QVariantList>
 
 namespace speecher {
@@ -76,8 +76,8 @@ public:
     bool scanning() const { return m_scanning; }
     QVariantList recent() const { return m_recent; }
     int builtInCount() const;
-    QString capture() const { return m_capture; }
-    int captureCountdown() const { return m_countdown; }
+    QString capture() const;
+    int captureCountdown() const { return m_capture.countdown(); }
     QVariantMap tested() const { return m_tested; }
 
     // Scans the installed apps off the UI thread, once a session; later
@@ -119,9 +119,9 @@ signals:
 private:
     void rebuild();
     void rebuildInstalled();
-    void setCapture(const QString &state);
-    void captureFront();
-    void startCapture(int seconds);
+    void setCaptureFailed(bool failed);
+    // Adds the App Switch to it found where none matches it.
+    void addCaptured(const Target &target);
     void showTested(const Target &target);
 
     ApplicationController *m_controller;
@@ -133,12 +133,12 @@ private:
     QVariantList m_types;
     QVariantList m_recent;
     UndoSlot m_undo;
-    QString m_capture;
+    AppCapture m_capture;
     // Whether the capture under way is a Test, which adds nothing.
     bool m_testing = false;
+    // Whether the last capture failed, until the next starts or is cancelled.
+    bool m_captureFailed = false;
     QVariantMap m_tested;
-    int m_countdown = 0;
-    QTimer m_tick;
 };
 
 } // namespace speecher

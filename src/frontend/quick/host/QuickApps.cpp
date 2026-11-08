@@ -4,7 +4,6 @@
 #include "core/AppEdits.h"
 #include "core/SeenApps.h"
 #include "core/SettingsStore.h"
-#include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/quick/host/QmlValues.h"
 
@@ -17,11 +16,6 @@
 namespace speecher {
 
 namespace {
-
-// How long Switch to it waits for another app to come to the front once the
-// countdown is over, and then for that app's window to settle.
-constexpr int captureWaitSeconds = 10;
-constexpr int settleMs = 700;
 
 QThreadPool &scanPool()
 {
@@ -239,23 +233,20 @@ std::optional<QString> nonEmpty(const QVariant &value)
 QuickApps::QuickApps(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_capture(
+          controller->targetProvider(),
+          [controller] { return controller->dictationState() != DictationState::Idle; },
+          [] { return QGuiApplication::applicationState() == Qt::ApplicationActive; })
 {
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickApps::rebuild);
     connect(controller->seenApps(), &SeenApps::changed, this, &QuickApps::rebuild);
-    m_tick.setInterval(1000);
-    connect(&m_tick, &QTimer::timeout, this, [this] {
-        if (m_countdown > 0) {
-            --m_countdown;
-            emit captureChanged();
-            return;
-        }
-        // Past the countdown, as long as Speecher is still in front.
-        if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
-            m_tick.stop();
-            QTimer::singleShot(settleMs, this, &QuickApps::captureFront);
-        } else if (--m_countdown < -captureWaitSeconds) {
-            m_tick.stop();
-            setCapture(QStringLiteral("failed"));
+    connect(&m_capture, &AppCapture::changed, this, &QuickApps::captureChanged);
+    connect(&m_capture, &AppCapture::failed, this, [this] { setCaptureFailed(true); });
+    connect(&m_capture, &AppCapture::captured, this, [this](const Target &target) {
+        if (m_testing) {
+            showTested(target);
+        } else {
+            addCaptured(target);
         }
     });
     rebuild();
@@ -486,10 +477,15 @@ QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
     });
 }
 
-void QuickApps::setCapture(const QString &state)
+QString QuickApps::capture() const
 {
-    if (m_capture != state) {
-        m_capture = state;
+    return m_capture.waiting() ? QStringLiteral("waiting") : m_captureFailed ? QStringLiteral("failed") : QString();
+}
+
+void QuickApps::setCaptureFailed(bool failed)
+{
+    if (m_captureFailed != failed) {
+        m_captureFailed = failed;
         emit captureChanged();
     }
 }
@@ -497,73 +493,52 @@ void QuickApps::setCapture(const QString &state)
 void QuickApps::captureNext(int seconds)
 {
     m_testing = false;
-    startCapture(seconds);
+    m_captureFailed = false;
+    m_capture.start(seconds);
 }
 
 void QuickApps::testNext(int seconds)
 {
     m_testing = true;
+    m_captureFailed = false;
     m_tested.clear();
     emit testedChanged();
-    startCapture(seconds);
-}
-
-void QuickApps::startCapture(int seconds)
-{
-    m_countdown = std::max(0, seconds);
-    m_capture.clear();
-    setCapture(QStringLiteral("waiting"));
-    m_tick.start();
+    m_capture.start(seconds);
 }
 
 void QuickApps::cancelCapture()
 {
-    m_tick.stop();
-    m_countdown = 0;
-    setCapture({});
+    m_captureFailed = false;
+    m_capture.cancel();
 }
 
-void QuickApps::captureFront()
+void QuickApps::addCaptured(const Target &target)
 {
-    TargetProvider *provider = m_controller->targetProvider();
-    // Capturing drops what a dictation under way captured.
-    if (m_capture != u"waiting" || !provider || m_controller->dictationState() != DictationState::Idle) {
-        setCapture(QStringLiteral("failed"));
+    if (target.applicationId.trimmed().isEmpty()) {
+        setCaptureFailed(true);
         return;
     }
-    provider->capture(this, [this](const Target &target) {
-        if (m_capture != u"waiting") {
-            return;
+    QString id = resolveApp(target, m_controller->settings()->dictationSnapshot().apps).appId;
+    if (id.isEmpty()) {
+        QStringList ids{target.applicationId};
+        if (!target.processName.isEmpty()
+            && comparableAppId(target.processName) != comparableAppId(target.applicationId)) {
+            ids.append(target.processName);
         }
-        if (m_testing) {
-            showTested(target);
-            return;
-        }
-        if (target.applicationId.trimmed().isEmpty()) {
-            setCapture(QStringLiteral("failed"));
-            return;
-        }
-        QString id = resolveApp(target, m_controller->settings()->dictationSnapshot().apps).appId;
-        if (id.isEmpty()) {
-            QStringList ids{target.applicationId};
-            if (!target.processName.isEmpty()
-                && comparableAppId(target.processName) != comparableAppId(target.applicationId)) {
-                ids.append(target.processName);
-            }
-            const QString name = !target.applicationName.isEmpty() ? target.applicationName : target.applicationId;
-            id = add({{QStringLiteral("name"), name}, {QStringLiteral("ids"), ids}}).value(QStringLiteral("id")).toString();
-        }
-        setCapture(id.isEmpty() ? QStringLiteral("failed") : QString());
-        if (!id.isEmpty()) {
-            emit captured(id);
-        }
-    });
+        const QString name = !target.applicationName.isEmpty() ? target.applicationName : target.applicationId;
+        id = add({{QStringLiteral("name"), name}, {QStringLiteral("ids"), ids}}).value(QStringLiteral("id")).toString();
+    }
+    if (id.isEmpty()) {
+        setCaptureFailed(true);
+        return;
+    }
+    emit captured(id);
 }
 
 void QuickApps::showTested(const Target &target)
 {
     if (!target.hasIdentity()) {
-        setCapture(QStringLiteral("failed"));
+        setCaptureFailed(true);
         return;
     }
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
@@ -582,7 +557,6 @@ void QuickApps::showTested(const Target &target)
         {QStringLiteral("history"), sourceRecord(resolution.historyFrom, resolution.historyApp)},
     });
     m_tested = tested;
-    setCapture({});
     emit testedChanged();
 }
 

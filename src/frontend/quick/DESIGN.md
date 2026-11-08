@@ -165,7 +165,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   App's name and matches. `captureNext(seconds)` is Switch to it, which
   captures the app in front as dictation does, and `testNext(seconds)` is
   Test, which answers `tested` with every App that matches it and where each
-  value comes from. Launchers of one program list as one installed app. Icons
+  value comes from. Both wait for the app through the host's `AppCapture`
+  (countdown, another app in front, its window settled); Apps decides what
+  the captured app becomes. Launchers of one program list as one installed app. Icons
   come from the host's `image://appicon` provider. `schema/apps.js` words
   all of it and holds the App Types' list.
 - `Settings.values.speechServices` and `refinementServices` are the two
