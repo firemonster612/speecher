@@ -90,24 +90,28 @@ Column {
                 }
             }
         }
-        Labelled {
+        // Thinking and speed wrap as one, so every service's row breaks
+        // the same way.
+        Row {
             visible: choice.tuned
-            label: choice.refineSpec.effortLabel
-            Select {
-                width: 130
-                options: choice.tuned ? choice.refineSpec.effortOptions[choice.modelData] : []
-                currentId: choice.entry.effort || ""
-                onChosen: id => choice.edited("effort", id)
+            spacing: Theme.space3
+            Labelled {
+                label: choice.refineSpec.effortLabel
+                Select {
+                    width: 130
+                    options: choice.tuned ? choice.refineSpec.effortOptions[choice.modelData] : []
+                    currentId: choice.entry.effort || ""
+                    onChosen: id => choice.edited("effort", id)
+                }
             }
-        }
-        Labelled {
-            visible: choice.tuned
-            label: choice.refineSpec.speedLabel
-            Select {
-                width: 130
-                options: choice.tuned ? choice.refineSpec.speedOptions[choice.modelData] : []
-                currentId: choice.entry.speed || ""
-                onChosen: id => choice.edited("speed", id)
+            Labelled {
+                label: choice.refineSpec.speedLabel
+                Select {
+                    width: 130
+                    options: choice.tuned ? choice.refineSpec.speedOptions[choice.modelData] : []
+                    currentId: choice.entry.speed || ""
+                    onChosen: id => choice.edited("speed", id)
+                }
             }
         }
         // A later speech service listens for its own Spoken Language, or, with
