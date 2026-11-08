@@ -297,11 +297,6 @@ function shortened(words) {
     return line.length > 40 ? line.slice(0, 39).trim() + "\u2026" : line
 }
 
-// "0:06", the playing position or an entry's length.
-function clock(ms) {
-    const s = Math.round(ms / 1000)
-    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
-}
 
 function _list(names) { return names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0] || "" }
 function _num(n) { return Number(n).toLocaleString(Qt.locale(), "f", 0) }

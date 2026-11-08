@@ -5,6 +5,7 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "apps"
 import "text"
 
 // How words get into apps: the delivery steps in the order core tries
@@ -95,12 +96,11 @@ Page {
         objectName: "appsPasteDifferently"
         // Those with steps or keys of their own, App Types first, with what
         // they do here.
-        readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => ({
-            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, typeIcon: Schema.apps.type(o.id).icon, icon: "",
-            own: o, effective: o.effective,
+        readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => Object.assign(Schema.apps.typeLink(o), {
+            effective: o.effective,
             terminalWins: o.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && (o.steps || o.keys))
-        })).concat(Apps.entries.filter(e => e.steps || e.keys).map(e => ({
-            id: "appentry:" + e.id, name: e.name, typeIcon: "", icon: e.icon, own: e, effective: e.effective, terminalWins: false
+        })).concat(Apps.entries.filter(e => e.steps || e.keys).map(e => Object.assign(Schema.apps.appLink(e), {
+            effective: e.effective, terminalWins: false
         })))
         title: Schema.row("appsPasteDifferently").label
         caption: Schema.row("appsPasteDifferently").help
@@ -110,45 +110,15 @@ Page {
         RowList {
             id: differentList
             values: differently.entries
-            delegate: ListRow {
-                id: differentRow
+            delegate: AppLinkRow {
                 required property string key
                 required property int index
-                readonly property var entry: differentList.entry(key)
                 objectName: "differently_" + key
-                width: ListView.view.width
                 first: index === 0 && differentList.first
-                implicitHeight: Math.max(Theme.rowHeight, words.implicitHeight + 22)
-                clickable: true
-                Accessible.name: entry.name
-                onClicked: Navigation.follow("apps", key)
-                AppIcon {
-                    id: icon
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: differentRow.entry.typeIcon ? "" : differentRow.entry.name
-                    iconName: differentRow.entry.typeIcon
-                    source: differentRow.entry.icon ? "image://appicon/" + encodeURIComponent(differentRow.entry.icon) : ""
-                    size: 28
-                }
-                Column {
-                    id: words
-                    x: icon.width + Theme.space3
-                    width: parent.width - x
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 3
-                    Txt { width: parent.width; text: differentRow.entry.name; variant: "label"; elide: Text.ElideRight }
-                    Txt {
-                        objectName: "differentlyResult"
-                        width: parent.width
-                        // What its steps and keys do here; Apps lists what it sets.
-                        text: Schema.pasting.pastingResult(System.stepsPlan(differentRow.entry.effective.steps),
-                                                           differentRow.entry.effective.keys, differentRow.entry.terminalWins)
-                        variant: "small"
-                        tone: "secondary"
-                        wrapMode: Text.WordWrap
-                    }
-                }
-                trailing: [ Icon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right"; size: 16 } ]
+                entry: differentList.entry(key)
+                // What its steps and keys do here; Apps lists what it sets.
+                detail: Schema.pasting.pastingResult(System.stepsPlan(entry.effective.steps), entry.effective.keys,
+                                                     entry.terminalWins)
             }
         }
         Reveal {

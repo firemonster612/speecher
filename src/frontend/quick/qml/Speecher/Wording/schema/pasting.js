@@ -66,7 +66,8 @@ function details(step, wayland) {
 }
 
 // The row for each step, by step id, and the one short name each step has
-// everywhere: the Pasting page, its picture, Apps and search.
+// on the Pasting page, its picture, Apps and search. Setup's Pasting verdict
+// names them its own way (setup.js stepNames).
 var rowOf = { insert: "insertThroughAccessibility", press: "pressPasteKeys", keep: "keepOnClipboard" };
 var stepIds = ["insert", "press", "keep"];
 var stepLabels = { insert: "Insert", press: "Press paste keys", keep: "Keep on clipboard" };

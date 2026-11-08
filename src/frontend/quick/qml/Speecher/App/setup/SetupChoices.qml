@@ -2,6 +2,7 @@ import QtQuick
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "../pages/home/words.js" as HomeWords
 
 // The setup assistant's draft, and where each step stands. The steps are
 // the pages' own sections, writing through Settings as the pages do. While
@@ -58,7 +59,7 @@ QtObject {
             const done = ready || (!!service && !!fallback)
             return { done: done, needed: !done,
                      verdict: !service ? Setup.text.notChosen : ready ? service.label
-                                          : fallback ? Setup.text.takesOver(fallback.label)
+                                          : fallback ? HomeWords.text.takesOver(fallback.label)
                                           : service.state !== "unknown" ? ModelText.status(service)
                                           : speech === "endpoint" ? ModelText.endpointCheck(Models.speechEndpoint).text
                                           : service.signInCheckFailure || ModelText.checking }

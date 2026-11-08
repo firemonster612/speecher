@@ -99,8 +99,8 @@ Column {
                     objectName: "readerPlay"
                     visible: !!root.entry.hasAudio
                     iconName: root.playing ? "square" : "play"
-                    text: root.playing ? T.clock(History.playing.positionMs || 0) + " / " + T.clock(History.playing.durationMs || root.entry.durationMs)
-                                       : T.clock(root.entry.durationMs)
+                    text: root.playing ? Words.clock(History.playing.positionMs || 0) + " / " + Words.clock(History.playing.durationMs || root.entry.durationMs)
+                                       : Words.clock(root.entry.durationMs)
                     tooltip: root.playing ? T.text.stop : T.text.play
                     size: "small"
                     onClicked: root.playing ? History.stopPlaying() : History.play(root.entryId)

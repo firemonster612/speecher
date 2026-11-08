@@ -10,6 +10,13 @@ QtObject {
     function num(n, decimals) { return Number(n).toLocaleString(Qt.locale(), "f", decimals || 0) }
     // "1 term", "128 terms"
     function count(n, one, many) { return num(n) + " " + (n === 1 ? one : many) }
+    // A length or a running time, to the second: "4:52", or "1:02:03" past
+    // an hour.
+    function clock(ms) {
+        const s = Math.floor(ms / 1000)
+        const mmss = Math.floor(s / 60) % 60 + ":" + String(s % 60).padStart(2, "0")
+        return s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0")
+    }
     // "42%", from 0.42
     function percent(fraction) { return Math.round(fraction * 100) + "%" }
     // "Slack, Linear and Notion"
@@ -24,7 +31,6 @@ QtObject {
     readonly property string delete_: "Delete"
     readonly property string remove: "Remove"
     readonly property string undo: "Undo"
-    readonly property string cantUndo: "This can't be undone."
     readonly property string moveUp: "Move up"
     readonly property string moveDown: "Move down"
     readonly property string copy: "Copy"
@@ -34,7 +40,6 @@ QtObject {
     readonly property string clear: "Clear"
     readonly property string choose: "Choose…"
     readonly property string suggestions: "Suggestions"
-    readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
     // A service that can't run, in an order: opens its Services card.
     readonly property string fix: "Fix"

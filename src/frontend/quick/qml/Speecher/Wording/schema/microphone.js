@@ -22,8 +22,7 @@ var rows = [
       startLabel: "Start test", startingLabel: "Starting…", stopLabel: "Stop test", retryLabel: "Try again",
       listeningText: "Listening to %1", noMicrophoneText: "No microphone found",
       accessOffText: "Microphone access is off.",
-      heardText: "Speecher hears your microphone.", notHeardText: "Not heard yet",
-      noMicrophoneHint: "Plug in or turn on a microphone. It shows up here as soon as your computer sees it.",
+      notHeardText: "Not heard yet",
       keywords: "level meter check volume hear input test" },
 
     { id: "captureMode", page: "microphone", section: "Advanced", kind: "choice",

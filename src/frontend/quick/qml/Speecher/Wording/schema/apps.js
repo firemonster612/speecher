@@ -26,6 +26,13 @@ var types = [
     { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
 ];
 function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
+// An App Type (of Apps.types) or an App (of Apps.entries) as another page
+// lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
+// the Apps page's landing id.
+function typeLink(settings) {
+    return { id: "apptype:" + settings.id, name: type(settings.id).label, typeIcon: type(settings.id).icon, icon: "" }
+}
+function appLink(entry) { return { id: "appentry:" + entry.id, name: entry.name, typeIcon: "", icon: entry.icon } }
 // The fallback profile's one name, wherever its place is named rather than
 // the profile it holds.
 var otherAppsProfile = "Other apps' profile";

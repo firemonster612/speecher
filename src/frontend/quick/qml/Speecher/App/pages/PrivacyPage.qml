@@ -5,6 +5,7 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "apps"
 import "history"
 import "history/HistoryWords.js" as HistoryText
 
@@ -43,11 +44,8 @@ Page {
     // The Apps and App Types that keep less than What Speecher Keeps, App
     // Types first, each with its choice, as Pasting lists those that paste
     // differently.
-    readonly property var _leftOut: Apps.types.filter(o => o.history).map(o => ({
-        id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, typeIcon: Schema.apps.type(o.id).icon, icon: "", history: o.history
-    })).concat(Apps.entries.filter(e => e.history).map(e => ({
-        id: "appentry:" + e.id, name: e.name, typeIcon: "", icon: e.icon, history: e.history
-    })))
+    readonly property var _leftOut: Apps.types.filter(o => o.history).map(o => Object.assign(Schema.apps.typeLink(o), { history: o.history }))
+        .concat(Apps.entries.filter(e => e.history).map(e => Object.assign(Schema.apps.appLink(e), { history: e.history })))
     readonly property string _refinementSees: {
         if (!Settings.values.refinementEnabled) return t.cleanupOff
         const sends = id => !!Settings.values[id] && Usable.usable(Schema.row(id))
@@ -115,40 +113,13 @@ Page {
             objectName: "historyExcludedList"
             values: page._leftOut
             first: false
-            delegate: ListRow {
-                id: leftOutRow
+            delegate: AppLinkRow {
                 required property string key
                 required property int index
-                readonly property var entry: leftOutList.entry(key)
                 objectName: "leftOut_" + key
-                implicitHeight: Math.max(Theme.rowHeight, leftOutWords.implicitHeight + 22)
-                clickable: true
-                Accessible.name: entry.name
-                onClicked: Navigation.follow("apps", key)
-                AppIcon {
-                    id: leftOutIcon
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: leftOutRow.entry.typeIcon ? "" : leftOutRow.entry.name
-                    iconName: leftOutRow.entry.typeIcon
-                    source: leftOutRow.entry.icon ? "image://appicon/" + encodeURIComponent(leftOutRow.entry.icon) : ""
-                    size: 28
-                }
-                Column {
-                    id: leftOutWords
-                    x: leftOutIcon.width + Theme.space3
-                    width: parent.width - x
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 3
-                    Txt { width: parent.width; text: leftOutRow.entry.name; variant: "label"; elide: Text.ElideRight }
-                    Txt {
-                        width: parent.width
-                        text: Schema.apps.historyLabel(leftOutRow.entry.history)
-                        variant: "small"
-                        tone: "secondary"
-                        elide: Text.ElideRight
-                    }
-                }
-                trailing: [ Icon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right"; size: 16 } ]
+                first: index === 0 && leftOutList.first
+                entry: leftOutList.entry(key)
+                detail: Schema.apps.historyLabel(entry.history)
             }
         }
         SchemaRow {

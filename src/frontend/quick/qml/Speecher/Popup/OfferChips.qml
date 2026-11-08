@@ -35,10 +35,7 @@ Column {
         dismiss: "Dismiss",
         installed: v => "Speecher " + v + " is installed",
         seeWhatsNew: "See what's new",
-        recording: ms => {
-            const s = Math.floor(ms / 1000)
-            return "Recording " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
-        },
+        recording: ms => "Recording " + Words.clock(ms),
         stop: "Stop"
     })
 

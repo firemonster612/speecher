@@ -1516,7 +1516,7 @@ private slots:
         QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:terminal")) == nullptr || terminalKeysDiffer);
         // Following them is no different from them.
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.Steps")));
-        QQuickItem *result = findItem(app, QStringLiteral("differentlyResult"));
+        QQuickItem *result = findItem(app, QStringLiteral("appLinkDetail"));
         QVERIFY(result);
         QCOMPARE(result->property("text").toString(), QStringLiteral("Clipboard only"));
 

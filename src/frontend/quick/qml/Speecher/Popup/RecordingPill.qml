@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 
 // The recording pill: while a recording runs and no dictation is up, a small
 // pill at the popup's place says so, with its time and a round Stop.
@@ -34,11 +35,6 @@ Item {
         stop: "Stop",
         open: "Open"
     })
-    function clock(ms) {
-        const s = Math.floor(ms / 1000)
-        const mmss = Math.floor(s / 60) % 60 + ":" + String(s % 60).padStart(2, "0")
-        return s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0")
-    }
 
     property string _last: phase
     onPhaseChanged: {
@@ -108,8 +104,8 @@ Item {
                 text: pill.saved ? pill.t.saved
                     : pill.phase === "starting" ? pill.t.connecting
                     : pill.phase === "stopping" ? pill.t.finishing
-                    : pill.attention ? pill.t.callAudioStopped + " " + pill.clock(Recording.elapsedMs)
-                    : pill.t.recording + " " + pill.clock(Recording.elapsedMs)
+                    : pill.attention ? pill.t.callAudioStopped + " " + Words.clock(Recording.elapsedMs)
+                    : pill.t.recording + " " + Words.clock(Recording.elapsedMs)
                 variant: "label"
                 strong: true
                 anchors.verticalCenter: parent.verticalCenter

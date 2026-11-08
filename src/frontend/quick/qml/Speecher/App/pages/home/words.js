@@ -57,11 +57,7 @@ var text = {
 }
 
 // "Recording a call, 12:03"
-function recordingLine(ms) {
-    const s = Math.floor(ms / 1000)
-    const mmss = Math.floor(s / 60) % 60 + ":" + String(s % 60).padStart(2, "0")
-    return text.recordingCall + ", " + (s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0"))
-}
+function recordingLine(ms) { return text.recordingCall + ", " + _words().clock(ms) }
 
 // History's line on Home: "1,284 entries, searchable". Recordings and files
 // count too, so not "dictations".
@@ -109,11 +105,6 @@ function _sentence(parts) { return parts.filter(p => p).join(". ") + "." }
 function hourLabel(h) {
     const h12 = h % 12 === 0 ? 12 : h % 12
     return h12 + " " + (h < 12 ? "am" : "pm")
-}
-// "4:52"
-function clockText(ms) {
-    const s = Math.round(ms / 1000)
-    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
 }
 // "45 min", "2 h", "2 h 5 min"
 function minutesText(m) {
@@ -192,7 +183,7 @@ function figures(s, period, today) {
         { label: "Dictations", value: _num(s.dictations),
           note: _sentence([s.dictations ? _num(s.dictationsPerActiveDay, 1) + " a day when you dictate" : "", _delta(s.dictationsDelta, period)]) },
         { label: "Audio", value: audioText(s.audioMs),
-          note: s.dictations ? clockText(s.averageAudioMs) + " a dictation on average." : "" },
+          note: s.dictations ? _words().clock(s.averageAudioMs) + " a dictation on average." : "" },
         { label: "Streak", value: _count(s.streak.current, "day", "days"), note: streakNote(s.streak, today) }
     ]
     if (s.wordsPerMinute > 0) {
@@ -248,7 +239,7 @@ function records(s, today) {
           value: _count(s.streak.best, "day", "days") }
     ]
     return streak.concat([
-        { title: "Longest dictation", value: clockText(s.longest.audioMs),
+        { title: "Longest dictation", value: _words().clock(s.longest.audioMs),
           detail: _count(s.longest.words, "word", "words") + " into " + s.longest.app + ", " + relativeDay(s.longest.date, today) },
         { title: "Busiest day", detail: _capitalized(relativeDay(s.busiestDay.date, today)),
           value: _count(s.busiestDay.dictations, "dictation", "dictations") },

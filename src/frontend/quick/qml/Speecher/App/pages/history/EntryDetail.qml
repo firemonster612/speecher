@@ -3,6 +3,7 @@ import QtQuick
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
+import Speecher.Wording
 import "HistoryWords.js" as T
 
 // An opened dictation's actions, under its row: Refined or As spoken where
@@ -43,7 +44,7 @@ Item {
             Button {
                 visible: root.entry.hasAudio
                 iconName: root.playing ? "square" : "play"
-                text: root.playing ? T.clock(History.playing.positionMs || 0) : T.clock(root.entry.durationMs)
+                text: root.playing ? Words.clock(History.playing.positionMs || 0) : Words.clock(root.entry.durationMs)
                 size: "small"
                 onClicked: root.playRequested()
             }

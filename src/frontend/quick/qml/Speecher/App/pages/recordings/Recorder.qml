@@ -165,7 +165,7 @@ Section {
                     }
                     MorphText {
                         id: clock
-                        text: T.clock(Recording.elapsedMs)
+                        text: Words.clock(Recording.elapsedMs)
                         variant: "mono"
                         tone: "secondary"
                         opacity: recorder.phase === "starting" ? 0 : 1
