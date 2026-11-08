@@ -61,7 +61,7 @@ var pages = [
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, what it keeps, moving it to your phone or off this computer, and the setup assistant.",
-      keywords: "login startup phone insights history privacy setup assistant uninstall remove" },
+      keywords: "login startup phone insights history privacy data setup assistant uninstall remove" },
     { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
       subtitle: "How Speecher's windows look.",
       keywords: "theme dark light colors color scheme layout split framed translucent blur" },

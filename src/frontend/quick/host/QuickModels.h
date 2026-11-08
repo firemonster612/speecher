@@ -10,6 +10,7 @@
 namespace speecher {
 
 class ApplicationController;
+class QuickSettings;
 
 // The UI's Models singleton: what core knows about the providers that hear
 // and clean up dictation, and about running models on this computer. The
@@ -119,7 +120,9 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
 
 
 public:
-    explicit QuickModels(ApplicationController *controller, QObject *parent = nullptr);
+    // Reads the settings as settings shows them (QuickSettings::shown), so
+    // setup's draft shows in the services' states, as in System's.
+    QuickModels(ApplicationController *controller, const QuickSettings *settings, QObject *parent = nullptr);
 
     QVariantList speechServices() const { return m_speechServices; }
     QVariantList refinementProviders() const { return m_refinementProviders; }
@@ -197,6 +200,7 @@ private:
     void refreshDownloads();
 
     ApplicationController *m_controller;
+    const QuickSettings *m_settings;
     QVariantList m_speechServices;
     QVariantList m_refinementProviders;
     QVariantMap m_speechRatings;

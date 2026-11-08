@@ -1252,7 +1252,7 @@ private slots:
         // The step's check is System's.
         test::SystemSingletons system(&controller);
         // Setup's choices read Models, as the host always has one.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
         // Setup reads Accounts, which the host always makes. Its keyring
         // reads fail at once, so none is left waiting on this thread when it
         // goes.

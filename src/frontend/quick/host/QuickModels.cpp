@@ -9,6 +9,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
 #include "frontend/quick/host/QmlValues.h"
+#include "frontend/quick/host/QuickSettings.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -206,9 +207,10 @@ QVariantList namedModels(const QString &providerId)
 
 } // namespace
 
-QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
+QuickModels::QuickModels(ApplicationController *controller, const QuickSettings *settings, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_settings(settings)
 {
     LocalSetup *local = controller->localSetup();
     connect(local, &LocalSetup::changed, this, &QuickModels::refresh);
@@ -216,6 +218,8 @@ QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
     connect(local, &LocalSetup::changed, this, &QuickModels::pullChanged);
     connect(local, &LocalSetup::pullProgress, this, &QuickModels::pullChanged);
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickModels::refresh);
+    // A draft edit changes the shown settings without a save.
+    connect(settings, &QuickSettings::valuesChanged, this, &QuickModels::refresh);
     // LocalSetup records the bytes from this signal, so it reads them after.
     connect(controller->localModelStore(), &LocalModelStore::downloadProgress, this, &QuickModels::refreshDownloads,
             Qt::QueuedConnection);
@@ -228,7 +232,7 @@ void QuickModels::refresh()
     const LocalSetup &local = *m_controller->localSetup();
     const ProviderRegistry &registry = *m_controller->providerRegistry();
     const ProviderAvailability &availability = *m_controller->providerAvailability();
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppSettings settings = m_settings->shown();
     const LiveFacts facts = local.liveFacts(settings);
     const HardwareProfile &hardware = local.hardware().profile;
     const QStringList speechIds = providerIds(registry.speechProviders());
@@ -396,7 +400,7 @@ void QuickModels::checkComputer()
 void QuickModels::checkSignIns()
 {
     m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
-                                                             m_controller->settings()->dictationSnapshot());
+                                                             m_settings->shown());
 }
 
 QVariantMap QuickModels::service(const QString &id) const
@@ -453,12 +457,12 @@ void QuickModels::openModelFolder()
 
 void QuickModels::testSpeechEndpoint()
 {
-    m_controller->localSetup()->checkSpeechEndpoint(m_controller->settings()->dictationSnapshot().speech.server);
+    m_controller->localSetup()->checkSpeechEndpoint(m_settings->shown().speech.server);
 }
 
 void QuickModels::testRefinementEndpoint()
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppSettings settings = m_settings->shown();
     m_controller->localSetup()->checkRefinementEndpoint(resolvedRefinementEndpoint(settings.refinement, settings.accounts));
 }
 

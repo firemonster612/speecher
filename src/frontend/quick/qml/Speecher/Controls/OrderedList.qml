@@ -6,7 +6,8 @@ import Speecher.Theme
 // to reorder, remove one, or add one of the options left. Rows slide out of
 // each other's way as the order changes, and fold in and out as they come
 // and go. The page owns the data and adapts it:
-//   options: every option that may be listed, [{ id, label, icon?, status?, tone? }]
+//   options: every option that may be listed, [{ id, label, icon?, help?, status?, tone? }];
+//            help shows under it in the choices that add one
 //            (a tone of negative or warning marks a row that can't run)
 //   statusOf: optional (id, index) => ({ text, tone }), for a status that
 //            depends on the row's place in the order

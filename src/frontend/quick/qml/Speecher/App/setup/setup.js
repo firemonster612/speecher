@@ -35,11 +35,8 @@ var text = {
     finishForNow: "Finish for now",
     stillMissing: titles => (titles.length > 1 ? titles.slice(0, -1).join(", ") + " and " + titles[titles.length - 1] + " still need"
                                                : titles[0] + " still needs") + " attention, so setup opens again next time.",
-    needs: "Dictation needs these:",
-    allPassed: "Every step passed its check.",
     almostReady: "Almost ready",
     notReady: "Not ready to dictate yet",
-    worksWithout: "Dictation works without these, but each makes it better:",
     notChosen: "Not chosen",
     welcomeTitle: "Welcome to Speecher",
     welcomeHint: "Once setup is done, press it in any app, speak, and Speecher types what you said.",
@@ -55,6 +52,3 @@ var text = {
     startWithCommand: "Run this from a terminal or your own keybinding to dictate.",
     takesOver: label => label + " takes over"
 };
-
-// Ready's heading over the steps still open: "2 steps need attention".
-function stepsOpen(count) { return count === 1 ? "One step needs attention" : count + " steps need attention"; }

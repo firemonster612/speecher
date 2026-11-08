@@ -7,10 +7,10 @@ import Speecher.Wording
 import Speecher.App
 
 // One App's or one App Type's settings, as rows on a wash under its row:
-// for an App what it is recognized by, its type, writing profile and
-// Pasting, each starting "Same as …" until changed, the vocabulary limited
-// to it, and Remove app; for an
-// App Type its writing profile and Pasting. Every change saves at once
+// for an App what it is recognized by, its type, writing profile, Pasting
+// and History, each starting "Same as …" until changed, the vocabulary
+// limited to it, and Remove app; for an App Type its writing profile,
+// Pasting and History. Every change saves at once
 // through Apps; a refusal shows under the rows.
 Item {
     id: editor
@@ -43,6 +43,22 @@ Item {
              : inherited.pastingFrom === "type" ? Words.sameAs(appType.label, Schema.apps.pastingLabel(inherited.pasting))
              : Words.sameAs(appType.label, t.theSteps)
     }
+    // History: what Privacy & data keeps, which an App or App Type can only
+    // lower, and the choice this one follows without its own.
+    readonly property var keepsSpec: Schema.row("historyKeeps")
+    readonly property string keeps: Settings.values.historyKeeps || ""
+    readonly property string keepsLabel: (keepsSpec.options.find(o => o.id === keeps) || { label: "" }).label
+    readonly property string otherHistory: (Apps.types.find(o => o.id === "general") || { history: "" }).history
+    function inheritedHistory() {
+        const inherited = entry.inherited || {}
+        const fromType = isType ? (isOther ? "" : otherHistory) : inherited.history
+        const place = isType ? Schema.apps.type("general").label
+                    : inherited.historyFrom === "type" ? appType.label : Schema.apps.type("general").label
+        return fromType ? Words.sameAs(place, Schema.apps.historyLabel(fromType))
+                        : Words.sameAs(Schema.page(keepsSpec.page).title, keepsLabel)
+    }
+    readonly property string historyResult: Schema.apps.historyResult(
+        isType ? entry.history || (isOther ? "" : otherHistory) : (entry.effective || {}).history, keeps, keepsLabel)
     // The Vocabulary Entries limited to the App, corrections learned in it
     // included.
     readonly property int vocabularyCount: isType ? 0 : Library.vocabulary.filter(e => Library.limitedToApp(e, entry)).length
@@ -118,6 +134,17 @@ Item {
                     .concat(Schema.apps.pastingChoices.slice(1))
                 currentId: editor.entry.pasting || ""
                 onChosen: id => editor.save({ pasting: id })
+            }
+        }
+        SettingRow {
+            title: editor.t.history
+            help: editor.historyResult
+            InheritSelect {
+                objectName: "appHistory"
+                inheritedText: editor.inheritedHistory()
+                choices: Schema.apps.historyChoices
+                currentId: editor.entry.history || ""
+                onChosen: id => editor.save({ history: id })
             }
         }
         SettingRow {

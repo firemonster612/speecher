@@ -407,7 +407,7 @@ private slots:
         // microphone, the speech service. Here a microphone is plugged in.
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
         QGuiApplication::clipboard()->clear();
 
         QQmlEngine engine;
@@ -470,7 +470,7 @@ private slots:
         QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
 
         QQmlEngine engine;
         QQmlComponent component(&engine);
@@ -484,14 +484,16 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(qobject_cast<QWindow *>(window.get())));
         auto *session = home->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
-        QVERIFY(session->property("blocked").toBool());
+        auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
+        QVERIFY(readiness);
+        QVERIFY(readiness->property("blocked").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
         // Every check is listed, in its group: the shortcut is what
         // dictation works without. Microphone access isn't a row of its own
         // but the Microphone row's, which says what is missing.
-        QVERIFY(session->property("neededChecks").value<QJSValue>().toVariant().toStringList().isEmpty());
-        QVERIFY(session->property("optionalChecks").value<QJSValue>().toVariant().toStringList().contains(QStringLiteral("globalShortcuts")));
-        const QVariantMap microphone = session->property("microphoneItem").value<QJSValue>().toVariant().toMap();
+        QVERIFY(readiness->property("neededChecks").value<QJSValue>().toVariant().toStringList().isEmpty());
+        QVERIFY(readiness->property("optionalChecks").value<QJSValue>().toVariant().toStringList().contains(QStringLiteral("globalShortcuts")));
+        const QVariantMap microphone = readiness->property("microphoneItem").value<QJSValue>().toVariant().toMap();
         QCOMPARE(microphone.value(QStringLiteral("state")).toString(), QStringLiteral("missing"));
 
         // Delegates hang off the visual tree, not the object tree.
@@ -520,7 +522,7 @@ private slots:
         QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
 
         QQmlEngine engine;
         QQmlComponent component(&engine);
@@ -532,10 +534,12 @@ private slots:
         QVERIFY2(window, qPrintable(component.errorString()));
         auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
+        auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
+        QVERIFY(readiness);
         // Home asked for the sign-ins; the test's homes have none.
-        QTRY_COMPARE(session->property("speechState").toString(), QStringLiteral("attention"));
-        QVERIFY(session->property("blocked").toBool());
-        QVERIFY(!session->property("cantStart").toBool());
+        QTRY_COMPARE(readiness->property("speechState").toString(), QStringLiteral("attention"));
+        QVERIFY(readiness->property("blocked").toBool());
+        QVERIFY(!readiness->property("cantStart").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Not ready to dictate"));
         QCOMPARE(session->property("caption").toString(), QStringLiteral("Dictation needs a working speech service."));
     }
@@ -555,7 +559,7 @@ private slots:
         QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
 
         QQmlEngine engine;
         QQmlComponent component(&engine);
@@ -567,9 +571,11 @@ private slots:
         QVERIFY2(window, qPrintable(component.errorString()));
         auto *session = window->property("home").value<QQuickItem *>()->findChild<QObject *>(QStringLiteral("homeSession"));
         QVERIFY(session);
-        QCOMPARE(session->property("speechState").toString(), QStringLiteral("notChecked"));
-        QVERIFY(!session->property("allPass").toBool());
-        QVERIFY(!session->property("cantStart").toBool());
+        auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
+        QVERIFY(readiness);
+        QCOMPARE(readiness->property("speechState").toString(), QStringLiteral("notChecked"));
+        QVERIFY(!readiness->property("allPass").toBool());
+        QVERIFY(!readiness->property("cantStart").toBool());
         QCOMPARE(session->property("title").toString(), QStringLiteral("Speech to text isn't checked yet"));
         QCOMPARE(session->property("caption").toString(), QStringLiteral("Start a dictation to try it."));
     }
@@ -590,7 +596,7 @@ private slots:
         // microphone, the speech service. Here a microphone is plugged in.
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
 
         QQmlEngine engine;
         QQmlComponent component(&engine);

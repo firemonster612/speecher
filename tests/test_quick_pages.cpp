@@ -23,6 +23,7 @@
 #include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
+#include "frontend/quick/host/QuickSystem.h"
 #include "frontend/quick/host/ScatterRibbon.h"
 
 #include <QAccessible>
@@ -34,6 +35,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QJSValue>
+#include <QSet>
 #include <QPainter>
 #include <QPointer>
 #include <QQmlComponent>
@@ -264,6 +266,8 @@ private slots:
             draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal, PasteMethod::DirectInsert),
                                gmail};
             draft.apps.apps.first().name = QStringLiteral("Kate");
+            // Privacy & data lists an app kept out of History.
+            draft.apps.apps.first().history = HistoryKeep::Stats;
             draft.apps.types[1].writingProfile = WritingProfile::Work;
             // Vocabulary shows each kind: a key term with a context, one
             // limited to a profile, a snippet over several lines, one
@@ -325,7 +329,7 @@ private slots:
                           }});
         }
         for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"), QStringLiteral("refinement"),
-                                    QStringLiteral("app type"), QStringLiteral("zzz no match")}) {
+                                    QStringLiteral("app type"), QStringLiteral("quarterly deck"), QStringLiteral("zzz no match")}) {
             steps.append({QStringLiteral("search ") + query, [search, query] {
                               QMetaObject::invokeMethod(search, "open");
                               search->setProperty("query", query);
@@ -878,6 +882,88 @@ private slots:
         QTRY_VERIFY(!mode->property("note").toString().startsWith(QStringLiteral("Using")));
     }
 
+    // Every id a link, a search landing or the schema names is a page or a
+    // schema row that exists, so nothing lands nowhere after a row or page
+    // moves or goes. Ids a page makes up for its own entries (appentry:,
+    // vocab:, historyFind: and the like) are the pages' own business.
+    void everyIdALinkNamesExists()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *schema = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        QSet<QString> pages;
+        for (const QVariant &page : schema->property("pages").value<QJSValue>().toVariant().toList()) {
+            pages.insert(page.toMap().value(QStringLiteral("id")).toString());
+        }
+        QSet<QString> rows;
+        const QVariantList rowList = schema->property("rows").value<QJSValue>().toVariant().toList();
+        for (const QVariant &row : rowList) {
+            rows.insert(row.toMap().value(QStringLiteral("id")).toString());
+        }
+        QStringList stale;
+        const auto check = [&](const QString &where, const QString &id, const QSet<QString> &known) {
+            if (!id.isEmpty() && !id.contains(u':') && !known.contains(id)) {
+                stale.append(where + QStringLiteral(": ") + id);
+            }
+        };
+        for (const QVariant &value : rowList) {
+            const QVariantMap row = value.toMap();
+            const QString id = row.value(QStringLiteral("id")).toString();
+            check(id + QStringLiteral(" page"), row.value(QStringLiteral("page")).toString(), pages);
+            check(id + QStringLiteral(" opens"), row.value(QStringLiteral("opens")).toString(), rows);
+            for (const char *when : {"hiddenWhen", "enabledWhen"}) {
+                check(id + QLatin1Char(' ') + QLatin1String(when),
+                      row.value(QLatin1String(when)).toMap().value(QStringLiteral("id")).toString(), rows);
+            }
+        }
+        for (const QString &id : schema->property("suggestions").value<QJSValue>().toVariant().toStringList()) {
+            check(QStringLiteral("suggestions"), id, rows);
+        }
+        for (const QString &id : schema->property("since").value<QJSValue>().toVariant().toMap().keys()) {
+            check(QStringLiteral("since"), id, rows);
+        }
+        // Links and landings written into the QML: Navigation.go("page"),
+        // goToRow and follow("page", "row"), rowId: "row" and rowIds: [...].
+        static const QRegularExpression link(QStringLiteral("Navigation\\.(?:go|goToRow|follow)\\(\\s*\"([^\"]+)\"(?:\\s*,\\s*\"([^\"]*)\")?"));
+        static const QRegularExpression rowId(QStringLiteral("\\browId:\\s*\"([^\"]+)\""));
+        static const QRegularExpression rowIds(QStringLiteral("\\browIds:\\s*\\[([^\\]]*)\\]"));
+        static const QRegularExpression quoted(QStringLiteral("\"([^\"]+)\""));
+        QDirIterator files(QStringLiteral(SPEECHER_SOURCE_DIR "/src/frontend/quick/qml"), {QStringLiteral("*.qml"), QStringLiteral("*.js")},
+                           QDir::Files, QDirIterator::Subdirectories);
+        int scanned = 0;
+        while (files.hasNext()) {
+            QFile file(files.next());
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            // Comments' examples are not links.
+            QStringList lines = QString::fromUtf8(file.readAll()).split(u'\n');
+            lines.removeIf([](const QString &line) { return line.trimmed().startsWith(QLatin1String("//")); });
+            const QString text = lines.join(u'\n');
+            const QString where = files.fileName();
+            ++scanned;
+            for (auto it = link.globalMatch(text); it.hasNext();) {
+                const QRegularExpressionMatch match = it.next();
+                check(where, match.captured(1), pages);
+                check(where, match.captured(2), rows);
+            }
+            for (auto it = rowId.globalMatch(text); it.hasNext();) {
+                check(where, it.next().captured(1), rows);
+            }
+            for (auto it = rowIds.globalMatch(text); it.hasNext();) {
+                const QString list = it.next().captured(1);
+                for (auto ids = quoted.globalMatch(list); ids.hasNext();) {
+                    check(where, ids.next().captured(1), rows);
+                }
+            }
+        }
+        QVERIFY(scanned > 50);
+        QVERIFY2(stale.isEmpty(), qPrintable(stale.join(QStringLiteral("\n"))));
+    }
+
     // A search result for a row on another page, such as the speech
     // server's URL among Your servers, lands on the row; keypad Enter picks
     // a result as Return does.
@@ -911,6 +997,31 @@ private slots:
         // Landed, which clears the pending row, then scrolled into the window.
         QTRY_COMPARE(navigation->pendingRow(), QString());
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
+    }
+
+    // Add service lists the services not in the order with their ratings,
+    // so they can be compared before one is added.
+    void addServiceShowsTheRatings()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("codex")}));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
+        QQuickItem *order = nullptr;
+        QTRY_VERIFY((order = findItem(main->contentItem(), QStringLiteral("speechServiceOrder"))));
+        const QVariantList available = order->property("available").value<QJSValue>().toVariant().toList();
+        const auto claude = std::find_if(available.cbegin(), available.cend(), [](const QVariant &option) {
+            return option.toMap().value(QStringLiteral("id")).toString() == QLatin1String("claude");
+        });
+        QVERIFY(claude != available.cend());
+        const QString help = claude->toMap().value(QStringLiteral("help")).toString();
+        QVERIFY2(help.startsWith(QLatin1String("Accuracy ")) && help.contains(QLatin1String("out of 10.")), qPrintable(help));
     }
 
     // A search for a refinement service's thinking lands on Refinement's
@@ -1296,6 +1407,84 @@ private slots:
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, AppCategory::Email);
     }
 
+    // An App's History choice can only lower what Privacy & data keeps. Once
+    // chosen, Privacy & data lists the App, and its row opens it in Apps.
+    void anAppKeptOutOfHistoryShowsInPrivacyAndData()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.Vault"))};
+            return true;
+        });
+        const QString id = QStringLiteral("app:org.example.Vault");
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *apps = engine->singletonInstance<QuickApps *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Apps"));
+        QVERIFY(navigation && apps);
+        QTest::ignoreMessage(QtWarningMsg, "Apps.update takes no History choice text");
+        QCOMPARE(apps->update(id, {{QStringLiteral("history"), QStringLiteral("text")}}), QStringLiteral("invalid"));
+
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:") + id);
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QQuickItem *history = findItem(row->parentItem(), QStringLiteral("appHistory"));
+        QVERIFY(history);
+        QVERIFY(QMetaObject::invokeMethod(history, "chosen", Q_ARG(QString, QStringLiteral("nothing"))));
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().history, HistoryKeep::Nothing);
+
+        navigation->go(QStringLiteral("general"));
+        QQuickItem *listed = nullptr;
+        QTRY_VERIFY((listed = findItem(main->contentItem(), QStringLiteral("leftOut_appentry:") + id)));
+        QVERIFY(QMetaObject::invokeMethod(listed, "clicked"));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QCOMPARE(navigation->returnTo(), QStringLiteral("general"));
+    }
+
+    // While History keeps text, search ends with Search History for the
+    // words, which opens History with them searched; keeping only stats, it
+    // doesn't offer it.
+    void searchOffersHistoryWhileItKeepsText()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *settings = engine->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && settings && search);
+        const auto offered = [search] {
+            const auto results = searchResults(search, QStringLiteral("quarterly deck"));
+            return !results.isEmpty() && results.last() == std::pair{QStringLiteral("historyFind:quarterly deck"), QStringLiteral("Home › History")};
+        };
+        settings->set(QStringLiteral("historyKeeps"), QStringLiteral("stats"));
+        QMetaObject::invokeMethod(search, "open");
+        QVERIFY(!offered());
+        settings->set(QStringLiteral("historyKeeps"), QStringLiteral("text"));
+        QVERIFY(offered());
+
+        const int last = int(search->property("results").value<QJSValue>().property(QStringLiteral("length")).toInt()) - 1;
+        QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, last));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("history"));
+        QQuickItem *field = nullptr;
+        QTRY_VERIFY((field = findItem(main->contentItem(), QStringLiteral("historySearch"))));
+        QTRY_COMPARE(field->property("text").toString(), QStringLiteral("quarterly deck"));
+        QCOMPARE(navigation->pendingRow(), QString());
+    }
+
     // History in each of its states: off, keeping stats, nothing kept yet,
     // then a seed's entries, a search that matches nothing, and an entry
     // opened in place.
@@ -1619,6 +1808,37 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(setup, "finish"));
         QCOMPARE(savedOrder(), reordered);
         QVERIFY(!controller.settings()->dictationSnapshot().setupCompleted);
+    }
+
+    // Ready shows Home's readiness card over setup's draft: a delivery step
+    // turned off in setup changes what it says of Pasting at once, as
+    // System's outcome does, while the saved step stays on.
+    void setupReadyShowsHomesReadinessOverTheDraft()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        QVERIFY(QTest::qWaitForWindowExposed(setup));
+        setup->setProperty("step", setup->property("steps").value<QJSValue>().property(QStringLiteral("length")).toInt() - 1);
+        QQmlEngine *engine = qmlEngine(setup);
+        auto *settings = engine->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
+        auto *system = engine->singletonInstance<QuickSystem *>(QStringLiteral("Speecher.Backend"), QStringLiteral("System"));
+        QVERIFY(settings && system);
+        QObject *readiness = nullptr;
+        QTRY_VERIFY((readiness = findItem(setup->contentItem(), QStringLiteral("readiness"))));
+        QVERIFY(readiness->property("inSetup").toBool());
+        const auto pastingNeeded = [readiness] { return readiness->property("pastingNeeded").toBool(); };
+
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
+        settings->set(QStringLiteral("keepOnClipboard"), false);
+        QCOMPARE(pastingNeeded(), system->pastingOutcome() == QLatin1String("nothing"));
+        settings->set(QStringLiteral("insertThroughAccessibility"), false);
+        settings->set(QStringLiteral("pressPasteKeys"), false);
+        QCOMPARE(pastingNeeded(), system->pastingOutcome() == QLatin1String("nothing"));
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
     }
 
     void everyPopupStateLoads_data() { themes(); }

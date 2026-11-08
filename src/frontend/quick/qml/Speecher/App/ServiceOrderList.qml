@@ -34,7 +34,9 @@ Column {
     OrderedList {
         objectName: list.role + "ServiceOrder"
         ids: ModelText.order(list.role)
-        options: list.services.map(s => ({ id: s.id, label: s.label, icon: ModelText.serviceOf(list.role, s.id).icon }))
+        // Each with its ratings, which Add service shows under its name.
+        options: list.services.map(s => ({ id: s.id, label: s.label, icon: ModelText.serviceOf(list.role, s.id).icon,
+                                           help: ModelText.ratingLine(list.role, s.id) }))
         statusOf: (id, index) => {
             const s = ModelText.orderStatus(ModelText.serviceOf(list.role, id), index)
             return { text: s.text, tone: States.tone(s.state) }

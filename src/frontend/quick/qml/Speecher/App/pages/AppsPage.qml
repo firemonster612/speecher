@@ -26,7 +26,9 @@ Page {
         title: page.t.yourApps
         caption: page.t.yourAppsHelp
         actions: [ Button { text: page.t.addApp; iconName: "plus"; size: "small"; onClicked: picker.start() } ]
-        SearchLanding { rowIds: ["apps"]; target: yours }
+        // The History row is in each App's editor; a search for it lands on
+        // the list.
+        SearchLanding { rowIds: ["apps", "appHistory"]; target: yours }
         SearchLanding { rowIds: ["addApp"]; target: yours; onLanded: picker.start() }
         AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can tell which app you're in. Your apps apply once it can." }
 

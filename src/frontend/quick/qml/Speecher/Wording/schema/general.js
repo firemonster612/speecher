@@ -61,9 +61,12 @@ var rows = [
       help: "Scan the code with Speecher for Android. Your phone needs to be on the same network.",
       keywords: "android mobile qr code transfer export vocabulary snippets profiles" },
 
+    // Privacy & data: every choice about what Speecher keeps or shares, each
+    // in one place. History's own rows are edited here; the rest are links
+    // to the row that owns the setting, saying how it is set now.
     // What Speecher Keeps. Lowering it below Text asks whether to delete the
     // text already kept (GeneralPage).
-    { id: "historyKeeps", page: "general", section: "Insights", kind: "custom",
+    { id: "historyKeeps", page: "general", section: "Privacy & data", kind: "custom",
       label: "What Speecher keeps",
       help: "Stays on this computer. Password fields are never kept.",
       keywords: "history insights stats statistics privacy tracking text audio record save keep",
@@ -73,7 +76,7 @@ var rows = [
           { id: "text", label: "Text", help: "Also what you said, so you can find it in History." },
           { id: "audio", label: "Text and audio", help: "Also the sound of each dictation, to play it back." }
       ] },
-    { id: "historyTextDays", page: "general", section: "Insights", kind: "choice", control: "select",
+    { id: "historyTextDays", page: "general", section: "Privacy & data", kind: "choice", control: "select",
       label: "Keep text for",
       help: "Older dictations and file transcriptions keep their stats. Their words and audio are deleted.",
       keywords: "history retention days delete older expire",
@@ -85,7 +88,7 @@ var rows = [
           { id: "365", label: "A year" },
           { id: "0", label: "Until I delete it" }
       ] },
-    { id: "historyAudioDays", page: "general", section: "Insights", kind: "choice", control: "select",
+    { id: "historyAudioDays", page: "general", section: "Privacy & data", kind: "choice", control: "select",
       label: "Keep audio for",
       help: "About 0.25 MB a minute. Never longer than text.",
       keywords: "history retention days audio sound recording delete",
@@ -96,10 +99,31 @@ var rows = [
           { id: "30", label: "30 days" },
           { id: "-1", label: "As long as text" }
       ] },
-    { id: "clearHistory", page: "general", section: "Insights", kind: "custom",
+    // The Apps and App Types whose History choice keeps less, read-only:
+    // each is changed in its editor on Apps.
+    { id: "historyExcludedApps", page: "general", section: "Privacy & data", kind: "custom",
+      label: "Apps left out of History",
+      help: "Apps and app types that keep less than the choice above. Change them in Apps.",
+      emptyText: "Every app follows the choice above.",
+      keywords: "history exclude excluded private password manager incognito app per-app stats nothing privacy" },
+    { id: "clearHistory", page: "general", section: "Privacy & data", kind: "custom",
       label: "Clear history",
       help: "Deletes text and audio from this computer. Check Also delete their stats to empty Home too.",
       keywords: "delete clear erase privacy reset stats insights history" },
+
+    { id: "privacyRefinementSees", page: "general", section: "Privacy & data", kind: "custom",
+      label: "What refinement sees",
+      help: "Besides your words, what Speecher sends the refinement service for each dictation. Never kept afterwards.",
+      keywords: "privacy context nearby text cursor screenshot screen share send cloud refinement" },
+    { id: "privacyLearnedCorrections", page: "general", section: "Privacy & data", kind: "custom",
+      label: "Learning from your edits",
+      help: "Corrections keep the words you fixed and the app you fixed them in.",
+      keywords: "privacy learned corrections edits watch learn vocabulary" },
+    // Held by the daemon, not saved, so there is nothing to set.
+    { id: "privacyLastText", page: "general", section: "Privacy & data", kind: "custom",
+      label: "Your last dictation",
+      help: "Its text stays in memory for Paste again, Home and speecher last until Speecher quits, whatever History keeps.",
+      keywords: "privacy last latest transcript memory paste again clipboard" },
 
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",
