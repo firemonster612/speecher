@@ -690,6 +690,11 @@ private slots:
                  // Following it chooses nothing.
                  QCOMPARE(controller.settings()->snapshot().speech.services.order,
                           (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
+                 // A row drawn wider than the font measures it, as Windows
+                 // draws them, widens a popover opened from a link too.
+                 QVERIFY(QMetaObject::invokeMethod(serviceLanguages, "measure", Q_ARG(QVariant, 400)));
+                 QTRY_VERIFY2(serviceLanguages->property("width").toReal() > 400,
+                              qPrintable(serviceLanguages->property("width").toString()));
                  QTest::keyClick(main, Qt::Key_Escape);
              }},
             {QStringLiteral("rest the pointer on a row of the picker"), [&] {

@@ -30,12 +30,18 @@ MenuPopup {
     // stays open when item goes, as a row's link does when its list
     // changes and the rows are made again.
     function openFrom(item) {
-        width = fitWidth(languages, Math.max(item.width, 280), true)
         const under = item.mapToItem(parent, 0, item.height + 6)
-        x = align === "right" ? under.x + item.width - width : under.x
+        const itemWidth = item.width
+        _openerWidth = itemWidth
+        // Bound, so a width the rows measure wider still lines it up.
+        x = Qt.binding(() => align === "right" ? under.x + itemWidth - width : under.x)
         y = under.y
         open()
     }
+    // What it opens from sets its least width: where it's declared, or
+    // the item openFrom placed it at.
+    property real _openerWidth: parent ? parent.width : 0
+    onLanguagesChanged: measured = 0
 
     // Lower case without accents, so "francais" finds "français".
     function _fold(s) { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase() }
@@ -64,7 +70,7 @@ MenuPopup {
         close()
     }
 
-    width: fitWidth(languages, Math.max(parent ? parent.width : 0, 280), true)
+    width: fitWidth(languages, Math.max(_openerWidth, 280), true)
     implicitHeight: implicitContentHeight + topPadding + bottomPadding
     // Kept inside the window, over what opened it where there is no room
     // below.
@@ -159,6 +165,8 @@ MenuPopup {
                     focusPolicy: Qt.NoFocus
                     onClicked: if (popover.choosing) popover._take(index)
                     Accessible.role: popover.choosing ? Accessible.MenuItem : Accessible.ListItem
+                    onImplicitWidthChanged: popover.measure(implicitWidth)
+                    Component.onCompleted: popover.measure(implicitWidth)
                 }
             }
             Txt {
